@@ -1,5 +1,6 @@
 """Real bundles, aliases, original groups and locks; SDK/signing are modeled."""
 from pathlib import Path
+from datetime import datetime, timezone
 import json
 import os
 import sys
@@ -218,6 +219,13 @@ class InputTests(unittest.TestCase):
             path = self.sdk/name/"artifact"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("original SDK artifact "+name)
+        self.home = self.root/"developer-home"
+        self.home.mkdir()
+        home = patch.object(CACHE.Path, "home", return_value=self.home)
+        home.start()
+        self.addCleanup(home.stop)
+        self.profile_payload = {"ExpirationDate":datetime(2099, 1, 1),
+                                "privateDeviceData":"must not appear in cache inputs"}
         self.cancel = threading.Event()
 
     def command(self, args, **_):
@@ -227,6 +235,9 @@ class InputTests(unittest.TestCase):
             return ("stable-aarch64-apple-darwin (default)",)
         if len(args) == 5 and args[:3] == ["rustup", "which", "--toolchain"]:
             return (str(self.rust_tools[args[-1]]),)
+        if args[:2] == [sys.executable, "-c"] and "'cms'" in args[2]:
+            expiry = self.profile_payload["ExpirationDate"]
+            return (json.dumps({"expires_at":expiry.replace(tzinfo=timezone.utc).isoformat()}),)
         return ("modeled tool/SDK version",)
 
     def inputs(self, *, platform="ios", **options):
@@ -245,6 +256,62 @@ class InputTests(unittest.TestCase):
                         self.assertEqual(first["rust_toolchains"]["stable"][tool],
                                          second["rust_toolchains"]["stable"][tool])
                     self.assertNotEqual(first, second)
+
+    def test_installed_provisioning_profile_bytes_invalidate_with_same_certificate(self):
+        for directory in ("Library/Developer/Xcode/UserData/Provisioning Profiles",
+                          "Library/MobileDevice/Provisioning Profiles"):
+            with self.subTest(directory=directory):
+                profile = self.home/directory/"automatic.mobileprovision"
+                profile.parent.mkdir(parents=True)
+                profile.write_bytes(b"original profile")
+                first = self.inputs(platform="macos")
+                profile.write_bytes(b"renewed profile, unchanged signing certificate")
+                second = self.inputs(platform="macos")
+                self.assertEqual(first["signing_identities_sha256"], second["signing_identities_sha256"])
+                self.assertNotEqual(first, second)
+                self.assertNotIn("must not appear", json.dumps(second))
+
+    def test_profile_expiration_invalidates_without_byte_or_certificate_changes(self):
+        profile = self.home/"Library/Developer/Xcode/UserData/Provisioning Profiles/test.mobileprovision"
+        profile.parent.mkdir(parents=True)
+        profile.write_bytes(b"unchanged installed profile")
+        original = CACHE._macos_provisioning_inputs
+        before, after = datetime(2098, 12, 31, tzinfo=timezone.utc), datetime(2099, 1, 1, tzinfo=timezone.utc)
+        with patch.object(CACHE, "_macos_provisioning_inputs",
+                side_effect=lambda command, cancel:original(command, cancel, now=before)):
+            first = self.inputs(platform="macos")
+        with patch.object(CACHE, "_macos_provisioning_inputs",
+                side_effect=lambda command, cancel:original(command, cancel, now=after)):
+            second = self.inputs(platform="macos")
+        self.assertNotEqual(first, second)
+        self.assertEqual(first["signing_identities_sha256"], second["signing_identities_sha256"])
+        self.assertEqual(profile.read_bytes(), b"unchanged installed profile")
+
+    def test_ios_collection_does_not_decode_host_provisioning_profiles(self):
+        with patch.object(CACHE, "_macos_provisioning_inputs") as inspect:
+            self.assertIsNone(self.inputs()["provisioning_profiles"])
+        inspect.assert_not_called()
+
+    def test_profile_change_during_expiry_query_and_invalid_expiry_are_rejected(self):
+        profile = self.home/"Library/Developer/Xcode/UserData/Provisioning Profiles/test.mobileprovision"
+        profile.parent.mkdir(parents=True)
+        profile.write_bytes(b"original installed profile")
+        original = self.command
+
+        def command(args, **options):
+            result = original(args, **options)
+            if args[:2] == [sys.executable, "-c"] and "'cms'" in args[2]:
+                profile.write_bytes(b"changed during original query")
+            return result
+
+        with patch.object(self, "command", side_effect=command):
+            with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "profile changed"):
+                self.inputs(platform="macos")
+        for expiry in (None, "not-a-date", "2099-01-01T00:00:00"):
+            with self.subTest(expiry=expiry):
+                with self.assertRaisesRegex(CACHE.NativeBuildCacheError, "expiry is invalid"):
+                    CACHE._macos_provisioning_inputs(
+                        lambda *_args, **_options:(json.dumps({"expires_at":expiry}),), self.cancel)
 
     def test_native_rust_resolution_rejects_missing_relative_and_multiple_paths(self):
         original = self.command

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import sys
 import uuid
 from urllib.parse import unquote, urlparse
 
@@ -21,6 +23,15 @@ from native_zakura_front import _capture
 
 _TOKEN = object()
 _ROLES = ("cohort", "helper")
+_PROFILE_EXPIRY_QUERY = (
+    "import datetime,json,plistlib,subprocess,sys\n"
+    "result=subprocess.run(['/usr/bin/security','cms','-D','-i',sys.argv[1]],"
+    "check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)\n"
+    "expiry=plistlib.loads(result.stdout)['ExpirationDate']\n"
+    "if not isinstance(expiry,datetime.datetime): raise TypeError('invalid profile expiry')\n"
+    "expiry=expiry.replace(tzinfo=datetime.timezone.utc) if expiry.tzinfo is None else expiry\n"
+    "print(json.dumps({'expires_at':expiry.astimezone(datetime.timezone.utc).isoformat()}))\n"
+)
 
 
 class NativeBuildCacheError(FunderCacheError):
@@ -211,6 +222,50 @@ def _flutter_sdk_inputs(tool, platform, cancel):
             capture=artifact_record, ignore_generated=False) for name in trees}}
 
 
+def _macos_provisioning_inputs(command, cancel, *, now=None):
+    # Xcode selects automatic profiles during the build. Conservatively bind
+    # both SDK-supported installed inventories, not a guessed selected UUID.
+    now = datetime.now(timezone.utc) if now is None else now
+    result = {}
+    for name in ("Library/Developer/Xcode/UserData/Provisioning Profiles",
+                 "Library/MobileDevice/Provisioning Profiles"):
+        directory = Path.home()/name
+        if not directory.exists() and not directory.is_symlink():
+            result[str(directory)] = None
+            continue
+        if directory.resolve(strict=True) != directory or not directory.is_dir():
+            raise NativeBuildCacheError("installed provisioning directory must be canonical")
+        before = tree.identity(directory.lstat())
+        paths = sorted(path for path in directory.iterdir()
+                       if path.suffix in {".mobileprovision", ".provisionprofile"})
+        if len(paths) > 2048:
+            raise NativeBuildCacheError("installed provisioning inventory exceeds its bound")
+        records = {}
+        for path in paths:
+            if cancel.is_set():
+                from e2e_runtime import Cancelled
+                raise Cancelled()
+            record = _file_record(path, limit=8*1024*1024)
+            # Only expiry reaches original command logs, never profile device
+            # lists, certificate payloads or other developer-account metadata.
+            payload = json.loads("".join(command([sys.executable, "-c",
+                _PROFILE_EXPIRY_QUERY, str(path)])))
+            try:
+                expiry = datetime.fromisoformat(payload["expires_at"])
+                if expiry.tzinfo is None:
+                    raise ValueError("profile expiry requires UTC offset")
+            except (KeyError, TypeError, ValueError) as error:
+                raise NativeBuildCacheError("installed provisioning expiry is invalid") from error
+            if _file_record(path, limit=8*1024*1024) != record:
+                raise NativeBuildCacheError("installed provisioning profile changed during inspection")
+            records[path.name] = {"sha256":record[1], "expires_at":expiry.isoformat(),
+                                  "unexpired":now < expiry}
+        if tree.identity(directory.lstat()) != before:
+            raise NativeBuildCacheError("installed provisioning inventory changed during inspection")
+        result[str(directory)] = records
+    return result
+
+
 def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
                                 command, environment, cancel, tex_address=None):
     configuration = root/".dart_tool/package_config.json"
@@ -278,6 +333,8 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         "ruby":list(command(["ruby", "--version"], in_source=True)),
         "signing_identities_sha256":hashlib.sha256("".join(command(
             ["/usr/bin/security", "find-identity", "-v", "-p", "codesigning"])).encode()).hexdigest()
+            if platform == "macos" else None,
+        "provisioning_profiles":_macos_provisioning_inputs(command, cancel)
             if platform == "macos" else None,
         "cargo_config_sha256":{str(path):_capture(path)[1] for path in sorted(configurations) if path.exists() or path.is_symlink()},
         "environment_sha256":{name:hashlib.sha256(value.encode()).hexdigest() for name,value in sorted(environment.items())}}
