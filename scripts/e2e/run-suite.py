@@ -156,6 +156,8 @@ def run(args: argparse.Namespace) -> int:
         plan = e2e_catalog.plan(catalog, scenarios)
         if not plan.runnable:
             raise e2e_catalog.CatalogError("selected execution is pending: " + "; ".join(plan.blockers))
+        if sys.version_info < (3, 11):
+            raise e2e_catalog.CatalogError("isolated execution requires Python 3.11 or newer")
         # Keep all backend/platform imports out of side-effect-free previews.
         from native_macos_suite import run_native_suite
         return run_native_suite(args,catalog,scenarios,selection,source_root=REPO_ROOT)

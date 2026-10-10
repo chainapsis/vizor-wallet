@@ -381,6 +381,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
     configurations = {cargo_home/name for name in ("config", "config.toml")}
     configurations.update(parent/".cargo"/name for parent in (root,*root.parents)
                           for name in ("config", "config.toml"))
+    configurations.update(root/"rust/.cargo"/name for name in ("config", "config.toml"))
     return {"schema":1, "platform":platform, "architecture":architecture, "tex_address":tex_address,
         "source_sha256":{str(path.relative_to(root)) if path.is_relative_to(root) else str(path):record[1]
             for path,record in source.items() if path != configuration},
@@ -388,6 +389,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         "flutter":flutter, "flutter_sdk":_flutter_sdk_inputs(tool, platform, cancel),
         "apple_toolchain":_native_apple_inputs(command, platform, cancel),
         "collector_sha256":_capture(Path(toolchain_inputs.__file__).resolve(strict=True))[1],
+        "configured_tools":toolchain_inputs.configured_tool_inputs(environment, configurations, root/"rust"),
         "xcode":list(command(["/usr/bin/xcodebuild", "-version"])),
         "sdk":list(command(["/usr/bin/xcrun", "--sdk", sdk, "--show-sdk-build-version"])),
         "rust_toolchains":rust,

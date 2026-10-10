@@ -120,6 +120,7 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual((code, errors), (0, ""))
         self.assertEqual(len(output["scenarios"]), 64)
         self.assertEqual(output["catalog_sha256"], self.catalog.fingerprint)
+
         wired_ids = {"flutter.macos.import-sync", "flutter.macos.fallback-endpoint",
             "flutter.macos.custom-endpoint-no-fallback", "flutter.macos.slow-height-fallback",
             "flutter.macos.sync-startup-stall-recovery",
@@ -167,6 +168,16 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(record["supported"], wired)
             self.assertEqual(record["runnable"], wired)
             self.assertEqual(bool(record["pending_reason"]), not wired)
+
+    def test_python_39_preview_survives_but_execution_requires_311_before_import(self):
+        with patch.object(CLI.sys, "version_info", (3, 9, 0)):
+            code, _, error = self.invoke("--suite", "all", "--plan")
+            self.assertEqual((code, error), (0, ""))
+            with patch("subprocess.run", side_effect=AssertionError("started a process")), \
+                 patch.object(Path, "mkdir", side_effect=AssertionError("created artifacts")):
+                code, _, error = self.invoke("--scenario", "rust.receive.sync", "--run")
+            self.assertEqual(code, 2)
+            self.assertIn("Python 3.11", error)
 
     def test_exact_selection_deduplicates_in_catalog_order(self) -> None:
         first, second = self.catalog.scenarios[:2]

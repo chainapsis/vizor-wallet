@@ -219,6 +219,7 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                                for name in ("config", "config.toml")}
         configuration_paths.update(parent / ".cargo" / name for parent in root.parents
                                    for name in ("config", "config.toml"))
+        cargo_configuration_paths = frozenset(configuration_paths)
         go_configuration = [line.strip() for line in
                             command([str(tools["sdk"]["go"]), "env", "GOENV"], cwd=sdk)]
         if len(go_configuration) != 1:
@@ -249,11 +250,17 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                        for name, path in items.items()} for context, items in tools.items()},
             "producer_sha256": tool_records[producer][1], "platform": sys.platform,
             "collector_sha256":tool_records[collector][1], "compiler_inputs":compiler_inputs(),
+            "configured_tools":{context:toolchain_inputs.configured_tool_inputs(
+                environment, cargo_configuration_paths, cwd)
+                for context, cwd in (("outer", Path.cwd()), ("sdk", sdk))},
             "configuration_sha256": configuration_hashes(),
             "environment_sha256": {name: hashlib.sha256(value.encode()).hexdigest()
                 for name, value in sorted(environment.items())
                 if name not in {"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS", "CGO_LDFLAGS", "GOMAXPROCS"}}}
         def verify_inputs():
+            if {context:toolchain_inputs.configured_tool_inputs(environment, cargo_configuration_paths, cwd)
+                for context, cwd in (("outer", Path.cwd()), ("sdk", sdk))} != cache_inputs["configured_tools"]:
+                raise VotingBuildError("configured build tools changed during publication")
             original = cache_inputs["compiler_inputs"]
             unchanged = (compiler_inputs() == original if case.accepting_launches
                 else toolchain_inputs.apple_inputs_unchanged(original["apple_linker"], cancel)

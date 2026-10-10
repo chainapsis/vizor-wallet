@@ -6,8 +6,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import shlex
+import shutil
 import stat
 import sys
+import tomllib
 
 import e2e_runtime as runtime
 import native_owned_tree as tree
@@ -15,6 +19,131 @@ import native_owned_tree as tree
 
 class ToolInputError(runtime.RunnerError):
     """Installed compiler identity or source bounds are unproven."""
+
+
+def configured_tool_inputs(environment, configurations, cwd):
+    """Bind referenced programs, not just configuration text; never execute them.
+
+    Conservatively include all configured targets/precedence layers. A missing
+    unselected target tool is recorded as missing; if selected, only the original
+    successful producer could ever authorize publishing its artifact.
+    """
+    tools, configs, seen, requests = {}, {}, set(), []
+    searches = {(environment.get("PATH", os.defpath), cwd)}
+    def program(value, base, *, arguments=False):
+        if len(requests) >= 4096:
+            raise ToolInputError("configured build tools exceed their bound")
+        requests.append((value, base, arguments))
+
+    def record_program(value, base, arguments):
+        if value == "":
+            return
+        if isinstance(value, list) and value and all(isinstance(item, str) for item in value):
+            names = value[:1]
+        elif isinstance(value, str):
+            names = shlex.split(value)[:1] if arguments else [value]
+            if arguments:
+                words = shlex.split(value)
+                if len(words) > 1 and Path(words[0]).name in {"ccache", "sccache", "distcc", "icecc"}:
+                    names.append(words[1])
+        else:
+            raise ToolInputError("configured build program must be a string or argument list")
+        for name in names:
+            if not name:
+                raise ToolInputError("configured build program is empty")
+            if "/" in name:
+                path = Path(name)
+                paths = {path if path.is_absolute() else base/path}
+            else:
+                paths = set()
+                for value, origin in searches:
+                    search = os.pathsep.join(str(Path(entry) if Path(entry).is_absolute() else origin/entry)
+                        for entry in value.split(os.pathsep))
+                    found = shutil.which(name, path=search)
+                    if found is not None:
+                        paths.add(Path(found))
+                if not paths:
+                    tools["unresolved:"+name] = None
+                    continue
+            for path in paths:
+                if not path.exists() and not path.is_symlink():
+                    tools[str(path)] = None
+                    continue
+                path = path.resolve(strict=True)
+                tools[str(path)] = file_record(path, executable=True)[1]
+
+    def flags(value, base, *, encoded=False):
+        words = (value.split("\x1f") if encoded else shlex.split(value)) if isinstance(value, str) else value
+        if not isinstance(words, list) or not all(isinstance(word, str) for word in words):
+            raise ToolInputError("configured Rust flags must be strings")
+        for index, word in enumerate(words):
+            setting = (words[index+1] if word == "-C" and index+1 < len(words) else
+                       word[2:] if word.startswith("-C") else "")
+            if setting.startswith("linker="):
+                program(setting.removeprefix("linker="), base)
+
+    def env_tools(values, base):
+        direct = {"RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTDOC",
+            "CARGO_BUILD_RUSTC", "CARGO_BUILD_RUSTC_WRAPPER", "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER"}
+        for name, value in values.items():
+            if name in direct or re.fullmatch(r"CARGO_TARGET_[A-Z0-9_]+_LINKER", name):
+                program(value, base)
+            elif re.fullmatch(r"(?:(?:HOST|TARGET)_)?(?:CC|CXX|AR|LD|AS|RANLIB)(?:_[A-Za-z0-9_-]+)?", name):
+                program(value, base, arguments=True)
+            elif name in {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"}:
+                flags(value, base, encoded=name == "CARGO_ENCODED_RUSTFLAGS")
+    env_tools(environment, cwd)
+
+    def configuration(path, depth=0):
+        if depth > 16 or len(seen) >= 128:
+            raise ToolInputError("Cargo configuration includes exceed their bound")
+        if not path.exists() and not path.is_symlink():
+            return
+        path = path.resolve(strict=True)
+        if path in seen:
+            return
+        seen.add(path)
+        before = file_record(path, limit=1024*1024)
+        with path.open("rb") as source:
+            payload = tomllib.load(source)
+        if file_record(path, limit=1024*1024) != before:
+            raise ToolInputError("Cargo configuration changed during inspection")
+        configs[str(path)] = before[1]
+        includes = payload.get("include", [])
+        if not isinstance(includes, list):
+            raise ToolInputError("Cargo configuration includes must be a list")
+        for item in includes:
+            name = item if isinstance(item, str) else item.get("path") if isinstance(item, dict) else None
+            if not isinstance(name, str):
+                raise ToolInputError("Cargo configuration include must identify a path")
+            configuration(path.parent/name, depth+1)
+        base = path.parent.parent
+        build = payload.get("build", {})
+        for name in ("rustc", "rustc-wrapper", "rustc-workspace-wrapper", "rustdoc"):
+            if name in build:
+                program(build[name], base)
+        if "rustflags" in build:
+            flags(build["rustflags"], base)
+        for target in payload.get("target", {}).values():
+            if "linker" in target:
+                program(target["linker"], base)
+            if "rustflags" in target:
+                flags(target["rustflags"], base)
+        for name, item in payload.get("env", {}).items():
+            value = item if isinstance(item, str) else item.get("value") if isinstance(item, dict) else None
+            origin = base if isinstance(item, dict) and item.get("relative") else cwd
+            if name == "PATH":
+                if not isinstance(value, str) or len(searches) >= 128:
+                    raise ToolInputError("configured Cargo PATH is invalid or exceeds its bound")
+                searches.add((str(origin/value) if origin == base else value, cwd))
+                for tool in ("rustc", "cargo", "cc", "clang", "ld", "ar"):
+                    program(tool, cwd)
+            env_tools({name:value}, origin)
+    for path in sorted(configurations):
+        configuration(path)
+    for value, base, arguments in requests:
+        record_program(value, base, arguments)
+    return {"executables_sha256":tools, "configuration_sha256":configs}
 
 
 def _json(value):

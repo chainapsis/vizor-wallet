@@ -62,9 +62,14 @@ not a claim that every case passed together on the final implementation source.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
-Previews require Python 3.9 or newer and use only the standard library. Git is
+Previews require Python 3.9 or newer and use only the standard library. Actual
+isolated execution requires Python 3.11 or newer for the standard TOML parser
+that binds Cargo-selected build tools to cache identity. Git is
 also required for `--changed-from`; Flutter, Docker, and a running regtest stack
 are not needed for previews or the host-only checks below.
+Use `python3.11` (or a newer interpreter) for execution and builder/cache
+host checks, including CLI tests that mock supported execution. Pure
+catalog/selector checks and public previews still run on Python 3.9.
 
 ```bash
 # List the inventory or preview a suite, exact scenario, or tag intersection.
@@ -99,7 +104,7 @@ subprocess; no preview starts services, builds, simulators, or artifact director
 Host-only checks for this slice:
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
+python3.11 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
 ```
 
 ## Isolated iOS Simulator execution
@@ -119,7 +124,7 @@ never adopts an existing developer device. Preview the21-case suite first:
 
 ```bash
 python3 -B scripts/e2e/run-suite.py --suite flutter-ios-full --plan
-python3 -B scripts/e2e/run-suite.py --suite flutter-ios-full --run \
+python3.11 -B scripts/e2e/run-suite.py --suite flutter-ios-full --run \
   --flutter /absolute/flutter-sdk/bin/flutter \
   --zakura-cache /absolute/zakura-git-cache \
   --grpcurl /absolute/bin/grpcurl \
@@ -174,7 +179,7 @@ worker retention cancels subsequent case allocation. No CPU/RAM-based automatic
 worker limit or measured general speedup is claimed by this dispatch policy.
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_e2e_schedule.py scripts/e2e/test_run_suite.py scripts/e2e/test_native_macos_suite.py
+python3.11 -B -m unittest scripts/e2e/test_e2e_schedule.py scripts/e2e/test_run_suite.py scripts/e2e/test_native_macos_suite.py
 ```
 
 ## Isolated macOS import and endpoint execution
@@ -190,7 +195,8 @@ The sandbox app returns its storage observation through its original Driver,
 which writes the host evidence file. Neither that observation nor a JSON receipt
 authorizes cleanup; the original worker must prove terminal cleanup itself.
 
-Requirements: macOS, Flutter dependencies already resolved, Xcode/Swift and an
+Requirements: macOS, Python 3.11 or newer, Flutter dependencies already resolved,
+Xcode/Swift and an
 available development identity/profile that signs the native app, Docker,
 grpcurl/protos, the pinned Zakura Git object cache above, and Cargo dependencies
 already available for the offline signer build. Commit Rust changes first: the
@@ -198,7 +204,7 @@ signer uses the exact committed Rust subtree rather than mixing source versions.
 Use explicit absolute tooling paths; no automatic installation or download.
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.import-sync --run \
   --flutter /absolute/flutter-sdk/bin/flutter \
   --zakura-cache /absolute/zakura-git-cache \
@@ -217,7 +223,7 @@ and `flutter.macos.sync-startup-stall-recovery`. Repeat `--scenario` to combine
 only the cases needed, using the same explicit tooling arguments above:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.fallback-endpoint \
   --scenario flutter.macos.custom-endpoint-no-fallback \
   --scenario flutter.macos.slow-height-fallback \
@@ -250,7 +256,7 @@ build while retaining separate wallet storage, chain state and ports. Use the
 same requirements and absolute tooling paths as the import example above:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.shield-transparent \
   --scenario flutter.macos.shield-transparent-retry \
   --scenario flutter.macos.multi-account-send \
@@ -290,7 +296,7 @@ The same coordinator runs `rust.receive.sync`, `rust.send.basic`,
 and `deterministic-reimport`. Use the same absolute tooling paths shown above:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario rust.receive.sync --scenario rust.send.basic \
   --scenario rust.import.bip39-passphrase --plan
 ```
@@ -324,7 +330,7 @@ account balance separation, existing history and idempotent-sync assertions.
 Select just this domain without building the native app/helper:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --changed-file rust/tests/regtest_multi_account.rs --plan
 ```
 
@@ -350,7 +356,7 @@ the rejected claimant must retain complete transaction IDs, and independent
 funding transactions must differ. Example side-effect-free selection:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario rust.receive.direct-zakura --scenario rust.import.direct-zakura \
   --scenario rust.gift-card.tracking-multiple \
   --scenario rust.gift-card.empty-db-reuse --scenario rust.gift-card.competition --plan
@@ -369,7 +375,7 @@ The original control owner forwards those operations; it does not reconstruct
 ownership from JSON or implement a second reorg algorithm. Example preview:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario rust.ironwood.migration --scenario rust.ironwood.gift-card-claim --plan
 ```
 
@@ -393,7 +399,7 @@ their existing 15+10 and 15+12-minute test limits plus five minutes for the two
 launches, original stop/join and confirmation mining. Phase limits are unchanged.
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.mempool-receive-history \
   --scenario flutter.macos.mempool-during-sync \
   --scenario flutter.macos.mempool-expiry \
@@ -448,7 +454,7 @@ git -C /path/to/vote-sdk-cache.git fetch https://github.com/valargroup/vote-sdk.
 git init --bare /path/to/voting-pir-cache.git
 git -C /path/to/voting-pir-cache.git fetch https://github.com/valargroup/vote-nullifier-pir.git 20356d14f61a825ef28726f38270c37d604cc268:refs/vizor-e2e/source/20356d14f61a825ef28726f38270c37d604cc268
 
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.voting --scenario flutter.macos.voting-slow-helper \
   --run --workers 2 \
   --flutter /path/to/flutter/bin/flutter --zakura-cache /path/to/zakura \
@@ -1114,7 +1120,7 @@ Missing offline dependencies remain errors rather than triggering downloads.
 Host checks use real Git/files/processes with only the compiler modeled:
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_funder_build.py scripts/e2e/test_funder_cache.py scripts/e2e/test_funder_execution.py scripts/e2e/test_native_macos_suite.py
+python3.11 -B -m unittest scripts/e2e/test_funder_build.py scripts/e2e/test_funder_cache.py scripts/e2e/test_funder_execution.py scripts/e2e/test_native_macos_suite.py
 ```
 
 ### Immutable native cohort/helper cache
@@ -1131,6 +1137,11 @@ checksums are not keys; the local package sources are checked instead. External
 package inventories exclude generated directories only at their roots; same-named
 directories beneath source trees remain inputs. Remote Podspec checksums and all
 locked versions remain inputs. Compiler environment values are hashed.
+Executables selected by Rust wrappers, target linkers, CC/CXX/AR and Rust
+linker flags are also hashed, including Cargo configuration, included files,
+relative paths and configured PATH lookups. Collection never executes those
+configured tools. The signer and voting builders use the same collector and
+recheck its inputs before publication, including after the original owner seals.
 
 Only the original source-checking native builder with positively joined
 successful command groups can publish. The same bounded per-key lock and
@@ -1183,7 +1194,7 @@ Gift SDK repair or same-final-source21/64-case coverage. The public iOS catalog
 remains pending until its functional integration gate is satisfied.
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_native_build_cache.py scripts/e2e/test_native_ios_build.py scripts/e2e/test_native_macos_build.py scripts/e2e/test_native_macos_suite.py
+python3.11 -B -m unittest scripts/e2e/test_native_build_cache.py scripts/e2e/test_native_ios_build.py scripts/e2e/test_native_macos_build.py scripts/e2e/test_native_macos_suite.py
 ```
 
 ### Immutable voting executable cache
@@ -1212,7 +1223,7 @@ Rust/Go dependency caches were already populated: this is not an empty-machine
 baseline, complete voting E2E, aggregate CPU/RAM saving or whole-suite speedup.
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_native_voting.py scripts/e2e/test_native_macos_suite.py scripts/e2e/test_funder_cache.py
+python3.11 -B -m unittest scripts/e2e/test_native_voting.py scripts/e2e/test_native_macos_suite.py scripts/e2e/test_funder_cache.py
 ```
 
 ### Owned offline signer execution

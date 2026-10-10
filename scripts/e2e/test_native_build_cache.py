@@ -277,10 +277,70 @@ class InputTests(unittest.TestCase):
                                 "roots":[str(path) for path in self.apple_trees[-2:]]}),)
         return ("modeled tool/SDK version",)
 
-    def inputs(self, *, platform="ios", **options):
+    def inputs(self, *, platform="ios", environment=None, **options):
         return CACHE.collect_native_cache_inputs(self.root,{self.tool:CACHE._capture(self.tool)},self.tool,
             platform=platform,architecture="arm64",command=self.command,
-            environment={"RUSTFLAGS":"private compiler flags"},cancel=self.cancel,**options)
+            environment={"RUSTFLAGS":"private compiler flags"} if environment is None else environment,
+            cancel=self.cancel,**options)
+
+    def test_configured_environment_tool_bytes_invalidate_without_setting_changes(self):
+        wrapper = self.root/"custom-wrapper"
+        wrapper.write_text("original custom build tool")
+        wrapper.chmod(0o700)
+        variables = ("RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CC", "CC_aarch64_apple_ios",
+                     "CARGO_TARGET_AARCH64_APPLE_IOS_SIM_LINKER", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")
+        for platform in ("ios", "macos"):
+            for name in variables:
+                with self.subTest(platform=platform, variable=name):
+                    wrapper.write_text("original "+platform+name)
+                    value = ("-C\x1flinker="+str(wrapper) if name == "CARGO_ENCODED_RUSTFLAGS" else
+                             "-Clinker="+str(wrapper) if name == "RUSTFLAGS" else str(wrapper))
+                    environment = {name:value}
+                    first = self.inputs(platform=platform, environment=environment)
+                    wrapper.write_text("changed custom tool bytes")
+                    second = self.inputs(platform=platform, environment=environment)
+                    self.assertEqual(first["environment_sha256"], second["environment_sha256"])
+                    self.assertNotEqual(first, second)
+
+    def test_cargo_configured_tool_and_included_file_bytes_invalidate(self):
+        directory = self.root/"rust/.cargo"
+        directory.mkdir(parents=True)
+        tool = self.root/"rust/custom linker"
+        tool.write_text("original configured linker")
+        tool.chmod(0o700)
+        extra = directory/"extra.toml"
+        extra.write_text("[target.'cfg(target_os = \"ios\")']\nlinker = \"./custom linker\"\n")
+        config = directory/"config.toml"
+        config.write_text('include = ["extra.toml"]\n[build]\nrustc-wrapper = "./custom linker"\n')
+        first = self.inputs()
+        tool.write_text("changed configured linker")
+        second = self.inputs()
+        self.assertEqual(first["cargo_config_sha256"], second["cargo_config_sha256"])
+        self.assertNotEqual(first, second)
+        first = second
+        extra.write_text(extra.read_text()+"\n# included configuration update\n")
+        second = self.inputs()
+        self.assertEqual(first["cargo_config_sha256"], second["cargo_config_sha256"])
+        self.assertNotEqual(first, second)
+
+    def test_configured_cargo_path_resolves_bare_tool_without_changing_settings(self):
+        directory = self.root/"rust/.cargo"
+        directory.mkdir(parents=True)
+        tool = self.root/"rust/tools/custom-linker"
+        tool.parent.mkdir()
+        tool.write_text("original PATH-selected custom linker")
+        tool.chmod(0o700)
+        (directory/"config.toml").write_text(
+            '[env]\nPATH = { value = "./tools", relative = true, force = true }\n'
+            '[target.aarch64-apple-ios-sim]\nlinker = "custom-linker"\n')
+        environment = {"PATH":str(self.root/"empty-path")}
+        first = self.inputs(environment=environment)
+        tool.write_text("patched PATH-selected linker")
+        second = self.inputs(environment=environment)
+        self.assertEqual(first["cargo_config_sha256"], second["cargo_config_sha256"])
+        self.assertEqual(first["environment_sha256"], second["environment_sha256"])
+        self.assertNotEqual(first, second)
+        self.assertIn(str(tool), first["configured_tools"]["executables_sha256"])
 
     def test_native_rust_executable_bytes_invalidate_with_unchanged_versions(self):
         for platform in ("ios", "macos"):
