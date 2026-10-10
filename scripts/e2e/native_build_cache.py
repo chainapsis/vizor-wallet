@@ -278,7 +278,7 @@ def _native_apple_inputs(command, platform, cancel):
 
     sdk_name = "iphonesimulator" if platform == "ios" else "macosx"
     programs = {name:selected(["/usr/bin/xcrun", "--sdk", sdk_name, "--find", name])
-        for name in ("xcodebuild", "clang", "swiftc", "swift-frontend", "ld",
+        for name in ("xcodebuild", "clang", "swiftc", "swift-frontend", "swift", "swift-build", "swift-package", "ld",
                      "actool", "ibtool", "dsymutil", "strip")}
     programs.update({"system_"+name:Path(path).resolve(strict=True)
                      for name, path in _APPLE_SYSTEM_TOOLS.items()})
@@ -306,7 +306,7 @@ def _native_apple_inputs(command, platform, cancel):
         raise NativeBuildCacheError("CocoaPods interpreter or launcher changed during inspection")
     roots = {selected(["/usr/bin/xcrun", "--sdk", sdk_name, "--show-sdk-path"])}
     developer = programs["xcodebuild"].parent.parent.parent
-    candidates = {programs[name].parent.parent/"lib" for name in ("clang", "swift-frontend")}
+    candidates = {programs[name].parent.parent/"lib" for name in ("clang", "swift-frontend", "swift-package")}
     candidates.update((developer/"usr/lib", developer.parent/"SharedFrameworks/XCBuild.framework"))
     roots.update(path.resolve(strict=True) for path in candidates if path.exists())
     for name in ruby["roots"]:

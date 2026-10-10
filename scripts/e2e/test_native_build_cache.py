@@ -238,7 +238,8 @@ class InputTests(unittest.TestCase):
                                 "privateDeviceData":"must not appear in cache inputs"}
         self.apple = self.root/"Xcode.app/Contents/Developer"
         self.apple_tools = {name:self.apple/"usr/bin"/name for name in (
-            "xcodebuild", "clang", "swiftc", "swift-frontend", "ld", "actool", "ibtool", "dsymutil", "strip")}
+            "xcodebuild", "clang", "swiftc", "swift-frontend", "swift", "swift-build", "swift-package",
+            "ld", "actool", "ibtool", "dsymutil", "strip")}
         self.host_tools = {name:self.root/"host/bin"/name for name in ("xcrun", "codesign", "security", "ruby", "pod")}
         for name, path in {**self.apple_tools, **self.host_tools}.items():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -450,6 +451,23 @@ class InputTests(unittest.TestCase):
                     for field in ("xcode", "sdk", "cocoapods", "ruby"):
                         self.assertEqual(first[field], second[field])
                     self.assertNotEqual(first, second)
+
+    def test_swift_build_dispatch_alias_binds_swiftpm_bytes_with_unchanged_frontend(self):
+        for platform in ("ios", "macos"):
+            with self.subTest(platform=platform):
+                driver = self.apple_tools["swift"]
+                dispatcher = self.apple_tools["swift-build"]
+                driver.unlink()
+                driver.symlink_to("swift-frontend")
+                dispatcher.unlink()
+                dispatcher.symlink_to("swift-package")
+                first = self.inputs(platform=platform)
+                self.apple_tools["swift-package"].write_text("patched SwiftPM implementation "+platform)
+                second = self.inputs(platform=platform)
+                for name in ("swift", "swiftc", "swift-frontend"):
+                    self.assertEqual(first["apple_toolchain"]["executables"][name],
+                                     second["apple_toolchain"]["executables"][name])
+                self.assertNotEqual(first, second)
 
     def test_installed_tool_hardlinks_do_not_relax_output_artifact_ownership(self):
         tool = self.host_tools["ruby"]
