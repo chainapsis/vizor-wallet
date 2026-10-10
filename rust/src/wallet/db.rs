@@ -357,6 +357,36 @@ pub(crate) fn hold_wallet_db_write_lock(at_most: Duration) -> std::sync::mpsc::S
     release
 }
 
+/// Runs `test` of `module` (the caller's `module_path!()`) alone in a child
+/// test process and returns true once it passed there. Inside that child it
+/// returns false, and the caller runs the test body.
+///
+/// For a test whose deadlines must measure only its own requests and wallet
+/// writers: unrelated tests in this process can hold the process-wide wallet
+/// write lock beyond them.
+#[cfg(test)]
+pub(crate) fn isolated_test(module: &str, test: &str) -> bool {
+    let module = module.split_once("::").unwrap().1;
+    let name = format!("{module}::{test}");
+    const MARKER: &str = "VIZOR_TEST_PROCESS";
+    if std::env::var(MARKER).as_deref() == Ok(name.as_str()) {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name.as_str(), "--test-threads=1"])
+        .env(MARKER, &name)
+        .output()
+        .expect("start isolated test process");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("1 passed; 0 failed; 0 ignored"),
+        "isolated {name} failed or selected no test:\n{}\n{}",
+        stdout,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    true
+}
+
 fn run_wallet_db_write<T>(
     operation: &'static str,
     guard: MutexGuard<'_, ()>,
