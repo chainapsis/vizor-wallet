@@ -42,6 +42,22 @@ class NativeZakuraFrontError(runtime.RunnerError):
     """Front startup, original child or exact RPC adaptation is unproven."""
 
 
+def _same_lightd_info(earlier, later):
+    """Compare LightdInfo replies except lightwalletd's wall-clock estimate.
+
+    estimatedHeight is the tip plus elapsed target spacings, so it advances
+    about every 75 seconds without any backend change. It must still be a
+    decimal height in both replies and must not decrease.
+    """
+    estimates = [info.get("estimatedHeight") for info in (earlier, later)]
+    if estimates != [None, None] and not all(
+            isinstance(value, str) and value.isascii() and value.isdigit() for value in estimates):
+        return False
+    return ({key: value for key, value in earlier.items() if key != "estimatedHeight"}
+            == {key: value for key, value in later.items() if key != "estimatedHeight"}
+            and (estimates == [None, None] or int(estimates[0]) <= int(estimates[1])))
+
+
 def _capture(path, *, chunks=None):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
@@ -225,7 +241,7 @@ class OwnedNativeZakuraFront:
                 cancel.wait(min(0.05, max(0, deadline - time.monotonic())))
             before = raw("GetLightdInfo", {})
             if (before.get("chainName") not in {"test", "regtest"}
-                or normalized != dict(before, chainName="regtest")):
+                or not _same_lightd_info(normalized, dict(before, chainName="regtest"))):
                 raise NativeZakuraFrontError("front changed more than the known LightdInfo chainName")
             genesis = front("GetTreeState", {"height": "0"})
             if genesis is None or dict(genesis, height=str(genesis.get("height", "0"))) != state:
@@ -237,7 +253,7 @@ class OwnedNativeZakuraFront:
             latest = raw("GetLatestBlock", {})
             if front("GetLatestBlock", {}) != latest or raw("GetLatestBlock", {}) != latest:
                 raise NativeZakuraFrontError("front changed LatestBlock")
-            if raw("GetLightdInfo", {}) != before:
+            if not _same_lightd_info(before, raw("GetLightdInfo", {})):
                 raise NativeZakuraFrontError("raw backend changed during front readiness")
             self._genesis.handoff()
             if {path: _capture(path) for path in self._snapshot} != self._snapshot:

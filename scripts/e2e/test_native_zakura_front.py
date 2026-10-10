@@ -324,6 +324,61 @@ class FrontTests(unittest.TestCase):
                 owner.start()
         self.assertTrue(owner.process.cleanup_completed)
 
+    def test_wall_clock_estimated_height_may_advance_during_readiness(self):
+        fixture = self.backend._fixture
+        original = fixture.grpc
+        estimate = 6597928
+
+        def grpc(method, payload=None, *, deadline=None):
+            nonlocal estimate
+            value = original(method, payload, deadline=deadline)
+            if method == "GetLightdInfo":
+                estimate += 1
+                value["estimatedHeight"] = str(estimate)
+            return value
+
+        owner = self.prepare()
+        first, second = self.patches()
+        with first, second, patch.object(fixture, "grpc", side_effect=grpc):
+            self.assertTrue(owner.start()["lightd_info_only_chainName_changed"])
+        self.assertGreaterEqual(estimate, 6597931)
+        owner.stop()
+
+    def test_decreasing_estimated_height_is_still_a_backend_change(self):
+        fixture = self.backend._fixture
+        original = fixture.grpc
+        estimates = iter(["6597930", "6597930", "6597929"])
+
+        def grpc(method, payload=None, *, deadline=None):
+            value = original(method, payload, deadline=deadline)
+            if method == "GetLightdInfo":
+                value["estimatedHeight"] = next(estimates)
+            return value
+
+        owner = self.prepare()
+        first, second = self.patches()
+        with first, second, patch.object(fixture, "grpc", side_effect=grpc):
+            with self.assertRaisesRegex(FRONT.NativeZakuraFrontError, "raw backend changed"):
+                owner.start()
+        self.assertTrue(owner.process.cleanup_completed)
+
+    def test_lightd_info_comparison_ignores_only_a_valid_advancing_estimate(self):
+        base = {"chainName": "regtest", "blockHeight": "111", "build": "modeled"}
+        same = FRONT._same_lightd_info
+        self.assertTrue(same(base, dict(base)))
+        self.assertTrue(same(dict(base, estimatedHeight="9"), dict(base, estimatedHeight="10")))
+        self.assertTrue(same(dict(base, estimatedHeight="10"), dict(base, estimatedHeight="10")))
+        for earlier, later in (
+            (dict(base, estimatedHeight="10"), dict(base, estimatedHeight="9")),
+            (dict(base, estimatedHeight="10"), dict(base)),
+            (dict(base), dict(base, estimatedHeight="10")),
+            (dict(base, estimatedHeight="10"), dict(base, estimatedHeight="11a")),
+            (dict(base, estimatedHeight="10"), dict(base, estimatedHeight=11)),
+            (dict(base, estimatedHeight="10"), dict(base, estimatedHeight="11", blockHeight="112")),
+        ):
+            with self.subTest(earlier=earlier, later=later):
+                self.assertFalse(same(earlier, later))
+
     def test_changed_latest_block_is_not_readiness(self):
         self.assert_bad_ready("latest")
 
