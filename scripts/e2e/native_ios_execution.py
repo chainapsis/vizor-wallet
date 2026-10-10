@@ -130,6 +130,8 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
     app = session.storage.start_app(timeout=max(0.001, launch_deadline - time.monotonic()),
         cancel_event=cancel, raw_lines=app_lines, max_output_bytes=8*1024*1024, phase=_phase,
         send_recipient=send_recipient)
+    # The OS spawned the app: its UIKit job appeared in the device inventory.
+    _mark(timings, mark_prefix + "app_job_observed")
 
     def check():
         if cancel.is_set():

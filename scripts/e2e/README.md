@@ -195,10 +195,12 @@ Control requests and simctl job observations during that wait keep the case
 deadline, so a stalled simctl call is bounded only by it. Before the helper
 removal, launch to VM URL took 11.6 to 20.7 seconds in run
 `native-suite-7c8b9fc8d7`; recalibrate from `ios_marks_seconds` (`vm_url_ready`
-minus `app_launch_started`). A failed case retains/joins its original owner
-before releasing a held slot; unproven retention cancels queued admissions.
-Reports include `ios_preparation_slots` (zero when no iOS scenarios are
-selected) and, when iOS is selected, `ios_launch_timeout_seconds`.
+minus `app_launch_started`). `app_job_observed` marks when the app's UIKit job
+appeared, so a launch the OS never spawned has no such mark. A failed case
+retains/joins its original owner before releasing a held slot; unproven
+retention cancels queued admissions. Reports include `ios_preparation_slots`
+(zero when no iOS scenarios are selected) and, when iOS is selected,
+`ios_launch_timeout_seconds`.
 The runner records these separate budgets and reports each completed case
 immediately, retaining selected catalog order in the final results. Independent
 wallet/backend/native state and existing assertions remain unchanged. Unproven

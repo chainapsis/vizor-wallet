@@ -185,7 +185,7 @@ class ExecutionTests(ExecutionFixture):
         def ready():
             calls.append((set(timings), self.driver_started))
         self.assertTrue(self.execute(timings=timings, on_launch_ready=ready)["assertions_passed"])
-        self.assertEqual(calls, [({"app_launch_started", "vm_url_ready"}, False)])
+        self.assertEqual(calls, [({"app_launch_started", "app_job_observed", "vm_url_ready"}, False)])
         self.assertTrue(self.driver_started)
         self.assertIn("driver_finished", timings)
         self.session.close(timeout=15)
@@ -282,7 +282,8 @@ class RestartExecutionTests(ExecutionFixture):
         with patch.object(self.session.storage, "start_app", side_effect=start_app):
             self.execute(timeout=300, launch_timeout=45, timings=timings,
                          on_launch_ready=lambda: calls.append(set(timings)))
-        self.assertEqual(calls, [{"prepare_app_launch_started", "prepare_vm_url_ready"}])
+        self.assertEqual(calls, [{"prepare_app_launch_started", "prepare_app_job_observed",
+                                  "prepare_vm_url_ready"}])
         self.assertEqual([phase for phase, _ in budgets], ["prepare", "resume"])
         self.assertTrue(all(0 < budget <= 45 for _, budget in budgets))
         self.session.close(timeout=15)
