@@ -662,6 +662,54 @@ class InputTests(unittest.TestCase):
                 output.write_text("changed generated output")
                 self.assertEqual(first,self.inputs())
 
+    def test_generated_looking_package_uri_sources_always_invalidate(self):
+        for platform in ("ios", "macos"):
+            for name in ("build", "target", ".git", ".dart_tool", ".regtest-logs", "__pycache__"):
+                with self.subTest(platform=platform, package_uri=name):
+                    config = json.loads(self.configuration.read_text())
+                    config["packages"][0]["packageUri"] = name+"/"
+                    self.configuration.write_text(json.dumps(config))
+                    source = self.package/name/"code.dart"
+                    source.parent.mkdir(exist_ok=True)
+                    source.write_text("original configured Dart source")
+                    first = self.inputs(platform=platform)
+                    source.write_text("patched configured Dart source "+platform)
+                    second = self.inputs(platform=platform)
+                    self.assertEqual(first["package_config"]["dependency"]["package_uri"],
+                                     second["package_config"]["dependency"]["package_uri"])
+                    self.assertNotEqual(first, second)
+
+    def test_package_uri_resolution_preserves_sources_and_unrelated_generated_exclusions(self):
+        config = json.loads(self.configuration.read_text())
+        for uri in ("%62uild/sources/", "lib/../build/sources/"):
+            with self.subTest(package_uri=uri):
+                config["packages"][0]["packageUri"] = uri
+                self.configuration.write_text(json.dumps(config))
+                source = self.package/"build/sources/code.dart"
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("original escaped/normalized package source")
+                first = self.inputs()
+                output = self.package/"target/generated"
+                output.parent.mkdir(exist_ok=True)
+                output.write_text("unrelated generated output")
+                self.assertEqual(first,self.inputs())
+                source.write_text("patched configured package source")
+                self.assertNotEqual(first,self.inputs())
+        config["packages"][0].pop("packageUri")
+        self.configuration.write_text(json.dumps(config))
+        first = self.inputs()
+        source.write_text("root-URI source includes generated-looking directories")
+        self.assertNotEqual(first,self.inputs())
+
+    def test_package_uri_rejects_nonlocal_and_escaping_sources(self):
+        config = json.loads(self.configuration.read_text())
+        for uri in ("../", "https://example.com/src/", "/absolute/", "lib/?query", "lib/#fragment"):
+            with self.subTest(package_uri=uri):
+                config["packages"][0]["packageUri"] = uri
+                self.configuration.write_text(json.dumps(config))
+                with self.assertRaisesRegex(CACHE.NativeBuildCacheError,"package source URI"):
+                    self.inputs()
+
     def test_pod_version_and_package_source_changes_are_not_normalized_away(self):
         first = self.inputs()
         self.lock.write_text(self.lock.read_text().replace("Local (1.0)","Local (2.0)"))

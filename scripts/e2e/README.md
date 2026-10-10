@@ -1140,8 +1140,10 @@ locked Pod versions, Flutter/engine/Dart identity, Xcode/SDK, Cargokit compiler
 identity, Cargo configuration, environment and platform/architecture/TEX fixture.
 The wallet's package-config generation timestamp and workspace-local Podspec
 checksums are not keys; the local package sources are checked instead. External
-package inventories exclude generated directories only at their roots; same-named
-directories beneath source trees remain inputs. Remote Podspec checksums and all
+package inventories exclude generated directories only at their roots; a
+configured packageUri source subtree is always included, even under a
+generated-looking name. A root packageUri includes the complete package tree.
+Same-named directories beneath source trees remain inputs. Remote Podspec checksums and all
 locked versions remain inputs. Compiler environment values are hashed.
 Executables selected by Rust wrappers, target linkers, CC/CXX/AR and Rust
 linker flags are also hashed, including Cargo configuration, included files,

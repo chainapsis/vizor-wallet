@@ -186,6 +186,7 @@ def file_record(path, *, executable=False, limit=512*1024*1024, error_type=ToolI
 def tree_digest(root, cancel, *, capture=file_record, ignore_generated=True,
                 max_bytes=1024*1024*1024, linked_files=frozenset(), linked_roots=frozenset(),
                 ignored_root_names=frozenset(),
+                included_root_names=frozenset(),
                 error_type=ToolInputError):
     """Dependency source contents, not only lock versions or package-cache paths."""
     ignored = {".git", ".dart_tool", "build", "target", ".regtest-logs", "__pycache__"}
@@ -193,7 +194,7 @@ def tree_digest(root, cancel, *, capture=file_record, ignore_generated=True,
     for directory, children, files in os.walk(root, followlinks=False):
         children[:] = sorted(children)
         if ignore_generated and Path(directory) == root:
-            children[:] = [name for name in children if name not in ignored]
+            children[:] = [name for name in children if name not in ignored or name in included_root_names]
         if Path(directory) == root:
             children[:] = [name for name in children if name not in ignored_root_names]
         for name in sorted((*children, *files)):

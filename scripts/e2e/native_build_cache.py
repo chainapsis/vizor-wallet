@@ -13,7 +13,7 @@ import shutil
 import stat
 import sys
 import uuid
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from funder_cache import FunderCacheLease, FunderCacheError, _json, _read, _rename_exclusive
 from funder_build import _file_record, _MAX_BINARY_BYTES
@@ -156,10 +156,12 @@ def _copy_bundle(source, destination, *, seal=False):
 
 
 def _package_digest(root, cancel, *, capture=_capture, ignore_generated=True,
-                    max_bytes=1024*1024*1024, linked_files=frozenset(), linked_roots=frozenset()):
+                    max_bytes=1024*1024*1024, linked_files=frozenset(), linked_roots=frozenset(),
+                    included_root_names=frozenset()):
     return toolchain_inputs.tree_digest(root, cancel, capture=capture,
         ignore_generated=ignore_generated, max_bytes=max_bytes, linked_files=linked_files,
-        linked_roots=linked_roots, error_type=NativeBuildCacheError)
+        linked_roots=linked_roots, included_root_names=included_root_names,
+        error_type=NativeBuildCacheError)
 
 
 def _pod_lock(path):
@@ -347,9 +349,22 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         if not package_root.is_absolute():
             package_root = configuration.parent/package_root
         package_root = package_root.resolve(strict=True)
-        packages[package["name"]] = {"root":str(package_root), "package_uri":package["packageUri"],
+        package_uri = package.get("packageUri", "")
+        if not isinstance(package_uri, str):
+            raise NativeBuildCacheError("native package source URI must be a relative path")
+        source_uri = urlparse(package_uri)
+        if (source_uri.scheme or source_uri.netloc or source_uri.query or source_uri.fragment
+            or source_uri.path.startswith("/")):
+            raise NativeBuildCacheError("native package source URI must be a relative path")
+        resolved_uri = urlparse(urljoin(package_root.as_uri()+"/", package_uri))
+        source_root = Path(unquote(resolved_uri.path)).resolve()
+        if not source_root.is_relative_to(package_root):
+            raise NativeBuildCacheError("native package source URI escapes its package")
+        parts = source_root.relative_to(package_root).parts
+        packages[package["name"]] = {"root":str(package_root), "package_uri":package_uri,
             "language":package["languageVersion"], "sha256":None if package_root == root
-            else _package_digest(package_root, cancel)}
+            else _package_digest(package_root, cancel, ignore_generated=bool(parts),
+                                 included_root_names=frozenset(parts[:1]))}
     sdk = "iphonesimulator" if platform == "ios" else "macosx"
     flutter = json.loads("".join(command([str(tool), "--version", "--machine"], in_source=True)))
     if (not isinstance(flutter, dict) or any(not isinstance(flutter.get(name), str) or not flutter[name]
