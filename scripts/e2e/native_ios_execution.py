@@ -31,8 +31,14 @@ class NativeIosExecutionError(runtime.RunnerError):
     """Real app/case/Driver binding or assertion completion failed."""
 
 
+def _mark(timings, name):
+    # Diagnostic monotonic marks only; never an assertion, deadline or cleanup input.
+    if timings is not None:
+        timings[name] = time.monotonic()
+
+
 def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel_event=None,
-                            send_recipient=None, _phase=None):
+                            send_recipient=None, timings=None, _phase=None):
     if (not isinstance(session, NativeWorkerCase) or not isinstance(session.storage, OwnedIosCaseStorage)
         or session._front is None or session._control is None or session._finished):
         raise NativeIosExecutionError("expected this original prepared iOS worker case")
@@ -51,7 +57,7 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         # reinstallation, snapshot restore or replacement wallet is involved.
         started = time.monotonic()
         prepare = execute_native_ios_case(session, dart=dart, source_root=root,
-            timeout=timeout, cancel_event=cancel_event, _phase="prepare")
+            timeout=timeout, cancel_event=cancel_event, timings=timings, _phase="prepare")
         def remaining():
             if cancel_event is not None and cancel_event.is_set():
                 raise runtime.Cancelled()
@@ -63,7 +69,7 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         remaining()
         session.backend.mine(50)
         resume = execute_native_ios_case(session, dart=dart, source_root=root,
-            timeout=remaining(), cancel_event=cancel_event, _phase="resume")
+            timeout=remaining(), cancel_event=cancel_event, timings=timings, _phase="resume")
         if prepare["app_pid"] == resume["app_pid"] or prepare["simulator_udid"] != resume["simulator_udid"]:
             raise NativeIosExecutionError("mobile restart did not preserve its original Simulator with a new app PID")
         return {"scenario_id":manifest["scenario_id"], "namespace":manifest["namespace"],
@@ -99,6 +105,8 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise NativeIosExecutionError("native iOS integration deadline expired", 124)
+    mark_prefix = _phase + "_" if _phase else ""
+    _mark(timings, mark_prefix + "app_launch_started")
     app = session.storage.start_app(timeout=remaining, cancel_event=cancel,
         raw_lines=app_lines, max_output_bytes=8*1024*1024, phase=_phase,
         send_recipient=send_recipient)
@@ -143,6 +151,7 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
             if len(set(urls)) != 1:
                 raise NativeIosExecutionError("original iOS VM endpoint is ambiguous")
             vm_url = urls[0]
+            _mark(timings, mark_prefix + "vm_url_ready")
             break
         session._control.pump(deadline=deadline, cancel_event=cancel)
     driver_lines = []
@@ -154,6 +163,7 @@ def execute_native_ios_case(session, *, dart, source_root, timeout=600.0, cancel
         check()
         session._control.pump(deadline=deadline, cancel_event=cancel)
     code = session.case.wait_process(process, timeout=deadline-time.monotonic(), cancel_event=cancel)
+    _mark(timings, mark_prefix + "driver_finished")
     if code:
         raise NativeIosExecutionError("original iOS Driver reported failing assertions", code)
     markers = [line[len("VIZOR_E2E_RESULT="):] for line in driver_lines if line.startswith("VIZOR_E2E_RESULT=")]

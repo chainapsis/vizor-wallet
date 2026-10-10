@@ -184,6 +184,10 @@ class SuiteTests(unittest.TestCase):
                 args=self.args,cancel=threading.Event(),ios_preparation_slots=slots)
         self.assertEqual(result["error"],"model stops before backend execution")
         worker.retain.assert_called_once()
+        # Diagnostic timings name the phase that stopped the case.
+        self.assertEqual(result["failed_phase"],"backend_start")
+        self.assertEqual(set(result["phase_seconds"]),{"ios_admission_wait","prepare_case","backend_start"})
+        self.assertTrue(all(value >= 0 for value in result["phase_seconds"].values()))
 
     def test_failed_preparation_retains_before_freeing_slot_and_cancels_on_unproven_join(self):
         self.args.ios_runtime, self.args.ios_device_type = "model-runtime", "model-device"
@@ -202,6 +206,8 @@ class SuiteTests(unittest.TestCase):
                 artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),
                 args=self.args,cancel=cancel,ios_preparation_slots=slots)
         self.assertEqual(result["cleanup_errors"],["preparation writer join unproven"])
+        self.assertEqual(result["failed_phase"],"prepare_case")
+        self.assertEqual(set(result["phase_seconds"]),{"ios_admission_wait","prepare_case"})
         self.assertEqual(second["status"],"cancelled")
         allocate.assert_called_once()
         self.assertTrue(cancel.is_set())

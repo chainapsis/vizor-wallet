@@ -210,14 +210,26 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
         "duration_seconds":0.0, "error":None, "cleanup_errors":[]}
     worker = session = None
     preparation_held = False
+    # Diagnostic phase durations for reports; they never gate a case.
+    phases, ios_marks = {}, {}
+    current = {"name": None, "start": started}
+
+    def begin(name):
+        now = time.monotonic()
+        if current["name"] is not None:
+            phases[current["name"]] = round(now - current["start"], 3)
+        current.update(name=name, start=now)
+
     try:
         if cancel.is_set():
             raise runtime.Cancelled()
         is_rust = scenario.id in RUST_CASES
         is_ios = scenario.id in IOS_SCENARIOS
         if is_ios and ios_preparation_slots is not None:
+            begin("ios_admission_wait")
             _acquire_ios_preparation_slot(ios_preparation_slots, cancel)
             preparation_held = True
+        begin("prepare_case")
         worker = prepare_native_worker_lifecycle(root, run_id=run_id, worker_id=worker_id)
         activation = 500 if (scenario.id in VOTING_SCENARIOS or scenario.id in IOS_MIGRATION_SCENARIOS
             or is_rust and RUST_PROFILES[scenario.id] == "zakura-direct-activation500") else 1
@@ -232,12 +244,15 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             ios_preparation_slots.release()
             preparation_held = False
         result["log"] = str(session.case.workspace.root)
+        begin("backend_start")
         session.prepare_zakura_backend(
             grpcurl=args.grpcurl.resolve(strict=True), proto_dir=args.proto_dir,
             miner_address=_MINER, timeout=120)
         if cancel.is_set():
             raise runtime.Cancelled()
+        begin("mine")
         session.backend.mine(750 if scenario.id == "flutter.macos.mempool-during-sync" else 100)
+        begin("funding")
         result["payments"] = []
         if scenario.id in IOS_MIGRATION_SCENARIOS:
             result["payments"] = fund_ios_migration(session, artifact, ios_addresses, cancel=cancel)
@@ -246,14 +261,17 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
             result["payments"].append(fund_zakura(session.case, session.backend, artifact,
                 recipient_address=address, amount_zatoshi=amount, recipient_pool=pool,
                 source_height=source, confirmations=10, timeout=120, cancel_event=cancel))
+        begin("front_control")
         session.prepare_zakura_front(dart=dart, source_root=source_root, cancel_event=cancel)
         session.prepare_zakura_control(artifact=artifact)
+        begin("execute")
         if is_rust:
             result["observation"] = execute_native_rust_case(session, artifact=artifact,
                 scenario=scenario, cancel_event=cancel)
         elif is_ios:
             result["observation"] = execute_native_ios_case(session, dart=dart,
                 source_root=source_root, timeout=scenario.timeout_seconds, cancel_event=cancel,
+                timings=ios_marks,
                 send_recipient=(ios_addresses["send_recipient"]
                     if scenario.id == "flutter.ios.ironwood-pre-migration-send" else None))
         else:
@@ -262,11 +280,15 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
                 voting_artifact=voting_artifact, grpcurl=args.grpcurl)
         # No external PASS/cleanup boolean is accepted. The original owners
         # must complete their internal native/backend/process/port finalization.
+        begin("close")
         session.close(timeout=60)
         worker.close()
+        begin(None)
         result.update(status="passed", returncode=0, native_cleanup_proved=True,
                       backend_closed=session.backend.closed)
     except BaseException as error:
+        result["failed_phase"] = current["name"]
+        begin(None)
         result.update(error=str(error), returncode=getattr(error,"exit_code",1),
             failure_kind="process", native_cleanup_proved=False)
         if result["returncode"] == 130:
@@ -285,6 +307,9 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
         if preparation_held:
             ios_preparation_slots.release()
     result["duration_seconds"] = round(time.monotonic()-started,3)
+    result["phase_seconds"] = phases
+    if ios_marks:
+        result["ios_marks_seconds"] = {name: round(mark - started, 3) for name, mark in ios_marks.items()}
     return result
 
 
