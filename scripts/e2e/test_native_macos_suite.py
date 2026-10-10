@@ -10,7 +10,7 @@ import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import e2e_catalog
@@ -27,13 +27,17 @@ class SuiteTests(unittest.TestCase):
             tool = self.root/name
             tool.write_text("model-only")
             tool.chmod(0o700)
-        self.args = SimpleNamespace(workers=2,repeat=2,build_jobs=4,
+        self.args = SimpleNamespace(workers=2,repeat=2,build_jobs=4,order="short-first",timing_reports=[],
             flutter=self.root/"bin/flutter", grpcurl=self.root/"grpcurl",
             zakura_cache=self.root,proto_dir=self.root)
         self.catalog = e2e_catalog.load_catalog()
         self.scenarios = (self.catalog.scenarios_by_id["flutter.macos.import-sync"],)
-        self.helper, self.signer = object(), object()
+        self.helper = object()
+        self.macos_build_proof = {"app_build_count":1, "helper_build_count":1}
+        self.ios_build_proof = {"ios_app_build_count":1, "ios_helper_build_count":1}
+        self.signer = SimpleNamespace(identity=lambda: {"cargo_build_count":1, "cache_hit":False, "cache_key":"a"*64})
         self.voting = object()
+        self.voting_build_proof = {"build_count": 1}
         self.barrier = threading.Barrier(2)
         self.observed = []
         self.fail = False
@@ -58,10 +62,10 @@ class SuiteTests(unittest.TestCase):
              patch.object(SUITE.subprocess,"run",side_effect=self.git), \
              patch.object(SUITE,"NativeCaseLifecycle",side_effect=lambda x:x), \
              patch.object(SUITE,"prepare_native_case_workspace",return_value=object()), \
-             patch.object(SUITE,"build_native_macos_cohort",return_value=(self.helper,{"app_build_count":1})) as build, \
-             patch.object(SUITE,"build_native_ios_cohort",return_value=(self.helper,{"ios_app_build_count":1})) as ios_build, \
+             patch.object(SUITE,"build_native_macos_cohort",return_value=(self.helper,self.macos_build_proof)) as build, \
+             patch.object(SUITE,"build_native_ios_cohort",return_value=(self.helper,self.ios_build_proof)) as ios_build, \
              patch.object(SUITE,"build_regtest_funder",return_value=self.signer) as signer, \
-             patch.object(SUITE,"build_voting_artifacts",return_value=(self.voting,{"build_count":1})) as voting, \
+             patch.object(SUITE,"build_voting_artifacts",return_value=(self.voting,self.voting_build_proof)) as voting, \
              patch.object(SUITE,"derive_payment_addresses",return_value={"desktop_transparent":"tm-public-sdk-model",
                  "receiver_tex":"texregtest1publicsdkmodel"}), \
              patch.object(SUITE,"derive_ios_migration_addresses", return_value={
@@ -91,6 +95,92 @@ class SuiteTests(unittest.TestCase):
             self.assertEqual(report["results"][0]["status"],"passed")
             with self.assertRaisesRegex(e2e_catalog.CatalogError,"zero scenarios"):
                 e2e_catalog.select_scenarios(self.catalog,failed_from=Path(item["report"]))
+
+    def test_short_dispatch_keeps_catalog_result_order_and_separate_budgets(self):
+        self.args.workers, self.args.repeat = 1, 1
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in (
+            "rust.receive.sync", "rust.send.basic", "flutter.macos.import-sync"))
+        report = self.root/"timings.json"
+        report.write_text(json.dumps({"schema_version":2,"catalog_sha256":self.catalog.fingerprint,
+            "source_commit":"b" * 40,"results":[{
+                "scenario_id":case.id,"profile":case.profile,"target":case.target,"test":case.test,
+                "status":"passed","duration_seconds":duration,
+            } for case,duration in zip(self.scenarios,(8,2,20))]}))
+        self.args.timing_reports = [report]
+        observed = []
+        def execute(root, run_id, worker_id, case, **kwargs):
+            observed.append((case.id,worker_id))
+            return {"scenario_id":case.id,"target":case.target,"test":case.test,
+                    "status":"passed","duration_seconds":1}
+        self.execute = execute
+        code,summary,_,_ = self.invoke()
+        self.assertEqual(code,0)
+        self.assertEqual(observed,[(self.scenarios[1].id,1),(self.scenarios[0].id,0),(self.scenarios[2].id,2)])
+        final = json.loads(Path(summary["repetition_reports"][0]["report"]).read_text())
+        self.assertEqual([case["scenario_id"] for case in final["results"]],[case.id for case in self.scenarios])
+        self.assertEqual(summary["schedule"],final["schedule"])
+        self.assertEqual(summary["resource_budget"],{
+            "artifact_producer_slots":1,"cargo_jobs":4,"case_slots":1})
+
+    def test_invalid_timing_input_is_rejected_before_resources_or_builds(self):
+        self.args.timing_reports = [self.root/"missing.json"]
+        with patch.object(SUITE.sys,"platform","darwin"):
+            with self.assertRaises(OSError):
+                SUITE.run_native_suite(self.args,self.catalog,self.scenarios,{},source_root=self.root)
+        self.assertFalse((self.root/".regtest-logs").exists())
+
+    def test_unproven_retention_cancels_following_case_before_allocation(self):
+        cancel = threading.Event()
+        worker = SimpleNamespace(prepare_case=Mock(side_effect=RuntimeError("case failed")),
+                                 retain=Mock(side_effect=RuntimeError("writer join unproven")))
+        with patch.object(SUITE,"prepare_native_worker_lifecycle",return_value=worker) as allocate:
+            first = SUITE.execute_case(self.root,"a" * 10,0,self.scenarios[0],helper=self.helper,
+                artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),args=self.args,cancel=cancel)
+            second = SUITE.execute_case(self.root,"a" * 10,1,self.scenarios[0],helper=self.helper,
+                artifact=self.signer,source_root=self.root,dart=Path("/model/dart"),args=self.args,cancel=cancel)
+        self.assertEqual(first["status"],"failed")
+        self.assertEqual(first["cleanup_errors"],["writer join unproven"])
+        self.assertEqual(second["status"],"cancelled")
+        allocate.assert_called_once()
+
+    def test_cache_hit_reports_zero_builds_without_changing_case_execution(self):
+        self.signer = SimpleNamespace(identity=lambda: {
+            "cargo_build_count":0, "cache_hit":True, "cache_key":"b"*64})
+        self.scenarios = (self.catalog.scenarios_by_id["rust.receive.sync"],)
+        code, summary, app, signer = self.invoke()
+        self.assertEqual(code, 0)
+        app.assert_not_called()
+        signer.assert_called_once()
+        self.assertEqual(summary["builds"]["signer_build_count"], 0)
+        self.assertEqual(summary["builds"]["rust_build_count"], 0)
+        self.assertTrue(summary["builds"]["signer_cache_hit"])
+        self.assertEqual(summary["builds"]["signer_cache_key"], "b"*64)
+        self.assertEqual(len(self.observed), 2)
+        self.assertTrue(all(item[4] is self.signer for item in self.observed))
+        self.assertTrue(signer.call_args.kwargs["cache_root"].is_relative_to(self.root/".regtest-logs/build-cache"))
+
+    def test_native_cache_hit_keeps_fresh_repetitions_and_reports_zero_app_helper_builds(self):
+        self.macos_build_proof = {"app_build_count":0, "helper_build_count":0, "cache_hit":True}
+        code,summary,build,_ = self.invoke()
+        self.assertEqual(code,0)
+        self.assertEqual(summary["builds"]["app_build_count"],0)
+        self.assertEqual(summary["builds"]["helper_build_count"],0)
+        self.assertTrue(summary["builds"]["cache_hit"])
+        self.assertEqual(len({item[1] for item in self.observed}),2)
+        self.assertTrue(build.call_args.kwargs["cache_root"].is_relative_to(self.root/".regtest-logs/build-cache"))
+
+    def test_ios_cache_hit_reports_zero_builds_and_keeps_new_cases(self):
+        self.scenarios = (self.catalog.scenarios_by_id["flutter.ios.import-sync"],)
+        self.args.ios_runtime,self.args.ios_device_type = "model-runtime","model-device"
+        self.ios_build_proof = {"ios_app_build_count":0, "ios_helper_build_count":0, "cache_hit":True}
+        code,summary,build,_ = self.invoke()
+        self.assertEqual(code,0)
+        build.assert_not_called()
+        self.assertEqual(summary["builds"]["ios"]["ios_app_build_count"],0)
+        self.assertEqual(summary["builds"]["ios"]["ios_helper_build_count"],0)
+        self.assertTrue(summary["builds"]["ios"]["cache_hit"])
+        self.assertEqual(len({item[1] for item in self.observed}),2)
+        self.assertTrue(self.ios_builder.call_args.kwargs["cache_root"].is_relative_to(self.root/".regtest-logs/build-cache"))
 
     def test_ios_repetitions_build_one_cohort_and_do_not_build_macos(self):
         self.scenarios = (self.catalog.scenarios_by_id["flutter.ios.import-sync"],)
@@ -274,6 +364,21 @@ class SuiteTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "preactivation"):
                 SUITE.validate_options(self.args, (replace(scenario, profile="flutter-direct-height1"),))
         self.assertFalse((self.root/".regtest-logs").exists())
+
+    def test_warm_voting_cache_reports_zero_builds_and_keeps_cases_isolated(self):
+        self.scenarios = tuple(self.catalog.scenarios_by_id[name] for name in sorted(SUITE.VOTING_SCENARIOS))
+        self.args.voting_sdk_cache = self.args.voting_pir_cache = self.root
+        self.voting_build_proof = {"build_count": 0, "cache_hit": True, "cache_key": "b"*64}
+        code, summary, _, _ = self.invoke()
+        self.assertEqual(code, 0)
+        self.voting_builder.assert_called_once()
+        self.assertEqual(self.voting_builder.call_args.kwargs["cache_root"],
+                         self.root/".regtest-logs/build-cache/voting-v1")
+        self.assertEqual(summary["builds"]["voting_build_count"], 0)
+        self.assertEqual(summary["builds"]["voting_proof"], self.voting_build_proof)
+        self.assertEqual(len(self.observed), len(self.scenarios)*self.args.repeat)
+        self.assertEqual(len({item[0] for item in self.observed}), self.args.repeat)
+        self.assertTrue(all(item[5] is self.voting for item in self.observed))
 
     def test_payment_group_keeps_exact_balances_and_independent_funding_sources(self):
         names = ("flutter.macos.shield-transparent", "flutter.macos.shield-transparent-retry",

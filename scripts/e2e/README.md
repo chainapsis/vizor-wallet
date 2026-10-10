@@ -62,9 +62,14 @@ not a claim that every case passed together on the final implementation source.
 A preview exit code of 0 means the preview succeeded,
 not that any test ran or passed. Execution requires explicit `--run`.
 
-Previews require Python 3.9 or newer and use only the standard library. Git is
+Previews require Python 3.9 or newer and use only the standard library. Actual
+isolated execution requires Python 3.11 or newer for the standard TOML parser
+that binds Cargo-selected build tools to cache identity. Git is
 also required for `--changed-from`; Flutter, Docker, and a running regtest stack
 are not needed for previews or the host-only checks below.
+Use `python3.11` (or a newer interpreter) for execution and builder/cache
+host checks, including CLI tests that mock supported execution. Pure
+catalog/selector checks and public previews still run on Python 3.9.
 
 ```bash
 # List the inventory or preview a suite, exact scenario, or tag intersection.
@@ -99,7 +104,7 @@ subprocess; no preview starts services, builds, simulators, or artifact director
 Host-only checks for this slice:
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
+python3.11 -B -m unittest scripts/e2e/test_e2e_catalog.py scripts/e2e/test_e2e_report.py scripts/e2e/test_e2e_changes.py scripts/e2e/test_e2e_impact.py scripts/e2e/test_run_suite.py
 ```
 
 ## Isolated iOS Simulator execution
@@ -119,7 +124,7 @@ never adopts an existing developer device. Preview the21-case suite first:
 
 ```bash
 python3 -B scripts/e2e/run-suite.py --suite flutter-ios-full --plan
-python3 -B scripts/e2e/run-suite.py --suite flutter-ios-full --run \
+python3.11 -B scripts/e2e/run-suite.py --suite flutter-ios-full --run \
   --flutter /absolute/flutter-sdk/bin/flutter \
   --zakura-cache /absolute/zakura-git-cache \
   --grpcurl /absolute/bin/grpcurl \
@@ -143,10 +148,46 @@ one app/helper build. Both passed native/backend cleanup; older failed evidence
 and devices remain retained. These revision-specific runs do not establish a
 same-final-source all-green21/64-case result or current-policy cache coverage.
 
+### Timing-informed dispatch and resource budgets
+
+`--timing-report /path/to/run.json` reads an existing schema-2 case report with
+the current catalog fingerprint and matching profile/target/test identities.
+Repeat it for median successful case durations. Failures, timeouts, cancellations
+and unstarted cases do not supply completed-case estimates. Timings include
+case preparation and cleanup, not the shared build. Older source commits remain
+recorded provenance, never evidence that the current wallet passed.
+
+The default `--order short-first` dispatches measured short cases first for early
+feedback. `--order long-first` starts measured long cases first to reduce a late
+tail; neither guarantees a shorter whole run under contention. `--order catalog`
+uses inventory order. Cases without successful timings follow measured cases in
+catalog order; without timings, all modes use catalog order. `--plan` shows the
+dispatch order and report hashes without launching or writing anything.
+
+```bash
+python3 scripts/e2e/run-suite.py --suite rust-direct --plan \
+  --order long-first --timing-report /path/to/prior/repetition-0/run.json
+```
+
+Shared artifact producers run one at a time before the case queue. `--build-jobs`
+controls the Cargo job budget; it is not a global Flutter/Xcode CPU limit.
+`--workers` bounds concurrent case owners across engines and fresh repetitions.
+The runner records these separate budgets and reports each completed case
+immediately, retaining selected catalog order in the final results. Independent
+wallet/backend/native state and existing assertions remain unchanged. Unproven
+worker retention cancels subsequent case allocation. No CPU/RAM-based automatic
+worker limit or measured general speedup is claimed by this dispatch policy.
+
+```bash
+python3.11 -B -m unittest scripts/e2e/test_e2e_schedule.py scripts/e2e/test_run_suite.py scripts/e2e/test_native_macos_suite.py
+```
+
 ## Isolated macOS import and endpoint execution
 
-The selected native cohort, cleanup helper and offline signer are each built
-once per invocation. Each case has fresh wallet/Keychain/preferences storage,
+The selected native cohort/helper pair, offline signer and Rust test executables
+use immutable caches by default. A miss builds each selected artifact once;
+a hit records zero corresponding builds and creates fresh publication copies.
+Each case has fresh wallet/Keychain/preferences storage,
 ports and its own pinned Zakura/lightwalletd containers. The existing import
 test still requires shielded **1.25** and transparent **0.75**; a completed
 Driver connection or empty successful test response is not assertion completion.
@@ -154,7 +195,8 @@ The sandbox app returns its storage observation through its original Driver,
 which writes the host evidence file. Neither that observation nor a JSON receipt
 authorizes cleanup; the original worker must prove terminal cleanup itself.
 
-Requirements: macOS, Flutter dependencies already resolved, Xcode/Swift and an
+Requirements: macOS, Python 3.11 or newer, Flutter dependencies already resolved,
+Xcode/Swift and an
 available development identity/profile that signs the native app, Docker,
 grpcurl/protos, the pinned Zakura Git object cache above, and Cargo dependencies
 already available for the offline signer build. Commit Rust changes first: the
@@ -162,7 +204,7 @@ signer uses the exact committed Rust subtree rather than mixing source versions.
 Use explicit absolute tooling paths; no automatic installation or download.
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.import-sync --run \
   --flutter /absolute/flutter-sdk/bin/flutter \
   --zakura-cache /absolute/zakura-git-cache \
@@ -181,7 +223,7 @@ and `flutter.macos.sync-startup-stall-recovery`. Repeat `--scenario` to combine
 only the cases needed, using the same explicit tooling arguments above:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.fallback-endpoint \
   --scenario flutter.macos.custom-endpoint-no-fallback \
   --scenario flutter.macos.slow-height-fallback \
@@ -203,9 +245,9 @@ Evidence stays in `.regtest-logs/native-suite-<id>/`. Each repetition's
 and uncertain cleanup remains failure. Cancellation stops owned children and
 new assignment without terminating ordinary wallet processes.
 
-This is in-process build reuse; persistent verified caching is a separate
-implementation group. Resource/performance comparison and the final-source
-all-green catalog remain pending. No CI behavior changes.
+Build artifact reuse does not establish a wallet PASS or a general measured
+speedup. Resource/performance comparison
+and final-source all-green catalog are still pending. No CI behavior changes.
 
 ## Isolated macOS send, shielding and payment requests
 
@@ -214,7 +256,7 @@ build while retaining separate wallet storage, chain state and ports. Use the
 same requirements and absolute tooling paths as the import example above:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.shield-transparent \
   --scenario flutter.macos.shield-transparent-retry \
   --scenario flutter.macos.multi-account-send \
@@ -254,7 +296,7 @@ The same coordinator runs `rust.receive.sync`, `rust.send.basic`,
 and `deterministic-reimport`. Use the same absolute tooling paths shown above:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario rust.receive.sync --scenario rust.send.basic \
   --scenario rust.import.bip39-passphrase --plan
 ```
@@ -288,7 +330,7 @@ account balance separation, existing history and idempotent-sync assertions.
 Select just this domain without building the native app/helper:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --changed-file rust/tests/regtest_multi_account.rs --plan
 ```
 
@@ -314,7 +356,7 @@ the rejected claimant must retain complete transaction IDs, and independent
 funding transactions must differ. Example side-effect-free selection:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario rust.receive.direct-zakura --scenario rust.import.direct-zakura \
   --scenario rust.gift-card.tracking-multiple \
   --scenario rust.gift-card.empty-db-reuse --scenario rust.gift-card.competition --plan
@@ -333,7 +375,7 @@ The original control owner forwards those operations; it does not reconstruct
 ownership from JSON or implement a second reorg algorithm. Example preview:
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario rust.ironwood.migration --scenario rust.ironwood.gift-card-claim --plan
 ```
 
@@ -357,7 +399,7 @@ their existing 15+10 and 15+12-minute test limits plus five minutes for the two
 launches, original stop/join and confirmation mining. Phase limits are unchanged.
 
 ```bash
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.mempool-receive-history \
   --scenario flutter.macos.mempool-during-sync \
   --scenario flutter.macos.mempool-expiry \
@@ -412,7 +454,7 @@ git -C /path/to/vote-sdk-cache.git fetch https://github.com/valargroup/vote-sdk.
 git init --bare /path/to/voting-pir-cache.git
 git -C /path/to/voting-pir-cache.git fetch https://github.com/valargroup/vote-nullifier-pir.git 20356d14f61a825ef28726f38270c37d604cc268:refs/vizor-e2e/source/20356d14f61a825ef28726f38270c37d604cc268
 
-python3 -B scripts/e2e/run-suite.py \
+python3.11 -B scripts/e2e/run-suite.py \
   --scenario flutter.macos.voting --scenario flutter.macos.voting-slow-helper \
   --run --workers 2 \
   --flutter /path/to/flutter/bin/flutter --zakura-cache /path/to/zakura \
@@ -1025,7 +1067,7 @@ fix, host funding adapter or catalog execution is added by this tool.
 
 ### Original offline signer build producer
 
-`funder_build.py` builds the signer once for later case reuse. Pass a fresh,
+`funder_build.py` publishes the signer once for later case reuse. Pass a fresh,
 dedicated `NativeCaseLifecycle`, a local Vizor Git object cache and one full
 commit SHA to `build_regtest_funder`. It never builds the dirty checkout or
 downloads missing Git/dependency objects. Git replacement objects are disabled.
@@ -1034,8 +1076,8 @@ Git blobs are copied into new private directories, with read-only source files.
 Archive links, omitted/export-transformed blobs and unexpected files fail.
 
 The original case owns all Git/toolchain/Cargo processes and output capture.
-Cargo uses a fresh target directory, `--offline --locked`, an explicit rustc
-host target and 1–8 jobs (default four). Publication requires successful Cargo
+On a cache miss, Cargo uses a fresh target directory, `--offline --locked`, an
+explicit rustc host target and 1–8 jobs (default four). Cold publication requires successful Cargo
 JSON for this exact example/source, not a test harness, and positive completion
 of every original process group/output writer. Cargo's output may be hard-linked;
 only after joining writers is it copied into a new private single-link read-only
@@ -1044,7 +1086,7 @@ An explicit `RUSTC` or the PATH compiler is resolved to the executable actually
 probed (including rustup proxy resolution), then passed as Cargo's `RUSTC`.
 Compiler wrappers are disabled so Cargo cannot silently substitute a compiler.
 
-The returned `ProducedRegtestFunder` is an in-memory original-producer handle,
+The returned `ProducedRegtestFunder` is an in-memory original-publication handle,
 not a path/JSON receipt that can be adopted. Call `verify_unchanged()` before
 and after an owning case runs it. `identity()` records the exact commit, Rust
 Git/blob hashes, toolchain, host target and executable SHA-256. Changed source,
@@ -1052,14 +1094,179 @@ executable or original parent attachments invalidate that handle permanently;
 all failure evidence is retained. Two cases can consume the same publication
 without starting another Cargo build, but each owns its own process/output.
 
-This is not persistent cache lookup, a portable hermetic/environment attestation,
-native app build publication, funding/inclusion validation or catalog execution.
+The suite enables `.regtest-logs/build-cache/funder-v1` by default. Keys bind the
+complete Rust Git/blob inventory, compiler/Cargo identity and executable bytes,
+host target, exact selected tests/address tool, producer implementation, Cargo
+configuration contents and hashed build environment. The invocation ID, Git
+commit outside the Rust subtree, target directory and build job count are not
+compilation inputs in this key. No environment values or configuration contents
+are written to the manifest. A hit still inventories the exact current source,
+joins its original owner and copies binaries into a fresh private publication;
+it never accepts a loose old executable or adopts an old case. Reports record
+`signer_cache_hit`, `signer_cache_key` and actual signer/Rust build counts.
+
+Locked Cargo metadata binds the actual external registry, Git and vendored
+dependency source trees, not only their versions or replacement directory paths.
+Git dependencies include their complete checkout so workspace sibling inputs
+are covered. The offline signer and native cache collectors do not download
+missing Cargo inputs; the original offline signer build remains offline.
+
+Only an original successfully joined producer may create an entry. A bounded,
+cancel-aware per-key lock serializes publication; staging is sealed and renamed
+without replacing an existing entry. Every hit verifies exact inventory and
+read-only single-link executable hashes. Corrupt or writable entries fail rather
+than being silently rebuilt or overwritten. Partial staging and failed cases
+remain evidence; this runner does not prune caches or developer resources.
+Wallet storage, chain state, devices and process owners are never cached.
+
+This is not a portable hermetic/environment attestation, native app build
+publication, funding/inclusion validation or catalog execution.
 The source cache and compiler remain trusted cooperative inputs, not a sandbox.
 Missing offline dependencies remain errors rather than triggering downloads.
 Host checks use real Git/files/processes with only the compiler modeled:
 
 ```bash
-python3 -B -m unittest scripts/e2e/test_funder_build.py
+python3.11 -B -m unittest scripts/e2e/test_funder_build.py scripts/e2e/test_funder_cache.py scripts/e2e/test_funder_execution.py scripts/e2e/test_native_macos_suite.py
+```
+
+### Immutable native cohort/helper cache
+
+The suite enables `.regtest-logs/build-cache/macos-cohort-v1` and
+`ios-cohort-v1` by default. It preserves the existing cohort build flags and
+signing/capture checks, and caches both the app and its matching cleanup helper.
+The inputs bind checked wallet/test/native/Rust sources, helper and builder
+implementation, actual Dart package contents, semantic package configuration,
+locked Pod versions, Flutter/engine/Dart identity, Xcode/SDK, Cargokit compiler
+identity, Cargo configuration, environment and platform/architecture/TEX fixture.
+The wallet's package-config generation timestamp and workspace-local Podspec
+checksums are not keys; the local package sources are checked instead. External
+package inventories exclude generated directories only at their roots; a
+configured packageUri source subtree is always included, even under a
+generated-looking name. A root packageUri includes the complete package tree.
+Same-named directories beneath source trees remain inputs. Remote Podspec checksums and all
+locked versions remain inputs. Compiler environment values are hashed.
+Executables selected by Rust wrappers, target linkers, CC/CXX/AR and Rust
+linker flags are also hashed, including forwarded `-fuse-ld`, `-B` and
+`--ld-path` selectors, Cargo configuration, included files, relative paths,
+driver siblings and configured PATH lookups. Collection never executes those
+configured tools. The signer and voting builders use the same collector and
+recheck its inputs before publication, including after the original owner seals.
+
+macOS and iOS producers share one checkout-wide lock under
+`.regtest-logs/native-build-locks` from configuration through publication, even
+with different artifact keys/cache roots or with caching disabled. Different
+checkouts remain independent; case-worker parallelism is unchanged. The shared
+lock also protects common Flutter-generated files. Waiting uses the original
+deadline/cancellation;
+unproved writer shutdown leaves a retained denial marker and blocks later builds
+without deleting evidence or adopting a receipt. This coordinates these E2E
+producers, not unrelated developer builds.
+
+Only the original source-checking native builder with positively joined
+successful command groups can publish.
+Before lookup, `flutter build --config-only --no-pub` prepares the selected
+platform's configuration/Pod sandbox without app compilation. Missing Rust
+toolchains/targets in the captured Cargokit inventory are prepared before
+sysroot identity is collected; installed targets are not reinstalled or updated.
+Installed Pod
+contents bind the key alongside normalized lock metadata and package sources;
+preparation and build still reject changed project/wallet/tool inputs.
+The Flutter SDK inventory includes material-font artifact bytes copied into
+these Material-enabled debug apps, not just compiler and engine artifacts.
+The same bounded per-key lock and
+exclusive rename protect a sealed, complete app/helper pair. All bundle files
+are hashed, including resources and Frameworks; relative internal Framework
+aliases are preserved, while absolute/escaping links are rejected. Joined SDK
+resources can have group-writable modes, such as Flutter's stock font. They are
+copied without modifying the originals, then the cache directories/files are
+sealed as private read-only independent inodes. Published cache files must be
+single-link; a mutable or corrupt entry fails without replacement or pruning.
+
+On every hit, copies go into the new producer case's `native-publication/`.
+Those independent SDK staging copies use owner-writable private directories
+and files (0700/0600), preserving executable bits and signed bytes. Simulator
+installation cannot populate a staged read-only app directory. Cache entries
+remain sealed; neither the originals nor sibling publications are unsealed.
+The normal actual signature, role, entitlement, team and architecture capture
+runs on those copies; inputs are checked again before joining the new owner.
+Reports retain real app/helper build counts, cache hit/key and joined process
+outcomes. `persistent_cache_attestation` describes this cooperative local
+publication, not portable hermetic provenance or a wallet/catalog PASS.
+Wallets, storage, devices, Keychain and chain state remain case-local.
+
+Actual preactivation validation on clean `4429038fc` selected single iOS
+migration plus same-case app restart through the normal selectors and original
+owned executor on arm64, Flutter3.47.2 and iOS26.3. Each invocation used fresh
+case devices, wallets and backends, with unchanged assertions, `--build-jobs 8`
+and short-first without timing history:
+
+| Native cache / case workers | Total seconds | Signer / app / helper builds | Result |
+| --- | ---: | --- | --- |
+| App/helper miss, 2 workers (`7b9a8d7577`) | 402.209 | 0 / 1 / 1 | 2 PASS |
+| Warm, 1 worker (`a127c6e326`) | 227.533 | 0 / 0 / 0 | 2 PASS |
+| Warm, 2 workers (`8009b90765`) | 157.747 | 0 / 0 / 0 | 2 PASS |
+
+Both warm invocations reused the same captured signer/native keys, joined all
+15 native producer groups successfully, and proved original Driver assertions
+and native/backend cleanup with no cleanup errors. The real restart changed
+the app PID while retaining its case Simulator and wallet, not a restored state.
+The miss shared one app/helper build between the cases; the signer and existing
+dependency caches were already warm. It is not an empty-machine cold baseline.
+
+This single matched warm comparison reduced wall time by30.7 percent, not total
+system resource use. One trial per worker count ran serial-first, not randomized;
+host load and OS caches were not controlled. `/usr/bin/time -l` observed host
+parent/child CPU80.55 to89.00 seconds and maximum RSS436,125,696 to451,477,504 bytes. Daemon-parented
+Simulator apps and Docker VM CPU/memory are outside that accounting; maximum
+RSS is not a concurrent aggregate peak. This does not prove a general speedup,
+Gift SDK repair or same-final-source21/64-case coverage. The public iOS catalog
+remains pending until its functional integration gate is satisfied.
+
+```bash
+python3.11 -B -m unittest scripts/e2e/test_native_build_cache.py scripts/e2e/test_native_ios_build.py scripts/e2e/test_native_macos_build.py scripts/e2e/test_native_macos_suite.py
+```
+
+### Immutable voting executable cache
+
+Voting selections use `.regtest-logs/build-cache/voting-v1` for the five pinned
+SDK/PIR/round executables. Inputs bind both exact Git archives, selected Rust,
+Go and Make tool paths/bytes/versions, Cargo/Go configuration content hashes,
+hashed build environment, platform and producer implementation. Build job count
+and case-private output paths are not compilation identities. The cache reuses
+the bounded per-key lock and exclusive, sealed executable publication; changed
+or writable cached bytes fail without rebuild or overwrite.
+
+Both Go contexts query effective CC/CXX/FC/PKG_CONFIG/GOCACHEPROG settings and
+bind the referenced executable bytes, including programs selected through
+GOENV rather than inherited environment variables. Setting values are hashed,
+not recorded. External Cargo dependency source trees also bind voting keys.
+The SDK Go producer queries the effective module-cache location and the source
+trees selected by `go list -deps` for svoted's Halo2/RedPallas tags and
+voting-config. Actual replacement source directories are included; unrelated
+module-cache entries are not. Sources are rechecked before reuse/publication,
+including byte-only validation after the original owner has joined. The same
+readonly module mode as the producer prevents module-file edits.
+Voting Cargo producers already permit dependency downloads; their locked
+metadata preparation may also fetch unbuilt workspace/dev dependencies before
+lookup. This does not compile them or change either pinned revision.
+
+A hit still reads and extracts the original pinned sources, prepares fresh SDK
+runtime scripts and joins its new producer owner. It copies verified binaries
+into that owner's independent publication; vote-chain homes, keys, PIR data,
+wallets and process owners remain case-local. Reports use the actual
+`voting_build_count` (zero on a hit) and `voting_proof.cache_hit/cache_key`.
+This is cooperative local build reuse, not hermetic provenance, voting success
+or final-source full-catalog coverage.
+
+Actual original producers on clean `cf256da33` verified an artifact-cache miss
+in138.338s and a hit in1.390s. Build counts were1/0; all22/19 original command
+groups joined exit0, all five binary hashes matched and private runtime inodes
+were independent. The warm owner re-extracted its original pinned SDK scripts.
+Rust/Go dependency caches were already populated: this is not an empty-machine
+baseline, complete voting E2E, aggregate CPU/RAM saving or whole-suite speedup.
+
+```bash
+python3.11 -B -m unittest scripts/e2e/test_native_voting.py scripts/e2e/test_native_macos_suite.py scripts/e2e/test_funder_cache.py
 ```
 
 ### Owned offline signer execution

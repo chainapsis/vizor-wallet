@@ -6,7 +6,7 @@ wallets, chain state, ports, controllers and evidence are never shared.
 """
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import platform
@@ -19,6 +19,7 @@ import time
 import uuid
 
 import e2e_runtime as runtime
+from e2e_schedule import schedule_scenarios
 from funder_build import build_regtest_funder
 from native_case_lifecycle import NativeCaseLifecycle
 from native_macos_build import build_native_macos_cohort
@@ -256,12 +257,15 @@ def execute_case(root, run_id, worker_id, scenario, *, helper, artifact, source_
                 worker.retain(timeout=60)
             except BaseException as cleanup:
                 result["cleanup_errors"].append(str(cleanup))
+                cancel.set()
     result["duration_seconds"] = round(time.monotonic()-started,3)
     return result
 
 
 def run_native_suite(args, catalog, scenarios, selection, *, source_root):
     validate_options(args, scenarios)
+    schedule = schedule_scenarios(catalog, scenarios,
+        order=args.order, timing_reports=args.timing_reports)
     root = Path(source_root).resolve(strict=True)
     commit = subprocess.run(["git","-C",str(root),"rev-parse","HEAD"],
         check=True, capture_output=True, text=True).stdout.strip()
@@ -299,7 +303,9 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
     report = {"schema_version":2,"catalog_sha256":catalog.fingerprint,"selection":selection,
         "source_commit":commit,"working_tree_dirty":dirty,"run_id":run_id,
         "workers":args.workers,"repeat":args.repeat,"repetition_reports":[],
-        "builds":{},"error":None}
+        "builds":{},"error":None,"schedule":schedule.record,
+        "resource_budget":{"artifact_producer_slots":1,"cargo_jobs":args.build_jobs,
+                           "case_slots":min(args.workers, args.repeat * len(scenarios))}}
     try:
         print("Building selected native artifacts once; logs: "+str(evidence),file=sys.stderr,flush=True)
         targets = tuple(dict.fromkeys(s.target for s in scenarios if s.engine == "rust"))
@@ -307,12 +313,18 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
                               for s in scenarios)
         needs_ios_addresses = any(s.id in IOS_MIGRATION_SCENARIOS for s in scenarios)
         producer = build_case(1, "rust.signer-build", "rust") if targets else build_case(1,"flutter.macos.signer-build")
+        cache_parent = logs / "build-cache"
+        cache_parent.mkdir(mode=0o700, exist_ok=True)
         artifact = build_regtest_funder(producer,
             source_root=root, source_commit=commit, jobs=args.build_jobs, timeout=1200,
-            cancel_event=cancel, test_targets=targets, wallet_addresses=needs_addresses or needs_ios_addresses)
-        report["builds"]["signer_build_count"] = 1
+            cancel_event=cancel, test_targets=targets, wallet_addresses=needs_addresses or needs_ios_addresses,
+            cache_root=cache_parent / "funder-v1")
+        identity = artifact.identity()
+        report["builds"]["signer_build_count"] = identity["cargo_build_count"]
+        report["builds"]["signer_cache_hit"] = identity["cache_hit"]
+        report["builds"]["signer_cache_key"] = identity.get("cache_key")
         if targets:
-            report["builds"].update(rust_build_count=1, rust_test_targets=list(targets))
+            report["builds"].update(rust_build_count=identity["cargo_build_count"], rust_test_targets=list(targets))
         payment_addresses = {}
         ios_addresses = None
         if needs_ios_addresses:
@@ -327,43 +339,50 @@ def run_native_suite(args, catalog, scenarios, selection, *, source_root):
         if any(s.engine == "flutter-macos" for s in scenarios):
             helper, build_proof = build_native_macos_cohort(build_case(0,"flutter.macos.native-build"),
                 source_root=root, flutter=args.flutter, cancel_event=cancel,
-                tex_address=payment_addresses.get("receiver_tex"))
+                tex_address=payment_addresses.get("receiver_tex"), cache_root=cache_parent/"macos-cohort-v1")
             report["builds"].update(build_proof)
         ios_helper = None
         if any(s.engine == "flutter-ios" for s in scenarios):
             ios_helper, ios_proof = build_native_ios_cohort(build_case(4,"flutter.ios.native-build","ios"),
-                source_root=root, flutter=args.flutter, cancel_event=cancel)
+                source_root=root, flutter=args.flutter, cancel_event=cancel, cache_root=cache_parent/"ios-cohort-v1")
             report["builds"]["ios"] = ios_proof
         voting_artifact = None
         if any(s.id in VOTING_SCENARIOS for s in scenarios):
             voting_artifact, voting_proof = build_voting_artifacts(
                 build_case(3,"rust.voting-build","rust"),
                 sdk_cache=args.voting_sdk_cache, pir_cache=args.voting_pir_cache,
-                jobs=args.build_jobs, cancel_event=cancel)
-            report["builds"].update(voting_build_count=1, voting_proof=voting_proof)
+                cache_root=cache_parent/"voting-v1", jobs=args.build_jobs, cancel_event=cancel)
+            report["builds"].update(voting_build_count=voting_proof["build_count"], voting_proof=voting_proof)
         dart = (args.flutter.resolve(strict=True).parent/"cache/dart-sdk/bin/dart").resolve(strict=True)
         repetitions = []
-        jobs = []
         for repetition in range(args.repeat):
             repeated = evidence/("repetition-"+str(repetition))
             repeated.mkdir(mode=0o700)
             repeated_id = uuid.uuid4().hex[:10]
             repetitions.append((repeated, repeated_id))
-            jobs.extend((repetition, index, scenario) for index,scenario in enumerate(scenarios))
+        # Dispatch equal-duration repetitions next to each other rather than
+        # enqueueing a long first-repetition tail ahead of short later repeats.
+        jobs = [(repetition, index, scenarios[index]) for index in schedule.indices
+                for repetition in range(args.repeat)]
         results = [[] for _ in repetitions]
-        with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            submitted = [(repetition,pool.submit(execute_case,*repetitions[repetition],index,scenario,
+        with ThreadPoolExecutor(max_workers=report["resource_budget"]["case_slots"]) as pool:
+            submitted = {pool.submit(execute_case,*repetitions[repetition],index,scenario,
                 helper=helper,artifact=artifact,source_root=root,dart=dart,args=args,cancel=cancel,
                 desktop_transparent=payment_addresses.get("desktop_transparent"),
-                voting_artifact=voting_artifact, ios_helper=ios_helper, ios_addresses=ios_addresses))
-                for repetition,index,scenario in jobs]
-            for repetition, future in submitted:
-                results[repetition].append(future.result())
+                voting_artifact=voting_artifact, ios_helper=ios_helper, ios_addresses=ios_addresses):(repetition,index)
+                for repetition,index,scenario in jobs}
+            for future in as_completed(submitted):
+                repetition,index = submitted[future]
+                item = future.result()
+                results[repetition].append((index,item))
+                print("Completed " + item["scenario_id"] + ": " + item["status"] +
+                    " (" + str(item.get("duration_seconds", 0)) + "s)",file=sys.stderr,flush=True)
         for index,((repeated,repeated_id),items) in enumerate(zip(repetitions,results)):
+            items = [item for _,item in sorted(items)]
             path = repeated/"run.json"
             _write_report(path,{"schema_version":2,"catalog_sha256":catalog.fingerprint,
                 "selection":selection,"source_commit":commit,"working_tree_dirty":dirty,
-                "run_id":repeated_id,"results":items})
+                "run_id":repeated_id,"schedule":schedule.record,"results":items})
             report["repetition_reports"].append({"repetition":index,"report":str(path),
                 "passed":sum(item["status"] == "passed" for item in items),
                 "failed":sum(item["status"] != "passed" for item in items)})

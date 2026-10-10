@@ -42,6 +42,10 @@ class FunderBuildTests(unittest.TestCase):
         self.artifacts = self.root / "artifacts"
         self.artifacts.mkdir(mode=0o700)
         self.cases = []
+        self.cargo_dependency = self.root/"cargo-dependency"
+        self.cargo_dependency.mkdir()
+        (self.cargo_dependency/"Cargo.toml").write_text('[package]\nname="dependency"\nversion="1.0.0"\n')
+        (self.cargo_dependency/"lib.rs").write_text("original Cargo dependency")
         self.addCleanup(self.close_cases)
         self.completed = True
         self.candidate_mode = "original"
@@ -54,10 +58,31 @@ class FunderBuildTests(unittest.TestCase):
         self.compiler.write_text("modeled compiler\n")
         self.compiler.chmod(0o700)
         self.compiler_entry = self.compiler
+        self.cargo = self.root / "selected-cargo"
+        self.cargo.write_text("modeled Cargo\n")
+        self.cargo.chmod(0o700)
+        self.cargo_entry = self.cargo
+        self.selected_cargo = None
         self.rustup = None
         self.hard_link_output = False
         self.test_candidate_mode = "original"
         self.address_candidate_mode = "original"
+        self.rust_sysroot = self.root/"rust-sysroot"
+        self.rust_libraries = (self.rust_sysroot/"lib/libLLVM.dylib",
+                               self.rust_sysroot/"lib/rustlib/host/lib/libstd.rlib")
+        for path in self.rust_libraries:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("modeled Rust compiler/runtime library")
+        self.apple_tools = {name:self.root/"native-toolchain/usr/bin"/name
+                            for name in ("clang", "ld", "cc", "ar", "path_ar")}
+        for path in self.apple_tools.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("modeled native tool")
+            path.chmod(0o700)
+        self.apple_trees = (self.root/"native-toolchain/usr/lib", self.root/"native-sdk")
+        for path in self.apple_trees:
+            path.mkdir(parents=True)
+            (path/"artifact").write_text("modeled SDK/library")
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.source), *args], check=True,
@@ -79,15 +104,35 @@ class FunderBuildTests(unittest.TestCase):
     def build(self, case=None, **updates):
         case = case or self.case()
         original = case.run_command
+        original_which = BUILD.shutil.which
         def command(arguments, **options):
+            if arguments[0] in {"cargo", str(self.cargo)} and arguments[1:2] == ["metadata"]:
+                self.assertIn("--offline", arguments)
+                self.assertIn("--locked", arguments)
+                payload = {"version":1,"packages":[{"id":"dependency",
+                    "manifest_path":str(self.cargo_dependency/"Cargo.toml")}],
+                    "resolve":{"nodes":[{"id":"dependency"}]}}
+                return original([sys.executable, "-c", f"print({json.dumps(payload)!r})"], **options)
+            if arguments == [str(self.compiler), "--print", "sysroot"]:
+                return original([sys.executable, "-c", f"print({str(self.rust_sysroot)!r})"], **options)
+            if arguments[:1] == ["/usr/bin/which"] and arguments[1] in {"cc", "ar"}:
+                name = "path_ar" if arguments[1] == "ar" else "cc"
+                return original([sys.executable, "-c", f"print({str(self.apple_tools[name])!r})"], **options)
+            if arguments[:3] == ["/usr/bin/xcrun", "--sdk", "macosx"]:
+                path = self.apple_trees[-1] if "--show-sdk-path" in arguments else self.apple_tools[arguments[-1]]
+                return original([sys.executable, "-c", f"print({str(path)!r})"], **options)
             if self.rustup is not None and arguments == [str(self.rustup), "which", "rustc"]:
                 return original([sys.executable, "-B", "-c", f"print({str(self.compiler)!r})"], **options)
+            if self.rustup is not None and arguments == [str(self.rustup), "which", "cargo"]:
+                return original([sys.executable, "-B", "-c", f"print({str(self.cargo)!r})"], **options)
             if arguments == [str(self.compiler), "-vV"]:
                 return original([sys.executable, "-B", "-c", f"print({self.rustc_identity!r})"], **options)
-            if arguments[:2] == ["cargo", "-V"]:
+            if arguments[0] in {"cargo", str(self.cargo)} and arguments[1:2] == ["-V"]:
                 return original([sys.executable, "-B", "-c", "print('cargo modeled')"], **options)
-            if arguments[:2] != ["cargo", "build"]:
+            if arguments[0] not in {"cargo", str(self.cargo)} or arguments[1:2] != ["build"]:
                 return original(arguments, **options)
+            self.selected_cargo = arguments[0]
+            self.last_build_env = options["env"]
             self.compile_calls += 1
             self.assertIn("--offline", arguments)
             self.assertIn("--locked", arguments)
@@ -146,10 +191,13 @@ class FunderBuildTests(unittest.TestCase):
                 f"raise SystemExit({self.compiler_exit})")
             return original([sys.executable, "-B", "-c", script], **options)
         with patch.object(case, "run_command", side_effect=command), patch.object(
-                BUILD.shutil, "which", return_value=str(self.compiler_entry)) as chosen:
+                BUILD.shutil, "which", side_effect=lambda name, **options:
+                    str(self.cargo_entry) if name == "cargo" else str(self.compiler_entry)
+                    if name in {"rustc", os.environ.get("RUSTC", "rustc")}
+                    else original_which(name, **options)) as chosen:
             artifact = BUILD.build_regtest_funder(case, source_root=self.source, source_commit=self.commit,
                                                 timeout=5, **updates)
-            self.selected_compiler_request = chosen.call_args.args[0]
+            self.selected_compiler_request = chosen.call_args_list[0].args[0]
             return artifact
 
     def test_original_git_bytes_not_dirty_checkout_and_published_only_after_join(self):
@@ -169,6 +217,61 @@ class FunderBuildTests(unittest.TestCase):
         evidence = artifact.identity()
         evidence["rust_blobs"].clear()
         self.assertEqual(len(artifact.identity()["rust_blobs"]), 3)
+
+    @unittest.skipUnless(sys.platform == "darwin", "Apple linker inputs are macOS-only")
+    def test_linker_and_sdk_bytes_invalidate_cached_funder_with_same_rust(self):
+        cache = self.root/"funder-cache"
+        artifacts = (*self.apple_tools.values(), *(path/"artifact" for path in self.apple_trees))
+        for path in artifacts:
+            with self.subTest(input=path):
+                first = self.build(cache_root=cache).identity()
+                path.write_text("patched native compiler input")
+                second = self.build(cache_root=cache).identity()
+                self.assertEqual(first["rustc"], second["rustc"])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "default Apple archiver inputs are macOS-only")
+    def test_default_archiver_bytes_invalidate_with_same_compiler(self):
+        cache = self.root/"funder-cache"
+        first = self.build(cache_root=cache).identity()
+        self.apple_tools["path_ar"].write_text("patched default archiver")
+        second = self.build(cache_root=cache).identity()
+        self.assertEqual(first["rustc"], second["rustc"])
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    def test_cargo_dependency_mutation_while_sealing_rejects_without_launch(self):
+        case = self.case()
+        close = case.close
+        def seal():
+            receipt = close()
+            (self.cargo_dependency/"lib.rs").write_text("changed dependency after join")
+            return receipt
+        with patch.object(case,"close",side_effect=seal), self.assertRaisesRegex(
+                BUILD.FunderBuildError,"Cargo dependency sources changed"):
+            self.build(case,cache_root=self.root/"funder-cache")
+        self.assertFalse(case.accepting_launches)
+
+    @unittest.skipUnless(sys.platform == "darwin", "Apple linker inputs are macOS-only")
+    def test_linker_mutation_while_sealing_rejects_publication_without_launch(self):
+        case = self.case()
+        close = case.close
+        def seal():
+            receipt = close()
+            self.apple_tools["ld"].write_text("changed linker after join")
+            return receipt
+        with patch.object(case, "close", side_effect=seal), self.assertRaisesRegex(
+                BUILD.FunderBuildError, "Apple linker/SDK inputs changed"):
+            self.build(case, cache_root=self.root/"funder-cache")
+        self.assertFalse(case.accepting_launches)
+
+    def test_rust_sysroot_changes_invalidate_without_compiler_or_version_changes(self):
+        for path in self.rust_libraries:
+            with self.subTest(input=path):
+                first = self.build(cache_root=self.root/"funder-cache").identity()
+                path.write_text("patched Rust sysroot library")
+                second = self.build(cache_root=self.root/"funder-cache").identity()
+                self.assertEqual(first["rustc"], second["rustc"])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
 
     def add_test_sources(self, names=("regtest_receive_sync", "regtest_send")):
         for name in names:

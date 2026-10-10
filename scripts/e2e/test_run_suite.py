@@ -35,11 +35,92 @@ class PreviewTests(unittest.TestCase):
             code = CLI.main(arguments)
         return code, json.loads(output.getvalue()) if output.getvalue() else None, errors.getvalue()
 
+    def test_timing_plan_changes_dispatch_not_selected_identity_or_report_bytes(self):
+        cases = tuple(self.catalog.scenarios_by_id[name] for name in ("rust.receive.sync", "rust.send.basic"))
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory)/"run.json"
+            report.write_text(json.dumps({"schema_version":2,"catalog_sha256":self.catalog.fingerprint,
+                "source_commit":"a" * 40,"results":[{
+                    "scenario_id":case.id,"profile":case.profile,"target":case.target,"test":case.test,
+                    "status":"passed","duration_seconds":duration,
+                } for case,duration in zip(cases,(2,8))]}))
+            before = report.read_bytes()
+            with patch("subprocess.run",side_effect=AssertionError("spawned a process")), \
+                 patch.object(Path,"mkdir",side_effect=AssertionError("created artifacts")), \
+                 patch.object(Path,"write_text",side_effect=AssertionError("wrote a file")), \
+                 patch.object(Path,"write_bytes",side_effect=AssertionError("wrote a file")):
+                code,output,error = self.invoke("--scenario",cases[0].id,"--scenario",cases[1].id,
+                    "--plan","--order","short-first","--timing-report",str(report))
+            self.assertEqual((code,error),(0,""))
+            self.assertEqual([case["scenario_id"] for case in output["selected_scenarios"]],
+                [case.id for case in self.catalog.scenarios if case.id in {item.id for item in cases}])
+            self.assertEqual(output["schedule"]["dispatch_scenarios"],[case.id for case in cases])
+            self.assertEqual(report.read_bytes(),before)
+
+    def test_overflowing_timing_median_is_rejected_before_execution_or_plan_output(self):
+        from types import SimpleNamespace
+        def execute(*args, **kwargs):
+            raise AssertionError("started execution")
+        case = self.catalog.scenarios_by_id["rust.receive.sync"]
+        with tempfile.TemporaryDirectory() as directory:
+            reports = []
+            for index in range(2):
+                report = Path(directory)/("run-" + str(index) + ".json")
+                report.write_text(json.dumps({"schema_version":2,
+                    "catalog_sha256":self.catalog.fingerprint,
+                    "source_commit":("a" if index == 0 else "b") * 40,
+                    "results":[{"scenario_id":case.id,"profile":case.profile,
+                        "target":case.target,"test":case.test,"status":"passed",
+                        "duration_seconds":1e308}]}))
+                reports.append(report)
+            for mode in ("--plan", "--run"):
+                with self.subTest(mode=mode), \
+                     patch.dict(sys.modules, {"native_macos_suite":SimpleNamespace(run_native_suite=execute)}), \
+                     patch("subprocess.run",side_effect=AssertionError("spawned a process")), \
+                     patch.object(Path,"mkdir",side_effect=AssertionError("created artifacts")), \
+                     patch.object(Path,"write_text",side_effect=AssertionError("wrote a file")), \
+                     patch.object(Path,"write_bytes",side_effect=AssertionError("wrote a file")):
+                    code,output,error = self.invoke("--scenario",case.id,mode,
+                        "--timing-report",str(reports[0]),"--timing-report",str(reports[1]))
+                    self.assertEqual(code,2)
+                    self.assertIsNone(output)
+                    self.assertIn("non-finite median",error)
+                    self.assertIn(case.id,error)
+
+    def test_oversized_integer_timing_is_rejected_before_plan_or_execution(self):
+        from types import SimpleNamespace
+        def execute(*args, **kwargs):
+            raise AssertionError("started execution")
+        case = self.catalog.scenarios_by_id["rust.receive.sync"]
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory)/"run.json"
+            report.write_text(json.dumps({"schema_version":2,
+                "catalog_sha256":self.catalog.fingerprint,"source_commit":"a"*40,
+                "results":[{"scenario_id":case.id,"profile":case.profile,
+                    "target":case.target,"test":case.test,"status":"passed",
+                    "duration_seconds":10**309}]}))
+            original = report.read_bytes()
+            for mode in ("--plan", "--run"):
+                with self.subTest(mode=mode), \
+                     patch.dict(sys.modules, {"native_macos_suite":SimpleNamespace(run_native_suite=execute)}), \
+                     patch("subprocess.run",side_effect=AssertionError("spawned a process")), \
+                     patch.object(Path,"mkdir",side_effect=AssertionError("created artifacts")), \
+                     patch.object(Path,"write_text",side_effect=AssertionError("wrote a file")), \
+                     patch.object(Path,"write_bytes",side_effect=AssertionError("wrote a file")):
+                    code, output, error = self.invoke("--scenario",case.id,mode,
+                        "--timing-report",str(report))
+                    self.assertEqual(code, 2)
+                    self.assertIsNone(output)
+                    self.assertIn("invalid case duration", error)
+                    self.assertNotIn("Traceback", error)
+                self.assertEqual(report.read_bytes(), original)
+
     def test_list_inventory_marks_only_the_wired_scenarios_runnable(self) -> None:
         code, output, errors = self.invoke("--list")
         self.assertEqual((code, errors), (0, ""))
         self.assertEqual(len(output["scenarios"]), 64)
         self.assertEqual(output["catalog_sha256"], self.catalog.fingerprint)
+
         wired_ids = {"flutter.macos.import-sync", "flutter.macos.fallback-endpoint",
             "flutter.macos.custom-endpoint-no-fallback", "flutter.macos.slow-height-fallback",
             "flutter.macos.sync-startup-stall-recovery",
@@ -87,6 +168,16 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(record["supported"], wired)
             self.assertEqual(record["runnable"], wired)
             self.assertEqual(bool(record["pending_reason"]), not wired)
+
+    def test_python_39_preview_survives_but_execution_requires_311_before_import(self):
+        with patch.object(CLI.sys, "version_info", (3, 9, 0)):
+            code, _, error = self.invoke("--suite", "all", "--plan")
+            self.assertEqual((code, error), (0, ""))
+            with patch("subprocess.run", side_effect=AssertionError("started a process")), \
+                 patch.object(Path, "mkdir", side_effect=AssertionError("created artifacts")):
+                code, _, error = self.invoke("--scenario", "rust.receive.sync", "--run")
+            self.assertEqual(code, 2)
+            self.assertIn("Python 3.11", error)
 
     def test_exact_selection_deduplicates_in_catalog_order(self) -> None:
         first, second = self.catalog.scenarios[:2]
@@ -411,7 +502,7 @@ class PreviewTests(unittest.TestCase):
         original_import = builtins.__import__
 
         def guarded_import(name, *args, **kwargs):
-            if name.startswith(("native_", "e2e_schedule", "e2e_runtime", "direct_zakura", "ths_fixture")):
+            if name.startswith(("native_", "e2e_runtime", "direct_zakura", "ths_fixture")):
                 raise AssertionError(f"preview imported backend: {name}")
             return original_import(name, *args, **kwargs)
 
@@ -429,7 +520,7 @@ class PreviewTests(unittest.TestCase):
                     self.assertEqual((code, errors), (0, ""))
 
     def test_fresh_cli_invocations_do_not_create_checkout_artifacts(self) -> None:
-        files = ("run-suite.py", "catalog.json", "e2e_catalog.py", "e2e_changes.py", "e2e_impact.py")
+        files = ("run-suite.py", "catalog.json", "e2e_catalog.py", "e2e_changes.py", "e2e_impact.py", "e2e_schedule.py")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for filename in files:
