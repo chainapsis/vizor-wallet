@@ -18,6 +18,7 @@ from funder_build import _file_record, _copy_cargo_executable
 from funder_cache import FunderCacheLease, _json, _rename_exclusive
 from native_case_lifecycle import NativeCaseLifecycle
 from native_zakura_front import _capture
+import toolchain_inputs
 
 
 VOTE_SDK_REV = "36f5d828fc5be42d9a80baa38d1145c5541b229e"
@@ -231,17 +232,32 @@ def build_voting_artifacts(case, *, sdk_cache, pir_cache, cache_root, jobs=4, ti
                     if path.exists() or path.is_symlink()}
         producer = Path(__file__).resolve(strict=True)
         tool_records[producer] = _file_record(producer)
+        collector = Path(toolchain_inputs.__file__).resolve(strict=True)
+        tool_records[collector] = _file_record(collector)
+        def compiler_inputs():
+            return {"apple_linker":toolchain_inputs.apple_linker_inputs(command, cancel),
+                    "go":{context:toolchain_inputs.go_toolchain_inputs(
+                        lambda args:command(args, cwd=root if context == "outer" else sdk),
+                        items["go"], cancel) for context,items in tools.items()}}
         cache_inputs = {"schema": 1, "sdk_revision": VOTE_SDK_REV, "pir_revision": PIR_REV,
             "archives_sha256": {path.name: record[1] for path, record in archives.items()},
             "tool_versions": versions,
             "tools": {context: {name: {"path": str(path), "sha256": tool_records[path][1]}
                        for name, path in items.items()} for context, items in tools.items()},
             "producer_sha256": tool_records[producer][1], "platform": sys.platform,
+            "collector_sha256":tool_records[collector][1], "compiler_inputs":compiler_inputs(),
             "configuration_sha256": configuration_hashes(),
             "environment_sha256": {name: hashlib.sha256(value.encode()).hexdigest()
                 for name, value in sorted(environment.items())
                 if name not in {"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS", "CGO_LDFLAGS", "GOMAXPROCS"}}}
         def verify_inputs():
+            original = cache_inputs["compiler_inputs"]
+            unchanged = (compiler_inputs() == original if case.accepting_launches
+                else toolchain_inputs.apple_inputs_unchanged(original["apple_linker"], cancel)
+                and all(toolchain_inputs.go_inputs_unchanged(value, cancel)
+                        for value in original["go"].values()))
+            if not unchanged:
+                raise VotingBuildError("voting compiler/linker/SDK inputs changed during publication")
             if configuration_hashes() != cache_inputs["configuration_sha256"]:
                 raise VotingBuildError("voting build configuration changed during publication")
             for path, record in tool_records.items():

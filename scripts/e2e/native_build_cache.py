@@ -19,6 +19,7 @@ from funder_cache import FunderCacheLease, FunderCacheError, _json, _read, _rena
 from funder_build import _file_record, _MAX_BINARY_BYTES
 from native_case_lifecycle import NativeCaseLifecycle
 import native_owned_tree as tree
+import toolchain_inputs
 from native_zakura_front import _capture
 
 
@@ -53,34 +54,8 @@ class NativeBuildCacheError(FunderCacheError):
 
 
 def _tool_input_record(path, *, executable=False, limit=_MAX_BINARY_BYTES):
-    """Read installed root/user-owned SDK inputs, never relax output ownership."""
-    if not path.is_absolute() or path.resolve(strict=True) != path:
-        raise NativeBuildCacheError("native tool input must be canonical")
-    with contextlib.ExitStack() as stack:
-        parent = os.open(path.parent, os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
-        stack.callback(os.close, parent)
-        parent_info = os.fstat(parent)
-        if parent_info.st_uid not in {0, os.getuid()} or parent_info.st_mode & 0o002:
-            raise NativeBuildCacheError("native tool input parent is not protected: "+str(path.parent))
-        descriptor = os.open(path.name, os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK, dir_fd=parent)
-        stack.callback(os.close, descriptor)
-        before = os.fstat(descriptor)
-        if (not stat.S_ISREG(before.st_mode) or before.st_uid not in {0, os.getuid()}
-            or before.st_mode & 0o002 or before.st_nlink < 1 or before.st_size > limit
-            or (executable and not before.st_mode & stat.S_IXUSR)):
-            raise NativeBuildCacheError("native tool input is not a protected bounded file: "+str(path))
-        digest, size = hashlib.sha256(), 0
-        with os.fdopen(os.dup(descriptor), "rb") as source:
-            for chunk in iter(lambda:source.read(1024*1024), b""):
-                size += len(chunk)
-                if size > limit:
-                    raise NativeBuildCacheError("native tool input grew beyond its bound")
-                digest.update(chunk)
-        if (tree.identity(os.fstat(descriptor)) != tree.identity(before)
-            or tree.identity(path.lstat()) != tree.identity(before)
-            or tree.identity(path.parent.lstat()) != tree.identity(parent_info)):
-            raise NativeBuildCacheError("native tool input changed during inspection")
-        return tree.identity(before), digest.hexdigest()
+    return toolchain_inputs.file_record(path, executable=executable, limit=limit,
+                                       error_type=NativeBuildCacheError)
 
 
 def _original_bundle_file(path):
@@ -182,38 +157,9 @@ def _copy_bundle(source, destination, *, seal=False):
 
 def _package_digest(root, cancel, *, capture=_capture, ignore_generated=True,
                     max_bytes=1024*1024*1024, linked_files=frozenset(), linked_roots=frozenset()):
-    """Dependency source contents, not only lock versions or package-cache paths."""
-    ignored = {".git", ".dart_tool", "build", "target", ".regtest-logs", "__pycache__"}
-    digest, count, total = hashlib.sha256(), 0, 0
-    for directory, children, files in os.walk(root, followlinks=False):
-        children[:] = sorted(children)
-        if ignore_generated and Path(directory) == root:
-            children[:] = [name for name in children if name not in ignored]
-        for name in sorted((*children, *files)):
-            if cancel.is_set():
-                from e2e_runtime import Cancelled
-                raise Cancelled()
-            path = Path(directory)/name
-            relative = path.relative_to(root).as_posix()
-            info = path.lstat()
-            if stat.S_ISLNK(info.st_mode):
-                target = os.readlink(path)
-                resolved = path.resolve(strict=True)
-                if Path(target).is_absolute() or (not resolved.is_relative_to(root)
-                    and resolved not in linked_files
-                    and not any(resolved.is_relative_to(other) for other in linked_roots)):
-                    raise NativeBuildCacheError("package source link escapes its package: "+str(path)+" -> "+target)
-                value = [relative, "link", target]
-            elif stat.S_ISDIR(info.st_mode):
-                value = [relative, "directory"]
-            else:
-                value = [relative, "file", capture(path)[1], bool(info.st_mode & stat.S_IXUSR)]
-                total += info.st_size
-            count += 1
-            if count > 100_000 or total > max_bytes:
-                raise NativeBuildCacheError("package source exceeds its bound: "+str(root))
-            digest.update(_json(value)+b"\n")
-    return digest.hexdigest()
+    return toolchain_inputs.tree_digest(root, cancel, capture=capture,
+        ignore_generated=ignore_generated, max_bytes=max_bytes, linked_files=linked_files,
+        linked_roots=linked_roots, error_type=NativeBuildCacheError)
 
 
 def _pod_lock(path):
@@ -439,6 +385,7 @@ def collect_native_cache_inputs(root, source, tool, *, platform, architecture,
         "package_config":packages, "pod_lock_sha256":_pod_lock(root/platform/"Podfile.lock"),
         "flutter":flutter, "flutter_sdk":_flutter_sdk_inputs(tool, platform, cancel),
         "apple_toolchain":_native_apple_inputs(command, platform, cancel),
+        "collector_sha256":_capture(Path(toolchain_inputs.__file__).resolve(strict=True))[1],
         "xcode":list(command(["/usr/bin/xcodebuild", "-version"])),
         "sdk":list(command(["/usr/bin/xcrun", "--sdk", sdk, "--show-sdk-build-version"])),
         "rust_toolchains":rust,

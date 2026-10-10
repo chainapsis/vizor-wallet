@@ -63,6 +63,16 @@ class FunderBuildTests(unittest.TestCase):
         self.hard_link_output = False
         self.test_candidate_mode = "original"
         self.address_candidate_mode = "original"
+        self.apple_tools = {name:self.root/"native-toolchain/usr/bin"/name
+                            for name in ("clang", "ld", "cc")}
+        for path in self.apple_tools.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("modeled native tool")
+            path.chmod(0o700)
+        self.apple_trees = (self.root/"native-toolchain/usr/lib", self.root/"native-sdk")
+        for path in self.apple_trees:
+            path.mkdir(parents=True)
+            (path/"artifact").write_text("modeled SDK/library")
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.source), *args], check=True,
@@ -85,6 +95,11 @@ class FunderBuildTests(unittest.TestCase):
         case = case or self.case()
         original = case.run_command
         def command(arguments, **options):
+            if arguments[:2] == ["/usr/bin/which", "cc"]:
+                return original([sys.executable, "-c", f"print({str(self.apple_tools['cc'])!r})"], **options)
+            if arguments[:3] == ["/usr/bin/xcrun", "--sdk", "macosx"]:
+                path = self.apple_trees[-1] if "--show-sdk-path" in arguments else self.apple_tools[arguments[-1]]
+                return original([sys.executable, "-c", f"print({str(path)!r})"], **options)
             if self.rustup is not None and arguments == [str(self.rustup), "which", "rustc"]:
                 return original([sys.executable, "-B", "-c", f"print({str(self.compiler)!r})"], **options)
             if self.rustup is not None and arguments == [str(self.rustup), "which", "cargo"]:
@@ -179,6 +194,31 @@ class FunderBuildTests(unittest.TestCase):
         evidence = artifact.identity()
         evidence["rust_blobs"].clear()
         self.assertEqual(len(artifact.identity()["rust_blobs"]), 3)
+
+    @unittest.skipUnless(sys.platform == "darwin", "Apple linker inputs are macOS-only")
+    def test_linker_and_sdk_bytes_invalidate_cached_funder_with_same_rust(self):
+        cache = self.root/"funder-cache"
+        artifacts = (*self.apple_tools.values(), *(path/"artifact" for path in self.apple_trees))
+        for path in artifacts:
+            with self.subTest(input=path):
+                first = self.build(cache_root=cache).identity()
+                path.write_text("patched native compiler input")
+                second = self.build(cache_root=cache).identity()
+                self.assertEqual(first["rustc"], second["rustc"])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "Apple linker inputs are macOS-only")
+    def test_linker_mutation_while_sealing_rejects_publication_without_launch(self):
+        case = self.case()
+        close = case.close
+        def seal():
+            receipt = close()
+            self.apple_tools["ld"].write_text("changed linker after join")
+            return receipt
+        with patch.object(case, "close", side_effect=seal), self.assertRaisesRegex(
+                BUILD.FunderBuildError, "Apple linker/SDK inputs changed"):
+            self.build(case, cache_root=self.root/"funder-cache")
+        self.assertFalse(case.accepting_launches)
 
     def add_test_sources(self, names=("regtest_receive_sync", "regtest_send")):
         for name in names:

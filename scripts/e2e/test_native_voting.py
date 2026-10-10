@@ -40,6 +40,13 @@ class VotingBuildTests(unittest.TestCase):
             tool.write_text("modeled " + name + " tool\n")
             tool.chmod(0o700)
             self.tools[name] = tool
+        self.go_root = self.model.root/"go-sdk"
+        for name in ("src", "pkg/tool", "lib", "bin"):
+            path = self.go_root/name
+            path.mkdir(parents=True, exist_ok=True)
+            (path/"artifact").write_text("modeled Go compiler/library")
+        (self.go_root/"bin/go").write_text("modeled selected Go driver")
+        (self.go_root/"bin/go").chmod(0o700)
 
     def build(self, **options):
         if not self.case.accepting_launches:
@@ -52,6 +59,14 @@ class VotingBuildTests(unittest.TestCase):
             actual = arguments[4:] if arguments[0] == sys.executable else arguments
             name = Path(actual[0]).name.removeprefix("selected-")
             target = Path(kwargs["env"]["CARGO_TARGET_DIR"])
+            if name == "go" and actual[1:] == ["env", "-json", "GOROOT", "GOTOOLDIR"]:
+                data = json.dumps({"GOROOT":str(self.go_root), "GOTOOLDIR":str(self.go_root/"pkg/tool")})
+                return original([sys.executable, "-c", f"print({data!r})"], **kwargs)
+            if actual[:2] == ["/usr/bin/which", "cc"]:
+                return original([sys.executable, "-c", f"print({str(self.model.apple_tools['cc'])!r})"], **kwargs)
+            if actual[:3] == ["/usr/bin/xcrun", "--sdk", "macosx"]:
+                path = self.model.apple_trees[-1] if "--show-sdk-path" in actual else self.model.apple_tools[actual[-1]]
+                return original([sys.executable, "-c", f"print({str(path)!r})"], **kwargs)
             if name == "go" and actual[1:] == ["env", "GOENV"]:
                 return original([sys.executable, "-c", f"print({str(self.go_configuration)!r})"], **kwargs)
             if name == "xcrun" and actual[1:] == ["--find", "make"]:
@@ -182,6 +197,28 @@ class VotingBuildTests(unittest.TestCase):
         self.assertNotEqual(first["cache_key"], second["cache_key"])
         self.assertNotIn("secret configuration", json.dumps(second["cache_inputs"]))
         self.assertEqual(self.make_calls, 2)
+
+    def test_go_compiler_and_sdk_bytes_invalidate_with_unchanged_driver_version(self):
+        for name in ("src/artifact", "pkg/tool/artifact", "lib/artifact", "bin/go"):
+            with self.subTest(input=name):
+                _, first = self.build()
+                (self.go_root/name).write_text("patched Go SDK input")
+                _, second = self.build()
+                self.assertEqual(first["cache_inputs"]["tool_versions"],
+                                 second["cache_inputs"]["tool_versions"])
+                self.assertEqual(first["cache_inputs"]["tools"], second["cache_inputs"]["tools"])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    def test_go_mutation_while_sealing_rejects_publication_without_launch(self):
+        close = self.case.close
+        def seal():
+            receipt = close()
+            (self.go_root/"pkg/tool/artifact").write_text("changed Go compiler after join")
+            return receipt
+        with patch.object(self.case, "close", side_effect=seal), self.assertRaisesRegex(
+                BUILD.VotingBuildError, "compiler/linker/SDK inputs changed"):
+            self.build()
+        self.assertFalse(self.case.accepting_launches)
 
     def test_corrupt_cache_fails_without_rebuild_or_overwrite(self):
         _, proof = self.build()

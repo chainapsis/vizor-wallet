@@ -20,6 +20,7 @@ import threading
 import e2e_runtime as runtime
 from native_case_lifecycle import NativeCaseLifecycle
 import native_owned_tree as tree
+import toolchain_inputs
 
 
 _TOKEN = object()
@@ -353,6 +354,12 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 raise FunderBuildError("Cargo configuration changed during publication")
             if any(_file_record(path) != record for path, record in input_records.items()):
                 raise FunderBuildError("cache compiler/configuration/producer input changed")
+            unchanged = (toolchain_inputs.apple_linker_inputs(
+                lambda args:command(args, env=build_env), cancellation) == cache_inputs["apple_linker"]
+                if case.accepting_launches else toolchain_inputs.apple_inputs_unchanged(
+                    cache_inputs["apple_linker"], cancellation))
+            if not unchanged:
+                raise FunderBuildError("Apple linker/SDK inputs changed during publication")
         if cache_root is not None:
             from funder_cache import FunderCacheLease
             cargo_entry = shutil.which("cargo", path=build_env.get("PATH"))
@@ -378,13 +385,17 @@ def build_regtest_funder(case: NativeCaseLifecycle, *, source_root: Path,
                 if path.exists() or path.is_symlink():
                     input_records[path] = _file_record(path, limit=1024*1024)
                     configurations[str(path)] = input_records[path][1]
-            for path in (compiler, cargo_tool, Path(__file__).resolve(strict=True)):
+            collector = Path(toolchain_inputs.__file__).resolve(strict=True)
+            for path in (compiler, cargo_tool, Path(__file__).resolve(strict=True), collector):
                 input_records[path] = _file_record(path)
             cache_inputs = {"schema": 1, "rust_blobs": {name: list(value) for name, value in sorted(expected.items())},
                 "rustc": list(rustc), "rustc_sha256": _file_record(compiler)[1], "cargo": list(cargo),
                 "cargo_sha256": _file_record(cargo_tool)[1],
                 "host_target": host, "test_targets": sorted(test_targets), "wallet_addresses": wallet_addresses,
                 "producer_sha256": _file_record(Path(__file__).resolve(strict=True))[1],
+                "collector_sha256": input_records[collector][1],
+                "apple_linker": toolchain_inputs.apple_linker_inputs(
+                    lambda args:command(args, env=build_env), cancellation),
                 "configuration_sha256": configurations,
                 "environment_sha256": {name: hashlib.sha256(value.encode()).hexdigest()
                     for name, value in sorted(build_env.items()) if name not in {"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS"}}}
