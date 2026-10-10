@@ -22,7 +22,7 @@ class BuildTests(unittest.TestCase):
         self.source = self.root/"source"
         self.source.mkdir(mode=0o700)
         for name in ("macos/Runner.xcodeproj/project.pbxproj", "lib/app.dart",
-                     ".dart_tool/package_config.json", "bin/flutter"):
+                     "test/support/legacy_payment_link.dart", ".dart_tool/package_config.json", "bin/flutter"):
             path = self.source/name
             path.parent.mkdir(parents=True,exist_ok=True)
             path.write_text("model source")
@@ -46,7 +46,9 @@ class BuildTests(unittest.TestCase):
         if actual[:3] == ["rustup", "target", "add"]:
             self.installed_targets.add(actual[-1])
         if "ls-files" in arguments:
-            return runtime.CommandResult(0,("lib/app.dart\0macos/Runner.xcodeproj/project.pbxproj\0",))
+            requested = arguments[arguments.index("--")+1:]
+            files = ("lib/app.dart", "macos/Runner.xcodeproj/project.pbxproj", "test/support/legacy_payment_link.dart")
+            return runtime.CommandResult(0,("\0".join(name for name in files if name.split("/")[0] in requested)+"\0",))
         if "--target" in arguments:
             self.native_arguments = arguments
             # Reproduce the SDK's same-content metadata rewrite.
@@ -56,6 +58,8 @@ class BuildTests(unittest.TestCase):
                 self.project.write_text("changed project")
             elif self.mode == "changed-wallet-source":
                 (self.source/"lib/app.dart").write_text("changed wallet")
+            elif self.mode == "changed-test-support":
+                (self.source/"test/support/legacy_payment_link.dart").write_text("changed imported test support")
             if "--config-only" in arguments:
                 (self.source/"macos/Pods").mkdir(exist_ok=True)
             else:
@@ -89,6 +93,21 @@ class BuildTests(unittest.TestCase):
         with patch.object(BUILD.cache, "collect_native_cache_inputs", side_effect=inputs):
             with self.assertRaisesRegex(RuntimeError, "cache lookup boundary"):
                 self.build(cache_root=self.root/"cache")
+
+    def test_imported_test_support_is_in_cache_input_inventory(self):
+        def inputs(root, source, *args, **kwargs):
+            self.assertIn(self.source/"test/support/legacy_payment_link.dart", source)
+            raise RuntimeError("cache lookup boundary")
+        with patch.object(BUILD.cache,"collect_native_cache_inputs",side_effect=inputs):
+            with self.assertRaisesRegex(RuntimeError,"cache lookup boundary"):
+                self.build(cache_root=self.root/"cache")
+
+    def test_preparation_test_support_changes_are_rejected_before_cache_lookup(self):
+        self.mode = "changed-test-support"
+        with patch.object(BUILD.cache,"collect_native_cache_inputs") as inputs:
+            with self.assertRaisesRegex(BUILD.NativeMacosBuildError,"legacy_payment_link.dart"):
+                self.build(cache_root=self.root/"cache")
+            inputs.assert_not_called()
 
     def test_preparation_source_changes_are_rejected_before_cache_lookup(self):
         self.mode = "changed-wallet-source"

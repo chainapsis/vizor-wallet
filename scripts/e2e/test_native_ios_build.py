@@ -22,7 +22,7 @@ class BuildTests(unittest.TestCase):
         self.source = self.root/"source"
         self.source.mkdir(mode=0o700)
         for name in ("lib/app.dart", "ios/Runner.xcodeproj/project.pbxproj",
-                     ".dart_tool/package_config.json", "bin/flutter"):
+                     "test/support/legacy_payment_link.dart", ".dart_tool/package_config.json", "bin/flutter"):
             path = self.source/name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("model source")
@@ -32,6 +32,7 @@ class BuildTests(unittest.TestCase):
             worker_id=0, case_index=0, ports={"rpc":28232,"lwd":29067,"proxy":29068}, activation_height=1))
         self.commands = []
         self.change_source = False
+        self.change_test_support = False
         self.installed_targets = {"aarch64-apple-ios-sim"}
         self.installed_toolchains = {"stable"}
 
@@ -49,7 +50,9 @@ class BuildTests(unittest.TestCase):
         if actual[:3] == ["rustup", "target", "add"]:
             self.installed_targets.add(actual[-1])
         if "ls-files" in arguments:
-            return runtime.CommandResult(0,("lib/app.dart\0ios/Runner.xcodeproj/project.pbxproj\0",))
+            requested = arguments[arguments.index("--")+1:]
+            files = ("lib/app.dart", "ios/Runner.xcodeproj/project.pbxproj", "test/support/legacy_payment_link.dart")
+            return runtime.CommandResult(0,("\0".join(name for name in files if name.split("/")[0] in requested)+"\0",))
         if "--config-only" in arguments:
             (self.source/"ios/Pods").mkdir(exist_ok=True)
             project = self.source/"ios/Runner.xcodeproj/project.pbxproj"
@@ -57,6 +60,8 @@ class BuildTests(unittest.TestCase):
             os.utime(project, ns=(stamp,stamp))
             if self.change_source:
                 (self.source/"lib/app.dart").write_text("changed")
+            if self.change_test_support:
+                (self.source/"test/support/legacy_payment_link.dart").write_text("changed imported test support")
         return runtime.CommandResult(0,())
 
     def build(self, **options):
@@ -78,6 +83,21 @@ class BuildTests(unittest.TestCase):
         with patch.object(BUILD.cache, "collect_native_cache_inputs", side_effect=inputs):
             with self.assertRaisesRegex(RuntimeError, "cache lookup boundary"):
                 self.build(cache_root=self.root/"cache")
+
+    def test_imported_test_support_is_in_cache_input_inventory(self):
+        def inputs(root, source, *args, **kwargs):
+            self.assertIn(self.source/"test/support/legacy_payment_link.dart", source)
+            raise RuntimeError("cache lookup boundary")
+        with patch.object(BUILD.cache,"collect_native_cache_inputs",side_effect=inputs):
+            with self.assertRaisesRegex(RuntimeError,"cache lookup boundary"):
+                self.build(cache_root=self.root/"cache")
+
+    def test_preparation_test_support_changes_are_rejected_before_cache_lookup(self):
+        self.change_test_support = True
+        with patch.object(BUILD.cache,"collect_native_cache_inputs") as inputs:
+            with self.assertRaisesRegex(BUILD.NativeIosBuildError,"legacy_payment_link.dart"):
+                self.build(cache_root=self.root/"cache")
+            inputs.assert_not_called()
 
     def test_missing_simulator_rust_target_is_prepared_before_input_snapshot(self):
         self.installed_targets.clear()

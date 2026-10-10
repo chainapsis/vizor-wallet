@@ -68,7 +68,7 @@ def build_native_macos_cohort(case, *, source_root, flutter, timeout=1200.0, can
         # sources. This is checked-source continuity, not hermetic provenance.
         members = "".join(command(["/usr/bin/git", "-C", str(root), "ls-files",
             "--cached", "--others", "--exclude-standard", "-z", "--", "lib",
-            "integration_test", "rust", "rust_builder", "macos", "assets",
+            "integration_test", "test", "rust", "rust_builder", "macos", "assets",
             "scripts/e2e/native-cleanup", "third_party", "pubspec.yaml", "pubspec.lock", ".fvmrc"]))
         paths = [root / name for name in members.rstrip("\n\0").split("\0")
                  if name and name != "macos/Podfile.lock"]
