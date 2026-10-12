@@ -23,8 +23,8 @@ use rusqlite::{params, OptionalExtension};
 use zcash_client_backend::data_api::scanning::ScanRange;
 
 use super::{
-    elapsed, ensure_sync_meta_table, is_pending_scan_range, BATCH_SIZE_SANDBLASTING,
-    SANDBLASTING_END, SANDBLASTING_START,
+    elapsed, ensure_sync_meta_table, is_pending_scan_range, BATCH_BYTE_BUDGET,
+    BATCH_SIZE_FOREGROUND, MIN_BATCH_BLOCKS,
 };
 use crate::wallet::db::{
     open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, SYNC_DB_BUSY_TIMEOUT,
@@ -39,6 +39,13 @@ const WORK_PER_BLOCK: f64 = 0.37e-3;
 const WORK_PER_SAPLING_OUTPUT: f64 = 21e-6;
 const WORK_PER_ORCHARD_ACTION: f64 = 40e-6;
 const WORK_PER_BATCH: f64 = 0.25;
+
+// Compact-block bytes on the wire per output: field bytes plus protobuf
+// framing (Sapling: note commitment, ephemeral key and 52-byte ciphertext;
+// Orchard and Ironwood actions add the nullifier). Spends and transaction and
+// block headers add little where outputs dominate, and are left out.
+const COMPACT_SAPLING_OUTPUT_BYTES: f64 = 124.0;
+const COMPACT_ACTION_BYTES: f64 = 158.0;
 
 const SUBTREE_LEAVES: f64 = 65_536.0;
 const POOL_TABLES: [&str; 3] = [
@@ -132,9 +139,16 @@ impl OutputCurve {
 pub(super) struct WorkModel {
     /// Sapling, Orchard, Ironwood.
     curves: [OutputCurve; 3],
-    /// Batch size used to count planned batches. A fixed reference, so a
+    /// Block cap used to count planned batches. A fixed reference, so a
     /// foreground/background mode switch does not move the fraction.
     reference_batch_size: u32,
+    /// One past the last compiled checkpoint (0 without compiled data).
+    /// Batch sizes estimate bytes only below it, so they do not depend on
+    /// extrapolation or on subtrees newer than the build.
+    plan_end: u64,
+    /// Heights below `plan_end` where any curve changes slope, then
+    /// `plan_end`. Bytes per block are constant between neighbours.
+    plan_knots: Vec<u64>,
 }
 
 impl WorkModel {
@@ -142,39 +156,48 @@ impl WorkModel {
         db_data_path: &str,
         network: WalletNetwork,
         reference_batch_size: u32,
-    ) -> Self {
-        let mut points: [Vec<(u64, f64)>; 3] = Default::default();
-        for &(height, sizes) in mainnet_tree_sizes(network) {
-            for pool in 0..3 {
-                // A checkpoint holds the tree size at the end of its block.
-                points[pool].push((height + 1, sizes[pool] as f64));
+    ) -> Result<Self, String> {
+        let mut points = compiled_points(network);
+        let plan_end = compiled_end(&points);
+        for (pool, ends) in read_subtree_end_heights(db_data_path)?
+            .into_iter()
+            .enumerate()
+        {
+            for (index, end_height) in ends {
+                points[pool].push((end_height + 1, (index + 1) as f64 * SUBTREE_LEAVES));
             }
         }
-        match read_subtree_end_heights(db_data_path) {
-            Ok(subtrees) => {
-                for (pool, ends) in subtrees.into_iter().enumerate() {
-                    for (index, end_height) in ends {
-                        points[pool].push((end_height + 1, (index + 1) as f64 * SUBTREE_LEAVES));
-                    }
-                }
-            }
-            Err(e) => log::warn!(
-                "[{}] sync: subtree heights unavailable for progress estimate: {e}",
-                elapsed(),
-            ),
-        }
-        Self::from_points(points, reference_batch_size)
+        Ok(Self::from_points(points, reference_batch_size, plan_end))
     }
 
-    fn from_points(points: [Vec<(u64, f64)>; 3], reference_batch_size: u32) -> Self {
+    /// A model from the compiled tree sizes alone, for estimates made before
+    /// a wallet DB exists.
+    pub(super) fn compiled(network: WalletNetwork) -> Self {
+        let points = compiled_points(network);
+        let plan_end = compiled_end(&points);
+        Self::from_points(points, BATCH_SIZE_FOREGROUND, plan_end)
+    }
+
+    fn from_points(points: [Vec<(u64, f64)>; 3], reference_batch_size: u32, plan_end: u64) -> Self {
         let [sapling, orchard, ironwood] = points;
+        let curves = [
+            OutputCurve::from_points(sapling),
+            OutputCurve::from_points(orchard),
+            OutputCurve::from_points(ironwood),
+        ];
+        let mut plan_knots: Vec<u64> = curves
+            .iter()
+            .flat_map(|curve| curve.points.iter().map(|&(height, _)| height))
+            .filter(|&height| height < plan_end)
+            .chain(std::iter::once(plan_end))
+            .collect();
+        plan_knots.sort_unstable();
+        plan_knots.dedup();
         Self {
-            curves: [
-                OutputCurve::from_points(sapling),
-                OutputCurve::from_points(orchard),
-                OutputCurve::from_points(ironwood),
-            ],
+            curves,
             reference_batch_size: reference_batch_size.max(1),
+            plan_end,
+            plan_knots,
         }
     }
 
@@ -198,15 +221,73 @@ impl WorkModel {
             + WORK_PER_BATCH * self.planned_batches(start, end)
     }
 
-    /// Batches the engine plans for `[start, end)`, counted fractionally so
-    /// the count of a range equals the sum over any split of it.
+    /// Estimated compact-block bytes to download for blocks `[start, end)`.
+    pub(super) fn download_bytes(&self, start: u64, end: u64) -> f64 {
+        let sapling = self.curves[0].between(start, end);
+        let actions = self.curves[1].between(start, end) + self.curves[2].between(start, end);
+        COMPACT_SAPLING_OUTPUT_BYTES * sapling + COMPACT_ACTION_BYTES * actions
+    }
+
+    /// Compact-block bytes that size batches for `[start, end)`: the
+    /// download estimate below `plan_end`, zero past it.
+    pub(super) fn plan_bytes(&self, start: u64, end: u64) -> f64 {
+        self.download_bytes(start.min(self.plan_end), end.min(self.plan_end))
+    }
+
+    /// Blocks in the batch starting at `start`: as many as fit
+    /// [`BATCH_BYTE_BUDGET`], at most `max_blocks` and at least
+    /// [`MIN_BATCH_BLOCKS`] (or `max_blocks` when smaller).
+    pub(super) fn batch_blocks(&self, start: u64, max_blocks: u32) -> u32 {
+        let max = max_blocks.max(1);
+        let min = MIN_BATCH_BLOCKS.min(max);
+        let fits =
+            |blocks: u32| self.plan_bytes(start, start + u64::from(blocks)) <= BATCH_BYTE_BUDGET;
+        if fits(max) {
+            return max;
+        }
+        if !fits(min) {
+            return min;
+        }
+        // Bytes grow with the block count: `lo` fits and `hi` does not.
+        let (mut lo, mut hi) = (min, max);
+        while hi - lo > 1 {
+            let mid = lo + (hi - lo) / 2;
+            if fits(mid) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        lo
+    }
+
+    /// Batches the engine plans for `[start, end)` at the reference cap,
+    /// counted fractionally so the count of a range equals the sum over any
+    /// split of it. Between neighbouring knots bytes per block are constant,
+    /// so each piece holds the larger of its bytes over the budget and its
+    /// blocks over the cap, and at most its blocks over the minimum.
     fn planned_batches(&self, start: u64, end: u64) -> f64 {
-        let sand_start = u64::from(SANDBLASTING_START);
-        let sand_end = u64::from(SANDBLASTING_END);
-        let sand_blocks = end.min(sand_end).saturating_sub(start.max(sand_start));
-        let other_blocks = (end - start) - sand_blocks;
-        sand_blocks as f64 / f64::from(BATCH_SIZE_SANDBLASTING)
-            + other_blocks as f64 / f64::from(self.reference_batch_size)
+        if end <= start {
+            return 0.0;
+        }
+        let cap = f64::from(self.reference_batch_size);
+        let min = f64::from(MIN_BATCH_BLOCKS.min(self.reference_batch_size));
+        let first = self.plan_knots.partition_point(|&knot| knot <= start);
+        let cuts = self.plan_knots[first..]
+            .iter()
+            .copied()
+            .take_while(|&knot| knot < end)
+            .chain(std::iter::once(end));
+        let mut from = start;
+        let mut batches = 0.0;
+        for to in cuts {
+            let blocks = (to - from) as f64;
+            batches += (self.plan_bytes(from, to) / BATCH_BYTE_BUDGET)
+                .max(blocks / cap)
+                .min(blocks / min);
+            from = to;
+        }
+        batches
     }
 
     /// Estimated work left in the pending ranges, up to the chain tip.
@@ -222,6 +303,23 @@ impl WorkModel {
             })
             .sum()
     }
+}
+
+/// One past the last compiled checkpoint, or 0 without one.
+fn compiled_end(points: &[Vec<(u64, f64)>; 3]) -> u64 {
+    points[0].last().map_or(0, |&(height, _)| height)
+}
+
+/// Output-count points from the compiled mainnet tree sizes (none elsewhere).
+fn compiled_points(network: WalletNetwork) -> [Vec<(u64, f64)>; 3] {
+    let mut points: [Vec<(u64, f64)>; 3] = Default::default();
+    for &(height, sizes) in mainnet_tree_sizes(network) {
+        for pool in 0..3 {
+            // A checkpoint holds the tree size at the end of its block.
+            points[pool].push((height + 1, sizes[pool] as f64));
+        }
+    }
+    points
 }
 
 fn read_subtree_end_heights(db_data_path: &str) -> Result<[Vec<(u64, u64)>; 3], String> {
@@ -615,7 +713,19 @@ mod tests {
     }
 
     fn model_without_outputs(reference_batch_size: u32) -> WorkModel {
-        WorkModel::from_points(Default::default(), reference_batch_size)
+        WorkModel::from_points(Default::default(), reference_batch_size, 0)
+    }
+
+    /// Batch starts and sizes the engine plans over `[start, end)`.
+    fn plan(model: &WorkModel, start: u64, end: u64, cap: u32) -> Vec<(u64, u32)> {
+        let mut batches = Vec::new();
+        let mut next = start;
+        while next < end {
+            let blocks = model.batch_blocks(next, cap);
+            batches.push((next, blocks));
+            next += u64::from(blocks);
+        }
+        batches
     }
 
     fn new_job(pending: f64) -> JobProgress {
@@ -690,7 +800,12 @@ mod tests {
                 points[pool].push((height + 1, s[pool] as f64));
             }
         }
-        let model = WorkModel::from_points(points, 2_000);
+        let plan_end = sizes.last().unwrap().0 + 1;
+        let model = WorkModel::from_points(points, 2_000, plan_end);
+        assert_eq!(
+            model.plan_end,
+            WorkModel::compiled(WalletNetwork::Main).plan_end
+        );
         let (height, s) = sizes[200];
         assert_eq!(model.curves[0].below(height + 1), s[0] as f64);
         assert_eq!(model.curves[1].below(height + 1), s[1] as f64);
@@ -707,6 +822,7 @@ mod tests {
         let model = WorkModel::from_points(
             [vec![(1_001, 65_536.0), (2_001, 131_072.0)], vec![], vec![]],
             2_000,
+            0,
         );
         assert_eq!(model.curves[0].below(2_001), 131_072.0);
         assert_eq!(model.curves[0].between(1_001, 2_001), 65_536.0);
@@ -728,7 +844,7 @@ mod tests {
         .unwrap();
 
         // Off mainnet there are no compiled sizes, so only subtrees count.
-        let model = WorkModel::load(&path, WalletNetwork::Test, 2_000);
+        let model = WorkModel::load(&path, WalletNetwork::Test, 2_000).unwrap();
         // Subtree i holds leaves up to (i + 1) * 2^16 once its end block is in.
         assert_eq!(
             model.curves[0].points,
@@ -736,19 +852,98 @@ mod tests {
         );
         assert_eq!(model.curves[1].points, vec![(5_001, 65_536.0)]);
         assert!(model.curves[2].points.is_empty());
+        // Without compiled data the subtrees do not size batches.
+        assert_eq!(model.plan_end, 0);
+        assert_eq!(model.plan_bytes(1_001, 5_001), 0.0);
+        assert_eq!(model.batch_blocks(1_001, 1_000), 1_000);
     }
 
     #[test]
-    fn planned_batches_follow_the_sandblasting_window() {
+    fn planned_batches_follow_the_byte_budget() {
+        // Without compiled data every batch is the cap.
         let model = model_without_outputs(2_000);
-        // The full-sync historic range: 646 + 3,400 + 670 batches.
-        let pre = model.planned_batches(419_200, 1_710_000);
-        let sand = model.planned_batches(1_710_000, 2_050_000);
-        let post = model.planned_batches(2_050_000, 3_390_000);
-        assert!((pre - 645.4).abs() < 1e-9);
-        assert!((sand - 3_400.0).abs() < 1e-9);
-        assert!((post - 670.0).abs() < 1e-9);
-        assert!((model.planned_batches(419_200, 3_390_000) - (pre + sand + post)).abs() < 1e-6);
+        assert!((model.planned_batches(419_200, 3_390_000) - 2_970_800.0 / 2_000.0).abs() < 1e-9);
+
+        // Sapling outputs worth one budget per 100 blocks over 1,000,000..
+        // 1,100,000, then one budget per 2 blocks over 1,100,000..1,101,000.
+        let per_budget = BATCH_BYTE_BUDGET / COMPACT_SAPLING_OUTPUT_BYTES;
+        let dense = 1_000.0 * per_budget;
+        let model = WorkModel::from_points(
+            [
+                vec![
+                    (1_000_000, 0.0),
+                    (1_100_000, dense),
+                    (1_101_000, dense + 500.0 * per_budget),
+                ],
+                vec![],
+                vec![],
+            ],
+            2_000,
+            u64::MAX,
+        );
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9 * b.max(1.0);
+        // Sparse blocks: one batch per cap.
+        assert!(close(model.planned_batches(0, 1_000_000), 500.0));
+        // Dense blocks: one batch per budget.
+        assert!(close(model.planned_batches(1_000_000, 1_100_000), 1_000.0));
+        // Denser still: one batch per `MIN_BATCH_BLOCKS`.
+        let min = f64::from(MIN_BATCH_BLOCKS);
+        assert!(close(
+            model.planned_batches(1_100_000, 1_101_000),
+            1_000.0 / min
+        ));
+        assert!(close(
+            model.planned_batches(0, 1_101_000),
+            500.0 + 1_000.0 + 1_000.0 / min,
+        ));
+        // The planner agrees, down to the minimum.
+        assert_eq!(plan(&model, 1_000_000, 1_100_000, 2_000).len(), 1_000);
+        let floor = plan(&model, 1_100_000, 1_101_000, 2_000);
+        assert!(floor.iter().all(|&(_, blocks)| blocks == MIN_BATCH_BLOCKS));
+        assert_eq!(floor.len(), 1_000 / MIN_BATCH_BLOCKS as usize);
+    }
+
+    #[test]
+    fn batches_shrink_in_a_subtree_burst() {
+        // A compiled-like step whose outputs average half a budget per cap
+        // batch, all of them inside a 1,000-block burst.
+        let cap = 1_000;
+        let outputs = 5.0 * BATCH_BYTE_BUDGET / COMPACT_SAPLING_OUTPUT_BYTES;
+        let sparse = vec![(100_001, 0.0), (110_001, outputs)];
+        let compiled = WorkModel::from_points([sparse.clone(), vec![], vec![]], cap, 110_001);
+        assert!(plan(&compiled, 100_001, 110_001, cap)
+            .iter()
+            .all(|&(_, blocks)| blocks == cap));
+
+        let mut knotted = sparse;
+        knotted.extend([(104_001, 0.0), (105_001, outputs)]);
+        let model = WorkModel::from_points([knotted, vec![], vec![]], cap, 110_001);
+        let batches = plan(&model, 100_001, 110_001, cap);
+        assert!(batches.iter().any(|&(_, blocks)| blocks < cap / 4));
+        for (start, blocks) in batches {
+            let bytes = model.plan_bytes(start, start + u64::from(blocks));
+            assert!(bytes <= BATCH_BYTE_BUDGET || blocks == MIN_BATCH_BLOCKS);
+        }
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn planner_and_progress_count_the_same_batches() {
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let range_end = BlockHeight::from_u32(u32::try_from(main.plan_end).unwrap());
+        let mut next = BlockHeight::from_u32(419_200);
+        let mut planned = 0u32;
+        while let Some((_, end)) =
+            super::super::planned_batch_end(&main, BATCH_SIZE_FOREGROUND, next, range_end)
+        {
+            planned += 1;
+            next = end;
+        }
+        let counted = main.planned_batches(419_200, main.plan_end);
+        assert!(
+            (f64::from(planned) - counted).abs() <= 1.0 + 0.005 * counted,
+            "planner {planned} vs progress {counted}",
+        );
     }
 
     #[test]
@@ -760,6 +955,7 @@ mod tests {
                 vec![],
             ],
             2_000,
+            u64::MAX,
         );
         let whole = model.range_work(1_600_000, 2_100_000);
         let split = model.range_work(1_600_000, 1_722_700)
