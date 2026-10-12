@@ -500,11 +500,11 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 1. tonic gRPC → lightwalletd (TLS via `tls-ring`)
 2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
 3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O),
-   two batches ahead of the scan (`PREFETCH_DEPTH`), planned with the same byte
-   budget as the scan, so up to three batches' worth of compact blocks are held
-   at once; a tip batch that cuts in between history batches keeps the queued
-   ones, and a Verify range a new tip puts at the scan frontier is scanned
-   together with the queued batch it falls in
+   four batches ahead of the scan (`PREFETCH_DEPTH`), each on its own request
+   and planned with the same byte budget as the scan, so up to five batches'
+   worth of compact blocks are held at once; a tip batch that cuts in between
+   history batches keeps the queued ones, and a Verify range a new tip puts at
+   the scan frontier is scanned together with the queued batch it falls in
 4. `scan_cached_blocks` from memory. A batch takes as many blocks as fit a
    compact-block byte budget (about 31 MB on desktop, 11 MB on mobile), up to
    2,000 blocks on desktop, 1,000 on mobile and 300 in background mode. Bytes

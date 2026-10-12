@@ -200,15 +200,14 @@ const BATCH_SIZE_FOREGROUND: u32 = 2000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
-/// Scan batches downloading ahead of the one being scanned. A download is
-/// usually the bottleneck, and each request waits before its first block, so
-/// a second one in flight keeps the link busy through that wait. Small
-/// batches gain the most: on a 10,000-block spam-window slice in 100-block
-/// batches, batches waiting for blocks fell from about 90 to 40 of 100 and
-/// the slice took 15% less time, for about 20 MB more peak memory. Batches
-/// now follow a byte budget, so memory holds up to `1 + PREFETCH_DEPTH`
-/// budgets.
-const PREFETCH_DEPTH: usize = 2;
+/// Scan batches downloading ahead of the one being scanned, each on its own
+/// request. A download is usually the bottleneck, and each request waits
+/// before its first block, so more requests in flight keep the link busy
+/// through those waits. On spam-window slices, four instead of two raised
+/// throughput by about 40% with the mobile byte budget (7.1 to 9.7-10.3 MB/s)
+/// and by 7-21% with the desktop one, for 15-50 MB more peak memory. Memory
+/// holds up to `1 + PREFETCH_DEPTH` byte budgets of compact blocks.
+const PREFETCH_DEPTH: usize = 4;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
@@ -3631,8 +3630,8 @@ async fn run_sync_impl(
     // runtime on every platform (`bounded_runtime`), so the downloads overlap
     // the scan; migration preparation's current-thread runtime overlaps only
     // later async stages. The Android SDK pipelines one batch (`.buffer(1)`,
-    // `CompactBlockProcessor.kt:1666`); the Swift SDK downloads two batches
-    // past the one being scanned (`DownloadAction`), as here.
+    // `CompactBlockProcessor.kt:1666`) and the Swift SDK two
+    // (`DownloadAction`); this downloads four.
     //
     // Empty on the first iteration, after a rewind, and once the last
     // batch of a range is consumed (there's nothing to prefetch until
