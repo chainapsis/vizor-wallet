@@ -207,7 +207,9 @@ const BATCH_SIZE_BACKGROUND: u32 = 300;
 /// a second one in flight keeps the link busy through that wait. Small
 /// batches gain the most: on a 10,000-block spam-window slice in 100-block
 /// batches, batches waiting for blocks fell from about 90 to 40 of 100 and
-/// the slice took 15% less time, for about 20 MB more peak memory.
+/// the slice took 15% less time, for about 20 MB more peak memory. Batches
+/// now follow a byte budget, so memory holds up to `1 + PREFETCH_DEPTH`
+/// budgets.
 const PREFETCH_DEPTH: usize = 2;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
@@ -281,20 +283,28 @@ pub(crate) fn followup_updated_event(completed: (u64, u64)) -> SyncProgressEvent
     }
 }
 
-/// Sandblasting attack range (Zcash mainnet). Blocks in this range
-/// contain a very large number of outputs from a sustained spam
-/// attack, making `scan_cached_blocks` significantly more expensive
-/// per block. We reduce the batch size to `BATCH_SIZE_SANDBLASTING`
-/// while the next batch falls inside this window to avoid excessive
-/// memory pressure and potential timeouts. Batches are clamped at both
-/// boundaries so a long historical range does not inherit the reduced
-/// size before reaching the window or keep it after leaving the window.
-///
-/// Matches `zcash-android-wallet-sdk`'s `SANDBLASTING_RANGE` in
-/// `CompactBlockProcessor.kt:1171-1181`.
-const SANDBLASTING_START: u32 = 1_710_000;
-const SANDBLASTING_END: u32 = 2_050_000;
-const BATCH_SIZE_SANDBLASTING: u32 = 100;
+/// Estimated compact-block bytes per scan batch (`WorkModel::batch_blocks`).
+/// Up to `1 + PREFETCH_DEPTH` batches are in memory at once.
+const BATCH_BYTE_BUDGET: f64 = if cfg!(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux"
+)) {
+    DESKTOP_BATCH_BYTE_BUDGET
+} else {
+    MOBILE_BATCH_BYTE_BUDGET
+};
+/// The heaviest batch the block-count planner made on desktop: 2,000 blocks
+/// right after the spam window.
+const DESKTOP_BATCH_BYTE_BUDGET: f64 = 31_000_000.0;
+/// The heaviest 100-block spam-window batch by the compiled tree sizes
+/// (1,780,000..1,790,000 averages 113 KB a block). By the subtree heights
+/// those batches came to about 15 MB, which leaves room for the estimate's
+/// error between subtree heights.
+const MOBILE_BATCH_BYTE_BUDGET: f64 = 11_300_000.0;
+/// Fewest blocks per batch, against a broken estimate; real data never needs
+/// it.
+const MIN_BATCH_BLOCKS: u32 = 10;
 
 const MAX_WITNESS_REPAIR_PASSES_PER_RUN: u32 = 3;
 const WITNESS_CHECK_POLICY_VERSION: u32 = 1;
@@ -322,8 +332,11 @@ pub(crate) fn elapsed() -> String {
         .unwrap_or_default()
 }
 
+/// The batch starting at `start`: its planned block count (as many as fit
+/// `BATCH_BYTE_BUDGET`, at most `max_blocks`) and its end, cut at `range_end`.
 fn planned_batch_end(
-    base_batch_size: u32,
+    model: &WorkModel,
+    max_blocks: u32,
     start: BlockHeight,
     range_end: BlockHeight,
 ) -> Option<(u32, BlockHeight)> {
@@ -331,22 +344,8 @@ fn planned_batch_end(
         return None;
     }
 
-    let start_u32 = u32::from(start);
-    let (batch_size, phase_end) = if start_u32 < SANDBLASTING_START {
-        (
-            base_batch_size,
-            std::cmp::min(range_end, BlockHeight::from_u32(SANDBLASTING_START)),
-        )
-    } else if start_u32 < SANDBLASTING_END {
-        (
-            BATCH_SIZE_SANDBLASTING,
-            std::cmp::min(range_end, BlockHeight::from_u32(SANDBLASTING_END)),
-        )
-    } else {
-        (base_batch_size, range_end)
-    };
-
-    let end = std::cmp::min(start + batch_size, phase_end);
+    let batch_size = model.batch_blocks(u64::from(u32::from(start)), max_blocks);
+    let end = std::cmp::min(start + batch_size, range_end);
     Some((batch_size, end))
 }
 
@@ -356,7 +355,8 @@ fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
 }
 
 fn scannable_batch_end(
-    base_batch_size: u32,
+    model: &WorkModel,
+    max_blocks: u32,
     start: BlockHeight,
     range_end: BlockHeight,
     current_tip_height: u64,
@@ -366,13 +366,14 @@ fn scannable_batch_end(
         return None;
     }
 
-    planned_batch_end(base_batch_size, start, available_end)
+    planned_batch_end(model, max_blocks, start, available_end)
 }
 
 /// The next `count` batch ranges from `start`, contiguous, inside the range
 /// and below the tip.
 fn prefetch_ranges(
-    base_batch_size: u32,
+    model: &WorkModel,
+    max_blocks: u32,
     start: BlockHeight,
     range_end: BlockHeight,
     current_tip_height: u64,
@@ -382,7 +383,7 @@ fn prefetch_ranges(
     let mut next = start;
     while ranges.len() < count {
         let Some((_, end)) =
-            scannable_batch_end(base_batch_size, next, range_end, current_tip_height)
+            scannable_batch_end(model, max_blocks, next, range_end, current_tip_height)
         else {
             break;
         };
@@ -3023,6 +3024,9 @@ async fn run_payment_link_claim_sync_once(
 
     claim_roots::prepare_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
 
+    // Claim ranges start at a card's funding height, long after the spam
+    // window, so the compiled tree sizes are enough to size their batches.
+    let batch_model = WorkModel::compiled(network);
     let mut rewind_attempts = 0u32;
     loop {
         if should_exit() {
@@ -3107,9 +3111,13 @@ async fn run_payment_link_claim_sync_once(
 
         let start = range.block_range().start;
         let range_end = range.block_range().end;
-        let Some((_, end)) =
-            scannable_batch_end(BATCH_SIZE_FOREGROUND, start, range_end, current_tip_height)
-        else {
+        let Some((_, end)) = scannable_batch_end(
+            &batch_model,
+            BATCH_SIZE_FOREGROUND,
+            start,
+            range_end,
+            current_tip_height,
+        ) else {
             return Err(SyncError::continuity(
                 current_tip_height,
                 "payment-link pending scan range starts after the observed tip",
@@ -3558,9 +3566,13 @@ async fn run_sync_impl(
         .suggest_scan_ranges()
         .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
     let mut initial_total = pending_scan_blocks(&initial_ranges);
-    // Batches are counted at the platform's foreground size even in
-    // background mode, so a mode switch does not move the fraction.
-    let work_model = WorkModel::load(db_data_path, network, BATCH_SIZE_FOREGROUND);
+    // Batches are counted at the platform's foreground cap even in
+    // background mode, so a mode switch does not move the fraction. The model
+    // also sizes the batches, and without the subtree heights its 10,000-block
+    // averages miss where dense spam starts and stops, so a failed read ends
+    // the attempt like any other DB read.
+    let work_model = WorkModel::load(db_data_path, network, BATCH_SIZE_FOREGROUND)
+        .map_err(|e| SyncError::db(format!("subtree heights: {e}")))?;
     let (mut job, job_start) = JobProgress::start(
         stored_progress_job,
         work_model.pending_work(&initial_ranges, current_tip_height),
@@ -4091,16 +4103,17 @@ async fn run_sync_impl(
         let frontier_height = u32::from(start)
             .checked_sub(1)
             .ok_or_else(|| SyncError::other("scan range starts before a usable frontier"))?;
-        // Adaptive batch size: shrink to BATCH_SIZE_SANDBLASTING
-        // while the next batch is inside the known Zcash mainnet
-        // sandblasting attack window. These blocks contain an
-        // order of magnitude more outputs than normal blocks,
-        // making scan_cached_blocks much slower per block and
-        // using more memory. Matches the SDK's
-        // `SANDBLASTING_RANGE` check.
-        let Some((batch_size, end)) =
-            scannable_batch_end(base_batch_size, start, range_end, current_tip_height)
-        else {
+        // Batch size: as many blocks as fit `BATCH_BYTE_BUDGET` of
+        // estimated compact-block bytes (compiled tree sizes and subtree
+        // completion heights), up to `base_batch_size`, so dense
+        // spam-window blocks get short batches without naming their heights.
+        let Some((batch_size, end)) = scannable_batch_end(
+            &work_model,
+            base_batch_size,
+            start,
+            range_end,
+            current_tip_height,
+        ) else {
             if refresh_tip_for_queued_range(u32::from(start), &mut queued_tip_refreshed_for) {
                 log::info!(
                     "[{}] sync: pending range {} starts after current tip {}; refreshing the tip",
@@ -4197,6 +4210,7 @@ async fn run_sync_impl(
             .flatten()
         {
             let planned = prefetch_ranges(
+                &work_model,
                 base_batch_size,
                 next_start,
                 range_end,
@@ -4810,8 +4824,13 @@ async fn run_sync_impl(
         let next_display_range = next_pending_scan_range(&post_ranges, current_tip_height)
             .and_then(|r| {
                 let next_start = r.block_range().start;
-                planned_batch_end(base_batch_size, next_start, r.block_range().end)
-                    .map(|(_, next_end)| (next_start, next_end))
+                planned_batch_end(
+                    &work_model,
+                    base_batch_size,
+                    next_start,
+                    r.block_range().end,
+                )
+                .map(|(_, next_end)| (next_start, next_end))
             });
         let (next_display_target_blocks, next_work) = next_display_range
             .map(|(next_start, next_end)| {
@@ -5416,6 +5435,11 @@ mod tests {
     use std::time::Duration;
     use tokio::sync::{Barrier, Notify, Semaphore};
     use zcash_client_backend::proto::compact_formats::CompactBlock;
+
+    /// The 2022-23 spam window (`zcash-android-wallet-sdk`'s
+    /// `SANDBLASTING_RANGE`), where the mobile byte budget comes from.
+    const SANDBLASTING_START: u32 = 1_710_000;
+    const SANDBLASTING_END: u32 = 2_050_000;
 
     #[test]
     fn checking_reports_only_additional_work_and_its_next_batch() {
@@ -6467,6 +6491,7 @@ mod tests {
     fn scannable_batch_end_clamps_to_current_tip() {
         assert_eq!(
             scannable_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 2_000,
                 BlockHeight::from_u32(121),
                 BlockHeight::from_u32(131),
@@ -6480,6 +6505,7 @@ mod tests {
     fn scannable_batch_end_skips_ranges_past_current_tip() {
         assert_eq!(
             scannable_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 2_000,
                 BlockHeight::from_u32(122),
                 BlockHeight::from_u32(131),
@@ -6492,98 +6518,161 @@ mod tests {
     #[test]
     fn prefetch_ranges_stop_at_the_range_end_and_the_tip() {
         let h = BlockHeight::from_u32;
+        let test = WorkModel::compiled(WalletNetwork::Test);
         assert_eq!(
-            prefetch_ranges(1_000, h(1_000), h(10_000), 20_000, 2),
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 20_000, 2),
             vec![(h(1_000), h(2_000)), (h(2_000), h(3_000))],
         );
         // The last batch of a range is short and nothing follows it.
         assert_eq!(
-            prefetch_ranges(1_000, h(8_500), h(10_000), 20_000, 2),
+            prefetch_ranges(&test, 1_000, h(8_500), h(10_000), 20_000, 2),
             vec![(h(8_500), h(9_500)), (h(9_500), h(10_000))],
         );
         assert_eq!(
-            prefetch_ranges(1_000, h(10_000), h(10_000), 20_000, 2),
+            prefetch_ranges(&test, 1_000, h(10_000), h(10_000), 20_000, 2),
             vec![]
         );
         // Blocks past the tip are not requested.
         assert_eq!(
-            prefetch_ranges(1_000, h(1_000), h(10_000), 1_499, 2),
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 1_499, 2),
             vec![(h(1_000), h(1_500))],
         );
-        // The spam window's smaller batches apply to queued batches too.
         assert_eq!(
-            prefetch_ranges(
-                1_000,
-                h(SANDBLASTING_START - 500),
-                h(SANDBLASTING_END),
-                3_000_000,
-                2
-            ),
-            vec![
-                (h(SANDBLASTING_START - 500), h(SANDBLASTING_START)),
-                (
-                    h(SANDBLASTING_START),
-                    h(SANDBLASTING_START + BATCH_SIZE_SANDBLASTING)
-                ),
-            ],
-        );
-        assert_eq!(
-            prefetch_ranges(1_000, h(1_000), h(10_000), 20_000, 0),
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 20_000, 0),
             vec![]
         );
     }
 
+    /// Queued batches must match the batches the loop then plans, or every
+    /// prefetch is thrown away.
+    #[cfg(not(ironwood_masquerade))]
     #[test]
-    fn planned_batch_end_uses_base_size_before_sandblasting() {
+    fn prefetch_ranges_match_the_planned_batches() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let (_, first_end) = planned_batch_end(&main, 1_000, h(1_780_001), h(1_800_000)).unwrap();
+        let (_, second_end) = planned_batch_end(&main, 1_000, first_end, h(1_800_000)).unwrap();
+        assert!(first_end < h(1_781_001), "spam-window batches are short");
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(419_200),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((1_000, BlockHeight::from_u32(420_200))),
+            prefetch_ranges(&main, 1_000, h(1_780_001), h(1_800_000), 3_000_000, 2),
+            vec![(h(1_780_001), first_end), (first_end, second_end)],
         );
     }
 
     #[test]
-    fn planned_batch_end_stops_at_sandblasting_boundaries() {
+    fn planned_batch_end_uses_the_block_cap_where_blocks_are_sparse() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_START - 500),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((1_000, BlockHeight::from_u32(SANDBLASTING_START))),
+            planned_batch_end(&main, 1_000, h(419_200), h(3_500_000)),
+            Some((1_000, h(420_200))),
         );
+        // Past the compiled table.
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let past = u32::try_from(sizes.last().unwrap().0).unwrap() + 100_000;
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_START),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((
-                BATCH_SIZE_SANDBLASTING,
-                BlockHeight::from_u32(SANDBLASTING_START + BATCH_SIZE_SANDBLASTING),
-            )),
+            planned_batch_end(&main, 1_000, h(past), h(past + 5_000)),
+            Some((1_000, h(past + 1_000))),
         );
+        // No compiled data off mainnet, even at spam-window heights.
         assert_eq!(
             planned_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 1_000,
-                BlockHeight::from_u32(SANDBLASTING_END - 50),
-                BlockHeight::from_u32(3_500_000),
+                h(1_780_001),
+                h(3_500_000),
             ),
-            Some((
-                BATCH_SIZE_SANDBLASTING,
-                BlockHeight::from_u32(SANDBLASTING_END),
-            )),
+            Some((1_000, h(1_781_001))),
         );
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn planned_batch_end_fits_the_byte_budget() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let start = 1_780_001;
+        let (blocks, end) = planned_batch_end(&main, 1_000, h(start), h(3_500_000)).unwrap();
+        assert!(blocks < 1_000);
+        assert_eq!(end, h(start + blocks));
+        let bytes = |n: u32| main.plan_bytes(u64::from(start), u64::from(start + n));
+        assert!(bytes(blocks) <= BATCH_BYTE_BUDGET);
+        assert!(bytes(blocks + 1) > BATCH_BYTE_BUDGET);
+
+        // A batch is not cut where the spam window starts.
+        let (_, end) =
+            planned_batch_end(&main, 1_000, h(SANDBLASTING_START - 500), h(3_500_000)).unwrap();
+        assert!(end > h(SANDBLASTING_START));
+    }
+
+    /// The budgets follow from the compiled tree sizes at fixed heights, so a
+    /// longer table does not move them.
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn batch_byte_budget_matches_its_derivation() {
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        // The 2,000-block batch right after the window.
+        let desktop = main.download_bytes(2_050_001, 2_052_001);
+        // 100 blocks of the densest compiled step in the window.
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let mobile = sizes
+            .windows(2)
+            .filter(|pair| {
+                pair[0].0 >= u64::from(SANDBLASTING_START)
+                    && pair[1].0 <= u64::from(SANDBLASTING_END)
+            })
+            .map(|pair| {
+                let (from, to) = (pair[0].0 + 1, pair[1].0 + 1);
+                main.download_bytes(from, to) / (to - from) as f64
+            })
+            .fold(0.0, f64::max)
+            * 100.0;
+        for (budget, derived) in [
+            (DESKTOP_BATCH_BYTE_BUDGET, desktop),
+            (MOBILE_BATCH_BYTE_BUDGET, mobile),
+        ] {
+            assert!(
+                (budget / derived - 1.0).abs() < 0.01,
+                "budget {budget} vs derived {derived}",
+            );
+        }
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn plan_end_bounds_the_estimate() {
+        let h = BlockHeight::from_u32;
+        for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
+            let model = WorkModel::compiled(network);
+            assert_eq!(model.plan_bytes(1_780_001, 1_790_001), 0.0);
+            assert_eq!(
+                planned_batch_end(&model, 1_000, h(1_780_001), h(3_500_000)),
+                Some((1_000, h(1_781_001))),
+            );
+        }
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let plan_end = sizes.last().unwrap().0 + 1;
+        // Bytes stop at the last checkpoint instead of extrapolating.
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_END),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((1_000, BlockHeight::from_u32(SANDBLASTING_END + 1_000))),
+            main.plan_bytes(plan_end - 1, plan_end + 100_000),
+            main.plan_bytes(plan_end - 1, plan_end),
+        );
+        // A batch starting just before it is not cut there.
+        let start = u32::try_from(plan_end - 10).unwrap();
+        assert_eq!(
+            planned_batch_end(&main, 1_000, h(start), h(start + 5_000)),
+            Some((1_000, h(start + 1_000))),
+        );
+    }
+
+    #[test]
+    fn debug_cap_limits_every_batch() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        assert_eq!(
+            planned_batch_end(&main, 5, h(1_780_001), h(2_000_000)),
+            Some((5, h(1_780_006))),
         );
     }
 
