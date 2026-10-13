@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_bootstrap.dart';
@@ -200,12 +198,14 @@ class SyncKeepAwakeEtaSample {
   const SyncKeepAwakeEtaSample({
     required this.syncStartedAt,
     required this.measuredAt,
-    required this.estimatedRemainingBlocks,
+    required this.remainingFraction,
   });
 
   final DateTime syncStartedAt;
   final DateTime measuredAt;
-  final double estimatedRemainingBlocks;
+
+  /// Share of the sync job's work left, `1 - percentage`.
+  final double remainingFraction;
 }
 
 class SyncKeepAwakeEtaEstimate {
@@ -264,6 +264,8 @@ bool isSyncKeepAwakeCompletedSync(SyncState sync) {
   // its completion screen or reactivate the native screen-awake setting.
   if (sync.percentage >= 1) return true;
   if (sync.isSyncing) return false;
+  // A failed sync keeps its progress for the retry; it is not complete.
+  if (sync.failure != null) return false;
   if (sync.isSyncComplete) return true;
   return sync.chainTipHeight > 0 && sync.scannedHeight >= sync.chainTipHeight;
 }
@@ -294,18 +296,17 @@ SyncKeepAwakeEtaEstimate estimateSyncKeepAwakeEta(
     return const SyncKeepAwakeEtaEstimate.none();
   }
 
-  final estimatedRemainingBlocks = _estimatedRemainingBlocks(sync);
-  final sample = estimatedRemainingBlocks == null
-      ? null
-      : SyncKeepAwakeEtaSample(
+  final sample = _isScanningBatch(sync)
+      ? SyncKeepAwakeEtaSample(
           syncStartedAt: startedAt,
           measuredAt: now,
-          estimatedRemainingBlocks: estimatedRemainingBlocks,
-        );
+          remainingFraction: 1 - sync.percentage.clamp(0.0, 1.0),
+        )
+      : null;
 
   final observedEta = sample == null
       ? null
-      : _estimateFromObservedBlockRate(
+      : _estimateFromObservedRate(
           sample: sample,
           previousSample: previousSample,
         );
@@ -333,18 +334,16 @@ bool shouldShowSyncKeepAwakePrompt({
   return remaining != null && remaining >= threshold;
 }
 
-double? _estimatedRemainingBlocks(SyncState sync) {
-  final targetDelta = sync.displayTargetPercentage - sync.percentage;
-  if (sync.displayTargetBlocks > 0 && targetDelta > 0) {
-    final totalBlocks = sync.displayTargetBlocks / targetDelta;
-    if (totalBlocks.isFinite && totalBlocks > 0) {
-      return math.max(0.0, totalBlocks * (1 - sync.percentage));
-    }
-  }
-  return null;
-}
+/// Whether [sync] reports a batch in flight, so its percentage is a point on
+/// the job's work scale rather than a preparation placeholder.
+bool _isScanningBatch(SyncState sync) =>
+    sync.displayTargetBlocks > 0 &&
+    sync.displayTargetPercentage > sync.percentage;
 
-Duration? _estimateFromObservedBlockRate({
+/// ETA from the rate between two samples. The percentage is the job's share
+/// of estimated scan work, which tracks scan time, so the rate needs no
+/// conversion to blocks.
+Duration? _estimateFromObservedRate({
   required SyncKeepAwakeEtaSample sample,
   SyncKeepAwakeEtaSample? previousSample,
 }) {
@@ -357,26 +356,24 @@ Duration? _estimateFromObservedBlockRate({
       .inMicroseconds;
   if (elapsedMicros <= 0) return null;
 
-  final processedBlocks =
-      previousSample.estimatedRemainingBlocks - sample.estimatedRemainingBlocks;
-  if (processedBlocks <= 0 || !processedBlocks.isFinite) return null;
+  final processed = previousSample.remainingFraction - sample.remainingFraction;
+  if (processed <= 0 || !processed.isFinite) return null;
 
-  final blocksPerMicrosecond = processedBlocks / elapsedMicros;
-  if (blocksPerMicrosecond <= 0 || !blocksPerMicrosecond.isFinite) return null;
-
-  final remainingMicros =
-      sample.estimatedRemainingBlocks / blocksPerMicrosecond;
+  final remainingMicros = elapsedMicros * sample.remainingFraction / processed;
   if (!remainingMicros.isFinite || remainingMicros < 0) return null;
   return Duration(microseconds: remainingMicros.round());
 }
 
 Duration? _estimateFromRunPercentage(SyncState sync, Duration elapsed) {
   final percentage = sync.percentage;
-  if (percentage <= 0 || percentage >= 1 || elapsed <= Duration.zero) {
+  // A resumed job starts the session above zero; only this session's
+  // progress was made in `elapsed`.
+  final sessionProgress = percentage - sync.sessionStartPercentage;
+  if (sessionProgress <= 0 || percentage >= 1 || elapsed <= Duration.zero) {
     return null;
   }
   final remainingMicros =
-      elapsed.inMicroseconds * (1 - percentage) / percentage;
+      elapsed.inMicroseconds * (1 - percentage) / sessionProgress;
   if (!remainingMicros.isFinite || remainingMicros < 0) return null;
   return Duration(microseconds: remainingMicros.round());
 }
