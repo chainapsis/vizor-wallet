@@ -11968,8 +11968,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 15)
+      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
     return ApiSyncProgressEvent(
       kind: dco_decode_api_sync_event_kind(arr[0]),
       checking: dco_decode_opt_box_autoadd_api_sync_checking_progress(arr[1]),
@@ -11985,6 +11985,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       phaseCompletedUnits: dco_decode_u_64(arr[11]),
       phaseTotalUnits: dco_decode_u_64(arr[12]),
       phase: dco_decode_String(arr[13]),
+      syncJobId: dco_decode_String(arr[14]),
     );
   }
 
@@ -15041,13 +15042,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SyncProgress dco_decode_sync_progress(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return SyncProgress(
       scannedHeight: dco_decode_u_64(arr[0]),
       chainTipHeight: dco_decode_u_64(arr[1]),
       isSyncing: dco_decode_bool(arr[2]),
       isComplete: dco_decode_bool(arr[3]),
+      syncJobId: dco_decode_String(arr[4]),
+      syncJobFraction: dco_decode_f_64(arr[5]),
     );
   }
 
@@ -16131,6 +16134,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_phaseCompletedUnits = sse_decode_u_64(deserializer);
     var var_phaseTotalUnits = sse_decode_u_64(deserializer);
     var var_phase = sse_decode_String(deserializer);
+    var var_syncJobId = sse_decode_String(deserializer);
     return ApiSyncProgressEvent(
       kind: var_kind,
       checking: var_checking,
@@ -16146,6 +16150,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       phaseCompletedUnits: var_phaseCompletedUnits,
       phaseTotalUnits: var_phaseTotalUnits,
       phase: var_phase,
+      syncJobId: var_syncJobId,
     );
   }
 
@@ -20257,11 +20262,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_chainTipHeight = sse_decode_u_64(deserializer);
     var var_isSyncing = sse_decode_bool(deserializer);
     var var_isComplete = sse_decode_bool(deserializer);
+    var var_syncJobId = sse_decode_String(deserializer);
+    var var_syncJobFraction = sse_decode_f_64(deserializer);
     return SyncProgress(
       scannedHeight: var_scannedHeight,
       chainTipHeight: var_chainTipHeight,
       isSyncing: var_isSyncing,
       isComplete: var_isComplete,
+      syncJobId: var_syncJobId,
+      syncJobFraction: var_syncJobFraction,
     );
   }
 
@@ -21386,6 +21395,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.phaseCompletedUnits, serializer);
     sse_encode_u_64(self.phaseTotalUnits, serializer);
     sse_encode_String(self.phase, serializer);
+    sse_encode_String(self.syncJobId, serializer);
   }
 
   @protected
@@ -24801,6 +24811,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.chainTipHeight, serializer);
     sse_encode_bool(self.isSyncing, serializer);
     sse_encode_bool(self.isComplete, serializer);
+    sse_encode_String(self.syncJobId, serializer);
+    sse_encode_f_64(self.syncJobFraction, serializer);
   }
 
   @protected
