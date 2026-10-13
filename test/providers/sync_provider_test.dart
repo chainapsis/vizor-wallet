@@ -395,6 +395,81 @@ void main() {
     );
   });
 
+  group('refreshAfterUnlock restores the stored sync job', () {
+    Future<_BalanceRefreshTestSyncNotifier> unlockedNotifier({
+      SyncState? initialState,
+      rust_sync.SyncProgress? status,
+      Object? statusError,
+    }) async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier =
+                _BalanceRefreshTestSyncNotifier(
+                    () async => 'wallet.db',
+                    initialState: initialState,
+                  )
+                  ..syncStatus = status ?? _noStoredJob
+                  ..syncStatusError = statusError,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      return notifier;
+    }
+
+    test('so the sync resumes from the last shown fraction', () async {
+      final notifier = await unlockedNotifier(
+        status: _storedJob('job-1', 0.37),
+      );
+
+      await notifier.refreshAfterUnlock();
+
+      final state = notifier.state.requireValue;
+      expect(state.syncJobId, 'job-1');
+      expect(state.percentage, closeTo(0.37, 1e-12));
+      expect(state.displayTargetPercentage, closeTo(0.37, 1e-12));
+      final resumed = resumableSyncJob(state);
+      expect(resumed.jobId, 'job-1');
+      expect(resumed.percentage, closeTo(0.37, 1e-12));
+    });
+
+    test('unless a sync already reported its job', () async {
+      final notifier = await unlockedNotifier(
+        initialState: SyncState(
+          accountUuid: _accountUuid,
+          isSyncing: true,
+          percentage: 0.5,
+          syncJobId: 'live',
+        ),
+        status: _storedJob('job-1', 0.37),
+      );
+
+      await notifier.refreshAfterUnlock();
+
+      final state = notifier.state.requireValue;
+      expect(state.syncJobId, 'live');
+      expect(state.percentage, 0.5);
+    });
+
+    test('and a failed read leaves the state for the sync to fill', () async {
+      final notifier = await unlockedNotifier(
+        statusError: StateError('status unavailable'),
+      );
+
+      await expectLater(notifier.refreshAfterUnlock(), completes);
+
+      final state = notifier.state.requireValue;
+      expect(state.syncJobId, isEmpty);
+      expect(state.percentage, 0.0);
+    });
+  });
+
   test('successful queued refresh recovers an earlier pass failure', () async {
     final firstPathResolution = Completer<String>();
     var pathResolutionCount = 0;
@@ -1326,6 +1401,8 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
   bool failHistory = false;
   var balanceReadCount = 0;
   rust_sync.WalletBalance? balance;
+  rust_sync.SyncProgress syncStatus = _noStoredJob;
+  Object? syncStatusError;
 
   void replaceState(SyncState next) => state = AsyncData(next);
 
@@ -1360,6 +1437,15 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
   }
 
   @override
+  Future<rust_sync.SyncProgress> readSyncStatus({
+    required String dbPath,
+    required String network,
+  }) async {
+    if (syncStatusError case final error?) throw error;
+    return syncStatus;
+  }
+
+  @override
   Future<List<rust_sync.TransactionInfo>> readTransactionHistory({
     required String dbPath,
     required String network,
@@ -1370,6 +1456,18 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     return history;
   }
 }
+
+rust_sync.SyncProgress _storedJob(String id, double fraction) =>
+    rust_sync.SyncProgress(
+      scannedHeight: BigInt.from(1000),
+      chainTipHeight: BigInt.from(2000),
+      isSyncing: false,
+      isComplete: false,
+      syncJobId: id,
+      syncJobFraction: fraction,
+    );
+
+final _noStoredJob = _storedJob('', 0);
 
 class _UnavailableSwitchBalanceNotifier extends SyncNotifier {
   _UnavailableSwitchBalanceNotifier(this.fetchedTx)

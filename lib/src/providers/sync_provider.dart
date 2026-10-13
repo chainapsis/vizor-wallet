@@ -3377,7 +3377,48 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     clearRestoredSnapshotIfUnavailable: true,
   );
 
-  Future<void> refreshAfterUnlock() => _requestBalanceRefresh();
+  /// Unlock recovery, run before the foreground sync starts.
+  ///
+  /// A locked launch skips the bootstrap sync snapshot, and locking clears
+  /// the in-memory one, so the stored sync job is read here too: the sync
+  /// then resumes from the fraction the last session showed instead of zero
+  /// until its first event.
+  Future<void> refreshAfterUnlock() async {
+    await _requestBalanceRefresh();
+    await _restoreStoredSyncJob();
+  }
+
+  Future<void> _restoreStoredSyncJob() async {
+    if (_requiresUnlock) return;
+    final epoch = _sensitiveStateEpoch;
+    final rust_sync.SyncProgress status;
+    try {
+      status = await readSyncStatus(
+        dbPath: await _getDbPath(),
+        network: _endpointConfig.networkName,
+      );
+    } catch (e) {
+      log('SyncNotifier: stored sync job unavailable after unlock: $e');
+      return;
+    }
+    if (epoch != _sensitiveStateEpoch || _requiresUnlock) return;
+    final current = state.value ?? SyncState();
+    // A sync that already reported owns the job and its percentage.
+    if (status.syncJobId.isEmpty ||
+        current.syncJobId.isNotEmpty ||
+        current.isSyncing) {
+      return;
+    }
+    final percentage = status.syncJobFraction.clamp(0.0, 1.0);
+    state = AsyncData(
+      current.copyWith(
+        syncJobId: status.syncJobId,
+        percentage: percentage,
+        displayTargetPercentage: percentage,
+        sessionStartPercentage: percentage,
+      ),
+    );
+  }
 
   Future<void> _refreshBalanceAfterResume() async {
     if (_isShuttingDown) return;
@@ -3922,6 +3963,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     network: network,
     accountUuid: accountUuid,
   );
+
+  @protected
+  Future<rust_sync.SyncProgress> readSyncStatus({
+    required String dbPath,
+    required String network,
+  }) => rust_sync.getSyncStatus(dbPath: dbPath, network: network);
 
   @protected
   Future<List<rust_sync.TransactionInfo>> readTransactionHistory({
