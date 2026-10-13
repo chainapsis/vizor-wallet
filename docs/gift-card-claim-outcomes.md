@@ -115,9 +115,9 @@ The explicit two-wallet competition scenario is compiled by:
 cargo test --manifest-path rust/Cargo.toml --test regtest_payment_link_competition --no-run
 ```
 
-Run it only when regtest execution is explicitly requested (it uses the shared
-Docker regtest services and mines blocks):
+Run it only when regtest execution is explicitly requested (it starts its own
+direct Zakura fixture in Docker and mines blocks):
 
 ```sh
-cargo test --manifest-path rust/Cargo.toml --test regtest_payment_link_competition -- --ignored --nocapture --test-threads=1
+./run-regtest-rust-tests.sh rust.gift-card.competition
 ```

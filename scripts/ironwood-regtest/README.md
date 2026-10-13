@@ -145,7 +145,9 @@ Run the lower-level Rust migration path independently:
 scripts/e2e/ironwood-regtest-migration.sh
 ```
 
-The test imports a deterministic wallet, sends 1.0002 TAZ to its Orchard
+It runs on its own direct Zakura fixture, which activates NU6.3 at height 500,
+rather than on this stack (see `./run-regtest-rust-tests.sh --help`). The test
+imports a deterministic wallet, sends 1.0002 TAZ to its Orchard
 receiver, verifies that Ironwood is empty, activates NU6.3, runs the real
 migration pipeline, confirms both transaction stages, and verifies spendable
 Ironwood balance and a completed migration record.

@@ -1,0 +1,385 @@
+"""Run direct Zakura regtest cases one at a time, each against its own fixture.
+
+Every case owns a fresh pinned Zakura node and lightwalletd, the lightwalletd
+shim in front of them and an HTTP control. The offline signer and the Rust test
+executables are built once per run from the committed `rust/` tree and shared
+read-only. Cases never share chain state, wallets, ports or evidence.
+"""
+from __future__ import annotations
+
+import dataclasses
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import threading
+import time
+import uuid
+
+import content_memo
+import e2e_runtime as runtime
+from funder_build import build_regtest_funder
+from native_case_lifecycle import NativeCaseLifecycle
+import native_owned_tree as tree
+from native_ports import lease_native_ports
+from native_rust_case_storage import RustCaseStorage
+from native_workspace import prepare_native_case_workspace
+from native_zakura_backend import prepare_native_zakura_backend
+from native_zakura_control import prepare_native_zakura_control
+from native_zakura_front import prepare_native_zakura_front
+from zakura_fixture_source import ensure_pinned_images
+from zakura_genesis import create_zakura_genesis_proof
+
+
+# The coinbase of every fixture pays the signer's public test-only key.
+MINER_ADDRESS = "tmLomwDqZSUb1Mvsfpjtmt4cLBA7c9tGssX"
+# Ironwood (NU6.3) is active from height 1 unless a scenario funds Orchard
+# before a controlled activation.
+DEFAULT_ACTIVATION = 1
+MIGRATION_ACTIVATION = 500
+# Coinbase spends need 100 confirmations, so every fixture starts mature.
+INITIAL_BLOCKS = 100
+
+
+@dataclasses.dataclass(frozen=True)
+class RustScenario:
+    id: str
+    target: str
+    test: str
+    activation_height: int = DEFAULT_ACTIVATION
+    timeout_seconds: int = 600
+
+
+RUST_SCENARIOS = (
+    RustScenario("rust.send.basic", "regtest_send", "funded_wallet_can_send_to_second_wallet"),
+    RustScenario("rust.send.second-account", "regtest_send",
+                 "imported_second_account_can_send_using_its_own_seed"),
+    RustScenario("rust.receive.sync", "regtest_receive_sync", "create_wallet_receives_funds_and_syncs_balance"),
+    RustScenario("rust.receive.direct-zakura", "regtest_direct_zakura_receive",
+                 "empty_wallet_receives_exact_ironwood_funding_from_direct_zakura", timeout_seconds=180),
+    RustScenario("rust.import.direct-zakura", "regtest_direct_zakura_import",
+                 "historical_bip39_passphrase_import_recovers_exact_ironwood_funding_from_direct_zakura",
+                 timeout_seconds=180),
+    RustScenario("rust.import.bip39-passphrase", "regtest_import",
+                 "bip39_passphrase_import_recovers_funds_sent_to_independently_derived_address"),
+    RustScenario("rust.import.historical-birthday", "regtest_import",
+                 "import_wallet_with_historical_birthday_recovers_existing_funds"),
+    RustScenario("rust.import.future-birthday", "regtest_import",
+                 "import_wallet_with_future_birthday_does_not_rescan_old_receive"),
+    RustScenario("rust.import.receive-after-sync", "regtest_import",
+                 "import_wallet_then_receive_new_funds_after_sync_updates_correctly"),
+    RustScenario("rust.import.deterministic-reimport", "regtest_import",
+                 "same_mnemonic_imported_into_fresh_db_matches_original_ua_and_balance"),
+    RustScenario("rust.multi-account.orphaned-range", "regtest_multi_account",
+                 "sync_start_rescues_wallet_stuck_by_orphaned_historical_scan_range"),
+    RustScenario("rust.multi-account.deleted-range", "regtest_multi_account",
+                 "sync_completes_when_deleted_account_left_scanned_range_below_birthday"),
+    RustScenario("rust.multi-account.late-add-history-future", "regtest_multi_account",
+                 "adding_second_account_after_tip_sync_recovers_historical_and_future_funds"),
+    RustScenario("rust.multi-account.tip-birthday-history", "regtest_multi_account",
+                 "late_added_account_with_tip_birthday_still_recovers_historical_funds"),
+    RustScenario("rust.multi-account.two-before-sync", "regtest_multi_account",
+                 "two_new_accounts_added_before_single_sync_are_both_recovered"),
+    RustScenario("rust.multi-account.preserve-history", "regtest_multi_account",
+                 "existing_account_history_is_unchanged_when_new_account_is_added"),
+    RustScenario("rust.multi-account.isolated-balances", "regtest_multi_account",
+                 "multi_account_sync_keeps_balances_isolated_per_account"),
+    RustScenario("rust.multi-account.idempotent-sync", "regtest_multi_account",
+                 "repeated_sync_is_idempotent_for_multi_account_wallet"),
+    RustScenario("rust.gift-card.tracking-multiple", "regtest_gift_card_tracking",
+                 "observer_scans_multiple_view_only_accounts_and_retires_only_used_card"),
+    RustScenario("rust.gift-card.empty-db-reuse", "regtest_gift_card_tracking",
+                 "observer_reuses_empty_db_without_scanning_idle_gap"),
+    RustScenario("rust.gift-card.competition", "regtest_payment_link_competition",
+                 "one_card_two_claimants_preserve_and_resolve_losing_transaction"),
+    RustScenario("rust.ironwood.migration", "ironwood_regtest_migration",
+                 "orchard_funds_migrate_after_controlled_nu6_3_activation",
+                 activation_height=MIGRATION_ACTIVATION, timeout_seconds=1200),
+    RustScenario("rust.ironwood.gift-card-claim", "ironwood_regtest_gift_card_claim",
+                 "gift_card_claims_at_two_confirmations_and_discards_the_card_ovk",
+                 activation_height=MIGRATION_ACTIVATION, timeout_seconds=1200),
+)
+SCENARIOS = {scenario.id: scenario for scenario in RUST_SCENARIOS}
+
+
+def select_scenarios(names):
+    """Exact IDs, or every scenario whose ID starts with a dotted prefix."""
+    selected = []
+    for name in names:
+        matches = [s for s in RUST_SCENARIOS if s.id == name or s.id.startswith(name.rstrip(".") + ".")]
+        if not matches:
+            raise ValueError(f"unknown scenario or prefix: {name}")
+        selected.extend(s for s in matches if s not in selected)
+    return selected
+
+
+def verify_test_output(lines, test):
+    """Exit 0 with zero tests, an ignored test or a different test is not a pass."""
+    output = "".join(lines)
+    if (len(re.findall(r"^running 1 test$", output, re.MULTILINE)) != 1
+        or len(re.findall(r"^test " + re.escape(test) + r" \.\.\. ok$", output, re.MULTILINE)) != 1
+        or len(re.findall(r"^test result: ok\. 1 passed; 0 failed; 0 ignored; 0 measured; [0-9]+ filtered out; "
+                          r"finished in [0-9.]+s$", output, re.MULTILINE)) != 1):
+        raise runtime.RunnerError("the Rust test binary did not report the selected test as passed")
+
+
+def _check(cancel_event):
+    if cancel_event.is_set():
+        raise runtime.Cancelled()
+
+
+class SequentialCase:
+    """One case's ports, workspace, fixture, front and control.
+
+    Finalize with close() after a pass, or retain() to keep the fixture and
+    wallet files of a failed case for inspection.
+    """
+
+    def __init__(self, run_root, *, run_id, case_index, scenario_id, platform, activation_height):
+        self.lease = lease_native_ports(0, run_id)
+        try:
+            workspace = prepare_native_case_workspace(run_root, platform=platform,
+                scenario_id=scenario_id, run_id=run_id, worker_id=0, case_index=case_index,
+                ports=self.lease.ports, activation_height=activation_height)
+            self.case = NativeCaseLifecycle(workspace)
+            self.storage = RustCaseStorage(self.case) if platform == "rust" else None
+        except BaseException:
+            self.lease.close()
+            raise
+        self.backend = self.front = self.control = None
+        self._finished = False
+
+    def start(self, *, grpcurl, proto_dir, dart, source_root, artifact, cancel_event):
+        """Start the fixture, mature its coinbase, then put the shim and control in front."""
+        self.backend = prepare_native_zakura_backend(self.case, grpcurl=grpcurl,
+            proto_dir=proto_dir, miner_address=MINER_ADDRESS, timeout=120)
+        self.backend.start()
+        _check(cancel_event)
+        self.backend.mine(INITIAL_BLOCKS)
+        _check(cancel_event)
+        genesis = create_zakura_genesis_proof(self.case, self.backend, timeout=30,
+            cancel_event=cancel_event)
+        self.front = prepare_native_zakura_front(self.case, self.backend, genesis,
+            dart=dart, source_root=source_root, timeout=30)
+        # The shim and control bind the leased ports themselves.
+        self.lease.release_sockets()
+        self.front.start(cancel_event=cancel_event)
+        self.control = prepare_native_zakura_control(self.case, self.backend, self.front,
+            artifact=artifact)
+
+    def run_rust(self, artifact, scenario, *, cancel_event):
+        """Run one exact ignored test while serving its control requests."""
+        if self.storage is None or self.control is None:
+            raise runtime.RunnerError("a Rust case needs its wallet storage and a started control")
+        binary = artifact.test_binary(scenario.target)
+        deadline = time.monotonic() + scenario.timeout_seconds
+        _check(cancel_event)
+        lines = []
+        process = self.case.start_process([str(binary), scenario.test, "--exact", "--ignored",
+            "--show-output", "--test-threads=1", "--color", "never"],
+            env={**os.environ, "VIZOR_E2E_RUST_TEMP_ROOT": str(self.storage.path)},
+            raw_lines=lines, max_output_bytes=8 * 1024 * 1024)
+        while process.process.poll() is None:
+            _check(cancel_event)
+            if time.monotonic() >= deadline:
+                raise runtime.RunnerError("the Rust test did not finish before its deadline", 124)
+            self.storage.verify_owned()
+            self.front.assert_running()
+            self.control.pump(deadline=deadline, cancel_event=cancel_event)
+        code = self.case.wait_process(process, timeout=max(0.001, deadline - time.monotonic()),
+            cancel_event=cancel_event)
+        if code != 0:
+            raise runtime.RunnerError("the Rust test failed", code)
+        verify_test_output(lines, scenario.test)
+        artifact.verify_unchanged()
+        self.front.assert_running()
+
+    def close(self, *, timeout=60.0):
+        """Stop every case process, then remove the fixture, wallet files and port locks."""
+        if self._finished:
+            raise runtime.RunnerError("case already finalized")
+        self._finished = True
+        if self.control is not None:
+            self.control.close()
+        self.case.close(timeout=timeout)
+        if self.control is not None:
+            self.control.release_clipboard_after_writers()
+        if self.backend is not None:
+            self.backend.close()
+        if self.storage is not None:
+            self.storage.close(timeout=timeout)
+        self.lease.close()
+
+    def retain(self):
+        """Stop every case process; keep the fixture, wallet files and evidence."""
+        self._finished = True
+        errors = []
+        steps = [lambda: self.control.close() if self.control is not None else None,
+                 lambda: self.storage.retain() if self.storage is not None else self.case.close(),
+                 lambda: self.control.release_clipboard_after_writers() if self.control is not None else None,
+                 lambda: self.backend.retain() if self.backend is not None else None]
+        for step in steps:
+            try:
+                step()
+            except BaseException as error:
+                errors.append(error)
+        # Keep the port locks while a writer may still be alive.
+        if not errors:
+            self.lease.close()
+        if errors:
+            raise errors[0]
+
+    def retained_resources(self):
+        return {"evidence": str(self.case.workspace.root),
+                "docker": self.backend.retained_resources() if self.backend is not None else None,
+                "wallet_files": str(self.storage.path) if self.storage is not None else None}
+
+
+def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, proto_dir, dart,
+             source_root, keep_failed, cancel_event):
+    """Run one scenario on its own fixture and return its report entry."""
+    started = time.monotonic()
+    result = {"scenario_id": scenario.id, "target": scenario.target, "test": scenario.test,
+              "activation_height": scenario.activation_height, "status": "failed",
+              "returncode": 1, "error": None, "cleanup_error": None}
+    phases = {}
+    current = {"name": None, "start": started}
+
+    def begin(name):
+        now = time.monotonic()
+        if current["name"] is not None:
+            phases[current["name"]] = round(now - current["start"], 3)
+        current.update(name=name, start=now)
+
+    session = None
+    try:
+        begin("prepare")
+        session = SequentialCase(cases_root, run_id=run_id, case_index=case_index,
+            scenario_id=scenario.id, platform="rust", activation_height=scenario.activation_height)
+        result["evidence"] = str(session.case.workspace.root)
+        begin("fixture")
+        session.start(grpcurl=grpcurl, proto_dir=proto_dir, dart=dart, source_root=source_root,
+            artifact=artifact, cancel_event=cancel_event)
+        begin("execute")
+        session.run_rust(artifact, scenario, cancel_event=cancel_event)
+        begin("close")
+        session.close()
+        result.update(status="passed", returncode=0)
+    except BaseException as error:
+        result["failed_phase"] = current["name"]
+        result.update(error=str(error), returncode=getattr(error, "exit_code", 1))
+        if result["returncode"] == 130:
+            result["status"] = "cancelled"
+        elif result["returncode"] == 124:
+            result["status"] = "timed_out"
+        if session is not None and not session._finished:
+            try:
+                if keep_failed:
+                    session.retain()
+                    result["retained"] = session.retained_resources()
+                else:
+                    session.close()
+            except BaseException as cleanup:
+                result["cleanup_error"] = str(cleanup)
+                try:
+                    session.retain()
+                except BaseException:
+                    pass
+                result["retained"] = session.retained_resources()
+        if not isinstance(error, Exception):
+            raise
+    finally:
+        begin(None)
+        result["duration_seconds"] = round(time.monotonic() - started, 3)
+        result["phase_seconds"] = phases
+    return result
+
+
+def committed_source(source_root):
+    """The signer and test executables are built from HEAD's `rust/` tree only."""
+    root = Path(source_root).resolve(strict=True)
+    commit = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True).stdout.strip()
+    changed = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", "rust"],
+        check=True, capture_output=True, text=True).stdout
+    if changed:
+        raise ValueError("commit the changes under rust/ first; the test executables are built from HEAD")
+    return root, commit
+
+
+def resolve_dart(flutter, source_root):
+    """The shim runs on the SDK's Dart with the checkout's resolved packages."""
+    dart = (Path(flutter).resolve(strict=True).parent / "cache/dart-sdk/bin/dart").resolve(strict=True)
+    if not (Path(source_root) / ".dart_tool/package_config.json").is_file():
+        raise ValueError("run `fvm flutter pub get` first; the lightwalletd shim needs the resolved packages")
+    return dart
+
+
+def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4,
+                 keep_failed=False, cancel_event=None, out=print):
+    """Build once, then run each scenario on its own fixture; return the report."""
+    cancel = cancel_event if cancel_event is not None else threading.Event()
+    root, commit = committed_source(source_root)
+    dart = resolve_dart(flutter, root)
+    grpcurl = Path(grpcurl).resolve(strict=True)
+    proto_dir = Path(proto_dir).resolve(strict=True)
+    run_id = uuid.uuid4().hex[:10]
+    logs = root / ".regtest-logs"
+    logs.mkdir(mode=0o700, exist_ok=True)
+    evidence = logs / f"zakura-{run_id}"
+    evidence.mkdir(mode=0o700)
+    report = {"schema_version": 1, "run_id": run_id, "source_commit": commit,
+              "scenarios": [s.id for s in scenarios], "results": [], "error": None}
+    report_path = evidence / "report.json"
+
+    def write_report():
+        temporary = evidence / "report.json.tmp"
+        temporary.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+        temporary.replace(report_path)
+
+    started = time.monotonic()
+    builds = builds_id = None
+    try:
+        with content_memo.run_scope():
+            report["pinned_images"] = ensure_pinned_images(evidence, cancel_event=cancel, out=out)
+            out(f"Building the signer and {len({s.target for s in scenarios})} Rust test target(s); logs: {evidence}")
+            builds = evidence / "builds"
+            builds.mkdir(mode=0o700)
+            builds_id = tree.identity(builds.lstat())
+            producer = NativeCaseLifecycle(prepare_native_case_workspace(builds, platform="rust",
+                scenario_id="rust.signer-build", run_id=run_id, worker_id=0, case_index=0,
+                # A build case never listens; its manifest only needs distinct ports.
+                ports={"rpc": 28232, "lwd": 29067, "proxy": 29068}, activation_height=1))
+            artifact = build_regtest_funder(producer, source_root=root, source_commit=commit,
+                jobs=build_jobs, timeout=1200, cancel_event=cancel,
+                test_targets=tuple(dict.fromkeys(s.target for s in scenarios)))
+            cases = evidence / "cases"
+            cases.mkdir(mode=0o700)
+            for index, scenario in enumerate(scenarios, start=1):
+                _check(cancel)
+                out(f"[{index}/{len(scenarios)}] {scenario.id}")
+                result = run_case(cases, run_id, index, scenario, artifact=artifact, grpcurl=grpcurl,
+                    proto_dir=proto_dir, dart=dart, source_root=root, keep_failed=keep_failed,
+                    cancel_event=cancel)
+                report["results"].append(result)
+                write_report()
+                out(f"    {result['status']} in {result['duration_seconds']:.0f}s"
+                    + (f": {result['error']}" if result["error"] else ""))
+                if result["status"] == "cancelled":
+                    break
+    except BaseException as error:
+        report["error"] = str(error)
+        if not isinstance(error, Exception):
+            raise
+    finally:
+        failed = report["error"] is not None or any(r["status"] != "passed" for r in report["results"])
+        if builds_id is not None and not (keep_failed and failed):
+            # Each run builds into a fresh target directory (several GB). Keep it
+            # only beside fixtures kept for inspection; logs and markers stay.
+            report["build_prune"] = tree.prune_build_outputs(builds, expected=builds_id)
+            out(f"Removed {tree.size_text(report['build_prune']['bytes'])} of build output"
+                + (f"; {len(report['build_prune']['errors'])} error(s)" if report["build_prune"]["errors"] else ""))
+        report["duration_seconds"] = round(time.monotonic() - started, 3)
+        write_report()
+    return report, report_path

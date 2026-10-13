@@ -1,5 +1,64 @@
 # End-to-end tests
 
+## Direct Zakura regtest
+
+`scripts/e2e/zakura-run.py` runs regtest scenarios one at a time, each against
+its own fresh direct Zakura fixture. The Rust regtest suite
+(`./run-regtest-rust-tests.sh`) runs on it. The Flutter runners below still use
+the shared `scripts/regtest` and `scripts/ironwood-regtest` Docker stacks.
+
+For every scenario, the runner:
+
+1. starts the pinned Zakura node and lightwalletd containers through the
+   vendored fixture helper (`zakura_fixture/`), on a private Docker network
+   with leased host ports;
+2. mines 100 blocks so the fixture's coinbase can fund wallets;
+3. starts the Dart lightwalletd shim (`zakura_lwd_shim.dart`), which serves the
+   node-verified genesis tree state and reports the chain as `regtest`;
+4. serves an HTTP control on the scenario's RPC port for funding, mining,
+   activation and reorgs;
+5. runs the test, then removes the containers, network, volume and wallet files.
+
+Ironwood (NU6.3) is active from height 1. Scenarios that fund Orchard before a
+controlled activation (`rust.ironwood.*`) use a fixture that activates it at
+height 500.
+
+Funding transactions are signed offline by
+`rust/examples/regtest_direct_funder.rs` from the fixture's coinbase, which pays
+a public test-only key, and are broadcast with the node's `sendrawtransaction`.
+Nothing uses a node wallet. The signer and the Rust test executables are built
+once per run from `git archive HEAD rust`, so the runner refuses to start while
+`rust/` has uncommitted changes.
+
+Prerequisites: Python 3.11+, Docker, `grpcurl`, the fvm-pinned Flutter SDK after
+`fvm flutter pub get`, and fetched Cargo dependencies (`cargo fetch --locked` in
+`rust/`). Pinned images that Docker lacks are pulled by digest before the first
+scenario.
+
+```bash
+python3 scripts/e2e/zakura-run.py --list
+python3 scripts/e2e/zakura-run.py rust.import rust.send.basic
+```
+
+Each run writes `.regtest-logs/zakura-<run id>/report.json` with every
+scenario's status, phase durations and evidence directory, which holds its
+process logs and fixture proofs. The run's build output (several GB) is
+removed when the run ends. `--keep-failed` keeps the stopped containers and
+wallet files of failed scenarios, and then the build too; the report lists their
+Docker IDs. Remove them with `docker rm`, `docker network rm` and
+`docker volume rm`, and the run directory, when done.
+
+`zakura_fixture_source.py` pins the vendored helper's bytes and the node and
+lightwalletd image digests (`zakuracore/zakura`,
+`ghcr.io/zcashlabs/thus-spoke-zakura-lightwalletd`); see
+`zakura_fixture/README.md`. The harness unit tests run offline with Docker
+mocked. Some replace modules, so run each file in its own interpreter:
+
+```bash
+for test in scripts/e2e/test_*.py; do python3 -B -m unittest "$test" || break; done
+python3 -B -m unittest discover -s scripts/e2e/zakura_fixture/tests
+```
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
@@ -22,12 +81,12 @@ The companion Rust scenario verifies the skipped block interval directly with
 real shielded notes and a changed tree frontier, then imports an older card:
 
 ```bash
-cargo test --manifest-path rust/Cargo.toml --test regtest_gift_card_tracking -- --ignored --nocapture --test-threads=1
+./run-regtest-rust-tests.sh rust.gift-card.tracking-multiple rust.gift-card.empty-db-reuse
 ```
 
-Start a healthy regtest stack first. Do not run this command concurrently with
-an app E2E: both mine on the same chain. It uses temporary wallet DBs and does not
-inject scan queue rows. The test is excluded from ordinary Rust test runs.
+Each test starts its own direct Zakura fixture, so it does not share a chain
+with app E2Es. It uses temporary wallet DBs and does not inject scan queue rows.
+The test is excluded from ordinary Rust test runs.
 
 
 The macOS regtest runners cover the Gift Card (payment-link) flows. They

@@ -1236,18 +1236,16 @@ edge in `MobileBottomSafeArea`
   - Payment-request round trip and payment-URI locked-send: desktop runners only. The mobile receive pane has its own request sheet, so this is a harness gap rather than a feature gap.
   - Gift Card restart recovery and reorg retry: desktop runners only. The Gift Card round trip has a mobile counterpart driving the **Redeem a card → Paste card link** path; mobile claiming over a universal link still needs a publicly reachable HTTPS origin — see `scripts/e2e/README.md`. The payment-URI send also has a mobile counterpart, which instead pushes an `onUris` call over the `com.zcash.wallet/payment_uri` MethodChannel to raise the payment-request card.
 - Zcash regtest Rust integration tests:
-  - One-shot runner from repo root: `./run-regtest-rust-tests.sh`
-  - The runner always starts by tearing down any existing regtest containers and resetting `.regtest/`, so each run starts from the same clean chain/wallet state.
-  - The runner writes its terminal log to `.regtest-logs/regtest-rust-tests.log`, which is intentionally separate from `.regtest/` so the log survives the default final cleanup.
-  - Sapling proving params are cached separately at `~/.zcash-params` by default, so they survive `scripts/regtest/reset.sh`. Override with `SAPLING_PARAMS_DIR=/custom/path ./run-regtest-rust-tests.sh` if needed.
-  - By default the runner also does a final `down/reset` cleanup after the tests finish. Use `./run-regtest-rust-tests.sh --keep` if you want to keep the regtest state around for debugging.
+  - One-shot runner from repo root: `./run-regtest-rust-tests.sh` runs every Rust scenario; `./run-regtest-rust-tests.sh rust.import rust.send.basic` selects scenario IDs or dotted prefixes. List them with `python3 scripts/e2e/zakura-run.py --list`.
+  - Each test runs alone against its own fresh direct Zakura fixture: the pinned Zakura node and lightwalletd containers, the lightwalletd shim and an HTTP control (`scripts/e2e/zakura-run.py`). Tests never share chain or wallet state.
+  - Ironwood (NU6.3) is active from height 1, except in the `rust.ironwood.*` scenarios, which fund Orchard before activating Ironwood at height 500.
+  - Funding is signed offline from a public test-only coinbase key (`rust/examples/regtest_direct_funder.rs`); there is no node wallet.
+  - The signer and the test executables are built once per run from the committed `rust/` tree. The runner refuses to start while `rust/` has uncommitted changes.
+  - Prerequisites: Python 3.11+, Docker, `grpcurl`, the fvm-pinned Flutter SDK after `fvm flutter pub get` (the lightwalletd shim runs on its Dart), and Cargo dependencies already fetched (`cargo fetch --locked` in `rust/`; the build runs offline).
+  - The runner streams its output to the terminal and saves a copy to `.regtest-logs/regtest-rust-tests.log`. Each run also writes `.regtest-logs/zakura-<run id>/report.json` and per-test logs.
+  - Passing tests are always cleaned up, and the run's build output (several GB) is removed when it ends. `./run-regtest-rust-tests.sh --keep` keeps the stopped containers and wallet files of failed tests, and then the build too; the report lists their Docker IDs for removal.
+  - Sapling proving params are cached at `~/.zcash-params` by default. Override with `SAPLING_PARAMS_DIR=/custom/path ./run-regtest-rust-tests.sh` if needed.
   - These regtest scenarios are slow and heavy. Do not run them unless the user explicitly asks for regtest/integration execution.
-  - Manual flow:
-    - Start services: `./scripts/regtest/up.sh`
-    - Run individual scenario tests: `cd rust && cargo test --test regtest_receive_sync -- --ignored --nocapture --test-threads=1`
-    - Other available targets: `regtest_send`, `regtest_import`, `regtest_multi_account`
-    - Stop services: `./scripts/regtest/down.sh`
-  - The one-shot runner streams the full test output to the terminal and also saves a copy to `.regtest-logs/regtest-rust-tests.log`.
 - `scripts/regtest/` utilities:
   - `up.sh` — starts the Dockerized `zcashd + lightwalletd` regtest stack, waits for both services to become ready, and ensures the faucet state exists.
   - `down.sh` — stops the regtest Docker compose stack.

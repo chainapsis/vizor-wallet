@@ -2,7 +2,7 @@ mod common;
 use common::*;
 use rust_lib_zcash_wallet::api::gift_card_tracking as tracking;
 
-/// Explicit opt-in: shares the Docker regtest chain and mines blocks.
+/// Explicit opt-in: isolated runs use their own chain and external signer.
 #[test]
 #[ignore = "requires explicitly requested Docker regtest execution"]
 fn observer_scans_multiple_view_only_accounts_and_retires_only_used_card() {
@@ -13,7 +13,7 @@ fn observer_scans_multiple_view_only_accounts_and_retires_only_used_card() {
     let (card_dir, card) = create_wallet_with_birthday("Card", Some(birthday));
     let (other_dir, other) = create_wallet_with_birthday("Other card", Some(birthday - 1));
     let (_receiver_dir, receiver) = create_wallet("Receiver");
-    let observer = tempfile::tempdir().unwrap();
+    let observer = wallet_tempdir();
     let observer_path = path_str(&observer.path().join("observer.db"));
     let uuid = tracking::register_gift_card_observer(
         observer_path.clone(),
@@ -29,7 +29,7 @@ fn observer_scans_multiple_view_only_accounts_and_retires_only_used_card() {
         tracking::sync_gift_card_observers(
             observer_path.clone(),
             "regtest".into(),
-            LIGHTWALLETD_URL.into(),
+            lightwalletd_url(),
         )
         .unwrap()
     };
@@ -58,6 +58,10 @@ fn observer_scans_multiple_view_only_accounts_and_retires_only_used_card() {
         .find(|tx| tx.account_balance_delta == 50_010_000)
         .unwrap()
         .txid_hex;
+    assert_ne!(
+        funding, other_funding,
+        "the independently funded cards must have distinct transactions"
+    );
     let inspect = |account: &String, funding: &String| {
         tokio::runtime::Runtime::new()
             .unwrap()
@@ -100,7 +104,7 @@ fn observer_scans_multiple_view_only_accounts_and_retires_only_used_card() {
 fn observer_reuses_empty_db_without_scanning_idle_gap() {
     let _guard = exclusive_regtest();
     ensure_regtest_up();
-    let observer = tempfile::tempdir().unwrap();
+    let observer = wallet_tempdir();
     let path = observer.path().join("observer.db");
     let register = |card: &rust_lib_zcash_wallet::api::wallet::WalletCreationResult, birthday| {
         tracking::register_gift_card_observer(
@@ -113,12 +117,8 @@ fn observer_reuses_empty_db_without_scanning_idle_gap() {
         .unwrap()
     };
     let scan = || {
-        tracking::sync_gift_card_observers(
-            path_str(&path),
-            "regtest".into(),
-            LIGHTWALLETD_URL.into(),
-        )
-        .unwrap()
+        tracking::sync_gift_card_observers(path_str(&path), "regtest".into(), lightwalletd_url())
+            .unwrap()
     };
     let inspect = |uuid: &str, funding: &str| {
         tokio::runtime::Runtime::new()

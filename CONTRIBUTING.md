@@ -311,7 +311,10 @@ scripts/e2e/flutter-ios-regtest-mobile-full.sh
 ```
 
 The runners manage the required `regtest` and mobile compile-time definitions.
-Docker Compose is required; `grpcurl` is optional but improves readiness checks.
+Docker Compose is required; `grpcurl` is optional for the Flutter runners but
+improves readiness checks. The Rust suite runs each test on its own direct
+Zakura fixture and needs Python 3.11+, `grpcurl`, `fvm flutter pub get` and
+committed `rust/` changes; see `./run-regtest-rust-tests.sh --help`.
 Use a targeted script under `scripts/e2e/` instead of a full suite when it
 covers the changed behavior. State which scenario you ran in the PR.
 
