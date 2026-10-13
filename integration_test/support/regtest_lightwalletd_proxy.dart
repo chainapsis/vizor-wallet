@@ -281,6 +281,13 @@ class RegtestLightwalletdProxy
     service.BlockID request,
   ) async {
     _throwIfDown();
+    final local = localTreeState(request);
+    if (local != null) return local;
+    return _client.getTreeState(request);
+  }
+
+  /// A local response still goes through the proxy's availability check.
+  service.TreeState? localTreeState(service.BlockID request) {
     if (_serveEmptyGenesisTreeState &&
         request.height == Int64.ZERO &&
         request.hash.isEmpty) {
@@ -290,7 +297,7 @@ class RegtestLightwalletdProxy
         hash: List.filled(64, '0').join(),
       );
     }
-    return _client.getTreeState(request);
+    return null;
   }
 
   @override
