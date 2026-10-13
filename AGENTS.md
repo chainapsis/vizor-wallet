@@ -526,7 +526,7 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 
 Single DB connection reused across entire sync (opened once, passed to all operations).
 
-Progress percentage: `initial_total` (total blocks to scan) is captured once before the scan loop from `suggest_scan_ranges()`. After each batch, `remaining` unscanned blocks are recalculated, then `pct = 1.0 - remaining / initial_total`. Note: `suggest_scan_ranges()` does not return `Scanned` ranges, so per-batch `total` cannot be used as the denominator. Each progress event includes `has_new_tx` (from `ScanSummary` received/spent note counts) to trigger transaction history refresh only when needed.
+Progress percentage (`sync_engine/progress_work.rs`): the share of estimated scan work finished for one sync job. Work for a range is a weighted sum of its blocks, Sapling outputs, Orchard and Ironwood actions, and planned batches; output counts come from the compiled mainnet tree sizes and downloaded subtree completion heights, so the estimate sends no request. Blocks alone stall for most of a full-history sync (the 2022 sandblasting window holds nearly all outputs), and outputs alone stall on the long sparse stretch before it. `mark_sync_started` claims the job (the unfinished one, or a new id) in `ext_vizor_sync_meta`, where its id, total work and fraction stay until `mark_sync_completed` clears them, so retries, endpoint fallbacks and relaunches resume the same fraction (`get_sync_status` exposes it for bootstrap). Within an attempt, new pending work (tip growth, rewinds, repairs, new ranges) raises the total; it never restarts the denominator. Work found after the main scan drains (witness and anchor repairs, blocks a final tip refresh adds) shows as Checking instead: events carry `checking` with that queue's own block fraction while `percentage` stays at 1.0, and `retry_progress.rs` keeps the Checking stage across `run_sync_inner` retries (the job already carries the main scan's fraction). Work that appeared between attempts keeps the stored fraction and stretches the rest. Only new work larger than what the job finished (and than one reference batch), or any real catch-up after a job that had scanned everything, replaces the job under a new id. Every event carries `sync_job_id`; Dart restarts the display only for a new job. Each progress event also includes `has_new_tx` (from `ScanSummary` received/spent note counts) to trigger transaction history refresh only when needed.
 
 Automatic retry: `run_sync_inner` wraps `run_sync_impl` with exponential backoff (3 retries, 2s/4s/8s). Cancel and mode-change are checked during retry wait. Both FRB and C FFI paths benefit.
 
@@ -600,7 +600,7 @@ rust/src/
 │   │                    # MemoryBlockSource (BlockSource trait impl)
 │   │                    # Single DB connection reused across entire sync
 │   │                    # Checks cancel + mode mismatch after each download/scan/batch
-│   │                    # Progress: initial_total based (remaining / initial_total)
+│   │                    # Progress: work-unit fraction of a persisted sync job
 │   │                    # has_new_tx from ScanSummary note counts
 │   └── keystone.rs     # Keystone hardware wallet integration:
 │                        # - UR (Uniform Resources) encode/decode for animated QR:

@@ -277,7 +277,6 @@ impl StoredProgressJob {
     }
 }
 
-#[cfg(test)]
 pub(super) fn read_progress_job(db_data_path: &str) -> Result<Option<StoredProgressJob>, String> {
     let conn = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
     read_job(&conn)
