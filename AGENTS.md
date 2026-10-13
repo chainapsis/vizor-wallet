@@ -507,7 +507,9 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
    the scan frontier is scanned together with the queued batch it falls in
 4. `scan_cached_blocks` from memory. A batch takes as many blocks as fit a
    compact-block byte budget (about 31 MB on desktop, 11 MB on mobile), up to
-   2,000 blocks on desktop, 1,000 on mobile and 300 in background mode. Bytes
+   10,000 blocks on desktop, 1,000 on mobile and 300 in background mode (each
+   batch also pays a fixed serial cost after its scan, so sparse history wants
+   long batches). Bytes
    are estimated from the compiled mainnet tree sizes and the downloaded subtree
    completion heights, so the dense spam window gets short batches without
    hardcoded heights and the estimate sends no request; past the compiled table

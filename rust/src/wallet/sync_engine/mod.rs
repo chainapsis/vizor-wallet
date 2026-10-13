@@ -197,8 +197,14 @@ pub struct SyncProgressEvent {
     pub sync_job_id: String,
 }
 
+/// Blocks per scan batch at most; the byte budget decides below it. Every
+/// batch pays a fixed serial cost after its scan (range and checkpoint
+/// bookkeeping, tip check), so sparse history wants long batches: on a
+/// 400,000-block stretch before the spam window, 10,000 instead of 2,000
+/// cut the scan from 81 to 32 s (medians of three runs) and its CPU time by
+/// a fifth. Mobile keeps 1,000 until measured on a phone.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const BATCH_SIZE_FOREGROUND: u32 = 2000;
+const BATCH_SIZE_FOREGROUND: u32 = 10_000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
