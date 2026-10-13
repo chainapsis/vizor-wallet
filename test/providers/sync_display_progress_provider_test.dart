@@ -262,6 +262,226 @@ void main() {
     expect(container.read(syncDisplayPercentageProvider), 0);
   });
 
+  group('sync jobs', () {
+    final firstStartedAt = DateTime.utc(2026, 10, 10);
+    final secondStartedAt = firstStartedAt.add(const Duration(minutes: 1));
+
+    Future<(ProviderContainer, FakeSyncNotifier)> start(
+      SyncState initial,
+    ) async {
+      late FakeSyncNotifier syncNotifier;
+      final container = ProviderContainer(
+        overrides: [
+          syncProvider.overrideWith(
+            () => syncNotifier = FakeSyncNotifier(initial),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        syncDisplayPercentageProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      return (container, syncNotifier);
+    }
+
+    SyncState scanState({
+      required double percentage,
+      required String jobId,
+      DateTime? startedAt,
+    }) => SyncState(
+      isSyncing: true,
+      phase: 'scan',
+      percentage: percentage,
+      displayTargetPercentage: percentage,
+      lastSyncStartedAt: startedAt ?? firstStartedAt,
+      syncJobId: jobId,
+    );
+
+    test('a new session of an unfinished job continues its value', () async {
+      final (container, sync) = await start(
+        scanState(percentage: 0.5, jobId: 'job-a'),
+      );
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.52, 0.001),
+      );
+
+      sync.emit(
+        SyncState(
+          isSyncing: true,
+          phase: kSyncPhasePreflight,
+          percentage: 0.5,
+          lastSyncStartedAt: secondStartedAt,
+          syncJobId: 'job-a',
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.52, 0.001),
+      );
+
+      sync.emit(
+        scanState(percentage: 0.51, jobId: 'job-a', startedAt: secondStartedAt),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.05 + 0.94 * 0.51, 0.001),
+      );
+    });
+
+    test('holds until the new attempt names its job, then restarts '
+        'for a different one', () async {
+      final (container, sync) = await start(
+        scanState(percentage: 0.5, jobId: 'job-a'),
+      );
+
+      sync.emit(
+        SyncState(
+          isSyncing: true,
+          phase: kSyncPhasePreflight,
+          lastSyncStartedAt: secondStartedAt,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.52, 0.001),
+      );
+
+      sync.emit(
+        scanState(percentage: 0, jobId: 'job-b', startedAt: secondStartedAt),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.05, 1e-9),
+      );
+    });
+
+    test('restarts when Rust replaces the job mid-session', () async {
+      final (container, sync) = await start(
+        scanState(percentage: 0.5, jobId: 'job-a'),
+      );
+
+      sync.emit(scanState(percentage: 0.01, jobId: 'job-b'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.05 + 0.94 * 0.01, 0.001),
+      );
+    });
+
+    test('a resumed job skips the 0-5% preparation range', () async {
+      final (container, _) = await start(
+        SyncState(
+          isSyncing: true,
+          phase: kSyncPhaseActiveUtxo,
+          percentage: 0.4,
+          lastSyncStartedAt: firstStartedAt,
+          syncJobId: 'job-a',
+        ),
+      );
+
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.05 + 0.94 * 0.4, 0.001),
+      );
+    });
+
+    test('keeps its value between attempts', () async {
+      final (container, sync) = await start(
+        scanState(percentage: 0.5, jobId: 'job-a'),
+      );
+
+      sync.emit(
+        SyncState(
+          percentage: 0.5,
+          lastSyncStartedAt: firstStartedAt,
+          syncJobId: 'job-a',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.52, 0.001),
+      );
+    });
+
+    test('a relaunch with a stored job resumes where it stopped', () async {
+      // The bootstrap snapshot carries the stored job and its fraction.
+      final (container, sync) = await start(
+        SyncState(percentage: 0.4, syncJobId: 'job-a'),
+      );
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.05 + 0.94 * 0.4, 0.001),
+      );
+
+      sync.emit(
+        SyncState(
+          isSyncing: true,
+          phase: kSyncPhasePreflight,
+          percentage: 0.4,
+          lastSyncStartedAt: firstStartedAt,
+          syncJobId: 'job-a',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.05 + 0.94 * 0.4, 0.001),
+      );
+    });
+
+    test('an idle state without a job drops the held value', () async {
+      final (container, sync) = await start(
+        scanState(percentage: 0.5, jobId: 'job-a'),
+      );
+
+      // Signed out or wallet reset.
+      sync.emit(SyncState());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(syncDisplayPercentageProvider), 0);
+    });
+
+    test('a sync after a completed job starts from zero', () async {
+      final (container, sync) = await start(
+        scanState(percentage: 0.5, jobId: 'job-a'),
+      );
+      sync.emit(
+        SyncState(
+          isSyncComplete: true,
+          percentage: 1,
+          lastSyncStartedAt: firstStartedAt,
+          syncJobId: 'job-a',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(syncDisplayPercentageProvider), 1);
+
+      sync.emit(
+        SyncState(
+          isSyncing: true,
+          phase: kSyncPhasePreflight,
+          lastSyncStartedAt: secondStartedAt,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(syncDisplayPercentageProvider), 0);
+    });
+  });
+
   test('interpolates without republishing SyncState', () async {
     final initial = SyncState(
       isSyncing: true,
