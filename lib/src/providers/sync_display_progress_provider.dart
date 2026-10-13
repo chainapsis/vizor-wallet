@@ -22,6 +22,7 @@ typedef _SyncDisplayTarget = ({
   int phaseTotalUnits,
   String phase,
   DateTime? startedAt,
+  String jobId,
 });
 
 _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
@@ -38,6 +39,7 @@ _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
     phaseTotalUnits: sync.phaseTotalUnits,
     phase: sync.isChecking ? 'checking' : sync.phase,
     startedAt: sync.lastSyncStartedAt,
+    jobId: sync.syncJobId,
   );
 }
 
@@ -48,6 +50,10 @@ _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
 /// committed work units, while indeterminate waits approach—but never reach—
 /// their phase ceiling over time. Authoritative block progress is then mapped
 /// into 5-99%; only a real completion event can produce 100%.
+///
+/// A display session restarts from zero only for a new sync job. A new
+/// attempt of an unfinished job (Rust retry, endpoint fallback, relaunch)
+/// keeps the value it reached and resumes from the job's stored percentage.
 final syncDisplayPercentageProvider =
     NotifierProvider.autoDispose<SyncDisplayPercentageNotifier, double>(
       SyncDisplayPercentageNotifier.new,
@@ -75,6 +81,8 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
   Timer? _timer;
   _SyncDisplayTarget? _target;
   DateTime? _sessionStartedAt;
+  String _sessionJobId = '';
+  bool _sessionCompleted = false;
   String _phase = '';
   int _checkingCycle = 0;
   Stopwatch? _phaseStopwatch;
@@ -83,10 +91,7 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
   @override
   double build() {
     final input = ref.watch(syncProvider.select(_displayTarget));
-    final isNewSession =
-        input.isSyncing &&
-        input.startedAt != null &&
-        input.startedAt != _sessionStartedAt;
+    final isNewSession = _beginsNewSession(input);
     final isNewStage = input.isSyncing && input.checkingCycle != _checkingCycle;
     if (isNewSession || isNewStage) {
       _stopTimer();
@@ -94,9 +99,9 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
       _phase = '';
       _phaseStopwatch = null;
     }
+    _trackSession(input, isNewSession: isNewSession);
     _target = input;
     _checkingCycle = input.checkingCycle;
-    _sessionStartedAt = input.startedAt;
     ref.onDispose(_stopTimer);
     Future<void>.microtask(() {
       if (ref.mounted && identical(_target, input)) _applyTarget(input);
@@ -108,30 +113,62 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
     return _displayValue;
   }
 
+  /// Whether [input] starts a display session that restarts from zero.
+  ///
+  /// A new attempt continues the current session while it belongs to the
+  /// same unfinished job, including before its first event names the job.
+  /// A job Rust replaced (different id) always restarts.
+  bool _beginsNewSession(_SyncDisplayTarget input) {
+    if (!input.isSyncing) return false;
+    final hasSession = _sessionJobId.isNotEmpty && !_sessionCompleted;
+    final isNewAttempt =
+        input.startedAt != null && input.startedAt != _sessionStartedAt;
+    if (input.jobId.isNotEmpty && _sessionJobId.isNotEmpty) {
+      if (input.jobId != _sessionJobId) return true;
+      return isNewAttempt && _sessionCompleted;
+    }
+    return isNewAttempt && !hasSession;
+  }
+
+  void _trackSession(_SyncDisplayTarget input, {required bool isNewSession}) {
+    if (input.isSyncing && input.startedAt != _sessionStartedAt) {
+      _sessionCompleted = false;
+    }
+    _sessionStartedAt = input.startedAt;
+    if (isNewSession || input.jobId.isNotEmpty) _sessionJobId = input.jobId;
+    if (input.isSyncComplete) _sessionCompleted = true;
+  }
+
   double _initialValue(_SyncDisplayTarget input) {
     if (input.isSyncComplete) return 1;
-    if (!input.isSyncing) {
-      return input.percentage.clamp(0.0, _scanCeiling).toDouble();
-    }
+    if (!input.isSyncing) return _resumedFloor(input);
     if (isSyncPreparationPhase(input.phase)) {
       final range = _preparationRange(input.phase);
-      return math.max(range.floor, _measuredPreparation(input, range));
+      return math.max(
+        _resumedFloor(input),
+        math.max(range.floor, _measuredPreparation(input, range)),
+      );
     }
     return _mappedScanPercentage(input.percentage, input.phase);
   }
 
+  /// The scan-range value of a resumed job's stored percentage, so
+  /// preparation of a later attempt does not show 0-5% again. Zero for a
+  /// new job. Also the idle value, so starting a sync does not jump.
+  double _resumedFloor(_SyncDisplayTarget input) {
+    if (input.percentage <= 0) return 0;
+    return _mappedScanPercentage(input.percentage, 'scan');
+  }
+
   void _applyTarget(_SyncDisplayTarget input) {
-    final isNewSession =
-        input.isSyncing &&
-        input.startedAt != null &&
-        input.startedAt != _sessionStartedAt;
+    final isNewSession = _beginsNewSession(input);
     if (isNewSession) {
       _stopTimer();
       _publish(0);
       _phase = '';
       _phaseStopwatch = null;
-      _sessionStartedAt = input.startedAt;
     }
+    _trackSession(input, isNewSession: isNewSession);
     _target = input;
 
     if (input.isSyncComplete) {
@@ -140,8 +177,12 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
       return;
     }
     if (!input.isSyncing) {
+      // Between attempts of a job (stopped, failed, restarting) keep what
+      // the session reached. Without a job (signed out, wallet reset) show
+      // the plain value. Both use the scan-range mapping a sync resumes in.
       _stopTimer();
-      _publish(input.percentage.clamp(0.0, _scanCeiling).toDouble());
+      final floor = _resumedFloor(input);
+      _publish(input.jobId.isNotEmpty ? math.max(_displayValue, floor) : floor);
       return;
     }
 
@@ -160,7 +201,12 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
       _phaseStopwatch = Stopwatch()..start();
     }
     final measured = _measuredPreparation(input, range);
-    _publish(math.max(_displayValue, math.max(range.floor, measured)));
+    _publish(
+      math.max(
+        math.max(_displayValue, _resumedFloor(input)),
+        math.max(range.floor, measured),
+      ),
+    );
     final elapsedMs = _phaseStopwatch?.elapsedMilliseconds.toDouble() ?? 0;
     if (_timer == null &&
         _displayValue < range.ceiling &&
