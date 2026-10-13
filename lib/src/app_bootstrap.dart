@@ -138,6 +138,7 @@ class AppSyncSnapshot {
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
+    this.syncJobId = '',
     this.isSyncComplete = false,
     required this.transparentBalance,
     required this.saplingBalance,
@@ -166,6 +167,10 @@ class AppSyncSnapshot {
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
+
+  /// Unfinished Rust sync job [percentage] belongs to, or empty when
+  /// [percentage] is the scanned share of blocks.
+  final String syncJobId;
   final bool isSyncComplete;
   final BigInt transparentBalance;
   final BigInt saplingBalance;
@@ -816,7 +821,12 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
     }
     final scannedHeight = syncStatus.scannedHeight.toInt();
     final chainTipHeight = syncStatus.chainTipHeight.toInt();
-    final percentage = chainTipHeight == 0
+    // An unfinished job reports its own fraction, so the next sync resumes
+    // from what the last session showed.
+    final syncJobId = syncStatus.syncJobId;
+    final percentage = syncJobId.isNotEmpty
+        ? syncStatus.syncJobFraction.clamp(0.0, 1.0)
+        : chainTipHeight == 0
         ? 0.0
         : (scannedHeight / chainTipHeight).clamp(0.0, 1.0);
 
@@ -831,6 +841,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
       percentage: percentage,
+      syncJobId: syncJobId,
       isSyncComplete: syncStatus.isComplete,
       transparentBalance: balance.transparent,
       saplingBalance: balance.sapling,
