@@ -910,7 +910,6 @@ fn mark_sync_started(db_data_path: &str) -> Result<progress_work::StoredProgress
 
 /// The unfinished sync job's id and last fraction, for the status a relaunch
 /// starts from.
-#[cfg(test)]
 pub(crate) fn unfinished_progress_job(db_data_path: &str) -> Option<(String, f64)> {
     match progress_work::read_progress_job(db_data_path) {
         Ok(job) => job
