@@ -6,6 +6,9 @@
 # acceptance by such a reader does not qualify a writable downgrade.
 #
 # usage: scripts/test-db-upgrade.sh <base-ref> [scenario...]
+#
+# The synced-regtest scenario, not run by default, also needs the
+# scripts/regtest services (Docker): the base build syncs a wallet from them.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -58,6 +61,8 @@ run_probe() {
   shift
   (
     cd "$worktree/rust"
+    # Scenarios that sync from regtest use the current tree's services.
+    VIZOR_REGTEST_ROOT="$ROOT_DIR" \
     CARGO_TARGET_DIR="$TARGET_DIR" \
       cargo run --locked --quiet --example db_upgrade -- "$@"
   )

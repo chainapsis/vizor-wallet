@@ -733,3 +733,209 @@ async fn a_wallet_that_never_recovered_privately_has_nothing_to_forget() {
     assert_eq!(forget_private_ledger(&missing, NETWORK).unwrap(), None);
     assert!(!std::path::Path::new(&missing).exists());
 }
+
+/// A wallet that only ever ran public, with history built through the public
+/// paths every user runs: the UTXO refresh against lightwalletd, payload
+/// storage of a spend and of both legs of a TEX send, and the ZIP 320 check of
+/// the TEX pair's ephemeral address. Forgetting the private ledger, as the
+/// sync start and a toggle-off do, removes nothing and changes no table, not
+/// even on a second run.
+#[tokio::test(flavor = "multi_thread")]
+async fn forgetting_a_public_wallets_history_changes_no_table() {
+    use zcash_client_backend::data_api::wallet::decrypt_and_store_transaction;
+    use zcash_client_backend::proto::service::GetAddressUtxosReply;
+    use zcash_keys::encoding::AddressCodec as _;
+    use zcash_primitives::transaction::Transaction;
+
+    use crate::wallet::sync_engine::test_lwd::CapturingLwd;
+    use crate::wallet::sync_engine::transparent_recovery_tests::legacy_transaction;
+    use crate::wallet::sync_engine::{
+        ephemeral_checks, refresh_utxos, TransparentAccountSelection,
+    };
+
+    const RECEIVED: u32 = 150;
+    let _route = crate::network_privacy::test_route_policy::lock_route_policy();
+    let mut wallet = wallet();
+    let path = wallet.path.clone();
+    wallet
+        .db
+        .update_chain_tip(BlockHeight::from_u32(TIP))
+        .unwrap();
+    let public = policy(TransparentLedgerMode::Public);
+    let tip = BlockHeight::from_u32(TIP);
+    let store = |db: &mut WalletDatabase, tx: &Transaction, height: u32| {
+        decrypt_and_store_transaction(&NETWORK, db, tx, Some(BlockHeight::from_u32(height)))
+            .unwrap();
+    };
+
+    // Two receipts at the first external address, found by the UTXO refresh.
+    let receipts = [0xa1, 0xa2]
+        .map(|tag| legacy_transaction(OutPoint::new([tag; 32], 0), external(&wallet, 0), VALUE));
+    let utxos = receipts
+        .iter()
+        .map(|tx| GetAddressUtxosReply {
+            address: String::new(),
+            txid: tx.txid().as_ref().to_vec(),
+            index: 0,
+            script: tx.transparent_bundle().unwrap().vout[0]
+                .script_pubkey()
+                .0
+                 .0
+                .clone(),
+            value_zat: VALUE as i64,
+            height: u64::from(RECEIVED),
+        })
+        .collect();
+    let mut lwd = CapturingLwd::start_serving_utxos(utxos, u64::from(TIP)).await;
+    let mut received = false;
+    let refreshed = refresh_utxos(
+        &mut lwd.client,
+        &path,
+        &mut wallet.db,
+        NETWORK,
+        public,
+        tip,
+        TransparentAccountSelection::All,
+        None,
+        &mut received,
+        None,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert!(!refreshed.withheld && received, "{refreshed:?}");
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent, 2 * VALUE);
+    // Payload retrieval stores the receipts' transactions.
+    for receipt in &receipts {
+        store(&mut wallet.db, receipt, RECEIVED);
+    }
+
+    // A spend of the first receipt to an outside address.
+    let outside = |tag: u8| TransparentAddress::PublicKeyHash([tag; 20]);
+    let spend = legacy_transaction(
+        OutPoint::new(*receipts[0].txid().as_ref(), 0),
+        outside(0x42),
+        VALUE - 10_000,
+    );
+    store(&mut wallet.db, &spend, 160);
+
+    // A TEX send of the second receipt: the first leg pays the account's
+    // ephemeral address, the second leg spends that output to the recipient.
+    let ephemeral: String = rusqlite::Connection::open(&path)
+        .unwrap()
+        .query_row(
+            "SELECT cached_transparent_receiver_address FROM addresses
+             WHERE key_scope = 2 ORDER BY transparent_child_index LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let ephemeral = TransparentAddress::decode(&NETWORK, &ephemeral).unwrap();
+    let first_leg = legacy_transaction(
+        OutPoint::new(*receipts[1].txid().as_ref(), 0),
+        ephemeral,
+        VALUE - 10_000,
+    );
+    let second_leg = legacy_transaction(
+        OutPoint::new(*first_leg.txid().as_ref(), 0),
+        outside(0x43),
+        VALUE - 20_000,
+    );
+    store(&mut wallet.db, &first_leg, 170);
+    store(&mut wallet.db, &second_leg, 170);
+    assert_eq!(balance(&wallet, &wallet.uuid).transparent, 0);
+
+    // The ZIP 320 check of the now-used ephemeral address, made due, finds
+    // funds the TEX recipient returned to it.
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute(
+            "UPDATE addresses SET transparent_receiver_next_check_time = 0
+             WHERE cached_transparent_receiver_address = ?1",
+            [ephemeral.encode(&NETWORK)],
+        )
+        .unwrap();
+    let mut returned = Vec::new();
+    legacy_transaction(OutPoint::new([0xb1; 32], 0), ephemeral, 70_000)
+        .write(&mut returned)
+        .unwrap();
+    let history_lwd = CapturingLwd::start_with(returned, u64::from(TIP), |_| {}).await;
+    let mut changed = false;
+    ephemeral_checks::run(
+        &history_lwd.url,
+        &mut wallet.db,
+        &path,
+        NETWORK,
+        public,
+        tip,
+        &mut changed,
+        &|| false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(history_lwd.count("/GetTaddressTxids"), 1);
+    assert!(changed, "the check stored the returned funds");
+
+    // The public history is real: every transaction above, and its outputs
+    // and spends.
+    assert_eq!(count(&path, "SELECT COUNT(*) FROM transactions"), 6);
+    assert_eq!(
+        count(&path, "SELECT COUNT(*) FROM transparent_received_outputs"),
+        4
+    );
+    assert_eq!(
+        count(
+            &path,
+            "SELECT COUNT(*) FROM transparent_received_output_spends"
+        ),
+        3
+    );
+    let before = every_table_dump(&path);
+    // Every field of every history row, as the app reads them.
+    let history = || {
+        crate::wallet::sync::get_transaction_history(&path, NETWORK, None, &wallet.uuid)
+            .unwrap()
+            .iter()
+            .map(|tx| {
+                format!(
+                    "{} {} {} {} {} {:?} {} {} {} {} {} {:?} {:?} {:?} {:?} {} {} {} {}",
+                    tx.txid_hex,
+                    tx.mined_height,
+                    tx.expired_unmined,
+                    tx.account_balance_delta,
+                    tx.fee,
+                    tx.fee_state,
+                    tx.block_time,
+                    tx.is_transparent,
+                    tx.tx_kind,
+                    tx.display_amount,
+                    tx.display_pool,
+                    tx.activity_pool,
+                    tx.funding_parent_txid,
+                    tx.funding_parent_mined_height,
+                    tx.funding_parent_expired,
+                    tx.created_time,
+                    tx.details_complete,
+                    tx.provisional,
+                    tx.amount_includes_fee,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let history_before = history();
+    let balance_before = format!("{:?}", balance(&wallet, &wallet.uuid));
+
+    for run in 0..2 {
+        let forgotten = forget_private_ledger(&path, NETWORK).unwrap().unwrap();
+        assert!(forgotten.removed_nothing(), "run {run}: {forgotten:?}");
+        assert_eq!(every_table_dump(&path), before, "run {run}");
+        assert_eq!(history(), history_before, "run {run}");
+        assert_eq!(
+            format!("{:?}", balance(&wallet, &wallet.uuid)),
+            balance_before,
+            "run {run}"
+        );
+    }
+    assert!(!super::super::pir::companion_dir(&path).path().exists());
+    assert_eq!(applied(&path, NETWORK).mode, TransparentLedgerMode::Public);
+}

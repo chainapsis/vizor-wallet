@@ -28,6 +28,11 @@ mod compat;
 mod current;
 
 const NETWORK: &str = "regtest";
+/// A wallet the base build synced from the regtest services
+/// (`scripts/regtest`): two transparent receives from the faucet, found by
+/// the base build's own public discovery rather than inserted.
+const SYNCED_REGTEST: &str = "synced-regtest";
+const LIGHTWALLETD_URL: &str = "http://127.0.0.1:9067";
 const PRIMARY_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
 const SECONDARY_MNEMONIC: &str =
     "legal winner thank year wave sausage worth useful legal winner thank yellow";
@@ -278,6 +283,9 @@ fn create_fixture(scenario: &str, db_path: &str, manifest_path: &str) {
         !Path::new(db_path).exists(),
         "fixture DB already exists: {db_path}"
     );
+    if scenario == SYNCED_REGTEST {
+        return create_synced(db_path, manifest_path);
+    }
 
     if scenario == "hardware-first" {
         // No seed ever reaches this wallet: account creation and migration are seedless.
@@ -507,6 +515,9 @@ fn assert_fixture_balances(api: &ApiSnapshot) {
 }
 
 fn verify_upgraded(scenario: &str, db_path: &str, manifest_path: &str) {
+    if scenario == SYNCED_REGTEST {
+        return verify_synced(db_path, manifest_path);
+    }
     let manifest = read_manifest(manifest_path);
     assert_eq!(manifest.state.scenario, scenario);
     let (expected, expected_api) = match &manifest.after_old {
@@ -588,6 +599,153 @@ fn verify_upgraded(scenario: &str, db_path: &str, manifest_path: &str) {
         actual.accounts.len(),
         actual.migration_ids.len(),
         manifest.after_old.is_some(),
+    );
+}
+
+/// Runs `scripts/regtest/<name>` and returns the last line it printed. The
+/// scripts name their services after the checkout they run from, so both
+/// builds drive the current tree's services (`VIZOR_REGTEST_ROOT`, which
+/// `test-db-upgrade.sh` sets), falling back to the tree this probe was built
+/// in.
+fn regtest_script(name: &str, args: &[&str]) -> String {
+    let root = std::env::var_os("VIZOR_REGTEST_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("repository root")
+                .to_path_buf()
+        });
+    let script = root.join("scripts/regtest").join(name);
+    let output = std::process::Command::new(&script)
+        .args(args)
+        .output()
+        .unwrap_or_else(|error| panic!("run {}: {error}", script.display()));
+    assert!(
+        output.status.success(),
+        "{name} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+fn sync_from_regtest(db_path: &str, build: &str) {
+    sync::run_full_sync_blocking(
+        db_path.to_string(),
+        LIGHTWALLETD_URL.to_string(),
+        NETWORK.to_string(),
+        1,
+    )
+    .unwrap_or_else(|error| panic!("the {build} build syncs from regtest: {error}"));
+}
+
+/// The base build creates a wallet, receives two transparent payments from
+/// the regtest faucet, and finds them through its own sync.
+fn create_synced(db_path: &str, manifest_path: &str) {
+    regtest_script("up.sh", &[]);
+    let uuid = compat::import_wallet(PRIMARY_MNEMONIC, NETWORK, db_path, "Primary");
+    let taddr = wallet::get_transparent_receive_address(
+        db_path.to_string(),
+        NETWORK.to_string(),
+        Some(uuid),
+    )
+    .expect("a transparent receive address");
+    for amount in ["0.5", "0.25"] {
+        let txid = regtest_script("fund-wallet.sh", &[&taddr, amount, "3"]);
+        println!("funded {taddr} with {amount}: {txid}");
+    }
+    sync_from_regtest(db_path, "base");
+
+    let state = read_legacy_state(db_path, SYNCED_REGTEST);
+    assert_scenario_shape(&state);
+    // The mnemonic is fixed and the regtest chain persists, so earlier runs
+    // may have paid it too.
+    assert!(
+        state.transparent_unspent_zat >= 75_000_000,
+        "the base build found both receives: {}",
+        state.transparent_unspent_zat
+    );
+    assert_sqlite_health(db_path);
+    let manifest = Manifest {
+        state,
+        schema: read_schema(db_path),
+        api: read_api(db_path),
+        after_old: None,
+    };
+    write_manifest(manifest_path, &manifest);
+    println!(
+        "created scenario={SYNCED_REGTEST} transparent={}",
+        manifest.state.transparent_unspent_zat
+    );
+}
+
+/// The upgrade keeps what the base build's sync found, and so does the
+/// current build's first sync of the upgraded wallet: its sync-start forget
+/// and its public follow-ups. Balances and history change only as the
+/// documented history rules state.
+fn verify_synced(db_path: &str, manifest_path: &str) {
+    let manifest = read_manifest(manifest_path);
+    let expected = &manifest.state;
+    let accounts = wallet::list_accounts(db_path.to_string(), NETWORK.to_string())
+        .expect("open and migrate wallet");
+    assert_eq!(accounts.len(), expected.accounts.len());
+    let upgraded = read_legacy_state(db_path, SYNCED_REGTEST);
+    assert_eq!(
+        accounts_as_base(&upgraded.accounts, &manifest.schema),
+        expected.accounts,
+        "account rows changed during upgrade"
+    );
+    assert_migrations(expected, &upgraded);
+    assert_current_schema(db_path);
+    assert_schema_superset(
+        &manifest.schema,
+        &read_schema(db_path),
+        &REMOVED_FOR_ALL_BUILDS,
+    );
+
+    assert_eq!(
+        upgraded.transparent_unspent_zat, expected.transparent_unspent_zat,
+        "transparent balance changed during the upgrade"
+    );
+    assert_eq!(
+        strip_locks(&upgraded.transparent_outputs, expected),
+        expected.transparent_outputs,
+        "transparent outputs or spends changed during the upgrade"
+    );
+    let conn = rusqlite::Connection::open(db_path).expect("open upgraded DB");
+    let first_verify = scalar_i64(&conn, "SELECT COUNT(*) FROM transparent_detail_work") == 0;
+    if first_verify {
+        assert_public_ledger_after_upgrade(&conn);
+    }
+    drop(conn);
+
+    sync_from_regtest(db_path, "current");
+    let synced = read_legacy_state(db_path, SYNCED_REGTEST);
+    assert_eq!(
+        synced.transparent_unspent_zat, expected.transparent_unspent_zat,
+        "the current build's first sync changed the transparent balance"
+    );
+    assert_eq!(
+        strip_locks(&synced.transparent_outputs, expected),
+        expected.transparent_outputs,
+        "the current build's first sync changed transparent outputs or spends"
+    );
+    let actual_api = read_api(db_path);
+    current::assert_current_api(db_path, &actual_api);
+    assert_eq!(
+        actual_api,
+        current::expected_current_api(db_path, &manifest.api),
+        "the current build reports different balances or history than the base build"
+    );
+    assert_sqlite_health(db_path);
+    println!(
+        "verified scenario={SYNCED_REGTEST} transparent={} first_verify={first_verify}",
+        synced.transparent_unspent_zat
     );
 }
 
@@ -685,6 +843,14 @@ fn expected_spendable(manifest: &Manifest) -> BTreeSet<(String, u32, u64)> {
 /// records stored before the upgrade.
 fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
     let conn = rusqlite::Connection::open(db_path).expect("open upgraded DB");
+    assert_public_ledger_after_upgrade(&conn);
+    assert_fixture_provenance(&conn, after_old);
+}
+
+/// What every upgraded, never-private wallet holds: the transparent ledger
+/// tables, empty of recovery and private work, a public policy in its first
+/// generation, and legacy provenance on every transparent output.
+fn assert_public_ledger_after_upgrade(conn: &rusqlite::Connection) {
     for table in ["tpir_meta", "tpir_output_origins", "tpir_spend_origins"] {
         assert!(object_exists(&conn, "table", table), "missing {table}");
     }
@@ -747,6 +913,11 @@ fn assert_transparent_ledger(db_path: &str, after_old: Option<&AfterOld>) {
         0,
         "transparent output without legacy provenance"
     );
+}
+
+/// The provenance of the inserted fixture's transactions, and of the base
+/// build's transaction when it spent after the upgrade.
+fn assert_fixture_provenance(conn: &rusqlite::Connection, after_old: Option<&AfterOld>) {
     let output_origins = |txid: &[u8]| {
         origins(
             &conn,
@@ -1386,6 +1557,10 @@ fn assert_scenario_shape(state: &LegacyState) {
             assert_eq!(state.accounts.len(), 2);
             assert_eq!(state.accounts[0].account_kind, 0);
             assert_eq!(state.accounts[1].account_kind, 1);
+        }
+        SYNCED_REGTEST => {
+            assert_eq!(state.accounts.len(), 1);
+            assert_eq!(state.accounts[0].account_kind, 0);
         }
         "imported-only" | "hardware-first" => {
             assert_eq!(state.accounts.len(), 1);

@@ -4,6 +4,9 @@
 //! PIR service through the reference adapter `zakura_pir_transparent`, over the
 //! wallet's routed HTTPS transport. It answers for mainnet only, from
 //! [`DEFAULT_MAINNET_ORIGIN`]; debug builds honor `VIZOR_TRANSPARENT_PIR_URL`.
+//! Debug builds under the regtest history harness's switch also answer on
+//! regtest, from that override only, over plain HTTP to a loopback origin
+//! (see [`regtest_private_e2e`]).
 //! Every commit it returns comes from that origin, which is what lets the
 //! coordinator qualify it (the trusted-indexer decision).
 //!
@@ -65,7 +68,7 @@ use crate::wallet::db::{
     WalletDatabase, READ_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync_engine::enhancement::RoutedExchange;
+use crate::wallet::sync_engine::enhancement::{regtest_private_e2e, RoutedExchange};
 
 /// The transparent PIR service mainnet wallets recover from.
 pub(crate) const DEFAULT_MAINNET_ORIGIN: &str = "https://transparent-pir.valargroup.dev";
@@ -466,10 +469,26 @@ impl Pass {
 }
 
 /// The origin a source on `network` recovers from: `configured` or the
-/// default service, on mainnet only.
+/// default service on mainnet; on regtest under [`regtest_private_e2e`],
+/// `configured` only.
 pub(crate) fn origin_for(network: WalletNetwork, configured: Option<String>) -> Option<String> {
-    (network == WalletNetwork::Main)
-        .then(|| configured.unwrap_or_else(|| DEFAULT_MAINNET_ORIGIN.to_owned()))
+    origin_for_gated(network, configured, regtest_private_e2e(network))
+}
+
+/// [`origin_for`] with the regtest harness switch given. Regtest never falls
+/// back to the mainnet service.
+pub(super) fn origin_for_gated(
+    network: WalletNetwork,
+    configured: Option<String>,
+    regtest_e2e: bool,
+) -> Option<String> {
+    match network {
+        WalletNetwork::Main => {
+            Some(configured.unwrap_or_else(|| DEFAULT_MAINNET_ORIGIN.to_owned()))
+        }
+        WalletNetwork::Regtest if regtest_e2e => configured,
+        WalletNetwork::Regtest | WalletNetwork::Test => None,
+    }
 }
 
 /// The configured origin override, read with `read`, in debug builds only.

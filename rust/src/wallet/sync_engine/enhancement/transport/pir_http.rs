@@ -15,6 +15,13 @@
 //!
 //! Logs name the service, the method and the route template, never a shard
 //! id, digest, body or the origin.
+//!
+//! Debug builds have one exception to HTTPS, for the regtest transparent
+//! history harness: under its switch (see
+//! [`regtest_private_e2e`](crate::wallet::sync_engine::enhancement::regtest_private_e2e)),
+//! an origin that is exactly `http://127.0.0.1:<port>` or
+//! `http://[::1]:<port>` is reached over plain HTTP on the direct route, and
+//! refused while the wallet wants Tor. Release builds compile none of it.
 
 use bytes::Bytes;
 use http::{header::RETRY_AFTER, Method};
@@ -41,6 +48,10 @@ pub(crate) struct RoutedExchange<'a, F> {
     origin: String,
     handle: Handle,
     timeout: Duration,
+    /// Plain HTTP to the regtest harness's loopback service. Debug builds
+    /// only.
+    #[cfg(debug_assertions)]
+    loopback: bool,
     #[cfg(test)]
     observer: Option<RequestObserver>,
 }
@@ -79,7 +90,8 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     /// Builds the exchange for `origin` on the wallet's preferred route.
     ///
     /// Refuses an origin that is not HTTPS, or that carries a query the
-    /// service routes would be appended to.
+    /// service routes would be appended to, except the regtest harness's
+    /// loopback origin in a debug build (see [`regtest_loopback`]).
     fn new(
         service: &'static str,
         origin: &str,
@@ -87,6 +99,19 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
         handle: Handle,
         timeout: Duration,
     ) -> Result<Self, SyncError> {
+        #[cfg(debug_assertions)]
+        if regtest_loopback(origin) {
+            return Ok(Self {
+                route: RoutedTransport::regtest_loopback(should_exit),
+                service,
+                origin: origin.trim_end_matches('/').to_owned(),
+                handle,
+                timeout,
+                loopback: true,
+                #[cfg(test)]
+                observer: None,
+            });
+        }
         if secure_endpoint_uri(origin)?.query().is_some() {
             return Err(SyncError::parse(format!(
                 "{service} origin must not carry a query"
@@ -98,6 +123,8 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
             origin: origin.trim_end_matches('/').to_owned(),
             handle,
             timeout,
+            #[cfg(debug_assertions)]
+            loopback: false,
             #[cfg(test)]
             observer: None,
         })
@@ -128,6 +155,18 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
         let exchange = async {
             #[cfg(test)]
             if let Some(response) = answer {
+                return read(response, request).await;
+            }
+            #[cfg(debug_assertions)]
+            if self.loopback {
+                let response = super::regtest_loopback_response(
+                    method,
+                    &url,
+                    request.body.clone(),
+                    &self.route.direct,
+                )
+                .await
+                .map_err(|_| HttpFailure::Unreachable)?;
                 return read(response, request).await;
             }
             let response = routed_response(
@@ -243,6 +282,36 @@ where
         }
     }
     Ok((bytes, true))
+}
+
+/// Whether `origin` is the regtest harness's loopback service in this
+/// process: a debug build under the harness's switch, and an origin that is
+/// exactly `http://127.0.0.1:<port>` or `http://[::1]:<port>`.
+#[cfg(debug_assertions)]
+fn regtest_loopback(origin: &str) -> bool {
+    is_loopback_http_origin(origin)
+        && crate::wallet::sync_engine::enhancement::regtest_private_e2e(
+            crate::wallet::network::WalletNetwork::Regtest,
+        )
+}
+
+/// Whether `origin` is exactly a plain-HTTP loopback origin with a port:
+/// `http://127.0.0.1:<port>` or `http://[::1]:<port>`, with no user info,
+/// path or query. `localhost` is refused: it resolves through the system.
+#[cfg(debug_assertions)]
+fn is_loopback_http_origin(origin: &str) -> bool {
+    let Ok(uri) = origin.parse::<http::Uri>() else {
+        return false;
+    };
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    uri.scheme_str() == Some("http")
+        && !authority.as_str().contains('@')
+        && matches!(authority.host(), "127.0.0.1" | "[::1]")
+        && authority.port_u16().is_some()
+        && uri.path() == "/"
+        && uri.query().is_none()
 }
 
 /// One request as dispatched.
@@ -494,6 +563,83 @@ mod tests {
         assert!(reply.is_err(), "no TLS service answered: {reply:?}");
         accepted.join().unwrap().expect("the request was sent");
         assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+    }
+
+    /// Debug builds admit plain HTTP only to an exact loopback origin, and
+    /// only under the regtest harness's switch, which unit tests never set.
+    /// Release builds compile none of it; see
+    /// `release_builds_ignore_the_regtest_switch`.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn only_an_exact_loopback_origin_may_be_plain_http() {
+        for origin in [
+            "http://127.0.0.1:8080",
+            "http://[::1]:8080",
+            "http://127.0.0.1:8080/",
+        ] {
+            assert!(is_loopback_http_origin(origin), "refused {origin}");
+        }
+        for origin in [
+            "http://localhost:8080",
+            "http://10.0.0.1:8080",
+            "http://127.0.0.2:8080",
+            "http://127.0.0.1",
+            "http://user@127.0.0.1:8080",
+            "http://127.0.0.1:8080?route=1",
+            "http://127.0.0.1:8080/v1",
+            "https://127.0.0.1:8080",
+            "127.0.0.1:8080",
+        ] {
+            assert!(!is_loopback_http_origin(origin), "accepted {origin}");
+        }
+        let runtime = runtime();
+        let exit = || false;
+        assert!(!regtest_loopback("http://127.0.0.1:8080"));
+        assert!(RoutedExchange::transparent(
+            "http://127.0.0.1:8080",
+            &exit,
+            runtime.handle().clone()
+        )
+        .is_err());
+    }
+
+    /// A release build ignores the regtest harness's switch even when it is
+    /// set: regtest selects public recovery, has no transparent PIR origin,
+    /// and a loopback origin is refused as plain HTTP. Runs only under
+    /// `cargo test --release`, where setting the switch affects no other test.
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn release_builds_ignore_the_regtest_switch() {
+        use crate::wallet::network::WalletNetwork;
+        use crate::wallet::sync_engine::enhancement::{
+            regtest_private_e2e, transparent_mode_for_preference,
+        };
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+        std::env::set_var("ZCASH_E2E_REGTEST_PRIVATE_TRANSPARENT", "1");
+        std::env::set_var("VIZOR_TRANSPARENT_PIR_URL", "http://127.0.0.1:8080");
+        assert!(!regtest_private_e2e(WalletNetwork::Regtest));
+        assert_eq!(
+            transparent_mode_for_preference(WalletNetwork::Regtest, true),
+            TransparentLedgerMode::Public
+        );
+        assert_eq!(
+            crate::wallet::sync_engine::transparent_details::source::txid_origin(
+                WalletNetwork::Regtest
+            ),
+            None
+        );
+        let runtime = runtime();
+        let exit = || false;
+        for origin in ["http://127.0.0.1:8080", "http://[::1]:8080"] {
+            assert!(
+                RoutedExchange::transparent(origin, &exit, runtime.handle().clone()).is_err(),
+                "accepted {origin}"
+            );
+            assert!(
+                RoutedExchange::txid(origin, &exit, runtime.handle().clone()).is_err(),
+                "accepted {origin}"
+            );
+        }
     }
 
     #[test]

@@ -319,13 +319,26 @@ fn count(path: &str, sql: &str) -> i64 {
 
 /// Every non-`tpir_*` table, rows rendered and sorted.
 fn production_dump(path: &str) -> Vec<(String, Vec<String>)> {
+    dump_tables(
+        path,
+        "AND name NOT LIKE 'tpir\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
+    )
+}
+
+/// Every table, the private ledger's and SQLite's own included, rows
+/// rendered and sorted.
+fn every_table_dump(path: &str) -> Vec<(String, Vec<String>)> {
+    dump_tables(path, "")
+}
+
+/// The tables `filter` admits, an SQL condition on `name` starting with
+/// `AND`, rows rendered and sorted.
+fn dump_tables(path: &str, filter: &str) -> Vec<(String, Vec<String>)> {
     let conn = rusqlite::Connection::open(path).unwrap();
     let tables: Vec<String> = conn
-        .prepare(
-            "SELECT name FROM sqlite_master WHERE type = 'table'
-             AND name NOT LIKE 'tpir\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
-             ORDER BY name",
-        )
+        .prepare(&format!(
+            "SELECT name FROM sqlite_master WHERE type = 'table' {filter} ORDER BY name"
+        ))
         .unwrap()
         .query_map([], |row| row.get(0))
         .unwrap()

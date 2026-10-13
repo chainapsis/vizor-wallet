@@ -808,7 +808,11 @@ trusted, since every commit comes from the configured origin.
   after a batch of accounts with no history). Only a complete answer counts. When
   its query or byte budget stops a pass, the library keeps what it confirmed
   and runs another pass over the rest with the filters it already has, so one
-  heavily used address cannot exhaust the check; an outage, a lagging publication, the 300 s deadline or anything else
+  heavily used address cannot exhaust the check. Debug builds on regtest under
+  `ZCASH_E2E_REGTEST_PRIVATE_TRANSPARENT` read
+  `ZCASH_E2E_REGTEST_DISCOVERY_MAX_QUERIES` and `..._MAX_SHARDS`, which lower
+  each pass's budgets so the transparent history harness reaches that stop on a
+  small chain; release builds never read them. An outage, a lagging publication, the 300 s deadline or anything else
   fails the import with a retry message, never a shorter list. Into an
   existing wallet the message also names the Settings toggle; a first wallet
   has no Settings yet. The

@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:zcash_wallet/app.dart' show applyEnhancePirPolicy;
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -91,6 +94,30 @@ class _Store implements EnhancePirPreferenceStore {
     value = enabled;
   }
 }
+
+/// A bootstrap on mainnet with the saved preference `enabled` (`null` when
+/// it could not be read).
+AppBootstrapState _bootstrap(bool? enabled, {bool hasAccount = false}) =>
+    AppBootstrapState(
+      initialLocation: '/settings',
+      initialAccountState: hasAccount
+          ? const AccountState(
+              accounts: [
+                AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
+              ],
+              activeAccountUuid: 'account-1',
+            )
+          : const AccountState(),
+      initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('fixture'),
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: ThemeMode.system,
+      privacyModeEnabled: false,
+      isPasswordConfigured: false,
+      isUnlocked: true,
+      passwordRotationRecoveryFailed: false,
+      enhancePirEnabled: enabled,
+    );
 
 ApiAppliedTransparentPolicy _applied(bool private, int generation) =>
     ApiAppliedTransparentPolicy(
@@ -279,26 +306,7 @@ void main() {
       if (coordinator != null)
         linuxKeyringCoordinatorProvider.overrideWithValue(coordinator),
       appBootstrapProvider.overrideWithValue(
-        AppBootstrapState(
-          initialLocation: '/settings',
-          initialAccountState: hasAccount
-              ? const AccountState(
-                  accounts: [
-                    AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
-                  ],
-                  activeAccountUuid: 'account-1',
-                )
-              : const AccountState(),
-          initialSyncSnapshot: AppSyncSnapshot.emptyForAccount('fixture'),
-          network: 'main',
-          rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-          themeMode: ThemeMode.system,
-          privacyModeEnabled: false,
-          isPasswordConfigured: false,
-          isUnlocked: true,
-          passwordRotationRecoveryFailed: false,
-          enhancePirEnabled: initialEnabled,
-        ),
+        _bootstrap(initialEnabled, hasAccount: hasAccount),
       ),
       enhancePirPreferenceStoreProvider.overrideWithValue(store),
       transparentPolicyReconcilerProvider.overrideWithValue(
@@ -983,6 +991,102 @@ void main() {
       );
     },
   );
+  // A launch over a wallet whose transparent policy is already private, as
+  // the transparent history suite's N_restart: the saved preference is read
+  // as bootstrap reads it, startup applies it, and the provider adopts it.
+  // Neither a missing nor an unreadable preference may lower the wallet.
+  group('a launch over a durably private wallet', () {
+    final available = isEnhancePirAvailableForNetwork('main');
+
+    Future<({bool? saved, List<String> steps, _DurableReconciler wallet})>
+    launch(_Store preferences) async {
+      // No legacy secure-store flag either.
+      FlutterSecureStorage.setMockInitialValues({});
+      final saved = await readEnhancePirEnabledPreference(
+        AppSecureStore.testing(storage: const FlutterSecureStorage()),
+        preferences: preferences,
+      );
+      final steps = <String>[];
+      final wallet = _DurableReconciler();
+      await applyEnhancePirPolicy(
+        _bootstrap(saved, hasAccount: true),
+        setRustEnabled: (enabled) => steps.add('rust:$enabled'),
+        setPreferenceConfirmed: (confirmed) =>
+            steps.add('confirmed:$confirmed'),
+        reconcileTransparentPolicy: wallet.call,
+        optOutStore: _OptOut(),
+        setNativePrivateRecovery: (enabled) async =>
+            steps.add('native:$enabled'),
+        prepareCompanions: () async {},
+      );
+      addTearDown(
+        () =>
+            TransparentPolicyStartup.current = const TransparentPolicyStartup(),
+      );
+      return (saved: saved, steps: steps, wallet: wallet);
+    }
+
+    test(
+      'with an unreadable preference stays private and unconfirmed',
+      () async {
+        final preferences = _Store()..failRead = true;
+        final (:saved, :steps, :wallet) = await launch(preferences);
+
+        expect(saved, isNull);
+        expect(preferences.value, isNull, reason: 'nothing is written back');
+        expect(steps, [
+          'rust:$available',
+          'confirmed:false',
+          'native:$available',
+        ]);
+        expect(wallet.calls, isEmpty, reason: 'never raised, never lowered');
+        expect(wallet.privateRequired, isTrue);
+        final container = setup(
+          preferences,
+          _Sync(),
+          initialEnabled: saved,
+          hasAccount: true,
+          reconciler: wallet,
+        );
+        addTearDown(container.dispose);
+        expect(container.read(enhancePirProvider), available);
+        expect(wallet.calls, isEmpty);
+      },
+    );
+
+    // A missing preference is a fresh install's: bootstrap records it as
+    // off. The wallet's durable private policy still holds, since only an
+    // explicit opt-out lowers it; its transparent recovery waits until
+    // private queries are turned on, or the toggle finishes the opt-out.
+    test('with a missing preference is off but never lowered', () async {
+      final preferences = _Store();
+      final (:saved, :steps, :wallet) = await launch(preferences);
+
+      expect(saved, isFalse);
+      expect(preferences.value, isFalse, reason: 'recorded as an explicit off');
+      expect(steps, ['rust:false', 'confirmed:true', 'native:false']);
+      expect(wallet.calls, isEmpty, reason: 'never lowered at startup');
+      expect(wallet.privateRequired, isTrue);
+      final container = setup(
+        preferences,
+        _Sync(),
+        initialEnabled: saved,
+        hasAccount: true,
+        reconciler: wallet,
+      );
+      addTearDown(container.dispose);
+      expect(container.read(enhancePirProvider), isFalse);
+      // Sync reports the wallet still reads its transparent funds privately;
+      // the Private queries toggle then stays on, and turning it off is the
+      // disclosed opt-out, instead of startup lowering it.
+      container.read(walletTransparentPrivateProvider.notifier).update(true);
+      expect(container.read(privateQueriesControlEnabledProvider), isTrue);
+      expect(container.read(privateQueriesTurnOffDisclosesProvider), isTrue);
+      expect(wallet.calls, isEmpty);
+      expect(api.values, isEmpty);
+    });
+  });
+
   test('an unreadable saved setting is on for this launch', () {
     final container = setup(_Store(), _Sync(), initialEnabled: null);
     addTearDown(container.dispose);
@@ -1621,6 +1725,22 @@ void main() {
       isEnhancePirAvailableForNetwork('main', isMasquerade: false),
       isTrue,
     );
+  });
+  test('regtest has private queries only under the harness allowance', () {
+    bool available(String network, {bool masquerade = false}) =>
+        isEnhancePirAvailableForNetwork(
+          network,
+          isMasquerade: masquerade,
+          regtestHarness: true,
+        );
+    expect(
+      isEnhancePirAvailableForNetwork('regtest', isMasquerade: false),
+      isFalse,
+    );
+    expect(available('regtest'), isTrue);
+    expect(available('regtest', masquerade: true), isFalse);
+    expect(available('test'), isFalse);
+    expect(available('main'), isTrue);
   });
 
   test(

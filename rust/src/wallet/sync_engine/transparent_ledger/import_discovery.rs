@@ -21,6 +21,11 @@
 //! the candidates it did not confirm, since a heavily used address spends the
 //! budget on its own history.
 //! Logs carry outcome and variant names, never addresses or adapter text.
+//!
+//! Debug builds on regtest under the transparent history harness's switch
+//! (see [`regtest_private_e2e`]) can lower a pass's query and shard budgets
+//! (`ZCASH_E2E_REGTEST_DISCOVERY_MAX_QUERIES`, `..._MAX_SHARDS`), so a small
+//! chain reaches the budget stop and the library's next pass. Release builds never read them.
 
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -38,11 +43,46 @@ use super::pir::{
 };
 use crate::wallet::bounded_runtime::{run_detached, Detached};
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync_engine::enhancement::RoutedExchange;
+use crate::wallet::sync_engine::enhancement::{regtest_private_e2e, RoutedExchange};
 
 /// Wall-clock bound on one discovery. A walk from Sapling activation
 /// downloads about 50 filters, one at a time, over Tor when it is on.
 pub(crate) const DISCOVERY_DEADLINE: Duration = Duration::from_secs(300);
+
+/// Replaces [`MAX_QUERIES`] for each discovery pass; see [`pass_limits`].
+const MAX_QUERIES_OVERRIDE_ENV: &str = "ZCASH_E2E_REGTEST_DISCOVERY_MAX_QUERIES";
+/// Replaces [`MAX_SHARDS`] for each discovery pass; see [`pass_limits`].
+const MAX_SHARDS_OVERRIDE_ENV: &str = "ZCASH_E2E_REGTEST_DISCOVERY_MAX_SHARDS";
+
+/// The shard and query budgets of each discovery pass on `network`:
+/// [`MAX_SHARDS`] and [`MAX_QUERIES`], except in a debug build on regtest
+/// under [`regtest_private_e2e`], where the harness may lower them. Release
+/// builds never read the overrides.
+fn pass_limits(network: WalletNetwork) -> (usize, u64) {
+    let harness = cfg!(debug_assertions) && regtest_private_e2e(network);
+    pass_limits_from(|name| {
+        if harness {
+            std::env::var(name).ok()
+        } else {
+            None
+        }
+    })
+}
+
+/// [`pass_limits`] with the overrides read through `read`. A missing,
+/// unparsable or zero value keeps the default.
+fn pass_limits_from(read: impl Fn(&str) -> Option<String>) -> (usize, u64) {
+    let positive = |name| {
+        read(name)
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .filter(|&value| value > 0)
+    };
+    let shards = positive(MAX_SHARDS_OVERRIDE_ENV)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(MAX_SHARDS);
+    let queries = positive(MAX_QUERIES_OVERRIDE_ENV).unwrap_or(MAX_QUERIES);
+    (shards, queries)
+}
 
 /// The private discovery failed or did not finish; the user retries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +93,8 @@ pub(crate) struct PrivateDiscoveryFailed;
 pub(crate) struct PrivateAccountDiscovery {
     /// `None` off mainnet: private discovery is unavailable.
     origin: Option<String>,
+    /// Shard-map entries and private queries one pass may use.
+    limits: (usize, u64),
     #[cfg(test)]
     transport: Option<super::pir::test_transport::Seam>,
     #[cfg(test)]
@@ -74,6 +116,7 @@ impl PrivateAccountDiscovery {
         let _ = db_path;
         Self {
             origin: origin_for(network, origin_override(|name| std::env::var(name).ok())),
+            limits: pass_limits(network),
             #[cfg(test)]
             transport: super::pir::test_transport::get(db_path),
             #[cfg(test)]
@@ -87,6 +130,7 @@ impl PrivateAccountDiscovery {
     pub(crate) fn canned(answer: Result<BTreeSet<usize>, PrivateDiscoveryFailed>) -> Self {
         Self {
             origin: Some(super::pir::DEFAULT_MAINNET_ORIGIN.to_owned()),
+            limits: (MAX_SHARDS, MAX_QUERIES),
             transport: None,
             canned: Some((answer, Default::default())),
         }
@@ -131,6 +175,7 @@ impl PrivateAccountDiscovery {
             // No test reaches the live service by accident.
             return Err(PrivateDiscoveryFailed);
         };
+        let (max_shards, max_queries) = self.limits;
         let deadline = Instant::now() + DISCOVERY_DEADLINE;
         let past_deadline = move || Instant::now() >= deadline;
         let cancel = Arc::new(AtomicBool::new(false));
@@ -153,8 +198,8 @@ impl PrivateAccountDiscovery {
                         // theirs.
                         let limits = DiscoveryLimits {
                             scripts: addresses.len(),
-                            shards: MAX_SHARDS,
-                            queries: MAX_QUERIES,
+                            shards: max_shards,
+                            queries: max_queries,
                             private_bytes: MAX_PRIVATE_BYTES,
                         };
                         discover_active_addresses(
@@ -263,6 +308,31 @@ mod tests {
             (RecoveryError::PublicationChanged, false),
         ] {
             assert_eq!(interpret(Err(error), outage), Err(PrivateDiscoveryFailed));
+        }
+    }
+
+    #[test]
+    fn the_harness_may_lower_a_pass_budget_and_nothing_else() {
+        assert_eq!(pass_limits_from(|_| None), (MAX_SHARDS, MAX_QUERIES));
+        let read = |queries: &'static str, shards: &'static str| {
+            move |name: &str| match name {
+                MAX_QUERIES_OVERRIDE_ENV => Some(queries.to_owned()),
+                MAX_SHARDS_OVERRIDE_ENV => Some(shards.to_owned()),
+                _ => None,
+            }
+        };
+        assert_eq!(pass_limits_from(read("1", "8")), (8, 1));
+        assert_eq!(pass_limits_from(read(" 3 ", "")), (MAX_SHARDS, 3));
+        for bad in ["0", "-1", "many", ""] {
+            assert_eq!(
+                pass_limits_from(read(bad, bad)),
+                (MAX_SHARDS, MAX_QUERIES),
+                "{bad:?}"
+            );
+        }
+        // Off regtest the overrides are never read, whatever the environment.
+        for network in [WalletNetwork::Main, WalletNetwork::Test] {
+            assert_eq!(pass_limits(network), (MAX_SHARDS, MAX_QUERIES));
         }
     }
 

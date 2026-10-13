@@ -14,8 +14,8 @@ use zcash_client_backend::data_api::transparent_ledger::{
     TransparentLedgerMode, TransparentLedgerWrite,
 };
 use zcash_client_backend::proto::service::{
-    compact_tx_streamer_client::CompactTxStreamerClient, BlockId, RawTransaction, SendResponse,
-    TxFilter,
+    compact_tx_streamer_client::CompactTxStreamerClient, BlockId, GetAddressUtxosArg,
+    GetAddressUtxosReply, RawTransaction, SendResponse, TxFilter,
 };
 
 use crate::wallet::{db::open_wallet_db_with_timeout, network::WalletNetwork};
@@ -27,12 +27,16 @@ type OnRequest = Arc<dyn Fn(&str) + Send + Sync>;
 /// Transactions `GetTransaction` answers, by txid: raw bytes and height.
 type Served = Arc<std::collections::HashMap<[u8; 32], (Vec<u8>, u64)>>;
 
+/// UTXOs `GetAddressUtxosStream` answers.
+type Utxos = Arc<Vec<GetAddressUtxosReply>>;
+
 /// Records every request path. Address history returns `history_tx`, or ends
 /// with no transaction when `history_tx` is empty;
 /// transaction lookups answer "not found" unless the transaction is served,
 /// `GetLatestBlock` reports
 /// `tip_height` (with a zero hash unless started with
-/// [`Self::start_at_tip`]), and UTXO streams are empty.
+/// [`Self::start_at_tip`]), and UTXO streams are empty unless UTXOs are
+/// served.
 pub(crate) struct CapturingLwd {
     pub(crate) client: CompactTxStreamerClient<Channel>,
     /// The transport `client` uses, for calls that layer services over it.
@@ -74,6 +78,7 @@ impl CapturingLwd {
             None,
             Served::default(),
             vec![0; 32],
+            Utxos::default(),
         )
         .await
     }
@@ -97,6 +102,7 @@ impl CapturingLwd {
             None,
             Arc::new(served),
             vec![0; 32],
+            Utxos::default(),
         )
         .await
     }
@@ -111,6 +117,7 @@ impl CapturingLwd {
             None,
             Served::default(),
             vec![0; 32],
+            Utxos::default(),
         )
         .await
     }
@@ -130,6 +137,7 @@ impl CapturingLwd {
             Some(gate.clone()),
             Served::default(),
             vec![0; 32],
+            Utxos::default(),
         )
         .await;
         (lwd, gate)
@@ -147,6 +155,27 @@ impl CapturingLwd {
             None,
             Served::default(),
             tip_hash.to_vec(),
+            Utxos::default(),
+        )
+        .await
+    }
+
+    /// Like [`Self::start_with`], but `GetAddressUtxosStream` answers with
+    /// each of `utxos` mined at or above the request's start height, and, when
+    /// its `address` is set, only to a request for that address.
+    pub(crate) async fn start_serving_utxos(
+        utxos: Vec<GetAddressUtxosReply>,
+        tip_height: u64,
+    ) -> Self {
+        Self::start_inner(
+            Vec::new(),
+            tip_height,
+            |_| {},
+            false,
+            None,
+            Served::default(),
+            vec![0; 32],
+            Arc::new(utxos),
         )
         .await
     }
@@ -160,6 +189,7 @@ impl CapturingLwd {
         send_gate: Option<Arc<tokio::sync::Notify>>,
         served: Served,
         tip_hash: Vec<u8>,
+        utxos: Utxos,
     ) -> Self {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let response_gates = Arc::new(Mutex::new(std::collections::HashMap::<
@@ -181,6 +211,7 @@ impl CapturingLwd {
                 let send_gate = send_gate.clone();
                 let served = served.clone();
                 let tip_hash = tip_hash.clone();
+                let utxos = utxos.clone();
                 tokio::spawn(async move {
                     let service =
                         service_fn(move |request: hyper::Request<hyper::body::Incoming>| {
@@ -197,9 +228,32 @@ impl CapturingLwd {
                             let send_gate = send_gate.clone();
                             let served = served.clone();
                             let tip_hash = tip_hash.clone();
+                            let utxos = utxos.clone();
                             async move {
                                 if let Some(gate) = response_gate {
                                     gate.notified().await;
+                                }
+                                if path.ends_with("/GetAddressUtxosStream") && !utxos.is_empty() {
+                                    let body = request.into_body().collect().await;
+                                    let arg = body.ok().and_then(|body| {
+                                        let bytes = body.to_bytes();
+                                        GetAddressUtxosArg::decode(bytes.get(5..)?).ok()
+                                    });
+                                    let mut frames = Vec::new();
+                                    if let Some(arg) = arg {
+                                        for utxo in utxos.iter().filter(|utxo| {
+                                            utxo.height >= arg.start_height
+                                                && (utxo.address.is_empty()
+                                                    || arg.addresses.contains(&utxo.address))
+                                        }) {
+                                            frames.extend_from_slice(&grpc_frame(utxo));
+                                        }
+                                    }
+                                    let response = hyper::Response::builder()
+                                        .header("content-type", "application/grpc")
+                                        .header("grpc-status", "0")
+                                        .body(Full::new(Bytes::from(frames)));
+                                    return Ok::<_, std::convert::Infallible>(response.unwrap());
                                 }
                                 if path.ends_with("/GetTransaction") && !served.is_empty() {
                                     let body = request.into_body().collect().await;

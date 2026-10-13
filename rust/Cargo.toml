@@ -231,6 +231,34 @@ features = ["sqlite", "testing"]
 [dev-dependencies.ipir-sp]
 version = "=0.1.0-rc.6"
 
+# The transparent history harness (rust/tests/transparent_history_cases)
+# publishes the regtest chain as a transparent shard set and a txid display
+# set, and serves both in process through wallet-pir's routers: the
+# publisher's crates and the shard server at the revision
+# zakura-pir-transparent already depends on.
+[dev-dependencies.transparent-shard]
+git = "https://github.com/valargroup/wallet-pir"
+rev = "9d2cbda0b4336258cfce76ca8ee77b095daa7fd7"
+
+[dev-dependencies.transparent-shard-server]
+git = "https://github.com/valargroup/wallet-pir"
+rev = "9d2cbda0b4336258cfce76ca8ee77b095daa7fd7"
+
+[dev-dependencies.transparent-filter]
+git = "https://github.com/valargroup/wallet-pir"
+rev = "9d2cbda0b4336258cfce76ca8ee77b095daa7fd7"
+
+[dev-dependencies.transparent-events]
+git = "https://github.com/valargroup/wallet-pir"
+rev = "9d2cbda0b4336258cfce76ca8ee77b095daa7fd7"
+
+[dev-dependencies.axum]
+version = "0.7"
+
+[dev-dependencies.tower]
+version = "0.5"
+features = ["util"]
+
 [dev-dependencies.vote-commitment-tree]
 version = "=0.6.3"
 default-features = false
@@ -308,4 +336,12 @@ zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries", 
 opt-level = 3
 
 [profile.dev.package."*"]
+opt-level = 3
+
+# valar-spiral-rs's reduction wraps by design, which debug overflow checks turn
+# into a panic in the PIR server the transparent history harness runs in
+# process. Test builds only, as in wallet-pir and wallet-libraries; a named
+# package entry does not inherit `package."*"`, so repeat its opt-level.
+[profile.test.package.valar-spiral-rs]
+overflow-checks = false
 opt-level = 3

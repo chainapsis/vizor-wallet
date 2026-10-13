@@ -127,6 +127,50 @@ impl<'a, F> RoutedTransport<'a, F> {
     }
 }
 
+#[cfg(debug_assertions)]
+impl<'a, F> RoutedTransport<'a, F> {
+    /// The regtest harness's transport: the same direct-route connector,
+    /// which also speaks plain HTTP. Debug builds only; see
+    /// [`regtest_loopback_response`].
+    pub(in crate::wallet::sync_engine) fn regtest_loopback(should_exit: &'a F) -> Self {
+        let connector = HttpsConnectorBuilder::new()
+            .with_webpki_roots()
+            .https_or_http()
+            .enable_http1()
+            .wrap_connector(DirectRouteConnector::new());
+        Self {
+            should_exit,
+            direct: Client::builder(TokioExecutor::new()).build(connector),
+        }
+    }
+}
+
+/// Sends one request to the regtest harness's loopback service on the direct
+/// route. Refused while the wallet wants Tor, so the harness never sees a
+/// Tor wallet's request in the clear. Debug builds only.
+#[cfg(debug_assertions)]
+async fn regtest_loopback_response(
+    method: Method,
+    url: &str,
+    body: Vec<u8>,
+    direct: &DirectHttpsClient,
+) -> Result<http::Response<Incoming>, RoutedHttpError> {
+    if crate::network_privacy::is_tor_desired() {
+        return Err(RoutedHttpError::Failed(SyncError::net(
+            "the regtest loopback service is not reachable over Tor",
+        )));
+    }
+    let request = Request::builder()
+        .method(method)
+        .uri(url)
+        .header(http::header::CONTENT_TYPE, "application/octet-stream")
+        .body(Full::new(Bytes::from(body)))
+        .map_err(|error| SyncError::parse(format!("build loopback request: {error}")))?;
+    direct.request(request).await.map_err(|error| {
+        RoutedHttpError::Failed(SyncError::net(format!("loopback request failed: {error}")))
+    })
+}
+
 /// Validated before route selection, so a plaintext endpoint is rejected on
 /// every route rather than only the direct one. Tor conceals the client from
 /// the service, but the exit-to-service hop is still the open network.
