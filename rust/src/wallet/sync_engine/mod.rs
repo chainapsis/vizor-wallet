@@ -81,6 +81,7 @@ pub(crate) use lwd::{
     transparent_lookup::TransparentLookupGate,
 };
 use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
+use progress_work::{JobProgress, WorkModel};
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
     latest_block_for_transaction_with_client,
@@ -124,12 +125,12 @@ fn checking_progress(
     })
 }
 
-fn begin_checking(cycle: &mut u32, total: u64, tip: u64) -> SyncProgressEvent {
+fn begin_checking(cycle: &mut u32, total: u64, tip: u64, job: &JobProgress) -> SyncProgressEvent {
     *cycle += 1;
     SyncProgressEvent {
         checking: checking_progress(*cycle, total, total, 0),
         remaining_scan_blocks: Some(total),
-        ..preparation_progress_event(tip, "chain_prepare", 0, 0)
+        ..preparation_progress_event(tip, "chain_prepare", 0, 0, job.fraction(), job.id())
     }
 }
 
@@ -142,14 +143,15 @@ fn scan_queue_progress_event(
     total: u64,
     tip: u64,
     pending_start: Option<u64>,
+    job: &JobProgress,
 ) -> SyncProgressEvent {
     let mut event = if total > 0 && (*cycle > 0 || main_scan_complete) {
-        begin_checking(cycle, total, tip)
+        begin_checking(cycle, total, tip, job)
     } else {
         SyncProgressEvent {
             checking: checking_progress(*cycle, total, total, 0),
             remaining_scan_blocks: Some(total),
-            ..preparation_progress_event(tip, "chain_prepare", 0, 0)
+            ..preparation_progress_event(tip, "chain_prepare", 0, 0, job.fraction(), job.id())
         }
     };
     event.pending_scan_start_height = pending_start;
@@ -188,6 +190,11 @@ pub struct SyncProgressEvent {
     /// - `"scan"` — running `scan_cached_blocks` (CPU-intensive)
     /// - `""` — completion event or unspecified
     pub phase: String,
+    /// Id of the sync job `percentage` belongs to. A job lasts until a sync
+    /// completes, across retries, endpoint fallbacks and app relaunches, so a
+    /// new attempt with the same id continues the same fraction. Claimed
+    /// before the first event, so every event carries it.
+    pub sync_job_id: String,
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -213,19 +220,24 @@ fn current_active_sync_account(target: Option<&ActiveSyncAccountTarget>) -> Opti
     })?
 }
 
+/// A preparation event. `job_percentage` is the stored fraction of the job
+/// this attempt resumes, or 0 for a new job, so the display does not fall
+/// back to zero while the attempt prepares.
 fn preparation_progress_event(
     chain_tip_height: u64,
     phase: &str,
     phase_completed_units: u64,
     phase_total_units: u64,
+    job_percentage: f64,
+    sync_job_id: &str,
 ) -> SyncProgressEvent {
     SyncProgressEvent {
         kind: SyncEventKind::Progress,
         checking: None,
         scanned_height: 0,
         chain_tip_height,
-        percentage: 0.0,
-        display_target_percentage: 0.0,
+        percentage: job_percentage,
+        display_target_percentage: job_percentage,
         display_target_blocks: 0,
         remaining_scan_blocks: None,
         pending_scan_start_height: None,
@@ -234,6 +246,7 @@ fn preparation_progress_event(
         phase_completed_units,
         phase_total_units,
         phase: phase.into(),
+        sync_job_id: sync_job_id.into(),
     }
 }
 
@@ -256,6 +269,8 @@ pub(crate) fn followup_updated_event(completed: (u64, u64)) -> SyncProgressEvent
         phase_completed_units: 0,
         phase_total_units: 0,
         phase: String::new(),
+        // The job ended with the completion this follows.
+        sync_job_id: String::new(),
     }
 }
 
@@ -395,139 +410,6 @@ fn reset_promoted_scan_progress(
     let pending = pending_scan_blocks(ranges);
     *initial_total = pending;
     *prev_remaining = pending;
-}
-
-fn chain_window_percentage(window_start_height: u64, tip_height: u64, scanned_height: u64) -> f64 {
-    if tip_height <= window_start_height {
-        return 1.0;
-    }
-    let scanned = scanned_height.saturating_sub(window_start_height);
-    let total = tip_height - window_start_height;
-    (scanned as f64 / total as f64).clamp(0.0, 1.0)
-}
-
-fn chain_window_frontier_height(ranges: &[ScanRange], fallback_height: u64) -> u64 {
-    earliest_pending_scan_start(ranges).unwrap_or(fallback_height)
-}
-
-fn chain_window_target_height_after_batch(
-    ranges: &[ScanRange],
-    batch_start: BlockHeight,
-    batch_end: BlockHeight,
-    fallback_height: u64,
-) -> u64 {
-    let frontier = chain_window_frontier_height(ranges, fallback_height);
-    if frontier == u32::from(batch_start) as u64 {
-        u32::from(batch_end) as u64
-    } else {
-        frontier
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ProgressDisplayMode {
-    Work,
-    ChainWindow { window_start_height: u64 },
-}
-
-impl ProgressDisplayMode {
-    fn percentage(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        scanned_height: u64,
-        tip_height: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::Work => {
-                if initial_total == 0 {
-                    1.0
-                } else {
-                    (1.0 - (remaining_blocks as f64 / initial_total as f64)).clamp(0.0, 1.0)
-                }
-            }
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(window_start_height, tip_height, scanned_height),
-        }
-    }
-
-    fn target_percentage_after_blocks(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        scanned_height: u64,
-        tip_height: u64,
-        blocks: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::Work => {
-                target_percentage_after_blocks(initial_total, remaining_blocks, blocks)
-            }
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(
-                window_start_height,
-                tip_height,
-                scanned_height.saturating_add(blocks),
-            ),
-        }
-    }
-
-    fn batch_start_height(self, ranges: &[ScanRange], batch_start: BlockHeight) -> u64 {
-        match self {
-            ProgressDisplayMode::ChainWindow { .. } => {
-                chain_window_frontier_height(ranges, u32::from(batch_start) as u64)
-            }
-            ProgressDisplayMode::Work => u32::from(batch_start) as u64,
-        }
-    }
-
-    fn batch_end_height(
-        self,
-        post_ranges: &[ScanRange],
-        batch_end: BlockHeight,
-        tip_height: u64,
-    ) -> u64 {
-        match self {
-            ProgressDisplayMode::ChainWindow { .. } => {
-                chain_window_frontier_height(post_ranges, tip_height)
-            }
-            ProgressDisplayMode::Work => u32::from(batch_end) as u64,
-        }
-    }
-
-    fn batch_target_percentage(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        ranges: &[ScanRange],
-        batch_start: BlockHeight,
-        batch_end: BlockHeight,
-        tip_height: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(
-                window_start_height,
-                tip_height,
-                chain_window_target_height_after_batch(
-                    ranges,
-                    batch_start,
-                    batch_end,
-                    u32::from(batch_start) as u64,
-                ),
-            ),
-            ProgressDisplayMode::Work => self.target_percentage_after_blocks(
-                initial_total,
-                remaining_blocks,
-                u32::from(batch_start) as u64,
-                tip_height,
-                u32::from(batch_end).saturating_sub(u32::from(batch_start)) as u64,
-            ),
-        }
-    }
 }
 
 fn is_pending_scan_range(range: &ScanRange) -> bool {
@@ -678,19 +560,19 @@ fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
         .sum()
 }
 
-fn first_pending_scan_range(ranges: &[ScanRange]) -> Option<String> {
-    ranges
-        .iter()
-        .find(|r| is_pending_scan_range(r))
-        .map(|r| r.to_string())
-}
-
 fn earliest_pending_scan_start(ranges: &[ScanRange]) -> Option<u64> {
     ranges
         .iter()
         .filter(|r| is_pending_scan_range(r))
         .map(|r| u32::from(r.block_range().start) as u64)
         .min()
+}
+
+fn first_pending_scan_range(ranges: &[ScanRange]) -> Option<String> {
+    ranges
+        .iter()
+        .find(|r| is_pending_scan_range(r))
+        .map(|r| r.to_string())
 }
 
 fn block_range_len(range: &std::ops::Range<BlockHeight>) -> u64 {
@@ -997,7 +879,9 @@ pub(crate) fn completed_sync_height_for_status(
     }
 }
 
-fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
+/// Marks a sync in progress and returns its progress job: the unfinished one,
+/// or a newly claimed one.
+fn mark_sync_started(db_data_path: &str) -> Result<progress_work::StoredProgressJob, String> {
     let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
     ensure_sync_meta_table(&conn)?;
     let tx = conn
@@ -1018,8 +902,25 @@ fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("write sync in-progress marker: {e}"))?;
+    let job = progress_work::claim_progress_job(&tx)?;
     tx.commit()
-        .map_err(|e| format!("commit sync-start metadata: {e}"))
+        .map_err(|e| format!("commit sync-start metadata: {e}"))?;
+    Ok(job)
+}
+
+/// The unfinished sync job's id and last fraction, for the status a relaunch
+/// starts from.
+#[cfg(test)]
+pub(crate) fn unfinished_progress_job(db_data_path: &str) -> Option<(String, f64)> {
+    match progress_work::read_progress_job(db_data_path) {
+        Ok(job) => job
+            .filter(|job| !job.is_finished())
+            .map(|job| (job.id, job.fraction)),
+        Err(e) => {
+            log::warn!("sync: stored progress job unreadable: {e}");
+            None
+        }
+    }
 }
 
 fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<(), String> {
@@ -1052,6 +953,8 @@ fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("clear sync in-progress marker: {e}"))?;
+    // The job is done; the next sync measures its own work from zero.
+    progress_work::clear_progress_job(&tx)?;
     tx.commit()
         .map_err(|e| format!("commit completed sync transaction: {e}"))
 }
@@ -2676,7 +2579,8 @@ where
 
 /// Run the full sync loop with automatic retry on failure.
 /// Retries up to 3 times with exponential backoff (2s, 4s, 8s).
-/// Progress includes work completed by earlier attempts in this call.
+/// Progress is the sync job's fraction, which includes work completed by
+/// earlier attempts; the Checking stage carries across attempts in this call.
 /// This is the unified entry point called by both Dart (FRB) and Swift (C FFI).
 pub async fn run_sync_inner(
     db_data_path: &str,
@@ -2744,7 +2648,6 @@ pub async fn run_sync_inner(
             }
         }
 
-        progress.lock().unwrap().start_attempt();
         let (checking_cycle, main_scan_complete) = {
             let progress = progress.lock().unwrap();
             (progress.checking_cycle(), progress.main_scan_complete())
@@ -3128,10 +3031,17 @@ async fn run_sync_impl(
     // Persist the active session before any new sync work begins. A crash or
     // mode handoff cannot leave the previous completed tip looking like the
     // current run completed successfully.
-    with_wallet_db_write_lock("sync_engine.mark_sync_started", || {
+    //
+    // The progress job is the unfinished one from an earlier attempt or
+    // session, or a new one claimed now. Preparation reports its stored
+    // fraction; the job is measured, and rarely replaced, once pending work
+    // is known below.
+    let stored_progress_job = with_wallet_db_write_lock("sync_engine.mark_sync_started", || {
         mark_sync_started(db_data_path)
     })
     .map_err(SyncError::db)?;
+    let preparation_job_id = stored_progress_job.id.clone();
+    let preparation_job_percentage = stored_progress_job.fraction;
 
     // Declared before the channel open so a stopped session leaves the Tor wait.
     let should_exit = || {
@@ -3275,6 +3185,8 @@ async fn run_sync_impl(
             "active_utxo",
             completed,
             total,
+            preparation_job_percentage,
+            &preparation_job_id,
         ));
     };
     let defer_inactive_transparent_refresh = if let Some(active_account_uuid) =
@@ -3357,6 +3269,8 @@ async fn run_sync_impl(
             "chain_prepare",
             0,
             0,
+            preparation_job_percentage,
+            &preparation_job_id,
         ));
     }
 
@@ -3434,7 +3348,7 @@ async fn run_sync_impl(
     // If a deleted, only-partially-synced old-birthday account left scanned
     // blocks BELOW the surviving birthday, `max_scanned` sits below it and
     // `update_chain_tip` re-creates sub-birthday pending work. Pruning here —
-    // after the tip update, before `initial_total` is measured — demotes both
+    // after the tip update, before pending work is measured — demotes both
     // the original orphan and any such re-created range, so the orphaned history
     // is never scanned. No-op for healthy wallets; best-effort (a failure must
     // not block sync).
@@ -3455,26 +3369,35 @@ async fn run_sync_impl(
         .suggest_scan_ranges()
         .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
     let mut initial_total = pending_scan_blocks(&initial_ranges);
-    let initial_work = progress_work::WorkModel::load(db_data_path, network, BATCH_SIZE_FOREGROUND)
-        .pending_work(&initial_ranges, current_tip_height);
+    // Batches are counted at the platform's foreground size even in
+    // background mode, so a mode switch does not move the fraction.
+    let work_model = WorkModel::load(db_data_path, network, BATCH_SIZE_FOREGROUND);
+    let (mut job, job_start) = JobProgress::start(
+        stored_progress_job,
+        work_model.pending_work(&initial_ranges, current_tip_height),
+        work_model.reference_batch_work(),
+    );
+    job.persist_if_due(db_data_path, true);
     progress_fn(scan_queue_progress_event(
         &mut checking_cycle,
         main_scan_complete,
         initial_total,
         current_tip_height,
         earliest_pending_scan_start(&initial_ranges),
+        &job,
     ));
-    let initial_window_start_height =
-        earliest_pending_scan_start(&initial_ranges).unwrap_or(current_tip_height);
     let mut queued_ranges = Some(initial_ranges);
     let mut voting_scan_end = None;
     let mut prev_remaining = initial_total;
-    let mut progress_display_mode = ProgressDisplayMode::Work;
     log::info!(
-        "[{}] sync: {} blocks to scan, {:.0} estimated work units",
+        "[{}] sync: {} blocks to scan; progress job {} {:?} at {:.1}% ({:.0} of {:.0} work units left)",
         elapsed(),
         initial_total,
-        initial_work,
+        job.id(),
+        job_start,
+        job.fraction() * 100.0,
+        job.remaining(),
+        job.total(),
     );
 
     // Reorg-triggered rewinds are split between the verify and main scan
@@ -3669,6 +3592,7 @@ async fn run_sync_impl(
                                     &mut checking_cycle,
                                     pending_blocks,
                                     current_tip_height,
+                                    &job,
                                 ));
                             }
                             queued_ranges = Some(repair_ranges);
@@ -3772,9 +3696,9 @@ async fn run_sync_impl(
                                     &mut checking_cycle,
                                     initial_total,
                                     current_tip_height,
+                                    &job,
                                 ));
                             }
-                            progress_display_mode = ProgressDisplayMode::Work;
                             queued_ranges = Some(promoted_ranges);
 
                             completion_tip_validation_required = true;
@@ -3817,6 +3741,7 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 repair_pending_blocks,
                                 current_tip_height,
+                                &job,
                             ));
                             queued_ranges = Some(repair_ranges);
                             completion_tip_validation_required = true;
@@ -3840,9 +3765,9 @@ async fn run_sync_impl(
                             &mut checking_cycle,
                             repair_pending_blocks,
                             current_tip_height,
+                            &job,
                         ));
                     }
-                    progress_display_mode = ProgressDisplayMode::Work;
                     prefetch = None;
                     continue;
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
@@ -3863,16 +3788,9 @@ async fn run_sync_impl(
                             &mut checking_cycle,
                             repair_pending_blocks,
                             current_tip_height,
+                            &job,
                         ));
                     }
-                    let repair_ranges = db.suggest_scan_ranges().map_err(|e| {
-                        SyncError::db(format!("suggest_scan_ranges after anchor repair: {e}"))
-                    })?;
-                    let first_pending = earliest_pending_scan_start(&repair_ranges)
-                        .unwrap_or(initial_window_start_height);
-                    progress_display_mode = ProgressDisplayMode::ChainWindow {
-                        window_start_height: initial_window_start_height.min(first_pending),
-                    };
                     prefetch = None;
                     continue;
                 } else {
@@ -3928,9 +3846,9 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 initial_total,
                                 current_tip_height,
+                                &job,
                             ));
                         }
-                        progress_display_mode = ProgressDisplayMode::Work;
                         queued_ranges = Some(promoted_ranges);
                         completion_tip_validation_required = true;
                         continue;
@@ -3993,25 +3911,17 @@ async fn run_sync_impl(
             break;
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
-        let display_scanned_height = progress_display_mode.batch_start_height(&ranges, start);
-        let current_pct = progress_display_mode.percentage(
-            initial_total,
-            prev_remaining,
-            display_scanned_height,
-            current_tip_height,
-        );
-        let display_target_percentage = progress_display_mode.batch_target_percentage(
-            initial_total,
-            prev_remaining,
-            &ranges,
-            start,
-            end,
-            current_tip_height,
-        );
+        // Ranges can change between batches (a rewind, a repair, a new
+        // account); any added work raises the job total here.
+        job.observe(work_model.pending_work(&ranges, current_tip_height));
+        let batch_work =
+            work_model.range_work(u64::from(u32::from(start)), u64::from(u32::from(end)));
+        let (current_pct, display_target_percentage) =
+            (job.fraction(), job.fraction_after(batch_work));
         progress_fn(SyncProgressEvent {
             scanned_height: u32::from(start) as u64,
             chain_tip_height: current_tip_height,
-            percentage: current_pct.clamp(0.0, 1.0),
+            percentage: current_pct,
             display_target_percentage,
             display_target_blocks: batch_blocks,
             remaining_scan_blocks: Some(pending_scan_blocks(&ranges)),
@@ -4028,6 +3938,7 @@ async fn run_sync_impl(
             phase_completed_units: 0,
             phase_total_units: 0,
             phase: "download".into(),
+            sync_job_id: job.id().to_string(),
         });
         log::info!(
             "[{}] sync: scanning {}-{} (priority {:?}{}, batch={})",
@@ -4362,6 +4273,8 @@ async fn run_sync_impl(
                         ));
                     }
                     if post_rewind_pending > 0 {
+                        // Rewound blocks count as added job work, measured at
+                        // the next batch.
                         initial_total = post_rewind_pending;
                         prev_remaining = post_rewind_pending;
                         if checking_cycle > 0 && post_rewind_pending > 0 {
@@ -4369,13 +4282,9 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 post_rewind_pending,
                                 current_tip_height,
+                                &job,
                             ));
                         }
-                        let rewind_start = earliest_pending_scan_start(&post_rewind_ranges)
-                            .unwrap_or(actual_rewind_height_u64);
-                        progress_display_mode = ProgressDisplayMode::ChainWindow {
-                            window_start_height: initial_window_start_height.min(rewind_start),
-                        };
                     }
                     prefetch = None;
                     continue;
@@ -4592,6 +4501,7 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 pending_blocks,
                                 current_tip_height,
+                                &job,
                             ));
                         }
                         queued_ranges = Some(repair_ranges);
@@ -4662,15 +4572,11 @@ async fn run_sync_impl(
                 checking_cycle += 1;
             }
         }
-        prev_remaining = remaining;
-        let display_scanned_height =
-            progress_display_mode.batch_end_height(&post_ranges, end, current_tip_height);
-        let pct = progress_display_mode.percentage(
-            initial_total,
-            remaining,
-            display_scanned_height,
-            current_tip_height,
+        job.observe_after_batch(
+            batch_work,
+            work_model.pending_work(&post_ranges, current_tip_height),
         );
+        prev_remaining = remaining;
         let next_display_range = post_ranges
             .iter()
             .find(|r| is_pending_scan_range(r))
@@ -4679,32 +4585,22 @@ async fn run_sync_impl(
                 planned_batch_end(base_batch_size, next_start, r.block_range().end)
                     .map(|(_, next_end)| (next_start, next_end))
             });
-        let next_display_target_blocks = next_display_range
+        let (next_display_target_blocks, next_work) = next_display_range
             .map(|(next_start, next_end)| {
-                u32::from(next_end).saturating_sub(u32::from(next_start)) as u64
+                (
+                    u32::from(next_end).saturating_sub(u32::from(next_start)) as u64,
+                    work_model.range_work(
+                        u64::from(u32::from(next_start)),
+                        u64::from(u32::from(next_end)),
+                    ),
+                )
             })
-            .unwrap_or(0);
-        let display_target_percentage = if let Some((next_start, next_end)) = next_display_range {
-            progress_display_mode.batch_target_percentage(
-                initial_total,
-                remaining,
-                &post_ranges,
-                next_start,
-                next_end,
-                current_tip_height,
-            )
-        } else {
-            progress_display_mode.percentage(
-                initial_total,
-                remaining,
-                current_tip_height,
-                current_tip_height,
-            )
-        };
+            .unwrap_or((0, 0.0));
+        let (pct, display_target_percentage) = (job.fraction(), job.fraction_after(next_work));
         let progress = SyncProgressEvent {
             scanned_height: u32::from(end) as u64,
             chain_tip_height: current_tip_height,
-            percentage: pct.clamp(0.0, 1.0),
+            percentage: pct,
             display_target_percentage,
             display_target_blocks: next_display_target_blocks,
             remaining_scan_blocks: Some(remaining),
@@ -4721,14 +4617,18 @@ async fn run_sync_impl(
             phase_completed_units: 0,
             phase_total_units: 0,
             phase: "scan".into(),
+            sync_job_id: job.id().to_string(),
         };
+        // Save the last batch at once, so an attempt that stops before
+        // completion leaves a finished job rather than a stale fraction.
+        job.persist_if_due(db_data_path, job.remaining() <= 0.0);
         log::info!(
-            "[{}] sync: {:.1}% (remaining={}/{}, scanned={})",
+            "[{}] sync: {:.1}% (work remaining={:.0}/{:.0}, blocks remaining={})",
             elapsed(),
             progress.percentage * 100.0,
+            job.remaining(),
+            job.total(),
             remaining,
-            initial_total,
-            initial_total - remaining
         );
         progress_fn(progress);
         #[cfg(debug_assertions)]
@@ -4816,6 +4716,7 @@ async fn run_sync_impl(
         phase_completed_units: 0,
         phase_total_units: 0,
         phase: String::new(),
+        sync_job_id: job.id().to_string(),
     };
     progress_fn(final_progress);
 
@@ -4962,6 +4863,7 @@ async fn run_sync_impl(
                 phase_completed_units: 0,
                 phase_total_units: 0,
                 phase: String::new(),
+                sync_job_id: job.id().to_string(),
             });
         }
     }
@@ -5005,6 +4907,7 @@ async fn run_sync_impl(
                 phase_completed_units: 0,
                 phase_total_units: 0,
                 phase: String::new(),
+                sync_job_id: job.id().to_string(),
             });
         }
     }
@@ -5288,7 +5191,10 @@ mod tests {
     fn checking_reports_only_additional_work_and_its_next_batch() {
         assert!(checking_progress(0, 1000, 750, 100).is_none());
         let mut cycle = 0;
-        let start = begin_checking(&mut cycle, 1000, 2000);
+        let (job, _) = JobProgress::start(progress_work::StoredProgressJob::unmeasured(), 0.0, 0.0);
+        let start = begin_checking(&mut cycle, 1000, 2000, &job);
+        // Checking events keep the job, so the display does not restart.
+        assert_eq!(start.sync_job_id, job.id());
         assert_eq!(start.kind, SyncEventKind::Progress);
         assert_eq!(start.phase, "chain_prepare");
         assert!(start.is_syncing);
@@ -5301,7 +5207,9 @@ mod tests {
             checking_progress(cycle, 1000, 0, 0).unwrap().percentage,
             1.0
         );
-        let new_work = begin_checking(&mut cycle, 200, 2000).checking.unwrap();
+        let new_work = begin_checking(&mut cycle, 200, 2000, &job)
+            .checking
+            .unwrap();
         assert_eq!(new_work.cycle, 2);
         assert_eq!(new_work.percentage, 0.0);
     }
@@ -5715,13 +5623,6 @@ mod tests {
         assert_eq!(marked.get(), 0);
     }
 
-    fn assert_pct(actual: f64, expected: f64) {
-        assert!(
-            (actual - expected).abs() < 0.000_001,
-            "expected {expected}, got {actual}"
-        );
-    }
-
     #[tokio::test]
     async fn scan_batch_inputs_start_concurrently() {
         let barrier = Arc::new(Barrier::new(3));
@@ -6062,46 +5963,21 @@ mod tests {
         )];
         let (mut total, mut remaining) = (0, 0);
         reset_promoted_scan_progress(&ranges, &mut total, &mut remaining);
-        let mode = ProgressDisplayMode::Work;
-        assert_eq!(mode.percentage(total, remaining, 999, 1_299), 0.0);
+        assert_eq!(target_percentage_after_blocks(total, remaining, 0), 0.0);
         for batch in 1..=3 {
-            let target = mode.target_percentage_after_blocks(total, remaining, 0, 0, 100);
+            let target = target_percentage_after_blocks(total, remaining, 100);
             remaining -= 100;
-            let actual = mode.percentage(total, remaining, 0, 0);
+            let actual = target_percentage_after_blocks(total, remaining, 0);
             assert_eq!(target, actual);
             assert!((actual - batch as f64 / 3.0).abs() < 1e-9);
         }
         reset_promoted_scan_progress(&[], &mut total, &mut remaining);
-        assert_eq!(mode.percentage(total, remaining, 0, 0), 1.0);
-    }
-
-    #[test]
-    fn work_progress_matches_remaining_block_ratio() {
-        let mode = ProgressDisplayMode::Work;
-
-        assert_pct(mode.percentage(1_000, 300, 0, 0), 0.7);
-        assert_pct(
-            mode.target_percentage_after_blocks(1_000, 300, 0, 0, 100),
-            0.8,
-        );
-    }
-
-    #[test]
-    fn chain_window_progress_uses_session_window_not_absolute_height() {
-        let mode = ProgressDisplayMode::ChainWindow {
-            window_start_height: 1_000,
-        };
-
-        assert_pct(mode.percentage(0, 0, 1_700, 2_000), 0.7);
-        assert_pct(
-            mode.target_percentage_after_blocks(0, 0, 1_700, 2_000, 100),
-            0.8,
-        );
+        assert_eq!(target_percentage_after_blocks(total, remaining, 0), 1.0);
     }
 
     #[test]
     fn preparation_progress_does_not_claim_an_empty_scan_queue() {
-        let event = preparation_progress_event(2_000, "chain_prepare", 0, 0);
+        let event = preparation_progress_event(2_000, "chain_prepare", 0, 0, 0.0, "");
         assert_eq!(event.remaining_scan_blocks, None);
         assert_eq!(event.pending_scan_start_height, None);
     }
@@ -6126,42 +6002,6 @@ mod tests {
         assert_eq!(earliest_pending_scan_start(&ranges), Some(1_700));
         assert_eq!(pending_scan_blocks(&[]), 0);
         assert_eq!(earliest_pending_scan_start(&[]), None);
-    }
-
-    #[test]
-    fn chain_window_progress_waits_for_earliest_pending_range() {
-        let mode = ProgressDisplayMode::ChainWindow {
-            window_start_height: 1_000,
-        };
-        let high_range_start = BlockHeight::from_u32(1_900);
-        let high_range_end = BlockHeight::from_u32(2_000);
-        let ranges = vec![
-            ScanRange::from_parts(high_range_start..high_range_end, ScanPriority::Verify),
-            ScanRange::from_parts(
-                BlockHeight::from_u32(1_700)..BlockHeight::from_u32(1_800),
-                ScanPriority::Verify,
-            ),
-        ];
-
-        assert_eq!(pending_scan_blocks(&ranges), 200);
-        assert_eq!(earliest_pending_scan_start(&ranges), Some(1_700));
-        let display_height = mode.batch_start_height(&ranges, high_range_start);
-        assert_eq!(display_height, 1_700);
-        assert_pct(mode.percentage(0, 0, display_height, 2_000), 0.7);
-        assert_pct(
-            mode.batch_target_percentage(0, 0, &ranges, high_range_start, high_range_end, 2_000),
-            0.7,
-        );
-
-        let post_ranges = vec![ScanRange::from_parts(
-            BlockHeight::from_u32(1_700)..BlockHeight::from_u32(1_800),
-            ScanPriority::Verify,
-        )];
-        assert_eq!(pending_scan_blocks(&post_ranges), 100);
-        assert_eq!(earliest_pending_scan_start(&post_ranges), Some(1_700));
-        let display_height_after = mode.batch_end_height(&post_ranges, high_range_end, 2_000);
-        assert_eq!(display_height_after, 1_700);
-        assert_pct(mode.percentage(0, 0, display_height_after, 2_000), 0.7);
     }
 
     #[test]
@@ -6433,6 +6273,19 @@ mod tests {
                 Some(false)
             ),
         );
+    }
+
+    #[test]
+    fn sync_starts_share_one_progress_job_until_completion() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+        let first = mark_sync_started(path).unwrap();
+        assert_eq!(mark_sync_started(path).unwrap().id, first.id);
+        assert_eq!(unfinished_progress_job(path), Some((first.id.clone(), 0.0)));
+
+        mark_sync_completed(path, 100).unwrap();
+        assert_eq!(unfinished_progress_job(path), None);
+        assert_ne!(mark_sync_started(path).unwrap().id, first.id);
     }
 
     #[test]
