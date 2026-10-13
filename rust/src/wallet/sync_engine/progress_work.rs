@@ -52,14 +52,17 @@ const PROGRESS_JOB_POLICY_VERSION_KEY: &str = "progress_job_policy_version";
 const PROGRESS_JOB_ID_KEY: &str = "progress_job_id";
 const PROGRESS_JOB_TOTAL_KEY: &str = "progress_job_total_work";
 const PROGRESS_JOB_FRACTION_KEY: &str = "progress_job_fraction";
-pub(super) const PROGRESS_JOB_KEYS: [&str; 4] = [
+const PROGRESS_JOB_CLOSED_KEY: &str = "progress_job_closed";
+pub(super) const PROGRESS_JOB_KEYS: [&str; 5] = [
     PROGRESS_JOB_POLICY_VERSION_KEY,
     PROGRESS_JOB_ID_KEY,
     PROGRESS_JOB_TOTAL_KEY,
     PROGRESS_JOB_FRACTION_KEY,
+    PROGRESS_JOB_CLOSED_KEY,
 ];
-// After a failed save, the next try waits this long instead of every batch.
-const PROGRESS_JOB_RETRY_INTERVAL: Duration = Duration::from_secs(15);
+const PROGRESS_JOB_PERSIST_INTERVAL: Duration = Duration::from_secs(15);
+// Persist sooner when the total grows by more than this share.
+const PROGRESS_JOB_TOTAL_PERSIST_GROWTH: f64 = 0.001;
 // Past the last known point, outputs continue at the average rate over at
 // least this many blocks, so a short final segment does not set the rate.
 const EXTRAPOLATION_LOOKBACK_BLOCKS: u64 = 10_000;
@@ -257,6 +260,11 @@ pub(super) struct StoredProgressJob {
     /// Last fraction reported for the job, shown during the next attempt's
     /// preparation before its pending work is measured.
     pub(super) fraction: f64,
+    /// Saved when the attempt ended (completed its loop, stopped, failed)
+    /// rather than by a periodic save. The fraction then matches what was
+    /// scanned, so less pending work at the next start went away unscanned.
+    /// After a killed process the last save can be up to 15 seconds behind.
+    pub(super) closed: bool,
 }
 
 impl StoredProgressJob {
@@ -266,6 +274,7 @@ impl StoredProgressJob {
             id: new_job_id(),
             total_work: 0.0,
             fraction: 0.0,
+            closed: false,
         }
     }
 
@@ -321,6 +330,7 @@ fn read_job(conn: &rusqlite::Connection) -> Result<Option<StoredProgressJob>, St
     let fraction = read(PROGRESS_JOB_FRACTION_KEY)?
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(0.0);
+    let closed = read(PROGRESS_JOB_CLOSED_KEY)?.as_deref() == Some("1");
     match (id, total_work) {
         (Some(id), Some(total_work)) if total_work.is_finite() && total_work >= 0.0 => {
             Ok(Some(StoredProgressJob {
@@ -331,6 +341,7 @@ fn read_job(conn: &rusqlite::Connection) -> Result<Option<StoredProgressJob>, St
                 } else {
                     0.0
                 },
+                closed,
             }))
         }
         _ => Ok(None),
@@ -357,6 +368,7 @@ fn write_job(tx: &rusqlite::Transaction<'_>, job: &StoredProgressJob) -> Result<
         (PROGRESS_JOB_ID_KEY, job.id.clone()),
         (PROGRESS_JOB_TOTAL_KEY, job.total_work.to_string()),
         (PROGRESS_JOB_FRACTION_KEY, job.fraction.to_string()),
+        (PROGRESS_JOB_CLOSED_KEY, u8::from(job.closed).to_string()),
     ] {
         tx.execute(
             "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
@@ -396,20 +408,25 @@ pub(super) enum JobStart {
 }
 
 /// Progress of one sync job in work units.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct JobProgress {
     id: String,
     total: f64,
     remaining: f64,
-    retry_after: Option<Instant>,
+    persisted_total: f64,
+    persisted_at: Option<Instant>,
+    /// Wallet DB the job is saved to, recorded by the first save. Dropping
+    /// the job saves it there as closed, unless the sync completed.
+    store: Option<String>,
 }
 
 impl JobProgress {
     /// Continues `stored` with `pending` work measured for this attempt.
     ///
-    /// Work that appeared or went away since the stored fraction (blocks mined
-    /// while the app was closed, a rewind, a deleted account) keeps that
-    /// fraction and rescales the rest, so the display neither drops nor jumps.
+    /// Work that appeared since the stored fraction (blocks mined while the
+    /// app was closed, a rewind), or went away after an attempt that saved
+    /// where it stopped (a deleted account), keeps that fraction and rescales
+    /// the rest, so the display neither drops nor jumps.
     /// Growth beyond what the job had finished, and at least
     /// `min_replace_growth`, starts a new job.
     pub(super) fn start(
@@ -422,6 +439,7 @@ impl JobProgress {
             id,
             total_work: stored_total,
             fraction,
+            closed,
         } = stored;
         let (id, total, start) = if stored_total <= 0.0 {
             // Claimed when the attempt began; this is its first measurement.
@@ -431,7 +449,9 @@ impl JobProgress {
             let expected = stored_total - done;
             let growth = pending - expected;
             let eps = 1e-9 * stored_total.max(1.0);
-            if growth.abs() <= eps {
+            if growth.abs() <= eps || (growth < 0.0 && !closed) {
+                // Unchanged, or less work after an attempt that did not save
+                // where it stopped: it scanned past its last periodic save.
                 (id, stored_total, JobStart::Resumed)
             } else if growth > 0.0 && (expected <= eps || growth > done.max(min_replace_growth)) {
                 // Claiming already starts over after a finished job; nothing
@@ -445,7 +465,9 @@ impl JobProgress {
             id,
             total,
             remaining: pending,
-            retry_after: None,
+            persisted_total: 0.0,
+            persisted_at: None,
+            store: None,
         };
         (job, start)
     }
@@ -510,28 +532,71 @@ impl JobProgress {
         self.remaining = pending;
     }
 
-    /// Stores the job when it has work. The engine saves it after every
-    /// batch, so the stored fraction lags the scan by at most one batch and a
-    /// resumed attempt can read less pending work as work that went away, not
-    /// as scanning it never recorded. Failure only costs resume accuracy, so it
-    /// is logged and the next try waits.
-    pub(super) fn persist(&mut self, db_data_path: &str) {
-        if self.total <= 0.0 || self.retry_after.is_some_and(|at| Instant::now() < at) {
+    /// Stores the job when it has work, at most every few seconds unless the
+    /// total grew noticeably. Failure only costs resume accuracy, so it is
+    /// logged and ignored.
+    pub(super) fn persist_if_due(&mut self, db_data_path: &str, force: bool) {
+        if self.store.is_none() {
+            self.store = Some(db_data_path.to_owned());
+        }
+        if self.total <= 0.0 {
             return;
         }
+        let grown = self.total > self.persisted_total * (1.0 + PROGRESS_JOB_TOTAL_PERSIST_GROWTH);
+        let due = self
+            .persisted_at
+            .is_none_or(|at| at.elapsed() >= PROGRESS_JOB_PERSIST_INTERVAL);
+        if !(force || grown || due) {
+            return;
+        }
+        match self.save(db_data_path, false) {
+            Ok(()) => {
+                self.persisted_total = self.total;
+                self.persisted_at = Some(Instant::now());
+            }
+            Err(e) => {
+                // Retry after the normal interval instead of on every batch.
+                self.persisted_total = self.total;
+                self.persisted_at = Some(Instant::now());
+                log::warn!("[{}] sync: progress job not saved: {e}", elapsed());
+            }
+        }
+    }
+
+    /// The sync completed and cleared the job; dropping it saves nothing.
+    pub(super) fn complete(&mut self) {
+        self.store = None;
+    }
+
+    fn save(&self, db_data_path: &str, closed: bool) -> Result<(), String> {
         let stored = StoredProgressJob {
             id: self.id.clone(),
             total_work: self.total,
             fraction: self.fraction(),
+            closed,
         };
-        match crate::wallet::db::with_wallet_db_write_lock("sync_engine.progress_job", || {
+        crate::wallet::db::with_wallet_db_write_lock("sync_engine.progress_job", || {
             write_progress_job(db_data_path, &stored)
-        }) {
-            Ok(()) => self.retry_after = None,
-            Err(e) => {
-                self.retry_after = Some(Instant::now() + PROGRESS_JOB_RETRY_INTERVAL);
-                log::warn!("[{}] sync: progress job not saved: {e}", elapsed());
-            }
+        })
+    }
+}
+
+impl Drop for JobProgress {
+    /// Saves where the attempt stopped, however it ended, so the next attempt
+    /// can tell work that went away from scanning a periodic save missed. A
+    /// wallet DB that is gone (a reset) is not recreated.
+    fn drop(&mut self) {
+        let Some(path) = self.store.take() else {
+            return;
+        };
+        if self.total <= 0.0 || !std::path::Path::new(&path).exists() {
+            return;
+        }
+        if let Err(e) = self.save(&path, true) {
+            log::warn!(
+                "[{}] sync: progress job not saved at attempt end: {e}",
+                elapsed()
+            );
         }
     }
 }
@@ -559,11 +624,21 @@ mod tests {
         job
     }
 
+    /// A job last saved by a periodic save, as a killed process leaves it.
     fn stored(total_work: f64, fraction: f64) -> StoredProgressJob {
         StoredProgressJob {
             id: "abc".into(),
             total_work,
             fraction,
+            closed: false,
+        }
+    }
+
+    /// A job saved where its attempt stopped.
+    fn closed(total_work: f64, fraction: f64) -> StoredProgressJob {
+        StoredProgressJob {
+            closed: true,
+            ..stored(total_work, fraction)
         }
     }
 
@@ -755,9 +830,19 @@ mod tests {
         assert_eq!(job.id(), "abc");
         assert!((job.fraction() - 0.6).abs() < 1e-12);
 
-        // The job is saved after every batch, so less work than stored went
-        // away unscanned (a deleted account): the fraction stays.
+        // Less work than stored after a killed process is scanning done
+        // after the last periodic save.
         let (job, _) = JobProgress::start(stored(1_000.0, 0.6), 300.0, 1.0);
+        assert_eq!(job.id(), "abc");
+        assert!((job.fraction() - 0.7).abs() < 1e-12);
+
+        // After an attempt saved where it stopped, the same decrease is work
+        // that went away unscanned (a deleted account): the fraction stays.
+        let (job, _) = JobProgress::start(closed(1_000.0, 0.6), 300.0, 1.0);
+        assert!((job.fraction() - 0.6).abs() < 1e-12);
+
+        // Unchanged work resumes either way.
+        let (job, _) = JobProgress::start(closed(1_000.0, 0.6), 400.0, 1.0);
         assert!((job.fraction() - 0.6).abs() < 1e-12);
     }
 
@@ -793,8 +878,9 @@ mod tests {
 
     #[test]
     fn work_removed_between_attempts_keeps_the_fraction_already_shown() {
-        // The account was deleted while the sync was paused at 20% of 1,000.
-        let (mut job, start) = JobProgress::start(stored(1_000.0, 0.2), 40.0, 1.0);
+        // The account was deleted while the sync was paused at 20% of 1,000;
+        // pausing ended the attempt, which saved where it stopped.
+        let (mut job, start) = JobProgress::start(closed(1_000.0, 0.2), 40.0, 1.0);
         assert_eq!(start, JobStart::Resumed);
         assert_eq!(job.id(), "abc");
         assert!((job.fraction() - 0.2).abs() < 1e-12);
@@ -862,13 +948,16 @@ mod tests {
         let path = path.as_str();
         assert_eq!(read_progress_job(path).unwrap(), None);
 
-        let job = StoredProgressJob {
-            id: "0123456789abcdef".into(),
-            total_work: 1234.5,
-            fraction: 0.42,
-        };
-        write_progress_job(path, &job).unwrap();
-        assert_eq!(read_progress_job(path).unwrap(), Some(job));
+        for closed in [false, true] {
+            let job = StoredProgressJob {
+                id: "0123456789abcdef".into(),
+                total_work: 1234.5,
+                fraction: 0.42,
+                closed,
+            };
+            write_progress_job(path, &job).unwrap();
+            assert_eq!(read_progress_job(path).unwrap(), Some(job));
+        }
 
         let mut conn = rusqlite::Connection::open(path).unwrap();
         let tx = conn.transaction().unwrap();
@@ -900,6 +989,7 @@ mod tests {
             id: first.id.clone(),
             total_work: 500.0,
             fraction: 0.25,
+            closed: false,
         };
         write_progress_job(&path, &measured).unwrap();
         assert_eq!(claim(), measured);
@@ -923,6 +1013,53 @@ mod tests {
     }
 
     #[test]
+    fn an_attempt_saves_open_and_closes_where_it_stopped() {
+        let (_dir, path) = temp_db();
+        let mut job = new_job(1_000.0);
+        job.persist_if_due(&path, true);
+        job.observe_after_batch(100.0, 900.0);
+        job.persist_if_due(&path, true);
+        let saved = read_progress_job(&path).unwrap().unwrap();
+        assert!(!saved.closed);
+        assert!((saved.fraction - 0.1).abs() < 1e-12);
+
+        // A batch after the last periodic save is in the closing save.
+        job.observe_after_batch(100.0, 800.0);
+        let id = job.id().to_string();
+        drop(job);
+        let saved = read_progress_job(&path).unwrap().unwrap();
+        assert!(saved.closed);
+        assert_eq!(saved.id, id);
+        assert!((saved.fraction - 0.2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_completed_attempt_does_not_store_its_job_again() {
+        let (_dir, path) = temp_db();
+        let mut job = new_job(1_000.0);
+        job.persist_if_due(&path, true);
+        job.observe_after_batch(1_000.0, 0.0);
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        let tx = conn.transaction().unwrap();
+        clear_progress_job(&tx).unwrap();
+        tx.commit().unwrap();
+        job.complete();
+        drop(job);
+        assert_eq!(read_progress_job(&path).unwrap(), None);
+    }
+
+    #[test]
+    fn closing_does_not_recreate_a_removed_wallet_db() {
+        let (dir, path) = temp_db();
+        let mut job = new_job(1_000.0);
+        job.persist_if_due(&path, true);
+        std::fs::remove_file(&path).unwrap();
+        drop(job);
+        assert!(!std::path::Path::new(&path).exists());
+        drop(dir);
+    }
+
+    #[test]
     fn a_job_from_another_policy_version_is_ignored() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("wallet.db");
@@ -933,6 +1070,7 @@ mod tests {
                 id: "abc".into(),
                 total_work: 10.0,
                 fraction: 0.5,
+                closed: false,
             },
         )
         .unwrap();
