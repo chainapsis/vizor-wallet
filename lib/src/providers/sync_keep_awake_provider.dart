@@ -260,12 +260,13 @@ bool isSyncKeepAwakeActiveSync(SyncState sync) {
 
 bool isSyncKeepAwakeCompletedSync(SyncState sync) {
   if (sync.isBackgroundMode) return false;
+  // A failed sync keeps its progress for the retry, 100% included when it
+  // failed after the main scan; it is not complete.
+  if (sync.failure != null) return false;
   // Keep-awake covers the main scan only. Final Checking work does not delay
   // its completion screen or reactivate the native screen-awake setting.
   if (sync.percentage >= 1) return true;
   if (sync.isSyncing) return false;
-  // A failed sync keeps its progress for the retry; it is not complete.
-  if (sync.failure != null) return false;
   if (sync.isSyncComplete) return true;
   return sync.chainTipHeight > 0 && sync.scannedHeight >= sync.chainTipHeight;
 }
