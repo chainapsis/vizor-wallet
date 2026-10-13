@@ -79,6 +79,9 @@ class SyncProgressEvent {
   /// Current sync phase from Rust, including preparation phases.
   final String phase;
 
+  /// Rust sync job that [percentage] belongs to; empty until known.
+  final String syncJobId;
+
   const SyncProgressEvent({
     required this.scannedHeight,
     required this.chainTipHeight,
@@ -94,10 +97,26 @@ class SyncProgressEvent {
     this.phaseCompletedUnits = 0,
     this.phaseTotalUnits = 0,
     this.phase = '',
+    this.syncJobId = '',
   });
 }
 
 enum SpendableBalanceFreshness { authoritative, lastCompletedSync }
+
+/// The Rust sync job a new session continues, if any.
+///
+/// An unfinished job keeps its percentage across retries, endpoint fallbacks
+/// and relaunches. Only a percentage that came from the engine's job (events,
+/// or the stored job at bootstrap) carries an id, so a block-share estimate
+/// never seeds a session; a completed job starts the next sync from zero.
+({String jobId, double percentage}) resumableSyncJob(SyncState? previous) {
+  if (previous == null ||
+      previous.isSyncComplete ||
+      previous.syncJobId.isEmpty) {
+    return (jobId: '', percentage: 0.0);
+  }
+  return (jobId: previous.syncJobId, percentage: previous.percentage);
+}
 
 class SyncState {
   /// Account UUID that owns the balance, shield status, and recent transaction
@@ -233,6 +252,15 @@ class SyncState {
   /// Current preparation, download, or scan phase. The Sidebar keeps its
   /// existing percentage copy and uses this only to estimate display progress.
   final String phase;
+
+  /// Rust sync job that [percentage] belongs to. A job outlives retries,
+  /// endpoint fallbacks and relaunches, so a new session with the same id
+  /// continues its percentage instead of restarting from zero.
+  final String syncJobId;
+
+  /// [percentage] when the current session started. A resumed job starts
+  /// above zero, so rates over the session measure from here.
+  final double sessionStartPercentage;
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
   BigInt get pendingBalance =>
@@ -471,6 +499,8 @@ class SyncState {
     this.lastSyncCompletedAt,
     this.lastSyncFailedAt,
     this.phase = '',
+    this.syncJobId = '',
+    this.sessionStartPercentage = 0,
   }) : hasBalanceData = hasBalanceData ?? hasAccountScopedData,
        hasRecentTransactionsData =
            hasRecentTransactionsData ?? hasAccountScopedData,
@@ -574,6 +604,8 @@ class SyncState {
     DateTime? lastSyncCompletedAt,
     DateTime? lastSyncFailedAt,
     String? phase,
+    String? syncJobId,
+    double? sessionStartPercentage,
   }) {
     return SyncState(
       accountUuid: accountUuid ?? this.accountUuid,
@@ -657,6 +689,9 @@ class SyncState {
       lastSyncCompletedAt: lastSyncCompletedAt ?? this.lastSyncCompletedAt,
       lastSyncFailedAt: lastSyncFailedAt ?? this.lastSyncFailedAt,
       phase: phase ?? this.phase,
+      syncJobId: syncJobId ?? this.syncJobId,
+      sessionStartPercentage:
+          sessionStartPercentage ?? this.sessionStartPercentage,
     );
   }
 
@@ -773,6 +808,8 @@ class SyncState {
       lastSyncCompletedAt: current.lastSyncCompletedAt,
       lastSyncFailedAt: current.lastSyncFailedAt,
       phase: current.phase,
+      syncJobId: current.syncJobId,
+      sessionStartPercentage: current.sessionStartPercentage,
     );
   }
 
@@ -800,6 +837,8 @@ class SyncState {
       lastSyncCompletedAt: lastSyncCompletedAt,
       lastSyncFailedAt: lastSyncFailedAt,
       phase: phase,
+      syncJobId: syncJobId,
+      sessionStartPercentage: sessionStartPercentage,
     );
   }
 }
@@ -1313,6 +1352,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       isBackgroundMode: false,
       isSyncComplete: initialBelongsToActiveAccount && initial.isSyncComplete,
       percentage: initial.percentage,
+      syncJobId: initial.syncJobId,
       scannedHeight: initial.scannedHeight,
       chainTipHeight: initial.chainTipHeight,
       transparentBalance: initialBelongsToActiveAccount
@@ -1608,6 +1648,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       privatePolicyMayApply: _privatePolicyMayApply,
       crossesTip: nextChainTipHeight != previousChainTipHeight,
     );
+    final resumed = resumableSyncJob(prev);
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
@@ -1617,7 +1658,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isSyncing: true,
         isBackgroundMode: false,
         isSyncComplete: false,
-        percentage: 0.0,
+        percentage: resumed.percentage,
+        syncJobId: resumed.jobId,
+        sessionStartPercentage: resumed.percentage,
         scannedHeight: previousScannedHeight,
         chainTipHeight: nextChainTipHeight,
         transparentBalance: carried?.transparentBalance,
@@ -1765,6 +1808,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 phaseCompletedUnits: event.phaseCompletedUnits.toInt(),
                 phaseTotalUnits: event.phaseTotalUnits.toInt(),
                 phase: event.phase,
+                syncJobId: event.syncJobId,
               );
               _lastForegroundSyncProgress = progress;
               final handling = _onSyncProgress(progress);
@@ -2016,6 +2060,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         failure: failure,
         error: failure.rawMessage,
         isSyncComplete: false,
+        // Keep the job's progress so a retry continues from it.
+        percentage: prev?.percentage ?? 0,
+        displayTargetPercentage: prev?.percentage ?? 0,
+        scannedHeight: prev?.scannedHeight ?? 0,
+        chainTipHeight: prev?.chainTipHeight ?? 0,
+        syncJobId: prev?.syncJobId ?? '',
+        sessionStartPercentage: prev?.sessionStartPercentage ?? 0,
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
@@ -2145,6 +2196,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         checking: prev?.checking,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
+        syncJobId: prev?.syncJobId ?? '',
+        sessionStartPercentage: prev?.sessionStartPercentage ?? 0,
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
@@ -3073,9 +3126,23 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         : prev?.lastSyncCompletedAt;
     final isPreparationEvent = isSyncPreparationPhase(event.phase);
     final eventPercentage = _clampProgress(event.percentage);
-    final actualPercentage = isPreparationEvent
+    final currentJobId = currentState?.syncJobId ?? '';
+    // Rust names the job from the first event of every attempt. A different
+    // id means the job was replaced (for example after an account with an
+    // older birthday was added) or the seeded one no longer exists (wallet
+    // reset); its percentage starts over.
+    final isSameJob =
+        event.syncJobId.isEmpty || event.syncJobId == currentJobId;
+    final actualPercentage = isPreparationEvent && isSameJob
         ? math.max(currentState?.percentage ?? 0, eventPercentage)
         : eventPercentage;
+    final nextSyncJobId = event.syncJobId.isEmpty
+        ? currentJobId
+        : event.syncJobId;
+    final learnedJob = currentJobId.isEmpty && event.syncJobId.isNotEmpty;
+    final nextSessionStartPercentage = learnedJob || !isSameJob
+        ? actualPercentage
+        : currentState?.sessionStartPercentage ?? 0;
     final nextScannedHeight = isPreparationEvent
         ? currentState?.scannedHeight ?? event.scannedHeight
         : event.scannedHeight;
@@ -3115,8 +3182,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isBackgroundMode: false,
         isSyncComplete: event.isComplete,
         percentage: actualPercentage,
-        displayTargetPercentage: isPreparationEvent
+        syncJobId: nextSyncJobId,
+        sessionStartPercentage: nextSessionStartPercentage,
+        displayTargetPercentage: isPreparationEvent && isSameJob
             ? currentState?.displayTargetPercentage ?? actualPercentage
+            : isPreparationEvent
+            ? actualPercentage
             : event.displayTargetPercentage,
         checking: event.isComplete ? null : event.checking,
         displayTargetBlocks: isPreparationEvent && event.checking == null
@@ -3831,6 +3902,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncCompletedAt: current?.lastSyncCompletedAt,
         lastSyncFailedAt: current?.lastSyncFailedAt,
         phase: current?.phase ?? '',
+        syncJobId: current?.syncJobId ?? '',
+        sessionStartPercentage: current?.sessionStartPercentage ?? 0,
       ),
     );
   }
@@ -3971,6 +4044,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   @visibleForTesting
   void stopTipChecksForTesting() => _stopPolling();
+
+  @visibleForTesting
+  void recordSyncFailureForTesting(Object error) => _recordSyncFailure(error);
 
   @visibleForTesting
   Future<void> checkTipForTesting() => _checkAndSync();
