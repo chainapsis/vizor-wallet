@@ -757,6 +757,11 @@ void main() {
       failure: classifySyncFailure(Exception('connection reset')),
     );
     expect(isSyncKeepAwakeCompletedSync(failed), isFalse);
+    // A failure after the main scan keeps its 100% for the retry.
+    expect(
+      isSyncKeepAwakeCompletedSync(failed.copyWith(percentage: 1)),
+      isFalse,
+    );
     expect(
       isSyncKeepAwakeCompletedSync(
         SyncState(percentage: 1, scannedHeight: 200, chainTipHeight: 200),
