@@ -9,13 +9,26 @@
 //!
 //! Output counts come from the compiled mainnet tree sizes and the downloaded
 //! subtree completion heights, so estimating pending work sends no request.
+//!
+//! The job's id, total work and fraction live in `ext_vizor_sync_meta` until a
+//! sync completes. The id is claimed when an attempt starts, so every event
+//! names the job. A retry, an endpoint fallback or an app relaunch therefore
+//! resumes the same fraction instead of starting again from zero. Work that
+//! appeared since the last attempt keeps the fraction already shown and
+//! stretches what remains of the job.
 
+use std::time::{Duration, Instant};
+
+use rusqlite::{params, OptionalExtension};
 use zcash_client_backend::data_api::scanning::ScanRange;
 
 use super::{
-    elapsed, is_pending_scan_range, BATCH_SIZE_SANDBLASTING, SANDBLASTING_END, SANDBLASTING_START,
+    elapsed, ensure_sync_meta_table, is_pending_scan_range, BATCH_SIZE_SANDBLASTING,
+    SANDBLASTING_END, SANDBLASTING_START,
 };
-use crate::wallet::db::{open_readonly_conn_with_timeout, SYNC_DB_BUSY_TIMEOUT};
+use crate::wallet::db::{
+    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, SYNC_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::tree_states::mainnet_tree_sizes;
 
@@ -34,6 +47,20 @@ const POOL_TABLES: [&str; 3] = [
     "ironwood_tree_shards",
 ];
 
+const PROGRESS_JOB_POLICY_VERSION: u32 = 1;
+const PROGRESS_JOB_POLICY_VERSION_KEY: &str = "progress_job_policy_version";
+const PROGRESS_JOB_ID_KEY: &str = "progress_job_id";
+const PROGRESS_JOB_TOTAL_KEY: &str = "progress_job_total_work";
+const PROGRESS_JOB_FRACTION_KEY: &str = "progress_job_fraction";
+pub(super) const PROGRESS_JOB_KEYS: [&str; 4] = [
+    PROGRESS_JOB_POLICY_VERSION_KEY,
+    PROGRESS_JOB_ID_KEY,
+    PROGRESS_JOB_TOTAL_KEY,
+    PROGRESS_JOB_FRACTION_KEY,
+];
+const PROGRESS_JOB_PERSIST_INTERVAL: Duration = Duration::from_secs(15);
+// Persist sooner when the total grows by more than this share.
+const PROGRESS_JOB_TOTAL_PERSIST_GROWTH: f64 = 0.001;
 // Past the last known point, outputs continue at the average rate over at
 // least this many blocks, so a short final segment does not set the rate.
 const EXTRAPOLATION_LOOKBACK_BLOCKS: u64 = 10_000;
@@ -149,6 +176,12 @@ impl WorkModel {
         }
     }
 
+    /// Work of one full batch of empty blocks at the reference batch size.
+    /// Growth below this never replaces a job.
+    pub(super) fn reference_batch_work(&self) -> f64 {
+        WORK_PER_BLOCK * f64::from(self.reference_batch_size) + WORK_PER_BATCH
+    }
+
     /// Estimated work for blocks `[start, end)`.
     pub(super) fn range_work(&self, start: u64, end: u64) -> f64 {
         if end <= start {
@@ -216,6 +249,299 @@ fn read_subtree_end_heights(db_data_path: &str) -> Result<[Vec<(u64, u64)>; 3], 
     Ok(out)
 }
 
+/// The persisted part of an unfinished sync job.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct StoredProgressJob {
+    pub(super) id: String,
+    /// Zero while the job is claimed but its work not yet measured.
+    pub(super) total_work: f64,
+    /// Last fraction reported for the job, shown during the next attempt's
+    /// preparation before its pending work is measured.
+    pub(super) fraction: f64,
+}
+
+impl StoredProgressJob {
+    /// A new job whose work is not measured yet.
+    pub(super) fn unmeasured() -> Self {
+        Self {
+            id: new_job_id(),
+            total_work: 0.0,
+            fraction: 0.0,
+        }
+    }
+
+    /// Scanned everything it measured; only an attempt that stopped before
+    /// marking the sync complete leaves such a job behind.
+    pub(super) fn is_finished(&self) -> bool {
+        self.total_work > 0.0 && self.fraction >= 1.0
+    }
+}
+
+#[cfg(test)]
+pub(super) fn read_progress_job(db_data_path: &str) -> Result<Option<StoredProgressJob>, String> {
+    let conn = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
+    read_job(&conn)
+}
+
+/// Returns the unfinished job, or claims a new unmeasured one, inside the
+/// transaction that marks a sync started. Every event of the attempt then
+/// names the job, and an attempt that fails before measuring keeps the id.
+/// A finished job is not resumed: the next catch-up is a new job from zero,
+/// as after a completed sync.
+pub(super) fn claim_progress_job(
+    tx: &rusqlite::Transaction<'_>,
+) -> Result<StoredProgressJob, String> {
+    if let Some(job) = read_job(tx)?.filter(|job| !job.is_finished()) {
+        return Ok(job);
+    }
+    let job = StoredProgressJob::unmeasured();
+    write_job(tx, &job)?;
+    Ok(job)
+}
+
+fn read_job(conn: &rusqlite::Connection) -> Result<Option<StoredProgressJob>, String> {
+    let read = |key: &str| -> Result<Option<String>, String> {
+        match conn
+            .query_row(
+                "SELECT value FROM ext_vizor_sync_meta WHERE key = ?1",
+                params![key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+        {
+            Ok(value) => Ok(value),
+            Err(e) if e.to_string().contains("no such table") => Ok(None),
+            Err(e) => Err(format!("read {key}: {e}")),
+        }
+    };
+    let version = read(PROGRESS_JOB_POLICY_VERSION_KEY)?.and_then(|v| v.parse::<u32>().ok());
+    if version != Some(PROGRESS_JOB_POLICY_VERSION) {
+        return Ok(None);
+    }
+    let id = read(PROGRESS_JOB_ID_KEY)?.filter(|id| !id.is_empty());
+    let total_work = read(PROGRESS_JOB_TOTAL_KEY)?.and_then(|v| v.parse::<f64>().ok());
+    let fraction = read(PROGRESS_JOB_FRACTION_KEY)?
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    match (id, total_work) {
+        (Some(id), Some(total_work)) if total_work.is_finite() && total_work >= 0.0 => {
+            Ok(Some(StoredProgressJob {
+                id,
+                total_work,
+                fraction: if fraction.is_finite() {
+                    fraction.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn write_progress_job(db_data_path: &str, job: &StoredProgressJob) -> Result<(), String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
+    ensure_sync_meta_table(&conn)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("begin progress job transaction: {e}"))?;
+    write_job(&tx, job)?;
+    tx.commit()
+        .map_err(|e| format!("commit progress job transaction: {e}"))
+}
+
+fn write_job(tx: &rusqlite::Transaction<'_>, job: &StoredProgressJob) -> Result<(), String> {
+    for (key, value) in [
+        (
+            PROGRESS_JOB_POLICY_VERSION_KEY,
+            PROGRESS_JOB_POLICY_VERSION.to_string(),
+        ),
+        (PROGRESS_JOB_ID_KEY, job.id.clone()),
+        (PROGRESS_JOB_TOTAL_KEY, job.total_work.to_string()),
+        (PROGRESS_JOB_FRACTION_KEY, job.fraction.to_string()),
+    ] {
+        tx.execute(
+            "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )
+        .map_err(|e| format!("write {key}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Removes the progress job inside a transaction that marks a sync complete.
+pub(super) fn clear_progress_job(tx: &rusqlite::Transaction<'_>) -> Result<(), String> {
+    for key in PROGRESS_JOB_KEYS {
+        tx.execute(
+            "DELETE FROM ext_vizor_sync_meta WHERE key = ?1",
+            params![key],
+        )
+        .map_err(|e| format!("clear {key}: {e}"))?;
+    }
+    Ok(())
+}
+
+fn new_job_id() -> String {
+    format!("{:016x}", rand::random::<u64>())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum JobStart {
+    New,
+    Resumed,
+    /// More new work is pending than the stored job had finished, such as
+    /// after an account with an older birthday was added. The job restarts
+    /// under a new id so the display resets instead of crawling from the old
+    /// fraction.
+    Replaced,
+}
+
+/// Progress of one sync job in work units.
+#[derive(Debug, Clone)]
+pub(super) struct JobProgress {
+    id: String,
+    total: f64,
+    remaining: f64,
+    persisted_total: f64,
+    persisted_at: Option<Instant>,
+}
+
+impl JobProgress {
+    /// Continues `stored` with `pending` work measured for this attempt.
+    ///
+    /// Work that appeared since the stored fraction (blocks mined while the
+    /// app was closed, a rewind) keeps that fraction and stretches the rest,
+    /// so the display neither drops nor holds still. Growth beyond what the
+    /// job had finished, and at least `min_replace_growth`, starts a new job.
+    pub(super) fn start(
+        stored: StoredProgressJob,
+        pending: f64,
+        min_replace_growth: f64,
+    ) -> (Self, JobStart) {
+        let pending = pending.max(0.0);
+        let StoredProgressJob {
+            id,
+            total_work: stored_total,
+            fraction,
+        } = stored;
+        let (id, total, start) = if stored_total <= 0.0 {
+            // Claimed when the attempt began; this is its first measurement.
+            (id, pending, JobStart::New)
+        } else {
+            let done = fraction * stored_total;
+            let expected = stored_total - done;
+            let growth = pending - expected;
+            let eps = 1e-9 * stored_total.max(1.0);
+            if growth <= eps {
+                (id, stored_total, JobStart::Resumed)
+            } else if expected <= eps || growth > done.max(min_replace_growth) {
+                // Claiming already starts over after a finished job; nothing
+                // is left to stretch over here either.
+                (new_job_id(), pending, JobStart::Replaced)
+            } else {
+                (id, pending / (1.0 - fraction), JobStart::Resumed)
+            }
+        };
+        let job = Self {
+            id,
+            total,
+            remaining: pending,
+            persisted_total: 0.0,
+            persisted_at: None,
+        };
+        (job, start)
+    }
+
+    pub(super) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(super) fn total(&self) -> f64 {
+        self.total
+    }
+
+    pub(super) fn remaining(&self) -> f64 {
+        self.remaining
+    }
+
+    pub(super) fn fraction(&self) -> f64 {
+        if self.total <= 0.0 {
+            return 1.0;
+        }
+        (1.0 - self.remaining / self.total).clamp(0.0, 1.0)
+    }
+
+    /// The fraction once `work` more is finished, for the display target.
+    pub(super) fn fraction_after(&self, work: f64) -> f64 {
+        if self.total <= 0.0 {
+            return 1.0;
+        }
+        (1.0 - (self.remaining - work).max(0.0) / self.total).clamp(0.0, 1.0)
+    }
+
+    /// Records pending work measured outside a scanned batch. Any increase is
+    /// new work (a rewind, a repair, a new range) and raises the total.
+    pub(super) fn observe(&mut self, pending: f64) {
+        let expected = self.remaining;
+        self.record(expected, pending);
+    }
+
+    /// Records pending work after scanning a batch estimated at `batch_work`.
+    /// Pending work beyond what the batch should have left is new work, such
+    /// as blocks mined since the batch began.
+    pub(super) fn observe_after_batch(&mut self, batch_work: f64, pending: f64) {
+        let expected = (self.remaining - batch_work).max(0.0);
+        self.record(expected, pending);
+    }
+
+    fn record(&mut self, expected: f64, pending: f64) {
+        let pending = pending.max(0.0);
+        let growth = pending - expected;
+        if growth > 1e-9 * self.total.max(1.0) {
+            self.total += growth;
+        }
+        if self.total < pending {
+            self.total = pending;
+        }
+        self.remaining = pending;
+    }
+
+    /// Stores the job when it has work, at most every few seconds unless the
+    /// total grew noticeably. Failure only costs resume accuracy, so it is
+    /// logged and ignored.
+    pub(super) fn persist_if_due(&mut self, db_data_path: &str, force: bool) {
+        if self.total <= 0.0 {
+            return;
+        }
+        let grown = self.total > self.persisted_total * (1.0 + PROGRESS_JOB_TOTAL_PERSIST_GROWTH);
+        let due = self
+            .persisted_at
+            .is_none_or(|at| at.elapsed() >= PROGRESS_JOB_PERSIST_INTERVAL);
+        if !(force || grown || due) {
+            return;
+        }
+        let stored = StoredProgressJob {
+            id: self.id.clone(),
+            total_work: self.total,
+            fraction: self.fraction(),
+        };
+        match crate::wallet::db::with_wallet_db_write_lock("sync_engine.progress_job", || {
+            write_progress_job(db_data_path, &stored)
+        }) {
+            Ok(()) => {
+                self.persisted_total = self.total;
+                self.persisted_at = Some(Instant::now());
+            }
+            Err(e) => {
+                // Retry after the normal interval instead of on every batch.
+                self.persisted_at = Some(Instant::now());
+                log::warn!("[{}] sync: progress job not saved: {e}", elapsed());
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +557,20 @@ mod tests {
 
     fn model_without_outputs(reference_batch_size: u32) -> WorkModel {
         WorkModel::from_points(Default::default(), reference_batch_size)
+    }
+
+    fn new_job(pending: f64) -> JobProgress {
+        let (job, start) = JobProgress::start(StoredProgressJob::unmeasured(), pending, 1.0);
+        assert_eq!(start, JobStart::New);
+        job
+    }
+
+    fn stored(total_work: f64, fraction: f64) -> StoredProgressJob {
+        StoredProgressJob {
+            id: "abc".into(),
+            total_work,
+            fraction,
+        }
     }
 
     fn temp_db() -> (tempfile::TempDir, String) {
@@ -369,5 +709,215 @@ mod tests {
         ];
         let expected = model.range_work(10_000, 12_000) + model.range_work(13_000, 15_001);
         assert!((model.pending_work(&ranges, 15_000) - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn job_fraction_advances_by_batch_work_and_absorbs_tip_growth() {
+        let mut job = new_job(100.0);
+        assert_eq!(job.fraction(), 0.0);
+        assert!((job.fraction_after(25.0) - 0.25).abs() < 1e-12);
+
+        job.observe_after_batch(25.0, 75.0);
+        assert!((job.fraction() - 0.25).abs() < 1e-12);
+
+        // A batch of 25 also brought 5 units of newly mined blocks.
+        job.observe_after_batch(25.0, 55.0);
+        assert!((job.total() - 105.0).abs() < 1e-12);
+        assert!((job.fraction() - 50.0 / 105.0).abs() < 1e-12);
+
+        job.observe_after_batch(55.0, 0.0);
+        assert_eq!(job.fraction(), 1.0);
+    }
+
+    #[test]
+    fn rewound_work_raises_the_total_instead_of_restarting() {
+        let mut job = new_job(1_000.0);
+        job.observe_after_batch(600.0, 400.0);
+        assert!((job.fraction() - 0.6).abs() < 1e-12);
+        // A reorg requeues 10 units: a small, legitimate dip, not a reset.
+        job.observe(410.0);
+        assert!((job.total() - 1_010.0).abs() < 1e-12);
+        assert!((job.fraction() - 600.0 / 1_010.0).abs() < 1e-12);
+        // Measuring again without change keeps the fraction.
+        job.observe(410.0);
+        assert!((job.fraction() - 600.0 / 1_010.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn an_unmeasured_claim_keeps_its_id() {
+        let claimed = StoredProgressJob::unmeasured();
+        let id = claimed.id.clone();
+        let (job, start) = JobProgress::start(claimed, 250.0, 1.0);
+        assert_eq!(start, JobStart::New);
+        assert_eq!(job.id(), id);
+        assert_eq!(job.total(), 250.0);
+        assert_eq!(job.fraction(), 0.0);
+    }
+
+    #[test]
+    fn a_stored_job_resumes_its_fraction_and_id() {
+        let (job, start) = JobProgress::start(stored(1_000.0, 0.6), 400.0, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert_eq!(job.id(), "abc");
+        assert!((job.fraction() - 0.6).abs() < 1e-12);
+
+        // Progress saved late: the measured work shows more was done.
+        let (job, _) = JobProgress::start(stored(1_000.0, 0.6), 300.0, 1.0);
+        assert!((job.fraction() - 0.7).abs() < 1e-12);
+    }
+
+    #[test]
+    fn work_added_between_attempts_keeps_the_fraction_already_shown() {
+        // 50 units mined while the app was closed, at 60% of 1,000.
+        let (mut job, start) = JobProgress::start(stored(1_000.0, 0.6), 450.0, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert_eq!(job.id(), "abc");
+        assert!((job.fraction() - 0.6).abs() < 1e-12);
+        assert!((job.total() - 1_125.0).abs() < 1e-9);
+        // The rest advances at the stretched scale.
+        job.observe_after_batch(45.0, 405.0);
+        assert!((job.fraction() - 0.64).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_block_mined_before_the_first_batch_resumes_the_job() {
+        // A small job failed before committing a batch; one more block is
+        // pending on retry. It is the same job, not a replacement.
+        let one_block = WORK_PER_BLOCK;
+        let (job, start) = JobProgress::start(stored(0.3, 0.0), 0.3 + one_block, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert_eq!(job.id(), "abc");
+        assert_eq!(job.fraction(), 0.0);
+        assert!((job.total() - (0.3 + one_block)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn more_new_work_than_the_job_finished_replaces_it() {
+        // 1,100 new units against 600 finished: an older account was added.
+        let (job, start) = JobProgress::start(stored(1_000.0, 0.6), 1_500.0, 1.0);
+        assert_eq!(start, JobStart::Replaced);
+        assert_ne!(job.id(), "abc");
+        assert_eq!(job.fraction(), 0.0);
+        assert_eq!(job.total(), 1_500.0);
+
+        // Growth above what was finished but below one batch of work resumes.
+        let (job, start) = JobProgress::start(stored(1.0, 0.2), 0.8 + 0.5, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert!((job.fraction() - 0.2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_finished_job_has_no_remaining_share_to_stretch() {
+        // Claiming replaces such a job first; start() must not divide by zero.
+        let (job, start) = JobProgress::start(stored(1_000.0, 1.0), 0.5, 1.0);
+        assert_eq!(start, JobStart::Replaced);
+        assert_ne!(job.id(), "abc");
+        assert_eq!(job.fraction(), 0.0);
+
+        let (job, start) = JobProgress::start(stored(1_000.0, 1.0), 0.0, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert_eq!(job.fraction(), 1.0);
+    }
+
+    #[test]
+    fn an_empty_job_is_complete() {
+        let job = new_job(0.0);
+        assert_eq!(job.fraction(), 1.0);
+        assert_eq!(job.fraction_after(10.0), 1.0);
+    }
+
+    #[test]
+    fn reference_batch_work_counts_empty_blocks_and_one_batch() {
+        let model = model_without_outputs(2_000);
+        assert!((model.reference_batch_work() - model.range_work(100_000, 102_000)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn progress_job_round_trips_and_clears() {
+        let (_dir, path) = temp_db();
+        let path = path.as_str();
+        assert_eq!(read_progress_job(path).unwrap(), None);
+
+        let job = StoredProgressJob {
+            id: "0123456789abcdef".into(),
+            total_work: 1234.5,
+            fraction: 0.42,
+        };
+        write_progress_job(path, &job).unwrap();
+        assert_eq!(read_progress_job(path).unwrap(), Some(job));
+
+        let mut conn = rusqlite::Connection::open(path).unwrap();
+        let tx = conn.transaction().unwrap();
+        clear_progress_job(&tx).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(read_progress_job(path).unwrap(), None);
+    }
+
+    #[test]
+    fn claiming_keeps_an_unfinished_job_and_names_a_new_one_otherwise() {
+        let (_dir, path) = temp_db();
+        let claim = || {
+            let mut conn = rusqlite::Connection::open(&path).unwrap();
+            ensure_sync_meta_table(&conn).unwrap();
+            let tx = conn.transaction().unwrap();
+            let job = claim_progress_job(&tx).unwrap();
+            tx.commit().unwrap();
+            job
+        };
+
+        let first = claim();
+        assert_eq!(first.total_work, 0.0);
+        assert_eq!(first.id.len(), 16);
+        // An attempt that fails before measuring keeps the id for the retry.
+        assert_eq!(claim(), first);
+        assert_eq!(read_progress_job(&path).unwrap(), Some(first.clone()));
+
+        let measured = StoredProgressJob {
+            id: first.id.clone(),
+            total_work: 500.0,
+            fraction: 0.25,
+        };
+        write_progress_job(&path, &measured).unwrap();
+        assert_eq!(claim(), measured);
+
+        // The scan finished but the attempt stopped before completing: the
+        // next catch-up is a new job.
+        let finished = StoredProgressJob {
+            fraction: 1.0,
+            ..measured
+        };
+        write_progress_job(&path, &finished).unwrap();
+        let after_finished = claim();
+        assert_ne!(after_finished.id, first.id);
+        assert_eq!(after_finished.total_work, 0.0);
+
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        let tx = conn.transaction().unwrap();
+        clear_progress_job(&tx).unwrap();
+        tx.commit().unwrap();
+        assert_ne!(claim().id, after_finished.id);
+    }
+
+    #[test]
+    fn a_job_from_another_policy_version_is_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        write_progress_job(
+            path,
+            &StoredProgressJob {
+                id: "abc".into(),
+                total_work: 10.0,
+                fraction: 0.5,
+            },
+        )
+        .unwrap();
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.execute(
+            "UPDATE ext_vizor_sync_meta SET value = '0' WHERE key = ?1",
+            params![PROGRESS_JOB_POLICY_VERSION_KEY],
+        )
+        .unwrap();
+        assert_eq!(read_progress_job(path).unwrap(), None);
     }
 }
