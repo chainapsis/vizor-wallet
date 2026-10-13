@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -666,7 +667,34 @@ void main() {
     expect(estimate.sample, isNull);
   });
 
-  test('ETA uses display target block samples when available', () {
+  test('ETA of a resumed job counts only this session\'s progress', () {
+    final startedAt = DateTime(2026, 7, 9, 12);
+    final now = startedAt.add(const Duration(seconds: 30));
+
+    // The job resumed at 40% and reached 50% in 30 seconds: 50% left at
+    // that rate is 150 seconds, not the 30 seconds a 0% start would imply.
+    final estimate = estimateSyncKeepAwakeEta(
+      _sync(
+        percentage: 0.5,
+        sessionStartPercentage: 0.4,
+        lastSyncStartedAt: startedAt,
+      ),
+      now: now,
+    );
+    expect(estimate.remaining, const Duration(seconds: 150));
+
+    final noProgressYet = estimateSyncKeepAwakeEta(
+      _sync(
+        percentage: 0.4,
+        sessionStartPercentage: 0.4,
+        lastSyncStartedAt: startedAt,
+      ),
+      now: now,
+    );
+    expect(noProgressYet.remaining, isNull);
+  });
+
+  test('ETA uses the observed rate between batch samples', () {
     final startedAt = DateTime(2026, 7, 9, 12);
     final previous = estimateSyncKeepAwakeEta(
       _sync(
@@ -691,6 +719,50 @@ void main() {
 
     expect(current.remaining, const Duration(seconds: 80));
     expect(current.sample, isNotNull);
+  });
+
+  test('ETA does not depend on how much work a batch packs per block', () {
+    final startedAt = DateTime(2026, 7, 9, 12);
+    // A dense 100-block batch, then a sparse 2,000-block one. Both carry
+    // work fractions, so the rate is 1% per second either way.
+    final previous = estimateSyncKeepAwakeEta(
+      _sync(
+        percentage: 0.10,
+        displayTargetPercentage: 0.11,
+        displayTargetBlocks: 100,
+        lastSyncStartedAt: startedAt,
+      ),
+      now: startedAt.add(const Duration(seconds: 10)),
+    );
+
+    final current = estimateSyncKeepAwakeEta(
+      _sync(
+        percentage: 0.20,
+        displayTargetPercentage: 0.40,
+        displayTargetBlocks: 2000,
+        lastSyncStartedAt: startedAt,
+      ),
+      now: startedAt.add(const Duration(seconds: 20)),
+      previousSample: previous.sample,
+    );
+
+    expect(current.remaining, const Duration(seconds: 80));
+  });
+
+  test('a failed sync is not complete even at the tip', () {
+    final failed = SyncState(
+      percentage: 0.99,
+      scannedHeight: 200,
+      chainTipHeight: 200,
+      failure: classifySyncFailure(Exception('connection reset')),
+    );
+    expect(isSyncKeepAwakeCompletedSync(failed), isFalse);
+    expect(
+      isSyncKeepAwakeCompletedSync(
+        SyncState(percentage: 1, scannedHeight: 200, chainTipHeight: 200),
+      ),
+      isTrue,
+    );
   });
 
   test('prompt requires unseen state and at least one minute ETA', () {
@@ -755,6 +827,7 @@ SyncState _sync({
   int? remainingScanBlocks,
   int? pendingScanStartHeight,
   bool scanWorkKnown = true,
+  double sessionStartPercentage = 0,
 }) {
   return SyncState(
     isSyncing: isSyncing,
@@ -773,5 +846,6 @@ SyncState _sync({
     chainTipHeight: chainTipHeight,
     lastSyncStartedAt: lastSyncStartedAt,
     phase: phase,
+    sessionStartPercentage: sessionStartPercentage,
   );
 }
