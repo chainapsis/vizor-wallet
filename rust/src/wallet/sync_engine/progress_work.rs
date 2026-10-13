@@ -58,9 +58,8 @@ pub(super) const PROGRESS_JOB_KEYS: [&str; 4] = [
     PROGRESS_JOB_TOTAL_KEY,
     PROGRESS_JOB_FRACTION_KEY,
 ];
-const PROGRESS_JOB_PERSIST_INTERVAL: Duration = Duration::from_secs(15);
-// Persist sooner when the total grows by more than this share.
-const PROGRESS_JOB_TOTAL_PERSIST_GROWTH: f64 = 0.001;
+// After a failed save, the next try waits this long instead of every batch.
+const PROGRESS_JOB_RETRY_INTERVAL: Duration = Duration::from_secs(15);
 // Past the last known point, outputs continue at the average rate over at
 // least this many blocks, so a short final segment does not set the rate.
 const EXTRAPOLATION_LOOKBACK_BLOCKS: u64 = 10_000;
@@ -402,17 +401,17 @@ pub(super) struct JobProgress {
     id: String,
     total: f64,
     remaining: f64,
-    persisted_total: f64,
-    persisted_at: Option<Instant>,
+    retry_after: Option<Instant>,
 }
 
 impl JobProgress {
     /// Continues `stored` with `pending` work measured for this attempt.
     ///
-    /// Work that appeared since the stored fraction (blocks mined while the
-    /// app was closed, a rewind) keeps that fraction and stretches the rest,
-    /// so the display neither drops nor holds still. Growth beyond what the
-    /// job had finished, and at least `min_replace_growth`, starts a new job.
+    /// Work that appeared or went away since the stored fraction (blocks mined
+    /// while the app was closed, a rewind, a deleted account) keeps that
+    /// fraction and rescales the rest, so the display neither drops nor jumps.
+    /// Growth beyond what the job had finished, and at least
+    /// `min_replace_growth`, starts a new job.
     pub(super) fn start(
         stored: StoredProgressJob,
         pending: f64,
@@ -432,9 +431,9 @@ impl JobProgress {
             let expected = stored_total - done;
             let growth = pending - expected;
             let eps = 1e-9 * stored_total.max(1.0);
-            if growth <= eps {
+            if growth.abs() <= eps {
                 (id, stored_total, JobStart::Resumed)
-            } else if expected <= eps || growth > done.max(min_replace_growth) {
+            } else if growth > 0.0 && (expected <= eps || growth > done.max(min_replace_growth)) {
                 // Claiming already starts over after a finished job; nothing
                 // is left to stretch over here either.
                 (new_job_id(), pending, JobStart::Replaced)
@@ -446,8 +445,7 @@ impl JobProgress {
             id,
             total,
             remaining: pending,
-            persisted_total: 0.0,
-            persisted_at: None,
+            retry_after: None,
         };
         (job, start)
     }
@@ -480,7 +478,8 @@ impl JobProgress {
     }
 
     /// Records pending work measured outside a scanned batch. Any increase is
-    /// new work (a rewind, a repair, a new range) and raises the total.
+    /// new work (a rewind, a repair, a new range) and raises the total; a
+    /// decrease (a deleted account, pruned ranges) keeps the fraction.
     pub(super) fn observe(&mut self, pending: f64) {
         let expected = self.remaining;
         self.record(expected, pending);
@@ -497,8 +496,13 @@ impl JobProgress {
     fn record(&mut self, expected: f64, pending: f64) {
         let pending = pending.max(0.0);
         let growth = pending - expected;
-        if growth > 1e-9 * self.total.max(1.0) {
+        let eps = 1e-9 * self.total.max(1.0);
+        if growth > eps {
             self.total += growth;
+        } else if growth < -eps {
+            // Work that went away unscanned is not progress: keep the fraction
+            // this measurement expected and spread what is left over the rest.
+            self.total *= pending / expected;
         }
         if self.total < pending {
             self.total = pending;
@@ -506,18 +510,13 @@ impl JobProgress {
         self.remaining = pending;
     }
 
-    /// Stores the job when it has work, at most every few seconds unless the
-    /// total grew noticeably. Failure only costs resume accuracy, so it is
-    /// logged and ignored.
-    pub(super) fn persist_if_due(&mut self, db_data_path: &str, force: bool) {
-        if self.total <= 0.0 {
-            return;
-        }
-        let grown = self.total > self.persisted_total * (1.0 + PROGRESS_JOB_TOTAL_PERSIST_GROWTH);
-        let due = self
-            .persisted_at
-            .is_none_or(|at| at.elapsed() >= PROGRESS_JOB_PERSIST_INTERVAL);
-        if !(force || grown || due) {
+    /// Stores the job when it has work. The engine saves it after every
+    /// batch, so the stored fraction lags the scan by at most one batch and a
+    /// resumed attempt can read less pending work as work that went away, not
+    /// as scanning it never recorded. Failure only costs resume accuracy, so it
+    /// is logged and the next try waits.
+    pub(super) fn persist(&mut self, db_data_path: &str) {
+        if self.total <= 0.0 || self.retry_after.is_some_and(|at| Instant::now() < at) {
             return;
         }
         let stored = StoredProgressJob {
@@ -528,13 +527,9 @@ impl JobProgress {
         match crate::wallet::db::with_wallet_db_write_lock("sync_engine.progress_job", || {
             write_progress_job(db_data_path, &stored)
         }) {
-            Ok(()) => {
-                self.persisted_total = self.total;
-                self.persisted_at = Some(Instant::now());
-            }
+            Ok(()) => self.retry_after = None,
             Err(e) => {
-                // Retry after the normal interval instead of on every batch.
-                self.persisted_at = Some(Instant::now());
+                self.retry_after = Some(Instant::now() + PROGRESS_JOB_RETRY_INTERVAL);
                 log::warn!("[{}] sync: progress job not saved: {e}", elapsed());
             }
         }
@@ -760,9 +755,10 @@ mod tests {
         assert_eq!(job.id(), "abc");
         assert!((job.fraction() - 0.6).abs() < 1e-12);
 
-        // Progress saved late: the measured work shows more was done.
+        // The job is saved after every batch, so less work than stored went
+        // away unscanned (a deleted account): the fraction stays.
         let (job, _) = JobProgress::start(stored(1_000.0, 0.6), 300.0, 1.0);
-        assert!((job.fraction() - 0.7).abs() < 1e-12);
+        assert!((job.fraction() - 0.6).abs() < 1e-12);
     }
 
     #[test]
@@ -776,6 +772,35 @@ mod tests {
         // The rest advances at the stretched scale.
         job.observe_after_batch(45.0, 405.0);
         assert!((job.fraction() - 0.64).abs() < 1e-12);
+    }
+
+    #[test]
+    fn removed_work_keeps_the_fraction_and_rescales_the_rest() {
+        let mut job = new_job(1_000.0);
+        job.observe_after_batch(200.0, 800.0);
+        assert!((job.fraction() - 0.2).abs() < 1e-12);
+        // An account with old history is deleted: 760 of the 800 units go
+        // away without being scanned. The bar stays where it was.
+        job.observe(40.0);
+        assert!((job.fraction() - 0.2).abs() < 1e-12);
+        assert!((job.total() - 50.0).abs() < 1e-9);
+        // What is left fills the remaining 80%.
+        job.observe_after_batch(20.0, 20.0);
+        assert!((job.fraction() - 0.6).abs() < 1e-12);
+        job.observe_after_batch(20.0, 0.0);
+        assert!((job.fraction() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn work_removed_between_attempts_keeps_the_fraction_already_shown() {
+        // The account was deleted while the sync was paused at 20% of 1,000.
+        let (mut job, start) = JobProgress::start(stored(1_000.0, 0.2), 40.0, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert_eq!(job.id(), "abc");
+        assert!((job.fraction() - 0.2).abs() < 1e-12);
+        assert!((job.total() - 50.0).abs() < 1e-9);
+        job.observe_after_batch(20.0, 20.0);
+        assert!((job.fraction() - 0.6).abs() < 1e-12);
     }
 
     #[test]

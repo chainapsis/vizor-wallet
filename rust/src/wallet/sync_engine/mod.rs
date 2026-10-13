@@ -3376,7 +3376,7 @@ async fn run_sync_impl(
         work_model.pending_work(&initial_ranges, current_tip_height),
         work_model.reference_batch_work(),
     );
-    job.persist_if_due(db_data_path, true);
+    job.persist(db_data_path);
     progress_fn(scan_queue_progress_event(
         &mut checking_cycle,
         main_scan_complete,
@@ -4618,9 +4618,7 @@ async fn run_sync_impl(
             phase: "scan".into(),
             sync_job_id: job.id().to_string(),
         };
-        // Save the last batch at once, so an attempt that stops before
-        // completion leaves a finished job rather than a stale fraction.
-        job.persist_if_due(db_data_path, job.remaining() <= 0.0);
+        job.persist(db_data_path);
         log::info!(
             "[{}] sync: {:.1}% (work remaining={:.0}/{:.0}, blocks remaining={})",
             elapsed(),
