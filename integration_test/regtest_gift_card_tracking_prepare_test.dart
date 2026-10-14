@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/gift_card_usage.d
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart';
 import 'support/gift_card_tracking_flow.dart';
+import 'support/regtest_control.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -72,7 +73,7 @@ void main() {
         'address': link.address,
         'observerPath': await getGiftCardTrackingDbPath('regtest'),
         'usage': used.toJson(),
-        'oldTip': await paymentLinkZcashdRpc<int>('getblockcount'),
+        'oldTip': await regtestTipHeight(),
       });
       prepared = true;
     },

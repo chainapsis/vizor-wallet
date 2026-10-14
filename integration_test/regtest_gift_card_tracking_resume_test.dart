@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/rust/api/gift_card_tracking.dart' as tracking;
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart';
 import 'support/gift_card_tracking_flow.dart';
+import 'support/regtest_control.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +27,7 @@ void main() {
       expect(await getGiftCardTrackingDbPath('regtest'), path);
       expect(await tracking.listGiftCardObservers(dbPath: path), isEmpty);
       expect(
-        await paymentLinkZcashdRpc<int>('getblockcount'),
+        await regtestTipHeight(),
         greaterThanOrEqualTo((manifest['oldTip'] as int) + 200),
       );
       await pumpTrackingApp(tester);

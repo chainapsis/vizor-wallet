@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart';
+import 'support/regtest_control.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -142,10 +143,7 @@ Future<void> _fundAndMeasureBatch(
   expect(recoveries.map((record) => record.fundingTxids).toSet(), {
     result.txids,
   });
-  final raw = await paymentLinkZcashdRpc<Map<String, Object?>>(
-    'getrawtransaction',
-    [result.txids, 1],
-  );
+  final raw = await regtestTransaction(result.txids);
   final orchardActions =
       (raw['orchard'] as Map<String, Object?>)['actions'] as List<Object?>;
   final ironwoodActions =
@@ -216,7 +214,7 @@ Future<void> _waitForSpendable(
   // Also wait for the scan of the mined blocks: until the previous funding is
   // seen mined, its sibling notes are not selectable even though the balance
   // already counts them as spendable.
-  final chainTip = await paymentLinkZcashdRpc<int>('getblockcount');
+  final chainTip = await regtestTipHeight();
   final deadline = DateTime.now().add(const Duration(minutes: 4));
   Object? lastBalance;
   while (true) {

@@ -40,6 +40,10 @@ RECEIVER_MNEMONIC = ("return try reason flat civil wolf dwarf announce toddler u
                      "gauge east rifle swim tray twin venue fossil will version")
 
 LIGHTWALLETD_OVERRIDE = ("ZCASH_E2E_LIGHTWALLETD_URL", f"http://127.0.0.1:{LIGHTWALLETD_PORT}")
+# Scenarios whose tests put their in-test proxy in front of lightwalletd.
+PROXY_OVERRIDE = ("ZCASH_E2E_LIGHTWALLETD_URL", f"http://127.0.0.1:{PROXY_PORT}")
+PAYMENT_LINKS = (("VIZOR_PAYMENT_LINK_REGTEST_ENABLED", "true"),
+                 ("VIZOR_DEEPLINK_BASE_URL", "https://link-dev.vizor.cash"))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -100,6 +104,15 @@ class FlutterScenario:
     activation_height: int = DEFAULT_ACTIVATION
     initial_blocks: int = INITIAL_BLOCKS
     timeout_seconds: int = 1200
+
+
+def _payment_link(id, tests, lightwalletd=LIGHTWALLETD_OVERRIDE, mine_between=0):
+    """A desktop Gift Card scenario; the sender holds 1.25 ZEC, and between
+    a prepare and a resume phase the chain advances with the app stopped."""
+    phases = tuple(Phase(f"integration_test/{test}_test.dart", mine_before=mine_between if index else 0)
+                   for index, test in enumerate(tests))
+    return FlutterScenario(id, "macos", phases, defines=(lightwalletd, *PAYMENT_LINKS),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),))
 
 
 def _ironwood(id, platform, test, notes, *defines, initial_blocks=INITIAL_BLOCKS):
@@ -193,6 +206,22 @@ FLUTTER_SCENARIOS = (
         "flutter.macos.mempool-expiry", "macos",
         (Phase("integration_test/regtest_mempool_receive_history_test.dart", fundings=1),),
         defines=(LIGHTWALLETD_OVERRIDE, ("ZCASH_E2E_MEMPOOL_TEST_MODE", "expiry"))),
+    _payment_link("flutter.macos.payment-link-round-trip", ("regtest_payment_link_round_trip",)),
+    _payment_link("flutter.macos.payment-link-restart",
+        ("regtest_payment_link_restart_prepare", "regtest_payment_link_restart_resume"), mine_between=6),
+    _payment_link("flutter.macos.payment-link-batch-restart",
+        ("regtest_payment_link_batch_restart_prepare", "regtest_payment_link_batch_restart_resume"),
+        lightwalletd=PROXY_OVERRIDE, mine_between=6),
+    _payment_link("flutter.macos.payment-link-recovery",
+        ("regtest_payment_link_failure_prepare", "regtest_payment_link_failure_reorg_resume"),
+        lightwalletd=PROXY_OVERRIDE, mine_between=5),
+    _payment_link("flutter.macos.gift-card-tracking",
+        ("regtest_gift_card_tracking_prepare", "regtest_gift_card_tracking_resume"), mine_between=200),
+    # The shell runner ran each Gift Card outcome pair on a fresh chain.
+    _payment_link("flutter.macos.gift-card-competition",
+        ("regtest_gift_card_competition", "regtest_gift_card_removal_resume"), lightwalletd=PROXY_OVERRIDE),
+    _payment_link("flutter.macos.gift-card-response",
+        ("regtest_gift_card_response_prepare", "regtest_gift_card_response_resume"), lightwalletd=PROXY_OVERRIDE),
     FlutterScenario(
         "flutter.ios.create-sync", "ios",
         (Phase("integration_test/regtest_mobile_create_sync_test.dart"),),

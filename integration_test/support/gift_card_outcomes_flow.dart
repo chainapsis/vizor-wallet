@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'desktop_regtest_flow.dart';
 import 'payment_link_regtest_flow.dart';
+import 'regtest_control.dart';
 import 'regtest_lightwalletd_proxy.dart';
 
 final giftOutcomeAmount = BigInt.from(10_000_000);
@@ -156,7 +157,8 @@ Future<void> submitCompetitor(
 }
 
 Future<void> waitForCompetitorInMempool(String txids) async {
-  final mempool = await paymentLinkZcashdRpc<List<Object?>>('getrawmempool');
+  final mempool =
+      (await regtestControlGet('/mempool'))['txids']! as List<Object?>;
   // ExecuteProposal returns display-order IDs, unlike the received store.
   expect(mempool, containsAll(txids.split(',')));
 }

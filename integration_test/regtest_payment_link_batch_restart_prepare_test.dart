@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_tr
 
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart';
+import 'support/regtest_control.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 void main() {
@@ -110,9 +111,8 @@ Future<void> _waitForMempoolTxid(WidgetTester tester, String txid) async {
   var mempool = const <String>[];
   while (DateTime.now().isBefore(deadline)) {
     mempool = [
-      for (final entry in await paymentLinkZcashdRpc<List<Object?>>(
-        'getrawmempool',
-      ))
+      for (final entry
+          in (await regtestControlGet('/mempool'))['txids']! as List<Object?>)
         '$entry',
     ];
     if (mempool.any((entry) => paymentLinkTxidsMatch(entry, txid))) return;
