@@ -62,6 +62,7 @@ void main() {
       expect(started.activeRunId, isNotNull);
       expect(started.pendingTxCount, 0);
       expect(started.signedChildPcztCount, greaterThanOrEqualTo(2));
+      await waitForMobileRegtestMempoolSize(tester, 1);
 
       await pauseFlutterAndQuiesceMigrationForNativeOutboxTicks(
         tester,
