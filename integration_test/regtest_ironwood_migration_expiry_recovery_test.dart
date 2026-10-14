@@ -302,11 +302,7 @@ void main() {
         expect(recovered.trim(), '2:0:2:1:2');
       } finally {
         try {
-          await ironwoodDriverPost(
-            _driverUrl,
-            '/node/restart',
-            timeout: const Duration(minutes: 5),
-          );
+          await ironwoodDriverPost(_driverUrl, '/lightwalletd/start');
         } finally {
           syncNotifier.resumeAfterWalletMutation(syncPause);
         }
@@ -431,11 +427,7 @@ void main() {
         expect(persistedSecondWave[3], 'scheduled');
       } finally {
         try {
-          await ironwoodDriverPost(
-            _driverUrl,
-            '/node/restart',
-            timeout: const Duration(minutes: 5),
-          );
+          await ironwoodDriverPost(_driverUrl, '/lightwalletd/start');
         } finally {
           syncNotifier.resumeAfterWalletMutation(secondSyncPause);
         }

@@ -320,7 +320,8 @@ class ActivationControlTests(ControlFixture):
     def test_recovery_outages_use_only_original_front_on_owner_thread(self):
         self.prepare()
         for scenario in ("flutter.ios.ironwood-migration-network-recovery",
-                         "flutter.macos.ironwood-migration-restart"):
+                         "flutter.macos.ironwood-migration-restart",
+                         "flutter.macos.ironwood-migration-expiry-recovery"):
             self.control._scenario = scenario
             calls = []
             def available(value, **kwargs):

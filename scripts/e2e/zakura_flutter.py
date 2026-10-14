@@ -324,6 +324,8 @@ FLUTTER_SCENARIOS = (
         ("ZCASH_E2E_SEND_RECIPIENT_ADDRESS", RECEIVER_UA)),
     _ironwood("flutter.macos.ironwood-migration-multi-account", "macos",
         "integration_test/regtest_ironwood_migration_multi_account_test.dart", OrchardNotes(1_100_000)),
+    _ironwood("flutter.macos.ironwood-migration-expiry-recovery", "macos",
+        "integration_test/regtest_ironwood_migration_expiry_recovery_test.dart", OrchardNotes(4_120_000)),
     _ironwood("flutter.macos.ironwood-migration-reorg", "macos",
         "integration_test/regtest_ironwood_migration_reorg_test.dart", OrchardNotes(1_100_000)),
     # 99.0002 ZEC takes sixteen 6.25 ZEC coinbases; the shell runner mined 20
