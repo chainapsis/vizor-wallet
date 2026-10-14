@@ -41,11 +41,14 @@ class SelectionTests(unittest.TestCase):
         for scenario in flutter.FLUTTER_SCENARIOS:
             with self.subTest(scenario=scenario.id):
                 notes = scenario.orchard_notes
-                sources = [payment.source_height for payment in scenario.funding]
-                sources += [height for heights in (notes.sources if notes else ()) for height in heights]
+                transactions = [(payment.source_height,) for payment in scenario.funding]
+                transactions += list(notes.sources if notes else ())
+                sources = [height for heights in transactions for height in heights]
                 self.assertEqual(len(sources), len(set(sources)))
-                # Spending coinbase h needs a tip of at least h + 99 before funding.
-                self.assertGreaterEqual(scenario.initial_blocks + 99, max(sources, default=1))
+                # Each funding transaction mines 10 blocks, and spending the
+                # coinbase of height h needs a tip of h + 99 or more.
+                for index, heights in enumerate(transactions):
+                    self.assertGreaterEqual(scenario.initial_blocks + 10 * index, max(heights) + 99)
                 self.assertEqual(scenario.activation_height, 500 if notes else 1)
                 for value in flutter.derived_addresses(scenario):
                     self.assertIn(value.field, {"unifiedAddress", "transparentAddress", "texAddress"})
