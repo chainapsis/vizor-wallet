@@ -280,8 +280,9 @@ class OwnedNativeZakuraControl:
                 "required_txids", "fork_height"}:
             gift = self._scenario == "flutter.macos.payment-link-recovery" and self._activation == 1
             mobile = self._scenario == "flutter.ios.ironwood-migration-reorg" and self._activation == 500
-            if not (gift or mobile) or (mobile and payload["fork_height"] != 500):
-                raise _BadRequest("fork replacement requires the owned Gift/mobile recovery case")
+            desktop = self._scenario == "flutter.macos.ironwood-migration-reorg" and self._activation == 500
+            if not (gift or mobile or desktop) or (mobile and payload["fork_height"] != 500):
+                raise _BadRequest("fork replacement requires the owned Gift or Ironwood reorg case")
             return self._backend.replace_fork_holding(_txids(payload["required_txids"]),
                 fork_height=_integer(payload["fork_height"], "fork height", 1, 0xFFFFFFFF),
                 deadline=self._deadline)

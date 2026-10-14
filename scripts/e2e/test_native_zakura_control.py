@@ -347,6 +347,19 @@ class ActivationControlTests(ControlFixture):
             self.assertEqual(self.request("POST", "/lightwalletd/start", "{}")[0], 400)
             change.assert_not_called()
 
+    def test_desktop_reorg_names_its_transactions_at_any_fork(self):
+        self.prepare()
+        self.control._scenario = "flutter.macos.ironwood-migration-reorg"
+        with patch.object(self.backend, "replace_fork_holding", return_value={"held_txids":["12"*32]}) as replace:
+            self.assertEqual(self.request("POST", "/reorg-hold-fork", json.dumps({
+                "required_txids":[], "fork_height":500}))[0], 400)
+            replace.assert_not_called()
+            for height in (500, 523):
+                self.assertEqual(self.request("POST", "/reorg-hold-fork", json.dumps({
+                    "required_txids":["12"*32], "fork_height":height}))[0], 200)
+                self.assertEqual(replace.call_args.args, (["12"*32],))
+                self.assertEqual(replace.call_args.kwargs["fork_height"], height)
+
     def test_mobile_reorg_binds_exact_activation_fork_and_original_backend(self):
         self.prepare()
         self.control._scenario = "flutter.ios.ironwood-migration-reorg"

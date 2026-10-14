@@ -87,6 +87,11 @@ void main() {
       );
       final runId = started.activeRunId;
       expect(runId, isNotNull);
+      final denominationTxids = await _broadcastDenominationSplit(
+        tester,
+        accountUuid,
+      );
+      expect(denominationTxids, hasLength(1));
 
       await prepareDesktopRegtestMigrationSchedule(
         tester,
@@ -107,25 +112,26 @@ void main() {
       expect(firstChild.totalCount, greaterThan(0));
 
       e2eLog('reorging the trusted denomination chain');
-      final denominationReorg = await ironwoodDriverPost(
-        _driverUrl,
-        '/reorg',
-        payload: const {'forkHeight': 500},
+      // The child spends against the mined split's anchor, which the fork
+      // removes, so only the split can return to the mempool.
+      final denominationReorg = await _reorg(500, denominationTxids);
+      expect(
+        denominationReorg['new_tip_height'],
+        (denominationReorg['old_tip_height'] as int) + 1,
       );
       expect(
-        denominationReorg['newTip'],
-        (denominationReorg['oldTip'] as int) + 1,
+        denominationReorg['new_tip_hash'],
+        isNot(denominationReorg['old_tip_hash']),
       );
-      expect(
-        denominationReorg['newTipHash'],
-        isNot(denominationReorg['oldTipHash']),
+      final heldAfterDenominationReorg = _txids(
+        denominationReorg,
+        'held_txids',
       );
-      final heldAfterDenominationReorg = _txids(denominationReorg, 'heldTxids');
       final reintroducedDenominations = _txids(
         denominationReorg,
-        'reintroducedTxids',
+        'reintroduced_txids',
       );
-      expect(reintroducedDenominations, isNotEmpty);
+      expect(reintroducedDenominations, containsAll(denominationTxids));
 
       final rolledBackDenomination = await waitForDesktopRegtestMigrationStatus(
         tester,
@@ -190,12 +196,11 @@ void main() {
       expect(minedChild.confirmedTxCount, greaterThan(0));
 
       e2eLog('reorging the untrusted Ironwood child transaction');
-      final childReorg = await ironwoodDriverPost(
-        _driverUrl,
-        '/reorg',
-        payload: {'forkHeight': childForkHeight},
+      final childReorg = await _reorg(
+        childForkHeight,
+        _broadcastTxids(minedChild, 'confirmed'),
       );
-      final reintroducedChildren = _txids(childReorg, 'reintroducedTxids');
+      final reintroducedChildren = _txids(childReorg, 'reintroduced_txids');
       expect(reintroducedChildren, isNotEmpty);
       final rolledBackChild = await waitForDesktopRegtestMigrationStatus(
         tester,
@@ -211,7 +216,7 @@ void main() {
         anyOf('broadcast_scheduled', 'waiting_migration_confirmations'),
       );
 
-      await _releaseTransactions(_txids(childReorg, 'heldTxids'));
+      await _releaseTransactions(_txids(childReorg, 'held_txids'));
       await advanceDesktopRegtestMigrationSchedule(
         tester,
         _driverUrl,
@@ -288,14 +293,55 @@ List<String> _txids(Map<String, Object?> payload, String key) {
   return (payload[key] as List<Object?>).cast<String>();
 }
 
+/// The txids of the run's scheduled broadcasts in [state].
+List<String> _broadcastTxids(rust_sync.MigrationStatus status, String state) {
+  return status.scheduledBroadcasts
+      .where((broadcast) => broadcast.status == state)
+      .map((broadcast) => broadcast.txidHex)
+      .toList();
+}
+
+/// Returns the txids of the run's denomination split from the mempool.
+/// Desktop may schedule the split a few blocks ahead, so this mines up to its
+/// scheduled height first.
+Future<List<String>> _broadcastDenominationSplit(
+  WidgetTester tester,
+  String accountUuid,
+) async {
+  final deadline = DateTime.now().add(const Duration(minutes: 3));
+  while (DateTime.now().isBefore(deadline)) {
+    final txids = _txids(
+      await ironwoodDriverGet(_driverUrl, '/mempool'),
+      'txids',
+    );
+    if (txids.isNotEmpty) return txids;
+    final status = await desktopRegtestMigrationStatus(accountUuid);
+    final scheduled = [
+      for (final stage in status.preparationTransactions ?? const [])
+        if (stage.state ==
+            rust_sync.MigrationPreparationTransactionState.scheduled)
+          stage.scheduledHeight ?? stage.plannedHeight,
+    ]..sort();
+    final tip =
+        (await ironwoodDriverGet(_driverUrl, '/status'))['zcashdHeight'] as int;
+    if (scheduled.isNotEmpty && scheduled.first > tip) {
+      await ironwoodDriverPost(
+        _driverUrl,
+        '/mine',
+        payload: {'blocks': scheduled.first - tip},
+      );
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+  }
+  fail('The denomination split did not reach the mempool.');
+}
+
 /// Waits until the app has resent the run's submitted child to the mempool.
 Future<void> _waitForSubmittedChildInMempool(
   rust_sync.MigrationStatus status,
 ) async {
-  final submitted = status.scheduledBroadcasts
-      .where((broadcast) => broadcast.status == 'broadcasted')
-      .map((broadcast) => broadcast.txidHex)
-      .toSet();
+  final submitted = _broadcastTxids(status, 'broadcasted').toSet();
   expect(submitted, isNotEmpty);
   final deadline = DateTime.now().add(const Duration(minutes: 3));
   while (DateTime.now().isBefore(deadline)) {
@@ -307,11 +353,22 @@ Future<void> _waitForSubmittedChildInMempool(
   fail('The submitted Ironwood child did not return to the mempool.');
 }
 
+/// Replaces the chain above [forkHeight] with a branch one block longer. The
+/// fixture returns [required] to the mempool and keeps the mempool's
+/// transactions out of blocks until they are released.
+Future<Map<String, Object?>> _reorg(int forkHeight, List<String> required) {
+  return ironwoodDriverPost(
+    _driverUrl,
+    '/reorg-hold-fork',
+    payload: {'fork_height': forkHeight, 'required_txids': required},
+  );
+}
+
 Future<void> _releaseTransactions(List<String> txids) async {
   if (txids.isEmpty) return;
   await ironwoodDriverPost(
     _driverUrl,
-    '/reorg/release',
+    '/release-held',
     payload: {'txids': txids},
   );
 }
