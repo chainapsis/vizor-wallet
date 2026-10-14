@@ -11,6 +11,7 @@ import '../features/migration/services/ironwood_migration_background_credential_
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/lifecycle/app_shutdown_signal.dart';
+import '../core/platform/device_power.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
@@ -1290,6 +1291,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       onResume: _handleAppResume,
       onHide: _handleAppHide,
     );
+    // Scan with less of the CPU as the device warms or saves power.
+    final devicePower = devicePowerEvents().listen((power) {
+      rust_sync.setSyncScanPower(level: syncScanPowerFor(power));
+    });
+    ref.onDispose(devicePower.cancel);
 
     ref.onDispose(() {
       ++_syncGen;
