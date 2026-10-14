@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -107,6 +108,7 @@ class _RawFixture extends service_grpc.CompactTxStreamerServiceBase {
   );
   final latest = service.BlockID(height: Int64(7), hash: [1, 2, 3]);
   final requests = <service.BlockID>[];
+  final mempoolOpened = Completer<void>();
 
   @override
   Future<service.LightdInfo> getLightdInfo(
@@ -119,6 +121,16 @@ class _RawFixture extends service_grpc.CompactTxStreamerServiceBase {
     grpc.ServiceCall call,
     service.ChainSpec request,
   ) async => latest.deepCopy();
+
+  /// A mempool stream that stays open, as lightwalletd's does between blocks.
+  @override
+  Stream<service.RawTransaction> getMempoolStream(
+    grpc.ServiceCall call,
+    service.Empty request,
+  ) {
+    if (!mempoolOpened.isCompleted) mempoolOpened.complete();
+    return StreamController<service.RawTransaction>().stream;
+  }
 
   @override
   Future<service.TreeState> getTreeState(
@@ -326,6 +338,43 @@ void main() {
         );
         shim.setHealthy();
         expect((await client.getTreeState(service.BlockID())).hash, _hash);
+      },
+    );
+
+    test(
+      'an outage drops open streams and refuses calls until it ends',
+      () async {
+        final mempool = service_grpc.CompactTxStreamerClient(
+          channel,
+        ).getMempoolStream(service.Empty()).toList();
+        await raw.mempoolOpened.future;
+        await shim.stopServing().timeout(const Duration(seconds: 2));
+        await expectLater(mempool, throwsA(isA<grpc.GrpcError>()));
+        await expectLater(
+          client.getLatestBlock(service.ChainSpec()),
+          throwsA(
+            isA<grpc.GrpcError>().having(
+              (e) => e.code,
+              'code',
+              grpc.StatusCode.unavailable,
+            ),
+          ),
+        );
+        await shim.resumeServing();
+        final resumed = grpc.ClientChannel(
+          '127.0.0.1',
+          port: shim.listenPort,
+          options: const grpc.ChannelOptions(
+            credentials: grpc.ChannelCredentials.insecure(),
+          ),
+        );
+        addTearDown(resumed.shutdown);
+        expect(
+          (await service_grpc.CompactTxStreamerClient(
+            resumed,
+          ).getLatestBlock(service.ChainSpec())).writeToBuffer(),
+          raw.latest.writeToBuffer(),
+        );
       },
     );
 

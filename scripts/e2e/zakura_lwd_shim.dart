@@ -69,11 +69,12 @@ Future<void> main(List<String> args) async {
   final stopped = Completer<void>();
   final signals = <StreamSubscription<ProcessSignal>>[];
   var availabilitySequence = 0;
-  void setAvailable(bool available) {
+  // An outage closes the listener, as a stopped lightwalletd would.
+  Future<void> setAvailable(bool available) async {
     if (available) {
-      shim.setHealthy();
+      await shim.resumeServing();
     } else {
-      shim.setDown();
+      await shim.stopServing();
     }
     stdout.writeln(
       jsonEncode({

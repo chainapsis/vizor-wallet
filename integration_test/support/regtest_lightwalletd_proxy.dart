@@ -63,6 +63,26 @@ class RegtestLightwalletdProxy
     await _channel.shutdown();
   }
 
+  /// Closes the listener and drops open connections, so clients get a refused
+  /// connection as from a stopped lightwalletd. [resumeServing] listens again.
+  Future<void> stopServing() async {
+    releaseStalledAddressUtxosStream();
+    final server = _server;
+    _server = null;
+    if (server != null) {
+      // Shutdown closes the listener at once but finishes each connection
+      // gracefully, which waits for open streams such as the mempool stream.
+      final closed = server.shutdown();
+      for (final connection in server.handlers.keys.toList()) {
+        await connection.terminate();
+      }
+      await closed;
+    }
+    _log('primary proxy stopped listening');
+  }
+
+  Future<void> resumeServing() => start();
+
   void setHealthy() {
     _mode = _ProxyMode.healthy;
     _slowHeight = null;
