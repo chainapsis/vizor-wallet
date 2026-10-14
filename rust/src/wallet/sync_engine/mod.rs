@@ -202,6 +202,13 @@ const BATCH_SIZE_FOREGROUND: u32 = 2000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
+/// Scan batches downloading ahead of the one being scanned. A download is
+/// usually the bottleneck, and each request waits before its first block, so
+/// a second one in flight keeps the link busy through that wait. Small
+/// batches gain the most: on a 10,000-block spam-window slice in 100-block
+/// batches, batches waiting for blocks fell from about 90 to 40 of 100 and
+/// the slice took 15% less time, for about 20 MB more peak memory.
+const PREFETCH_DEPTH: usize = 2;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
@@ -360,6 +367,29 @@ fn scannable_batch_end(
     }
 
     planned_batch_end(base_batch_size, start, available_end)
+}
+
+/// The next `count` batch ranges from `start`, contiguous, inside the range
+/// and below the tip.
+fn prefetch_ranges(
+    base_batch_size: u32,
+    start: BlockHeight,
+    range_end: BlockHeight,
+    current_tip_height: u64,
+    count: usize,
+) -> Vec<(BlockHeight, BlockHeight)> {
+    let mut ranges = Vec::with_capacity(count);
+    let mut next = start;
+    while ranges.len() < count {
+        let Some((_, end)) =
+            scannable_batch_end(base_batch_size, next, range_end, current_tip_height)
+        else {
+            break;
+        };
+        ranges.push((next, end));
+        next = end;
+    }
+    ranges
 }
 
 fn effective_base_batch_size(default_batch_size: u32) -> u32 {
@@ -2522,6 +2552,52 @@ impl<T> Drop for Prefetch<T> {
     }
 }
 
+/// The queued tuple for batch `start..end`, if it is next. A batch that
+/// overlaps the queue any other way means the ranges changed under it, so
+/// the queue is dropped. A batch clear of it, such as a tip batch between
+/// history batches, leaves it for when the scan returns. Rewinds clear the
+/// queue where they happen.
+fn take_queued_batch<T>(
+    queue: &mut VecDeque<Prefetch<T>>,
+    start: BlockHeight,
+    end: BlockHeight,
+) -> Option<Prefetch<T>> {
+    if queue
+        .front()
+        .is_some_and(|queued| queued.start == start && queued.end == end)
+    {
+        return queue.pop_front();
+    }
+    if queue
+        .iter()
+        .any(|queued| queued.start < end && start < queued.end)
+    {
+        queue.clear();
+    }
+    None
+}
+
+/// Where to queue more tuples after batch `..end` of a range ending at
+/// `range_end`: after the queue when it continues this batch, else right
+/// after this batch. A batch that cut in ahead of the queue keeps it only
+/// while it is the last of its range (one new block's tip range, say), so
+/// a longer range that cuts in still downloads ahead.
+fn prefetch_continues_from<T>(
+    queue: &mut VecDeque<Prefetch<T>>,
+    end: BlockHeight,
+    range_end: BlockHeight,
+) -> Option<BlockHeight> {
+    match (queue.front(), queue.back()) {
+        (None, _) => Some(end),
+        (Some(front), Some(back)) if front.start == end => Some(back.end),
+        _ if end < range_end => {
+            queue.clear();
+            Some(end)
+        }
+        _ => None,
+    }
+}
+
 /// The post-batch chain tip, fetched while the batch scans so the round trip
 /// overlaps CPU work instead of waiting after it. Dropping it aborts the
 /// request.
@@ -3521,18 +3597,22 @@ async fn run_sync_impl(
     let mut completion_tip_validation_required = !initial_tip_identity_verified;
     let mut last_periodic_tip_refresh_attempt = initial_tip_observed_at;
 
-    // Prefetched scan batch from the previous iteration.
+    // Scan batches downloading ahead of the current one, in order.
     // When the scan loop processes a range that spans multiple batches,
-    // we start the next block-and-frontier tuple before scanning the current
-    // batch. This overlaps network I/O with CPU work on multithread runtimes
-    // and with later async stages on the iOS current-thread runtime, matching
-    // the SDK's `.buffer(1)` pipelining pattern in
-    // `CompactBlockProcessor.kt:1666`.
+    // we keep up to `PREFETCH_DEPTH` block-and-frontier tuples in flight
+    // before scanning the current batch. App syncs run on a multi-thread
+    // runtime on every platform (`bounded_runtime`), so the downloads overlap
+    // the scan; migration preparation's current-thread runtime overlaps only
+    // later async stages. The Android SDK pipelines one batch (`.buffer(1)`,
+    // `CompactBlockProcessor.kt:1666`); the Swift SDK downloads two batches
+    // past the one being scanned (`DownloadAction`), as here.
     //
-    // `None` on the first iteration and whenever the previous batch
-    // was the last in its range (so there's nothing to prefetch until
-    // `suggest_scan_ranges` runs again).
-    let mut prefetch: Option<Prefetch<ScanBatch>> = None;
+    // Empty on the first iteration, after a rewind, and once the last
+    // batch of a range is consumed (there's nothing to prefetch until
+    // `suggest_scan_ranges` runs again). A one-batch tip range that cuts
+    // in leaves it for the history batches it holds
+    // (`take_queued_batch`).
+    let mut prefetch: VecDeque<Prefetch<ScanBatch>> = VecDeque::new();
 
     // Retry enhancement work left by an interrupted/older sync before scanning.
     // Best-effort: a retryable public failure must not block compact sync; the
@@ -3657,7 +3737,7 @@ async fn run_sync_impl(
                                 ));
                             }
                             main_rewinds_this_run += 1;
-                            prefetch = None;
+                            prefetch.clear();
                             let (actual_height, repair_ranges, pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
@@ -3807,7 +3887,7 @@ async fn run_sync_impl(
                                 ));
                             }
                             main_rewinds_this_run += 1;
-                            prefetch = None;
+                            prefetch.clear();
                             let (actual_height, repair_ranges, repair_pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
@@ -3857,7 +3937,7 @@ async fn run_sync_impl(
                             &job,
                         ));
                     }
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     db_data_path,
@@ -3880,7 +3960,7 @@ async fn run_sync_impl(
                             &job,
                         ));
                     }
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 } else {
                     // A previous attempt may have scanned its final batch before
@@ -4054,12 +4134,12 @@ async fn run_sync_impl(
         );
 
         // Download blocks and their preceding frontier together, or consume a
-        // matching tuple that the previous iteration prefetched.
-        let batch =
-            resolve_prefetched_or_download(prefetch.take(), start, end, &should_exit, || {
-                download_scan_batch(&mut client, start, end - 1, network)
-            })
-            .await?;
+        // matching tuple that an earlier iteration prefetched.
+        let queued = take_queued_batch(&mut prefetch, start, end);
+        let batch = resolve_prefetched_or_download(queued, start, end, &should_exit, || {
+            download_scan_batch(&mut client, start, end - 1, network)
+        })
+        .await?;
         let Some((block_source, from_state)) = batch else {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
@@ -4076,18 +4156,22 @@ async fn run_sync_impl(
         let incoming_orchard_checkpoint_heights =
             migration_anchor_retention_required.then(|| block_source.orchard_checkpoint_heights());
 
-        // Start the next tuple before scanning this batch. Dropping `prefetch`
-        // on any early return, error, or reorg aborts its network task.
-        if end < range_end && !should_exit() {
-            let prefetch_start = end;
-            if let Some((_, prefetch_end)) = scannable_batch_end(
+        // Start the next tuples before scanning this batch. Dropping `prefetch`
+        // on any early return, error, or reorg aborts their network tasks.
+        if let Some(next_start) = (!should_exit())
+            .then(|| prefetch_continues_from(&mut prefetch, end, range_end))
+            .flatten()
+        {
+            let planned = prefetch_ranges(
                 base_batch_size,
-                prefetch_start,
+                next_start,
                 range_end,
                 current_tip_height,
-            ) {
+                PREFETCH_DEPTH.saturating_sub(prefetch.len()),
+            );
+            for &(prefetch_start, prefetch_end) in &planned {
                 let mut prefetch_client = client.clone();
-                prefetch = Some(Prefetch::spawn(prefetch_start, prefetch_end, async move {
+                prefetch.push_back(Prefetch::spawn(prefetch_start, prefetch_end, async move {
                     download_scan_batch(
                         &mut prefetch_client,
                         prefetch_start,
@@ -4096,11 +4180,13 @@ async fn run_sync_impl(
                     )
                     .await
                 }));
-            } else {
+            }
+            let next_start = planned.last().map_or(next_start, |r| r.1);
+            if prefetch.len() < PREFETCH_DEPTH && next_start < range_end {
                 log::debug!(
                     "[{}] sync: skipping prefetch from {} past current tip {}",
                     elapsed(),
-                    u32::from(prefetch_start),
+                    u32::from(next_start),
                     current_tip_height,
                 );
             }
@@ -4387,7 +4473,7 @@ async fn run_sync_impl(
                             ));
                         }
                     }
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 }
                 RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Fatal => {
@@ -4587,7 +4673,7 @@ async fn run_sync_impl(
                             ));
                         }
                         main_rewinds_this_run += 1;
-                        prefetch = None;
+                        prefetch.clear();
                         let (actual_height, repair_ranges, pending_blocks) =
                             rewind_for_confirmed_tip_reorg(
                                 db_data_path,
@@ -5853,6 +5939,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_tip_batch_between_history_batches_keeps_the_prefetch_queue() {
+        let queued = |start, end| {
+            Prefetch::spawn(block_height(start), block_height(end), async {
+                Ok::<_, SyncError>(0u8)
+            })
+        };
+        let ranges = |queue: &VecDeque<Prefetch<u8>>| {
+            queue
+                .iter()
+                .map(|p| (u32::from(p.start), u32::from(p.end)))
+                .collect::<Vec<_>>()
+        };
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+
+        // A new block's tip batch cuts in: the history tuples wait for it.
+        let h = block_height;
+        assert!(take_queued_batch(&mut queue, h(5_000), h(5_001)).is_none());
+        assert_eq!(ranges(&queue), [(100, 200), (200, 300)]);
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(5_001), h(5_001)),
+            None
+        );
+        assert_eq!(ranges(&queue), [(100, 200), (200, 300)]);
+
+        // The scan returns to history and tops the queue up after its end.
+        let next = take_queued_batch(&mut queue, h(100), h(200)).expect("queued batch");
+        assert_eq!((u32::from(next.start), u32::from(next.end)), (100, 200));
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(200), h(1_000)),
+            Some(h(300))
+        );
+
+        // A longer range that cuts in downloads ahead instead.
+        assert!(take_queued_batch(&mut queue, h(5_000), h(5_100)).is_none());
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(5_100), h(6_000)),
+            Some(h(5_100))
+        );
+        assert!(queue.is_empty());
+
+        // A batch that overlaps the queue but is not next means the ranges
+        // changed under it.
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+        assert!(take_queued_batch(&mut queue, h(100), h(150)).is_none());
+        assert!(queue.is_empty());
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+        assert!(take_queued_batch(&mut queue, h(250), h(260)).is_none());
+        assert!(queue.is_empty());
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(260), h(1_000)),
+            Some(h(260))
+        );
+    }
+
+    #[tokio::test]
     async fn scan_batch_prefetch_success_and_failure_choose_the_right_source() {
         let start = block_height(10);
         let end = block_height(13);
@@ -6272,6 +6413,50 @@ mod tests {
                 121,
             ),
             None,
+        );
+    }
+
+    #[test]
+    fn prefetch_ranges_stop_at_the_range_end_and_the_tip() {
+        let h = BlockHeight::from_u32;
+        assert_eq!(
+            prefetch_ranges(1_000, h(1_000), h(10_000), 20_000, 2),
+            vec![(h(1_000), h(2_000)), (h(2_000), h(3_000))],
+        );
+        // The last batch of a range is short and nothing follows it.
+        assert_eq!(
+            prefetch_ranges(1_000, h(8_500), h(10_000), 20_000, 2),
+            vec![(h(8_500), h(9_500)), (h(9_500), h(10_000))],
+        );
+        assert_eq!(
+            prefetch_ranges(1_000, h(10_000), h(10_000), 20_000, 2),
+            vec![]
+        );
+        // Blocks past the tip are not requested.
+        assert_eq!(
+            prefetch_ranges(1_000, h(1_000), h(10_000), 1_499, 2),
+            vec![(h(1_000), h(1_500))],
+        );
+        // The spam window's smaller batches apply to queued batches too.
+        assert_eq!(
+            prefetch_ranges(
+                1_000,
+                h(SANDBLASTING_START - 500),
+                h(SANDBLASTING_END),
+                3_000_000,
+                2
+            ),
+            vec![
+                (h(SANDBLASTING_START - 500), h(SANDBLASTING_START)),
+                (
+                    h(SANDBLASTING_START),
+                    h(SANDBLASTING_START + BATCH_SIZE_SANDBLASTING)
+                ),
+            ],
+        );
+        assert_eq!(
+            prefetch_ranges(1_000, h(1_000), h(10_000), 20_000, 0),
+            vec![]
         );
     }
 
