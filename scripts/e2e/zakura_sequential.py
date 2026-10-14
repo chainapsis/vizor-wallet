@@ -159,9 +159,11 @@ class SequentialCase:
             _require_unbound(flutter_cases.UNAVAILABLE_PORT)
             self.lease = lease_fixed_ports(run_id, dict(ports))
         try:
+            # Screenshot and voting ports stay leased for their services, outside the fixture's.
             workspace = prepare_native_case_workspace(run_root, platform=platform,
                 scenario_id=scenario_id, run_id=run_id, worker_id=0, case_index=case_index,
-                ports=self.lease.ports, activation_height=activation_height)
+                ports={name: self.lease.ports[name] for name in ("rpc", "lwd", "proxy")},
+                activation_height=activation_height)
             self.case = NativeCaseLifecycle(workspace)
             self.storage = RustCaseStorage(self.case) if platform == "rust" else None
         except BaseException:

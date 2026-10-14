@@ -453,6 +453,20 @@ class VotingPhaseTests(unittest.TestCase):
         self.assertEqual(flutter.fixed_ports(scenario)["voting_gateway"], 18080)
 
 
+class CasePortTests(unittest.TestCase):
+    def test_service_ports_are_leased_but_kept_out_of_the_fixture_workspace(self):
+        ports = SEQUENTIAL.flutter_cases.fixed_ports(SEQUENTIAL.SCENARIOS["flutter.ios.voting"])
+        lease = type("Lease", (), {"ports": dict(ports), "close": lambda self: None})()
+        with patch.object(SEQUENTIAL, "_require_unbound"), \
+             patch.object(SEQUENTIAL, "lease_fixed_ports", return_value=lease) as leased, \
+             patch.object(SEQUENTIAL, "prepare_native_case_workspace") as workspace, \
+             patch.object(SEQUENTIAL, "NativeCaseLifecycle"):
+            SEQUENTIAL.SequentialCase(Path("/model/cases"), run_id="a1b2c3d4e5", case_index=1,
+                scenario_id="flutter.ios.voting", platform="ios", activation_height=500, ports=ports)
+        self.assertEqual(leased.call_args.args[1], ports)
+        self.assertEqual(workspace.call_args.kwargs["ports"], {"rpc": 18232, "lwd": 9067, "proxy": 19068})
+
+
 class CaptureTests(unittest.TestCase):
     def test_marked_sandbox_pngs_are_copied_into_the_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
