@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -50,6 +51,9 @@ DEFAULT_ACTIVATION = 1
 MIGRATION_ACTIVATION = 500
 # Coinbase spends need 100 confirmations, so every fixture starts mature.
 INITIAL_BLOCKS = 100
+# The Gift Card tracking tests print each capture they save in the app sandbox.
+CAPTURE_MARKER = "[gift-card-tracking-screenshot] "
+CAPTURE_DIRECTORY = "gift_card_tracking_e2e_screenshots"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -282,12 +286,22 @@ class SequentialCase:
                 self.control.pump(deadline=deadline, cancel_event=cancel_event)
             code = self.case.wait_process(process, timeout=max(0.001, deadline - time.monotonic()),
                 cancel_event=cancel_event)
+            self._collect_captures(lines)
             if code != 0:
                 raise runtime.RunnerError(f"{phase.test} failed", code)
             flutter_cases.verify_flutter_output(lines)
         if scenario.voting:
             self._check_voting(source_root, deadline, cancel_event)
         self.front.assert_running()
+
+    def _collect_captures(self, lines):
+        """Copy the PNGs the phase saved in the app sandbox into this case's evidence."""
+        for line in "".join(lines).splitlines():
+            source = Path(line.partition(CAPTURE_MARKER)[2].strip())
+            if source.parent.name == CAPTURE_DIRECTORY and source.suffix == ".png" and source.is_file():
+                captures = self.case.workspace.root / "captures"
+                captures.mkdir(mode=0o700, exist_ok=True)
+                shutil.copy2(source, captures / source.name)
 
     def _voting_command(self, source_root, mode):
         script = Path(source_root) / "scripts/e2e/voting-services.sh"

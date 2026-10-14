@@ -453,6 +453,26 @@ class VotingPhaseTests(unittest.TestCase):
         self.assertEqual(flutter.fixed_ports(scenario)["voting_gateway"], 18080)
 
 
+class CaptureTests(unittest.TestCase):
+    def test_marked_sandbox_pngs_are_copied_into_the_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sandbox = root / "support" / SEQUENTIAL.CAPTURE_DIRECTORY
+            sandbox.mkdir(parents=True)
+            (sandbox / "unused.png").write_bytes(b"png")
+            (root / "support" / "wallet.png").write_bytes(b"other")
+            case = object.__new__(SEQUENTIAL.SequentialCase)
+            evidence = root / "evidence"
+            evidence.mkdir()
+            case.case = type("Case", (), {"workspace": type("Workspace", (), {"root": evidence})()})()
+            case._collect_captures([
+                f"flutter: {SEQUENTIAL.CAPTURE_MARKER}{sandbox / 'unused.png'}\n",
+                f"flutter: {SEQUENTIAL.CAPTURE_MARKER}{root / 'support' / 'wallet.png'}\n",
+                f"flutter: {SEQUENTIAL.CAPTURE_MARKER}{sandbox / 'missing.png'}\n",
+                "00:24 +1: All tests passed!\n"])
+            self.assertEqual(sorted(path.name for path in (evidence / "captures").iterdir()), ["unused.png"])
+
+
 class FakeSimulator:
     created = []
 
