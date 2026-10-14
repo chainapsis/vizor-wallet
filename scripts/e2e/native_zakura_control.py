@@ -233,8 +233,9 @@ class OwnedNativeZakuraControl:
         if method == "POST" and path in {"/lightwalletd/stop", "/lightwalletd/start"}:
             if (payload != {} or self._activation != 500 or self._scenario not in {
                     "flutter.ios.ironwood-migration-network-recovery",
-                    "flutter.ios.ironwood-background-migration"}):
-                raise _BadRequest("front outages require the exact owned mobile recovery case and empty payload")
+                    "flutter.ios.ironwood-background-migration",
+                    "flutter.macos.ironwood-migration-restart"}):
+                raise _BadRequest("front outages require an Ironwood outage case and an empty payload")
             observed = self._front.set_available(path.endswith("/start"),
                 timeout=min(10.0, _remaining(self._deadline, self._cancel)), cancel_event=self._cancel)
             return {"ok": True, "scope": "owned-lightwalletd-front", **observed}

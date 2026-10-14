@@ -197,6 +197,8 @@ FLUTTER_SCENARIOS = (
     _ironwood("flutter.macos.ironwood-migration-mixed-notes", "macos",
         "integration_test/regtest_ironwood_migration_mixed_notes_test.dart",
         OrchardNotes(1_000_020_000, 20, ((1,), (2,), (3,), (4,)))),
+    _ironwood_restart("flutter.macos.ironwood-migration-restart", "macos",
+        "regtest_ironwood_migration_restart", OrchardNotes(1_100_000)),
     _ironwood_restart("flutter.ios.ironwood-migration-restart", "ios",
         "regtest_mobile_ironwood_migration_restart", OrchardNotes(123_000_000), mine_between=12),
     _ironwood_restart("flutter.ios.ironwood-background-restart", "ios",

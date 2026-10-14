@@ -317,21 +317,23 @@ class GiftRecoveryControlTests(ControlFixture):
 class ActivationControlTests(ControlFixture):
     activation_height = 500
 
-    def test_mobile_recovery_outages_use_only_original_front_on_owner_thread(self):
+    def test_recovery_outages_use_only_original_front_on_owner_thread(self):
         self.prepare()
-        self.control._scenario = "flutter.ios.ironwood-migration-network-recovery"
-        calls = []
-        def available(value, **kwargs):
-            calls.append((value, threading.get_ident(), kwargs))
-            return {"available":value, "sequence":len(calls), "fixture_run_id":"original"}
-        with patch.object(self.front, "set_available", side_effect=available):
-            for path, expected in (("/lightwalletd/stop", False), ("/lightwalletd/start", True)):
-                status, body = self.request("POST", path, "{}")
-                self.assertEqual(status, 200)
-                self.assertIs(json.loads(body)["available"], expected)
-                self.assertEqual(json.loads(body)["scope"], "owned-lightwalletd-front")
-            self.assertEqual([item[:2] for item in calls], [(False, threading.get_ident()), (True, threading.get_ident())])
-            self.assertTrue(all(item[2]["cancel_event"] is self.cancel for item in calls))
+        for scenario in ("flutter.ios.ironwood-migration-network-recovery",
+                         "flutter.macos.ironwood-migration-restart"):
+            self.control._scenario = scenario
+            calls = []
+            def available(value, **kwargs):
+                calls.append((value, threading.get_ident(), kwargs))
+                return {"available":value, "sequence":len(calls), "fixture_run_id":"original"}
+            with self.subTest(scenario=scenario), patch.object(self.front, "set_available", side_effect=available):
+                for path, expected in (("/lightwalletd/stop", False), ("/lightwalletd/start", True)):
+                    status, body = self.request("POST", path, "{}")
+                    self.assertEqual(status, 200)
+                    self.assertIs(json.loads(body)["available"], expected)
+                    self.assertEqual(json.loads(body)["scope"], "owned-lightwalletd-front")
+                self.assertEqual([item[:2] for item in calls], [(False, threading.get_ident()), (True, threading.get_ident())])
+                self.assertTrue(all(item[2]["cancel_event"] is self.cancel for item in calls))
 
     def test_front_outage_rejects_neighbor_cases_wrong_profile_and_nonempty_payload(self):
         self.prepare()
