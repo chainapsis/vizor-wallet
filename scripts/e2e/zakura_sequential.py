@@ -32,7 +32,9 @@ from native_zakura_backend import prepare_native_zakura_backend
 from native_zakura_control import prepare_native_zakura_control
 from native_zakura_front import prepare_native_zakura_front
 import zakura_flutter as flutter_cases
+from zakura_flutter import Derived
 from zakura_fixture_source import ensure_pinned_images
+from zakura_batch_funding import fund_zakura_batch, migration_note_batches
 from zakura_funding import fund_zakura
 from zakura_genesis import create_zakura_genesis_proof
 from zakura_simulator import RunSimulator, newest_runtime
@@ -160,23 +162,42 @@ class SequentialCase:
             self.lease.close()
             raise
         self.backend = self.front = self.control = None
+        self.derived = {}
         self._finished = False
 
     def start(self, *, grpcurl, proto_dir, dart, source_root, artifact, cancel_event,
-              initial_blocks=INITIAL_BLOCKS, funding=()):
-        """Start the fixture, mature its coinbase and fund it, then put the shim and control in front."""
+              initial_blocks=INITIAL_BLOCKS, funding=(), orchard_notes=None, derive=()):
+        """Start the fixture, mature its coinbase and fund it, then put the shim and control in front.
+
+        The addresses in `derive` are derived first; funding and Flutter
+        defines use them.
+        """
         self.backend = prepare_native_zakura_backend(self.case, grpcurl=grpcurl,
             proto_dir=proto_dir, miner_address=MINER_ADDRESS, timeout=120)
         self.backend.start()
         _check(cancel_event)
         self.backend.mine(initial_blocks)
         _check(cancel_event)
+        for value in derive:
+            self.derived[value] = self.wallet_addresses(artifact, value.mnemonic,
+                cancel_event=cancel_event)[value.field]
         for payment in funding:
-            fund_zakura(self.case, self.backend, artifact, recipient_address=payment.address,
+            address = self.derived[payment.address] if isinstance(payment.address, Derived) else payment.address
+            fund_zakura(self.case, self.backend, artifact, recipient_address=address,
                 amount_zatoshi=payment.zatoshi, recipient_pool=payment.pool,
                 source_height=payment.source_height, confirmations=10, timeout=120,
                 cancel_event=cancel_event)
             _check(cancel_event)
+        if orchard_notes is not None:
+            addresses = self.wallet_addresses(artifact, flutter_cases.DESKTOP_MNEMONIC,
+                orchard_notes.note_count, cancel_event=cancel_event)["unifiedAddresses"]
+            batches = migration_note_batches(addresses, total_zatoshi=orchard_notes.total_zatoshi,
+                tx_count=len(orchard_notes.sources))
+            for payments, sources in zip(batches, orchard_notes.sources):
+                fund_zakura_batch(self.case, self.backend, artifact, payments=payments,
+                    source_heights=sources, recipient_pool="orchard", confirmations=10,
+                    timeout=180, cancel_event=cancel_event)
+                _check(cancel_event)
         genesis = create_zakura_genesis_proof(self.case, self.backend, timeout=30,
             cancel_event=cancel_event)
         self.front = prepare_native_zakura_front(self.case, self.backend, genesis,
@@ -186,6 +207,18 @@ class SequentialCase:
         self.front.start(cancel_event=cancel_event)
         self.control = prepare_native_zakura_control(self.case, self.backend, self.front,
             artifact=artifact)
+
+    def wallet_addresses(self, artifact, mnemonic, count=1, *, cancel_event):
+        """The wallet address tool's record for a test mnemonic's first `count` addresses."""
+        result = self.case.run_command([str(artifact.wallet_addresses_binary()), mnemonic, str(count)],
+            env=os.environ.copy(), timeout=60, cancel_event=cancel_event,
+            max_output_bytes=2 * 1024 * 1024)
+        if result.returncode:
+            raise runtime.RunnerError("the wallet address tool failed", result.returncode)
+        records = [json.loads(line) for line in result.lines if line.lstrip().startswith("{")]
+        if len(records) != 1 or len(records[0].get("unifiedAddresses", ())) != count:
+            raise runtime.RunnerError("the wallet address tool did not print the requested addresses")
+        return records[0]
 
     def run_rust(self, artifact, scenario, *, cancel_event):
         """Run one exact ignored test while serving its control requests."""
@@ -226,7 +259,7 @@ class SequentialCase:
                 self.backend.mine(phase.mine_before)
             lines = []
             process = self.case.start_process(flutter_cases.flutter_command(scenario, phase,
-                flutter=flutter, device=device, source_root=source_root),
+                flutter=flutter, device=device, source_root=source_root, derived=self.derived),
                 env=env, raw_lines=lines, max_output_bytes=16 * 1024 * 1024)
             while process.process.poll() is None:
                 _check(cancel_event)
@@ -322,7 +355,9 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
         session.start(grpcurl=grpcurl, proto_dir=proto_dir, dart=dart, source_root=source_root,
             artifact=artifact, cancel_event=cancel_event,
             initial_blocks=scenario.initial_blocks if is_flutter else INITIAL_BLOCKS,
-            funding=scenario.funding if is_flutter else ())
+            funding=scenario.funding if is_flutter else (),
+            orchard_notes=scenario.orchard_notes if is_flutter else None,
+            derive=flutter_cases.derived_addresses(scenario) if is_flutter else ())
         begin("execute")
         if is_flutter:
             session.run_flutter(scenario, flutter=flutter, device=device, source_root=source_root,
@@ -424,8 +459,9 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 # A build case never listens; its manifest only needs distinct ports.
                 ports={"rpc": 28232, "lwd": 29067, "proxy": 29068}, activation_height=1))
             artifact = build_regtest_funder(producer, source_root=root, source_commit=commit,
-                jobs=build_jobs, timeout=1200, cancel_event=cancel,
-                test_targets=targets)
+                jobs=build_jobs, timeout=1200, cancel_event=cancel, test_targets=targets,
+                wallet_addresses=any(isinstance(s, flutter_cases.FlutterScenario)
+                                     and flutter_cases.needs_wallet_addresses(s) for s in scenarios))
             if needs_simulator:
                 simulator = RunSimulator(run_id, ios_runtime or newest_runtime())
                 report["ios_simulator"] = simulator.describe()

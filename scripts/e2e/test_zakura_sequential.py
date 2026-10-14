@@ -34,6 +34,22 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(scenario.activation_height, expected, scenario.id)
         self.assertEqual(len({s.id for s in SEQUENTIAL.RUST_SCENARIOS}), len(SEQUENTIAL.RUST_SCENARIOS))
 
+    def test_flutter_catalog_funds_each_coinbase_once_and_orchard_only_before_activation(self):
+        flutter = SEQUENTIAL.flutter_cases
+        ids = [s.id for s in SEQUENTIAL.ALL_SCENARIOS]
+        self.assertEqual(len(set(ids)), len(ids))
+        for scenario in flutter.FLUTTER_SCENARIOS:
+            with self.subTest(scenario=scenario.id):
+                notes = scenario.orchard_notes
+                sources = [payment.source_height for payment in scenario.funding]
+                sources += [height for heights in (notes.sources if notes else ()) for height in heights]
+                self.assertEqual(len(sources), len(set(sources)))
+                # Spending coinbase h needs a tip of at least h + 99 before funding.
+                self.assertGreaterEqual(scenario.initial_blocks + 99, max(sources, default=1))
+                self.assertEqual(scenario.activation_height, 500 if notes else 1)
+                for value in flutter.derived_addresses(scenario):
+                    self.assertIn(value.field, {"unifiedAddress", "transparentAddress", "texAddress"})
+
 
 class OutputTests(unittest.TestCase):
     def test_only_the_selected_test_passing_alone_counts(self):
@@ -217,6 +233,17 @@ class FlutterCommandTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.command(moving)
 
+    def test_derived_defines_need_their_address(self):
+        flutter = SEQUENTIAL.flutter_cases
+        scenario = SEQUENTIAL.SCENARIOS["flutter.ios.ironwood-pre-migration-send"]
+        command = SEQUENTIAL.flutter_cases.flutter_command(scenario, scenario.phases[0],
+            flutter=Path("/model/flutter"), device="DEVICE", source_root=Path("/model/root"),
+            derived={flutter.RECEIVER_UA: "uregtest1model"})
+        self.assertIn("--dart-define=ZCASH_E2E_SEND_RECIPIENT_ADDRESS=uregtest1model", command)
+        self.assertIn("--dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT=500", command)
+        with self.assertRaises(ValueError):
+            self.command(scenario)
+
     def test_only_a_reported_pass_counts(self):
         verify = SEQUENTIAL.flutter_cases.verify_flutter_output
         verify(["00:24 +1: All tests passed!\n"])
@@ -276,6 +303,56 @@ class BuildOutputTests(SequenceHarness):
         self.assertNotIn("build_prune", report)
         report, producer = self.run_sequence("failed", keep_failed=False)
         self.assertFalse((producer / "funder-build").exists())
+
+
+class FixtureStartTests(unittest.TestCase):
+    """Derived addresses resolve before funding; Orchard notes go out in their batches."""
+    def start(self, scenario):
+        flutter = SEQUENTIAL.flutter_cases
+        records = {flutter.DESKTOP_MNEMONIC: {"unifiedAddresses": [f"uregtest1note{n}" for n in range(500)]},
+                   flutter.RECEIVER_MNEMONIC: {"unifiedAddress": "uregtest1receiver"}}
+        calls = {"funding": [], "batches": [], "derived": []}
+        case = object.__new__(SEQUENTIAL.SequentialCase)
+        case.case = object()
+        case.derived = {}
+        case.lease = type("Lease", (), {"release_sockets": lambda self: None})()
+
+        def wallet_addresses(artifact, mnemonic, count=1, *, cancel_event):
+            calls["derived"].append((mnemonic, count))
+            record = dict(records[mnemonic])
+            record["unifiedAddresses"] = record.get("unifiedAddresses", ["uregtest1receiver"])[:count]
+            return record
+
+        case.wallet_addresses = wallet_addresses
+        backend = type("Backend", (), {"start": lambda self: None, "mine": lambda self, count: None})()
+        front = type("Front", (), {"start": lambda self, **_kwargs: None})()
+        with patch.object(SEQUENTIAL, "prepare_native_zakura_backend", return_value=backend), \
+             patch.object(SEQUENTIAL, "fund_zakura",
+                          side_effect=lambda *_a, **kw: calls["funding"].append(kw["recipient_address"])), \
+             patch.object(SEQUENTIAL, "fund_zakura_batch",
+                          side_effect=lambda *_a, **kw: calls["batches"].append(
+                              (len(kw["payments"]), kw["source_heights"], kw["recipient_pool"]))), \
+             patch.object(SEQUENTIAL, "create_zakura_genesis_proof"), \
+             patch.object(SEQUENTIAL, "prepare_native_zakura_front", return_value=front), \
+             patch.object(SEQUENTIAL, "prepare_native_zakura_control"):
+            case.start(grpcurl=None, proto_dir=None, dart=None, source_root=None, artifact=None,
+                cancel_event=threading.Event(), initial_blocks=scenario.initial_blocks,
+                funding=scenario.funding, orchard_notes=scenario.orchard_notes,
+                derive=flutter.derived_addresses(scenario))
+        return case, calls
+
+    def test_receiver_address_is_derived_and_notes_are_funded_in_orchard(self):
+        flutter = SEQUENTIAL.flutter_cases
+        case, calls = self.start(SEQUENTIAL.SCENARIOS["flutter.ios.ironwood-pre-migration-send"])
+        self.assertEqual(case.derived, {flutter.RECEIVER_UA: "uregtest1receiver"})
+        self.assertEqual(calls["batches"], [(1, (1,), "orchard")])
+        self.assertEqual(calls["derived"], [(flutter.RECEIVER_MNEMONIC, 1), (flutter.DESKTOP_MNEMONIC, 1)])
+
+    def test_five_hundred_notes_go_out_in_ten_transactions(self):
+        _case, calls = self.start(SEQUENTIAL.SCENARIOS["flutter.ios.ironwood-migration-500-notes"])
+        self.assertEqual([count for count, _sources, _pool in calls["batches"]], [50] * 10)
+        self.assertEqual([sources for _count, sources, _pool in calls["batches"]],
+                         [(height,) for height in range(1, 11)])
 
 
 class FakeSimulator:

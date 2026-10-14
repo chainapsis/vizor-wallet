@@ -34,16 +34,44 @@ IMPORT_UA = ("uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxy
              "9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn")
 IMPORT_TRANSPARENT = "tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM"
 
+DESKTOP_MNEMONIC = ("winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle "
+                    "ethics found child scare curve congress renew salute pig better used")
+RECEIVER_MNEMONIC = ("return try reason flat civil wolf dwarf announce toddler uphold equip range neck proof "
+                     "gauge east rifle swim tray twin venue fossil will version")
+
 LIGHTWALLETD_OVERRIDE = ("ZCASH_E2E_LIGHTWALLETD_URL", f"http://127.0.0.1:{LIGHTWALLETD_PORT}")
+
+
+@dataclasses.dataclass(frozen=True)
+class Derived:
+    """An address of a test mnemonic, from the wallet address tool the run builds."""
+    mnemonic: str
+    field: str
+
+
+RECEIVER_UA = Derived(RECEIVER_MNEMONIC, "unifiedAddress")
 
 
 @dataclasses.dataclass(frozen=True)
 class Funding:
     """One payment from a mature coinbase, confirmed before the app starts."""
-    address: str
+    address: str | Derived
     zatoshi: int
     pool: str
     source_height: int
+
+
+@dataclasses.dataclass(frozen=True)
+class OrchardNotes:
+    """Orchard notes on the desktop wallet's first diversified addresses.
+
+    They are funded before a controlled activation, one transaction per tuple
+    of coinbase heights, and the total is split as the Ironwood shell runner
+    split it.
+    """
+    total_zatoshi: int
+    note_count: int = 1
+    sources: tuple[tuple[int, ...], ...] = ((1,),)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -62,9 +90,29 @@ class FlutterScenario:
     defines: tuple[tuple[str, str], ...] = ()
     env: tuple[tuple[str, str], ...] = ()
     funding: tuple[Funding, ...] = ()
+    orchard_notes: OrchardNotes | None = None
     activation_height: int = DEFAULT_ACTIVATION
     initial_blocks: int = INITIAL_BLOCKS
     timeout_seconds: int = 1200
+
+
+def _ironwood(id, platform, test, notes, *defines, initial_blocks=INITIAL_BLOCKS):
+    """A migration scenario as the Ironwood shell runner ran it."""
+    return FlutterScenario(id, platform, (Phase(test),),
+        defines=(LIGHTWALLETD_OVERRIDE,
+                 ("ZCASH_E2E_ORCHARD_FUNDING_NOTE_COUNT", str(notes.note_count)),
+                 ("ZCASH_FAST_TESTNET_MIGRATION", "false"),
+                 ("ZCASH_E2E_ORCHARD_FUNDING_TX_COUNT", str(len(notes.sources))), *defines),
+        orchard_notes=notes, activation_height=MIGRATION_ACTIVATION, initial_blocks=initial_blocks)
+
+
+def _ironwood_restart(id, platform, prefix, notes, *, mine_between=0):
+    """A prepare phase that keeps the app installed, then a resume phase."""
+    return FlutterScenario(id, platform,
+        (Phase(f"integration_test/{prefix}_prepare_test.dart", args=("--no-uninstall",)),
+         Phase(f"integration_test/{prefix}_resume_test.dart", mine_before=mine_between)),
+        defines=(LIGHTWALLETD_OVERRIDE,), orchard_notes=notes,
+        activation_height=MIGRATION_ACTIVATION)
 
 
 FLUTTER_SCENARIOS = (
@@ -101,6 +149,40 @@ FLUTTER_SCENARIOS = (
         "flutter.ios.fallback-endpoint", "ios",
         (Phase("integration_test/regtest_mobile_fallback_endpoint_test.dart"),),
         funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
+    _ironwood("flutter.ios.ironwood-migration", "ios",
+        "integration_test/regtest_mobile_ironwood_migration_test.dart", OrchardNotes(1_095_000)),
+    _ironwood("flutter.ios.ironwood-pre-migration-send", "ios",
+        "integration_test/regtest_mobile_ironwood_pre_migration_send_test.dart", OrchardNotes(1_095_000),
+        ("ZCASH_E2E_SEND_RECIPIENT_ADDRESS", RECEIVER_UA)),
+    _ironwood("flutter.ios.ironwood-immediate-migration", "ios",
+        "integration_test/regtest_mobile_ironwood_immediate_migration_test.dart", OrchardNotes(1_095_000)),
+    _ironwood("flutter.ios.ironwood-migration-multi-account", "ios",
+        "integration_test/regtest_mobile_ironwood_migration_multi_account_test.dart", OrchardNotes(1_100_000)),
+    _ironwood("flutter.ios.ironwood-migration-network-recovery", "ios",
+        "integration_test/regtest_mobile_ironwood_migration_network_recovery_test.dart", OrchardNotes(1_100_000)),
+    _ironwood("flutter.ios.ironwood-migration-account-reimport", "ios",
+        "integration_test/regtest_mobile_ironwood_migration_account_reimport_test.dart", OrchardNotes(123_000_000)),
+    _ironwood("flutter.ios.ironwood-background-migration", "ios",
+        "integration_test/regtest_mobile_ironwood_background_migration_test.dart", OrchardNotes(123_000_000)),
+    # 10.0002 ZEC needs two 6.25 ZEC coinbases in one transaction, and the
+    # second matures one block later.
+    _ironwood("flutter.ios.ironwood-migration-many-notes", "ios",
+        "integration_test/regtest_mobile_ironwood_migration_many_notes_test.dart",
+        OrchardNotes(1_000_020_000, 20, ((1, 2),)),
+        ("ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI", "1000020000"),
+        ("ZCASH_E2E_EXPECTED_SPLIT_STAGE_COUNT", "4"),
+        ("ZCASH_E2E_EXPECTED_MIGRATION_BATCH_COUNT", "9"),
+        initial_blocks=INITIAL_BLOCKS + 1),
+    _ironwood("flutter.ios.ironwood-migration-500-notes", "ios",
+        "integration_test/regtest_mobile_ironwood_migration_many_notes_test.dart",
+        OrchardNotes(500_000_000, 500, tuple((height,) for height in range(1, 11))),
+        ("ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI", "500000000"),
+        ("ZCASH_E2E_EXPECTED_SPLIT_STAGE_COUNT", "44"),
+        ("ZCASH_E2E_EXPECTED_MIGRATION_BATCH_COUNT", "7")),
+    _ironwood_restart("flutter.ios.ironwood-migration-restart", "ios",
+        "regtest_mobile_ironwood_migration_restart", OrchardNotes(123_000_000), mine_between=12),
+    _ironwood_restart("flutter.ios.ironwood-background-restart", "ios",
+        "regtest_mobile_ironwood_background_restart", OrchardNotes(123_000_000)),
 )
 
 # Python moves into the checkout before `flutter test` replaces it, so the
@@ -108,8 +190,22 @@ FLUTTER_SCENARIOS = (
 _IN_CHECKOUT = "import os, sys; os.chdir(sys.argv[1]); os.execvp(sys.argv[2], sys.argv[2:])"
 
 
-def flutter_command(scenario, phase, *, flutter, device, source_root):
-    """The phase's `flutter test` command line, run from the checkout root."""
+def derived_addresses(scenario):
+    """Every derived address the scenario's defines and funding use."""
+    values = [value for _, value in scenario.defines if isinstance(value, Derived)]
+    values += [payment.address for payment in scenario.funding if isinstance(payment.address, Derived)]
+    return tuple(dict.fromkeys(values))
+
+
+def needs_wallet_addresses(scenario):
+    return bool(derived_addresses(scenario)) or scenario.orchard_notes is not None
+
+
+def flutter_command(scenario, phase, *, flutter, device, source_root, derived=None):
+    """The phase's `flutter test` command line, run from the checkout root.
+
+    `derived` maps each Derived define to the address the run derived.
+    """
     defines = {
         "ZCASH_DEFAULT_NETWORK": "regtest",
         "ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT": str(scenario.activation_height),
@@ -122,6 +218,10 @@ def flutter_command(scenario, phase, *, flutter, device, source_root):
     for name, value in scenario.defines:
         if name in defines:
             raise ValueError(f"{scenario.id} overrides the fixture define {name}")
+        if isinstance(value, Derived):
+            if value not in (derived or {}):
+                raise ValueError(f"{scenario.id} needs {name} derived before it runs")
+            value = derived[value]
         defines[name] = value
     return [sys.executable, "-c", _IN_CHECKOUT, str(source_root), str(flutter), "test", phase.test,
             "-d", device, *phase.args, *(f"--dart-define={name}={value}" for name, value in defines.items())]
