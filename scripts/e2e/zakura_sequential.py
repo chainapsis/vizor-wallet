@@ -39,7 +39,7 @@ from zakura_fixture_source import ensure_pinned_images
 from zakura_batch_funding import fund_zakura_batch, migration_note_batches
 from zakura_funding import fund_zakura
 from zakura_genesis import create_zakura_genesis_proof
-from zakura_simulator import RunSimulator, newest_runtime
+from zakura_simulator import RunSimulator, newest_runtime, uninstall_app
 
 
 # The coinbase of every fixture pays the signer's public test-only key.
@@ -165,6 +165,7 @@ class SequentialCase:
             raise
         self.backend = self.front = self.control = None
         self.derived = {}
+        self._voting_env = None
         self._finished = False
 
     def start(self, *, grpcurl, proto_dir, dart, source_root, artifact, cancel_event,
@@ -257,13 +258,21 @@ class SequentialCase:
         env = {**os.environ, **dict(scenario.env)}
         if scenario.screenshots:
             self._start_screenshot_driver(source_root, device, cancel_event)
-        for phase in scenario.phases:
+        voting_defines = ()
+        for index, phase in enumerate(scenario.phases):
             _check(cancel_event)
+            if index == 1 and scenario.voting:
+                voting_defines = self._start_voting(scenario.voting, source_root, device,
+                    deadline, cancel_event)
             if phase.mine_before:
                 self.backend.mine(phase.mine_before)
+            if phase.reinstall:
+                uninstall_app(device, source_root / "build/ios/iphonesimulator/Runner.app")
             lines = []
+            on_macos = flutter_cases.phase_platform(scenario, phase) == "macos"
             process = self.case.start_process(flutter_cases.flutter_command(scenario, phase,
-                flutter=flutter, device=device, source_root=source_root, derived=self.derived),
+                flutter=flutter, device="macos" if on_macos else device, source_root=source_root,
+                derived=self.derived, extra_defines=voting_defines),
                 env=env, raw_lines=lines, max_output_bytes=16 * 1024 * 1024)
             while process.process.poll() is None:
                 _check(cancel_event)
@@ -276,7 +285,43 @@ class SequentialCase:
             if code != 0:
                 raise runtime.RunnerError(f"{phase.test} failed", code)
             flutter_cases.verify_flutter_output(lines)
+        if scenario.voting:
+            self._check_voting(source_root, deadline, cancel_event)
         self.front.assert_running()
+
+    def _voting_command(self, source_root, mode):
+        script = Path(source_root) / "scripts/e2e/voting-services.sh"
+        return ["bash", str(script), mode, str(self.case.workspace.root / "voting" / "ready.json")]
+
+    def _start_voting(self, voting, source_root, device, deadline, cancel_event):
+        """Start the voting services against this fixture; return their defines.
+
+        The services run until the case stops them on close.
+        """
+        ready = self.case.workspace.root / "voting" / "ready.json"
+        self._voting_env = {**os.environ, "VOTING_DEVICE": device,
+            "ZCASH_E2E_DRIVER_URL": f"http://127.0.0.1:{flutter_cases.CONTROL_PORT}",
+            "VOTING_LIGHTWALLETD": f"127.0.0.1:{flutter_cases.LIGHTWALLETD_PORT}",
+            "E2E_SLOW_HELPER_MODE": "1" if voting.slow_helper else "0",
+            "E2E_VOTING_DISCOVERY_TRANSITION": "1" if voting.discovery_transition else "0"}
+        services = self.case.start_process(self._voting_command(source_root, "start"),
+            env=self._voting_env, max_output_bytes=8 * 1024 * 1024)
+        while not ready.exists():
+            _check(cancel_event)
+            if services.process.poll() is not None:
+                raise runtime.RunnerError("the voting services stopped before they were ready")
+            if time.monotonic() >= deadline:
+                raise runtime.RunnerError("the voting services were not ready before the deadline", 124)
+            self.control.pump(deadline=deadline, cancel_event=cancel_event)
+        return tuple(json.loads(ready.read_text(encoding="utf-8"))["defines"].items())
+
+    def _check_voting(self, source_root, deadline, cancel_event):
+        """The gateway must have served discovery, and the round must have votes."""
+        result = self.case.run_command(self._voting_command(source_root, "check"),
+            env=self._voting_env, timeout=max(1.0, min(120.0, deadline - time.monotonic())),
+            cancel_event=cancel_event, max_output_bytes=1024 * 1024)
+        if result.returncode:
+            raise runtime.RunnerError("the voting services did not record the votes", result.returncode)
 
     def _start_screenshot_driver(self, source_root, device, cancel_event):
         """Capture the simulator into this case's evidence; the case stops it on close."""
@@ -487,6 +532,15 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 jobs=build_jobs, timeout=1200, cancel_event=cancel, test_targets=targets,
                 wallet_addresses=any(isinstance(s, flutter_cases.FlutterScenario)
                                      and flutter_cases.needs_wallet_addresses(s) for s in scenarios))
+            if any(getattr(s, "voting", None) for s in scenarios):
+                out("Building the pinned voting services")
+                built = runtime.run_logged_command(
+                    ["bash", str(root / "scripts/e2e/voting-services.sh"), "build"], cwd=root,
+                    env=os.environ.copy(), log_path=evidence / "voting-build.log", timeout=3600,
+                    cancel_event=cancel)
+                if built.returncode:
+                    raise runtime.RunnerError("the voting services did not build; see voting-build.log",
+                        built.returncode)
             if needs_simulator:
                 simulator = RunSimulator(run_id, ios_runtime or newest_runtime())
                 report["ios_simulator"] = simulator.describe()

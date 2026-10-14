@@ -1,7 +1,10 @@
 """The run's own iOS simulator: runtime choice, boot failure and deletion."""
 import json
 from pathlib import Path
+import plistlib
+import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -66,6 +69,41 @@ class LifecycleTests(unittest.TestCase):
              self.assertRaises(SIMULATOR.runtime.RunnerError):
             SIMULATOR.RunSimulator("a1b2c3d4e5", "iOS-26-3")
         self.assertEqual(simctl.calls, ["create", "bootstatus", "list", "delete"])
+
+
+class UninstallTests(unittest.TestCase):
+    def uninstall(self, installed):
+        """Runs uninstall_app while get_app_container reports `installed` in turn."""
+        states = iter(installed)
+        calls = []
+
+        def run(command, **_kwargs):
+            calls.append(command[2])
+            return subprocess.CompletedProcess(command, 0 if next(states) else 1)
+
+        def simctl(*arguments, timeout=120):
+            calls.append(arguments[0])
+            return ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / "Runner.app"
+            app.mkdir()
+            (app / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.example.model"}))
+            with patch.object(SIMULATOR.subprocess, "run", side_effect=run), \
+                 patch.object(SIMULATOR, "_simctl", side_effect=simctl):
+                SIMULATOR.uninstall_app(UDID, app)
+        return calls
+
+    def test_an_app_the_test_run_left_installed_is_uninstalled(self):
+        self.assertEqual(self.uninstall([True, False]),
+                         ["get_app_container", "terminate", "uninstall", "get_app_container"])
+
+    def test_an_app_flutter_uninstalled_is_left_alone(self):
+        self.assertEqual(self.uninstall([False, False]), ["get_app_container", "get_app_container"])
+
+    def test_an_app_that_survives_uninstall_is_an_error(self):
+        with self.assertRaises(SIMULATOR.runtime.RunnerError):
+            self.uninstall([True, True])
 
 
 if __name__ == "__main__":

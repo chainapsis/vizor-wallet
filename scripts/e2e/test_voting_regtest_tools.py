@@ -126,27 +126,36 @@ class DiscoveryTests(unittest.TestCase):
 
 class GatewayTests(unittest.TestCase):
     def test_home_resync_mines_fixed_batch_and_returns_synced_tip(self) -> None:
+        mined = []
+        class Control(BaseHTTPRequestHandler):
+            def do_POST(self):
+                mined.append((self.path, json.loads(self.rfile.read(int(self.headers["Content-Length"])))))
+                body = b'{"tip":{"height":650}}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *_):
+                pass
+        control = ThreadingHTTPServer(("127.0.0.1", 0), Control)
+        threading.Thread(target=control.serve_forever, daemon=True).start()
         handler = type("MiningGateway", (gateway.GatewayHandler,), {
-            "enable_zcash_mining": True,
+            "zcash_control": f"http://127.0.0.1:{control.server_port}",
         })
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
-            with patch.object(gateway.subprocess, "run") as mine, patch.object(
-                gateway.subprocess, "check_output", return_value=b"650\n"
-            ) as tip:
-                request = urllib.request.Request(
-                    f"http://127.0.0.1:{server.server_port}/mine-for-home-sync",
-                    data=b"{}", headers={"Content-Type": "application/json"},
-                )
-                with urllib.request.urlopen(request) as response:
-                    self.assertEqual(json.load(response), {"height": 650})
-                self.assertEqual(mine.call_args.args[0][-1], "20")
-                self.assertTrue(mine.call_args.args[0][0].endswith("ironwood-regtest/mine.sh"))
-                self.assertEqual(tip.call_args.args[0][-1], "getblockcount")
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{server.server_port}/mine-for-home-sync",
+                data=b"{}", headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request) as response:
+                self.assertEqual(json.load(response), {"height": 650})
+            self.assertEqual(mined, [("/mine", {"blocks": 20})])
         finally:
-            server.shutdown()
-            server.server_close()
+            for item in (server, control):
+                item.shutdown()
+                item.server_close()
 
     def test_participation_proxy_preserves_query_and_counts_requests(self) -> None:
         seen = []

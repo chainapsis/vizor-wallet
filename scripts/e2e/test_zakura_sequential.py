@@ -380,6 +380,53 @@ class FixtureStartTests(unittest.TestCase):
                          [(height,) for height in range(1, 11)])
 
 
+class VotingPhaseTests(unittest.TestCase):
+    """The setup phase runs on the desktop app; the services' defines reach the later phases."""
+    def test_services_start_after_the_setup_phase_and_are_checked_last(self):
+        flutter = SEQUENTIAL.flutter_cases
+        scenario = SEQUENTIAL.SCENARIOS["flutter.ios.voting-reinstall"]
+        commands, events = [], []
+        case = object.__new__(SEQUENTIAL.SequentialCase)
+        case.derived = {}
+        case.control = type("Control", (), {"pump": lambda self, **_kwargs: None})()
+        case.front = type("Front", (), {"assert_running": lambda self: None})()
+        case.backend = type("Backend", (), {"mine": lambda self, count: events.append(f"mine {count}")})()
+
+        class Process:
+            def poll(self):
+                return 0
+
+        def start_process(command, *, env, raw_lines, max_output_bytes):
+            commands.append(command)
+            events.append("flutter")
+            raw_lines.append("00:01 +1: All tests passed!\n")
+            return type("Managed", (), {"process": Process()})()
+
+        case.case = type("Case", (), {
+            "start_process": staticmethod(start_process),
+            "wait_process": staticmethod(lambda *_a, **_kw: 0)})()
+        with patch.object(SEQUENTIAL.SequentialCase, "_start_voting",
+                          side_effect=lambda *_a: events.append("services") or (("ZCASH_E2E_VOTE_ROUND_ID", "ab"),)), \
+             patch.object(SEQUENTIAL.SequentialCase, "_check_voting",
+                          side_effect=lambda *_a: events.append("check")), \
+             patch.object(SEQUENTIAL, "uninstall_app",
+                          side_effect=lambda *args: events.append(("uninstall", *args))):
+            case.run_flutter(scenario, flutter=Path("/model/flutter"), device="MODEL-UDID",
+                             source_root=Path("/model/root"), cancel_event=threading.Event())
+        self.assertEqual(events, ["flutter", "services", "flutter",
+            ("uninstall", "MODEL-UDID", Path("/model/root/build/ios/iphonesimulator/Runner.app")),
+            "flutter", "check"])
+        devices = [command[command.index("-d") + 1] for command in commands]
+        self.assertEqual(devices, ["macos", "MODEL-UDID", "MODEL-UDID"])
+        self.assertIn("--dart-define=VIZOR_E2E_HIDDEN_WINDOW=true", commands[0])
+        self.assertNotIn("--dart-define=ZCASH_E2E_VOTE_ROUND_ID=ab", commands[0])
+        for command in commands[1:]:
+            self.assertIn("--dart-define=VIZOR_FORM_FACTOR=mobile", command)
+            self.assertIn("--dart-define=ZCASH_E2E_VOTE_ROUND_ID=ab", command)
+            self.assertIn("--dart-define=ZCASH_E2E_VOTING_KEEP_APP_STATE=1", command)
+        self.assertEqual(flutter.fixed_ports(scenario)["voting_gateway"], 18080)
+
+
 class FakeSimulator:
     created = []
 

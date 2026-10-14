@@ -24,6 +24,8 @@ PROXY_PORT = 19068
 UNAVAILABLE_PORT = 19067
 # The screenshot tests post to a host driver that captures the simulator.
 SCREENSHOT_PORT = 39070
+# voting-services.sh serves the vote chain, PIR and the voting gateway here.
+VOTING_PORTS = {"pir": 13000, "vote_api": 1317, "vote_rpc": 26657, "voting_gateway": 18080}
 FIXED_PORTS = {"rpc": CONTROL_PORT, "lwd": LIGHTWALLETD_PORT, "proxy": PROXY_PORT}
 
 DEFAULT_ACTIVATION = 1
@@ -87,11 +89,28 @@ class Phase:
     """One `flutter test` run; `mine_before` blocks are mined while no app runs.
 
     `fundings` counts the coinbases the test spends through the control.
+    A phase may run on another platform than its scenario, with its own
+    defines on top of the scenario's. A `reinstall` phase starts on the
+    simulator only after the app and its data are gone.
     """
     test: str
     mine_before: int = 0
     args: tuple[str, ...] = ()
     fundings: int = 0
+    platform: str | None = None
+    defines: tuple[tuple[str, str], ...] = ()
+    reinstall: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class Voting:
+    """The vote chain, PIR server and gateway a voting scenario votes against.
+
+    The first phase migrates the wallet's Orchard notes into Ironwood voting
+    power; voting-services.sh then starts the services for the later phases.
+    """
+    slow_helper: bool = False
+    discovery_transition: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -104,6 +123,7 @@ class FlutterScenario:
     funding: tuple[Funding, ...] = ()
     orchard_notes: OrchardNotes | None = None
     screenshots: bool = False
+    voting: Voting | None = None
     activation_height: int = DEFAULT_ACTIVATION
     initial_blocks: int = INITIAL_BLOCKS
     timeout_seconds: int = 1200
@@ -135,6 +155,29 @@ def _ironwood_restart(id, platform, prefix, notes, *, mine_between=0):
          Phase(f"integration_test/{prefix}_resume_test.dart", mine_before=mine_between)),
         defines=(LIGHTWALLETD_OVERRIDE,), orchard_notes=notes,
         activation_height=MIGRATION_ACTIVATION)
+
+
+def _voting(id, platform, test, voting=Voting(), *, reinstall=False):
+    """Migrate voting power on the desktop app, then vote on the platform's app.
+
+    With `reinstall`, the vote phase leaves the wallet, the app is reinstalled
+    and a last phase restores the same wallet against the same round.
+    """
+    vote_defines = (("ZCASH_E2E_VOTING_KEEP_APP_STATE", "1" if reinstall else "0"),
+                    ("ZCASH_E2E_REUSE_MIGRATED_WALLET", "true"),
+                    ("ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN", "true"))
+    phases = (Phase("integration_test/regtest_voting_ironwood_setup_test.dart", platform="macos",
+                    defines=(("ZCASH_E2E_ORCHARD_FUNDING_NOTE_COUNT", "1"),
+                             ("ZCASH_FAST_TESTNET_MIGRATION", "false"),
+                             ("ZCASH_E2E_ORCHARD_FUNDING_TX_COUNT", "1"),
+                             ("ZCASH_E2E_ORCHARD_FUNDING_ZATOSHI", "13000000"))),
+              Phase(f"integration_test/{test}_test.dart", defines=vote_defines))
+    if reinstall:
+        phases += (Phase("integration_test/regtest_mobile_voting_reinstall_test.dart", defines=vote_defines,
+                         reinstall=True),)
+    return FlutterScenario(id, platform, phases, defines=(LIGHTWALLETD_OVERRIDE,),
+        orchard_notes=OrchardNotes(13_000_000), voting=voting,
+        activation_height=MIGRATION_ACTIVATION, timeout_seconds=3600)
 
 
 FLUTTER_SCENARIOS = (
@@ -341,6 +384,13 @@ FLUTTER_SCENARIOS = (
         OrchardNotes(1_000_020_000, 20, ((1,), (2,), (3,), (4,)))),
     _ironwood_restart("flutter.macos.ironwood-migration-restart", "macos",
         "regtest_ironwood_migration_restart", OrchardNotes(1_100_000)),
+    _voting("flutter.macos.voting", "macos", "regtest_voting"),
+    _voting("flutter.macos.voting-slow-helper", "macos", "regtest_voting", Voting(slow_helper=True)),
+    _voting("flutter.ios.voting", "ios", "regtest_mobile_voting"),
+    _voting("flutter.ios.voting-slow-helper", "ios", "regtest_mobile_voting", Voting(slow_helper=True)),
+    _voting("flutter.ios.voting-discovery", "ios", "regtest_mobile_voting_discovery",
+            Voting(discovery_transition=True)),
+    _voting("flutter.ios.voting-reinstall", "ios", "regtest_mobile_voting", reinstall=True),
     _ironwood_restart("flutter.ios.ironwood-migration-restart", "ios",
         "regtest_mobile_ironwood_migration_restart", OrchardNotes(123_000_000), mine_between=12),
     _ironwood_restart("flutter.ios.ironwood-background-restart", "ios",
@@ -365,7 +415,12 @@ def needs_wallet_addresses(scenario):
 
 def fixed_ports(scenario):
     """The default ports the scenario's fixture and host tools listen on."""
-    return {**FIXED_PORTS, **({"screenshots": SCREENSHOT_PORT} if scenario.screenshots else {})}
+    return {**FIXED_PORTS, **({"screenshots": SCREENSHOT_PORT} if scenario.screenshots else {}),
+            **(VOTING_PORTS if scenario.voting else {})}
+
+
+def phase_platform(scenario, phase):
+    return phase.platform or scenario.platform
 
 
 def runner_sources(scenario):
@@ -384,10 +439,11 @@ def funding_source_height(scenario, phase):
     return first + sum(earlier.fundings for earlier in scenario.phases[:scenario.phases.index(phase)])
 
 
-def flutter_command(scenario, phase, *, flutter, device, source_root, derived=None):
+def flutter_command(scenario, phase, *, flutter, device, source_root, derived=None, extra_defines=()):
     """The phase's `flutter test` command line, run from the checkout root.
 
-    `derived` maps each Derived define to the address the run derived.
+    `derived` maps each Derived define to the address the run derived, and
+    `extra_defines` are values the run learned while the case ran.
     """
     defines = {
         "ZCASH_DEFAULT_NETWORK": "regtest",
@@ -395,13 +451,13 @@ def flutter_command(scenario, phase, *, flutter, device, source_root, derived=No
         "ZCASH_E2E_DRIVER_URL": f"http://127.0.0.1:{CONTROL_PORT}",
         "ZCASH_E2E_FUNDING_SOURCE_HEIGHT": str(funding_source_height(scenario, phase)),
     }
-    if scenario.platform == "macos":
+    if phase_platform(scenario, phase) == "macos":
         defines["VIZOR_E2E_HIDDEN_WINDOW"] = "true"
     else:
         defines["VIZOR_FORM_FACTOR"] = "mobile"
-    for name, value in scenario.defines:
+    for name, value in (*scenario.defines, *phase.defines, *extra_defines):
         if name in defines:
-            raise ValueError(f"{scenario.id} overrides the fixture define {name}")
+            raise ValueError(f"{scenario.id} sets the define {name} twice")
         if isinstance(value, Derived):
             if value not in (derived or {}):
                 raise ValueError(f"{scenario.id} needs {name} derived before it runs")

@@ -8,6 +8,7 @@ entries left by an earlier install on its first launch.
 from __future__ import annotations
 
 import json
+import plistlib
 import re
 import subprocess
 
@@ -37,6 +38,27 @@ def newest_runtime():
     if not usable:
         raise runtime.RunnerError("no available iOS simulator runtime can run an iPhone 16")
     return max(usable, key=lambda item: tuple(int(part) for part in item["version"].split(".")))["identifier"]
+
+
+def uninstall_app(udid, app):
+    """Uninstall the built `app` (a Runner.app path) if a test run left it on the device.
+
+    Flutter's integration runner normally uninstalls the app when it finishes.
+    """
+    bundle = plistlib.loads((app / "Info.plist").read_bytes())["CFBundleIdentifier"]
+    if _installed(udid, bundle):
+        try:
+            _simctl("terminate", udid, bundle)
+        except runtime.RunnerError:
+            pass  # The app was not running.
+        _simctl("uninstall", udid, bundle)
+    if _installed(udid, bundle):
+        raise runtime.RunnerError(f"{bundle} is still installed after simctl uninstall")
+
+
+def _installed(udid, bundle):
+    return subprocess.run(["/usr/bin/xcrun", "simctl", "get_app_container", udid, bundle, "data"],
+        capture_output=True, timeout=120).returncode == 0
 
 
 class RunSimulator:

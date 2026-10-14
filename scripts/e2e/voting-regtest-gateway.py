@@ -12,6 +12,7 @@ import json
 import mimetypes
 import subprocess
 import threading
+import urllib.request
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -106,7 +107,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
     config_waiting = 0
     simulator: str | None = None
     screenshot_dir: Path | None = None
-    enable_zcash_mining = False
+    zcash_control: str | None = None
     slow_helper_delay: float
     metrics_lock = threading.Lock()
     slow_share_inflight = 0
@@ -156,11 +157,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
             type(self).config_release.set()
             self._json(200, {"ok": True})
             return
-        if self.command == "POST" and parsed.path == "/mine-for-home-sync" and self.enable_zcash_mining:
+        if self.command == "POST" and parsed.path == "/mine-for-home-sync" and self.zcash_control:
             read_request_body(self.rfile, self.headers)
-            scripts = Path(__file__).resolve().parents[1] / "ironwood-regtest"
-            subprocess.run([str(scripts / "mine.sh"), "20"], check=True, timeout=90, capture_output=True)
-            height = subprocess.check_output([str(scripts / "rpc.sh"), "getblockcount"], timeout=30)
+            request = urllib.request.Request(f"{self.zcash_control}/mine", method="POST",
+                data=json.dumps({"blocks": 20}).encode(), headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(request, timeout=90) as response:
+                height = json.load(response)["tip"]["height"]
             self._json(200, {"height": int(height)})
             return
         if self.command == "GET" and parsed.path in {"/commit", "/validators", "/abci_query"} and self.rpc_target is not None:
@@ -363,7 +365,7 @@ def main() -> None:
     parser.add_argument("--vote-target", type=parse_target, required=True)
     parser.add_argument("--simulator")
     parser.add_argument("--discovery-transition", action="store_true")
-    parser.add_argument("--enable-zcash-mining", action="store_true")
+    parser.add_argument("--zcash-control", help="the fixture control that mines regtest blocks")
     parser.add_argument("--screenshot-dir", type=Path)
     parser.add_argument("--rpc-target", type=parse_target)
     parser.add_argument("--slow-helper-delay", type=float, default=0.0)
@@ -383,7 +385,7 @@ def main() -> None:
             "rpc_target": args.rpc_target,
             "simulator": args.simulator,
             "discovery_transition": args.discovery_transition,
-            "enable_zcash_mining": args.enable_zcash_mining,
+            "zcash_control": args.zcash_control,
             "screenshot_dir": args.screenshot_dir,
             "slow_helper_delay": max(0.0, args.slow_helper_delay),
         },
