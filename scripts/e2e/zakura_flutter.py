@@ -285,6 +285,8 @@ FLUTTER_SCENARIOS = (
         "integration_test/regtest_mobile_ironwood_migration_network_recovery_test.dart", OrchardNotes(1_100_000)),
     _ironwood("flutter.ios.ironwood-migration-account-reimport", "ios",
         "integration_test/regtest_mobile_ironwood_migration_account_reimport_test.dart", OrchardNotes(123_000_000)),
+    _ironwood("flutter.ios.ironwood-migration-reorg", "ios",
+        "integration_test/regtest_mobile_ironwood_migration_reorg_test.dart", OrchardNotes(1_100_000)),
     _ironwood("flutter.ios.ironwood-background-migration", "ios",
         "integration_test/regtest_mobile_ironwood_background_migration_test.dart", OrchardNotes(123_000_000)),
     # 10.0002 ZEC needs two 6.25 ZEC coinbases in one transaction, and the
