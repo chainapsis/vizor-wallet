@@ -499,8 +499,11 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 
 1. tonic gRPC → lightwalletd (TLS via `tls-ring`)
 2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
-3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O)
-4. `scan_cached_blocks` from memory (100 blocks per batch)
+3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O),
+   two batches ahead of the scan (`PREFETCH_DEPTH`); a tip batch that cuts in
+   between history batches keeps the queued ones
+4. `scan_cached_blocks` from memory (up to 2,000 blocks per batch on desktop
+   and 1,000 on mobile; 100 inside the 2022–23 spam window)
 5. Enhancement: process each work queue separately. Status observations come
    from `transaction_status_work()`, which routes each obligation to public
    `GetTransaction` or private Status PIR. Payload recovery comes from
