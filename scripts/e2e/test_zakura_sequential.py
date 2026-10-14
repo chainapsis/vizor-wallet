@@ -1,5 +1,6 @@
 """Sequential Zakura runner: selection, pass proof, source guard and failure cleanup."""
 import dataclasses
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -227,6 +228,12 @@ class FlutterCommandTests(unittest.TestCase):
         moved = subprocess.run([sys.executable, "-c", command[2], tempfile.gettempdir(), "pwd"],
             check=True, capture_output=True, text=True).stdout.strip()
         self.assertEqual(Path(moved).resolve(), Path(tempfile.gettempdir()).resolve())
+
+    def test_macos_windows_stay_hidden_unless_the_environment_shows_them(self):
+        scenario = SEQUENTIAL.SCENARIOS["flutter.macos.import-sync"]
+        for value, expected in (("", "true"), ("false", "false")):
+            with self.subTest(value=value), patch.dict(os.environ, {"VIZOR_E2E_HIDDEN_WINDOW": value}):
+                self.assertIn(f"--dart-define=VIZOR_E2E_HIDDEN_WINDOW={expected}", self.command(scenario))
 
     def test_mobile_phases_use_the_mobile_form_factor_and_cannot_move_the_fixture(self):
         flutter = SEQUENTIAL.flutter_cases

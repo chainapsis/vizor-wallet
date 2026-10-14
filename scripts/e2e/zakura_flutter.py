@@ -13,6 +13,7 @@ it get it; the endpoint tests configure their presets themselves.
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
 import sys
 
@@ -452,7 +453,8 @@ def flutter_command(scenario, phase, *, flutter, device, source_root, derived=No
         "ZCASH_E2E_FUNDING_SOURCE_HEIGHT": str(funding_source_height(scenario, phase)),
     }
     if phase_platform(scenario, phase) == "macos":
-        defines["VIZOR_E2E_HIDDEN_WINDOW"] = "true"
+        # Set VIZOR_E2E_HIDDEN_WINDOW=false to watch the window.
+        defines["VIZOR_E2E_HIDDEN_WINDOW"] = os.environ.get("VIZOR_E2E_HIDDEN_WINDOW") or "true"
     else:
         defines["VIZOR_FORM_FACTOR"] = "mobile"
     for name, value in (*scenario.defines, *phase.defines, *extra_defines):
