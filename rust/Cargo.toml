@@ -51,6 +51,10 @@ rand = "0.8"
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 futures = "0.3"
+# Scan thread pools at reduced power (`sync_engine::scan_power`); both are
+# already in the graph through the wallet libraries.
+rayon = "1.12"
+libc = "0.2"
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 bytes = "1"
 http = "1"

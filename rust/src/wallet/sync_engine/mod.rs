@@ -64,6 +64,7 @@ pub(crate) mod mempool;
 mod private_recovery_reorg_tests;
 mod progress_work;
 mod retry_progress;
+pub(crate) mod scan_power;
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
@@ -3721,6 +3722,8 @@ async fn run_sync_impl(
     // `refresh_tip_for_queued_range`).
     let mut force_tip_refresh = false;
     let mut queued_tip_refreshed_for: Option<u32> = None;
+    // Logged when a batch scans at a different power level than the last.
+    let mut last_scan_power = None;
     log::info!(
         "[{}] sync: {} blocks to scan; progress job {} {:?} at {:.1}% ({:.0} of {:.0} work units left)",
         elapsed(),
@@ -4435,31 +4438,40 @@ async fn run_sync_impl(
                 );
             }
             voting_scan_end = Some(end);
-            // The decryption started while the previous batch was written, if it
-            // is this batch's.
-            match next_decryption.take() {
-                Some(next) if next.start == start && next.end == end => Ok(next.decryption),
-                _ => decrypt_cached_blocks(
-                    &network,
-                    &block_source,
-                    &db,
-                    start,
-                    batch_blocks as usize,
-                ),
+            let power = scan_power::current();
+            if last_scan_power != Some(power) {
+                log::info!("[{}] sync: scanning at {power:?} power", elapsed());
+                last_scan_power = Some(power);
             }
-            .and_then(|decryption| {
-                // This batch's decryption was queued first, so the next
-                // batch's runs after it, while this batch is written.
-                next_decryption = start_next_decryption(&network, &db, &mut prefetch, end);
-                scan_decrypted_blocks(
-                    &network,
-                    &block_source,
-                    &mut db,
-                    start,
-                    &from_state,
-                    batch_blocks as usize,
-                    decryption,
-                )
+            // The next batch's decryption starts inside the same call, so it
+            // runs at this batch's scan power too.
+            scan_power::install(power, || {
+                // The decryption started while the previous batch was written, if
+                // it is this batch's.
+                match next_decryption.take() {
+                    Some(next) if next.start == start && next.end == end => Ok(next.decryption),
+                    _ => decrypt_cached_blocks(
+                        &network,
+                        &block_source,
+                        &db,
+                        start,
+                        batch_blocks as usize,
+                    ),
+                }
+                .and_then(|decryption| {
+                    // This batch's decryption was queued first, so the next
+                    // batch's runs after it, while this batch is written.
+                    next_decryption = start_next_decryption(&network, &db, &mut prefetch, end);
+                    scan_decrypted_blocks(
+                        &network,
+                        &block_source,
+                        &mut db,
+                        start,
+                        &from_state,
+                        batch_blocks as usize,
+                        decryption,
+                    )
+                })
             })
             .map_err(|e| match e {
                 ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
