@@ -103,6 +103,17 @@ class NativePortsTests(unittest.TestCase):
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", free))
 
+    def test_a_wildcard_listener_fails_like_a_loopback_one(self):
+        # Docker publishes ports on the wildcard addresses, which a reusable
+        # bind to 127.0.0.1 does not collide with on macOS.
+        for family, address in ((socket.AF_INET, "0.0.0.0"), (socket.AF_INET6, "::")):
+            with self.subTest(address=address), socket.socket(family) as listener:
+                listener.bind((address, 0))
+                listener.listen(1)
+                taken = listener.getsockname()[1]
+                with self.assertRaisesRegex(PORTS.NativePortError, f"port {taken} is in use"):
+                    PORTS.lease_fixed_ports("a1b2c3d4e5", {"rpc": taken}, lock_root=self.locks)
+
     def test_fixed_ports_must_be_distinct_unprivileged_roles(self):
         for ports in ({}, {"rpc": 80}, {"rpc": 19000, "lwd": 19000}, {"RPC": 19000}):
             with self.subTest(ports=ports), self.assertRaises(PORTS.NativePortError):

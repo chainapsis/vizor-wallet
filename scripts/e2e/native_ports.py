@@ -126,7 +126,24 @@ def _reserve_port(lock_root: Path, run_id: str) -> tuple[int, socket.socket, int
     raise NativePortError("could not reserve a cooperatively locked native port")
 
 
+def _accepts_connections(port: int) -> bool:
+    """Whether anything accepts a loopback connection on `port`.
+
+    A listener on a wildcard address, as Docker publishes ports, does not stop
+    the reusable bind to 127.0.0.1 below on macOS.
+    """
+    for address in ("127.0.0.1", "::1"):
+        try:
+            with socket.create_connection((address, port), timeout=1.0):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _reserve_fixed_port(lock_root: Path, run_id: str, port: int) -> tuple[socket.socket, int]:
+    if _accepts_connections(port):
+        raise NativePortError(f"port {port} is in use; stop whatever listens on it")
     reserved = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         # A previous case's connections may still be in TIME_WAIT; a live
