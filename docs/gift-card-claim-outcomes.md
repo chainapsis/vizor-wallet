@@ -106,8 +106,9 @@ Capture scenarios: `gift-card-claimed-elsewhere`, `gift-card-claim-failed`, and
 The macOS outcomes E2E runner covers three scenarios with real Rust wallets and
 regtest transactions: competing claims, accepted-response loss and restart
 recovery, and removing the losing card after restart. Run
-`scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh` explicitly; it uses the
-shared local Docker chain. See `scripts/e2e/README.md` for phases and logs.
+`scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh` explicitly; each
+scenario runs on its own direct Zakura fixture. See `scripts/e2e/README.md` for
+phases and logs.
 
 The explicit two-wallet competition scenario is compiled by:
 

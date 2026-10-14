@@ -262,7 +262,7 @@ fvm flutter analyze
 Permanent iOS simulator regtest coverage runs with:
 
 ```bash
-SIMULATOR_UDID=<simulator-uuid> scripts/e2e/flutter-ios-regtest-mobile-gift-onboarding.sh
+scripts/e2e/flutter-ios-regtest-mobile-gift-onboarding.sh
 scripts/e2e/flutter-ios-regtest-mobile-create-sync.sh
 scripts/e2e/flutter-ios-regtest-mobile-import-sync.sh
 ```
