@@ -657,8 +657,11 @@ Future<_ShieldedBalanceSnapshot> _shieldedBalance(String accountUuid) async {
     accountUuid: accountUuid,
   );
   return _ShieldedBalanceSnapshot(
-    pending: balance.saplingPending + balance.orchardPending,
-    spendable: balance.sapling + balance.orchard,
+    pending:
+        balance.saplingPending +
+        balance.orchardPending +
+        balance.ironwoodPending,
+    spendable: balance.sapling + balance.orchard + balance.ironwood,
   );
 }
 
