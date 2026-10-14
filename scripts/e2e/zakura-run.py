@@ -53,6 +53,9 @@ def main(argv=None):
     parser.add_argument("--build-jobs", type=int, default=4, help="Cargo build jobs, 1 through 8")
     parser.add_argument("--keep-failed", action="store_true",
         help="keep the fixture and wallet files of failed scenarios")
+    parser.add_argument("--ios-runtime",
+        help="simulator runtime for iOS scenarios, such as com.apple.CoreSimulator.SimRuntime.iOS-26-3 "
+             "(default: the newest installed)")
     args = parser.parse_args(argv)
     if args.list:
         for scenario in sequential.ALL_SCENARIOS:
@@ -83,7 +86,7 @@ def main(argv=None):
     try:
         report, path = sequential.run_sequence(root, scenarios, flutter=flutter, grpcurl=grpcurl,
             proto_dir=args.proto_dir, build_jobs=args.build_jobs, keep_failed=args.keep_failed,
-            cancel_event=cancel, out=_console)
+            cancel_event=cancel, out=_console, ios_runtime=args.ios_runtime)
     except ValueError as error:
         _console(f"zakura-run: {error}")
         return 2

@@ -228,8 +228,8 @@ class FlutterCommandTests(unittest.TestCase):
                 verify(lines)
 
 
-class BuildOutputTests(unittest.TestCase):
-    """A run's fresh signer build is removed unless failed fixtures are kept beside it."""
+class SequenceHarness(unittest.TestCase):
+    """Runs run_sequence with a model build and model cases."""
     def setUp(self):
         directory = tempfile.TemporaryDirectory(prefix="zakura-run-")
         self.addCleanup(directory.cleanup)
@@ -241,7 +241,7 @@ class BuildOutputTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def run_sequence(self, status, keep_failed):
+    def run_sequence(self, status, keep_failed, scenarios=None, run_case=None):
         def build(producer, **_kwargs):
             output = producer.workspace.root / "funder-build" / "target"
             output.mkdir(parents=True)
@@ -251,12 +251,17 @@ class BuildOutputTests(unittest.TestCase):
 
         result = {"status": status, "duration_seconds": 1.0, "error": None if status == "passed" else "failed"}
         with patch.object(SEQUENTIAL, "build_regtest_funder", side_effect=build), \
-             patch.object(SEQUENTIAL, "run_case", return_value=result):
-            report, _ = SEQUENTIAL.run_sequence(self.root, [SEQUENTIAL.SCENARIOS["rust.send.basic"]],
+             patch.object(SEQUENTIAL, "run_case", side_effect=run_case, return_value=result):
+            report, _ = SEQUENTIAL.run_sequence(self.root,
+                scenarios or [SEQUENTIAL.SCENARIOS["rust.send.basic"]],
                 flutter=Path("/model/flutter"), grpcurl=self.root, proto_dir=self.root,
-                keep_failed=keep_failed, out=lambda _text: None)
+                keep_failed=keep_failed, out=lambda _text: None, ios_runtime="iOS-26-3")
         producer = next((self.root / ".regtest-logs" / f"zakura-{report['run_id']}" / "builds" / "e2e").iterdir())
         return report, producer
+
+
+class BuildOutputTests(SequenceHarness):
+    """A run's fresh signer build is removed unless failed fixtures are kept beside it."""
 
     def test_passing_run_removes_the_build_but_keeps_its_logs(self):
         report, producer = self.run_sequence("passed", keep_failed=True)
@@ -271,6 +276,63 @@ class BuildOutputTests(unittest.TestCase):
         self.assertNotIn("build_prune", report)
         report, producer = self.run_sequence("failed", keep_failed=False)
         self.assertFalse((producer / "funder-build").exists())
+
+
+class FakeSimulator:
+    created = []
+
+    def __init__(self, run_id, runtime_identifier):
+        self.name, self.udid, self.runtime = f"model {run_id}", "MODEL-UDID", runtime_identifier
+        self.deleted = False
+        FakeSimulator.created.append(self)
+
+    def describe(self):
+        return {"name": self.name, "udid": self.udid, "runtime": self.runtime}
+
+    def delete(self):
+        self.deleted = True
+
+
+class SimulatorTests(SequenceHarness):
+    """iOS scenarios run on a simulator the run creates after its build."""
+    def setUp(self):
+        super().setUp()
+        FakeSimulator.created = []
+        patcher = patch.object(SEQUENTIAL, "RunSimulator", FakeSimulator)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        flutter = SEQUENTIAL.flutter_cases
+        self.ios = flutter.FlutterScenario("flutter.ios.model", "ios",
+            (flutter.Phase("integration_test/model_test.dart"),))
+        self.devices = []
+
+    def record(self, status):
+        def run_case(*_args, device=None, **_kwargs):
+            self.devices.append(device)
+            return {"status": status, "duration_seconds": 1.0, "error": None if status == "passed" else "failed"}
+        return run_case
+
+    def test_ios_scenarios_get_the_run_simulator_which_is_deleted_after_a_pass(self):
+        macos = SEQUENTIAL.SCENARIOS["flutter.macos.import-sync"]
+        report, _ = self.run_sequence("passed", keep_failed=False, scenarios=[macos, self.ios],
+                                      run_case=self.record("passed"))
+        self.assertEqual(self.devices, ["macos", "MODEL-UDID"])
+        self.assertEqual(report["ios_simulator"]["runtime"], "iOS-26-3")
+        self.assertTrue(FakeSimulator.created[0].deleted)
+
+    def test_failed_runs_keep_the_simulator_only_when_asked(self):
+        report, _ = self.run_sequence("failed", keep_failed=True, scenarios=[self.ios],
+                                      run_case=self.record("failed"))
+        self.assertTrue(report["ios_simulator"]["kept"])
+        self.assertFalse(FakeSimulator.created[0].deleted)
+        self.run_sequence("failed", keep_failed=False, scenarios=[self.ios], run_case=self.record("failed"))
+        self.assertTrue(FakeSimulator.created[1].deleted)
+
+    def test_macos_runs_create_no_simulator(self):
+        report, _ = self.run_sequence("passed", keep_failed=False,
+            scenarios=[SEQUENTIAL.SCENARIOS["flutter.macos.import-sync"]], run_case=self.record("passed"))
+        self.assertNotIn("ios_simulator", report)
+        self.assertEqual(FakeSimulator.created, [])
 
 
 if __name__ == "__main__":

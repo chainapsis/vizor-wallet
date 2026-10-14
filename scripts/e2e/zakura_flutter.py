@@ -84,6 +84,23 @@ FLUTTER_SCENARIOS = (
     FlutterScenario(
         "flutter.macos.sync-startup-stall-recovery", "macos",
         (Phase("integration_test/regtest_sync_startup_stall_recovery_test.dart"),)),
+    FlutterScenario(
+        "flutter.ios.create-sync", "ios",
+        (Phase("integration_test/regtest_mobile_create_sync_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE,)),
+    FlutterScenario(
+        "flutter.ios.account-management", "ios",
+        (Phase("integration_test/regtest_mobile_account_management_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE,)),
+    FlutterScenario(
+        "flutter.ios.import-sync", "ios",
+        (Phase("integration_test/regtest_mobile_import_sync_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE,),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
+    FlutterScenario(
+        "flutter.ios.fallback-endpoint", "ios",
+        (Phase("integration_test/regtest_mobile_fallback_endpoint_test.dart"),),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
 )
 
 # Python moves into the checkout before `flutter test` replaces it, so the

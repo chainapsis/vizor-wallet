@@ -35,6 +35,7 @@ import zakura_flutter as flutter_cases
 from zakura_fixture_source import ensure_pinned_images
 from zakura_funding import fund_zakura
 from zakura_genesis import create_zakura_genesis_proof
+from zakura_simulator import RunSimulator, newest_runtime
 
 
 # The coinbase of every fixture pays the signer's public test-only key.
@@ -382,15 +383,18 @@ def resolve_dart(flutter, source_root):
 
 
 def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4,
-                 keep_failed=False, cancel_event=None, out=print, ios_device=None):
-    """Build once, then run each scenario on its own fixture; return the report."""
+                 keep_failed=False, cancel_event=None, out=print, ios_runtime=None):
+    """Build once, then run each scenario on its own fixture; return the report.
+
+    iOS scenarios run on a simulator the run creates after the build and
+    deletes at the end, unless it is kept beside failed fixtures.
+    """
     cancel = cancel_event if cancel_event is not None else threading.Event()
     root, commit = committed_source(source_root)
     dart = resolve_dart(flutter, root)
     grpcurl = Path(grpcurl).resolve(strict=True)
     proto_dir = Path(proto_dir).resolve(strict=True)
-    if ios_device is None and any(getattr(s, "platform", None) == "ios" for s in scenarios):
-        raise ValueError("iOS scenarios need a booted simulator; pass its UDID")
+    needs_simulator = any(getattr(s, "platform", None) == "ios" for s in scenarios)
     run_id = uuid.uuid4().hex[:10]
     logs = root / ".regtest-logs"
     logs.mkdir(mode=0o700, exist_ok=True)
@@ -406,7 +410,7 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
         temporary.replace(report_path)
 
     started = time.monotonic()
-    builds = builds_id = None
+    builds = builds_id = simulator = None
     try:
         with content_memo.run_scope():
             report["pinned_images"] = ensure_pinned_images(evidence, cancel_event=cancel, out=out)
@@ -422,6 +426,10 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
             artifact = build_regtest_funder(producer, source_root=root, source_commit=commit,
                 jobs=build_jobs, timeout=1200, cancel_event=cancel,
                 test_targets=targets)
+            if needs_simulator:
+                simulator = RunSimulator(run_id, ios_runtime or newest_runtime())
+                report["ios_simulator"] = simulator.describe()
+                out(f"Booted {simulator.name} ({simulator.udid}, {simulator.runtime})")
             cases = evidence / "cases"
             cases.mkdir(mode=0o700)
             for index, scenario in enumerate(scenarios, start=1):
@@ -430,7 +438,7 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 result = run_case(cases, run_id, index, scenario, artifact=artifact, grpcurl=grpcurl,
                     proto_dir=proto_dir, dart=dart, source_root=root, keep_failed=keep_failed,
                     cancel_event=cancel, flutter=flutter,
-                    device=ios_device if getattr(scenario, "platform", None) == "ios" else "macos")
+                    device=simulator.udid if getattr(scenario, "platform", None) == "ios" else "macos")
                 report["results"].append(result)
                 write_report()
                 out(f"    {result['status']} in {result['duration_seconds']:.0f}s"
@@ -443,6 +451,16 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
             raise
     finally:
         failed = report["error"] is not None or any(r["status"] != "passed" for r in report["results"])
+        if simulator is not None:
+            if keep_failed and failed:
+                report["ios_simulator"]["kept"] = True
+                out(f"Kept {simulator.name} ({simulator.udid})")
+            else:
+                try:
+                    simulator.delete()
+                except runtime.RunnerError as error:
+                    report["ios_simulator"]["cleanup_error"] = str(error)
+                    out(f"Could not delete {simulator.name} ({simulator.udid}): {error}")
         if builds_id is not None and not (keep_failed and failed):
             # Each run builds into a fresh target directory (several GB). Keep it
             # only beside fixtures kept for inspection; logs and markers stay.
