@@ -1244,7 +1244,7 @@ edge in `MobileBottomSafeArea`
   - The signer and the test executables are built once per run from the committed `rust/` tree. The runner refuses to start while `rust/` has uncommitted changes.
   - Prerequisites: Python 3.11+, Docker, `grpcurl`, the fvm-pinned Flutter SDK after `fvm flutter pub get` (the lightwalletd shim runs on its Dart), and Cargo dependencies already fetched (`cargo fetch --locked` in `rust/`; the build runs offline).
   - The runner streams its output to the terminal and saves a copy to `.regtest-logs/regtest-rust-tests.log`. Each run also writes `.regtest-logs/zakura-<run id>/report.json` and per-test logs.
-  - Passing tests are always cleaned up, and the run's build output (several GB) is removed when it ends. `./run-regtest-rust-tests.sh --keep` keeps the stopped containers and wallet files of failed tests, and then the build too; the report lists their Docker IDs for removal.
+  - Passing tests are always cleaned up, and the run's build output (several GB) is removed when it ends. `./run-regtest-rust-tests.sh --keep` keeps the stopped containers and wallet files of failed tests; the report lists their Docker IDs for removal.
   - Sapling proving params are cached at `~/.zcash-params` by default. Override with `SAPLING_PARAMS_DIR=/custom/path ./run-regtest-rust-tests.sh` if needed.
   - These regtest scenarios are slow and heavy. Do not run them unless the user explicitly asks for regtest/integration execution.
 - `scripts/regtest/` utilities:

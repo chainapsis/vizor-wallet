@@ -439,6 +439,7 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
         current.update(name=name, start=now)
 
     session = None
+    stopped = False
     try:
         begin("prepare")
         session = SequentialCase(cases_root, run_id=run_id, case_index=case_index,
@@ -461,6 +462,7 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
             session.run_rust(artifact, scenario, cancel_event=cancel_event)
         begin("close")
         session.close()
+        stopped = True
         result.update(status="passed", returncode=0)
     except BaseException as error:
         result["failed_phase"] = current["name"]
@@ -476,6 +478,7 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
                     result["retained"] = session.retained_resources()
                 else:
                     session.close()
+                stopped = True
             except BaseException as cleanup:
                 result["cleanup_error"] = str(cleanup)
                 try:
@@ -487,6 +490,9 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
             raise
     finally:
         begin(None)
+        if stopped and is_flutter and scenario.voting:
+            # Each voting case regenerates several GB of PIR data and chain state.
+            result["voting_prune"] = tree.prune_voting_data(Path(result["evidence"]))
         result["duration_seconds"] = round(time.monotonic() - started, 3)
         result["phase_seconds"] = phases
     return result
@@ -602,9 +608,9 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 except runtime.RunnerError as error:
                     report["ios_simulator"]["cleanup_error"] = str(error)
                     out(f"Could not delete {simulator.name} ({simulator.udid}): {error}")
-        if builds_id is not None and not (keep_failed and failed):
-            # Each run builds into a fresh target directory (several GB). Keep it
-            # only beside fixtures kept for inspection; logs and markers stay.
+        if builds_id is not None:
+            # Each run builds into a fresh target directory (several GB). Kept
+            # fixtures do not need it; logs and markers stay.
             report["build_prune"] = tree.prune_build_outputs(builds, expected=builds_id)
             out(f"Removed {tree.size_text(report['build_prune']['bytes'])} of build output"
                 + (f"; {len(report['build_prune']['errors'])} error(s)" if report["build_prune"]["errors"] else ""))

@@ -133,6 +133,41 @@ class OwnedTreeTests(unittest.TestCase):
         self.assertIn("e2e/" + case.name + "/ios-build", record["removed"])
         self.assertFalse((case / "ios-build").exists())
 
+    def voting_case(self):
+        case = self.tree("vizor_a1b2c3d4e5_w0_7")
+        voting = case / "voting"
+        (voting / "pir-data" / "tier1").mkdir(parents=True)
+        (voting / "pir-data" / "tier1" / "rows.bin").write_bytes(b"p" * 4096)
+        (voting / "pir-data" / "nullifiers.bin").write_bytes(b"n" * 1024)
+        (voting / "vote-home" / "data").mkdir(parents=True)
+        (voting / "vote-home" / "data" / "state.db").write_bytes(b"s" * 2048)
+        (voting / "logs").mkdir()
+        (voting / "logs" / "vote-server.log").write_text("log")
+        (voting / "ready.json").write_text("{}")
+        return case
+
+    def test_voting_prune_keeps_the_case_evidence(self):
+        case = self.voting_case()
+        record = TREE.prune_voting_data(case)
+        self.assertEqual(record, {"removed": ["voting/pir-data", "voting/vote-home"],
+                                  "bytes": 4096 + 1024 + 2048, "errors": []})
+        self.assertEqual(sorted(path.name for path in (case / "voting").iterdir()), ["logs", "ready.json"])
+        self.assertTrue((case / "voting" / "logs" / "vote-server.log").exists())
+
+    def test_voting_prune_without_voting_data_removes_nothing(self):
+        case = self.tree("vizor_a1b2c3d4e5_w0_8")
+        (case / "process-0000.log").write_text("log")
+        self.assertEqual(TREE.prune_voting_data(case), {"removed": [], "bytes": 0, "errors": []})
+        self.assertTrue((case / "process-0000.log").exists())
+
+    def test_voting_prune_records_an_unowned_entry_and_keeps_it(self):
+        case = self.voting_case()
+        os.link(case / "voting" / "ready.json", case / "voting" / "pir-data" / "linked")
+        record = TREE.prune_voting_data(case)
+        self.assertEqual(record["removed"], ["voting/vote-home"])
+        self.assertEqual(len(record["errors"]), 1)
+        self.assertTrue((case / "voting" / "pir-data" / "nullifiers.bin").exists())
+
     def test_symlinked_roots_are_refused_without_touching_targets(self):
         builds, case = self.producer()
         (case.parent / "vizor_a1b2c3d4e5_w0_2").symlink_to(self.outside, target_is_directory=True)

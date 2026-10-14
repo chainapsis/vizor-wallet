@@ -201,6 +201,34 @@ class RunCaseTests(unittest.TestCase):
         self.assertEqual((result["status"], result["tests"]),
                          ("passed", ["integration_test/regtest_import_sync_test.dart"]))
 
+    def test_voting_cases_prune_their_regenerated_data_once_stopped(self):
+        for scenario_id, fail, pruned in (("flutter.macos.voting", None, True),
+                                          ("flutter.macos.voting", "start", True),
+                                          ("flutter.macos.import-sync", None, False)):
+            with self.subTest(scenario=scenario_id, fail=fail), \
+                 patch.object(SEQUENTIAL, "SequentialCase", side_effect=lambda *a, **kw: FakeCase(*a, fail=fail, **kw)), \
+                 patch.object(SEQUENTIAL.tree, "prune_voting_data", return_value={"removed": []}) as prune:
+                result = SEQUENTIAL.run_case(Path("/model/cases"), "a1b2c3d4e5", 1, SEQUENTIAL.SCENARIOS[scenario_id],
+                    artifact=object(), grpcurl=Path("/model/grpcurl"), proto_dir=Path("/model/protos"),
+                    dart=Path("/model/dart"), source_root=Path("/model/root"), keep_failed=False,
+                    cancel_event=threading.Event(), flutter=Path("/model/flutter"), device="macos")
+                if pruned:
+                    prune.assert_called_once_with(Path("/model/evidence"))
+                    self.assertEqual(result["voting_prune"], {"removed": []})
+                else:
+                    prune.assert_not_called()
+
+    def test_a_case_whose_cleanup_failed_keeps_its_voting_data(self):
+        with patch.object(SEQUENTIAL, "SequentialCase",
+                          side_effect=lambda *a, **kw: FakeCase(*a, fail="start", close_fails=True, **kw)), \
+             patch.object(SEQUENTIAL.tree, "prune_voting_data") as prune:
+            result = SEQUENTIAL.run_case(Path("/model/cases"), "a1b2c3d4e5", 1, SEQUENTIAL.SCENARIOS["flutter.macos.voting"],
+                artifact=object(), grpcurl=Path("/model/grpcurl"), proto_dir=Path("/model/protos"),
+                dart=Path("/model/dart"), source_root=Path("/model/root"), keep_failed=False,
+                cancel_event=threading.Event(), flutter=Path("/model/flutter"), device="macos")
+        self.assertEqual(result["cleanup_error"], "cleanup unproven")
+        prune.assert_not_called()
+
     def test_deadline_and_cancellation_have_their_own_status(self):
         result, _ = self.run_case(fail=SEQUENTIAL.runtime.RunnerError("deadline", 124))
         self.assertEqual(result["status"], "timed_out")
@@ -324,21 +352,16 @@ class SequenceHarness(unittest.TestCase):
 
 
 class BuildOutputTests(SequenceHarness):
-    """A run's fresh signer build is removed unless failed fixtures are kept beside it."""
+    """A run's fresh signer build is removed when the run ends, even beside kept fixtures."""
 
-    def test_passing_run_removes_the_build_but_keeps_its_logs(self):
-        report, producer = self.run_sequence("passed", keep_failed=True)
-        self.assertFalse((producer / "funder-build").exists())
-        self.assertTrue((producer / "case-manifest.json").exists())
-        self.assertEqual(report["build_prune"]["errors"], [])
-        self.assertGreaterEqual(report["build_prune"]["bytes"], 4096)
-
-    def test_failed_run_keeps_the_build_only_beside_kept_fixtures(self):
-        report, producer = self.run_sequence("failed", keep_failed=True)
-        self.assertTrue((producer / "funder-build" / "target" / "test-binary").exists())
-        self.assertNotIn("build_prune", report)
-        report, producer = self.run_sequence("failed", keep_failed=False)
-        self.assertFalse((producer / "funder-build").exists())
+    def test_every_run_removes_the_build_but_keeps_its_logs(self):
+        for status, keep_failed in (("passed", True), ("failed", True), ("failed", False)):
+            with self.subTest(status=status, keep_failed=keep_failed):
+                report, producer = self.run_sequence(status, keep_failed=keep_failed)
+                self.assertFalse((producer / "funder-build").exists())
+                self.assertTrue((producer / "case-manifest.json").exists())
+                self.assertEqual(report["build_prune"]["errors"], [])
+                self.assertGreaterEqual(report["build_prune"]["bytes"], 4096)
 
 
 class DefineTests(SequenceHarness):

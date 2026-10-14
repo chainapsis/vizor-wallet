@@ -47,9 +47,9 @@ Each run writes `.regtest-logs/zakura-<run id>/report.json` with every
 scenario's status, phase durations and evidence directory, which holds its
 process logs and fixture proofs. The run's build output (several GB) is
 removed when the run ends. `--keep-failed` keeps the stopped containers and
-wallet files of failed scenarios, and then the build too; the report lists their
-Docker IDs. Remove them with `docker rm`, `docker network rm` and
-`docker volume rm`, and the run directory, when done.
+wallet files of failed scenarios; the report lists their Docker IDs. Remove them
+with `docker rm`, `docker network rm` and `docker volume rm`, and the run
+directory, when done.
 
 `zakura_fixture_source.py` pins the vendored helper's bytes and the node and
 lightwalletd image digests (`zakuracore/zakura`,
@@ -94,9 +94,11 @@ Before the first case, a run with voting scenarios fetches the pinned
 desktop setup phase has migrated the voting power, `voting-services.sh` starts
 the vote chain, the nullifier PIR server and the voting gateway against the
 fixture. Their logs and the gateway's screenshots are written to the case's
-`voting/logs/`. The final-tally scenarios, `flutter.macos.voting-final-tally`
-and `flutter.macos.voting-ledger-final-tally`, also wait for the round to
-finalize and check its tally. Their vote window is 300 seconds unless
+`voting/logs/`. The PIR data and the vote chain home, several GB that each case
+regenerates, are removed once the case stops. The final-tally scenarios,
+`flutter.macos.voting-final-tally` and
+`flutter.macos.voting-ledger-final-tally`, also wait for the round to finalize
+and check its tally. Their vote window is 300 seconds unless
 `E2E_VOTE_WINDOW_SECS` sets another. `scripts/e2e/ledger-speculos-docker.sh
 voting-tally` runs them, with the Ledger one signing on its Speculos device.
 

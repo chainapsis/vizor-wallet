@@ -16,6 +16,9 @@ import stat
 
 # Producer logs and these markers/proofs outlive their build intermediates.
 BUILD_EVIDENCE = frozenset({"workspace-owner.json", "case-manifest.json", "build-proof.json"})
+# A voting case regenerates its PIR data and vote chain home from its fixture;
+# the logs, configs, ready file and tally beside them stay as evidence.
+VOTING_DATA = ("pir-data", "vote-home")
 _PRODUCER_RE = re.compile(r"vizor_[0-9a-f]{10}_w[0-9]+_[0-9]+\Z")
 
 
@@ -176,6 +179,61 @@ def output_bytes(entries) -> int:
         elif stat.S_ISREG(entry.identity[3]) and entry.identity[:2] not in seen:
             seen.add(entry.identity[:2])
             total += entry.identity[4]
+    return total
+
+
+def prune_voting_data(case_root: Path) -> dict:
+    """Remove a finished case's regenerated voting data, keeping its evidence.
+
+    The caller proves the case's processes have stopped. Errors are recorded,
+    not raised.
+    """
+    record, removed = {"removed": [], "bytes": 0, "errors": []}, []
+    try:
+        with contextlib.ExitStack() as stack:
+            case_fd = open_directory(stack, case_root, private=True)
+            try:
+                voting_fd = open_directory(stack, "voting", dir_fd=case_fd)
+            except FileNotFoundError:
+                return record
+            voting_id = identity(os.fstat(voting_fd))
+            for name in VOTING_DATA:
+                try:
+                    with contextlib.ExitStack() as data_stack:
+                        try:
+                            data_fd = open_directory(data_stack, name, dir_fd=voting_fd)
+                        except FileNotFoundError:
+                            continue
+                        data_id = identity(os.fstat(data_fd))
+
+                        def attached(name=name, data_id=data_id):
+                            if (identity(os.stat("voting", dir_fd=case_fd, follow_symlinks=False)) != voting_id
+                                or identity(os.stat(name, dir_fd=voting_fd, follow_symlinks=False)) != data_id):
+                                raise OwnedTreeError("voting data attachment changed")
+
+                        entries = scan(data_fd)
+                        remove_entries(data_fd, entries, attached)
+                    attached()
+                    os.rmdir(name, dir_fd=voting_fd)
+                    record["removed"].append("voting/" + name)
+                    removed.extend(entries)
+                except (OSError, OwnedTreeError) as error:
+                    record["errors"].append(f"voting/{name}: {error}")
+    except (OSError, OwnedTreeError) as error:
+        record["errors"].append(str(error))
+    record["bytes"] = _owned_bytes(removed)
+    return record
+
+
+def _owned_bytes(entries) -> int:
+    """Regular-file bytes below default-mode entries, which admit no hard links."""
+    total, pending = 0, list(entries)
+    while pending:
+        entry = pending.pop()
+        if entry.children is not None:
+            pending.extend(entry.children)
+        elif stat.S_ISREG(entry.identity[3]):
+            total += entry.identity[5]
     return total
 
 
