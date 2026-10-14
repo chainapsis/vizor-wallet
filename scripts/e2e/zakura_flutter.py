@@ -22,6 +22,8 @@ LIGHTWALLETD_PORT = 9067
 CONTROL_PORT = 18232
 PROXY_PORT = 19068
 UNAVAILABLE_PORT = 19067
+# The screenshot tests post to a host driver that captures the simulator.
+SCREENSHOT_PORT = 39070
 FIXED_PORTS = {"rpc": CONTROL_PORT, "lwd": LIGHTWALLETD_PORT, "proxy": PROXY_PORT}
 
 DEFAULT_ACTIVATION = 1
@@ -101,6 +103,7 @@ class FlutterScenario:
     env: tuple[tuple[str, str], ...] = ()
     funding: tuple[Funding, ...] = ()
     orchard_notes: OrchardNotes | None = None
+    screenshots: bool = False
     activation_height: int = DEFAULT_ACTIVATION
     initial_blocks: int = INITIAL_BLOCKS
     timeout_seconds: int = 1200
@@ -268,6 +271,16 @@ FLUTTER_SCENARIOS = (
                  ("VIZOR_DEEPLINK_BASE_URL", "https://link-dev.vizor.cash")),
         funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
     FlutterScenario(
+        "flutter.ios.screenshot-tour", "ios",
+        (Phase("integration_test/regtest_mobile_screenshot_tour_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE,),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),), screenshots=True),
+    FlutterScenario(
+        "flutter.ios.send-screenshots", "ios",
+        (Phase("integration_test/regtest_mobile_send_screenshot_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE,),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),), screenshots=True),
+    FlutterScenario(
         "flutter.ios.payment-uri-send", "ios",
         (Phase("integration_test/regtest_mobile_payment_uri_send_test.dart"),),
         defines=(LIGHTWALLETD_OVERRIDE,),
@@ -346,6 +359,11 @@ def derived_addresses(scenario):
 
 def needs_wallet_addresses(scenario):
     return bool(derived_addresses(scenario)) or scenario.orchard_notes is not None
+
+
+def fixed_ports(scenario):
+    """The default ports the scenario's fixture and host tools listen on."""
+    return {**FIXED_PORTS, **({"screenshots": SCREENSHOT_PORT} if scenario.screenshots else {})}
 
 
 def runner_sources(scenario):

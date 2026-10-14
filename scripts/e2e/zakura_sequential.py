@@ -16,8 +16,10 @@ from pathlib import Path
 import re
 import socket
 import subprocess
+import sys
 import threading
 import time
+import urllib.request
 import uuid
 
 import content_memo
@@ -253,6 +255,8 @@ class SequentialCase:
             raise runtime.RunnerError("a Flutter case needs a started control")
         deadline = time.monotonic() + scenario.timeout_seconds
         env = {**os.environ, **dict(scenario.env)}
+        if scenario.screenshots:
+            self._start_screenshot_driver(source_root, device, cancel_event)
         for phase in scenario.phases:
             _check(cancel_event)
             if phase.mine_before:
@@ -273,6 +277,27 @@ class SequentialCase:
                 raise runtime.RunnerError(f"{phase.test} failed", code)
             flutter_cases.verify_flutter_output(lines)
         self.front.assert_running()
+
+    def _start_screenshot_driver(self, source_root, device, cancel_event):
+        """Capture the simulator into this case's evidence; the case stops it on close."""
+        driver = self.case.start_process([sys.executable, "-u",
+            str(Path(source_root) / "scripts/e2e/screenshot-driver.py"), "--udid", device,
+            "--out-dir", str(self.case.workspace.root / "screenshots"),
+            "--port", str(flutter_cases.SCREENSHOT_PORT)],
+            env=os.environ.copy(), max_output_bytes=1024 * 1024)
+        health = f"http://127.0.0.1:{flutter_cases.SCREENSHOT_PORT}/health"
+        deadline = time.monotonic() + 10
+        while True:
+            _check(cancel_event)
+            try:
+                with urllib.request.urlopen(health, timeout=1) as response:
+                    if response.status == 200:
+                        return
+            except OSError:
+                pass
+            if driver.process.poll() is not None or time.monotonic() >= deadline:
+                raise runtime.RunnerError("the screenshot driver did not start")
+            time.sleep(0.1)
 
     def close(self, *, timeout=60.0):
         """Stop every case process, then remove the fixture, wallet files and port locks."""
@@ -349,7 +374,7 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
         session = SequentialCase(cases_root, run_id=run_id, case_index=case_index,
             scenario_id=scenario.id, platform=scenario.platform if is_flutter else "rust",
             activation_height=scenario.activation_height,
-            ports=flutter_cases.FIXED_PORTS if is_flutter else None)
+            ports=flutter_cases.fixed_ports(scenario) if is_flutter else None)
         result["evidence"] = str(session.case.workspace.root)
         begin("fixture")
         session.start(grpcurl=grpcurl, proto_dir=proto_dir, dart=dart, source_root=source_root,

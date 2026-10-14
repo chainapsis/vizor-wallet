@@ -251,6 +251,13 @@ class FlutterCommandTests(unittest.TestCase):
             device="DEVICE", source_root=Path("/model/root"))
         self.assertIn("--dart-define=ZCASH_E2E_FUNDING_SOURCE_HEIGHT=5", command)
 
+    def test_screenshot_scenarios_also_hold_the_screenshot_port(self):
+        flutter = SEQUENTIAL.flutter_cases
+        self.assertEqual(flutter.fixed_ports(SEQUENTIAL.SCENARIOS["flutter.ios.screenshot-tour"]),
+                         {**flutter.FIXED_PORTS, "screenshots": 39070})
+        self.assertEqual(flutter.fixed_ports(SEQUENTIAL.SCENARIOS["flutter.ios.import-sync"]),
+                         flutter.FIXED_PORTS)
+
     def test_derived_defines_need_their_address(self):
         flutter = SEQUENTIAL.flutter_cases
         scenario = SEQUENTIAL.SCENARIOS["flutter.ios.ironwood-pre-migration-send"]
