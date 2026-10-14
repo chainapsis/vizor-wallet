@@ -5,6 +5,10 @@ app's endpoint presets and the tests' defaults need no override: the
 lightwalletd shim on 9067, the HTTP control on 18232 and the in-test
 lightwalletd proxy on 19068. Nothing may listen on 19067, the Unavailable
 preset. Each phase is one `flutter test` run from the checkout root.
+
+The lightwalletd URL define replaces the endpoint preset with a custom one at
+bootstrap, which turns off fallback. Only scenarios whose shell runner passed
+it get it; the endpoint tests configure their presets themselves.
 """
 from __future__ import annotations
 
@@ -29,6 +33,8 @@ DESKTOP_UA = ("uregtest1nu0qx0nca0ncpshm5x47ldc90835m2fy3gjuh3empp5js9qanzjwxpps
 IMPORT_UA = ("uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s"
              "9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn")
 IMPORT_TRANSPARENT = "tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM"
+
+LIGHTWALLETD_OVERRIDE = ("ZCASH_E2E_LIGHTWALLETD_URL", f"http://127.0.0.1:{LIGHTWALLETD_PORT}")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,9 +71,19 @@ FLUTTER_SCENARIOS = (
     FlutterScenario(
         "flutter.macos.import-sync", "macos",
         (Phase("integration_test/regtest_import_sync_test.dart"),),
-        defines=(("ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN", "true"),),
+        defines=(LIGHTWALLETD_OVERRIDE, ("ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN", "true")),
         funding=(Funding(IMPORT_UA, 125_000_000, "ironwood", 1),
                  Funding(IMPORT_TRANSPARENT, 75_000_000, "transparent", 2))),
+    FlutterScenario(
+        "flutter.macos.fallback-endpoint", "macos",
+        (Phase("integration_test/regtest_fallback_endpoint_test.dart"),),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
+    FlutterScenario(
+        "flutter.macos.custom-endpoint-no-fallback", "macos",
+        (Phase("integration_test/regtest_custom_endpoint_no_fallback_test.dart"),)),
+    FlutterScenario(
+        "flutter.macos.sync-startup-stall-recovery", "macos",
+        (Phase("integration_test/regtest_sync_startup_stall_recovery_test.dart"),)),
 )
 
 # Python moves into the checkout before `flutter test` replaces it, so the
@@ -80,7 +96,6 @@ def flutter_command(scenario, phase, *, flutter, device, source_root):
     defines = {
         "ZCASH_DEFAULT_NETWORK": "regtest",
         "ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT": str(scenario.activation_height),
-        "ZCASH_E2E_LIGHTWALLETD_URL": f"http://127.0.0.1:{LIGHTWALLETD_PORT}",
         "ZCASH_E2E_DRIVER_URL": f"http://127.0.0.1:{CONTROL_PORT}",
     }
     if scenario.platform == "macos":

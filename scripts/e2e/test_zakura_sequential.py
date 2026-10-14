@@ -196,6 +196,9 @@ class FlutterCommandTests(unittest.TestCase):
         self.assertIn("--dart-define=ZCASH_E2E_DRIVER_URL=http://127.0.0.1:18232", command)
         self.assertIn("--dart-define=VIZOR_E2E_HIDDEN_WINDOW=true", command)
         self.assertNotIn("--dart-define=VIZOR_FORM_FACTOR=mobile", command)
+        fallback = self.command(SEQUENTIAL.SCENARIOS["flutter.macos.fallback-endpoint"])
+        self.assertFalse(any(part.startswith("--dart-define=ZCASH_E2E_LIGHTWALLETD_URL=")
+                             for part in fallback))
         moved = subprocess.run([sys.executable, "-c", command[2], tempfile.gettempdir(), "pwd"],
             check=True, capture_output=True, text=True).stdout.strip()
         self.assertEqual(Path(moved).resolve(), Path(tempfile.gettempdir()).resolve())
