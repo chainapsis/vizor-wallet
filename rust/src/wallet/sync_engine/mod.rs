@@ -414,6 +414,22 @@ fn is_pending_scan_range(range: &ScanRange) -> bool {
     range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
 }
 
+/// The pending range to scan next: the first, in priority order, that starts
+/// at or below the loop's tip. A ChainTip range the mempool observer queued
+/// past that tip waits behind history until a tip fetch reaches it. With no
+/// such range, the first pending range is returned and the loop's
+/// past-the-tip handling decides.
+fn next_pending_scan_range(ranges: &[ScanRange], current_tip_height: u64) -> Option<&ScanRange> {
+    let tip_end = chain_tip_exclusive_end(current_tip_height);
+    let mut pending = ranges.iter().filter(|range| is_pending_scan_range(range));
+    let first = pending.clone().next()?;
+    Some(
+        pending
+            .find(|range| range.block_range().start < tip_end)
+            .unwrap_or(first),
+    )
+}
+
 fn recovery_resubmit_exclusions(
     db_path: &str,
     ranges: &[ScanRange],
@@ -2493,6 +2509,19 @@ impl<T> Drop for Prefetch<T> {
     }
 }
 
+/// Whether a pending range that starts past the loop's tip should trigger one
+/// tip refresh instead of ending the attempt. The mempool observer writes new
+/// tips to the wallet DB while the loop scans, so the next ChainTip range can
+/// start past the tip this loop last fetched. One refresh per range start: a
+/// server still behind it ends the attempt as before, without spinning.
+fn refresh_tip_for_queued_range(range_start: u32, refreshed_for: &mut Option<u32>) -> bool {
+    if *refreshed_for == Some(range_start) {
+        return false;
+    }
+    *refreshed_for = Some(range_start);
+    true
+}
+
 async fn resolve_prefetched_or_download<T, Download, DownloadFuture>(
     prefetch: Option<Prefetch<T>>,
     start: BlockHeight,
@@ -3373,6 +3402,10 @@ async fn run_sync_impl(
     let mut queued_ranges = Some(initial_ranges);
     let mut voting_scan_end = None;
     let mut prev_remaining = initial_total;
+    // Set when a queued range starts past the loop's tip (see
+    // `refresh_tip_for_queued_range`).
+    let mut force_tip_refresh = false;
+    let mut queued_tip_refreshed_for: Option<u32> = None;
     log::info!(
         "[{}] sync: {} blocks to scan; progress job {} {:?} at {:.1}% ({:.0} of {:.0} work units left)",
         elapsed(),
@@ -3470,7 +3503,9 @@ async fn run_sync_impl(
         // against the last validated tip. A lower, non-divergent response is
         // returned as a transient error to avoid repeatedly requesting an
         // empty range from a lagging replica.
-        if last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL {
+        if force_tip_refresh || last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL
+        {
+            force_tip_refresh = false;
             last_periodic_tip_refresh_attempt = std::time::Instant::now();
             let fresh_tip_result =
                 get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
@@ -3597,7 +3632,7 @@ async fn run_sync_impl(
                 .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
         };
 
-        let range = match ranges.iter().find(|r| is_pending_scan_range(r)) {
+        let range = match next_pending_scan_range(&ranges, current_tip_height) {
             Some(r) => r.clone(),
             None => {
                 // A long catch-up can outlive the tip captured at startup.
@@ -3878,6 +3913,16 @@ async fn run_sync_impl(
         let Some((batch_size, end)) =
             scannable_batch_end(base_batch_size, start, range_end, current_tip_height)
         else {
+            if refresh_tip_for_queued_range(u32::from(start), &mut queued_tip_refreshed_for) {
+                log::info!(
+                    "[{}] sync: pending range {} starts after current tip {}; refreshing the tip",
+                    elapsed(),
+                    describe_block_range(range.block_range()),
+                    current_tip_height,
+                );
+                force_tip_refresh = true;
+                continue;
+            }
             log::info!(
                 "[{}] sync: pending range {} starts after current tip {}, waiting for tip advance",
                 elapsed(),
@@ -4547,9 +4592,7 @@ async fn run_sync_impl(
             work_model.pending_work(&post_ranges, current_tip_height),
         );
         prev_remaining = remaining;
-        let next_display_range = post_ranges
-            .iter()
-            .find(|r| is_pending_scan_range(r))
+        let next_display_range = next_pending_scan_range(&post_ranges, current_tip_height)
             .and_then(|r| {
                 let next_start = r.block_range().start;
                 planned_batch_end(base_batch_size, next_start, r.block_range().end)
@@ -5172,6 +5215,48 @@ mod tests {
             .unwrap();
         assert_eq!(new_work.cycle, 2);
         assert_eq!(new_work.percentage, 0.0);
+    }
+
+    #[test]
+    fn a_range_past_the_tip_refreshes_the_tip_once_per_start() {
+        let mut refreshed_for = None;
+        // The observer queued blocks past the loop's tip: refresh once.
+        assert!(refresh_tip_for_queued_range(3_513_789, &mut refreshed_for));
+        // Still past it after the refresh (a lagging server): end as before.
+        assert!(!refresh_tip_for_queued_range(3_513_789, &mut refreshed_for));
+        // A later block queues a new range: refresh again.
+        assert!(refresh_tip_for_queued_range(3_513_790, &mut refreshed_for));
+    }
+
+    #[test]
+    fn a_chain_tip_range_past_the_tip_waits_behind_history() {
+        // The observer wrote 3,516,998 while the loop's tip is 3,516,997.
+        let ranges = vec![
+            ScanRange::from_parts(
+                block_height(3_516_998)..block_height(3_516_999),
+                ScanPriority::ChainTip,
+            ),
+            ScanRange::from_parts(
+                block_height(1_800_000)..block_height(1_900_000),
+                ScanPriority::Scanned,
+            ),
+            ScanRange::from_parts(
+                block_height(1_900_000)..block_height(2_000_000),
+                ScanPriority::Historic,
+            ),
+        ];
+        let next = next_pending_scan_range(&ranges, 3_516_997).unwrap();
+        assert_eq!(next.priority(), ScanPriority::Historic);
+        assert_eq!(u32::from(next.block_range().start), 1_900_000);
+
+        // Once a tip fetch reaches it, the ChainTip range goes first again.
+        let next = next_pending_scan_range(&ranges, 3_516_998).unwrap();
+        assert_eq!(next.priority(), ScanPriority::ChainTip);
+
+        // With only that range left, it is returned for the tip refresh.
+        let next = next_pending_scan_range(&ranges[..2], 3_516_997).unwrap();
+        assert_eq!(next.priority(), ScanPriority::ChainTip);
+        assert!(next_pending_scan_range(&ranges[1..2], 3_516_997).is_none());
     }
 
     #[test]
