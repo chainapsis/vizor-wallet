@@ -174,12 +174,40 @@ def _kill_group(managed: ManagedProcess, sig: int, *, deadline: float | None = N
             # macOS can report EPERM for a dying/zombie group leader. Reap our
             # direct child and retry once; permission failure is NOT absence.
             if attempt:
-                raise
+                if sys.platform != "darwin":
+                    raise
+                # macOS also reports EPERM while the descendants launchd adopted
+                # wait as zombies to be reaped. A listing of only zombies ends
+                # cleanup as on Linux; any live member keeps the failure.
+                members = _darwin_group_members(managed._group_id)
+                if members is None or any(not zombie for _pid, zombie in members):
+                    raise PermissionError(f"{error}; group {managed._group_id} members: {members}") from error
+                if members:
+                    managed._capture.zombie_pids = tuple(pid for pid, _zombie in members)
+                    managed._capture.group_quiescent = True
+                else:
+                    managed._capture.group_gone = True
+                return False
             try:
                 remaining = 0.0 if deadline is None else max(0.0, deadline - time.monotonic())
                 managed.process.wait(timeout=remaining)
             except subprocess.TimeoutExpired:
                 raise error
+
+
+def _darwin_group_members(group_id: int) -> list[tuple[int, bool]] | None:
+    """Each process in the group with whether it is a zombie, or None if unknown."""
+    try:
+        listing = subprocess.run(["/bin/ps", "-A", "-o", "pid=,pgid=,stat="],
+            capture_output=True, text=True, timeout=5, check=True).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    members = []
+    for line in listing.splitlines():
+        fields = line.split()
+        if len(fields) == 3 and fields[1] == str(group_id):
+            members.append((int(fields[0]), "Z" in fields[2]))
+    return members
 
 
 def _reap_adopted_group_children(managed: ManagedProcess, deadline: float) -> None:

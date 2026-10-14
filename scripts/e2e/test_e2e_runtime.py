@@ -416,11 +416,17 @@ class RuntimeTests(unittest.TestCase):
         self.assertTrue(managed._capture.closed)
         self.assertFalse(managed.cleanup_completed)
 
-    def test_permission_error_never_counts_as_group_absence(self):
+    def finished(self):
         managed = self.start("print('finished')")
         managed.process.wait(timeout=3)
         managed.pump_thread.join(timeout=3)
-        with patch.object(RUNTIME.os, "killpg", side_effect=PermissionError("injected probe failure")):
+        return managed
+
+    def test_permission_error_never_counts_as_group_absence(self):
+        managed = self.finished()
+        # On macOS, a group listing with a live member keeps the failure.
+        with patch.object(RUNTIME.os, "killpg", side_effect=PermissionError("injected probe failure")), \
+             patch.object(RUNTIME, "_darwin_group_members", return_value=[(managed.process.pid, False)]):
             with self.assertRaisesRegex(RUNTIME.RunnerError, "injected probe failure"):
                 RUNTIME.terminate_process(managed, timeout=0.05)
         self.assertFalse(managed._capture.group_gone)
@@ -428,6 +434,26 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(RUNTIME.RunnerError, "injected probe failure"):
             RUNTIME.terminate_process(managed)
         self.assertTrue(managed._capture.closed)
+
+    def test_macos_zombie_only_group_ends_cleanup_with_its_zombies_recorded(self):
+        for members, zombies in (([(4242, True), (4243, True)], (4242, 4243)), ([], ())):
+            managed = self.finished()
+            with self.subTest(members=members), patch.object(RUNTIME.sys, "platform", "darwin"), \
+                 patch.object(RUNTIME.os, "killpg", side_effect=PermissionError("zombie group")), \
+                 patch.object(RUNTIME, "_darwin_group_members", return_value=members):
+                RUNTIME.terminate_process(managed, timeout=1)
+                self.assertTrue(managed.cleanup_completed)
+                self.assertEqual(managed.unreaped_zombie_pids, zombies)
+
+    def test_macos_live_or_unknown_member_keeps_the_permission_failure(self):
+        for members in (None, [(4242, True), (4243, False)]):
+            managed = self.finished()
+            with self.subTest(members=members), patch.object(RUNTIME.sys, "platform", "darwin"), \
+                 patch.object(RUNTIME.os, "killpg", side_effect=PermissionError("live member")), \
+                 patch.object(RUNTIME, "_darwin_group_members", return_value=members):
+                with self.assertRaisesRegex(RUNTIME.RunnerError, "live member.*members"):
+                    RUNTIME.terminate_process(managed, timeout=0.05)
+                self.assertFalse(managed.cleanup_completed)
 
     def test_output_join_exception_remains_failed_after_retry(self):
         managed = self.start("print('finished')")
