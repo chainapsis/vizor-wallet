@@ -2509,6 +2509,61 @@ impl<T> Drop for Prefetch<T> {
     }
 }
 
+/// The post-batch chain tip, fetched while the batch scans so the round trip
+/// overlaps CPU work instead of waiting after it. Dropping it aborts the
+/// request.
+struct TipPrefetch {
+    handle: Option<
+        tokio::task::JoinHandle<Result<zcash_client_backend::proto::service::BlockId, SyncError>>,
+    >,
+    /// When the request was sent. The tip it returns is as old as this, not
+    /// as old as the moment it is read after the scan.
+    requested_at: std::time::Instant,
+}
+
+impl TipPrefetch {
+    fn spawn(
+        mut client: CompactTxStreamerClient<Channel>,
+        lightwalletd_url: &str,
+        network: WalletNetwork,
+    ) -> Self {
+        let lightwalletd_url = lightwalletd_url.to_owned();
+        Self {
+            handle: Some(tokio::spawn(async move {
+                get_latest_block_recorded(&mut client, &lightwalletd_url, network).await
+            })),
+            requested_at: std::time::Instant::now(),
+        }
+    }
+
+    /// The tip, or `None` when cancellation or a mode handoff won.
+    async fn resolve(
+        mut self,
+        should_exit: &impl Fn() -> bool,
+    ) -> Option<Result<zcash_client_backend::proto::service::BlockId, SyncError>> {
+        let handle = self.handle.as_mut()?;
+        let result = tokio::select! {
+            biased;
+            _ = watch_for_exit(should_exit) => return None,
+            result = handle => result,
+        };
+        self.handle = None;
+        Some(result.unwrap_or_else(|error| {
+            Err(SyncError::other(format!(
+                "post-batch tip fetch task failed: {error}"
+            )))
+        }))
+    }
+}
+
+impl Drop for TipPrefetch {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
+
 /// Whether a pending range that starts past the loop's tip should trigger one
 /// tip refresh instead of ending the attempt. The mempool observer writes new
 /// tips to the wallet DB while the loop scans, so the next ChainTip range can
@@ -4027,6 +4082,8 @@ async fn run_sync_impl(
                 );
             }
         }
+        let tip_prefetch =
+            (!should_exit()).then(|| TipPrefetch::spawn(client.clone(), lightwalletd_url, network));
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -4418,9 +4475,18 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        let fresh_tip_result =
-            get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
-        let Some(fresh_tip_result) = tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+        // Started before the scan; usually complete by now. A tip proved
+        // unchanged counts as validated when it was requested, so the final
+        // tip check before completion stays as strict as a fetch made here.
+        let tip_requested_at = tip_prefetch
+            .as_ref()
+            .map_or_else(std::time::Instant::now, |prefetch| prefetch.requested_at);
+        let fresh_tip_result = match tip_prefetch {
+            Some(tip_prefetch) => tip_prefetch.resolve(&should_exit).await,
+            None => Some(get_latest_block_recorded(&mut client, lightwalletd_url, network).await),
+        };
+        let Some(fresh_tip_result) = fresh_tip_result
+            .and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
         else {
             log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
             return Ok(());
@@ -4450,7 +4516,7 @@ async fn run_sync_impl(
                 let relation = relation?;
                 match relation {
                     RefreshedTipRelation::Unchanged => {
-                        last_completion_tip_validation = std::time::Instant::now();
+                        last_completion_tip_validation = tip_requested_at;
                         completion_tip_validation_required = false;
                         last_periodic_tip_refresh_attempt = std::time::Instant::now();
                     }
@@ -5226,6 +5292,31 @@ mod tests {
         assert!(!refresh_tip_for_queued_range(3_513_789, &mut refreshed_for));
         // A later block queues a new range: refresh again.
         assert!(refresh_tip_for_queued_range(3_513_790, &mut refreshed_for));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_tip_prefetch_returns_the_tip_requested_before_it_is_read() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let before = std::time::Instant::now();
+        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+        let requested_at = prefetch.requested_at;
+        let tip = prefetch.resolve(&|| false).await.unwrap().unwrap();
+
+        assert_eq!(tip.height, 3_516_998);
+        assert_eq!(lwd.count("/GetLatestBlock"), 1);
+        assert!(before <= requested_at && requested_at <= std::time::Instant::now());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_tip_prefetch_yields_to_an_exit_while_the_server_holds_it() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let _held = lwd.hold_responses("/GetLatestBlock");
+        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+
+        let resolved =
+            tokio::time::timeout(Duration::from_secs(5), prefetch.resolve(&|| true)).await;
+
+        assert!(matches!(resolved, Ok(None)));
     }
 
     #[test]
