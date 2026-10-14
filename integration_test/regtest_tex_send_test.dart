@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
+import 'support/regtest_control.dart';
 
 const _network = String.fromEnvironment(
   'ZCASH_E2E_NETWORK',
@@ -24,17 +25,7 @@ const _lightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
 );
-const _zcashdRpcUrl = String.fromEnvironment(
-  'ZCASH_E2E_ZCASHD_RPC_URL',
-  defaultValue: 'http://127.0.0.1:18232',
-);
 const _texAddress = String.fromEnvironment('ZCASH_E2E_TEX_ADDRESS');
-const _driverUrl = String.fromEnvironment(
-  'ZCASH_E2E_DRIVER_URL',
-  defaultValue: 'http://127.0.0.1:39068',
-);
-const _zcashdRpcUser = 'zcash';
-const _zcashdRpcPassword = 'zcash';
 const _accountsKey = 'zcash_accounts';
 const _firstMnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
@@ -155,12 +146,13 @@ void main() {
       // source, and the sender must recognize and be able to spend them.
       final ephemeral = await _texEphemeralSource(receiverAccountUuid);
       _log('TEX ephemeral source $ephemeral');
-      final returned = await _postDriver('/fund-confirmed', {
-        'address': ephemeral,
-        'amount': _returnAmount,
-        'confirmations': 1,
-      });
-      _log('returned funds txid=${returned['txid']}');
+      final returned = await fundRegtestFixture(
+        ephemeral,
+        _returnAmount,
+        pool: 'transparent',
+        confirmations: 1,
+      );
+      _log('returned funds txid=$returned');
       // The source becomes checkable once the first leg can no longer expire.
       await _mineRegtestBlocks(45);
 
@@ -327,8 +319,8 @@ Future<BigInt> _estimateSendFee({
 Future<void> _mineRegtestBlocks(int blocks) async {
   _log('mining $blocks regtest blocks');
 
-  final before = await _zcashdRpc<int>('getblockcount');
-  await _zcashdRpc<List<Object?>>('generate', [blocks]);
+  final before = await regtestTipHeight();
+  await mineRegtestFixture(blocks);
   final targetHeight = before + blocks;
   final deadline = DateTime.now().add(const Duration(seconds: 30));
 
@@ -358,16 +350,10 @@ Future<String> _texEphemeralSource(String receiverAccountUuid) async {
   final secondLeg = history.firstWhere(
     (tx) => tx.txKind == 'received' && tx.displayAmount == _sendZatoshi,
   );
-  // Wallet txids are in internal byte order; zcashd RPC expects display order.
-  final tx = await _zcashdRpc<Map<String, Object?>>('getrawtransaction', [
-    _reverseTxidHex(secondLeg.txidHex),
-    1,
-  ]);
+  // Wallet txids are in internal byte order; the node expects display order.
+  final tx = await regtestTransaction(_reverseTxidHex(secondLeg.txidHex));
   final input = (tx['vin']! as List<Object?>).single! as Map<String, Object?>;
-  final prevout = await _zcashdRpc<Map<String, Object?>>('getrawtransaction', [
-    input['txid'],
-    1,
-  ]);
+  final prevout = await regtestTransaction(input['txid']! as String);
   final output =
       (prevout['vout']! as List<Object?>)[input['vout']! as int]!
           as Map<String, Object?>;
@@ -415,75 +401,6 @@ Future<void> _waitForShieldBalanceUi(WidgetTester tester) async {
     description: 'shield balance action to render',
     timeout: const Duration(minutes: 2),
   );
-}
-
-Future<Map<String, Object?>> _postDriver(
-  String path,
-  Map<String, Object?> payload, {
-  Duration timeout = const Duration(minutes: 2),
-}) async {
-  final client = HttpClient();
-  try {
-    final request = await client
-        .postUrl(Uri.parse('$_driverUrl$path'))
-        .timeout(timeout);
-    final bodyBytes = utf8.encode(jsonEncode(payload));
-    request.headers.contentType = ContentType.json;
-    request.contentLength = bodyBytes.length;
-    request.add(bodyBytes);
-
-    final response = await request.close().timeout(timeout);
-    final body = await utf8.decoder.bind(response).join().timeout(timeout);
-    if (response.statusCode != HttpStatus.ok) {
-      throw StateError(
-        'E2E driver $path failed: HTTP ${response.statusCode}\n$body',
-      );
-    }
-    return jsonDecode(body) as Map<String, Object?>;
-  } finally {
-    client.close(force: true);
-  }
-}
-
-Future<T> _zcashdRpc<T>(
-  String method, [
-  List<Object?> params = const [],
-]) async {
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(Uri.parse(_zcashdRpcUrl));
-    final credentials = base64Encode(
-      utf8.encode('$_zcashdRpcUser:$_zcashdRpcPassword'),
-    );
-    request.headers
-      ..set(HttpHeaders.authorizationHeader, 'Basic $credentials')
-      ..contentType = ContentType.json;
-    request.write(
-      jsonEncode({
-        'jsonrpc': '1.0',
-        'id': 'regtest-tex-e2e',
-        'method': method,
-        'params': params,
-      }),
-    );
-
-    final response = await request.close();
-    final body = await utf8.decoder.bind(response).join();
-    if (response.statusCode != HttpStatus.ok) {
-      throw StateError(
-        'zcashd RPC $method failed: HTTP ${response.statusCode}',
-      );
-    }
-
-    final decoded = jsonDecode(body) as Map<String, Object?>;
-    final error = decoded['error'];
-    if (error != null) {
-      throw StateError('zcashd RPC $method failed: $error');
-    }
-    return decoded['result'] as T;
-  } finally {
-    client.close(force: true);
-  }
 }
 
 Future<void> _openWallet(WidgetTester tester) async {

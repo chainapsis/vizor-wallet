@@ -41,14 +41,17 @@ class SelectionTests(unittest.TestCase):
         for scenario in flutter.FLUTTER_SCENARIOS:
             with self.subTest(scenario=scenario.id):
                 notes = scenario.orchard_notes
-                transactions = [(payment.source_height,) for payment in scenario.funding]
-                transactions += list(notes.sources if notes else ())
+                transactions = flutter.runner_sources(scenario)
                 sources = [height for heights in transactions for height in heights]
                 self.assertEqual(len(sources), len(set(sources)))
                 # Each funding transaction mines 10 blocks, and spending the
                 # coinbase of height h needs a tip of h + 99 or more.
                 for index, heights in enumerate(transactions):
                     self.assertGreaterEqual(scenario.initial_blocks + 10 * index, max(heights) + 99)
+                # The tests' own payments may spend before mining anything.
+                last = scenario.phases[-1]
+                test_sources = flutter.funding_source_height(scenario, last) + last.fundings - 1
+                self.assertGreaterEqual(scenario.initial_blocks + 10 * len(transactions), test_sources + 99)
                 self.assertEqual(scenario.activation_height, 500 if notes else 1)
                 for value in flutter.derived_addresses(scenario):
                     self.assertIn(value.field, {"unifiedAddress", "transparentAddress", "texAddress"})
@@ -235,6 +238,18 @@ class FlutterCommandTests(unittest.TestCase):
         moving = dataclasses.replace(mobile, defines=(("ZCASH_E2E_DRIVER_URL", "http://127.0.0.1:1"),))
         with self.assertRaises(ValueError):
             self.command(moving)
+
+    def test_each_phase_starts_spending_after_the_runner_and_earlier_phases(self):
+        flutter = SEQUENTIAL.flutter_cases
+        scenario = flutter.FlutterScenario("flutter.macos.model", "macos",
+            (flutter.Phase("integration_test/a_test.dart", fundings=2),
+             flutter.Phase("integration_test/b_test.dart", fundings=1)),
+            funding=(flutter.Funding(flutter.DESKTOP_UA, 1, "ironwood", 1),
+                     flutter.Funding(flutter.IMPORT_TRANSPARENT, 1, "transparent", 2)))
+        self.assertEqual([flutter.funding_source_height(scenario, phase) for phase in scenario.phases], [3, 5])
+        command = flutter.flutter_command(scenario, scenario.phases[1], flutter=Path("/model/flutter"),
+            device="DEVICE", source_root=Path("/model/root"))
+        self.assertIn("--dart-define=ZCASH_E2E_FUNDING_SOURCE_HEIGHT=5", command)
 
     def test_derived_defines_need_their_address(self):
         flutter = SEQUENTIAL.flutter_cases

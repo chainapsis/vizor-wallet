@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
@@ -14,6 +13,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_onboarding_flow.dart';
+import 'support/regtest_control.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 const _mnemonic =
@@ -23,9 +23,7 @@ const _mnemonic =
 const _password = 'Vizor123!';
 const _primaryProxyUrl = 'http://127.0.0.1:19068';
 const _realLightwalletdUrl = 'http://127.0.0.1:9067';
-const _driverUrl = String.fromEnvironment('ZCASH_E2E_DRIVER_URL');
 const _unifiedAddress = String.fromEnvironment('ZCASH_E2E_UNIFIED_ADDRESS');
-const _faucetZaddr = String.fromEnvironment('ZCASH_E2E_FAUCET_ZADDR');
 const _fallbackToast =
     'Selected endpoint is unstable. Switched to fallback endpoint.';
 const _primaryToast = 'Selected endpoint recovered. Switched back.';
@@ -41,13 +39,8 @@ void main() {
   testWidgets(
     'falls back on slow height, returns to primary, then falls back when down',
     (tester) async {
-      if (_unifiedAddress.isEmpty || _faucetZaddr.isEmpty) {
-        fail(
-          'ZCASH_E2E_UNIFIED_ADDRESS and ZCASH_E2E_FAUCET_ZADDR are required.',
-        );
-      }
-      if (_driverUrl.isEmpty) {
-        fail('ZCASH_E2E_DRIVER_URL is required.');
+      if (_unifiedAddress.isEmpty) {
+        fail('ZCASH_E2E_UNIFIED_ADDRESS is required.');
       }
 
       addTearDown(() async {
@@ -180,37 +173,8 @@ Future<void> _configureSlowPresetPrimary() async {
 
 Future<void> _fundWallet(String amountZec) async {
   _log('funding $_unifiedAddress with $amountZec $_currencyTicker');
-  await _postDriver('/fund-unmined-prepared', {
-    'address': _unifiedAddress,
-    'amount': amountZec,
-  });
-  await _postDriver('/mine', {'blocks': 3});
-}
-
-Future<Map<String, dynamic>> _postDriver(
-  String path,
-  Map<String, Object> payload,
-) async {
-  final client = HttpClient();
-  try {
-    final bodyBytes = utf8.encode(jsonEncode(payload));
-    final request = await client.postUrl(Uri.parse('$_driverUrl$path'));
-    request.headers.contentType = ContentType.json;
-    request.contentLength = bodyBytes.length;
-    request.add(bodyBytes);
-    final response = await request.close();
-    final body = await utf8.decodeStream(response);
-    final decoded = jsonDecode(body) as Map<String, dynamic>;
-    if (response.statusCode != HttpStatus.ok) {
-      fail(
-        'E2E driver $path failed with status ${response.statusCode}: '
-        '${decoded['error'] ?? body}',
-      );
-    }
-    return decoded;
-  } finally {
-    client.close(force: true);
-  }
+  await fundRegtestFixtureUnmined(_unifiedAddress, amountZec);
+  await mineRegtestFixture(3);
 }
 
 Future<void> _cleanupE2eWalletState() async {

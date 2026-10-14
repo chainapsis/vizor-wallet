@@ -50,6 +50,8 @@ class Derived:
 
 
 RECEIVER_UA = Derived(RECEIVER_MNEMONIC, "unifiedAddress")
+RECEIVER_TEX = Derived(RECEIVER_MNEMONIC, "texAddress")
+DESKTOP_TRANSPARENT = Derived(DESKTOP_MNEMONIC, "transparentAddress")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,10 +78,14 @@ class OrchardNotes:
 
 @dataclasses.dataclass(frozen=True)
 class Phase:
-    """One `flutter test` run; `mine_before` blocks are mined while no app runs."""
+    """One `flutter test` run; `mine_before` blocks are mined while no app runs.
+
+    `fundings` counts the coinbases the test spends through the control.
+    """
     test: str
     mine_before: int = 0
     args: tuple[str, ...] = ()
+    fundings: int = 0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -132,6 +138,61 @@ FLUTTER_SCENARIOS = (
     FlutterScenario(
         "flutter.macos.sync-startup-stall-recovery", "macos",
         (Phase("integration_test/regtest_sync_startup_stall_recovery_test.dart"),)),
+    FlutterScenario(
+        "flutter.macos.slow-height-fallback", "macos",
+        (Phase("integration_test/regtest_slow_height_fallback_test.dart", fundings=3),),
+        defines=(("ZCASH_E2E_UNIFIED_ADDRESS", DESKTOP_UA),),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
+    FlutterScenario(
+        "flutter.macos.shield-transparent", "macos",
+        (Phase("integration_test/regtest_shield_transparent_test.dart", fundings=1),),
+        defines=(LIGHTWALLETD_OVERRIDE,)),
+    FlutterScenario(
+        "flutter.macos.shield-transparent-retry", "macos",
+        (Phase("integration_test/regtest_shield_transparent_retry_test.dart", fundings=1),)),
+    FlutterScenario(
+        "flutter.macos.multi-account-send", "macos",
+        (Phase("integration_test/regtest_multi_account_send_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE,),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),
+                 Funding(DESKTOP_TRANSPARENT, 75_000_000, "transparent", 2))),
+    FlutterScenario(
+        "flutter.macos.tex-send", "macos",
+        (Phase("integration_test/regtest_tex_send_test.dart", fundings=1),),
+        defines=(LIGHTWALLETD_OVERRIDE, ("ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN", "true"),
+                 ("ZCASH_E2E_TEX_ADDRESS", RECEIVER_TEX)),
+        env=(("ZCASH_E2E_EPHEMERAL_CHECKS_DUE_NOW", "1"),),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
+    FlutterScenario(
+        "flutter.macos.payment-uri-send", "macos",
+        (Phase("integration_test/regtest_payment_uri_send_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE,),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
+    FlutterScenario(
+        "flutter.macos.payment-uri-locked-send", "macos",
+        (Phase("integration_test/regtest_payment_uri_locked_send_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE,),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
+    FlutterScenario(
+        "flutter.macos.payment-request-round-trip", "macos",
+        (Phase("integration_test/regtest_payment_request_round_trip_test.dart"),),
+        defines=(LIGHTWALLETD_OVERRIDE, ("VIZOR_E2E_STEP_DELAY_MS", "0")),
+        funding=(Funding(DESKTOP_UA, 125_000_000, "ironwood", 1),)),
+    FlutterScenario(
+        "flutter.macos.mempool-receive-history", "macos",
+        (Phase("integration_test/regtest_mempool_receive_history_test.dart", fundings=1),),
+        defines=(LIGHTWALLETD_OVERRIDE,)),
+    # The app syncs 750 blocks in slow batches, so the payment lands mid-sync.
+    FlutterScenario(
+        "flutter.macos.mempool-during-sync", "macos",
+        (Phase("integration_test/regtest_mempool_receive_history_test.dart", fundings=1),),
+        defines=(LIGHTWALLETD_OVERRIDE, ("ZCASH_E2E_MEMPOOL_TEST_MODE", "during-sync")),
+        env=(("ZCASH_E2E_SYNC_BATCH_SIZE", "50"), ("ZCASH_E2E_SYNC_BATCH_DELAY_MS", "750")),
+        initial_blocks=750),
+    FlutterScenario(
+        "flutter.macos.mempool-expiry", "macos",
+        (Phase("integration_test/regtest_mempool_receive_history_test.dart", fundings=1),),
+        defines=(LIGHTWALLETD_OVERRIDE, ("ZCASH_E2E_MEMPOOL_TEST_MODE", "expiry"))),
     FlutterScenario(
         "flutter.ios.create-sync", "ios",
         (Phase("integration_test/regtest_mobile_create_sync_test.dart"),),
@@ -221,6 +282,22 @@ def needs_wallet_addresses(scenario):
     return bool(derived_addresses(scenario)) or scenario.orchard_notes is not None
 
 
+def runner_sources(scenario):
+    """Coinbase heights the runner spends, one tuple per funding transaction."""
+    notes = scenario.orchard_notes
+    return [(payment.source_height,) for payment in scenario.funding] + list(notes.sources if notes else ())
+
+
+def funding_source_height(scenario, phase):
+    """The first coinbase height the phase's test may spend.
+
+    The runner's own payments take the lowest heights, and each earlier phase
+    takes the next ones.
+    """
+    first = 1 + max((height for heights in runner_sources(scenario) for height in heights), default=0)
+    return first + sum(earlier.fundings for earlier in scenario.phases[:scenario.phases.index(phase)])
+
+
 def flutter_command(scenario, phase, *, flutter, device, source_root, derived=None):
     """The phase's `flutter test` command line, run from the checkout root.
 
@@ -230,6 +307,7 @@ def flutter_command(scenario, phase, *, flutter, device, source_root, derived=No
         "ZCASH_DEFAULT_NETWORK": "regtest",
         "ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT": str(scenario.activation_height),
         "ZCASH_E2E_DRIVER_URL": f"http://127.0.0.1:{CONTROL_PORT}",
+        "ZCASH_E2E_FUNDING_SOURCE_HEIGHT": str(funding_source_height(scenario, phase)),
     }
     if scenario.platform == "macos":
         defines["VIZOR_E2E_HIDDEN_WINDOW"] = "true"

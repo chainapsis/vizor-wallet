@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
@@ -15,10 +14,10 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
+import 'support/regtest_control.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 final _network = kZcashDefaultNetworkName;
-const _driverUrl = String.fromEnvironment('ZCASH_E2E_DRIVER_URL');
 const _password = 'Vizor123!';
 const _primaryProxyUrl = 'http://127.0.0.1:19068';
 const _transparentFundingAmount = '0.75';
@@ -40,10 +39,6 @@ void main() {
   testWidgets(
     'retries shielding after first broadcast failure and completes',
     (tester) async {
-      if (_driverUrl.isEmpty) {
-        fail('ZCASH_E2E_DRIVER_URL is required.');
-      }
-
       addTearDown(() async {
         await _cleanupE2eWalletState();
       });
@@ -267,47 +262,12 @@ Future<String> _transparentAddressForAccount(String accountUuid) async {
 
 Future<String> _fundConfirmed(String address, String amount) async {
   _log('requesting confirmed transparent funding of $amount $_currencyTicker');
-  final response = await _postDriver('/fund-confirmed', {
-    'address': address,
-    'amount': amount,
-    'confirmations': 10,
-  }, timeout: const Duration(minutes: 10));
-  final txid = response['txid'] as String? ?? '';
-  if (txid.isEmpty) fail('E2E driver did not return a txid.');
-  return txid;
+  return fundRegtestFixture(address, amount, pool: 'transparent');
 }
 
 Future<void> _mineRegtestBlocks(int blocks) async {
   _log('requesting external mining of $blocks regtest blocks');
-  await _postDriver('/mine', {'blocks': blocks});
-}
-
-Future<Map<String, Object?>> _postDriver(
-  String path,
-  Map<String, Object?> payload, {
-  Duration timeout = const Duration(minutes: 2),
-}) async {
-  final client = HttpClient();
-  try {
-    final request = await client
-        .postUrl(Uri.parse('$_driverUrl$path'))
-        .timeout(timeout);
-    final bodyBytes = utf8.encode(jsonEncode(payload));
-    request.headers.contentType = ContentType.json;
-    request.contentLength = bodyBytes.length;
-    request.add(bodyBytes);
-
-    final response = await request.close().timeout(timeout);
-    final body = await utf8.decoder.bind(response).join().timeout(timeout);
-    if (response.statusCode != HttpStatus.ok) {
-      throw StateError(
-        'E2E driver $path failed: HTTP ${response.statusCode}\n$body',
-      );
-    }
-    return jsonDecode(body) as Map<String, Object?>;
-  } finally {
-    client.close(force: true);
-  }
+  await mineRegtestFixture(blocks);
 }
 
 Future<String> _accountUuidAtOrder(int order) async {
