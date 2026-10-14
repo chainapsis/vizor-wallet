@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# flutter-macos-ironwood-migration.sh now runs one fixed scenario on a direct
+# Zakura fixture and ignores the E2E_* settings this script passes it.
+echo "migration_sim_test has not moved to the direct Zakura fixtures yet; see README.md." >&2
+exit 1
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SIM_DIR="$ROOT_DIR/migration_sim_test"
 ARTIFACT_DIR="$SIM_DIR/artifacts"
