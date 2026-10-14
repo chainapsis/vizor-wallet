@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import fcntl
-import importlib.util
 import os
 from pathlib import Path
 import socket
@@ -14,13 +13,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 
-SPEC = importlib.util.spec_from_file_location(
-    "native_ports", Path(__file__).with_name("native_ports.py")
-)
-assert SPEC is not None and SPEC.loader is not None
-PORTS = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = PORTS
-SPEC.loader.exec_module(PORTS)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import native_ports as PORTS
 
 
 class NativePortsTests(unittest.TestCase):

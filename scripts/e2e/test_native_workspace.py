@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,11 +16,8 @@ from unittest.mock import patch
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SPEC = importlib.util.spec_from_file_location("native_workspace", SCRIPT_DIR / "native_workspace.py")
-assert SPEC is not None and SPEC.loader is not None
-WORKSPACE = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = WORKSPACE
-SPEC.loader.exec_module(WORKSPACE)
+sys.path.insert(0, str(SCRIPT_DIR))
+import native_workspace as WORKSPACE
 
 
 class NativeWorkspaceTests(unittest.TestCase):
