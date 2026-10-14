@@ -32,6 +32,17 @@ pub fn get_sync_mode() -> u8 {
     DESIRED_SYNC_MODE.load(Ordering::SeqCst)
 }
 
+/// Set how much of the device sync scans may use, from the device's thermal
+/// state and power mode: 0 scans on every core at the default priority, 1 on
+/// half the cores at a lower priority (the efficiency cores on Apple devices),
+/// 2 on the fewest threads at background priority. A running sync applies it
+/// from its next batch; later syncs start with it.
+#[frb(sync)]
+pub fn set_sync_scan_power(level: u8) {
+    use crate::wallet::sync_engine::scan_power;
+    scan_power::set(scan_power::ScanPower::from_level(level));
+}
+
 /// Update the foreground sync account whose pending transparent refreshes
 /// should be scheduled first. Requests already in flight are not interrupted.
 #[frb(sync)]

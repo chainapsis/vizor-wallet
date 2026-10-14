@@ -59,6 +59,7 @@ mod lwd;
 pub(crate) mod mempool;
 mod progress_work;
 mod retry_progress;
+pub(crate) mod scan_power;
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
@@ -3567,6 +3568,8 @@ async fn run_sync_impl(
     // `refresh_tip_for_queued_range`).
     let mut force_tip_refresh = false;
     let mut queued_tip_refreshed_for: Option<u32> = None;
+    // Logged when a batch scans at a different power level than the last.
+    let mut last_scan_power = None;
     log::info!(
         "[{}] sync: {} blocks to scan; progress job {} {:?} at {:.1}% ({:.0} of {:.0} work units left)",
         elapsed(),
@@ -4259,14 +4262,21 @@ async fn run_sync_impl(
                 );
             }
             voting_scan_end = Some(end);
-            scan_cached_blocks(
-                &network,
-                &block_source,
-                &mut db,
-                start,
-                &from_state,
-                batch_blocks as usize,
-            )
+            let power = scan_power::current();
+            if last_scan_power != Some(power) {
+                log::info!("[{}] sync: scanning at {power:?} power", elapsed());
+                last_scan_power = Some(power);
+            }
+            scan_power::install(power, || {
+                scan_cached_blocks(
+                    &network,
+                    &block_source,
+                    &mut db,
+                    start,
+                    &from_state,
+                    batch_blocks as usize,
+                )
+            })
             .map_err(|e| match e {
                 ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
                     let at_height = u32::from(scan_err.at_height()) as u64;

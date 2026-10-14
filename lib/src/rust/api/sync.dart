@@ -5,7 +5,6 @@
 
 import '../frb_generated.dart';
 import 'keystone.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
@@ -19,6 +18,14 @@ void setSyncMode({required int mode}) =>
 
 /// Get the current desired sync mode.
 int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
+
+/// Set how much of the device sync scans may use, from the device's thermal
+/// state and power mode: 0 scans on every core at the default priority, 1 on
+/// half the cores at a lower priority (the efficiency cores on Apple devices),
+/// 2 on the fewest threads at background priority. A running sync applies it
+/// from its next batch; later syncs start with it.
+void setSyncScanPower({required int level}) =>
+    RustLib.instance.api.crateApiSyncSetSyncScanPower(level: level);
 
 /// Update the foreground sync account whose pending transparent refreshes
 /// should be scheduled first. Requests already in flight are not interrupted.
