@@ -114,8 +114,8 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 ### Desktop voting through final tally
 
 Run `scripts/e2e/ledger-speculos-docker.sh voting-tally` with Docker and the
-regtest voting prerequisites available. This lane builds Zcash 3.9.4
-(`1a0f6495458ecb77abf97c8cff25b0a1a344daaa`) with `--features testnet` and
+voting prerequisites of `scripts/e2e/README.md` available. This lane builds Zcash
+3.9.4 (`1a0f6495458ecb77abf97c8cff25b0a1a344daaa`) with `--features testnet` and
 changes its install paths to `44'/1'` and `32'/1'` in a disposable checkout.
 3.10.0 replaces that feature with a `variant_testnet` build named "Zcash Test",
 which Vizor does not open; voting needs only NU6.3.
@@ -127,13 +127,15 @@ for coin type 1, but the install paths do not change automatically. Vizor's
 production mainnet restriction remains in place. This test variant is not an
 officially distributed testnet app.
 
-The lane runs software and Ledger accounts against separate fresh local chains
-using the same public disposable mnemonic, funded notes, four proposals and
-decision 0. The helper exports the real device UFVK at coin type 1 and re-encodes
-it from testnet to regtest without changing its keys. The Ledger case imports it
-as a hardware account with no mnemonic stored in Vizor. Funding and migration
-are prepared with the software fixture before this import; this lane does not
-test Ledger shielding.
+The lane runs the `flutter.macos.voting-final-tally` (software account) and
+`flutter.macos.voting-ledger-final-tally` (Ledger account) scenarios through
+`scripts/e2e/zakura-run.py`, each on its own direct Zakura fixture, using the
+same public disposable mnemonic, funded notes, four proposals and decision 0.
+The helper exports the real device UFVK at coin type 1 and re-encodes it from
+testnet to regtest without changing its keys. The Ledger case imports it as a
+hardware account with no mnemonic stored in Vizor. Funding and migration are
+prepared with the software fixture before this import; this lane does not test
+Ledger shielding.
 
 Only the test's Ledger signer provider is replaced: it invokes a Rust helper
 that uses the production APDU transport and signature verification against the
@@ -144,5 +146,6 @@ Each run waits for `FINALIZED` and checks all 64 revealed shares, one ballot for
 each selected option and zero for every other option.
 
 `E2E_LEDGER_VOTING=true` or `false` selects one account type when rerunning a
-failed case; the default runs both. `E2E_VOTE_WINDOW_SECS` defaults to 300; increase it on slower hosts. Results and
-device logs are retained in the printed Speculos artifact directory.
+failed case; the default runs both. `E2E_VOTE_WINDOW_SECS` defaults to 300; increase it on slower hosts. The run log,
+each passing scenario's `final-tally-<ledger>.json` and the device log are
+retained in the printed Speculos artifact directory.

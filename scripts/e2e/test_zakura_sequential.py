@@ -487,6 +487,34 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(sorted(path.name for path in (evidence / "captures").iterdir()), ["unused.png"])
 
 
+class VotingModeTests(unittest.TestCase):
+    def test_final_tally_and_ledger_modes_reach_the_services(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("E2E_VOTE_WINDOW_SECS", None)
+            evidence = Path(directory)
+            (evidence / "voting").mkdir()
+            (evidence / "voting" / "ready.json").write_text('{"defines": {"ZCASH_E2E_FINAL_TALLY": "true"}}')
+            envs = []
+
+            def start_process(command, *, env, max_output_bytes):
+                envs.append(env)
+                return type("Managed", (), {"process": type("Process", (), {"poll": lambda self: None})()})()
+
+            case = object.__new__(SEQUENTIAL.SequentialCase)
+            case.control = type("Control", (), {"pump": lambda self, **_kwargs: None})()
+            case.case = type("Case", (), {"workspace": type("Workspace", (), {"root": evidence})(),
+                                          "start_process": staticmethod(start_process)})()
+            for scenario, modes in (("flutter.macos.voting", ("0", "0")),
+                                    ("flutter.macos.voting-final-tally", ("1", "0")),
+                                    ("flutter.macos.voting-ledger-final-tally", ("1", "1"))):
+                defines = case._start_voting(SEQUENTIAL.SCENARIOS[scenario].voting, Path("/model/root"),
+                    "macos", float("inf"), threading.Event())
+                self.assertEqual((envs[-1]["E2E_FINAL_TALLY"], envs[-1]["E2E_LEDGER_VOTING"]), modes)
+                self.assertEqual(envs[-1].get("E2E_VOTE_WINDOW_SECS"), "300" if modes[0] == "1" else None)
+            self.assertEqual(defines, (("ZCASH_E2E_FINAL_TALLY", "true"),))
+
+
 class FakeSimulator:
     created = []
 

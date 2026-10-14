@@ -94,9 +94,13 @@ Before the first case, a run with voting scenarios fetches the pinned
 desktop setup phase has migrated the voting power, `voting-services.sh` starts
 the vote chain, the nullifier PIR server and the voting gateway against the
 fixture. Their logs and the gateway's screenshots are written to the case's
-`voting/logs/`.
+`voting/logs/`. The final-tally scenarios, `flutter.macos.voting-final-tally`
+and `flutter.macos.voting-ledger-final-tally`, also wait for the round to
+finalize and check its tally. Their vote window is 300 seconds unless
+`E2E_VOTE_WINDOW_SECS` sets another. `scripts/e2e/ledger-speculos-docker.sh
+voting-tally` runs them, with the Ledger one signing on its Speculos device.
 
-The Ledger Speculos runners, the mainnet keychain runner and the payment-URI
+The other Ledger Speculos lanes, the mainnet keychain runner and the payment-URI
 prefill runner need no regtest fixture and run as before.
 
 ## Gift Cards

@@ -109,9 +109,14 @@ class Voting:
 
     The first phase migrates the wallet's Orchard notes into Ironwood voting
     power; voting-services.sh then starts the services for the later phases.
+    A `final_tally` scenario waits for the round to finalize and checks its
+    tally. A `ledger` one signs on the Speculos device that
+    ledger-speculos-docker.sh runs.
     """
     slow_helper: bool = False
     discovery_transition: bool = False
+    final_tally: bool = False
+    ledger: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -387,6 +392,9 @@ FLUTTER_SCENARIOS = (
         "regtest_ironwood_migration_restart", OrchardNotes(1_100_000)),
     _voting("flutter.macos.voting", "macos", "regtest_voting"),
     _voting("flutter.macos.voting-slow-helper", "macos", "regtest_voting", Voting(slow_helper=True)),
+    _voting("flutter.macos.voting-final-tally", "macos", "regtest_voting", Voting(final_tally=True)),
+    _voting("flutter.macos.voting-ledger-final-tally", "macos", "regtest_voting",
+            Voting(final_tally=True, ledger=True)),
     _voting("flutter.ios.voting", "ios", "regtest_mobile_voting"),
     _voting("flutter.ios.voting-slow-helper", "ios", "regtest_mobile_voting", Voting(slow_helper=True)),
     _voting("flutter.ios.voting-discovery", "ios", "regtest_mobile_voting_discovery",

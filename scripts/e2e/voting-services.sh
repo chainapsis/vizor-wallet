@@ -6,10 +6,14 @@
 #   voting-services.sh start READY    start the services after the setup phase
 #                                     migrated the voting power, write the voting
 #                                     test's defines to READY and keep serving
-#   voting-services.sh check READY    require discovery, helper and vote traffic
+#   voting-services.sh check READY    require discovery, helper and vote traffic,
+#                                     and with E2E_FINAL_TALLY=1 the final tally
 #
 # The fixture's lightwalletd and control come from VOTING_LIGHTWALLETD and
-# ZCASH_E2E_DRIVER_URL. VOTING_DEVICE is `macos` or the simulator UDID.
+# ZCASH_E2E_DRIVER_URL. VOTING_DEVICE is `macos` or the simulator UDID. With
+# E2E_LEDGER_VOTING=1, the Ledger signer bridge uses the helper, Speculos API and
+# exported account in VIZOR_LEDGER_REGTEST_HELPER,
+# VIZOR_LEDGER_SPECULOS_SIGNING_API_URL and VIZOR_LEDGER_REGTEST_ACCOUNT.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -267,6 +271,27 @@ EOF
   pids+=("$!")
   wait_http "http://127.0.0.1:$GATEWAY_PORT/health" "voting gateway"
 
+  local signer_url=""
+  if [[ "${E2E_LEDGER_VOTING:-0}" == "1" ]]; then
+    local port_file="$state_dir/ledger-signer.port"
+    python3 "$ROOT_DIR/scripts/e2e/ledger-regtest-signer.py" \
+      --helper "${VIZOR_LEDGER_REGTEST_HELPER:?}" \
+      --speculos-url "${VIZOR_LEDGER_SPECULOS_SIGNING_API_URL:?}" \
+      --account "${VIZOR_LEDGER_REGTEST_ACCOUNT:?}" --port-file "$port_file" \
+      >"$log_dir/ledger-signer.log" 2>&1 &
+    pids+=("$!")
+    for _ in $(seq 1 50); do
+      [[ -s "$port_file" ]] && break
+      kill -0 "${pids[${#pids[@]}-1]}" 2>/dev/null || {
+        cat "$log_dir/ledger-signer.log" >&2
+        exit 1
+      }
+      sleep 0.1
+    done
+    [[ -s "$port_file" ]] || { echo "the Ledger signer bridge did not start" >&2; exit 1; }
+    signer_url="http://127.0.0.1:$(cat "$port_file")"
+  fi
+
   local static_sha commit_json
   static_sha="$(shasum -a 256 "$config_dir/static-voting-config.json" | awk '{print $1}')"
   # The anchor belongs to this freshly initialized local chain, not a public RPC.
@@ -278,13 +303,17 @@ EOF
     --arg chain "$(jq -r '.result.signed_header.header.chain_id' <<<"$commit_json")" \
     --arg validators "$(jq -r '.result.signed_header.header.validators_hash' <<<"$commit_json")" \
     --arg snapshot "$snapshot_height" \
-    '{defines: {
+    --arg tally "${E2E_FINAL_TALLY:-0}" --arg signer "$signer_url" \
+    '{defines: ({
         ZCASH_E2E_VOTING_GATEWAY_URL: $gateway,
         ZCASH_E2E_VOTING_STATIC_CONFIG_URL: $static,
         ZCASH_E2E_VOTE_ROUND_ID: $round,
         ZCASH_E2E_VOTE_NEXT_ROUND_ID: $next,
         ZCASH_E2E_VOTE_CHAIN_ID: $chain,
-        ZCASH_E2E_VOTE_VALIDATOR_HASH: $validators},
+        ZCASH_E2E_VOTE_VALIDATOR_HASH: $validators}
+        + (if $tally == "1" then {ZCASH_E2E_FINAL_TALLY: "true"} else {} end)
+        + (if $signer != "" then {ZCASH_E2E_LEDGER_VOTING: "true",
+            VIZOR_LEDGER_REGTEST_SIGNER_URL: $signer} else {} end)),
       snapshot_height: ($snapshot | tonumber)}' >"$ready.tmp"
   mv "$ready.tmp" "$ready"
   echo "voting services ready for round $round_id at snapshot $snapshot_height"
@@ -310,6 +339,12 @@ check_services() {
     "http://127.0.0.1:$VOTE_PORT/shielded-vote/v1/commitment-tree/$round_id/latest") \
     >/dev/null
   echo "voting E2E recorded votes; round=$round_id metrics=$metrics"
+  if [[ "${E2E_FINAL_TALLY:-0}" == "1" ]]; then
+    require_cmd python3
+    python3 "$ROOT_DIR/scripts/e2e/assert-voting-final-tally.py" \
+      --api-url "http://127.0.0.1:$VOTE_PORT" --round-id "$round_id" \
+      --output "$(dirname "$ready")/logs/final-tally.json"
+  fi
 }
 
 case "${1:-}" in

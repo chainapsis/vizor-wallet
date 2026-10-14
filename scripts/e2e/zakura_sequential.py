@@ -319,7 +319,13 @@ class SequentialCase:
             "ZCASH_E2E_DRIVER_URL": f"http://127.0.0.1:{flutter_cases.CONTROL_PORT}",
             "VOTING_LIGHTWALLETD": f"127.0.0.1:{flutter_cases.LIGHTWALLETD_PORT}",
             "E2E_SLOW_HELPER_MODE": "1" if voting.slow_helper else "0",
-            "E2E_VOTING_DISCOVERY_TRANSITION": "1" if voting.discovery_transition else "0"}
+            "E2E_VOTING_DISCOVERY_TRANSITION": "1" if voting.discovery_transition else "0",
+            "E2E_FINAL_TALLY": "1" if voting.final_tally else "0",
+            "E2E_LEDGER_VOTING": "1" if voting.ledger else "0"}
+        if voting.final_tally:
+            # The round finalizes only after its vote window closes; slower
+            # hosts can lengthen it with E2E_VOTE_WINDOW_SECS.
+            self._voting_env.setdefault("E2E_VOTE_WINDOW_SECS", "300")
         services = self.case.start_process(self._voting_command(source_root, "start"),
             env=self._voting_env, max_output_bytes=8 * 1024 * 1024)
         while not ready.exists():
@@ -332,9 +338,12 @@ class SequentialCase:
         return tuple(json.loads(ready.read_text(encoding="utf-8"))["defines"].items())
 
     def _check_voting(self, source_root, deadline, cancel_event):
-        """The gateway must have served discovery, and the round must have votes."""
+        """The gateway must have served discovery, and the round must have votes.
+
+        A final-tally check waits up to 15 minutes for the round to finalize.
+        """
         result = self.case.run_command(self._voting_command(source_root, "check"),
-            env=self._voting_env, timeout=max(1.0, min(120.0, deadline - time.monotonic())),
+            env=self._voting_env, timeout=max(1.0, deadline - time.monotonic()),
             cancel_event=cancel_event, max_output_bytes=1024 * 1024)
         if result.returncode:
             raise runtime.RunnerError("the voting services did not record the votes", result.returncode)
