@@ -2564,6 +2564,36 @@ fn take_queued_batch<T>(
     None
 }
 
+/// The end of the queued tuple that starts at `start` and runs past `end`,
+/// when every block it adds is still pending. A chain tip that moves while
+/// the tip ranges scan puts a short Verify range at the scan frontier, inside
+/// the tuple queued next; scanning that tuple whole keeps the queue and the
+/// blocks it already downloaded.
+fn queued_batch_extension<T>(
+    queue: &VecDeque<Prefetch<T>>,
+    start: BlockHeight,
+    end: BlockHeight,
+    ranges: &[ScanRange],
+) -> Option<BlockHeight> {
+    let queued = queue.front()?;
+    if queued.start != start || queued.end <= end {
+        return None;
+    }
+    let mut next = end;
+    while next < queued.end {
+        next = ranges
+            .iter()
+            .find(|range| {
+                is_pending_scan_range(range)
+                    && range.block_range().start <= next
+                    && next < range.block_range().end
+            })?
+            .block_range()
+            .end;
+    }
+    Some(queued.end)
+}
+
 /// Where to queue more tuples after batch `..end` of a range ending at
 /// `range_end`: after the queue when it continues this batch, else right
 /// after this batch. A batch that cut in ahead of the queue keeps it only
@@ -4065,6 +4095,10 @@ async fn run_sync_impl(
                 current_tip_height,
             );
             break;
+        };
+        let (batch_size, end) = match queued_batch_extension(&prefetch, start, end, &ranges) {
+            Some(queued_end) => (u32::from(queued_end) - u32::from(start), queued_end),
+            None => (batch_size, end),
         };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
         // Ranges can change between batches (a rewind, a repair, a new
@@ -5949,6 +5983,45 @@ mod tests {
         assert_eq!(
             prefetch_continues_from(&mut queue, h(260), h(1_000)),
             Some(h(260))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_verify_range_inside_the_next_queued_batch_scans_it_whole() {
+        let h = block_height;
+        let queued =
+            |start, end| Prefetch::spawn(h(start), h(end), async { Ok::<_, SyncError>(0u8) });
+        let range = |start, end, priority| ScanRange::from_parts(h(start)..h(end), priority);
+        let queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+
+        // A new block put a Verify range at the frontier, inside the queued
+        // batch: scan the queued batch whole.
+        let split = [
+            range(100, 110, ScanPriority::Verify),
+            range(110, 500, ScanPriority::ChainTip),
+        ];
+        assert_eq!(
+            queued_batch_extension(&queue, h(100), h(110), &split),
+            Some(h(200))
+        );
+
+        // Blocks no longer pending are not scanned again.
+        let scanned = [
+            range(100, 110, ScanPriority::Verify),
+            range(110, 150, ScanPriority::Scanned),
+            range(150, 500, ScanPriority::ChainTip),
+        ];
+        assert_eq!(
+            queued_batch_extension(&queue, h(100), h(110), &scanned),
+            None
+        );
+
+        // Only a longer queued batch starting at the batch extends it.
+        assert_eq!(queued_batch_extension(&queue, h(100), h(200), &split), None);
+        assert_eq!(queued_batch_extension(&queue, h(110), h(150), &split), None);
+        assert_eq!(
+            queued_batch_extension(&VecDeque::<Prefetch<u8>>::new(), h(100), h(110), &split),
+            None
         );
     }
 
