@@ -250,8 +250,8 @@ class SequentialCase:
         artifact.verify_unchanged()
         self.front.assert_running()
 
-    def run_flutter(self, scenario, *, flutter, device, source_root, cancel_event):
-        """Run each phase's `flutter test` while serving its control requests."""
+    def run_flutter(self, scenario, *, flutter, device, source_root, cancel_event, dart_defines=()):
+        """Run each phase's `flutter test`, with `dart_defines` added, while serving its control requests."""
         if self.control is None:
             raise runtime.RunnerError("a Flutter case needs a started control")
         deadline = time.monotonic() + scenario.timeout_seconds
@@ -272,7 +272,7 @@ class SequentialCase:
             on_macos = flutter_cases.phase_platform(scenario, phase) == "macos"
             process = self.case.start_process(flutter_cases.flutter_command(scenario, phase,
                 flutter=flutter, device="macos" if on_macos else device, source_root=source_root,
-                derived=self.derived, extra_defines=voting_defines),
+                derived=self.derived, extra_defines=(*voting_defines, *dart_defines)),
                 env=env, raw_lines=lines, max_output_bytes=16 * 1024 * 1024)
             while process.process.poll() is None:
                 _check(cancel_event)
@@ -394,7 +394,7 @@ def _require_unbound(port):
 
 
 def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, proto_dir, dart,
-             source_root, keep_failed, cancel_event, flutter=None, device=None):
+             source_root, keep_failed, cancel_event, flutter=None, device=None, dart_defines=()):
     """Run one scenario on its own fixture and return its report entry."""
     started = time.monotonic()
     is_flutter = isinstance(scenario, flutter_cases.FlutterScenario)
@@ -431,7 +431,7 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
         begin("execute")
         if is_flutter:
             session.run_flutter(scenario, flutter=flutter, device=device, source_root=source_root,
-                cancel_event=cancel_event)
+                cancel_event=cancel_event, dart_defines=dart_defines)
         else:
             session.run_rust(artifact, scenario, cancel_event=cancel_event)
         begin("close")
@@ -488,7 +488,7 @@ def resolve_dart(flutter, source_root):
 
 
 def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4,
-                 keep_failed=False, cancel_event=None, out=print, ios_runtime=None):
+                 keep_failed=False, cancel_event=None, out=print, ios_runtime=None, dart_defines=()):
     """Build once, then run each scenario on its own fixture; return the report.
 
     iOS scenarios run on a simulator the run creates after the build and
@@ -506,7 +506,8 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
     evidence = logs / f"zakura-{run_id}"
     evidence.mkdir(mode=0o700)
     report = {"schema_version": 1, "run_id": run_id, "source_commit": commit,
-              "scenarios": [s.id for s in scenarios], "results": [], "error": None}
+              "scenarios": [s.id for s in scenarios], "results": [], "error": None,
+              "dart_defines": [f"{name}={value}" for name, value in dart_defines]}
     report_path = evidence / "report.json"
 
     def write_report():
@@ -552,7 +553,7 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 out(f"[{index}/{len(scenarios)}] {scenario.id}")
                 result = run_case(cases, run_id, index, scenario, artifact=artifact, grpcurl=grpcurl,
                     proto_dir=proto_dir, dart=dart, source_root=root, keep_failed=keep_failed,
-                    cancel_event=cancel, flutter=flutter,
+                    cancel_event=cancel, flutter=flutter, dart_defines=dart_defines,
                     device=simulator.udid if getattr(scenario, "platform", None) == "ios" else "macos")
                 report["results"].append(result)
                 write_report()

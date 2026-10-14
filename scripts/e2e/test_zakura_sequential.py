@@ -123,8 +123,9 @@ class FakeCase:
         if isinstance(self.fail, BaseException):
             raise self.fail
 
-    def run_flutter(self, *_args, **_kwargs):
+    def run_flutter(self, *_args, dart_defines=(), **_kwargs):
         self.calls.append("run flutter")
+        self.dart_defines = dart_defines
 
     def close(self, **_kwargs):
         self.calls.append("close")
@@ -189,11 +190,13 @@ class RunCaseTests(unittest.TestCase):
             result = SEQUENTIAL.run_case(Path("/model/cases"), "a1b2c3d4e5", 1, scenario,
                 artifact=object(), grpcurl=Path("/model/grpcurl"), proto_dir=Path("/model/protos"),
                 dart=Path("/model/dart"), source_root=Path("/model/root"), keep_failed=False,
-                cancel_event=threading.Event(), flutter=Path("/model/flutter"), device="macos")
+                cancel_event=threading.Event(), flutter=Path("/model/flutter"), device="macos",
+                dart_defines=(("GIFT_CARD_E2E_AMOUNT_MODE", "usd"),))
         kwargs, case = created[0]
         self.assertEqual(kwargs["ports"], {"rpc": 18232, "lwd": 9067, "proxy": 19068})
         self.assertEqual(kwargs["platform"], "macos")
         self.assertEqual(case.calls, ["start", "run flutter", "close"])
+        self.assertEqual(case.dart_defines, (("GIFT_CARD_E2E_AMOUNT_MODE", "usd"),))
         self.assertEqual((result["status"], result["tests"]),
                          ("passed", ["integration_test/regtest_import_sync_test.dart"]))
 
@@ -293,7 +296,7 @@ class SequenceHarness(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def run_sequence(self, status, keep_failed, scenarios=None, run_case=None):
+    def run_sequence(self, status, keep_failed, scenarios=None, run_case=None, dart_defines=()):
         def build(producer, **_kwargs):
             output = producer.workspace.root / "funder-build" / "target"
             output.mkdir(parents=True)
@@ -307,7 +310,8 @@ class SequenceHarness(unittest.TestCase):
             report, _ = SEQUENTIAL.run_sequence(self.root,
                 scenarios or [SEQUENTIAL.SCENARIOS["rust.send.basic"]],
                 flutter=Path("/model/flutter"), grpcurl=self.root, proto_dir=self.root,
-                keep_failed=keep_failed, out=lambda _text: None, ios_runtime="iOS-26-3")
+                keep_failed=keep_failed, out=lambda _text: None, ios_runtime="iOS-26-3",
+                dart_defines=dart_defines)
         producer = next((self.root / ".regtest-logs" / f"zakura-{report['run_id']}" / "builds" / "e2e").iterdir())
         return report, producer
 
@@ -328,6 +332,21 @@ class BuildOutputTests(SequenceHarness):
         self.assertNotIn("build_prune", report)
         report, producer = self.run_sequence("failed", keep_failed=False)
         self.assertFalse((producer / "funder-build").exists())
+
+
+class DefineTests(SequenceHarness):
+    def test_extra_defines_reach_each_case_and_the_report(self):
+        seen = []
+
+        def run_case(*_args, dart_defines=(), **_kwargs):
+            seen.append(dart_defines)
+            return {"status": "passed", "duration_seconds": 1.0, "error": None}
+
+        mode = (("GIFT_CARD_E2E_AMOUNT_MODE", "usd"),)
+        report, _ = self.run_sequence("passed", keep_failed=False, run_case=run_case, dart_defines=mode,
+            scenarios=[SEQUENTIAL.SCENARIOS["flutter.macos.payment-link-round-trip"]])
+        self.assertEqual(seen, [mode])
+        self.assertEqual(report["dart_defines"], ["GIFT_CARD_E2E_AMOUNT_MODE=usd"])
 
 
 class FixtureStartTests(unittest.TestCase):

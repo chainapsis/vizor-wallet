@@ -56,6 +56,8 @@ def main(argv=None):
     parser.add_argument("--ios-runtime",
         help="simulator runtime for iOS scenarios, such as com.apple.CoreSimulator.SimRuntime.iOS-26-3 "
              "(default: the newest installed)")
+    parser.add_argument("--dart-define", action="append", default=[], metavar="NAME=VALUE",
+        help="add a define to every Flutter phase, such as GIFT_CARD_E2E_AMOUNT_MODE=usd")
     args = parser.parse_args(argv)
     if args.list:
         for scenario in sequential.ALL_SCENARIOS:
@@ -67,6 +69,14 @@ def main(argv=None):
         scenarios = sequential.select_scenarios(args.scenarios)
     except ValueError as error:
         parser.error(str(error))
+    defines = []
+    for text in args.dart_define:
+        name, separator, value = text.partition("=")
+        if not name or not separator:
+            parser.error(f"--dart-define takes NAME=VALUE, not {text!r}")
+        defines.append((name, value))
+    if defines and any(not isinstance(s, sequential.flutter_cases.FlutterScenario) for s in scenarios):
+        parser.error("--dart-define applies only to Flutter scenarios")
     if not 1 <= args.build_jobs <= 8:
         parser.error("--build-jobs must be 1 through 8")
     grpcurl = args.grpcurl or (Path(found) if (found := shutil.which("grpcurl")) else None)
@@ -86,7 +96,7 @@ def main(argv=None):
     try:
         report, path = sequential.run_sequence(root, scenarios, flutter=flutter, grpcurl=grpcurl,
             proto_dir=args.proto_dir, build_jobs=args.build_jobs, keep_failed=args.keep_failed,
-            cancel_event=cancel, out=_console, ios_runtime=args.ios_runtime)
+            cancel_event=cancel, out=_console, ios_runtime=args.ios_runtime, dart_defines=tuple(defines))
     except ValueError as error:
         _console(f"zakura-run: {error}")
         return 2
