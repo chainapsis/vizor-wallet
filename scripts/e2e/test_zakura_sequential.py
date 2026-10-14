@@ -1,4 +1,5 @@
 """Sequential Zakura runner: selection, pass proof, source guard and failure cleanup."""
+import dataclasses
 from pathlib import Path
 import subprocess
 import sys
@@ -23,7 +24,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual([s.id for s in SEQUENTIAL.select_scenarios(["rust.send.basic"])], ["rust.send.basic"])
 
     def test_unknown_names_and_partial_segments_are_rejected(self):
-        for name in ("rust.unknown", "rust.imp", "flutter.macos.import-sync"):
+        for name in ("rust.unknown", "rust.imp", "flutter.macos.unknown", "flutter.mac"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 SEQUENTIAL.select_scenarios([name])
 
@@ -100,6 +101,9 @@ class FakeCase:
         if isinstance(self.fail, BaseException):
             raise self.fail
 
+    def run_flutter(self, *_args, **_kwargs):
+        self.calls.append("run flutter")
+
     def close(self, **_kwargs):
         self.calls.append("close")
         self._finished = True
@@ -151,11 +155,74 @@ class RunCaseTests(unittest.TestCase):
         self.assertEqual(result["cleanup_error"], "cleanup unproven")
         self.assertIn("retained", result)
 
+    def test_flutter_scenarios_use_the_fixed_ports_and_run_their_phases(self):
+        created = []
+
+        def factory(*args, **kwargs):
+            created.append((kwargs, FakeCase(*args, **kwargs)))
+            return created[-1][1]
+
+        scenario = SEQUENTIAL.SCENARIOS["flutter.macos.import-sync"]
+        with patch.object(SEQUENTIAL, "SequentialCase", side_effect=factory):
+            result = SEQUENTIAL.run_case(Path("/model/cases"), "a1b2c3d4e5", 1, scenario,
+                artifact=object(), grpcurl=Path("/model/grpcurl"), proto_dir=Path("/model/protos"),
+                dart=Path("/model/dart"), source_root=Path("/model/root"), keep_failed=False,
+                cancel_event=threading.Event(), flutter=Path("/model/flutter"), device="macos")
+        kwargs, case = created[0]
+        self.assertEqual(kwargs["ports"], {"rpc": 18232, "lwd": 9067, "proxy": 19068})
+        self.assertEqual(kwargs["platform"], "macos")
+        self.assertEqual(case.calls, ["start", "run flutter", "close"])
+        self.assertEqual((result["status"], result["tests"]),
+                         ("passed", ["integration_test/regtest_import_sync_test.dart"]))
+
     def test_deadline_and_cancellation_have_their_own_status(self):
         result, _ = self.run_case(fail=SEQUENTIAL.runtime.RunnerError("deadline", 124))
         self.assertEqual(result["status"], "timed_out")
         result, _ = self.run_case(fail=SEQUENTIAL.runtime.Cancelled())
         self.assertEqual(result["status"], "cancelled")
+
+
+class FlutterCommandTests(unittest.TestCase):
+    def command(self, scenario):
+        return SEQUENTIAL.flutter_cases.flutter_command(scenario, scenario.phases[0],
+            flutter=Path("/model/flutter"), device="DEVICE", source_root=Path("/model/root"))
+
+    def test_phases_run_from_the_checkout_with_the_fixture_defines(self):
+        command = self.command(SEQUENTIAL.SCENARIOS["flutter.macos.import-sync"])
+        self.assertEqual(command[3:8], ["/model/root", "/model/flutter", "test",
+                                        "integration_test/regtest_import_sync_test.dart", "-d"])
+        self.assertIn("--dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT=1", command)
+        self.assertIn("--dart-define=ZCASH_E2E_LIGHTWALLETD_URL=http://127.0.0.1:9067", command)
+        self.assertIn("--dart-define=ZCASH_E2E_DRIVER_URL=http://127.0.0.1:18232", command)
+        self.assertIn("--dart-define=VIZOR_E2E_HIDDEN_WINDOW=true", command)
+        self.assertNotIn("--dart-define=VIZOR_FORM_FACTOR=mobile", command)
+        moved = subprocess.run([sys.executable, "-c", command[2], tempfile.gettempdir(), "pwd"],
+            check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(Path(moved).resolve(), Path(tempfile.gettempdir()).resolve())
+
+    def test_mobile_phases_use_the_mobile_form_factor_and_cannot_move_the_fixture(self):
+        flutter = SEQUENTIAL.flutter_cases
+        mobile = flutter.FlutterScenario("flutter.ios.model", "ios",
+            (flutter.Phase("integration_test/model_test.dart", args=("--no-uninstall",)),),
+            activation_height=500)
+        command = self.command(mobile)
+        self.assertIn("--no-uninstall", command)
+        self.assertIn("--dart-define=VIZOR_FORM_FACTOR=mobile", command)
+        self.assertIn("--dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT=500", command)
+        self.assertNotIn("--dart-define=VIZOR_E2E_HIDDEN_WINDOW=true", command)
+        moving = dataclasses.replace(mobile, defines=(("ZCASH_E2E_DRIVER_URL", "http://127.0.0.1:1"),))
+        with self.assertRaises(ValueError):
+            self.command(moving)
+
+    def test_only_a_reported_pass_counts(self):
+        verify = SEQUENTIAL.flutter_cases.verify_flutter_output
+        verify(["00:24 +1: All tests passed!\n"])
+        verify(["01:02 +3 ~1: All tests passed!\n"])
+        for lines in (["Xcode build done.\n"], ["00:00 +0: All tests passed!\n"],
+                      ["00:03 +0 ~1: All tests skipped.\n"],
+                      ["00:24 +1: All tests passed!\n", "00:30 +1 -1: Some tests failed.\n"]):
+            with self.subTest(lines=lines), self.assertRaises(SEQUENTIAL.runtime.RunnerError):
+                verify(lines)
 
 
 class BuildOutputTests(unittest.TestCase):

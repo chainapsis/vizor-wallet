@@ -3,7 +3,9 @@
 Every case owns a fresh pinned Zakura node and lightwalletd, the lightwalletd
 shim in front of them and an HTTP control. The offline signer and the Rust test
 executables are built once per run from the committed `rust/` tree and shared
-read-only. Cases never share chain state, wallets, ports or evidence.
+read-only. Cases never share chain state, wallets or evidence. Rust cases lease
+free ports; Flutter cases use the app's default regtest ports, one case at a
+time.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import threading
 import time
@@ -22,13 +25,15 @@ import e2e_runtime as runtime
 from funder_build import build_regtest_funder
 from native_case_lifecycle import NativeCaseLifecycle
 import native_owned_tree as tree
-from native_ports import lease_native_ports
+from native_ports import lease_fixed_ports, lease_native_ports
 from native_rust_case_storage import RustCaseStorage
 from native_workspace import prepare_native_case_workspace
 from native_zakura_backend import prepare_native_zakura_backend
 from native_zakura_control import prepare_native_zakura_control
 from native_zakura_front import prepare_native_zakura_front
+import zakura_flutter as flutter_cases
 from zakura_fixture_source import ensure_pinned_images
+from zakura_funding import fund_zakura
 from zakura_genesis import create_zakura_genesis_proof
 
 
@@ -100,14 +105,15 @@ RUST_SCENARIOS = (
                  "gift_card_claims_at_two_confirmations_and_discards_the_card_ovk",
                  activation_height=MIGRATION_ACTIVATION, timeout_seconds=1200),
 )
-SCENARIOS = {scenario.id: scenario for scenario in RUST_SCENARIOS}
+ALL_SCENARIOS = RUST_SCENARIOS + flutter_cases.FLUTTER_SCENARIOS
+SCENARIOS = {scenario.id: scenario for scenario in ALL_SCENARIOS}
 
 
 def select_scenarios(names):
     """Exact IDs, or every scenario whose ID starts with a dotted prefix."""
     selected = []
     for name in names:
-        matches = [s for s in RUST_SCENARIOS if s.id == name or s.id.startswith(name.rstrip(".") + ".")]
+        matches = [s for s in ALL_SCENARIOS if s.id == name or s.id.startswith(name.rstrip(".") + ".")]
         if not matches:
             raise ValueError(f"unknown scenario or prefix: {name}")
         selected.extend(s for s in matches if s not in selected)
@@ -136,8 +142,13 @@ class SequentialCase:
     wallet files of a failed case for inspection.
     """
 
-    def __init__(self, run_root, *, run_id, case_index, scenario_id, platform, activation_height):
-        self.lease = lease_native_ports(0, run_id)
+    def __init__(self, run_root, *, run_id, case_index, scenario_id, platform, activation_height,
+                 ports=None):
+        if ports is None:
+            self.lease = lease_native_ports(0, run_id)
+        else:
+            _require_unbound(flutter_cases.UNAVAILABLE_PORT)
+            self.lease = lease_fixed_ports(run_id, dict(ports))
         try:
             workspace = prepare_native_case_workspace(run_root, platform=platform,
                 scenario_id=scenario_id, run_id=run_id, worker_id=0, case_index=case_index,
@@ -150,14 +161,21 @@ class SequentialCase:
         self.backend = self.front = self.control = None
         self._finished = False
 
-    def start(self, *, grpcurl, proto_dir, dart, source_root, artifact, cancel_event):
-        """Start the fixture, mature its coinbase, then put the shim and control in front."""
+    def start(self, *, grpcurl, proto_dir, dart, source_root, artifact, cancel_event,
+              initial_blocks=INITIAL_BLOCKS, funding=()):
+        """Start the fixture, mature its coinbase and fund it, then put the shim and control in front."""
         self.backend = prepare_native_zakura_backend(self.case, grpcurl=grpcurl,
             proto_dir=proto_dir, miner_address=MINER_ADDRESS, timeout=120)
         self.backend.start()
         _check(cancel_event)
-        self.backend.mine(INITIAL_BLOCKS)
+        self.backend.mine(initial_blocks)
         _check(cancel_event)
+        for payment in funding:
+            fund_zakura(self.case, self.backend, artifact, recipient_address=payment.address,
+                amount_zatoshi=payment.zatoshi, recipient_pool=payment.pool,
+                source_height=payment.source_height, confirmations=10, timeout=120,
+                cancel_event=cancel_event)
+            _check(cancel_event)
         genesis = create_zakura_genesis_proof(self.case, self.backend, timeout=30,
             cancel_event=cancel_event)
         self.front = prepare_native_zakura_front(self.case, self.backend, genesis,
@@ -193,6 +211,33 @@ class SequentialCase:
             raise runtime.RunnerError("the Rust test failed", code)
         verify_test_output(lines, scenario.test)
         artifact.verify_unchanged()
+        self.front.assert_running()
+
+    def run_flutter(self, scenario, *, flutter, device, source_root, cancel_event):
+        """Run each phase's `flutter test` while serving its control requests."""
+        if self.control is None:
+            raise runtime.RunnerError("a Flutter case needs a started control")
+        deadline = time.monotonic() + scenario.timeout_seconds
+        env = {**os.environ, **dict(scenario.env)}
+        for phase in scenario.phases:
+            _check(cancel_event)
+            if phase.mine_before:
+                self.backend.mine(phase.mine_before)
+            lines = []
+            process = self.case.start_process(flutter_cases.flutter_command(scenario, phase,
+                flutter=flutter, device=device, source_root=source_root),
+                env=env, raw_lines=lines, max_output_bytes=16 * 1024 * 1024)
+            while process.process.poll() is None:
+                _check(cancel_event)
+                if time.monotonic() >= deadline:
+                    raise runtime.RunnerError("the Flutter test did not finish before its deadline", 124)
+                self.front.assert_running()
+                self.control.pump(deadline=deadline, cancel_event=cancel_event)
+            code = self.case.wait_process(process, timeout=max(0.001, deadline - time.monotonic()),
+                cancel_event=cancel_event)
+            if code != 0:
+                raise runtime.RunnerError(f"{phase.test} failed", code)
+            flutter_cases.verify_flutter_output(lines)
         self.front.assert_running()
 
     def close(self, *, timeout=60.0):
@@ -236,13 +281,25 @@ class SequentialCase:
                 "wallet_files": str(self.storage.path) if self.storage is not None else None}
 
 
+def _require_unbound(port):
+    """The Unavailable endpoint preset must refuse connections."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(1.0)
+        if probe.connect_ex(("127.0.0.1", port)) == 0:
+            raise runtime.RunnerError(f"something listens on port {port}, which must stay unavailable")
+
+
 def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, proto_dir, dart,
-             source_root, keep_failed, cancel_event):
+             source_root, keep_failed, cancel_event, flutter=None, device=None):
     """Run one scenario on its own fixture and return its report entry."""
     started = time.monotonic()
-    result = {"scenario_id": scenario.id, "target": scenario.target, "test": scenario.test,
-              "activation_height": scenario.activation_height, "status": "failed",
-              "returncode": 1, "error": None, "cleanup_error": None}
+    is_flutter = isinstance(scenario, flutter_cases.FlutterScenario)
+    result = {"scenario_id": scenario.id, "activation_height": scenario.activation_height,
+              "status": "failed", "returncode": 1, "error": None, "cleanup_error": None}
+    if is_flutter:
+        result["tests"] = [phase.test for phase in scenario.phases]
+    else:
+        result.update(target=scenario.target, test=scenario.test)
     phases = {}
     current = {"name": None, "start": started}
 
@@ -256,13 +313,21 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
     try:
         begin("prepare")
         session = SequentialCase(cases_root, run_id=run_id, case_index=case_index,
-            scenario_id=scenario.id, platform="rust", activation_height=scenario.activation_height)
+            scenario_id=scenario.id, platform=scenario.platform if is_flutter else "rust",
+            activation_height=scenario.activation_height,
+            ports=flutter_cases.FIXED_PORTS if is_flutter else None)
         result["evidence"] = str(session.case.workspace.root)
         begin("fixture")
         session.start(grpcurl=grpcurl, proto_dir=proto_dir, dart=dart, source_root=source_root,
-            artifact=artifact, cancel_event=cancel_event)
+            artifact=artifact, cancel_event=cancel_event,
+            initial_blocks=scenario.initial_blocks if is_flutter else INITIAL_BLOCKS,
+            funding=scenario.funding if is_flutter else ())
         begin("execute")
-        session.run_rust(artifact, scenario, cancel_event=cancel_event)
+        if is_flutter:
+            session.run_flutter(scenario, flutter=flutter, device=device, source_root=source_root,
+                cancel_event=cancel_event)
+        else:
+            session.run_rust(artifact, scenario, cancel_event=cancel_event)
         begin("close")
         session.close()
         result.update(status="passed", returncode=0)
@@ -317,13 +382,15 @@ def resolve_dart(flutter, source_root):
 
 
 def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4,
-                 keep_failed=False, cancel_event=None, out=print):
+                 keep_failed=False, cancel_event=None, out=print, ios_device=None):
     """Build once, then run each scenario on its own fixture; return the report."""
     cancel = cancel_event if cancel_event is not None else threading.Event()
     root, commit = committed_source(source_root)
     dart = resolve_dart(flutter, root)
     grpcurl = Path(grpcurl).resolve(strict=True)
     proto_dir = Path(proto_dir).resolve(strict=True)
+    if ios_device is None and any(getattr(s, "platform", None) == "ios" for s in scenarios):
+        raise ValueError("iOS scenarios need a booted simulator; pass its UDID")
     run_id = uuid.uuid4().hex[:10]
     logs = root / ".regtest-logs"
     logs.mkdir(mode=0o700, exist_ok=True)
@@ -343,7 +410,8 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
     try:
         with content_memo.run_scope():
             report["pinned_images"] = ensure_pinned_images(evidence, cancel_event=cancel, out=out)
-            out(f"Building the signer and {len({s.target for s in scenarios})} Rust test target(s); logs: {evidence}")
+            targets = tuple(dict.fromkeys(s.target for s in scenarios if isinstance(s, RustScenario)))
+            out(f"Building the signer and {len(targets)} Rust test target(s); logs: {evidence}")
             builds = evidence / "builds"
             builds.mkdir(mode=0o700)
             builds_id = tree.identity(builds.lstat())
@@ -353,7 +421,7 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 ports={"rpc": 28232, "lwd": 29067, "proxy": 29068}, activation_height=1))
             artifact = build_regtest_funder(producer, source_root=root, source_commit=commit,
                 jobs=build_jobs, timeout=1200, cancel_event=cancel,
-                test_targets=tuple(dict.fromkeys(s.target for s in scenarios)))
+                test_targets=targets)
             cases = evidence / "cases"
             cases.mkdir(mode=0o700)
             for index, scenario in enumerate(scenarios, start=1):
@@ -361,7 +429,8 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 out(f"[{index}/{len(scenarios)}] {scenario.id}")
                 result = run_case(cases, run_id, index, scenario, artifact=artifact, grpcurl=grpcurl,
                     proto_dir=proto_dir, dart=dart, source_root=root, keep_failed=keep_failed,
-                    cancel_event=cancel)
+                    cancel_event=cancel, flutter=flutter,
+                    device=ios_device if getattr(scenario, "platform", None) == "ios" else "macos")
                 report["results"].append(result)
                 write_report()
                 out(f"    {result['status']} in {result['duration_seconds']:.0f}s"

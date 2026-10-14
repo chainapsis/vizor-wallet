@@ -55,7 +55,7 @@ def main(argv=None):
         help="keep the fixture and wallet files of failed scenarios")
     args = parser.parse_args(argv)
     if args.list:
-        for scenario in sequential.RUST_SCENARIOS:
+        for scenario in sequential.ALL_SCENARIOS:
             print(scenario.id)
         return 0
     if not args.scenarios:

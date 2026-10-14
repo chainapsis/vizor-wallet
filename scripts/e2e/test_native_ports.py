@@ -70,6 +70,50 @@ class NativePortsTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     probe.bind(("127.0.0.1", port))
 
+    def free_ports(self, count: int) -> list[int]:
+        probes = [socket.socket() for _ in range(count)]
+        try:
+            for probe in probes:
+                probe.bind(("127.0.0.1", 0))
+            return [probe.getsockname()[1] for probe in probes]
+        finally:
+            for probe in probes:
+                probe.close()
+
+    def test_fixed_ports_are_held_until_handoff_and_locked_until_close(self):
+        rpc, lwd = self.free_ports(2)
+        lease = PORTS.lease_fixed_ports("a1b2c3d4e5", {"rpc": rpc, "lwd": lwd}, lock_root=self.locks)
+        self.addCleanup(lease.close)
+        self.assertEqual(lease.ports, {"rpc": rpc, "lwd": lwd})
+        for port in (rpc, lwd):
+            with socket.socket() as probe, self.assertRaises(OSError):
+                probe.bind(("127.0.0.1", port))
+        with self.assertRaisesRegex(PORTS.NativePortError, f"port {rpc} is in use"):
+            PORTS.lease_fixed_ports("f0e1d2c3b4", {"rpc": rpc}, lock_root=self.locks)
+        lease.release_sockets()
+        with self.assertRaisesRegex(PORTS.NativePortError, "leased by another E2E run"):
+            PORTS.lease_fixed_ports("f0e1d2c3b4", {"rpc": rpc}, lock_root=self.locks)
+        with socket.socket() as service:
+            service.bind(("127.0.0.1", rpc))
+        lease.close()
+        again = PORTS.lease_fixed_ports("f0e1d2c3b4", {"rpc": lwd}, lock_root=self.locks)
+        again.close()
+
+    def test_a_fixed_port_with_a_listener_fails_without_keeping_other_ports(self):
+        free, taken = self.free_ports(2)
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", taken))
+            listener.listen(1)
+            with self.assertRaisesRegex(PORTS.NativePortError, f"port {taken} is in use"):
+                PORTS.lease_fixed_ports("a1b2c3d4e5", {"rpc": free, "lwd": taken}, lock_root=self.locks)
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", free))
+
+    def test_fixed_ports_must_be_distinct_unprivileged_roles(self):
+        for ports in ({}, {"rpc": 80}, {"rpc": 19000, "lwd": 19000}, {"RPC": 19000}):
+            with self.subTest(ports=ports), self.assertRaises(PORTS.NativePortError):
+                PORTS.lease_fixed_ports("a1b2c3d4e5", ports, lock_root=self.locks)
+
     def test_invalid_service_roles_fail_before_creating_lock_storage(self):
         for names in ((), [], ("rpc", "rpc"), ("../escape",), (True,), tuple(str(n) for n in range(17))):
             with self.subTest(names=names), self.assertRaises(PORTS.NativePortError):
