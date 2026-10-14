@@ -132,7 +132,7 @@ void main() {
     await tapWidget(tester, const ValueKey('mobile_send_full_address'));
     await settle(tester, const Duration(milliseconds: 400));
     await shot('08_send_full_address');
-    await tester.tap(find.text('Cancel').last);
+    await tester.tap(find.bySemanticsLabel('Close').hitTestable().last);
     await settle(tester, const Duration(milliseconds: 400));
 
     await tapAppButton(
