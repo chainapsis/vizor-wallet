@@ -499,8 +499,12 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 
 1. tonic gRPC → lightwalletd (TLS via `tls-ring`)
 2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
-3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O)
-4. `scan_cached_blocks` from memory (100 blocks per batch)
+3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O),
+   two batches ahead of the scan (`PREFETCH_DEPTH`); a tip batch that cuts in
+   between history batches keeps the queued ones, and a Verify range a new tip
+   puts at the scan frontier is scanned together with the queued batch it falls in
+4. `scan_cached_blocks` from memory (up to 2,000 blocks per batch on desktop
+   and 1,000 on mobile; 100 inside the 2022–23 spam window)
 5. Enhancement: process each work queue separately. Status observations come
    from `transaction_status_work()`, which routes each obligation to public
    `GetTransaction` or private Status PIR. Payload recovery comes from
@@ -526,6 +530,8 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
    inactive-account UTXO refresh) finish.
 
 Single DB connection reused across entire sync (opened once, passed to all operations).
+
+Chain tip during a sync: fetched at the start, after every batch, every 10 minutes and before completion (skipped when a tip proved unchanged less than 5 seconds earlier). The post-batch fetch is requested when the batch's scan starts (`TipPrefetch`), so its round trip overlaps the scan; it counts as validated when it was requested, it runs whatever the wallet holds, so the request pattern carries no wallet state, and resubmission judges expiry against it. The mempool observer also writes new tips to the DB during a sync, so a ChainTip range can start past the loop's tip: the loop takes the first pending range at or below its tip (`next_pending_scan_range`), and with nothing else pending refreshes the tip once per range start (`refresh_tip_for_queued_range`) before ending the attempt with a continuity error.
 
 Progress percentage (`sync_engine/progress_work.rs`): the share of estimated scan work finished for one sync job. Work for a range is a weighted sum of its blocks, Sapling outputs, Orchard and Ironwood actions, and planned batches; output counts come from the compiled mainnet tree sizes and downloaded subtree completion heights, so the estimate sends no request. Blocks alone stall for most of a full-history sync (the 2022 sandblasting window holds nearly all outputs), and outputs alone stall on the long sparse stretch before it. `mark_sync_started` claims the job (the unfinished one, or a new id) in `ext_vizor_sync_meta`, where its id, total work and fraction stay until `mark_sync_completed` clears them, so retries, endpoint fallbacks and relaunches resume the same fraction (`get_sync_status` exposes it for bootstrap and unlock). Within an attempt, new pending work (tip growth, rewinds, repairs, new ranges) raises the total; it never restarts the denominator. Work found after the main scan drains (witness and anchor repairs, blocks a final tip refresh adds) shows as Checking instead: events carry `checking` with that queue's own block fraction while `percentage` stays at 1.0, and `retry_progress.rs` keeps the Checking stage across `run_sync_inner` retries (the job already carries the main scan's fraction). The job is saved every 15 seconds while an attempt scans, at once for the batch that finishes the scan, and once more, marked closed, when the attempt ends however it ends (completion clears it instead). Work that appeared between attempts (blocks mined meanwhile) keeps the stored fraction and rescales the rest; so does less work after a closed attempt, which went away unscanned (a deleted account). Less work after a killed process is scanning done since the last save and counts as progress. Only new work larger than what the job finished (and than one reference batch), or any real catch-up after a job that had scanned everything, replaces the job under a new id. Every event carries `sync_job_id`; Dart restarts the display only for a new job. Each progress event also includes `has_new_tx` (from `ScanSummary` received/spent note counts) to trigger transaction history refresh only when needed.
 
