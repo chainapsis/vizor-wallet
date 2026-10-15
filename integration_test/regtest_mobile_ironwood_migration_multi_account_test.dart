@@ -88,18 +88,13 @@ void main() {
       final runId = started.activeRunId;
       expect(runId, isNotNull);
 
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_ironwood_status_back_home_button'),
-      );
+      await leaveMobilePrivateMigrationStatusForHome(tester);
       await waitForHome(tester);
       await switchAccountTo(tester, secondAccountUuid);
       await pumpUntil(
         tester,
         () => !tester.any(
-          find.byKey(
-            const ValueKey('mobile_home_ironwood_migration_required_pill'),
-          ),
+          find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
         ),
         description: 'no migration CTA for unfunded mobile account',
       );
@@ -116,14 +111,17 @@ void main() {
       await switchAccountTo(tester, firstAccountUuid);
       await tapWidget(
         tester,
-        const ValueKey('mobile_home_ironwood_migration_required_pill'),
+        const ValueKey('mobile_home_ironwood_migration_banner'),
         timeout: const Duration(minutes: 2),
       );
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(
-            const ValueKey('mobile_ironwood_migration_status_preparing'),
+          find.descendant(
+            of: find.byKey(
+              const ValueKey('mobile_ironwood_migration_back_scope'),
+            ),
+            matching: find.text('Preparing your migration'),
           ),
         ),
         description: 'funded-account migration restored after account switch',
@@ -131,7 +129,7 @@ void main() {
 
       await waitForMobileRegtestMempoolSize(tester, 1);
       await postDriver('/mine', const {'blocks': 10});
-      await waitForMobileRegtestMigrationStatus(
+      await prepareMobilePrivateMigrationSchedule(
         tester,
         firstAccountUuid,
         (status) => status.scheduledBroadcasts.isNotEmpty,

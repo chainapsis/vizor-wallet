@@ -168,6 +168,13 @@ Future<void> _sendViaLockedPaymentUri(
     timeout: const Duration(minutes: 1),
   );
 
+  // A link from outside the wallet opens on a warning; the requested terms
+  // are behind its details.
+  await _tapAppButton(
+    tester,
+    const ValueKey('payment_request_link_details'),
+    timeout: const Duration(minutes: 1),
+  );
   await _pumpUntil(
     tester,
     () =>
@@ -190,7 +197,7 @@ Future<void> _sendViaLockedPaymentUri(
   );
   await _pumpUntil(
     tester,
-    () => tester.any(find.text('Review payment request')),
+    () => tester.any(find.text('Review Payment')),
     description: 'the payment-request review screen',
     timeout: const Duration(minutes: 1),
   );

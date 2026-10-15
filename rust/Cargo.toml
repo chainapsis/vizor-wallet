@@ -172,11 +172,9 @@ version = "=0.0.1-rc2"
 default-features = false
 features = ["wallet"]
 
-# Transparent PIR recovery adapter. A git dependency rather than a patched
-# crates.io package; see the `[patch.crates-io]` comment below.
+# Transparent PIR recovery adapter.
 [dependencies.zakura-pir-transparent]
-git = "https://github.com/zakura-core/wallet-libraries"
-rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae"
+version = "=0.0.1-rc0"
 default-features = false
 # `sqlite` applies a batch to the wallet and acknowledges it in one call.
 features = ["sqlite"]
@@ -224,11 +222,10 @@ features = ["test-fixtures"]
 
 # Real adapter batches for the coordinator's fixture source, the fake txid
 # display publication the loop-4 tests serve, and a real shard service in
-# process, with the wallet-pir crates it publishes with. Same rev as the
+# process, with the wallet-pir crates it publishes with. Same version as the
 # dependency above.
 [dev-dependencies.zakura-pir-transparent]
-git = "https://github.com/zakura-core/wallet-libraries"
-rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae"
+version = "=0.0.1-rc0"
 default-features = false
 features = ["sqlite", "testing"]
 
@@ -255,55 +252,6 @@ should_implement_trait = "allow"
 # and several assertions document cfg-dependent invariants.
 items_after_test_module = "allow"
 assertions_on_constants = "allow"
-
-# The transparent PIR ledger is in wallet-libraries but not released. Patch the
-# crates.io packages rather than depending on git directly: other dependencies
-# (including zakura-pir-enhance) reach these crates through
-# crates.io, and a direct git dependency would duplicate them. `zakura-pczt`
-# and `zakura-pir-enhance-types` are patched because the git
-# `zakura-client-backend` depends on them by path. Drop this once a release
-# includes the revision.
-#
-# `zakura-pir-transparent` is the exception, a direct git dependency: it is
-# not released on crates.io yet. Keep its rev equal to these so its path
-# dependencies on the backend and SQLite crates resolve to the patched sources.
-#
-# Pinned to wallet-libraries main at PR #177 (release packaging checks only),
-# after PR #175 (the testing fake txid display publication on txid-4k8),
-# PR #174 (the wallet-pir transparent crates from crates.io at 0.1.0-rc.3,
-# which read the 4,096-row txid display tables),
-# PR #169 (the ipir-sp family at 0.1.0-rc.7), PR #167 (the 8-bit txid
-# display), PR #165 (the 8-bit history profile and the /v2 API) and PR #153
-# (discovery that continues past its
-# budget, and the in-process shard service under `testing`), after PR #152
-# (rewound receives stay pending, deferrals carry the policy generation), PR #151
-# (unused transparent-recovery API removed), PR #147 (account activity, unattributed fees and the receipt
-# read), PR #150 (forget refuses a policy changed
-# since it began), PR #149 (interrupted settlements skip, policy changes stop,
-# timed-out lookups back off), PR #148 (a rewound private receive stays pending),
-# PR #146 (the recovery pass driver), PR #144 (typed transparent authority refusals and the ordered private-recovery
-# forget), PR #145 (the txid detail run driver and preferred receipts), the
-# transparent-ledger renames (activation, recovery suspension, address watch
-# sets), PR #137 (Enhance queries over only the rows a domain can hold), PR #140
-# (the same for a growing Transparent tail's pages), PR #139 (import-time account
-# discovery), PR #138 (the gated settlement this wallet uses to lock one commit
-# at a time), PR #134 (forget transparent ledger facts under `Public`), PR #133
-# (dithered 44-bit native queries for Transparent, Enhance and Status) and
-# PR #135 (the raw HTTP exchange, companion directory, settlement actions, txid
-# display service and `testing` feature this wallet builds on).
-# `zakura-pir-enhance` is patched too so its client uploads the dithered query.
-# The status response hook also needs its status/native path dependencies here
-# so their public types stay unified. Keep every wallet-libraries dependency at
-# this exact revision.
-[patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae" }
-zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae" }
-zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae" }
-zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries", rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae" }
-zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries", rev = "391d0b0247f0e07cfdea855ce87fcdf8ba376aae" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default

@@ -76,7 +76,7 @@ void main() {
 
       await waitForMobileRegtestMempoolSize(tester, 1);
       await postDriver('/mine', const {'blocks': 10});
-      final scheduled = await waitForMobileRegtestMigrationStatus(
+      final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
         accountUuid,
         (status) =>
@@ -121,7 +121,7 @@ void main() {
 
       await _releaseTransactions(reintroducedDenominations);
       await postDriver('/mine', const {'blocks': 10});
-      final rebuilt = await waitForMobileRegtestMigrationStatus(
+      final rebuilt = await prepareMobilePrivateMigrationSchedule(
         tester,
         accountUuid,
         (status) =>

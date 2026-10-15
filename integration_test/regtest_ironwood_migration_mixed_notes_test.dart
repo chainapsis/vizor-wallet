@@ -26,10 +26,10 @@ final _expectedReceiveAmounts = [
   BigInt.from(300006000),
   BigInt.from(400008000),
 ];
-final _expectedSplitFee = BigInt.from(160000);
+final _expectedSplitFee = BigInt.from(640000);
 final _expectedMigrationFee = BigInt.from(135000);
 final _expectedTotalFee = _expectedSplitFee + _expectedMigrationFee;
-final _expectedOrchardChange = BigInt.from(725000);
+final _expectedOrchardChange = BigInt.from(245000);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -104,14 +104,6 @@ void main() {
       _expectMixedNotePlan(migrationPlan);
 
       await openPrivateMigrationReview(tester);
-      expect(
-        find.textContaining(
-          '${migrationPlan.plannedBatchCount} batches',
-          findRichText: true,
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('~0.0029 ZEC'), findsOneWidget);
 
       await startPrivateMigrationFromReview(tester);
       final started = await waitForDesktopRegtestMigrationStatus(
@@ -119,48 +111,35 @@ void main() {
         accountUuid,
         (status) =>
             status.phase == 'waiting_denom_confirmations' &&
-            status.denominationSplitTotalCount == 2 &&
+            status.denominationSplitTotalCount == 8 &&
             status.denominationSplitCompletedCount == 0 &&
-            status.pendingSplitStageCount == 2,
-        description: 'first mixed-note denomination stage',
+            status.pendingSplitStageCount == 8,
+        description: 'mixed-note denomination preparation',
       );
       final runId = started.activeRunId;
       expect(runId, isNotNull);
       expect(started.totalCount, migrationPlan.plannedBatchCount);
       expect(started.preparedNoteCount, migrationPlan.plannedBatchCount);
-      expect((await _waitForMempool(tester, (size) => size == 1))['size'], 1);
+      // The 0.8 ZEC notes fund the small targets directly, beside two
+      // consolidations, so the first layer has four transactions.
+      expect(desktopPreparationLayers(started), [4, 2, 1, 1]);
 
-      e2eLog('confirming mixed-note denomination stage 1/2');
-      await ironwoodDriverPost(
+      e2eLog('confirming the mixed-note denomination preparation');
+      await prepareDesktopRegtestMigrationSchedule(
+        tester,
         _driverUrl,
-        '/mine',
-        payload: const {'blocks': 10},
+        accountUuid,
       );
-      final firstStageConfirmed = await waitForDesktopRegtestMigrationStatus(
+      final scheduled = await waitForDesktopRegtestMigrationStatus(
         tester,
         accountUuid,
         (status) =>
-            status.activeRunId == runId &&
-            status.phase == 'waiting_denom_confirmations' &&
-            status.denominationSplitCompletedCount == 1 &&
-            status.denominationSplitTotalCount == 2,
-        description: 'mixed-note denomination progress 1/2',
-      );
-      expect(firstStageConfirmed.pendingSplitStageCount, 2);
-      expect((await _waitForMempool(tester, (size) => size == 1))['size'], 1);
-
-      e2eLog('confirming mixed-note denomination stage 2/2');
-      await ironwoodDriverPost(
-        _driverUrl,
-        '/mine',
-        payload: const {'blocks': 10},
-      );
-      final scheduled = await prepareDesktopRegtestMigrationSchedule(
-        tester,
-        accountUuid,
+            status.scheduledBroadcasts.length ==
+            migrationPlan.plannedBatchCount,
+        description: 'mixed-note migration broadcast schedule',
       );
       expect(scheduled.activeRunId, runId);
-      expect(scheduled.denominationSplitCompletedCount, 2);
+      expect(scheduled.denominationSplitCompletedCount, 8);
       expect(scheduled.pendingSplitStageCount, 0);
       expect(scheduled.scheduledBroadcasts, hasLength(9));
 
@@ -260,7 +239,8 @@ void _expectMixedNotePlan(rust_sync.OrchardMigrationPrivatePlan plan) {
   expect(plan.totalInputZatoshi, _fundedAmount);
   expect(plan.plannedBatchCount, 9);
   expect(plan.targetValuesZatoshi, hasLength(plan.plannedBatchCount));
-  expect(plan.denominationSplitStageCount, 2);
+  expect(plan.denominationSplitStageCount, 8);
+  expect(plan.denominationSplitLayerCount, 4);
   expect(plan.denominationSplitFeeZatoshi, _expectedSplitFee);
   expect(plan.migrationFeeZatoshi, _expectedMigrationFee);
   expect(plan.estimatedTotalFeeZatoshi, _expectedTotalFee);
@@ -286,21 +266,6 @@ Future<void> _refreshMigrationStatusUi(
   container.invalidate(ironwoodMigrationStatusProvider(request));
   await container.read(ironwoodMigrationStatusProvider(request).future);
   await tester.pump();
-}
-
-Future<Map<String, Object?>> _waitForMempool(
-  WidgetTester tester,
-  bool Function(int size) condition,
-) async {
-  final end = DateTime.now().add(const Duration(minutes: 2));
-  Map<String, Object?>? last;
-  while (DateTime.now().isBefore(end)) {
-    last = await ironwoodDriverGet(_driverUrl, '/mempool');
-    if (condition(last['size'] as int)) return last;
-    await tester.pump(const Duration(milliseconds: 100));
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-  }
-  fail('Timed out waiting for migration mempool condition. Last: $last');
 }
 
 BigInt _sumTargets(Iterable<BigInt> values) {

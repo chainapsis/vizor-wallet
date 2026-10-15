@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _mnemonic = 'stub mnemonic words';
@@ -812,6 +813,75 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
+  testWidgets('finishes an additional account before the wallet change '
+      'refreshes the router', (tester) async {
+    final accountNotifier = _PublishingAccountNotifier();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        appSecurityProvider.overrideWith(
+          () => _RecordingSecurityNotifier(configured: true),
+        ),
+        accountProvider.overrideWith(() => accountNotifier),
+        syncProvider.overrideWith(_NoopSyncNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    final refresh = container.read(routerRefreshProvider);
+    // The application router refreshes whenever the wallet derived from the
+    // account list changes.
+    container.listen(accountProvider, (_, _) => refresh.requestRefresh());
+    final router = GoRouter(
+      refreshListenable: refresh,
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const Text('birthday route')),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+        mobileOnboardingRoutes().whereType<GoRoute>().singleWhere(
+          (route) => route.path == '/onboarding/customise-account',
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
+        ),
+      ),
+    );
+    router.push<void>(
+      '/onboarding/customise-account',
+      extra: const MobileOnboardingRouteArgs(
+        setupMode: OnboardingSetupMode.reusePasscode,
+        payload: CustomiseAccountArgs(
+          setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    // The new account is published while the mutation is still running.
+    // Give the router every chance to act on that change before it returns.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    accountNotifier.release.complete();
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.createdMnemonic, _mnemonic);
+    // A refresh during setup rebuilds the route without its arguments, which
+    // replaces the screen with an error view and never reaches Home.
+    expect(find.byType(ErrorWidget), findsNothing);
+    expect(find.text('home route'), findsOneWidget);
+  });
+
   testWidgets('imports a software draft with the selected persona', (
     tester,
   ) async {
@@ -1047,6 +1117,33 @@ class _RecordingAccountNotifier extends AccountNotifier {
     keystoneProfilePictureId = profilePictureId;
     keystoneUfvk = ufvk;
     keystoneZip32Index = zip32Index;
+  }
+}
+
+/// Publishes the created account, as the real import does, then holds the
+/// mutation open until the test releases it.
+class _PublishingAccountNotifier extends _RecordingAccountNotifier {
+  final release = Completer<void>();
+
+  @override
+  Future<void> createAccountFromMnemonic({
+    required String mnemonic,
+    String? name,
+    String profilePictureId = 'pfp-01',
+  }) async {
+    await super.createAccountFromMnemonic(
+      mnemonic: mnemonic,
+      name: name,
+      profilePictureId: profilePictureId,
+    );
+    state = AsyncData(
+      AccountState(
+        accounts: [AccountInfo(uuid: 'added', name: name ?? '', order: 0)],
+        activeAccountUuid: 'added',
+        activeAddress: 'u-added',
+      ),
+    );
+    await release.future;
   }
 }
 

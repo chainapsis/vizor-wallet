@@ -220,6 +220,13 @@ Future<void> _payRequestLink(WidgetTester tester, String uri) async {
     (_) {},
   );
 
+  // A link from outside the wallet opens on a warning; the requested terms
+  // are behind its details.
+  await _tapAppButton(
+    tester,
+    const ValueKey('payment_request_link_details'),
+    timeout: const Duration(minutes: 1),
+  );
   await _pumpUntil(
     tester,
     () =>

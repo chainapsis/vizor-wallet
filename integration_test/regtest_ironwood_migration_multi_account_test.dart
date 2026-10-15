@@ -109,22 +109,16 @@ void main() {
       expect(migrationPlan, isNotNull);
       await openPrivateMigrationReview(tester);
       await startPrivateMigrationFromReview(tester);
-      await pumpUntil(
+      final started = await waitForDesktopRegtestMigrationStatus(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
-        description: 'first-account denomination status',
-        timeout: const Duration(minutes: 5),
+        firstAccount.uuid,
+        (status) => status.phase == 'waiting_denom_confirmations',
+        description: 'first-account denomination preparation',
       );
-
-      final started = await desktopRegtestMigrationStatus(firstAccount.uuid);
+      await waitForDesktopActiveMigrationStatus(tester, preparing: true);
       expect(started.activeRunId, isNotNull);
 
+      await leaveDesktopMigrationStatusForHome(tester);
       await switchDesktopRegtestAccount(tester, secondAccount.uuid);
       await pumpUntil(
         tester,
@@ -150,24 +144,13 @@ void main() {
         tester,
         const ValueKey('home_desktop_ironwood_migration_cta_button'),
       );
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
-        description: 'first-account migration restored after account switch',
-      );
+      await waitForDesktopActiveMigrationStatus(tester, preparing: true);
 
-      await ironwoodDriverPost(
+      await prepareDesktopRegtestMigrationSchedule(
+        tester,
         _driverUrl,
-        '/mine',
-        payload: const {'blocks': 10},
+        firstAccount.uuid,
       );
-      await prepareDesktopRegtestMigrationSchedule(tester, firstAccount.uuid);
       await advanceDesktopRegtestMigrationSchedule(
         tester,
         _driverUrl,

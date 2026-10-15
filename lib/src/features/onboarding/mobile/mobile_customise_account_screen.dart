@@ -256,16 +256,23 @@ class _MobileCustomiseAccountScreenState
     );
 
     final pendingPassword = args.pendingPassword;
+    final routerRefresh = ref.read(routerRefreshProvider);
     if (pendingPassword == null) {
-      await createAccount();
-      await completeGiftClaimImportSetup(ref);
-      clearCustomisedAccountDraft(ref, args.flow);
-      router.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
+      // The new account refreshes the router, which would rebuild this route
+      // without its typed arguments and dispose the screen before the Gift
+      // handoff. Hold the refresh until setup has navigated away.
+      await routerRefresh.pauseWhile(() async {
+        await createAccount();
+        if (!mounted) return;
+        await completeGiftClaimImportSetup(ref);
+        if (!mounted) return;
+        clearCustomisedAccountDraft(ref, args.flow);
+        router.go(giftClaimSetupCompletionLocation(ref, otherwise: '/home'));
+      });
       return;
     }
 
     final securityNotifier = ref.read(appSecurityProvider.notifier);
-    final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
     try {
