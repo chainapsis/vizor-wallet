@@ -1,9 +1,9 @@
 # End-to-end and regtest tests
 
-How to run and write the Flutter and Rust regtest scenarios. The runner and
-every scenario are described in `scripts/e2e/README.md`. These runs are slow
-and heavy: start them only when the user explicitly asks for regtest or E2E
-execution.
+How to run and write the Flutter and Rust regtest scenarios, and what to clean
+up after a run. The runner and every scenario are described in
+`scripts/e2e/README.md`. These runs are slow and heavy: start them only when
+the user explicitly asks for regtest or E2E execution.
 
 ## Running on macOS
 
@@ -49,6 +49,94 @@ VIZOR_E2E_HIDDEN_WINDOW=false scripts/e2e/flutter-macos-regtest-import-sync.sh
 - Passing tests are always cleaned up, and the run's build output (several GB) is removed when it ends. `./run-regtest-rust-tests.sh --keep` keeps the stopped containers and wallet files of failed tests; the report lists their Docker IDs for removal.
 - Sapling proving params are cached at `~/.zcash-params` by default. Override with `SAPLING_PARAMS_DIR=/custom/path ./run-regtest-rust-tests.sh` if needed.
 - These regtest scenarios are slow and heavy. Do not run them unless the user explicitly asks for regtest/integration execution.
+
+## Cleaning up after a run
+
+Agents start most of these runs, so the agent that started a run removes what
+it left once nobody needs it. Remove only what you can tie to your own run id.
+If you cannot tell whether something is yours, leave it and say so in your
+report.
+
+The runner already removes each scenario's fixture, wallet files and port
+locks, each voting case's regenerated data, the run's build output and the
+run's simulator. What stays behind:
+
+- `--keep-failed` keeps a failed scenario's stopped containers, network,
+  volume and wallet files, and the run's simulator. A scenario whose cleanup
+  failed also lists what remains under `retained` in `report.json`.
+- A run killed before it could clean up (SIGKILL, a closed session, a reboot)
+  leaves its containers running, its simulator booted, case processes on the
+  fixed ports, and `builds/` in its run folder.
+- Caches outside the run folder stay: the worktree's `build/`, `.dart_tool/`
+  (Flutter keeps one build cache per configuration and never prunes them) and
+  `rust/target/`, and the Xcode DerivedData folder of the worktree's iOS
+  workspace. One full 85-scenario run left about 88 GB there.
+- The Ledger lane keeps the `vizor-speculos.*` folder it prints (app clone,
+  logs, ELF).
+
+### What you may remove
+
+Your run id is the suffix of `.regtest-logs/zakura-<run id>/`.
+
+- Docker containers, networks and volumes labelled for your run. Match the
+  whole `vizor_<run id>_` prefix, never anything broader. Then delete the
+  run's simulator by its exact name:
+
+  ```bash
+  run_id=<run id>
+  ns="vizor_${run_id}_"
+  label=com.keplr.vizor.e2e.namespace
+  docker ps -a --filter "label=$label" --format "{{.Label \"$label\"}} {{.ID}}" |
+    awk -v p="$ns" 'index($1, p) == 1 { print $2 }' | xargs docker rm -f
+  docker network ls --filter "label=$label" --format "{{.Label \"$label\"}} {{.ID}}" |
+    awk -v p="$ns" 'index($1, p) == 1 { print $2 }' | xargs docker network rm
+  docker volume ls --filter "label=$label" --format "{{.Label \"$label\"}} {{.Name}}" |
+    awk -v p="$ns" 'index($1, p) == 1 { print $2 }' | xargs docker volume rm
+  udid=$(xcrun simctl list devices | grep -F "Vizor Zakura E2E $run_id (" |
+    sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+  if [ -n "$udid" ]; then
+    xcrun simctl shutdown "$udid" 2>/dev/null || true
+    xcrun simctl delete "$udid"
+  fi
+  ```
+
+- If the next run refuses a fixed port (`port N is in use`), find the listener
+  with `lsof -nP -iTCP:N -sTCP:LISTEN`. Stop it only if your run started it;
+  otherwise report it.
+- Your run folder, `.regtest-logs/zakura-<run id>/`, once the result is
+  reported and you have copied what you still need. While a failure is
+  unresolved, keep the folder and its kept fixture, and say so.
+- The `vizor-speculos.*` folder the Ledger lane printed for your run.
+- Build caches of a worktree you created for this task, once nothing runs
+  there: `build/`, `.dart_tool/` and `rust/target/`, each only after
+  `git check-ignore -q <dir>` succeeds and `lsof -nP -Fn | grep -F "$PWD/<dir>/"`
+  prints nothing. Its iOS DerivedData folder is the one this prints, run from
+  the worktree root:
+
+  ```bash
+  ws=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$PWD/ios/Runner.xcworkspace")
+  for d in $(find ~/Library/Developer/Xcode/DerivedData -maxdepth 1 -type d -name 'Runner-*'); do
+    p=$(/usr/libexec/PlistBuddy -c 'Print :WorkspacePath' "$d/info.plist" 2>/dev/null) || continue
+    [ "$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$p")" = "$ws" ] && echo "$d"
+  done
+  ```
+
+### Never
+
+- Run `docker system prune`, `docker volume prune` or `docker image prune`,
+  remove containers by a name pattern, or remove pulled images. Never
+  force-quit Docker Desktop.
+- Delete or erase any simulator but your run's (`xcrun simctl delete all`,
+  `xcrun simctl erase all`). The user's own simulators stay.
+- Delete `~/Library/Developer/Xcode/DerivedData` or another workspace's folder
+  in it.
+- Run `flutter clean` or delete build caches in a worktree you did not create,
+  or one another agent or session is using.
+- Remove shared caches: `.regtest-voting/deps` (reused by every voting run),
+  `~/.zcash-params`, `~/.pub-cache`, `~/.cargo`, `~/.gradle`, SwiftPM caches
+  or simulator runtimes.
+- Touch Docker resources without your run's label, including other compose
+  stacks, or stop processes you did not start.
 
 ## Legacy zcashd stack (`scripts/regtest/`)
 

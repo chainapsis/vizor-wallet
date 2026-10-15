@@ -8,7 +8,8 @@ fvm flutter run
 fvm flutter test      # mobile-tagged tests auto-skip (dart_test.yaml)
 fvm flutter analyze
 
-# E2E and regtest runs: see docs/e2e.md; start them only when the user asks.
+# E2E and regtest runs: see docs/e2e.md. Run them only when the user asks,
+# and clean up after them.
 
 # Mobile form factor: mobile-targeted runs and tests pass the token
 # define. Details in the "Design Token Form Factor" section below.
@@ -1215,7 +1216,7 @@ edge in `MobileBottomSafeArea`
   Mobile-UI tests:
   `fvm flutter test --tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile`.
   Lane rules in "Design Token Form Factor" above.
-- E2E and regtest integration tests are slow and heavy; start them only when the user explicitly asks. How to run and write them: [`docs/e2e.md`](docs/e2e.md).
+- E2E and regtest integration tests are slow and heavy; start them only when the user explicitly asks, and clean up what a run leaves. How to run them, write them and clean up safely: [`docs/e2e.md`](docs/e2e.md).
 - Debug vs Release: Rust crypto is ~5-10x slower in debug (`opt-level=0`). Use `--release` for realistic sync performance.
 
 ## Crate Versions
