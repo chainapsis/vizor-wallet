@@ -576,8 +576,11 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
             if runs_flutter:
                 _require_unlocked_session()
             report["pinned_images"] = ensure_pinned_images(evidence, cancel_event=cancel, out=out)
-            targets = tuple(dict.fromkeys(s.target for s in scenarios if isinstance(s, RustScenario)))
-            out(f"Building the signer and {len(targets)} Rust test target(s); logs: {evidence}")
+            # Every run asks for the same signer: every catalog Rust target and the
+            # address tool. Any selection then reuses one build cache entry.
+            targets = tuple(dict.fromkeys(s.target for s in RUST_SCENARIOS))
+            selected = tuple(dict.fromkeys(s.target for s in scenarios if isinstance(s, RustScenario)))
+            out(f"Building the signer and {len(targets)} Rust test target(s), unless cached; logs: {evidence}")
             builds = evidence / "builds"
             builds.mkdir(mode=0o700)
             builds_id = tree.identity(builds.lstat())
@@ -585,10 +588,15 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                 scenario_id="rust.signer-build", run_id=run_id, worker_id=0, case_index=0,
                 # A build case never listens; its manifest only needs distinct ports.
                 ports={"rpc": 28232, "lwd": 29067, "proxy": 29068}, activation_height=1))
+            cache = logs / "build-cache"
+            cache.mkdir(mode=0o700, exist_ok=True)
             artifact = build_regtest_funder(producer, source_root=root, source_commit=commit,
                 jobs=build_jobs, timeout=1200, cancel_event=cancel, test_targets=targets,
-                wallet_addresses=any(isinstance(s, flutter_cases.FlutterScenario)
-                                     and flutter_cases.needs_wallet_addresses(s) for s in scenarios))
+                wallet_addresses=True, cache_root=cache / "funder-v1")
+            built = artifact.identity()
+            report["builds"] = {"signer_cache_hit": built["cache_hit"], "signer_cache_key": built.get("cache_key"),
+                                "rust_built_test_targets": list(targets), "rust_test_targets": list(selected)}
+            out("Reused the cached signer" if built["cache_hit"] else "Built the signer and cached it")
             if any(getattr(s, "voting", None) for s in scenarios):
                 out("Building the pinned voting services")
                 built = runtime.run_logged_command(

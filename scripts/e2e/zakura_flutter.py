@@ -418,10 +418,6 @@ def derived_addresses(scenario):
     return tuple(dict.fromkeys(values))
 
 
-def needs_wallet_addresses(scenario):
-    return bool(derived_addresses(scenario)) or scenario.orchard_notes is not None
-
-
 def fixed_ports(scenario):
     """The default ports the scenario's chain and host tools listen on."""
     return {**FIXED_PORTS, **({"screenshots": SCREENSHOT_PORT} if scenario.screenshots else {}),

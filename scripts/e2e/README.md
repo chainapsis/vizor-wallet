@@ -37,8 +37,22 @@ Funding transactions are signed offline by
 `rust/examples/regtest_direct_funder.rs` from the chain's coinbase, which pays
 a public test-only key, and are broadcast with the node's `sendrawtransaction`.
 Nothing uses a node wallet. The signer and the Rust test executables are built
-once per run from `git archive HEAD rust`, so the runner refuses to start while
-`rust/` has uncommitted changes.
+from `git archive HEAD rust`, so the runner refuses to start while `rust/` has
+uncommitted changes.
+
+Every run asks for the same build, the signer with every catalog Rust target
+and the address tool, and keeps it in `.regtest-logs/build-cache/funder-v1`,
+keyed by the committed `rust/` tree, the Rust toolchain, the Apple linker and
+the Cargo dependencies. A later run with the same inputs, whatever scenarios it
+selects, skips the 8 to 16 minute build; `report.json` says whether it hit.
+Each entry is about 500 MB. `prune-build-cache.py` lists the cache, and with
+`--apply` removes all but each kind's two newest entries, skipping any that a
+running run holds:
+
+```bash
+python3 scripts/e2e/prune-build-cache.py
+python3 scripts/e2e/prune-build-cache.py --apply
+```
 
 Prerequisites: Python 3.11+, Docker, `grpcurl`, the fvm-pinned Flutter SDK after
 `fvm flutter pub get`, and fetched Cargo dependencies (`cargo fetch --locked` in

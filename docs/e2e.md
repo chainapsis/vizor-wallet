@@ -77,6 +77,8 @@ run's simulator. What stays behind:
   workspace. One full 85-scenario run left about 88 GB there.
 - The Ledger lane keeps the `vizor-speculos.*` folder it prints (app clone,
   logs, ELF).
+- `.regtest-logs/build-cache/` keeps the built signer and Rust test
+  executables for later runs, about 500 MB per entry.
 
 ### What you may remove
 
@@ -111,6 +113,9 @@ Your run id is the suffix of `.regtest-logs/zakura-<run id>/`.
   reported and you have copied what you still need. While a failure is
   unresolved, keep the folder and its kept chain, and say so.
 - The `vizor-speculos.*` folder the Ledger lane printed for your run.
+- Old build cache entries, through `python3 scripts/e2e/prune-build-cache.py
+  --apply`. It keeps each kind's two newest entries and skips any that a
+  running run holds. Never delete the cache folder by hand.
 - Build caches of a worktree you created for this task, once nothing runs
   there: `build/`, `.dart_tool/` and `rust/target/`, each only after
   `git check-ignore -q <dir>` succeeds and `lsof -nP -Fn | grep -F "$PWD/<dir>/"`

@@ -318,6 +318,15 @@ class FlutterCommandTests(unittest.TestCase):
                 verify(lines)
 
 
+class Signer:
+    """The model build's handle; only its cache identity is read here."""
+    def __init__(self, hit=False):
+        self.hit = hit
+
+    def identity(self):
+        return {"cache_hit": self.hit, "cache_key": "c" * 64}
+
+
 class SequenceHarness(unittest.TestCase):
     """Runs run_sequence with a model build and model cases."""
     def setUp(self):
@@ -340,7 +349,7 @@ class SequenceHarness(unittest.TestCase):
             output.mkdir(parents=True)
             (output / "test-binary").write_bytes(b"0" * 4096)
             producer.close()
-            return object()
+            return Signer()
 
         result = {"status": status, "duration_seconds": 1.0, "error": None if status == "passed" else "failed"}
         with patch.object(SEQUENTIAL, "build_regtest_funder", side_effect=build), \
@@ -354,13 +363,43 @@ class SequenceHarness(unittest.TestCase):
         return report, producer
 
 
+class SignerCacheTests(SequenceHarness):
+    """Every run asks the build cache for the same signer, whatever it selects."""
+
+    def test_the_signer_carries_every_catalog_target_and_the_address_tool(self):
+        calls = []
+
+        def build(producer, **kwargs):
+            calls.append(kwargs)
+            producer.close()
+            return Signer(hit=len(calls) > 1)
+
+        passed = lambda *_args, **_kwargs: {"status": "passed", "duration_seconds": 1.0, "error": None}
+        reports = []
+        for selection in (["rust.send.basic"], ["flutter.macos.import-sync"]):
+            with patch.object(SEQUENTIAL, "build_regtest_funder", side_effect=build), \
+                 patch.object(SEQUENTIAL, "run_case", side_effect=passed):
+                report, _ = SEQUENTIAL.run_sequence(self.root, [SEQUENTIAL.SCENARIOS[i] for i in selection],
+                    flutter=Path("/model/flutter"), grpcurl=self.root, proto_dir=self.root, out=lambda _text: None)
+            reports.append(report)
+        catalog = list(dict.fromkeys(s.target for s in SEQUENTIAL.RUST_SCENARIOS))
+        for kwargs in calls:
+            self.assertEqual(kwargs["test_targets"], tuple(catalog))
+            self.assertIs(kwargs["wallet_addresses"], True)
+            self.assertEqual(kwargs["cache_root"], self.root / ".regtest-logs" / "build-cache" / "funder-v1")
+        self.assertEqual([r["builds"]["signer_cache_hit"] for r in reports], [False, True])
+        self.assertEqual([r["builds"]["rust_test_targets"] for r in reports],
+                         [[SEQUENTIAL.SCENARIOS["rust.send.basic"].target], []])
+        self.assertEqual(reports[1]["builds"]["rust_built_test_targets"], catalog)
+
+
 class SessionLockTests(SequenceHarness):
     """Flutter scenarios do not start while the macOS session is locked."""
 
     def run_locked(self, locked, scenarios, run_case):
         def build(producer, **_kwargs):
             producer.close()
-            return object()
+            return Signer()
 
         with patch.object(SEQUENTIAL.diagnostics, "session_locked", side_effect=locked) as probe, \
              patch.object(SEQUENTIAL, "build_regtest_funder", side_effect=build) as built, \
