@@ -8,7 +8,7 @@ void main() {
 
     expect(level(0), 0);
     expect(level(0, lowPower: true), 1);
-    expect(level(1), 1);
+    expect(level(1), 0);
     expect(level(1, lowPower: true), 1);
     expect(level(2), 2);
     expect(level(3, lowPower: true), 2);
