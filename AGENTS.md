@@ -502,7 +502,9 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O),
    four batches ahead of the scan (`PREFETCH_DEPTH`), each on its own request
    and planned with the same byte budget as the scan, so up to five batches'
-   worth of compact blocks are held at once; a tip batch that cuts in between
+   worth of compact blocks are held at once. Blocks stay protobuf-encoded
+   until the scan reads them (`MemoryBlockSource`), since decoded they take
+   about 1.8 times their wire size; a tip batch that cuts in between
    history batches keeps the queued ones, and a Verify range a new tip puts at
    the scan frontier is scanned together with the queued batch it falls in
 4. `scan_cached_blocks` from memory. A batch takes as many blocks as fit a

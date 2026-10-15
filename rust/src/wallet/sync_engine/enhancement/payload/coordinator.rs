@@ -178,7 +178,6 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
         request: IronwoodEnhanceDiscoveryRequest,
         should_exit: &impl Fn() -> bool,
     ) -> Result<(), EnhancePirRunError> {
-        let downloaded;
         let block = if let Some(block) = self
             .cached
             .and_then(|source| source.block_at(request.height))
@@ -192,7 +191,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
                 .map_err(|e| SyncError::db(format!("chain_height: {e}")))?;
             let (start, end) =
                 rediscovery_cover_range(request.height, tip, random_rediscovery_offset());
-            downloaded = await_request_with_cancel(
+            let downloaded = await_request_with_cancel(
                 crate::wallet::sync_engine::lwd::download_blocks(
                     self.lwd,
                     start,
@@ -211,7 +210,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
             return Err(EnhancePirRunError::ExitRequested);
         }
         let result = with_wallet_db_write_lock("enhance_pir.rediscover", || {
-            db.rebuild_ironwood_enhancement(request, block)
+            db.rebuild_ironwood_enhancement(request, &block)
         })
         .map_err(|e| SyncError::db(e.to_string()))?;
         if matches!(result, IronwoodEnhanceDiscoveryResult::Rejected) {

@@ -889,16 +889,21 @@ pub(super) async fn download_blocks(
     .await
     .map_err(|e| status_to_network_error("get_block_range", e))?;
 
-    let blocks = collect_compact_blocks_bounded(
+    // Each block is encoded as it arrives, so a queued batch never holds
+    // more than one decoded block.
+    let mut source =
+        MemoryBlockSource::with_capacity(expected_block_count(start_height, end_height)?);
+    for_each_compact_block(
         &mut stream,
         start_height,
         end_height,
         LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
         None,
+        |block| source.push(block),
     )
     .await?;
 
-    Ok(MemoryBlockSource::new(blocks))
+    Ok(source)
 }
 
 async fn collect_compact_blocks_bounded<S>(
@@ -911,12 +916,38 @@ async fn collect_compact_blocks_bounded<S>(
 where
     S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
 {
-    let expected_count = expected_block_count(start_height, end_height)?;
     let mut blocks = Vec::new();
     blocks
-        .try_reserve_exact(expected_count)
+        .try_reserve_exact(expected_block_count(start_height, end_height)?)
         .map_err(|_| SyncError::other("get_block_range request is too large"))?;
+    for_each_compact_block(
+        stream,
+        start_height,
+        end_height,
+        idle_timeout,
+        byte_limit,
+        |block| blocks.push(block),
+    )
+    .await?;
+    Ok(blocks)
+}
 
+/// Hands `keep` each block of the response for `start_height..=end_height`,
+/// in order, rejecting a response with missing, extra, out-of-order or
+/// (past `byte_limit`) oversized blocks.
+async fn for_each_compact_block<S>(
+    stream: &mut S,
+    start_height: u64,
+    end_height: u64,
+    idle_timeout: Duration,
+    byte_limit: Option<usize>,
+    mut keep: impl FnMut(CompactBlock),
+) -> Result<(), SyncError>
+where
+    S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
+{
+    let expected_count = expected_block_count(start_height, end_height)?;
+    let mut received = 0usize;
     let mut byte_count = 0usize;
     loop {
         let next = await_stream_message("get_block_range stream", idle_timeout, async {
@@ -931,13 +962,13 @@ where
             break;
         };
 
-        if blocks.len() >= expected_count {
+        if received >= expected_count {
             return Err(SyncError::net(format!(
                 "get_block_range returned more than {expected_count} blocks for request \
                  {start_height}..={end_height}"
             )));
         }
-        let offset = u64::try_from(blocks.len())
+        let offset = u64::try_from(received)
             .map_err(|_| SyncError::other("get_block_range response is too large"))?;
         let expected_height = start_height
             .checked_add(offset)
@@ -953,18 +984,18 @@ where
         if byte_limit.is_some_and(|limit| byte_count > limit) {
             return Err(SyncError::other("Gift Card range exceeds memory limit"));
         }
-        blocks.push(block);
+        keep(block);
+        received += 1;
     }
 
-    if blocks.len() != expected_count {
+    if received != expected_count {
         return Err(SyncError::net(format!(
-            "get_block_range returned {} of {expected_count} blocks for request \
+            "get_block_range returned {received} of {expected_count} blocks for request \
              {start_height}..={end_height}",
-            blocks.len(),
         )));
     }
 
-    Ok(blocks)
+    Ok(())
 }
 
 fn expected_block_count(start_height: u64, end_height: u64) -> Result<usize, SyncError> {

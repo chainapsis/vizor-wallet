@@ -210,9 +210,11 @@ const BATCH_SIZE_BACKGROUND: u32 = 300;
 /// request. A download is usually the bottleneck, and each request waits
 /// before its first block, so more requests in flight keep the link busy
 /// through those waits. On spam-window slices, four instead of two raised
-/// throughput by about 40% with the mobile byte budget (7.1 to 9.7-10.3 MB/s)
-/// and by 7-21% with the desktop one, for 15-50 MB more peak memory. Memory
-/// holds up to `1 + PREFETCH_DEPTH` byte budgets of compact blocks.
+/// throughput by about 40% with the mobile byte budget (7.1 to 9.7-10.3 MB/s).
+/// With the desktop budget it depends on the link: on a dense slice four
+/// scanned 17% slower than two over a fast link and as fast or faster over a
+/// slower one. Queued batches stay encoded (`MemoryBlockSource`), so four
+/// ahead holds about two more batches of wire bytes, some 60 MB on desktop.
 const PREFETCH_DEPTH: usize = 4;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
