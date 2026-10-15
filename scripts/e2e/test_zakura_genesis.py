@@ -17,7 +17,7 @@ try:
     import zakura_genesis as GENESIS
     import native_zakura_backend as BACKEND
     import native_workspace as WORKSPACE
-    from test_native_zakura_backend import FixtureModel, modeled_source, prepare
+    from test_native_zakura_backend import RegtestModel, prepare
 finally:
     sys.path.pop(0)
 
@@ -37,11 +37,11 @@ def observations():
     return block, node_tree
 
 
-class GenesisFixture(FixtureModel):
+class GenesisModel(RegtestModel):
     def start(self):
         ready = super().start()
-        self._lightwalletd_url = "127.0.0.1:39067"
-        ready["endpoints"] = {"lightwalletd_url": self._lightwalletd_url}
+        self.lightwalletd_url = "127.0.0.1:39067"
+        ready["endpoints"] = {"lightwalletd_url": self.lightwalletd_url}
         self.calls = []
         self.block, self.node_tree = observations()
         return ready
@@ -64,10 +64,9 @@ class GenesisTests(unittest.TestCase):
         self.root = Path(temporary.name).resolve()
         self.cases, self.backends = [], []
         self.addCleanup(self.stop_models)
-        source = patch.object(BACKEND, "load_zakura_fixture_source",
-                              return_value=modeled_source(GenesisFixture))
-        source.start()
-        self.addCleanup(source.stop)
+        regtest = patch.object(BACKEND, "ZakuraRegtest", GenesisModel)
+        regtest.start()
+        self.addCleanup(regtest.stop)
 
     def case(self):
         workspace = WORKSPACE.prepare_native_case_workspace(self.root, platform="macos",
@@ -108,16 +107,15 @@ class GenesisTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(data).hexdigest(), handoff["sha256"])
         self.assertEqual(handoff["upstream_port"], 39067)  # Not the manifest front port.
         self.assertEqual(proof["identity"]["run_id"], handoff["fixture_run_id"])
-        self.assertEqual(proof["source"], modeled_source(GenesisFixture).identity())
         self.assertEqual(proof["tree_state"], {"network": "regtest", "height": "0",
             "hash": HASH, "time": 1296688602, "saplingTree": "000000",
             "orchardTree": "000000", "ironwoodTree": "000000"})
         self.assertEqual(proof["empty_tree_codec"], GENESIS.EMPTY_TREE_CODEC)
         self.assertIs(proof["wallet_or_catalog_pass"], False)
-        self.assertEqual([call[:2] for call in backend._fixture.calls], [
+        self.assertEqual([call[:2] for call in backend._regtest.calls], [
             ("getblockhash", [0]), ("getblock", [HASH, 2]),
             ("z_gettreestate", [HASH]), ("getblockhash", [0])])
-        self.assertEqual(len({call[2] for call in backend._fixture.calls}), 1)
+        self.assertEqual(len({call[2] for call in backend._regtest.calls}), 1)
         self.assertEqual(backend._case.launched_process_count, 0)
         state = result.tree_state()
         state["hash"] = "mutated-copy"
@@ -191,7 +189,7 @@ class GenesisTests(unittest.TestCase):
         cancel.set()
         with self.assertRaises(GENESIS.runtime.Cancelled):
             self.create(backend, cancel_event=cancel)
-        self.assertEqual(backend._fixture.calls, [])
+        self.assertEqual(backend._regtest.calls, [])
 
     def test_cancellation_after_first_rpc_does_not_publish(self):
         backend = self.backend()
@@ -204,7 +202,7 @@ class GenesisTests(unittest.TestCase):
         with patch.object(backend, "rpc", side_effect=rpc):
             with self.assertRaises(GENESIS.runtime.Cancelled):
                 self.create(backend, cancel_event=cancel)
-        self.assertEqual(len(backend._fixture.calls), 1)
+        self.assertEqual(len(backend._regtest.calls), 1)
         self.assertFalse((backend.root / "genesis-proof.json").exists())
 
     def test_deadline_after_rpc_does_not_publish(self):
@@ -261,9 +259,9 @@ class GenesisTests(unittest.TestCase):
                 elif change == "writable":
                     path.chmod(0o600)
                 elif change == "run":
-                    backend._fixture.run_id = "f" * 32
+                    backend._regtest.run_id = "f" * 32
                 else:
-                    backend._fixture._lightwalletd_url = "127.0.0.1:39068"
+                    backend._regtest.lightwalletd_url = "127.0.0.1:39068"
                 with self.assertRaises((GENESIS.ZakuraGenesisError, OSError)):
                     result.handoff()
 
@@ -278,13 +276,13 @@ class GenesisTests(unittest.TestCase):
                         "127.0.0.1:39068" if change == "port" else "localhost:39067")
                 with self.assertRaises(GENESIS.ZakuraGenesisError):
                     self.create(backend)
-                self.assertEqual(backend._fixture.calls, [])
+                self.assertEqual(backend._regtest.calls, [])
 
     def test_oversized_or_nonfinite_evidence_is_not_published(self):
         for value in ("x" * GENESIS.MAX_PROOF_BYTES, float("nan")):
             with self.subTest(value_type=type(value).__name__):
                 backend = self.backend()
-                backend._fixture.block["extra"] = value
+                backend._regtest.block["extra"] = value
                 with self.assertRaises(GENESIS.ZakuraGenesisError):
                     self.create(backend)
                 self.assertFalse((backend.root / "genesis-proof.json").exists())

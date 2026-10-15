@@ -1,6 +1,6 @@
-"""Run direct Zakura regtest cases one at a time, each against its own fixture.
+"""Run Zakura regtest cases one at a time, each on its own chain.
 
-Every case owns a fresh pinned Zakura node and lightwalletd, the lightwalletd
+Every case owns a fresh Zakura node and lightwalletd, the lightwalletd
 shim in front of them and an HTTP control. The offline signer and the Rust test
 executables are built once per run from the committed `rust/` tree and shared
 read-only. Cases never share chain state, wallets or evidence. Rust cases lease
@@ -36,21 +36,21 @@ from native_zakura_control import prepare_native_zakura_control
 from native_zakura_front import prepare_native_zakura_front
 import zakura_flutter as flutter_cases
 from zakura_flutter import Derived
-from zakura_fixture_source import ensure_pinned_images
 from zakura_batch_funding import fund_zakura_batch, migration_note_batches
 import zakura_diagnostics as diagnostics
 from zakura_funding import fund_zakura
 from zakura_genesis import create_zakura_genesis_proof
+from zakura_regtest import ensure_pinned_images
 from zakura_simulator import RunSimulator, newest_runtime, uninstall_app
 
 
-# The coinbase of every fixture pays the signer's public test-only key.
+# The coinbase of every chain pays the signer's public test-only key.
 MINER_ADDRESS = "tmLomwDqZSUb1Mvsfpjtmt4cLBA7c9tGssX"
 # Ironwood (NU6.3) is active from height 1 unless a scenario funds Orchard
 # before a controlled activation.
 DEFAULT_ACTIVATION = 1
 MIGRATION_ACTIVATION = 500
-# Coinbase spends need 100 confirmations, so every fixture starts mature.
+# Coinbase spends need 100 confirmations, so every chain starts mature.
 INITIAL_BLOCKS = 100
 # The Gift Card tracking tests print each capture they save in the app sandbox.
 CAPTURE_MARKER = "[gift-card-tracking-screenshot] "
@@ -155,9 +155,9 @@ def _require_unlocked_session():
 
 
 class SequentialCase:
-    """One case's ports, workspace, fixture, front and control.
+    """One case's ports, workspace, chain, front and control.
 
-    Finalize with close() after a pass, or retain() to keep the fixture and
+    Finalize with close() after a pass, or retain() to keep the chain and
     wallet files of a failed case for inspection.
     """
 
@@ -169,7 +169,7 @@ class SequentialCase:
             _require_unbound(flutter_cases.UNAVAILABLE_PORT)
             self.lease = lease_fixed_ports(run_id, dict(ports))
         try:
-            # Screenshot and voting ports stay leased for their services, outside the fixture's.
+            # Screenshot and voting ports stay leased for their services, outside the chain's.
             workspace = prepare_native_case_workspace(run_root, platform=platform,
                 scenario_id=scenario_id, run_id=run_id, worker_id=0, case_index=case_index,
                 ports={name: self.lease.ports[name] for name in ("rpc", "lwd", "proxy")},
@@ -186,7 +186,7 @@ class SequentialCase:
 
     def start(self, *, grpcurl, proto_dir, dart, source_root, artifact, cancel_event,
               initial_blocks=INITIAL_BLOCKS, funding=(), orchard_notes=None, derive=()):
-        """Start the fixture, mature its coinbase and fund it, then put the shim and control in front.
+        """Start the chain, mature its coinbase and fund it, then put the shim and control in front.
 
         The addresses in `derive` are derived first; funding and Flutter
         defines use them.
@@ -332,7 +332,7 @@ class SequentialCase:
         return ["bash", str(script), mode, str(self.case.workspace.root / "voting" / "ready.json")]
 
     def _start_voting(self, voting, source_root, device, deadline, cancel_event):
-        """Start the voting services against this fixture; return their defines.
+        """Start the voting services against this chain; return their defines.
 
         The services run until the case stops them on close.
         """
@@ -392,7 +392,7 @@ class SequentialCase:
             time.sleep(0.1)
 
     def close(self, *, timeout=60.0):
-        """Stop every case process, then remove the fixture, wallet files and port locks."""
+        """Stop every case process, then remove the chain, wallet files and port locks."""
         if self._finished:
             raise runtime.RunnerError("case already finalized")
         self._finished = True
@@ -408,7 +408,7 @@ class SequentialCase:
         self.lease.close()
 
     def retain(self):
-        """Stop every case process; keep the fixture, wallet files and evidence."""
+        """Stop every case process; keep the chain, wallet files and evidence."""
         self._finished = True
         errors = []
         steps = [lambda: self.control.close() if self.control is not None else None,
@@ -442,7 +442,7 @@ def _require_unbound(port):
 
 def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, proto_dir, dart,
              source_root, keep_failed, cancel_event, flutter=None, device=None, dart_defines=()):
-    """Run one scenario on its own fixture and return its report entry."""
+    """Run one scenario on its own chain and return its report entry."""
     started = time.monotonic()
     is_flutter = isinstance(scenario, flutter_cases.FlutterScenario)
     result = {"scenario_id": scenario.id, "activation_height": scenario.activation_height,
@@ -469,7 +469,7 @@ def run_case(cases_root, run_id, case_index, scenario, *, artifact, grpcurl, pro
             activation_height=scenario.activation_height,
             ports=flutter_cases.fixed_ports(scenario) if is_flutter else None)
         result["evidence"] = str(session.case.workspace.root)
-        begin("fixture")
+        begin("chain")
         session.start(grpcurl=grpcurl, proto_dir=proto_dir, dart=dart, source_root=source_root,
             artifact=artifact, cancel_event=cancel_event,
             initial_blocks=scenario.initial_blocks if is_flutter else INITIAL_BLOCKS,
@@ -542,10 +542,10 @@ def resolve_dart(flutter, source_root):
 
 def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_jobs=4,
                  keep_failed=False, cancel_event=None, out=print, ios_runtime=None, dart_defines=()):
-    """Build once, then run each scenario on its own fixture; return the report.
+    """Build once, then run each scenario on its own chain; return the report.
 
     iOS scenarios run on a simulator the run creates after the build and
-    deletes at the end, unless it is kept beside failed fixtures.
+    deletes at the end, unless it is kept beside failed chains.
     """
     cancel = cancel_event if cancel_event is not None else threading.Event()
     root, commit = committed_source(source_root)
@@ -640,7 +640,7 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
                     out(f"Could not delete {simulator.name} ({simulator.udid}): {error}")
         if builds_id is not None:
             # Each run builds into a fresh target directory (several GB). Kept
-            # fixtures do not need it; logs and markers stay.
+            # chains do not need it; logs and markers stay.
             report["build_prune"] = tree.prune_build_outputs(builds, expected=builds_id)
             out(f"Removed {tree.size_text(report['build_prune']['bytes'])} of build output"
                 + (f"; {len(report['build_prune']['errors'])} error(s)" if report["build_prune"]["errors"] else ""))

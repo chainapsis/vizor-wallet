@@ -127,11 +127,11 @@ class OwnedNativeZakuraFront:
             raise NativeZakuraFrontError("owned front output capture failed")
 
     def _query(self, method, payload, deadline, cancel):
-        fixture = self._backend._fixture
+        regtest = self._backend._regtest
         remaining = deadline - time.monotonic()
-        result = self._case.run_command([str(fixture.grpcurl), "-plaintext",
-            "-max-time", f"{min(remaining, 2.0):.3f}", "-import-path", str(fixture.proto_dir),
-            "-proto", fixture.service_proto.name, "-d", json.dumps(payload),
+        result = self._case.run_command([str(regtest.grpcurl), "-plaintext",
+            "-max-time", f"{min(remaining, 2.0):.3f}", "-import-path", str(regtest.proto_dir),
+            "-proto", regtest.service_proto.name, "-d", json.dumps(payload),
             f"127.0.0.1:{self._port}", "cash.z.wallet.sdk.rpc.CompactTxStreamer/" + method],
             env=os.environ.copy(), timeout=remaining, cancel_event=cancel, max_output_bytes=_OUTPUT_BYTES)
         output = "".join(result.lines)

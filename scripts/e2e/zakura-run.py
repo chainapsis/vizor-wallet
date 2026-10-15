@@ -52,7 +52,7 @@ def main(argv=None):
         help="lightwalletd protos (default: protos/)")
     parser.add_argument("--build-jobs", type=int, default=4, help="Cargo build jobs, 1 through 8")
     parser.add_argument("--keep-failed", action="store_true",
-        help="keep the fixture and wallet files of failed scenarios")
+        help="keep the regtest chain and wallet files of failed scenarios")
     parser.add_argument("--ios-runtime",
         help="simulator runtime for iOS scenarios, such as com.apple.CoreSimulator.SimRuntime.iOS-26-3 "
              "(default: the newest installed)")

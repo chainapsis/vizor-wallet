@@ -161,11 +161,11 @@ class RunCaseTests(unittest.TestCase):
         result, calls = self.run_case()
         self.assertEqual((result["status"], result["returncode"]), ("passed", 0))
         self.assertEqual(calls, ["start", "run", "close"])
-        self.assertEqual(set(result["phase_seconds"]), {"prepare", "fixture", "execute", "close"})
+        self.assertEqual(set(result["phase_seconds"]), {"prepare", "chain", "execute", "close"})
 
     def test_failure_cleans_up_by_default_and_keeps_state_on_request(self):
         result, calls = self.run_case(fail="start")
-        self.assertEqual((result["status"], result["failed_phase"]), ("failed", "fixture"))
+        self.assertEqual((result["status"], result["failed_phase"]), ("failed", "chain"))
         self.assertEqual(calls, ["start", "close"])
         self.assertNotIn("retained", result)
         result, calls = self.run_case(keep_failed=True, fail="start")

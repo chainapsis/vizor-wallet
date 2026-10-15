@@ -17,13 +17,13 @@ try:
     import native_zakura_backend as BACKEND
     import native_workspace as WORKSPACE
     from zakura_genesis import create_zakura_genesis_proof
-    from test_zakura_genesis import GenesisFixture, HASH
-    from test_native_zakura_backend import modeled_source, prepare
+    from test_zakura_genesis import GenesisModel, HASH
+    from test_native_zakura_backend import prepare
 finally:
     sys.path.pop(0)
 
 
-class FrontFixture(GenesisFixture):
+class FrontModel(GenesisModel):
     def grpc(self, method, payload=None, *, deadline=None):
         if method == "GetLightdInfo":
             return {"chainName": "test", "blockHeight": "1", "build": "modeled"}
@@ -51,9 +51,9 @@ class FrontTests(unittest.TestCase):
             path.write_text("// modeled source\n")
         (self.source / ".dart_tool/package_config.json").write_text(json.dumps({
             "packages": [{"name": "zcash_wallet", "rootUri": "../"}]}))
-        source = patch.object(BACKEND, "load_zakura_fixture_source", return_value=modeled_source(FrontFixture))
-        source.start()
-        self.addCleanup(source.stop)
+        regtest = patch.object(BACKEND, "ZakuraRegtest", FrontModel)
+        regtest.start()
+        self.addCleanup(regtest.stop)
         workspace = WORKSPACE.prepare_native_case_workspace(self.root, platform="macos",
             scenario_id="flutter.macos.front-model", run_id="a1b2c3d4e5", worker_id=0,
             case_index=0, ports={"rpc": 28232, "lwd": 29067, "proxy": 29068}, activation_height=1)
@@ -279,7 +279,7 @@ class FrontTests(unittest.TestCase):
         self.assert_bad_ready("network")
 
     def test_initial_backend_catchup_precedes_lightd_info_baseline(self):
-        fixture = self.backend._fixture
+        fixture = self.backend._regtest
         original_grpc, original_synced = fixture.grpc, fixture.wait_synced
         synced = False
 
@@ -304,7 +304,7 @@ class FrontTests(unittest.TestCase):
         self.assertTrue(observed["lightd_info_only_chainName_changed"])
 
     def test_backend_lightd_info_drift_after_parity_is_still_rejected(self):
-        fixture = self.backend._fixture
+        fixture = self.backend._regtest
         original = fixture.grpc
         drifted = False
 
@@ -325,7 +325,7 @@ class FrontTests(unittest.TestCase):
         self.assertTrue(owner.process.cleanup_completed)
 
     def test_wall_clock_estimated_height_may_advance_during_readiness(self):
-        fixture = self.backend._fixture
+        fixture = self.backend._regtest
         original = fixture.grpc
         estimate = 6597928
 
@@ -345,7 +345,7 @@ class FrontTests(unittest.TestCase):
         owner.stop()
 
     def test_decreasing_estimated_height_is_still_a_backend_change(self):
-        fixture = self.backend._fixture
+        fixture = self.backend._regtest
         original = fixture.grpc
         estimates = iter(["6597930", "6597930", "6597929"])
 

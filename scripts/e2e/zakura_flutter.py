@@ -1,6 +1,6 @@
-"""Flutter E2E scenarios on direct Zakura fixtures: catalog and commands.
+"""Flutter E2E scenarios on Zakura regtest chains: catalog and commands.
 
-A Flutter case serves the fixture on the app's default regtest ports, so the
+A Flutter case serves its chain on the app's default regtest ports, so the
 app's endpoint presets and the tests' defaults need no override: the
 lightwalletd shim on 9067, the HTTP control on 18232 and the in-test
 lightwalletd proxy on 19068. Nothing may listen on 19067, the Unavailable
@@ -423,7 +423,7 @@ def needs_wallet_addresses(scenario):
 
 
 def fixed_ports(scenario):
-    """The default ports the scenario's fixture and host tools listen on."""
+    """The default ports the scenario's chain and host tools listen on."""
     return {**FIXED_PORTS, **({"screenshots": SCREENSHOT_PORT} if scenario.screenshots else {}),
             **(VOTING_PORTS if scenario.voting else {})}
 

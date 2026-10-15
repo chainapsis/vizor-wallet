@@ -303,8 +303,8 @@ class OwnedNativeZakuraControl:
                     raise NativeZakuraControlError("controlled activation did not reach NU6.3")
                 return result
             if path == "/reorg-hold-tip" and set(payload) == {"required_txids"}:
-                # The pinned original fixture owns the donor, raw block/tx checks,
-                # hold gate and cleanup. JSON is not a reconstructed fixture handle.
+                # The backend's chain owns the second node, the block checks, the
+                # hold and cleanup; nothing here is rebuilt from request JSON.
                 return self._backend.replace_tip_holding(_txids(payload["required_txids"]),
                     deadline=self._deadline)
         if method == "POST" and path in {"/fund-unmined", "/fund-unmined-expiring"} and set(payload) == {

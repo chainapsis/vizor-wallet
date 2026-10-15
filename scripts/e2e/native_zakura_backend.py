@@ -1,6 +1,6 @@
-"""Compose the pinned raw Zakura fixture with one case's original ownership.
+"""Own one case's Zakura regtest chain and the directory that holds its evidence.
 
-The raw fixture ports are internal, not the native manifest's front ports. This
+The chain's ports are internal, not the native manifest's front ports. This
 module provides no faucet, signer, control server, shim or scenario PASS.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ import uuid
 import e2e_runtime as runtime
 from native_case_lifecycle import NativeCaseLifecycle
 import native_owned_tree as tree
-from zakura_fixture_source import load_zakura_fixture_source
+from zakura_regtest import ZakuraRegtest
 
 
 _TOKEN = object()
@@ -30,12 +30,12 @@ class NativeZakuraError(runtime.RunnerError):
 
 class OwnedNativeZakuraBackend:
     """One cooperative owner, registered before starting any Docker resource."""
-    def __init__(self, case, source, root, directory_fd, directory_id, token):
+    def __init__(self, case, root, directory_fd, directory_id, token):
         if token is not _TOKEN:
             raise NativeZakuraError("use prepare_native_zakura_backend")
-        self._case, self._source, self.root = case, source, root
+        self._case, self.root = case, root
         self._directory_fd, self._directory_id = directory_fd, directory_id
-        self._fixture = None
+        self._regtest = None
         self._finished = self._closed = self._resources_finalized = False
         self._failure = None
         self._ready = None
@@ -61,7 +61,7 @@ class OwnedNativeZakuraBackend:
                 raise NativeZakuraError("backend evidence directory identity changed")
 
     def _write_text(self, name, text):
-        """All helper writes stay anchored to the originally opened evidence dir."""
+        """All chain writes stay anchored to the originally opened evidence dir."""
         if not isinstance(name, str) or Path(name).name != name or name in {"", ".", ".."}:
             raise NativeZakuraError("backend artifact name escaped its directory")
         self.verify_owned()
@@ -87,20 +87,20 @@ class OwnedNativeZakuraBackend:
             os.close(descriptor)
 
     def start(self):
-        if (self._finished or self._ready is not None or self._fixture is None
+        if (self._finished or self._ready is not None or self._regtest is None
             or not self._case.accepting_launches):
             raise NativeZakuraError("backend start is unavailable or already attempted")
         self.verify_owned()
         try:
-            observed = self._fixture.start()
+            observed = self._regtest.start()
             self._ready = copy.deepcopy(observed)
             return copy.deepcopy(observed)
         except BaseException:
             self._finished = True
             self._failure = "backend startup failed"
-            # The pinned helper rolls back partial startup. Do not call retain
-            # on an already closed fixture or turn its original failure into PASS.
-            self._resources_finalized = self._fixture._closed is True
+            # A failed start removes what it created. Do not call retain on an
+            # already removed chain or turn its original failure into PASS.
+            self._resources_finalized = self._regtest.closed is True
             raise
 
     def _running(self):
@@ -110,40 +110,40 @@ class OwnedNativeZakuraBackend:
 
     def rpc(self, method, params=None, *, deadline=None):
         self._running()
-        return self._fixture.rpc(method, params, deadline=deadline)
+        return self._regtest.rpc(method, params, deadline=deadline)
 
     def grpc(self, method, payload=None, *, deadline=None):
         self._running()
-        return self._fixture.grpc(method, payload, deadline=deadline)
+        return self._regtest.grpc(method, payload, deadline=deadline)
 
     def grpc_stream(self, method, payload=None, *, deadline=None):
         self._running()
-        return self._fixture.grpc_stream(method, payload, deadline=deadline)
+        return self._regtest.grpc_stream(method, payload, deadline=deadline)
 
     def mine(self, count):
         self._running()
-        return self._fixture.mine(count)
+        return self._regtest.mine(count)
 
     def wait_synced(self, *, deadline=None):
         self._running()
-        return self._fixture.wait_synced(deadline=deadline)
+        return self._regtest.wait_synced(deadline=deadline)
 
     def replace_tip_holding(self, required_txids, *, deadline=None):
         self._running()
-        return self._fixture.replace_tip_holding(required_txids, deadline=deadline)
+        return self._regtest.replace_tip_holding(required_txids, deadline=deadline)
 
     def replace_fork_holding(self, required_txids, *, fork_height, deadline=None):
         self._running()
-        return self._fixture.replace_fork_holding(required_txids,
+        return self._regtest.replace_fork_holding(required_txids,
             fork_height=fork_height, deadline=deadline)
 
     def release_held_transactions(self, txids, *, deadline=None):
         self._running()
-        return self._fixture.release_held_transactions(txids, deadline=deadline)
+        return self._regtest.release_held_transactions(txids, deadline=deadline)
 
     def hold_pending_transactions(self, txids, *, expiry_height, deadline=None):
         self._running()
-        return self._fixture.hold_pending_transactions(txids,
+        return self._regtest.hold_pending_transactions(txids,
             expiry_height=expiry_height, deadline=deadline)
 
     def close(self):
@@ -155,10 +155,10 @@ class OwnedNativeZakuraBackend:
         self._finished = True
         try:
             self.verify_owned()
-            proof = self._fixture.close()
-            # This flag comes from the original captured helper, never caller JSON.
-            if (self._fixture._closed is not True or proof.get("complete") is not True
-                or proof.get("run_id") != self._fixture.run_id or proof.get("errors") != []):
+            proof = self._regtest.close()
+            # This flag comes from the original chain object, never caller JSON.
+            if (self._regtest.closed is not True or proof.get("complete") is not True
+                or proof.get("run_id") != self._regtest.run_id or proof.get("errors") != []):
                 raise NativeZakuraError("owned Docker/port cleanup was not proved")
             self._resources_finalized = True
             self.verify_owned()
@@ -171,10 +171,10 @@ class OwnedNativeZakuraBackend:
 
     def retained_resources(self):
         """Docker identity this original owner left in place; it grants no deletion."""
-        if self._fixture is None or self._resources_finalized:
+        if self._regtest is None or self._resources_finalized:
             return None
         retention = self._retention or {}
-        return {"fixture_run_id": self._fixture.run_id, "stopped": retention.get("complete") is True,
+        return {"regtest_run_id": self._regtest.run_id, "stopped": retention.get("complete") is True,
                 "identity": copy.deepcopy(retention.get("identity"))}
 
     def retain(self):
@@ -192,14 +192,14 @@ class OwnedNativeZakuraBackend:
             raise NativeZakuraError("original backend retention did not finish")
         self._retention_attempted = True
         try:
-            if self._resources_finalized or self._fixture is None:
+            if self._resources_finalized or self._regtest is None:
                 proof = {"complete": True, "mode": "resources-already-finalized"}
             else:
-                # Even after path drift, the captured helper can stop its original
-                # Docker IDs; its adapter refuses writes to replacement directories.
-                proof = self._fixture.retain()
-            if (proof.get("complete") is not True or (not self._resources_finalized and self._fixture is not None
-                and (self._fixture._retained is not True or proof.get("run_id") != self._fixture.run_id
+                # Even after path drift, the chain can stop its original Docker
+                # IDs; its writer refuses writes to replacement directories.
+                proof = self._regtest.retain()
+            if (proof.get("complete") is not True or (not self._resources_finalized and self._regtest is not None
+                and (self._regtest.retained is not True or proof.get("run_id") != self._regtest.run_id
                      or proof.get("errors") != []))):
                 raise NativeZakuraError("owned Docker writer stop was not proved")
             self._retention = copy.deepcopy(proof)
@@ -220,8 +220,7 @@ def prepare_native_zakura_backend(case: NativeCaseLifecycle, *,
     manifest = json.loads(case.workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])
     activation = manifest["regtest_ironwood_activation_height"]
     if activation not in {1, 500}:
-        raise NativeZakuraError("direct backend requires the fixed height1 or activation500 profile")
-    source = load_zakura_fixture_source()
+        raise NativeZakuraError("Ironwood must activate at height 1 or 500")
     root = case.workspace.root / "zakura-backend"
     descriptor = None
     owner = None
@@ -232,38 +231,27 @@ def prepare_native_zakura_backend(case: NativeCaseLifecycle, *,
             descriptor = os.open("zakura-backend", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
             identity = tree.identity(os.fstat(descriptor))
             tree.check(os.fstat(descriptor), directory=True, private=True)
-        owner = OwnedNativeZakuraBackend(case, source, root, descriptor, identity, _TOKEN)
+        owner = OwnedNativeZakuraBackend(case, root, descriptor, identity, _TOKEN)
         owner.verify_owned()
         labels = {"com.keplr.vizor.e2e.namespace": case.workspace.namespace}
         suites = [part for part in case.workspace.root.parts if re.fullmatch(r"native-suite-[0-9a-f]{10}", part)]
         if len(suites) == 1:
             labels["com.keplr.vizor.e2e.suite-run"] = suites[0].removeprefix("native-suite-")
 
-        class AnchoredFixture(source.fixture_class):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                # The pinned helper creates and ownership-checks with this full set.
-                self.labels = {**self.labels, **labels}
-
-            def _write_text(self, name, text):
-                owner._write_text(name, text)
-
-        fixture_run_id = uuid.uuid4()
-        # The fixture needs at most three containers. Avoid consuming Docker's
+        run_id = uuid.uuid4()
+        # The chain needs at most three containers. Avoid consuming Docker's
         # much larger default subnets while retaining failed-case networks.
-        subnet_bytes = fixture_run_id.bytes
+        subnet_bytes = run_id.bytes
         network_subnet = f"10.{subnet_bytes[0]}.{subnet_bytes[1]}.{subnet_bytes[2] & 0xf0}/28"
-        owner._fixture = AnchoredFixture(root, grpcurl, proto_dir, timeout=timeout,
-            run_id=fixture_run_id, miner_address=miner_address, network_subnet=network_subnet,
-            profile="zakura-direct-height1" if activation == 1 else "zakura-direct-activation500")
-        owner._write_text("source-identity.json", json.dumps(source.identity(), sort_keys=True) + "\n")
+        # Every Docker resource is created and ownership-checked with these labels.
+        owner._regtest = regtest = ZakuraRegtest(root, grpcurl, proto_dir, run_id=run_id,
+            miner_address=miner_address, activation_height=activation, network_subnet=network_subnet,
+            labels=labels, write_text=owner._write_text, timeout=timeout)
         # Before Docker starts, so a network or volume left by a killed runner still maps here.
-        fixture = owner._fixture
-        owner._write_text("fixture-identity.json", json.dumps({"schema_version": 1, "run_id": fixture.run_id,
-            "prefix": "zakura-proof-" + fixture.run_id[:12], "names": {"network": fixture.network_name,
-                "node": fixture.node_name, "donor": fixture.donor_name, "lightwalletd": fixture.lwd_name,
-                "lightwalletd_volume": fixture.lwd_volume},
-            "network_subnet": network_subnet, "labels": fixture.labels}, sort_keys=True) + "\n")
+        owner._write_text("regtest-identity.json", json.dumps({"schema_version": 1, "run_id": regtest.run_id,
+            "names": {"network": regtest.network_name, "node": regtest.node_name, "donor": regtest.donor_name,
+                      "lightwalletd": regtest.lwd_name, "lightwalletd_volume": regtest.lwd_volume},
+            "network_subnet": network_subnet, "labels": regtest.labels}, sort_keys=True) + "\n")
         return owner
     except BaseException:
         if owner is not None:

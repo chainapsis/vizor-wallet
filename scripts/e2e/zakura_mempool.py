@@ -59,7 +59,7 @@ def fund_zakura_unmined(case, backend, artifact, *, recipient_address, amount_za
     if expiry_height is not None:
         _integer(expiry_height, "unmined expiry", minimum=target+1, maximum=min(0xFFFFFFFF, target+10000))
     identity = run_offline_funder(case, artifact, "identity", timeout=deadline-time.monotonic(), cancel_event=cancel)
-    if backend._fixture.miner_address != identity["miner_address"]:
+    if backend._regtest.miner_address != identity["miner_address"]:
         raise ZakuraFundingError("unmined miner differs from the original signer")
     block_hash = _hex(rpc("getblockhash", [source_height]), "unmined source hash", byte_count=32)
     txid, raw, vout, value = _coinbase(rpc("getblock", [block_hash, 2]), source_height, block_hash, identity["miner_address"])
@@ -129,7 +129,7 @@ def _pending_raw(raw, txid, expiry, expected_hex=None):
 
 
 def expire_zakura_unmined(case, backend, *, txid, expiry_height, timeout=120.0, cancel_event=None):
-    """Original pinned fixture holds the exact pending bytes while mining a donor.
+    """Hold the exact pending bytes while the chain mines past their expiry.
 
     Verify raw/compact exclusion at every adopted height, then actual mempool
     absence. This never changes transaction bytes or fabricates an app result.

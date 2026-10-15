@@ -18,7 +18,7 @@ SOURCE_TXID = funding_models.SOURCE_TXID
 VALUE, AMOUNT, FEE = funding_models.VALUE, 25_000_000, funding_models.FEE
 
 
-class MempoolModel(funding_models.FundingFixture):
+class MempoolModel(funding_models.FundingModel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.pending = False
@@ -63,7 +63,7 @@ class MempoolTests(unittest.TestCase):
         self.owner = fixtures.BackendTests(methodName="runTest")
         self.owner.setUp()
         self.addCleanup(self.owner.doCleanups)
-        self.owner.loader.return_value = fixtures.modeled_source(MempoolModel)
+        self.owner.model_class = MempoolModel
         self.case = self.owner.case(1)
         self.backend = fixtures.BACKEND.prepare_native_zakura_backend(self.case,
             grpcurl=Path("unused"), proto_dir=Path("unused"),
@@ -88,7 +88,7 @@ class MempoolTests(unittest.TestCase):
                                "coinbase_vout":0, "input_value_zatoshi":VALUE}],
             "payments":copy.deepcopy(request["payments"])}
         result.update(copy.deepcopy(self.changes))
-        self.backend._fixture.funding = result
+        self.backend._regtest.funding = result
         return result
 
     def fund(self, **options):
@@ -108,7 +108,7 @@ class MempoolTests(unittest.TestCase):
         self.assertIsNone(proof["mined_height"])
         self.assertEqual(proof["amount_zatoshi"], AMOUNT)
         self.assertEqual(proof["final_tip_height"], 101)
-        self.assertNotIn("mine", self.backend._fixture.operations)
+        self.assertNotIn("mine", self.backend._regtest.operations)
         self.assertFalse(proof["wallet_or_catalog_pass"])
         self.assertEqual(len(list(self.backend.root.glob("funding-unmined-*.json"))), 1)
 
@@ -120,10 +120,10 @@ class MempoolTests(unittest.TestCase):
             self.changes = changes
             with self.subTest(changes=changes), self.assertRaises(MEMPOOL.ZakuraFundingError):
                 self.fund(expiry_height=104)
-        self.assertNotIn("sendrawtransaction", self.backend._fixture.operations)
+        self.assertNotIn("sendrawtransaction", self.backend._regtest.operations)
 
     def test_raw_transaction_mutation_is_not_unmined_proof(self):
-        self.backend._fixture.mode = "wrong-raw"
+        self.backend._regtest.mode = "wrong-raw"
         with self.assertRaisesRegex(MEMPOOL.ZakuraFundingError, "raw transaction"):
             self.fund(expiry_height=104)
         self.assertEqual(list(self.backend.root.glob("funding-unmined-*.json")), [])
@@ -135,7 +135,7 @@ class MempoolTests(unittest.TestCase):
             self.fund(cancel_event=event)
         with self.assertRaises(MEMPOOL.ZakuraFundingError):
             self.fund(amount_zatoshi=True)
-        self.backend._fixture.tip = 99
+        self.backend._regtest.tip = 99
         with self.assertRaisesRegex(MEMPOOL.ZakuraFundingError, "not mature"):
             self.fund()
         with self.assertRaisesRegex(MEMPOOL.ZakuraFundingError, "original accepting"):
@@ -146,7 +146,7 @@ class MempoolTests(unittest.TestCase):
     def test_original_hold_and_every_raw_compact_block_prove_expiry(self):
         self.fund(expiry_height=104)
         proof = self.expire()
-        self.assertEqual(self.backend._fixture.hold_calls, [([TXID], 104)])
+        self.assertEqual(self.backend._regtest.hold_calls, [([TXID], 104)])
         self.assertEqual(proof["final_tip_height"], 104)
         self.assertTrue(proof["raw_compact_exclusion_verified"])
         self.assertTrue(proof["expired_mempool_absence_verified"])
@@ -156,19 +156,19 @@ class MempoolTests(unittest.TestCase):
 
     def test_raw_inclusion_cannot_be_called_expiry(self):
         self.fund(expiry_height=104)
-        self.backend._fixture.mode = "included"
+        self.backend._regtest.mode = "included"
         with self.assertRaisesRegex(MEMPOOL.ZakuraFundingError, "exclusion"):
             self.expire()
 
     def test_compact_inclusion_cannot_be_called_expiry(self):
         self.fund(expiry_height=104)
-        self.backend._fixture.mode = "compact-included"
+        self.backend._regtest.mode = "compact-included"
         with self.assertRaisesRegex(MEMPOOL.ZakuraFundingError, "exclusion"):
             self.expire()
 
     def test_early_absence_or_changed_pending_bytes_is_not_expiry(self):
         self.fund(expiry_height=104)
-        self.backend._fixture.mode = "early-absence"
+        self.backend._regtest.mode = "early-absence"
         with self.assertRaisesRegex(MEMPOOL.ZakuraFundingError, "vanished"):
             self.expire()
 
@@ -181,7 +181,7 @@ class MempoolTests(unittest.TestCase):
         event.set()
         with self.assertRaises(MEMPOOL.runtime.Cancelled):
             self.expire(cancel_event=event)
-        self.assertEqual(self.backend._fixture.hold_calls, [])
+        self.assertEqual(self.backend._regtest.hold_calls, [])
 
 
 if __name__ == "__main__":

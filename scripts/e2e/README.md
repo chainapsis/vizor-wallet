@@ -1,18 +1,17 @@
 # End-to-end tests
 
-## Direct Zakura regtest
+## Zakura regtest
 
-`scripts/e2e/zakura-run.py` runs regtest scenarios one at a time, each against
-its own fresh direct Zakura fixture. The Rust regtest suite
+`scripts/e2e/zakura-run.py` runs regtest scenarios one at a time, each on its
+own fresh Zakura regtest chain. The Rust regtest suite
 (`./run-regtest-rust-tests.sh`) and the Flutter regtest runners
 (`scripts/e2e/flutter-*.sh`) run on it.
 
 For every scenario, the runner:
 
-1. starts the pinned Zakura node and lightwalletd containers through the
-   vendored fixture helper (`zakura_fixture/`), on a private Docker network
-   with leased host ports;
-2. mines 100 blocks, or more for a few Flutter scenarios, so the fixture's
+1. starts a Zakura node and lightwalletd (`zakura_regtest.py`) on a private
+   Docker network with leased host ports;
+2. mines 100 blocks, or more for a few Flutter scenarios, so the chain's
    coinbase can fund wallets;
 3. funds a Flutter scenario's wallets;
 4. starts the Dart lightwalletd shim (`zakura_lwd_shim.dart`), which serves the
@@ -21,12 +20,21 @@ For every scenario, the runner:
    lightwalletd outages;
 6. runs the test, then removes the containers, network, volume and wallet files.
 
+The node runs the official `zakuracore/zakura` image (1.6.0), and lightwalletd
+the build Zcash Labs makes for Zakura
+(`ghcr.io/zcashlabs/thus-spoke-zakura-lightwalletd` 0.3.0). `zakura_regtest.py`
+pins both by digest. Tests steer the chain only with RPCs Zakura ships for
+Regtest: `generate`, `submitblock` and `invalidateblock`. Zakura cannot keep a
+mempool transaction out of the blocks it mines, so to hold transactions pending
+or to build a reorg branch, a second node without peers mines the blocks and
+the main node accepts them through `submitblock`.
+
 Ironwood (NU6.3) is active from height 1. Scenarios that fund Orchard before a
 controlled activation (`rust.ironwood.*`, `flutter.*.ironwood-*` and the voting
-scenarios) use a fixture that activates it at height 500.
+scenarios) use a chain that activates it at height 500.
 
 Funding transactions are signed offline by
-`rust/examples/regtest_direct_funder.rs` from the fixture's coinbase, which pays
+`rust/examples/regtest_direct_funder.rs` from the chain's coinbase, which pays
 a public test-only key, and are broadcast with the node's `sendrawtransaction`.
 Nothing uses a node wallet. The signer and the Rust test executables are built
 once per run from `git archive HEAD rust`, so the runner refuses to start while
@@ -45,21 +53,17 @@ python3 scripts/e2e/zakura-run.py flutter.ios
 
 Each run writes `.regtest-logs/zakura-<run id>/report.json` with every
 scenario's status, phase durations and evidence directory, which holds its
-process logs and fixture proofs. The run's build output (several GB) is
+process logs and the chain's records. The run's build output (several GB) is
 removed when the run ends. `--keep-failed` keeps the stopped containers and
 wallet files of failed scenarios; the report lists their Docker IDs. Remove them
 with `docker rm`, `docker network rm` and `docker volume rm`, and the run
 directory, when done.
 
-`zakura_fixture_source.py` pins the vendored helper's bytes and the node and
-lightwalletd image digests (`zakuracore/zakura`,
-`ghcr.io/zcashlabs/thus-spoke-zakura-lightwalletd`); see
-`zakura_fixture/README.md`. The harness unit tests run offline with Docker
-mocked. Some replace modules, so run each file in its own interpreter:
+The harness unit tests run offline with Docker mocked. Some replace modules,
+so run each file in its own interpreter, from `scripts/e2e`:
 
 ```bash
-for test in scripts/e2e/test_*.py; do python3 -B -m unittest "$test" || break; done
-python3 -B -m unittest discover -s scripts/e2e/zakura_fixture/tests
+cd scripts/e2e && for test in test_*.py; do python3 -B -m unittest "${test%.py}" || break; done
 ```
 
 ### Flutter scenarios
@@ -83,7 +87,7 @@ macOS windows stay hidden unless `VIZOR_E2E_HIDDEN_WINDOW=false` is set. iOS
 scenarios run on a simulator that the run creates and deletes at the end:
 `Vizor Zakura E2E <run id>`, an iPhone 16 on the newest installed iOS runtime
 unless `--ios-runtime` names another one. `--keep-failed` keeps it along with
-failed fixtures. The run never uses other simulators. `--dart-define=NAME=VALUE`
+the failed scenarios' chains. The run never uses other simulators. `--dart-define=NAME=VALUE`
 adds a define to every Flutter phase, but it cannot repeat a define the
 scenario already sets.
 
@@ -100,7 +104,7 @@ Before the first case, a run with voting scenarios fetches the pinned
 `voting-build.log`). This needs network access, Go, Cargo and `make`. Once the
 desktop setup phase has migrated the voting power, `voting-services.sh` starts
 the vote chain, the nullifier PIR server and the voting gateway against the
-fixture. Their logs and the gateway's screenshots are written to the case's
+case's chain. Their logs and the gateway's screenshots are written to the case's
 `voting/logs/`. The PIR data and the vote chain home, several GB that each case
 regenerates, are removed once the case stops. The final-tally scenarios,
 `flutter.macos.voting-final-tally` and
@@ -110,7 +114,7 @@ and check its tally. Their vote window is 300 seconds unless
 voting-tally` runs them, with the Ledger one signing on its Speculos device.
 
 The other Ledger Speculos lanes, the mainnet keychain runner and the payment-URI
-prefill runner need no regtest fixture and run as before.
+prefill runner need no regtest chain and run as before.
 
 ## Gift Cards
 
@@ -136,7 +140,7 @@ real shielded notes and a changed tree frontier, then imports an older card:
 ./run-regtest-rust-tests.sh rust.gift-card.tracking-multiple rust.gift-card.empty-db-reuse
 ```
 
-Each test starts its own direct Zakura fixture, so it does not share a chain
+Each test starts its own Zakura regtest chain, so it does not share a chain
 with app E2Es. It uses temporary wallet DBs and does not inject scan queue rows.
 The test is excluded from ordinary Rust test runs.
 
@@ -171,8 +175,8 @@ settled failures.
 Automatic claim recovery is gated only during the manual-check measurement,
 then released to execute the production recovery path.
 
-Each scenario gets its own fixture, and the fault proxy listens on 19068.
-`--keep-failed` keeps a failed scenario's fixture for inspection. As with the
+Each scenario gets its own chain, and the fault proxy listens on 19068.
+`--keep-failed` keeps a failed scenario's chain for inspection. As with the
 other runners, run it only when regtest execution is intended.
 
 The Gift Card scenarios set `VIZOR_DEEPLINK_BASE_URL` to
@@ -195,7 +199,7 @@ It is part of `scripts/e2e/flutter-ios-regtest-mobile-full.sh`. Besides
 gated off, and `VIZOR_DEEPLINK_BASE_URL`.
 
 The onboarding test funds fresh external Gift addresses with Ironwood notes
-through the control. Each card takes one of three fixture coinbases that the
+through the control. Each card takes one of three coinbases that the
 scenario reserves.
 
 The onboarding test drives **Activate gift card → Paste card link** in a walletless

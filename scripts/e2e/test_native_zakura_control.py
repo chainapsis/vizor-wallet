@@ -279,7 +279,7 @@ class ControlTests(ControlFixture):
 class GiftRecoveryControlTests(ControlFixture):
     scenario_id = "flutter.macos.payment-link-recovery"
 
-    def test_exact_fork_and_release_delegate_to_original_fixture_on_owner_thread(self):
+    def test_exact_fork_and_release_delegate_to_the_chain_on_owner_thread(self):
         self.prepare()
         txids = ["12"*32, "34"*32]
         threads = []
@@ -289,7 +289,7 @@ class GiftRecoveryControlTests(ControlFixture):
             self.assertEqual(fork_height, 121)
             self.assertGreater(deadline, time.monotonic())
             return {"held_txids":required, "fork_height":fork_height}
-        with patch.object(self.backend._fixture, "replace_fork_holding", side_effect=replace) as reorg:
+        with patch.object(self.backend._regtest, "replace_fork_holding", side_effect=replace) as reorg:
             for payload in ({"required_txids":txids, "fork_height":True},
                             {"required_txids":txids, "fork_height":0},
                             {"required_txids":["bad"], "fork_height":121},
@@ -308,7 +308,7 @@ class GiftRecoveryControlTests(ControlFixture):
     def test_another_height1_case_cannot_replace_a_fork(self):
         self.prepare()
         self.control._scenario = "flutter.macos.payment-link-round-trip"
-        with patch.object(self.backend._fixture, "replace_fork_holding") as reorg:
+        with patch.object(self.backend._regtest, "replace_fork_holding") as reorg:
             self.assertEqual(self.request("POST", "/reorg-hold-fork", json.dumps({
                 "required_txids":["12"*32], "fork_height":121}))[0], 400)
             reorg.assert_not_called()

@@ -24,7 +24,7 @@ def encoded(value, reverse=False):
     return base64.b64encode(data[::-1] if reverse else data).decode()
 
 
-class FundingFixture(fixtures.FixtureModel):
+class FundingModel(fixtures.RegtestModel):
     def __init__(self, *args, **options):
         super().__init__(*args, **options)
         self.tip = 101
@@ -90,7 +90,7 @@ class ZakuraFundingTests(unittest.TestCase):
         self.fixture = fixtures.BackendTests(methodName="runTest")
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
-        self.fixture.loader.return_value = fixtures.modeled_source(FundingFixture)
+        self.fixture.model_class = FundingModel
         self.case = self.fixture.case(1)
         self.backend = self.backend_for(self.case)
         self.funding_changes = {}
@@ -120,7 +120,7 @@ class ZakuraFundingTests(unittest.TestCase):
             value["recipient_output"] = {"address":request["recipient_address"],"vout":0,
                                          "script_hex":"76a9","amount_zatoshi":request["amount_zatoshi"]}
         value.update(self.funding_changes)
-        self.backend._fixture.funding = copy.deepcopy(value)
+        self.backend._regtest.funding = copy.deepcopy(value)
         return value
 
     def fund(self, **updates):
@@ -145,7 +145,7 @@ class ZakuraFundingTests(unittest.TestCase):
         proof = self.fund(recipient_pool="ironwood")
         self.assertEqual(proof["compact_action_count"],1)
         self.assertIsNone(proof["transparent_output"])
-        self.backend._fixture.tip = 101
+        self.backend._regtest.tip = 101
         with self.assertRaisesRegex(FUNDING.ZakuraFundingError,"Orchard"):
             self.fund(recipient_pool="orchard")
 
@@ -158,11 +158,11 @@ class ZakuraFundingTests(unittest.TestCase):
         self.assertEqual(self.sign_calls,["identity","build-orchard"])
 
     def test_exact_maturity_is_accepted_but_one_block_before_is_rejected(self):
-        self.backend._fixture.tip = 99
+        self.backend._regtest.tip = 99
         with self.assertRaisesRegex(FUNDING.ZakuraFundingError,"not mature"):
             self.fund(confirmations=1)
-        self.assertNotIn("sendrawtransaction",self.backend._fixture.operations)
-        self.backend._fixture.tip = 100
+        self.assertNotIn("sendrawtransaction",self.backend._regtest.operations)
+        self.backend._regtest.tip = 100
         proof = self.fund(confirmations=1)
         self.assertEqual(proof["mined_height"],101)
         self.assertEqual(proof["final_tip_height"],101)
@@ -170,8 +170,8 @@ class ZakuraFundingTests(unittest.TestCase):
     def test_exact_orchard_maturity_at_last_preactivation_block_is_valid(self):
         self.case = self.fixture.case(500)
         self.backend = self.backend_for(self.case)
-        self.backend._fixture.source["height"] = 399
-        self.backend._fixture.tip = 498
+        self.backend._regtest.source["height"] = 399
+        self.backend._regtest.tip = 498
         proof = self.fund(source_height=399,recipient_pool="orchard",confirmations=1)
         self.assertEqual(proof["mined_height"],499)
         self.assertEqual(proof["final_tip_height"],499)
@@ -187,10 +187,10 @@ class ZakuraFundingTests(unittest.TestCase):
         with self.assertRaises(FUNDING.runtime.Cancelled):
             self.fund(cancel_event=cancellation)
         self.assertEqual(self.sign_calls,[])
-        self.assertEqual(self.backend._fixture.operations,[])
+        self.assertEqual(self.backend._regtest.operations,[])
 
     def test_immature_spent_wrong_source_or_miner_never_broadcasts(self):
-        model = self.backend._fixture
+        model = self.backend._regtest
         model.tip = 99
         with self.assertRaisesRegex(FUNDING.ZakuraFundingError,"not mature"):
             self.fund()
@@ -214,17 +214,17 @@ class ZakuraFundingTests(unittest.TestCase):
             self.funding_changes = changes
             with self.subTest(changes=changes),self.assertRaises(FUNDING.ZakuraFundingError):
                 self.fund()
-        self.assertNotIn("sendrawtransaction",self.backend._fixture.operations)
+        self.assertNotIn("sendrawtransaction",self.backend._regtest.operations)
 
     def test_wrong_submission_raw_compact_or_transparent_stream_never_proves_payment(self):
         for mode in ("wrong-submitted","wrong-raw","wrong-compact","missing-stream","wrong-utxo"):
-            self.backend._fixture.mode, self.backend._fixture.tip = mode,101
+            self.backend._regtest.mode, self.backend._regtest.tip = mode,101
             with self.subTest(mode=mode),self.assertRaises(FUNDING.ZakuraFundingError):
                 self.fund()
         self.assertEqual(list(self.backend.root.glob("funding-inclusion-*.json")),[])
 
     def test_shielded_missing_compact_transaction_fails(self):
-        self.backend._fixture.mode = "missing-compact"
+        self.backend._regtest.mode = "missing-compact"
         with self.assertRaisesRegex(FUNDING.ZakuraFundingError,"compact block omitted"):
             self.fund(recipient_pool="ironwood")
 

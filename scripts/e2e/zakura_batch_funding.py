@@ -86,7 +86,7 @@ def fund_zakura_batch(case, backend, artifact, *, payments, source_heights,
         raise ZakuraFundingError("Ironwood batch precedes activation")
     identity = run_offline_funder(case, artifact, "identity", timeout=deadline-time.monotonic(),
                                  cancel_event=cancel)
-    if identity["miner_address"] != backend._fixture.miner_address:
+    if identity["miner_address"] != backend._regtest.miner_address:
         raise ZakuraFundingError("batch miner differs from the original signer")
     inputs, sources = [], []
     for height in source_heights:

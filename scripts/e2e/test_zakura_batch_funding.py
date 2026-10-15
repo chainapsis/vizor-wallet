@@ -14,7 +14,7 @@ import test_zakura_funding as models
 import test_native_zakura_backend as fixtures
 
 
-class BatchModel(models.FundingFixture):
+class BatchModel(models.FundingModel):
     def rpc(self, method, params=None, *, deadline=None):
         if method == "getblockhash":
             self.operations.append(method)
@@ -44,7 +44,7 @@ class BatchFundingTests(unittest.TestCase):
         self.owner = fixtures.BackendTests(methodName="runTest")
         self.owner.setUp()
         self.addCleanup(self.owner.doCleanups)
-        self.owner.loader.return_value = fixtures.modeled_source(BatchModel)
+        self.owner.model_class = BatchModel
         self.case = self.owner.case(500)
         self.backend = fixtures.BACKEND.prepare_native_zakura_backend(self.case,
             grpcurl=Path("unused"), proto_dir=Path("unused"),
@@ -71,7 +71,7 @@ class BatchFundingTests(unittest.TestCase):
                 "coinbase_txid":f"{20000+item['coinbase_height']:064x}", "coinbase_vout":0,
                 "input_value_zatoshi":models.VALUE} for item in request["coinbase_inputs"]]}
         result.update(copy.deepcopy(self.changes))
-        self.backend._fixture.funding = copy.deepcopy(result)
+        self.backend._regtest.funding = copy.deepcopy(result)
         return result
 
     def fund(self, count=20, **options):
@@ -96,7 +96,7 @@ class BatchFundingTests(unittest.TestCase):
 
     def test_bounded_five_hundred_distinct_notes(self):
         self.assertEqual(self.fund(count=500)["payment_count"], 500)
-        self.assertEqual(len(self.backend._fixture.funding["payments"]), 500)
+        self.assertEqual(len(self.backend._regtest.funding["payments"]), 500)
 
     def test_invalid_notes_or_repeated_sources_never_start_signer(self):
         for options in ({"payments":[]}, {"payments":[{}]}, {"payments":[
@@ -109,10 +109,10 @@ class BatchFundingTests(unittest.TestCase):
 
     def test_immature_or_cross_activation_range_never_submits(self):
         for tip in (100, 490):
-            self.backend._fixture.tip = tip
+            self.backend._regtest.tip = tip
             with self.subTest(tip=tip), self.assertRaises(BATCH.ZakuraFundingError):
                 self.fund()
-        self.assertNotIn("sendrawtransaction", self.backend._fixture.operations)
+        self.assertNotIn("sendrawtransaction", self.backend._regtest.operations)
 
     def test_wrong_signer_notes_sources_pool_conservation_or_boolean_never_submits(self):
         for changes in ({"payments":[]}, {"coinbase_inputs":[]}, {"amount_zatoshi":True},
@@ -121,12 +121,12 @@ class BatchFundingTests(unittest.TestCase):
             self.changes = changes
             with self.subTest(changes=changes), self.assertRaises(BATCH.ZakuraFundingError):
                 self.fund()
-        self.assertNotIn("sendrawtransaction", self.backend._fixture.operations)
+        self.assertNotIn("sendrawtransaction", self.backend._regtest.operations)
 
     def test_raw_compact_or_action_count_failure_retains_failure(self):
         for mode in ("wrong-raw", "wrong-compact", "missing-compact", "missing-action"):
-            self.backend._fixture.tip = 101
-            self.backend._fixture.mode = mode
+            self.backend._regtest.tip = 101
+            self.backend._regtest.mode = mode
             with self.subTest(mode=mode), self.assertRaises(BATCH.ZakuraFundingError):
                 self.fund()
         self.assertEqual(list(self.backend.root.glob("funding-batch-*.json")), [])

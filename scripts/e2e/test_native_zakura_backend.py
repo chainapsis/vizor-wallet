@@ -9,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import types
 import unittest
 from unittest.mock import patch
 
@@ -17,30 +16,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     import native_zakura_backend as BACKEND
     import native_workspace as WORKSPACE
-    import zakura_fixture_source as SOURCE
+    import zakura_regtest as REGTEST
 finally:
     sys.path.pop(0)
 
 
-class FixtureModel:
-    """Constructed by the adapter, not adopted from an external fixture/receipt."""
-    def __init__(self, artifacts, grpcurl, proto_dir, *, timeout, run_id, miner_address, profile, network_subnet):
+class RegtestModel:
+    """Built by the backend in place of ZakuraRegtest; starts no Docker resource."""
+    instances = []
+
+    def __init__(self, artifacts, grpcurl, proto_dir, *, run_id, miner_address, activation_height,
+                 network_subnet, labels, write_text, timeout):
+        RegtestModel.instances.append(self)
         self.artifacts = artifacts
         self.run_id = run_id.hex
-        self.timeout, self.miner_address, self.profile = timeout, miner_address, profile
+        self.timeout, self.miner_address, self.activation_height = timeout, miner_address, activation_height
         self.network_subnet = network_subnet
-        # Same names and ownership labels as the pinned helper's constructor.
-        prefix = "zakura-proof-" + self.run_id[:12]
+        # Same names and labels as ZakuraRegtest's constructor.
+        prefix = "vizor-zakura-" + self.run_id[:12]
         self.network_name, self.node_name, self.donor_name = prefix + "-net", prefix + "-node", prefix + "-donor"
         self.lwd_name, self.lwd_volume = prefix + "-lwd", prefix + "-lwd-data"
-        self.labels = {"com.zakura.regtest-fixture": "1", "com.zakura.regtest-fixture.run": self.run_id}
-        self._closed = self._retained = False
+        self.labels = {REGTEST.RUN_LABEL: self.run_id, **labels}
+        self._write_text = write_text
+        self.closed = self.retained = False
         self.started = self.close_calls = self.retain_calls = 0
 
     def start(self):
         self.started += 1
-        self._write_text("start-proof.json", json.dumps({"run_id": self.run_id}))
-        return {"identity": {"run_id": self.run_id}, "profile": self.profile}
+        self._write_text("start.json", json.dumps({"run_id": self.run_id}))
+        return {"identity": {"run_id": self.run_id}, "activation_height": self.activation_height}
 
     def rpc(self, method, params=None, *, deadline=None):
         return {"method": method, "params": params, "deadline": deadline}
@@ -64,18 +68,13 @@ class FixtureModel:
 
     def close(self):
         self.close_calls += 1
-        self._closed = True
+        self.closed = True
         return {"complete": True, "run_id": self.run_id, "errors": []}
 
     def retain(self):
         self.retain_calls += 1
-        self._retained = True
+        self.retained = True
         return {"complete": True, "run_id": self.run_id, "errors": []}
-
-
-def modeled_source(fixture_class=FixtureModel):
-    return types.SimpleNamespace(fixture_class=fixture_class,
-                                 identity=lambda: {"repository": "modeled", "commit": "captured"})
 
 
 def prepare(case, **updates):
@@ -90,9 +89,11 @@ class BackendTests(unittest.TestCase):
         self.root = Path(temporary.name).resolve()
         self.cases, self.backends = [], []
         self.addCleanup(self.stop_models)
-        source = patch.object(BACKEND, "load_zakura_fixture_source", return_value=modeled_source())
-        self.loader = source.start()
-        self.addCleanup(source.stop)
+        # Tests that model node behaviour replace this class.
+        self.model_class = RegtestModel
+        regtest = patch.object(BACKEND, "ZakuraRegtest", lambda *args, **kwargs: self.model_class(*args, **kwargs))
+        regtest.start()
+        self.addCleanup(regtest.stop)
 
     def case(self, activation=500, root=None):
         workspace = WORKSPACE.prepare_native_case_workspace(root or self.root, platform="macos",
@@ -118,50 +119,49 @@ class BackendTests(unittest.TestCase):
             if backend._directory_fd is not None:
                 backend.retain()
 
-    def test_construct_only_captures_source_private_directory_and_explicit_profile(self):
-        for activation, profile in ((1, "zakura-direct-height1"), (500, "zakura-direct-activation500")):
+    def test_construct_only_captures_private_directory_and_activation_height(self):
+        for activation in (1, 500):
             with self.subTest(activation=activation):
                 owner = self.backend(self.case(activation))
-                self.assertEqual(owner._fixture.started, 0)
-                self.assertEqual(owner._fixture.profile, profile)
-                self.assertEqual(owner._fixture.miner_address, "explicit-regtest-miner-model")
-                subnet = ipaddress.IPv4Network(owner._fixture.network_subnet, strict=True)
+                self.assertEqual(owner._regtest.started, 0)
+                self.assertEqual(owner._regtest.activation_height, activation)
+                self.assertEqual(owner._regtest.miner_address, "explicit-regtest-miner-model")
+                subnet = ipaddress.IPv4Network(owner._regtest.network_subnet, strict=True)
                 self.assertEqual(subnet.prefixlen, 28)
                 self.assertTrue(subnet.subnet_of(ipaddress.IPv4Network("10.0.0.0/8")))
-                run_bytes = bytes.fromhex(owner._fixture.run_id)
+                run_bytes = bytes.fromhex(owner._regtest.run_id)
                 self.assertEqual(str(subnet), f"10.{run_bytes[0]}.{run_bytes[1]}.{run_bytes[2] & 0xf0}/28")
                 self.assertEqual(owner.root.stat().st_mode & 0o777, 0o700)
-                source_file = owner.root / "source-identity.json"
-                self.assertEqual(source_file.stat().st_mode & 0o777, 0o600)
-                self.assertEqual(json.loads(source_file.read_text()), modeled_source().identity())
+                record = owner.root / "regtest-identity.json"
+                self.assertEqual(record.stat().st_mode & 0o777, 0o600)
 
-    def test_fixture_identity_and_vizor_labels_are_recorded_before_docker_starts(self):
+    def test_regtest_identity_and_vizor_labels_are_recorded_before_docker_starts(self):
         suite = self.root / "native-suite-0a1b2c3d4e" / "repetition-0"
         suite.mkdir(parents=True, mode=0o700)
         for root, expected in ((None, {}), (suite, {"com.keplr.vizor.e2e.suite-run": "0a1b2c3d4e"})):
             with self.subTest(root=root):
                 owner = self.backend(self.case(root=root))
-                fixture = owner._fixture
-                self.assertEqual(fixture.started, 0)
-                labels = {"com.zakura.regtest-fixture": "1", "com.zakura.regtest-fixture.run": fixture.run_id,
+                regtest = owner._regtest
+                self.assertEqual(regtest.started, 0)
+                labels = {REGTEST.RUN_LABEL: regtest.run_id,
                           "com.keplr.vizor.e2e.namespace": owner._case.workspace.namespace, **expected}
-                self.assertEqual(fixture.labels, labels)
-                record = owner.root / "fixture-identity.json"
+                self.assertEqual(regtest.labels, labels)
+                record = owner.root / "regtest-identity.json"
                 self.assertEqual(record.stat().st_mode & 0o777, 0o600)
-                prefix = "zakura-proof-" + fixture.run_id[:12]
-                self.assertEqual(json.loads(record.read_text()), {"schema_version": 1, "run_id": fixture.run_id,
-                    "prefix": prefix, "names": {"network": prefix + "-net", "node": prefix + "-node",
+                prefix = "vizor-zakura-" + regtest.run_id[:12]
+                self.assertEqual(json.loads(record.read_text()), {"schema_version": 1, "run_id": regtest.run_id,
+                    "names": {"network": prefix + "-net", "node": prefix + "-node",
                         "donor": prefix + "-donor", "lightwalletd": prefix + "-lwd",
                         "lightwalletd_volume": prefix + "-lwd-data"},
-                    "network_subnet": fixture.network_subnet, "labels": labels})
-        self.assertEqual(owner.retained_resources(), {"fixture_run_id": owner._fixture.run_id,
+                    "network_subnet": regtest.network_subnet, "labels": labels})
+        self.assertEqual(owner.retained_resources(), {"regtest_run_id": owner._regtest.run_id,
                                                       "stopped": False, "identity": None})
         owner._case.close()
         owner.retain()
         self.assertEqual(owner.retained_resources()["stopped"], True)
 
-    def test_pinned_helper_creates_and_ownership_checks_with_the_vizor_labels(self):
-        self.loader.return_value = SOURCE.load_zakura_fixture_source()
+    def test_the_chain_creates_and_ownership_checks_with_the_vizor_labels(self):
+        self.model_class = REGTEST.ZakuraRegtest
         tools = self.root / "tools"
         (tools / "protos").mkdir(parents=True)
         (tools / "protos" / "service.proto").write_text('syntax = "proto3";\n')
@@ -170,32 +170,28 @@ class BackendTests(unittest.TestCase):
         owner = BACKEND.prepare_native_zakura_backend(self.case(), grpcurl=tools / "grpcurl",
             proto_dir=tools / "protos", miner_address="tmJymvcUCn1ctbghvTJpXBwHiMEB8P6wxNV")
         self.backends.append(owner)
-        fixture = owner._fixture
+        regtest = owner._regtest
         namespace = owner._case.workspace.namespace
-        self.assertIn("com.keplr.vizor.e2e.namespace=" + namespace, fixture._label_args())
-        self.assertEqual(json.loads((owner.root / "fixture-identity.json").read_text())["labels"], fixture.labels)
+        self.assertIn("com.keplr.vizor.e2e.namespace=" + namespace, regtest._label_args())
+        self.assertEqual(json.loads((owner.root / "regtest-identity.json").read_text())["labels"], regtest.labels)
         def inspected(labels):
-            payload = [{"Id": "network-id", "Name": fixture.network_name, "Labels": labels}]
-            return patch.object(fixture, "_docker", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), ""))
-        foreign = {"com.zakura.regtest-fixture": "1", "com.zakura.regtest-fixture.run": fixture.run_id}
-        error = sys.modules[type(fixture).__mro__[1].__module__].FixtureError
+            def docker(args, deadline, check=True):
+                output = (regtest.network_name if args[1] == "ls" else
+                          json.dumps([{"Id": "network-id", "Name": regtest.network_name, "Labels": labels}]))
+                return subprocess.CompletedProcess(args, 0, output, "")
+            return patch.object(regtest, "_docker", side_effect=docker)
         deadline = time.monotonic() + 5
-        with inspected(foreign):
-            with self.assertRaisesRegex(error, "ownership labels changed"):
-                fixture._assert_owned("network", fixture.network_name, "network-id", deadline)
-            with self.assertRaisesRegex(error, "not owned by this run"):
-                fixture._owned_resource_id_if_present("network", fixture.network_name, deadline)
-        with inspected(dict(fixture.labels)):
-            self.assertEqual(fixture._assert_owned("network", fixture.network_name, "network-id", deadline)["Id"],
-                             "network-id")
-            self.assertEqual(fixture._owned_resource_id_if_present("network", fixture.network_name, deadline),
-                             "network-id")
+        with inspected({REGTEST.RUN_LABEL: regtest.run_id}):
+            with self.assertRaisesRegex(REGTEST.ZakuraRegtestError, "does not carry this run's labels"):
+                regtest._owned_id("network", regtest.network_name, deadline)
+        with inspected(dict(regtest.labels)):
+            self.assertEqual(regtest._owned_id("network", regtest.network_name, deadline), "network-id")
 
     def test_running_operations_forward_without_exposing_internal_ready_proof(self):
         owner = self.backend()
         ready = owner.start()
         ready["identity"]["run_id"] = "external-mutation"
-        self.assertEqual(owner._ready["identity"]["run_id"], owner._fixture.run_id)
+        self.assertEqual(owner._ready["identity"]["run_id"], owner._regtest.run_id)
         self.assertEqual(owner.rpc("getblock", [1], deadline=42)["deadline"], 42)
         self.assertEqual(owner.grpc("service", {"height": 1})["params"], {"height": 1})
         self.assertEqual(owner.grpc_stream("range")["method"], "range")
@@ -219,20 +215,21 @@ class BackendTests(unittest.TestCase):
             with self.assertRaises(BACKEND.NativeZakuraError):
                 method(["12"*32])
 
-    def test_no_adoption_or_source_import_for_invalid_case_or_timeout(self):
+    def test_no_adoption_or_chain_for_invalid_case_or_timeout(self):
+        built = len(RegtestModel.instances)
         for timeout in (False, 0, -1, float("inf"), float("nan"), "60"):
             with self.subTest(timeout=timeout), self.assertRaises(BACKEND.NativeZakuraError):
                 prepare(self.case(), timeout=timeout)
         with self.assertRaises(BACKEND.NativeZakuraError):
             prepare(object())
-        self.loader.assert_not_called()
+        self.assertEqual(len(RegtestModel.instances), built)
 
     def test_duplicate_directory_is_not_adopted_or_modified(self):
         owner = self.backend()
-        original = (owner.root / "source-identity.json").read_bytes()
+        original = (owner.root / "regtest-identity.json").read_bytes()
         with self.assertRaises(FileExistsError):
             prepare(owner._case)
-        self.assertEqual((owner.root / "source-identity.json").read_bytes(), original)
+        self.assertEqual((owner.root / "regtest-identity.json").read_bytes(), original)
 
     def test_sealed_case_cannot_start_execute_or_allocate_backend(self):
         owner = self.backend()
@@ -241,13 +238,13 @@ class BackendTests(unittest.TestCase):
             owner.start()
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.mine(1)
-        with patch.object(owner._fixture, "wait_synced") as wait:
+        with patch.object(owner._regtest, "wait_synced") as wait:
             with self.assertRaises(BACKEND.NativeZakuraError):
                 owner.wait_synced()
             wait.assert_not_called()
         with self.assertRaises(BACKEND.NativeZakuraError):
             prepare(owner._case)
-        self.assertEqual(owner._fixture.started, 0)
+        self.assertEqual(owner._regtest.started, 0)
 
     def test_only_original_successful_case_stop_allows_backend_deletion(self):
         owner = self.backend()
@@ -257,14 +254,14 @@ class BackendTests(unittest.TestCase):
         owner._case._cleanup_failed(RuntimeError("writer stop unproven"))
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.close()
-        self.assertEqual(owner._fixture.close_calls, 0)
+        self.assertEqual(owner._regtest.close_calls, 0)
         owner.retain()
 
     def test_close_releases_original_handle_and_preserves_evidence(self):
         owner = self.backend()
         owner.start()
-        source_file = owner.root / "source-identity.json"
-        original = source_file.read_bytes()
+        record = owner.root / "regtest-identity.json"
+        original = record.read_bytes()
         descriptor = owner._directory_fd
         owner._case.close()
         owner.close()
@@ -272,15 +269,15 @@ class BackendTests(unittest.TestCase):
         self.assertIsNone(owner._directory_fd)
         with self.assertRaises(OSError):
             os.fstat(descriptor)
-        self.assertEqual(source_file.read_bytes(), original)
+        self.assertEqual(record.read_bytes(), original)
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.close()
 
-    def test_complete_returned_json_cannot_replace_original_helper_closed_flag(self):
+    def test_complete_returned_json_cannot_replace_the_chains_closed_flag(self):
         owner = self.backend()
         owner._case.close()
-        with patch.object(owner._fixture, "close", return_value={
-                "complete": True, "run_id": owner._fixture.run_id, "errors": []}):
+        with patch.object(owner._regtest, "close", return_value={
+                "complete": True, "run_id": owner._regtest.run_id, "errors": []}):
             with self.assertRaises(BACKEND.NativeZakuraError):
                 owner.close()
         self.assertFalse(owner.closed)
@@ -292,9 +289,9 @@ class BackendTests(unittest.TestCase):
         for changes in ({"run_id": "foreign"}, {"errors": ["unproven"]}, {"complete": False}):
             owner = self.backend()
             owner._case.close()
-            owner._fixture._closed = True
-            with patch.object(owner._fixture, "close", return_value={
-                    "complete": True, "run_id": owner._fixture.run_id, "errors": [], **changes}):
+            owner._regtest.closed = True
+            with patch.object(owner._regtest, "close", return_value={
+                    "complete": True, "run_id": owner._regtest.run_id, "errors": [], **changes}):
                 with self.assertRaises(BACKEND.NativeZakuraError):
                     owner.close()
             self.assertFalse(owner.closed)
@@ -309,8 +306,8 @@ class BackendTests(unittest.TestCase):
         proof = owner.retain()
         proof["complete"] = False
         self.assertTrue(owner.retain()["complete"])
-        self.assertEqual(owner._fixture.retain_calls, 1)
-        self.assertEqual(owner._fixture.close_calls, 0)
+        self.assertEqual(owner._regtest.retain_calls, 1)
+        self.assertEqual(owner._regtest.close_calls, 0)
         self.assertTrue(owner.root.exists())
         self.assertFalse(owner.closed)
         with self.assertRaises(BACKEND.NativeZakuraError):
@@ -320,12 +317,12 @@ class BackendTests(unittest.TestCase):
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.close()
 
-    def test_retention_failure_is_sticky_without_reinvoking_helper(self):
+    def test_retention_failure_is_sticky_without_retaining_twice(self):
         for result in (RuntimeError("transport failed"), {"complete": False},
                        {"complete": True, "run_id": "foreign", "errors": []}):
             owner = self.backend()
             owner._case.close()
-            with patch.object(owner._fixture, "retain", side_effect=result if isinstance(result, Exception) else None,
+            with patch.object(owner._regtest, "retain", side_effect=result if isinstance(result, Exception) else None,
                               return_value=result) as retain:
                 with self.assertRaises((RuntimeError, BACKEND.NativeZakuraError)):
                     owner.retain()
@@ -335,17 +332,17 @@ class BackendTests(unittest.TestCase):
             self.assertIsNone(owner._directory_fd)
             self.assertTrue(owner.root.exists())
 
-    def test_successful_startup_rollback_does_not_retain_already_deleted_fixture(self):
+    def test_successful_startup_rollback_does_not_retain_an_already_removed_chain(self):
         owner = self.backend()
         def failed_start():
-            owner._fixture._closed = True
+            owner._regtest.closed = True
             raise RuntimeError("original start failure")
-        with patch.object(owner._fixture, "start", side_effect=failed_start):
+        with patch.object(owner._regtest, "start", side_effect=failed_start):
             with self.assertRaisesRegex(RuntimeError, "original start failure"):
                 owner.start()
         owner._case.close()
         owner.retain()
-        self.assertEqual(owner._fixture.retain_calls, 0)
+        self.assertEqual(owner._regtest.retain_calls, 0)
         self.assertFalse(owner.closed)
         self.assertTrue(owner.root.exists())
 
@@ -354,17 +351,17 @@ class BackendTests(unittest.TestCase):
         moved = owner.root.with_name("original-backend-evidence")
         owner.root.rename(moved)
         owner.root.mkdir(mode=0o700)
-        sentinel = owner.root / "source-identity.json"
+        sentinel = owner.root / "regtest-identity.json"
         sentinel.write_text("replacement-preserve")
         with self.assertRaises(BACKEND.NativeZakuraError):
-            owner._write_text("source-identity.json", "must-not-write")
+            owner._write_text("regtest-identity.json", "must-not-write")
         with self.assertRaises(BACKEND.NativeZakuraError):
             owner.start()
         owner._case.close()
         owner.retain()
-        self.assertEqual(owner._fixture.retain_calls, 1)
+        self.assertEqual(owner._regtest.retain_calls, 1)
         self.assertEqual(sentinel.read_text(), "replacement-preserve")
-        self.assertEqual(json.loads((moved / "source-identity.json").read_text()), modeled_source().identity())
+        self.assertEqual(json.loads((moved / "regtest-identity.json").read_text())["run_id"], owner._regtest.run_id)
 
     def test_artifact_escape_rejected_and_replaced_links_never_write_shared_target(self):
         owner = self.backend()

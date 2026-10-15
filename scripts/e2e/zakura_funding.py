@@ -1,6 +1,6 @@
-"""Owned direct-fixture funding with independent integer/raw/compact oracles.
+"""Owned regtest-chain funding with independent integer/raw/compact oracles.
 
-This proves a fixture payment, not wallet note decryption or scenario PASS.
+This proves a chain payment, not wallet note decryption or scenario PASS.
 """
 from __future__ import annotations
 
@@ -146,7 +146,7 @@ def fund_zakura(case, backend, artifact, *, recipient_address, amount_zatoshi,
                 timeout=120.0, cancel_event=None):
     """Explicit mature source; no faucet/wallet RPC or automatic source guessing.
 
-    Calls are synchronous and bounded by the pinned backend's transport budget;
+    Calls are synchronous and bounded by the backend's transport budget;
     cancellation is checked between calls, not within Docker/RPC transport.
     Caller owns failed retention and all final backend/native teardown.
     """
@@ -177,7 +177,7 @@ def fund_zakura(case, backend, artifact, *, recipient_address, amount_zatoshi,
         return value
     check()
     identity = run_offline_funder(case, artifact, "identity", timeout=deadline-time.monotonic(), cancel_event=cancellation)
-    if backend._fixture.miner_address != identity["miner_address"]:
+    if backend._regtest.miner_address != identity["miner_address"]:
         raise ZakuraFundingError("backend miner differs from original signer identity")
     activation = json.loads(case.workspace.launch_environment()["VIZOR_E2E_CASE_MANIFEST"])["regtest_ironwood_activation_height"]
     tip = _integer(rpc("getblockcount"), "initial tip", minimum=1, maximum=0xFFFFFFFF-41)

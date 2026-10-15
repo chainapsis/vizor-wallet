@@ -87,7 +87,7 @@ class OwnedZakuraGenesisProof:
             raise ZakuraGenesisError("use create_zakura_genesis_proof")
         self._backend, self._identity, self._digest = backend, identity, digest
         self._upstream_port = upstream_port
-        self._fixture_run_id = backend._fixture.run_id
+        self._fixture_run_id = backend._regtest.run_id
         self._state = copy.deepcopy(state)
 
     def tree_state(self):
@@ -99,8 +99,8 @@ class OwnedZakuraGenesisProof:
         """Recheck the original attachment before passing the file to a child."""
         backend = self._backend
         backend._running()
-        if (backend._fixture.run_id != self._fixture_run_id
-            or backend._fixture._lightwalletd_url != f"127.0.0.1:{self._upstream_port}"):
+        if (backend._regtest.run_id != self._fixture_run_id
+            or backend._regtest.lightwalletd_url != f"127.0.0.1:{self._upstream_port}"):
             raise ZakuraGenesisError("genesis proof backend identity changed")
         descriptor = os.open(_NAME, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=backend._directory_fd)
         try:
@@ -126,8 +126,8 @@ class OwnedZakuraGenesisProof:
 def create_zakura_genesis_proof(case, backend, *, timeout=60.0, cancel_event=None):
     """Observe raw height zero, never borrow height one's frontier or fallback.
 
-    Deadline/cancellation are checked between the pinned helper's synchronous
-    calls; this does not claim interruption of an in-progress RPC.
+    Deadline/cancellation are checked between the chain's synchronous calls;
+    this does not claim interruption of an in-progress RPC.
     """
     if (not isinstance(case, NativeCaseLifecycle) or not isinstance(backend, OwnedNativeZakuraBackend)
         or backend._case is not case or not case.accepting_launches):
@@ -152,14 +152,14 @@ def create_zakura_genesis_proof(case, backend, *, timeout=60.0, cancel_event=Non
 
     check()
     ready = copy.deepcopy(backend._ready)
-    fixture = backend._fixture
+    regtest = backend._regtest
     identity = ready.get("identity")
     endpoint = ready.get("endpoints", {}).get("lightwalletd_url")
     match = re.fullmatch(r"127\.0\.0\.1:([1-9][0-9]{0,4})", endpoint or "")
-    if (not isinstance(identity, dict) or identity.get("run_id") != fixture.run_id
-        or not re.fullmatch(r"[0-9a-f]{32}", fixture.run_id)
+    if (not isinstance(identity, dict) or identity.get("run_id") != regtest.run_id
+        or not re.fullmatch(r"[0-9a-f]{32}", regtest.run_id)
         or match is None or not 1 <= int(match[1]) <= 65535
-        or endpoint != fixture._lightwalletd_url):
+        or endpoint != regtest.lightwalletd_url):
         raise ZakuraGenesisError("genesis upstream does not match the original backend identity")
     genesis_hash = rpc("getblockhash", [0])
     block = rpc("getblock", [genesis_hash, 2])
@@ -169,9 +169,8 @@ def create_zakura_genesis_proof(case, backend, *, timeout=60.0, cancel_event=Non
         raise ZakuraGenesisError("owned genesis identity changed during verification")
     # Raw LWD limitations are diagnostic probes, not proof/cleanup authority.
     # The future shim consumes only this independently verified node evidence.
-    proof = {"schema_version": 1, "fixture_run_id": fixture.run_id,
-             "upstream_port": int(match[1]), "identity": identity,
-             "source": backend._source.identity(), "genesis_block": block,
+    proof = {"schema_version": 1, "fixture_run_id": regtest.run_id,
+             "upstream_port": int(match[1]), "identity": identity, "genesis_block": block,
              "genesis_node_tree": node_tree, "tree_state": state,
              "empty_tree_codec": EMPTY_TREE_CODEC, "wallet_or_catalog_pass": False}
     data = bytearray()
