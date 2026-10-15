@@ -52,10 +52,12 @@ Stream<DevicePower> devicePowerEvents() {
 
 /// How much of the CPU sync scans may use (`set_sync_scan_power`): 0 every
 /// core, 1 half the cores at a lower priority, 2 the fewest threads at
-/// background priority. Full speed while the device is cool, the efficiency
-/// cores once it warms or saves power, the minimum when the OS says it is hot.
+/// background priority. Full speed while the device is nominal or fair, the
+/// efficiency cores in power saving, the minimum when the OS says it is hot.
+/// Fair keeps full speed because a long scan can reach it early, and a
+/// restore spent mostly at level 1 would take about 1.8 times as long.
 int syncScanPowerFor(DevicePower power) {
   if (power.thermal >= 2) return 2;
-  if (power.thermal == 1 || power.lowPower) return 1;
+  if (power.lowPower) return 1;
   return 0;
 }
