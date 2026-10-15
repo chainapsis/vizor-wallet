@@ -11,7 +11,7 @@ class DevicePower {
   const DevicePower({required this.thermal, required this.lowPower});
 
   /// 0 nominal, 1 fair, 2 serious, 3 critical: iOS `ProcessInfo.ThermalState`
-  /// values, with Android's thermal status mapped onto them.
+  /// values, with Android's thermal status and headroom mapped onto them.
   final int thermal;
 
   /// Low Power Mode on iOS, Battery Saver on Android.
