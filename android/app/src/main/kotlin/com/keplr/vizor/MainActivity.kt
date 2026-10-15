@@ -159,6 +159,10 @@ class MainActivity : FlutterFragmentActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             LedgerMobileHandler.EVENT_CHANNEL
         ).setStreamHandler(ledgerMobileHandler)
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DEVICE_POWER_CHANNEL
+        ).setStreamHandler(DevicePowerHandler(applicationContext))
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CAMERA_PERMISSION_CHANNEL
@@ -445,6 +449,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
+        private const val DEVICE_POWER_CHANNEL = "com.zcash.wallet/device_power"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
