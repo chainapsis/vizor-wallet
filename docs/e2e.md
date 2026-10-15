@@ -15,6 +15,10 @@ is needed for debugging or visual verification.
 VIZOR_E2E_HIDDEN_WINDOW=false scripts/e2e/flutter-macos-regtest-import-sync.sh
 ```
 
+A hidden window still runs in the user's session, so the Mac must stay
+unlocked: the runner stops a Flutter run while the session is locked instead of
+letting its cases hang.
+
 ## Flutter regtest E2E
 
 - Integration tests: `fvm flutter test integration_test/` (requires device/simulator)

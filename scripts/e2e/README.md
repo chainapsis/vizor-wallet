@@ -87,6 +87,13 @@ failed fixtures. The run never uses other simulators. `--dart-define=NAME=VALUE`
 adds a define to every Flutter phase, but it cannot repeat a define the
 scenario already sets.
 
+Keep the Mac unlocked while Flutter scenarios run. A locked session makes the
+app's keychain writes fail and can leave platform calls unanswered, so a run
+with Flutter scenarios does not start, and stops before its next case, while
+the session is locked; a case that fails while it is locked says so in its
+error. When a phase prints nothing for four minutes or misses its deadline, the
+run saves the app's thread stacks (`sample`) in the case's `stacks/`.
+
 Before the first case, a run with voting scenarios fetches the pinned
 `valargroup/vote-sdk` and `valargroup/vote-nullifier-pir` revisions into
 `.regtest-voting/deps` and builds them (`voting-services.sh build`, logged to

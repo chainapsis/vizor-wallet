@@ -38,6 +38,7 @@ import zakura_flutter as flutter_cases
 from zakura_flutter import Derived
 from zakura_fixture_source import ensure_pinned_images
 from zakura_batch_funding import fund_zakura_batch, migration_note_batches
+import zakura_diagnostics as diagnostics
 from zakura_funding import fund_zakura
 from zakura_genesis import create_zakura_genesis_proof
 from zakura_simulator import RunSimulator, newest_runtime, uninstall_app
@@ -142,6 +143,15 @@ def verify_test_output(lines, test):
 def _check(cancel_event):
     if cancel_event.is_set():
         raise runtime.Cancelled()
+
+
+SESSION_LOCKED = ("the macOS session is locked, which stops the Flutter app's keychain and platform calls; "
+                  "unlock the Mac and rerun the remaining scenarios")
+
+
+def _require_unlocked_session():
+    if diagnostics.session_locked():
+        raise runtime.RunnerError(SESSION_LOCKED)
 
 
 class SequentialCase:
@@ -280,12 +290,24 @@ class SequentialCase:
                 flutter=flutter, device="macos" if on_macos else device, source_root=source_root,
                 derived=self.derived, extra_defines=(*voting_defines, *dart_defines)),
                 env=env, raw_lines=lines, max_output_bytes=16 * 1024 * 1024)
-            while process.process.poll() is None:
-                _check(cancel_event)
-                if time.monotonic() >= deadline:
-                    raise runtime.RunnerError("the Flutter test did not finish before its deadline", 124)
-                self.front.assert_running()
-                self.control.pump(deadline=deadline, cancel_event=cancel_event)
+            app_platform = "macos" if on_macos else "ios"
+            stacks = diagnostics.StallRecorder(self.case.workspace.root / "stacks",
+                lambda: diagnostics.app_pids(app_platform, source_root=source_root, device=device),
+                label=f"phase-{index + 1}")
+            try:
+                while process.process.poll() is None:
+                    _check(cancel_event)
+                    stacks.observe(len(lines))
+                    if time.monotonic() >= deadline:
+                        raise runtime.RunnerError("the Flutter test did not finish before its deadline", 124)
+                    self.front.assert_running()
+                    self.control.pump(deadline=deadline, cancel_event=cancel_event)
+            except runtime.RunnerError as error:
+                if error.exit_code == 124:
+                    stacks.record_now("deadline")
+                raise
+            finally:
+                stacks.join()
             code = self.case.wait_process(process, timeout=max(0.001, deadline - time.monotonic()),
                 cancel_event=cancel_event)
             self._collect_captures(lines)
@@ -531,6 +553,7 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
     grpcurl = Path(grpcurl).resolve(strict=True)
     proto_dir = Path(proto_dir).resolve(strict=True)
     needs_simulator = any(getattr(s, "platform", None) == "ios" for s in scenarios)
+    runs_flutter = any(isinstance(s, flutter_cases.FlutterScenario) for s in scenarios)
     run_id = uuid.uuid4().hex[:10]
     logs = root / ".regtest-logs"
     logs.mkdir(mode=0o700, exist_ok=True)
@@ -550,6 +573,8 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
     builds = builds_id = simulator = None
     try:
         with content_memo.run_scope():
+            if runs_flutter:
+                _require_unlocked_session()
             report["pinned_images"] = ensure_pinned_images(evidence, cancel_event=cancel, out=out)
             targets = tuple(dict.fromkeys(s.target for s in scenarios if isinstance(s, RustScenario)))
             out(f"Building the signer and {len(targets)} Rust test target(s); logs: {evidence}")
@@ -581,11 +606,16 @@ def run_sequence(source_root, scenarios, *, flutter, grpcurl, proto_dir, build_j
             cases.mkdir(mode=0o700)
             for index, scenario in enumerate(scenarios, start=1):
                 _check(cancel)
+                is_flutter = isinstance(scenario, flutter_cases.FlutterScenario)
+                if is_flutter:
+                    _require_unlocked_session()
                 out(f"[{index}/{len(scenarios)}] {scenario.id}")
                 result = run_case(cases, run_id, index, scenario, artifact=artifact, grpcurl=grpcurl,
                     proto_dir=proto_dir, dart=dart, source_root=root, keep_failed=keep_failed,
                     cancel_event=cancel, flutter=flutter, dart_defines=dart_defines,
                     device=simulator.udid if getattr(scenario, "platform", None) == "ios" else "macos")
+                if is_flutter and result["status"] != "passed" and diagnostics.session_locked():
+                    result["error"] = f"{result['error']} (the macOS session was locked)"
                 report["results"].append(result)
                 write_report()
                 out(f"    {result['status']} in {result['duration_seconds']:.0f}s"

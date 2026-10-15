@@ -330,6 +330,9 @@ class SequenceHarness(unittest.TestCase):
             patcher = patch.object(SEQUENTIAL, target, side_effect=value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        patcher = patch.object(SEQUENTIAL.diagnostics, "session_locked", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def run_sequence(self, status, keep_failed, scenarios=None, run_case=None, dart_defines=()):
         def build(producer, **_kwargs):
@@ -349,6 +352,75 @@ class SequenceHarness(unittest.TestCase):
                 dart_defines=dart_defines)
         producer = next((self.root / ".regtest-logs" / f"zakura-{report['run_id']}" / "builds" / "e2e").iterdir())
         return report, producer
+
+
+class SessionLockTests(SequenceHarness):
+    """Flutter scenarios do not start while the macOS session is locked."""
+
+    def run_locked(self, locked, scenarios, run_case):
+        def build(producer, **_kwargs):
+            producer.close()
+            return object()
+
+        with patch.object(SEQUENTIAL.diagnostics, "session_locked", side_effect=locked) as probe, \
+             patch.object(SEQUENTIAL, "build_regtest_funder", side_effect=build) as built, \
+             patch.object(SEQUENTIAL, "run_case", side_effect=run_case) as ran:
+            report, _ = SEQUENTIAL.run_sequence(self.root, scenarios, flutter=Path("/model/flutter"),
+                grpcurl=self.root, proto_dir=self.root, out=lambda _text: None)
+        return report, probe, built, ran
+
+    def test_a_locked_session_stops_the_run_before_the_build(self):
+        report, _, built, ran = self.run_locked([True], [SEQUENTIAL.SCENARIOS["flutter.macos.import-sync"]],
+                                                run_case=None)
+        self.assertEqual(report["error"], SEQUENTIAL.SESSION_LOCKED)
+        built.assert_not_called()
+        ran.assert_not_called()
+
+    def test_a_lock_during_the_run_marks_the_failure_and_stops_the_next_case(self):
+        failed = lambda *_args, **_kwargs: {"status": "timed_out", "duration_seconds": 1.0,
+                                            "error": "control deadline expired"}
+        scenarios = [SEQUENTIAL.SCENARIOS["flutter.macos.import-sync"],
+                     SEQUENTIAL.SCENARIOS["flutter.macos.payment-link-round-trip"]]
+        report, _, _, ran = self.run_locked([False, False, True, True], scenarios, run_case=failed)
+        self.assertEqual(ran.call_count, 1)
+        self.assertEqual(report["results"][0]["error"],
+                         "control deadline expired (the macOS session was locked)")
+        self.assertEqual(report["error"], SEQUENTIAL.SESSION_LOCKED)
+
+    def test_rust_runs_do_not_check_the_session(self):
+        passed = lambda *_args, **_kwargs: {"status": "passed", "duration_seconds": 1.0, "error": None}
+        report, probe, _, _ = self.run_locked([True], [SEQUENTIAL.SCENARIOS["rust.send.basic"]],
+                                              run_case=passed)
+        probe.assert_not_called()
+        self.assertIsNone(report["error"])
+
+
+class StallStackTests(unittest.TestCase):
+    """A Flutter phase that misses its deadline leaves the app's stacks in the case evidence."""
+
+    def test_a_missed_deadline_samples_the_app_before_teardown(self):
+        from native_zakura_control import NativeZakuraControlError
+
+        class Control:
+            def pump(self, **_kwargs):
+                raise NativeZakuraControlError("control deadline expired", 124)
+
+        running = type("Running", (), {"process": type("Popen", (), {"poll": lambda self: None})()})()
+        case = SEQUENTIAL.SequentialCase.__new__(SEQUENTIAL.SequentialCase)
+        case.control, case.derived = Control(), {}
+        case.front = type("Front", (), {"assert_running": lambda self: None})()
+        case.case = type("Case", (), {"start_process": lambda self, *a, **kw: running,
+                                      "workspace": type("Workspace", (), {"root": Path("/model/evidence")})()})()
+        samples = []
+        with patch.object(SEQUENTIAL.diagnostics, "app_pids", return_value=[42]) as pids, \
+             patch.object(SEQUENTIAL.diagnostics, "sample_stacks",
+                          side_effect=lambda found, directory, label: samples.append((found, directory, label))):
+            with self.assertRaises(SEQUENTIAL.runtime.RunnerError) as raised:
+                case.run_flutter(SEQUENTIAL.SCENARIOS["flutter.macos.import-sync"], flutter=Path("/model/flutter"),
+                                 device="macos", source_root=Path("/model/root"), cancel_event=threading.Event())
+        self.assertEqual(raised.exception.exit_code, 124)
+        self.assertEqual(samples, [([42], Path("/model/evidence/stacks"), "phase-1-deadline")])
+        pids.assert_called_once_with("macos", source_root=Path("/model/root"), device="macos")
 
 
 class BuildOutputTests(SequenceHarness):
@@ -453,7 +525,8 @@ class VotingPhaseTests(unittest.TestCase):
 
         case.case = type("Case", (), {
             "start_process": staticmethod(start_process),
-            "wait_process": staticmethod(lambda *_a, **_kw: 0)})()
+            "wait_process": staticmethod(lambda *_a, **_kw: 0),
+            "workspace": type("Workspace", (), {"root": Path("/model/evidence")})()})()
         with patch.object(SEQUENTIAL.SequentialCase, "_start_voting",
                           side_effect=lambda *_a: events.append("services") or (("ZCASH_E2E_VOTE_ROUND_ID", "ab"),)), \
              patch.object(SEQUENTIAL.SequentialCase, "_check_voting",
