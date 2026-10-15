@@ -6,7 +6,7 @@ regtest unified addresses in Orchard, and activates NU6.3 only when the test
 mines the configured activation block.
 
 The Flutter Ironwood E2E runners below do not use this stack. Each runs on its
-own direct Zakura fixture that activates NU6.3 at height 500; see
+own Zakura regtest chain that activates NU6.3 at height 500; see
 `scripts/e2e/README.md`. The stack remains for manual experiments.
 
 ## Pinned components
@@ -98,7 +98,7 @@ The test replaces the chain after denomination confirmation and verifies that
 the same migration run returns to denomination preparation, then rebuilds its
 Ironwood child. It mines that child below trusted depth, replaces the chain
 again, verifies the child becomes broadcastable, and completes the original run.
-The fixture keeps the transactions it returns to the mempool out of blocks until
+The chain keeps the transactions it returns to the mempool out of blocks until
 the test releases them.
 
 Test a large balance that requires multiple denomination stages and migration
@@ -143,7 +143,7 @@ Run the lower-level Rust migration path independently:
 scripts/e2e/ironwood-regtest-migration.sh
 ```
 
-It runs on its own direct Zakura fixture, which activates NU6.3 at height 500,
+It runs on its own Zakura regtest chain, which activates NU6.3 at height 500,
 rather than on this stack (see `./run-regtest-rust-tests.sh --help`). The test
 imports a deterministic wallet, sends 1.0002 TAZ to its Orchard
 receiver, verifies that Ironwood is empty, activates NU6.3, runs the real

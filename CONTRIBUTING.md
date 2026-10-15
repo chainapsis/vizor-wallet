@@ -311,7 +311,7 @@ scripts/e2e/flutter-ios-regtest-mobile-full.sh
 ```
 
 The runners manage the required `regtest` and mobile compile-time definitions.
-Every suite runs each test on its own direct Zakura fixture and needs Docker,
+Every suite runs each test on its own Zakura regtest chain and needs Docker,
 Python 3.11+, `grpcurl`, `fvm flutter pub get` and committed `rust/` changes;
 see `scripts/e2e/README.md`.
 Use a targeted script under `scripts/e2e/` instead of a full suite when it

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs on direct Zakura fixtures; see scripts/e2e/README.md.
+# Runs on Zakura regtest chains; see scripts/e2e/README.md.
 exec python3 "$(dirname "${BASH_SOURCE[0]}")/zakura-run.py" \
   flutter.ios.create-sync \
   flutter.ios.import-sync \

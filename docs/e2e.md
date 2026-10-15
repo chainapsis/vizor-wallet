@@ -22,11 +22,11 @@ letting its cases hang.
 ## Flutter regtest E2E
 
 - Integration tests: `fvm flutter test integration_test/` (requires device/simulator)
-- Every `scripts/e2e/flutter-*.sh` regtest runner runs its scenarios on direct Zakura fixtures through `scripts/e2e/zakura-run.py`; the catalog is `scripts/e2e/zakura_flutter.py` and the details are in `scripts/e2e/README.md`.
+- Every `scripts/e2e/flutter-*.sh` regtest runner runs its scenarios on Zakura regtest chains through `scripts/e2e/zakura-run.py`; the catalog is `scripts/e2e/zakura_flutter.py` and the details are in `scripts/e2e/README.md`.
 - Run app tests with `--dart-define=ZCASH_DEFAULT_NETWORK=regtest`; do not use the old `ZCASH_USE_E2E_STORAGE` path. Secure storage and wallet DB names are network-scoped.
 - Cleanup code should guard on `kZcashDefaultNetworkName == ZcashNetwork.regtest.name`, then delete `getWalletDbName()` plus its `-shm` / `-wal` files.
 - Use `ZCASH_E2E_LIGHTWALLETD_URL` only as the endpoint override, and keep Rust API calls on the same network as `kZcashDefaultNetworkName`.
-- Mempool receive E2E should use external funding from the fixture's control when testing true inbound tx discovery, not another in-app account.
+- Mempool receive E2E should use external funding from the regtest control when testing true inbound tx discovery, not another in-app account.
 - To prove mempool behavior while sync is active, pre-mine enough regtest blocks and pass the debug-only Rust throttle env vars inline: `ZCASH_E2E_SYNC_BATCH_SIZE` and `ZCASH_E2E_SYNC_BATCH_DELAY_MS`.
 
 ## Mobile (iOS simulator) regtest E2E
@@ -36,7 +36,7 @@ letting its cases hang.
 - Mobile runs need `VIZOR_FORM_FACTOR=mobile` and `ZCASH_DEFAULT_NETWORK=regtest`, plus `ZCASH_E2E_LIGHTWALLETD_URL` where the scenario overrides the endpoint; `zakura-run.py` passes them from the catalog. Gift Card scenarios also need `VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true` (payment links stay gated off without it) and `VIZOR_DEEPLINK_BASE_URL`.
 - Device: each run creates its own simulator (`Vizor Zakura E2E <run id>`, iPhone 16, the newest iOS runtime unless `--ios-runtime` names one) and deletes it at the end. It never uses an already booted simulator.
 - Each `flutter test integration_test` invocation reinstalls the app: the wallet DB dies with the container while the iOS Keychain persists until the reinstalled app's first launch clears it, so in-test `cleanupE2eWalletState()` (deleteAll + db files, regtest-guarded) runs at test start AND teardown. Cross-invocation wallet reuse needs `--no-uninstall`: the Ironwood restart runners pass it to their prepare phase so the resume phase reopens the same install. Gift Card scenarios pair it with `cleanupMobileE2ePaymentLinkClaimWallets()`, the regtest-guarded claim-wallet sweep — claim wallets from every network share one support directory, so the sweep is scoped to regtest names. Scenarios that leave the pasteboard populated clear it in teardown too; the simulator pasteboard outlives the app container.
-- The simulator shares the host loopback: `127.0.0.1` URLs, the in-test lightwalletd proxy, and the fixture's control all work unchanged. Android emulators would need `10.0.2.2` and are out of scope.
+- The simulator shares the host loopback: `127.0.0.1` URLs, the in-test lightwalletd proxy, and the regtest control all work unchanged. Android emulators would need `10.0.2.2` and are out of scope.
 - Desktop scenarios without mobile counterparts (feature gaps, add when the features land): custom-endpoint privacy (no mobile endpoint settings UI), mempool during-sync / expiry variants.
 - Payment-request round trip and payment-URI locked-send: desktop runners only. The mobile receive pane has its own request sheet, so this is a harness gap rather than a feature gap.
 - Gift Card restart recovery and reorg retry: desktop runners only. The Gift Card round trip has a mobile counterpart driving the **Redeem a card → Paste card link** path; mobile claiming over a universal link still needs a publicly reachable HTTPS origin — see `scripts/e2e/README.md`. The payment-URI send also has a mobile counterpart, which instead pushes an `onUris` call over the `com.zcash.wallet/payment_uri` MethodChannel to raise the payment-request card.
@@ -44,7 +44,7 @@ letting its cases hang.
 ## Zcash regtest Rust integration tests
 
 - One-shot runner from repo root: `./run-regtest-rust-tests.sh` runs every Rust scenario; `./run-regtest-rust-tests.sh rust.import rust.send.basic` selects scenario IDs or dotted prefixes. List them with `python3 scripts/e2e/zakura-run.py --list`.
-- Each test runs alone against its own fresh direct Zakura fixture: the pinned Zakura node and lightwalletd containers, the lightwalletd shim and an HTTP control (`scripts/e2e/zakura-run.py`). Tests never share chain or wallet state.
+- Each test runs alone against its own fresh Zakura regtest chain: a Zakura node and lightwalletd in Docker, the lightwalletd shim and an HTTP control (`scripts/e2e/zakura-run.py`). Tests never share chain or wallet state.
 - Ironwood (NU6.3) is active from height 1, except in the `rust.ironwood.*` scenarios, which fund Orchard before activating Ironwood at height 500.
 - Funding is signed offline from a public test-only coinbase key (`rust/examples/regtest_direct_funder.rs`); there is no node wallet.
 - The signer and the test executables are built once per run from the committed `rust/` tree. The runner refuses to start while `rust/` has uncommitted changes.
@@ -61,7 +61,7 @@ it left once nobody needs it. Remove only what you can tie to your own run id.
 If you cannot tell whether something is yours, leave it and say so in your
 report.
 
-The runner already removes each scenario's fixture, wallet files and port
+The runner already removes each scenario's chain, wallet files and port
 locks, each voting case's regenerated data, the run's build output and the
 run's simulator. What stays behind:
 
@@ -109,7 +109,7 @@ Your run id is the suffix of `.regtest-logs/zakura-<run id>/`.
   otherwise report it.
 - Your run folder, `.regtest-logs/zakura-<run id>/`, once the result is
   reported and you have copied what you still need. While a failure is
-  unresolved, keep the folder and its kept fixture, and say so.
+  unresolved, keep the folder and its kept chain, and say so.
 - The `vizor-speculos.*` folder the Ledger lane printed for your run.
 - Build caches of a worktree you created for this task, once nothing runs
   there: `build/`, `.dart_tool/` and `rust/target/`, each only after

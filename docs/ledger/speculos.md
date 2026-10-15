@@ -129,7 +129,7 @@ officially distributed testnet app.
 
 The lane runs the `flutter.macos.voting-final-tally` (software account) and
 `flutter.macos.voting-ledger-final-tally` (Ledger account) scenarios through
-`scripts/e2e/zakura-run.py`, each on its own direct Zakura fixture, using the
+`scripts/e2e/zakura-run.py`, each on its own Zakura regtest chain, using the
 same public disposable mnemonic, funded notes, four proposals and decision 0.
 The helper exports the real device UFVK at coin type 1 and re-encodes it from
 testnet to regtest without changing its keys. The Ledger case imports it as a

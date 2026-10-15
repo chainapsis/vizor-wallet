@@ -110,7 +110,7 @@ ensure_param_file "$SAPLING_SPEND_PATH" "$SAPLING_SPEND_HASH" "$SAPLING_PARAM_BA
 ensure_param_file "$SAPLING_OUTPUT_PATH" "$SAPLING_OUTPUT_HASH" "$SAPLING_PARAM_BASE_URL/sapling-output.params"
 export REGTEST_SAPLING_PARAMS_DIR="$SAPLING_PARAMS_DIR"
 
-echo "==> Running Rust regtest integration tests on direct Zakura fixtures"
+echo "==> Running Rust regtest integration tests on Zakura regtest chains"
 echo "==> Log file: $LOG_FILE"
 
 set +e

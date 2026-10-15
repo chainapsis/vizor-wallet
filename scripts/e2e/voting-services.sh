@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The vote chain, nullifier PIR server and voting gateway of the voting E2E
-# scenarios, run against the scenario's Zakura fixture by zakura-run.py.
+# scenarios, run against the scenario's Zakura regtest chain by zakura-run.py.
 #
 #   voting-services.sh build          fetch and build the pinned vote-sdk and PIR
 #   voting-services.sh start READY    start the services after the setup phase
@@ -9,7 +9,7 @@
 #   voting-services.sh check READY    require discovery, helper and vote traffic,
 #                                     and with E2E_FINAL_TALLY=1 the final tally
 #
-# The fixture's lightwalletd and control come from VOTING_LIGHTWALLETD and
+# The chain's lightwalletd and control come from VOTING_LIGHTWALLETD and
 # ZCASH_E2E_DRIVER_URL. VOTING_DEVICE is `macos` or the simulator UDID. With
 # E2E_LEDGER_VOTING=1, the Ledger signer bridge uses the helper, Speculos API and
 # exported account in VIZOR_LEDGER_REGTEST_HELPER,

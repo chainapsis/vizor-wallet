@@ -107,7 +107,7 @@ The macOS outcomes E2E runner covers three scenarios with real Rust wallets and
 regtest transactions: competing claims, accepted-response loss and restart
 recovery, and removing the losing card after restart. Run
 `scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh` explicitly; each
-scenario runs on its own direct Zakura fixture. See `scripts/e2e/README.md` for
+scenario runs on its own Zakura regtest chain. See `scripts/e2e/README.md` for
 phases and logs.
 
 The explicit two-wallet competition scenario is compiled by:
@@ -117,7 +117,7 @@ cargo test --manifest-path rust/Cargo.toml --test regtest_payment_link_competiti
 ```
 
 Run it only when regtest execution is explicitly requested (it starts its own
-direct Zakura fixture in Docker and mines blocks):
+Zakura regtest chain in Docker and mines blocks):
 
 ```sh
 ./run-regtest-rust-tests.sh rust.gift-card.competition

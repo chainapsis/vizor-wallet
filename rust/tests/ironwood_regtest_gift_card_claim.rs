@@ -1,4 +1,4 @@
-//! Gift Card claims on an owned direct Zakura fixture, or the manual
+//! Gift Card claims on an owned Zakura regtest chain, or the manual
 //! Dockerized Ironwood stack (`scripts/ironwood-regtest`).
 
 use std::path::{Path, PathBuf};

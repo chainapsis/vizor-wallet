@@ -212,7 +212,7 @@ if [[ "$LANE" == voting-tally ]]; then
   export VIZOR_LEDGER_REGTEST_ACCOUNT="$RUN_DIR/ledger-account.json"
   "$VIZOR_LEDGER_REGTEST_HELPER" regtest-export "$INSTANCE_URL" unused "$VIZOR_LEDGER_REGTEST_ACCOUNT" \
     > "$RUN_DIR/account-export.log" 2>&1
-  # Each scenario votes on its own Zakura fixture; only the Ledger one signs
+  # Each scenario votes on its own Zakura regtest chain; only the Ledger one signs
   # on this Speculos instance.
   echo "Running desktop final tally: ${scenarios[*]}"
   code=0

@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 
-/// The control server in front of the test's Zakura fixture: chain status,
-/// mining and funding.
+/// The control server in front of the test's Zakura regtest chain: chain
+/// status, mining and funding.
 const regtestControlUrl = String.fromEnvironment(
   'ZCASH_E2E_DRIVER_URL',
   defaultValue: 'http://127.0.0.1:18232',

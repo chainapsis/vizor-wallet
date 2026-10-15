@@ -103,13 +103,13 @@ account deletion. UI tests cover reactive status and failure display.
 
 The opt-in `regtest_gift_card_tracking` Rust integration test
 (`./run-regtest-rust-tests.sh rust.gift-card.tracking-multiple rust.gift-card.empty-db-reuse`,
-each on its own direct Zakura fixture) exercises real multi-account viewing-key scans, a late older-birthday registration and an
+each on its own Zakura regtest chain) exercises real multi-account viewing-key scans, a late older-birthday registration and an
 external claim. It also covers 1 → 0 → later registration with real shielded
 activity in the idle interval, zero scanned blocks in the skipped interval,
 subsequent tip refresh and older-card recovery. The macOS
 `flutter-macos-regtest-gift-card-tracking.sh` runner checks unmined funding → Unused, automatic UI/store
 updates and retention across a process restart. See `scripts/e2e/README.md`.
-It mines on its own direct Zakura fixture; run it only when regtest
+It mines on its own Zakura regtest chain; run it only when regtest
 execution is explicitly requested.
 
 Bridge bindings can be regenerated from the project root with
