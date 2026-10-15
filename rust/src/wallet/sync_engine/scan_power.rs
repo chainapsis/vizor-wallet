@@ -73,13 +73,6 @@ pub(crate) fn install<R: Send>(power: ScanPower, scan: impl FnOnce() -> R + Send
     }
 }
 
-/// Runs `scan` at the level the app last set. Payment-link claims and Gift
-/// Card discovery scan through this; they can run beside the main sync loop,
-/// which picks its level per batch with [`install`].
-pub(crate) fn install_current<R: Send>(scan: impl FnOnce() -> R + Send) -> R {
-    install(current(), scan)
-}
-
 /// Threads in a reduced pool: the scanning thread plus `decrypting` workers.
 fn pool_threads(decrypting: usize) -> usize {
     decrypting.max(1) + 1
@@ -159,15 +152,6 @@ mod tests {
             assert_eq!(ScanPower::from_level(power.level()), power);
         }
         assert_eq!(ScanPower::from_level(7), ScanPower::Minimal);
-    }
-
-    #[test]
-    fn install_current_scans_at_the_level_last_set() {
-        let before = current();
-        set(ScanPower::Minimal);
-        let threads = install_current(rayon::current_num_threads);
-        set(before);
-        assert_eq!(threads, pool_threads(cores() / 4));
     }
 
     #[test]
