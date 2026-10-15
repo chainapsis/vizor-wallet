@@ -18,6 +18,7 @@ use super::qualification::disclosing;
 use super::shard_service::{noise, receive, script, spend, ShardService, ShardSpec, RECEIVED};
 use super::*;
 use crate::wallet::sync::{get_transaction_history, TransparentBalanceAuthority};
+use crate::wallet::sync_engine::enhancement::ObservedRequest;
 use crate::wallet::sync_engine::test_lwd::CapturingLwd;
 
 use super::super::pir::test_transport;
@@ -643,4 +644,165 @@ fn a_declared_re_cut_of_sealed_history_keeps_the_wallet_current() {
     assert_private(&requests, &[secret(&wallet.address)]);
     assert_eq!(disclosing(&lwd), Vec::<String>::new());
     assert_eq!(disclosing(&later), Vec::<String>::new());
+}
+
+/// A receive-only script no account derives, tagged `tag`.
+fn unrelated(tag: u32) -> transparent_filter::ScriptBytes {
+    let mut bytes = vec![0x76, 0xa9, 20];
+    bytes.extend_from_slice(&tag.to_le_bytes());
+    bytes.extend_from_slice(&[0xdd; 16]);
+    bytes.extend_from_slice(&[0x88, 0xac]);
+    transparent_filter::ScriptBytes::new(bytes)
+}
+
+/// The shard holding the page cover test's history: three page tables of
+/// three blocks each, from [`BIRTHDAY`].
+const COVERED: u64 = 1;
+
+/// A publication where `address` receives three times from `from`: a sealed
+/// shard below the birthday, the sealed [`COVERED`] shard over the birthday
+/// and the eight blocks after it in three page tables, and a one-block tail.
+/// The directory keeps the two newest receives, so the oldest sits in the
+/// page table holding `from`. A short run of an unrelated script fills every
+/// page table, so each holds rows, as in production.
+fn covered_publication(address: TransparentAddress, from: u64) -> Vec<ShardSpec> {
+    let birthday = u64::from(BIRTHDAY);
+    let mut covered = noise(birthday, birthday + 8, 2);
+    for (table, start) in [birthday, birthday + 3, birthday + 6]
+        .into_iter()
+        .enumerate()
+    {
+        let filler = unrelated(900 + table as u32);
+        for n in 0..3 {
+            covered.push((
+                filler.clone(),
+                receive(start + n, 200_000 + 10 * table as u64 + n),
+            ));
+        }
+    }
+    for n in 0..3 {
+        covered.push((script(address), receive(from + n, 300_000 + n)));
+    }
+    vec![
+        ShardSpec::first(
+            birthday - 100,
+            birthday - 1,
+            true,
+            noise(birthday - 100, birthday - 1, 1),
+        ),
+        ShardSpec {
+            page_span: 3,
+            ..ShardSpec::first(birthday, birthday + 8, true, covered)
+        },
+        ShardSpec::first(
+            birthday + 9,
+            u64::from(TOP),
+            false,
+            noise(birthday + 9, u64::from(TOP), 3),
+        ),
+    ]
+}
+
+/// A request to the [`COVERED`] shard's page tables: whether it is a query,
+/// the page table, and its upload's length.
+fn covered_page_request(request: &ObservedRequest) -> Option<(bool, u32, usize)> {
+    // /v2/shards/<id>/revisions/<digest>/<query|setup>/pages-<j>[/<segment>]
+    let parts: Vec<&str> = request.path.split('/').collect();
+    if parts.get(2) != Some(&"shards") || parts.get(3) != Some(&COVERED.to_string().as_str()) {
+        return None;
+    }
+    let table = parts.get(7)?.strip_prefix("pages-")?.parse().ok()?;
+    Some((parts[6] == "query", table, request.body.len()))
+}
+
+/// The page traffic the service sees in the [`COVERED`] shard: the page tables
+/// whose setups were fetched, in order, and the page queries as sweeps over
+/// all three tables, each as its (table, upload length) pairs in table order.
+/// Sorting hides only each sweep's random order, which carries nothing.
+fn covered_transcript(requests: &[ObservedRequest]) -> (Vec<u32>, Vec<Vec<(u32, usize)>>) {
+    let pages: Vec<(bool, u32, usize)> = requests.iter().filter_map(covered_page_request).collect();
+    let setups = pages
+        .iter()
+        .filter(|(query, _, _)| !query)
+        .map(|(_, table, _)| *table)
+        .collect();
+    let queries: Vec<(u32, usize)> = pages
+        .iter()
+        .filter(|(query, _, _)| *query)
+        .map(|(_, table, upload)| (*table, *upload))
+        .collect();
+    assert!(
+        !queries.is_empty() && queries.len() % 3 == 0,
+        "page queries are whole sweeps over three tables: {queries:?}"
+    );
+    let sweeps = queries
+        .chunks(3)
+        .map(|sweep| {
+            let mut sweep = sweep.to_vec();
+            sweep.sort();
+            assert_eq!(
+                sweep.iter().map(|(table, _)| *table).collect::<Vec<_>>(),
+                [0, 1, 2],
+                "each sweep queries every page table once: {queries:?}"
+            );
+            sweep
+        })
+        .collect();
+    (setups, sweeps)
+}
+
+/// Page cover through the app's own transport: two wallets whose one older
+/// receive sits in different page tables of a three-table shard, the first in
+/// `pages-0` and the second in `pages-2`, send the service the same page
+/// traffic. Each fetches every page table's setup and sends one sweep over all
+/// three tables at the same lengths; the slot of the real query is random.
+/// Without page cover, the first queries only `pages-0` and the second only
+/// `pages-2`. Both recover all three receives, and no request carries either
+/// address.
+#[test]
+fn page_tables_a_wallet_reads_are_hidden_by_page_cover() {
+    if crate::wallet::db::isolated_test(
+        module_path!(),
+        "page_tables_a_wallet_reads_are_hidden_by_page_cover",
+    ) {
+        return;
+    }
+    private_process();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let lwd = runtime.block_on(CapturingLwd::start_at_tip(u64::from(TOP), main_hash(TOP).0));
+    let birthday = u64::from(BIRTHDAY);
+
+    let mut transcripts = Vec::new();
+    for from in [birthday, birthday + 6] {
+        let wallet = funded_wallet();
+        crate::api::sync::reconcile_transparent_policy(wallet.path.clone(), "main".into(), true)
+            .expect("raise the wallet to private recovery");
+        let service = ShardService::publish(&covered_publication(wallet.address, from));
+        let seam = test_transport::set(&wallet.path, service.observer());
+        syncs(&wallet.path, &lwd).expect("whole syncs complete");
+
+        let balance = get_wallet_balance(&wallet.path, MAIN, &wallet.uuid).unwrap();
+        assert_eq!(
+            balance.transparent_authority,
+            TransparentBalanceAuthority::Current,
+            "{balance:?}"
+        );
+        assert_eq!(balance.transparent, 3 * RECEIVED, "{balance:?}");
+        let requests = seam.seam.observer.requests();
+        assert_private(&requests, &[secret(&wallet.address)]);
+        transcripts.push(covered_transcript(&requests));
+    }
+
+    let (setups, sweeps) = &transcripts[0];
+    assert_eq!(
+        setups,
+        &[0, 1, 2],
+        "every page table's setup, in table order"
+    );
+    assert_eq!(sweeps.len(), 1, "one real page query, one sweep");
+    assert_eq!(
+        transcripts[0], transcripts[1],
+        "the service sees the same page traffic from both wallets"
+    );
+    assert_eq!(disclosing(&lwd), Vec::<String>::new());
 }

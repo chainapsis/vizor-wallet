@@ -145,7 +145,7 @@ features = ["local-prover"]
 
 [dependencies.pczt]
 package = "zakura-pczt"
-version = "=0.1.0-rc5"
+version = "=0.1.0-rc6"
 features = [
     "orchard",
     "io-finalizer",
@@ -171,8 +171,8 @@ features = ["wallet"]
 # Transparent PIR recovery adapter. A git dependency rather than a patched
 # crates.io package; see the `[patch.crates-io]` comment below.
 [dependencies.zakura-pir-transparent]
-git = "https://github.com/zakura-core/wallet-libraries"
-rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea"
+git = "ssh://git@github.com/zakura-core/wallet-libraries.git"
+rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f"
 default-features = false
 # `sqlite` applies a batch to the wallet and acknowledges it in one call.
 features = ["sqlite"]
@@ -223,8 +223,8 @@ features = ["test-fixtures"]
 # process, with the wallet-pir crates it publishes with. Same rev as the
 # dependency above.
 [dev-dependencies.zakura-pir-transparent]
-git = "https://github.com/zakura-core/wallet-libraries"
-rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea"
+git = "ssh://git@github.com/zakura-core/wallet-libraries.git"
+rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f"
 default-features = false
 features = ["sqlite", "testing"]
 
@@ -308,14 +308,14 @@ assertions_on_constants = "allow"
 zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "bd7bd519f02bcc7a6ade665d72ae757415ebdcce" }
 vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "bd7bd519f02bcc7a6ade665d72ae757415ebdcce" }
 vote-commitment-tree-client = { git = "https://github.com/valargroup/zcash_voting", rev = "bd7bd519f02bcc7a6ade665d72ae757415ebdcce" }
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea" }
-zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea" }
-zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea" }
-zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea" }
-zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries", rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea" }
-zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries", rev = "fc24cdd8d4f81738911e13b5faecb5bd1c8887ea" }
+zakura-client-backend = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }
+zakura-client-sqlite = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }
+zakura-pczt = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }
+zakura-pir-enhance-types = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }
+zakura-transaction-status = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }
+zakura-pir-status = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }
+zakura-pir-native = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }
+zakura-pir-enhance = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
@@ -327,3 +327,14 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Temporary, until `zcash_voting` pins wallet-libraries at the revision above.
+# `zcash_voting` depends on `zakura-wallet-lib` from wallet-libraries' git
+# repository at its own revision, over HTTPS. A git source cannot be patched to
+# another revision of the same URL, so every wallet-libraries dependency here
+# names the repository by its SSH URL, a different source to Cargo, and this
+# patch moves `zcash_voting`'s copy onto it. Each wallet crate then builds once.
+# Fetching needs GitHub SSH access (`CARGO_NET_GIT_FETCH_WITH_CLI=true` uses
+# the SSH agent).
+[patch."https://github.com/zakura-core/wallet-libraries"]
+zakura-wallet-lib = { git = "ssh://git@github.com/zakura-core/wallet-libraries.git", rev = "d879d2ade1d23826f64ad1168fe37b22db9ea96f" }

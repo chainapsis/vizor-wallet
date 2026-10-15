@@ -90,8 +90,11 @@ const MAX_SCRIPTS: usize = 10_000;
 pub(super) const MAX_SHARDS: usize = 1_024;
 /// Candidate events one pass may export.
 const MAX_EVENTS: usize = 500_000;
-/// Private queries one pass may send.
-pub(super) const MAX_QUERIES: u64 = 256;
+/// Private queries one pass may send, page cover included. Cover multiplies a
+/// shard's page queries by its cover size and pads them to a power of two; at
+/// 512, a restore with an address active in every shard fits one pass, and a
+/// round of up to about 128 fragments fits under a three-table cover.
+pub(super) const MAX_QUERIES: u64 = 512;
 /// Private bytes, setup included, one pass may receive.
 pub(super) const MAX_PRIVATE_BYTES: u64 = 96 << 20;
 /// Bytes one successful response may carry.

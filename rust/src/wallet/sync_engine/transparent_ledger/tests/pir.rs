@@ -151,7 +151,7 @@ pub(super) fn refusing() -> RequestObserver {
 
 /// The history service's six routes, as `METHOD path`: the library's
 /// end-to-end check, verbatim.
-pub(super) const HISTORY_ROUTES: &str = r"^(GET /v2/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))|POST /v2/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages))$";
+pub(super) const HISTORY_ROUTES: &str = r"^(GET /v2/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages-(0|[1-9][0-9]?))/[0-9]+))|POST /v2/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages-(0|[1-9][0-9]?)))$";
 
 /// The txid display service's six routes, as `METHOD path`: the public init,
 /// recent map and archive index chunks, then a shard revision's manifest,
@@ -161,8 +161,8 @@ pub(crate) const TXID_ROUTES: &str = r"^(GET /v2/txid/(init|map|map/[0-9]+/[0-9a
 /// Every route either service serves.
 pub(crate) const ROUTES: &str = concat!(
     r"^(",
-    r"GET /v2/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))",
-    r"|POST /v2/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages)",
+    r"GET /v2/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages-(0|[1-9][0-9]?))/[0-9]+))",
+    r"|POST /v2/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages-(0|[1-9][0-9]?))",
     r"|GET /v2/txid/(init|map|map/[0-9]+/[0-9a-f]{64}|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/directory-[0-9]+/[0-9]+)",
     r"|POST /v2/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/directory-[0-9]+",
     r")$"
@@ -1392,7 +1392,8 @@ fn routes_are_the_union_of_both_services() {
     for line in [
         "GET /v2/filters/shards".to_owned(),
         "GET /v2/shards/init".to_owned(),
-        format!("POST /v2/shards/3/revisions/{digest}/query/pages"),
+        format!("POST /v2/shards/3/revisions/{digest}/query/pages-7"),
+        format!("GET /v2/shards/3/revisions/{digest}/setup/pages-31/0"),
         "GET /v2/txid/init".to_owned(),
         "GET /v2/txid/map".to_owned(),
         format!("GET /v2/txid/map/32/{digest}"),
@@ -1404,6 +1405,8 @@ fn routes_are_the_union_of_both_services() {
         assert!(history.is_match(&line) != txid.is_match(&line), "{line}");
     }
     for line in [
+        format!("POST /v2/shards/3/revisions/{digest}/query/pages"),
+        format!("POST /v2/shards/3/revisions/{digest}/query/pages-07"),
         format!("GET /v2/txid/recent/shards/3/revisions/{digest}/query/directory-0"),
         format!("POST /v2/txid/recent/shards/3/revisions/{digest}/query/pages"),
         format!("GET /v2/txid/recent/shards/3/revisions/{digest}/setup/pages/0"),
