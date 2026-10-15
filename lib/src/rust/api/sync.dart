@@ -1570,6 +1570,11 @@ class ApiSyncProgressEvent {
   /// `"chain_prepare"` before the existing download/scan phases.
   final String phase;
 
+  /// Sync job `percentage` belongs to, named from the first event of every
+  /// attempt. A new attempt with the same id (retry, endpoint fallback,
+  /// relaunch) continues the same fraction.
+  final String syncJobId;
+
   const ApiSyncProgressEvent({
     required this.kind,
     this.checking,
@@ -1585,6 +1590,7 @@ class ApiSyncProgressEvent {
     required this.phaseCompletedUnits,
     required this.phaseTotalUnits,
     required this.phase,
+    required this.syncJobId,
   });
 
   @override
@@ -1602,7 +1608,8 @@ class ApiSyncProgressEvent {
       hasNewTx.hashCode ^
       phaseCompletedUnits.hashCode ^
       phaseTotalUnits.hashCode ^
-      phase.hashCode;
+      phase.hashCode ^
+      syncJobId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1622,7 +1629,8 @@ class ApiSyncProgressEvent {
           hasNewTx == other.hasNewTx &&
           phaseCompletedUnits == other.phaseCompletedUnits &&
           phaseTotalUnits == other.phaseTotalUnits &&
-          phase == other.phase;
+          phase == other.phase &&
+          syncJobId == other.syncJobId;
 }
 
 /// A wallet's durable transparent ledger mode.
@@ -3009,11 +3017,20 @@ class SyncProgress {
   final bool isSyncing;
   final bool isComplete;
 
+  /// Id of the unfinished sync job, or empty when none is stored.
+  final String syncJobId;
+
+  /// Last reported fraction of that job, in the units of
+  /// `ApiSyncProgressEvent::percentage`.
+  final double syncJobFraction;
+
   const SyncProgress({
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.isSyncing,
     required this.isComplete,
+    required this.syncJobId,
+    required this.syncJobFraction,
   });
 
   @override
@@ -3021,7 +3038,9 @@ class SyncProgress {
       scannedHeight.hashCode ^
       chainTipHeight.hashCode ^
       isSyncing.hashCode ^
-      isComplete.hashCode;
+      isComplete.hashCode ^
+      syncJobId.hashCode ^
+      syncJobFraction.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3031,7 +3050,9 @@ class SyncProgress {
           scannedHeight == other.scannedHeight &&
           chainTipHeight == other.chainTipHeight &&
           isSyncing == other.isSyncing &&
-          isComplete == other.isComplete;
+          isComplete == other.isComplete &&
+          syncJobId == other.syncJobId &&
+          syncJobFraction == other.syncJobFraction;
 }
 
 class TexPcztPairResult {

@@ -256,6 +256,10 @@ pub struct ApiSyncProgressEvent {
     /// Current sync phase. Preparation adds `"active_utxo"` and
     /// `"chain_prepare"` before the existing download/scan phases.
     pub phase: String,
+    /// Sync job `percentage` belongs to, named from the first event of every
+    /// attempt. A new attempt with the same id (retry, endpoint fallback,
+    /// relaunch) continues the same fraction.
+    pub sync_job_id: String,
 }
 
 fn run_full_sync_internal<F>(
@@ -339,6 +343,7 @@ pub fn start_full_sync(
                     phase_completed_units: progress.phase_completed_units,
                     phase_total_units: progress.phase_total_units,
                     phase: progress.phase.clone(),
+                    sync_job_id: progress.sync_job_id.clone(),
                 })
                 .is_err()
             {
@@ -737,6 +742,11 @@ pub struct SyncProgress {
     pub chain_tip_height: u64,
     pub is_syncing: bool,
     pub is_complete: bool,
+    /// Id of the unfinished sync job, or empty when none is stored.
+    pub sync_job_id: String,
+    /// Last reported fraction of that job, in the units of
+    /// `ApiSyncProgressEvent::percentage`.
+    pub sync_job_fraction: f64,
 }
 
 pub enum WalletBalanceAvailability {
@@ -1017,11 +1027,15 @@ pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress,
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let p = wallet_sync::get_sync_progress(&db_path, network)?;
+        let (sync_job_id, sync_job_fraction) =
+            crate::wallet::sync_engine::unfinished_progress_job(&db_path).unwrap_or_default();
         Ok(SyncProgress {
             scanned_height: p.scanned_height,
             chain_tip_height: p.chain_tip_height,
             is_syncing: p.is_syncing,
             is_complete: p.is_complete,
+            sync_job_id,
+            sync_job_fraction,
         })
     })
 }
