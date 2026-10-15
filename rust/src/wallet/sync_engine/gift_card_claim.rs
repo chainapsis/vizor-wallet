@@ -475,14 +475,16 @@ async fn run_inner(
                 BlockHeight::from_u32(end + 1),
             )
             .map_err(|e| e.to_string())?;
-            scan_cached_blocks(
-                &network,
-                &source,
-                &mut db,
-                BlockHeight::from_u32(start),
-                &from,
-                (end - start + 1) as usize,
-            )
+            super::scan_power::install_current(|| {
+                scan_cached_blocks(
+                    &network,
+                    &source,
+                    &mut db,
+                    BlockHeight::from_u32(start),
+                    &from,
+                    (end - start + 1) as usize,
+                )
+            })
             .map_err(|e| format!("Gift Card discovery: {e}"))?;
             let funding:Option<(u32,Vec<u8>)>=c.query_row("SELECT t.mined_height,t.txid FROM ironwood_received_notes n JOIN transactions t ON t.id_tx=n.transaction_id WHERE n.value>0 AND t.mined_height IS NOT NULL ORDER BY t.mined_height,t.tx_index LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e|e.to_string())?;
             progress(
