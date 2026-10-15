@@ -3127,16 +3127,14 @@ async fn run_payment_link_claim_sync_once(
             return Ok(());
         }
 
-        let scan_result = scan_power::install_current(|| {
-            scan_cached_blocks(
-                &network,
-                &block_source,
-                &mut db,
-                start,
-                &from_state,
-                batch_blocks as usize,
-            )
-        });
+        let scan_result = scan_cached_blocks(
+            &network,
+            &block_source,
+            &mut db,
+            start,
+            &from_state,
+            batch_blocks as usize,
+        );
         match scan_result {
             Ok(_) => {}
             Err(error) => {
