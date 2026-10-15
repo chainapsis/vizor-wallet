@@ -515,7 +515,13 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
    are estimated from the compiled mainnet tree sizes and the downloaded subtree
    completion heights, so the dense spam window gets short batches without
    hardcoded heights and the estimate sends no request; past the compiled table
-   and off mainnet the block caps alone apply.
+   and off mainnet the block caps alone apply. The wallet backend comes from a
+   fork (see "Crate Versions") whose `put_blocks` skips work on history scanned
+   after newer ranges: when no height in a batch is retained and each tree
+   already holds `max_checkpoints` newer checkpoints, the batch adds none, and a
+   note-free shard wholly inside it that is already stored as its downloaded
+   subtree root is not rebuilt, so that root is trusted as for an unscanned
+   shard. The tree rows come out the same as without the fork.
 5. Enhancement: process each work queue separately. Status observations come
    from `transaction_status_work()`, which routes each obligation to public
    `GetTransaction` or private Status PIR. Payload recovery comes from
@@ -1196,6 +1202,8 @@ edge in `MobileBottomSafeArea`
 ## Crate Versions
 
 Constrained in `rust/Cargo.toml` and resolved in `rust/Cargo.lock`. Key crates: `zcash_client_backend` 0.22.0, `zcash_client_sqlite` 0.20.2, `orchard` 0.13.1, `sapling-crypto` 0.7.0. These must stay compatible — check librustzcash releases before bumping.
+
+`zakura-client-backend`, `zakura-pczt` and `zakura-pir-enhance-types` are patched (`[patch.crates-io]`) to a revision of the `piatoss3612/wallet-libraries` fork: the zakura-core source of the crates.io releases plus the `put_blocks` history changes described under "Sync Engine". When bumping the zakura crates, move the fork onto the new release (or drop the patch once the changes are upstream) instead of leaving the patch at an older revision.
 
 `tonic` 0.14 with `tls-ring` + `tls-webpki-roots` features for gRPC TLS. `rustls` 0.23+ requires explicit crypto provider — `tls-ring` provides this.
 
