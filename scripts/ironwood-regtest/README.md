@@ -150,6 +150,50 @@ receiver, verifies that Ironwood is empty, activates NU6.3, runs the real
 migration pipeline, confirms both transaction stages, and verifies spendable
 Ironwood balance and a completed migration record.
 
+## One-time IVK swaps
+
+Run Vizor's private NEAR swap addresses against the real chain:
+
+```bash
+cd rust
+cargo test --test ironwood_regtest_one_time_ivk -- --ignored --test-threads=1
+```
+
+Each test resets the chain and drives Vizor only through its API and sync
+engine. A payer wallet stands in for NEAR and pays swap addresses with the zero
+OVK, as NEAR does. The test indexes those payments from the node's raw blocks
+the way the live receiver directory does, and serves the real receiver routes
+and PIR over loopback HTTP. It covers a payout found while its key scans, the
+same payout found by a seed restore days later, an address paid twice and then
+again weeks later, and a refund found live and by a restore. The later payment
+is found only by Check swap history, which applies it with its neighbour in the
+note commitment tree, so three tests place that neighbour differently: the
+payment's own change after it, its own change before it, or an earlier block's
+output before it. Another shows that Check swap history, which runs once, misses
+a payment the directory has not published yet and finds it when run again. In
+the last, a second device on the same seed must skip a refund address the first
+gave NEAR for a swap it never funded, which only NEAR's seen set reveals.
+
+Each found payout or refund is then spent with the app's send-max flow, and the
+test checks that the node mined the spend. The refund tests also check that the
+funding pays exactly the quoted deposit, that a restore recovers the refund key
+from its marker on spent change and from a zero-value marker, that a restore
+during a directory outage finds the refund once the directory returns, and that
+a refund key which starts scanning partway through a scan batch rescans the
+blocks it missed. Others cover two accounts in one wallet, NEAR swap privacy turned off mid-swap, two swaps that
+share a deposit address with different memos, a restore after another device
+spent two payouts from one transaction, and an underpaid swap refunded three
+weeks after its deadline.
+
+The tests start zcashd with `-mocktime` through `IRONWOOD_ZCASHD_CLOCK_ARG`, so
+`setmocktime` can move block times weeks ahead. Debug builds of Vizor read four
+seams the tests set: `VIZOR_REGTEST_ONE_TIME_IVKS` turns one-time IVKs on for
+regtest, `VIZOR_E2E_CLOCK_OFFSET_SECS` moves their clock with the chain's,
+`VIZOR_RECEIVER_PIR_URL` points the receiver directory at a loopback origin
+served over plain HTTP, and `VIZOR_RECEIVER_PIR_GENESIS` names the chain's
+genesis block. Release builds read none of them. Set `E2E_LOG=info` to print
+Vizor's info logs as well as its warnings.
+
 ## Reusable scenario commands
 
 ```bash

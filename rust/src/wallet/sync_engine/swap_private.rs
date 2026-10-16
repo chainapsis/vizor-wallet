@@ -20,6 +20,10 @@ const RECEIVER_ORIGIN_ENV: &str = "VIZOR_RECEIVER_PIR_URL";
 const RUN_BUDGET: Duration = Duration::from_secs(180);
 /// Time the seen set download before an issuance may take.
 const SEEN_BUDGET: Duration = Duration::from_secs(20);
+/// Debug builds only: the genesis block hash of the regtest end-to-end tests' chain, as
+/// `getblockhash 0` displays it, which their receiver directory commits to. Release
+/// builds never read it.
+const RECEIVER_GENESIS_ENV: &str = "VIZOR_RECEIVER_PIR_GENESIS";
 /// The receiver directory's origin: [`DEFAULT_RECEIVER_ORIGIN`], or in a debug build
 /// a configured override.
 fn receiver_origin() -> String {
@@ -28,6 +32,22 @@ fn receiver_origin() -> String {
         return origin;
     }
     DEFAULT_RECEIVER_ORIGIN.into()
+}
+/// The genesis block hash, in internal byte order, that receiver directory publications
+/// must commit to: mainnet's, or on regtest in a debug build, the configured chain's
+/// (see [`RECEIVER_GENESIS_ENV`]).
+fn receiver_genesis(network: WalletNetwork) -> Result<[u8; 32], String> {
+    if cfg!(debug_assertions) && network == WalletNetwork::Regtest {
+        if let Ok(displayed) = std::env::var(RECEIVER_GENESIS_ENV) {
+            let mut genesis: [u8; 32] = hex::decode(displayed.trim())
+                .ok()
+                .and_then(|bytes| bytes.try_into().ok())
+                .ok_or("Invalid receiver directory genesis")?;
+            genesis.reverse();
+            return Ok(genesis);
+        }
+    }
+    Ok(MAINNET_GENESIS)
 }
 /// The receiver directory uses the same Tor-aware transport as Vizor's other private
 /// services.
@@ -71,6 +91,103 @@ impl<F: Fn() -> bool> Transport for SwapTransport<'_, F> {
             .map_err(receiver_error)
     }
 }
+/// Debug builds only: a plaintext transport for a receiver directory on the loopback
+/// interface, which the regtest end-to-end tests serve in process. Every other origin,
+/// and every release build, uses [`SwapTransport`].
+#[cfg(debug_assertions)]
+struct LoopbackTransport {
+    client: hyper_util::client::legacy::Client<
+        hyper_util::client::legacy::connect::HttpConnector,
+        http_body_util::Full<bytes::Bytes>,
+    >,
+}
+#[cfg(debug_assertions)]
+impl LoopbackTransport {
+    /// A transport for `origin` if it is a plaintext loopback origin.
+    fn for_origin(origin: &str) -> Option<Self> {
+        let loopback = ["http://127.0.0.1:", "http://localhost:"]
+            .iter()
+            .any(|prefix| origin.starts_with(prefix));
+        loopback.then(|| Self {
+            client: hyper_util::client::legacy::Client::builder(
+                hyper_util::rt::TokioExecutor::new(),
+            )
+            .build_http(),
+        })
+    }
+    /// Sends one request, failing like [`SwapTransport`] does.
+    async fn send(
+        &self,
+        method: http::Method,
+        url: &str,
+        body: Vec<u8>,
+        limit: usize,
+    ) -> Result<Vec<u8>, DirectoryError> {
+        use http_body_util::BodyExt as _;
+        let request = http::Request::builder()
+            .method(method)
+            .uri(url)
+            .body(http_body_util::Full::new(bytes::Bytes::from(body)))
+            .map_err(|e| DirectoryError::Transport(e.to_string()))?;
+        let response = self
+            .client
+            .request(request)
+            .await
+            .map_err(|e| DirectoryError::Transport(e.to_string()))?;
+        if !response.status().is_success() {
+            return Err(receiver_error(RoutedHttpError::HttpStatus(
+                response.status().as_u16(),
+            )));
+        }
+        let body = http_body_util::Limited::new(response.into_body(), limit)
+            .collect()
+            .await
+            .map_err(|e| DirectoryError::Transport(e.to_string()))?;
+        Ok(body.to_bytes().to_vec())
+    }
+}
+/// The receiver directory's transport: [`SwapTransport`], or in a debug build a
+/// [`LoopbackTransport`] for a loopback origin.
+enum ReceiverTransport<'a, F> {
+    Routed(SwapTransport<'a, F>),
+    #[cfg(debug_assertions)]
+    Loopback(LoopbackTransport),
+}
+impl<'a, F> ReceiverTransport<'a, F> {
+    /// The transport to `origin`, stopping when `should_exit` does.
+    fn new(origin: &str, should_exit: &'a F) -> Self {
+        #[cfg(debug_assertions)]
+        if let Some(loopback) = LoopbackTransport::for_origin(origin) {
+            return Self::Loopback(loopback);
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = origin;
+        Self::Routed(SwapTransport::new(should_exit))
+    }
+}
+impl<F: Fn() -> bool> Transport for ReceiverTransport<'_, F> {
+    async fn get(&self, url: &str, limit: usize) -> Result<Vec<u8>, DirectoryError> {
+        match self {
+            Self::Routed(transport) => transport.get(url, limit).await,
+            #[cfg(debug_assertions)]
+            Self::Loopback(transport) => {
+                transport.send(http::Method::GET, url, vec![], limit).await
+            }
+        }
+    }
+    async fn post(
+        &self,
+        url: &str,
+        body: Vec<u8>,
+        limit: usize,
+    ) -> Result<Vec<u8>, DirectoryError> {
+        match self {
+            Self::Routed(transport) => transport.post(url, body, limit).await,
+            #[cfg(debug_assertions)]
+            Self::Loopback(transport) => transport.send(http::Method::POST, url, body, limit).await,
+        }
+    }
+}
 /// Holds the wallet write lock for each of a sweep's writes.
 struct WalletWriteLock;
 impl WriteLock for WalletWriteLock {
@@ -91,10 +208,17 @@ pub(crate) async fn fetch_seen(network: WalletNetwork) -> Option<zakura_pir_rece
     if !crate::wallet::one_time_ivk::supported(network) {
         return None;
     }
+    let genesis = match receiver_genesis(network) {
+        Ok(genesis) => genesis,
+        Err(e) => {
+            log::warn!("Swap seen set unavailable: {e}");
+            return None;
+        }
+    };
     let should_exit = || false;
-    let transport = SwapTransport::new(&should_exit);
     let origin = receiver_origin();
-    let fetch = zakura_pir_receiver::fetch_seen(&origin, &transport, MAINNET_GENESIS);
+    let transport = ReceiverTransport::new(&origin, &should_exit);
+    let fetch = zakura_pir_receiver::fetch_seen(&origin, &transport, genesis);
     match tokio::time::timeout(SEEN_BUDGET, fetch).await {
         Ok(Ok(seen)) => Some(seen),
         Ok(Err(e)) => {
@@ -160,8 +284,9 @@ async fn run_inner(
     if Some(through.height) != db.chain_height().map_err(error)? {
         return Ok(false);
     }
-    let transport = SwapTransport::new(should_exit);
     let origin = receiver_origin();
+    let transport = ReceiverTransport::new(&origin, should_exit);
+    let genesis = receiver_genesis(network)?;
     let now = crate::wallet::one_time_ivk::now()?;
     let mut finished = false;
     for account in crate::wallet::one_time_ivk::software_accounts(db)? {
@@ -170,7 +295,7 @@ async fn run_inner(
             &network,
             account,
             through,
-            MAINNET_GENESIS,
+            genesis,
             &origin,
             &transport,
             &WalletWriteLock,

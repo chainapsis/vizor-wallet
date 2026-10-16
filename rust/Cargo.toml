@@ -207,6 +207,11 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "
 # The transparent PIR privacy tests match requests against the service routes
 # with the library's own expression. Already in the graph.
 regex = "1"
+# The Ironwood regtest one-time IVK tests serve a receiver directory over loopback
+# HTTP, with the wallet-pir crates at the tag the receiver client resolves.
+axum = "0.7"
+receiver-pir = { git = "https://github.com/valargroup/wallet-pir", tag = "transparent-v0.1.0-rc.7", features = ["server"] }
+receiver-pir-server = { git = "https://github.com/valargroup/wallet-pir", tag = "transparent-v0.1.0-rc.7" }
 
 # Builds wallets through real private recovery for the history mapping tests.
 [dev-dependencies.zcash_client_sqlite]

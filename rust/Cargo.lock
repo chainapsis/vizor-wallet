@@ -4147,6 +4147,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "pir-control"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?tag=transparent-v0.1.0-rc.7#902b0fb5faabb686ff23cfe62406462177f7d7a7"
+dependencies = [
+ "axum 0.7.9",
+ "hex",
+ "rand 0.8.8",
+ "serde",
+ "sha2 0.10.9",
+ "tokio",
+]
+
+[[package]]
 name = "pir-native"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4176,6 +4189,16 @@ name = "pir-observability"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1adddf7e3ac9297a7fbe939df8f23f0a4d01643b7523a5f376c5690eb96e89b"
+dependencies = [
+ "axum 0.7.9",
+ "http-body",
+ "serde",
+]
+
+[[package]]
+name = "pir-observability"
+version = "0.1.0"
+source = "git+https://github.com/valargroup/wallet-pir?tag=transparent-v0.1.0-rc.7#902b0fb5faabb686ff23cfe62406462177f7d7a7"
 dependencies = [
  "axum 0.7.9",
  "http-body",
@@ -4753,6 +4776,7 @@ version = "0.0.1"
 source = "git+https://github.com/valargroup/wallet-pir?tag=transparent-v0.1.0-rc.7#902b0fb5faabb686ff23cfe62406462177f7d7a7"
 dependencies = [
  "hex",
+ "ipir-sp",
  "pir-native 0.1.0 (git+https://github.com/valargroup/wallet-pir?tag=transparent-v0.1.0-rc.7)",
  "rand 0.8.8",
  "receiver-directory",
@@ -4760,6 +4784,21 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "receiver-pir-server"
+version = "0.0.1"
+source = "git+https://github.com/valargroup/wallet-pir?tag=transparent-v0.1.0-rc.7#902b0fb5faabb686ff23cfe62406462177f7d7a7"
+dependencies = [
+ "axum 0.7.9",
+ "hex",
+ "pir-control 0.1.0 (git+https://github.com/valargroup/wallet-pir?tag=transparent-v0.1.0-rc.7)",
+ "pir-observability 0.1.0 (git+https://github.com/valargroup/wallet-pir?tag=transparent-v0.1.0-rc.7)",
+ "receiver-directory",
+ "receiver-pir",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -4967,6 +5006,7 @@ dependencies = [
  "aes",
  "aes-gcm",
  "anyhow",
+ "axum 0.7.9",
  "base64 0.22.1",
  "bip0039",
  "bytes",
@@ -4994,6 +5034,8 @@ dependencies = [
  "prost 0.14.4",
  "rand 0.8.8",
  "rand_core 0.6.4",
+ "receiver-pir",
+ "receiver-pir-server",
  "redb",
  "regex",
  "rusqlite",
@@ -7514,8 +7556,8 @@ dependencies = [
  "http-body",
  "ipir-sp",
  "memmap2",
- "pir-control",
- "pir-observability",
+ "pir-control 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pir-observability 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rayon",
  "reinspiring",
  "rustix 1.1.5",

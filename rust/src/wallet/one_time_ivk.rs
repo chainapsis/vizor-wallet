@@ -20,20 +20,34 @@ use super::{
     sync_engine::enhancement::EnhancementPolicy,
 };
 
+/// Debug builds only: runs one-time IVKs on regtest, where Private queries never apply,
+/// for the regtest end-to-end tests. Release builds never read it.
+const REGTEST_ENV: &str = "VIZOR_REGTEST_ONE_TIME_IVKS";
+/// Debug builds only: seconds added to [`now`], so the regtest end-to-end tests can move
+/// swap lifecycles forward with their chain's mock time. Release builds never read it.
+const CLOCK_OFFSET_ENV: &str = "VIZOR_E2E_CLOCK_OFFSET_SECS";
+
+/// Whether a debug build's regtest end-to-end run turned one-time IVKs on (see
+/// [`REGTEST_ENV`]). It stands in for Private queries, which regtest cannot run.
+fn regtest_e2e(network: WalletNetwork) -> bool {
+    cfg!(debug_assertions)
+        && network == WalletNetwork::Regtest
+        && std::env::var_os(REGTEST_ENV).is_some()
+}
+
 /// Whether `network` runs one-time IVKs at all: wherever Private queries could (see
-/// [`EnhancementPolicy`]), whatever the switches say. Restore sweeps, key maintenance
-/// and provider statuses need nothing more; new addresses do (see
-/// [`require_new_address`]).
+/// [`EnhancementPolicy`]), whatever the switches say, or in a regtest end-to-end run
+/// (see [`regtest_e2e`]). Restore sweeps, key maintenance and provider statuses need
+/// nothing more; new addresses do (see [`require_new_address`]).
 pub(crate) fn supported(network: WalletNetwork) -> bool {
-    EnhancementPolicy::for_preference(network, true).is_private()
+    regtest_e2e(network) || EnhancementPolicy::for_preference(network, true).is_private()
 }
 
 /// Fails unless new private swap addresses are allowed: where [`supported`], with both
 /// Private queries and NEAR swap privacy on.
 pub(crate) fn require_new_address(network: WalletNetwork) -> Result<(), String> {
-    if !EnhancementPolicy::current(network).is_private()
-        || !crate::api::sync::near_swap_privacy_enabled()
-    {
+    let private = regtest_e2e(network) || EnhancementPolicy::current(network).is_private();
+    if !private || !crate::api::sync::near_swap_privacy_enabled() {
         return Err(
             "Enable Private queries and NEAR swap privacy before reserving an address".into(),
         );
@@ -109,14 +123,25 @@ pub(crate) fn encode_address(key: &OneTimeKey, network: WalletNetwork) -> Result
         .to_string())
 }
 
-/// The current Unix time in seconds, as the library's lifecycle takes it.
+/// The current Unix time in seconds, as the library's lifecycle takes it, moved by
+/// [`CLOCK_OFFSET_ENV`] in a debug build.
 pub(crate) fn now() -> Result<i64, String> {
-    std::time::SystemTime::now()
+    let now: i64 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_secs()
         .try_into()
-        .map_err(|_| "Clock overflow".into())
+        .map_err(|_| "Clock overflow")?;
+    let offset = if cfg!(debug_assertions) {
+        std::env::var(CLOCK_OFFSET_ENV)
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    now.checked_add(offset)
+        .ok_or_else(|| "Clock overflow".into())
 }
 
 /// Runs `action` on `uuid`'s account in the wallet at `path`, under the wallet write lock.

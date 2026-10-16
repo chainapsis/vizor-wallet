@@ -10,6 +10,9 @@ services:
       - "-conf=/etc/zcash/zcash.conf"
       - "-datadir=/srv/zcash/.zcash"
       - "-nuparams=37a5165b:${IRONWOOD_ACTIVATION_HEIGHT:-500}"
+      # Scenarios that move the chain's clock pass -mocktime=<unix seconds>, which
+      # setmocktime requires. Others repeat a harmless flag.
+      - "${IRONWOOD_ZCASHD_CLOCK_ARG:--printtoconsole}"
     ports:
       - "${IRONWOOD_ZCASHD_RPC_PORT:-19232}:18232"
       - "${IRONWOOD_LIGHTWALLETD_PORT:-19067}:9067"
