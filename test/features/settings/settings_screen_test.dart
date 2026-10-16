@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/features/accounts/widgets/account_edit_modal.da
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/enhance_pir_privacy_control.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/near_swap_privacy_info.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
@@ -612,6 +613,76 @@ void main() {
     expect(calls, isEmpty);
   });
 
+  testWidgets('NEAR swap privacy explains itself', (tester) async {
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+    expect(find.text(kNearSwapPrivacyOffCopy), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('settings_near_swap_privacy_sub_option')),
+        matching: find.byKey(
+          const ValueKey('settings_near_swap_privacy_toggle'),
+        ),
+      ),
+      findsOneWidget,
+      reason: 'shown as an option of Private queries',
+    );
+
+    final info = find.byKey(const ValueKey('settings_near_swap_privacy_info'));
+    await tester.ensureVisible(info);
+    await tester.pumpAndSettle();
+    await tester.tap(info);
+    await tester.pumpAndSettle();
+    final dialog = find.byKey(const ValueKey('near_swap_privacy_info_dialog'));
+    expect(dialog, findsOneWidget);
+    expect(find.text(kNearSwapPrivacyInfoTitle), findsOneWidget);
+    for (final paragraph in kNearSwapPrivacyInfoParagraphs) {
+      expect(find.text(paragraph), findsOneWidget);
+    }
+    // It names what one-time Zcash addresses leave linkable.
+    expect(find.textContaining('still shared with NEAR'), findsOneWidget);
+    expect(
+      find.textContaining("Hardware wallet accounts don't use"),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('near_swap_privacy_info_close')),
+    );
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
+  });
+
+  testWidgets('NEAR swap privacy describes one-time addresses', (tester) async {
+    await tester.pumpWidget(_settingsHarness(enhancePirEnabled: true));
+    await tester.pump();
+    expect(find.text(kNearSwapPrivacyOnCopy), findsOneWidget);
+  });
+
+  testWidgets('NEAR swap privacy names the hardware account exception', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        enhancePirEnabled: true,
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'keystone-account',
+              name: 'Keystone account',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'keystone-account',
+          activeAddress: 'u1keystoneaddress',
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text(kNearSwapPrivacyHardwareCopy), findsOneWidget);
+    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+  });
+
   testWidgets('connected Tor state describes Vizor and external app routes', (
     tester,
   ) async {
@@ -652,6 +723,12 @@ void main() {
     );
     expect(find.text('Advanced'), findsNothing);
     expect(find.text('Private queries'), findsOneWidget);
+    expect(find.text('NEAR swap privacy'), findsOneWidget);
+    final swapToggle = tester.widget<PrivacyToggle>(
+      find.byKey(const ValueKey('settings_near_swap_privacy_toggle')),
+    );
+    expect(swapToggle.enabled, isFalse);
+    expect(swapToggle.onToggle, isNull);
     expect(
       tester.getSize(
         find.byKey(const ValueKey('settings_enhance_pir_toggle_track')),

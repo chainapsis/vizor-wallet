@@ -58,6 +58,15 @@ class RustSwapDepositSender implements SwapDepositSender {
               'deposit=${_shortSwapValue(quote.depositInstruction.address)} '
               'zatoshi=$amountZatoshi',
             );
+            if (quote.swapRefundIndex != null) {
+              return rust_sync.estimateSwapFundingFee(
+                dbPath: dbPath,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                depositAddress: quote.depositInstruction.address,
+                amountZatoshi: amountZatoshi,
+              );
+            }
             return rust_sync.estimateFee(
               dbPath: dbPath,
               network: endpoint.networkName,
@@ -108,14 +117,25 @@ class RustSwapDepositSender implements SwapDepositSender {
               final dbPath = await getWalletDbPath();
               secretGuard.check();
               final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-              final proposal = await rust_sync.proposeSend(
-                dbPath: dbPath,
-                network: endpoint.networkName,
-                accountUuid: accountUuid,
-                sendFlowId: sendFlowId,
-                toAddress: quote.depositInstruction.address,
-                amountZatoshi: amountZatoshi,
-              );
+              final refundIndex = quote.swapRefundIndex;
+              final proposal = refundIndex != null
+                  ? await rust_sync.proposeSwapFunding(
+                      dbPath: dbPath,
+                      network: endpoint.networkName,
+                      accountUuid: accountUuid,
+                      sendFlowId: sendFlowId,
+                      depositAddress: quote.depositInstruction.address,
+                      amountZatoshi: amountZatoshi,
+                      refundIndex: refundIndex,
+                    )
+                  : await rust_sync.proposeSend(
+                      dbPath: dbPath,
+                      network: endpoint.networkName,
+                      accountUuid: accountUuid,
+                      sendFlowId: sendFlowId,
+                      toAddress: quote.depositInstruction.address,
+                      amountZatoshi: amountZatoshi,
+                    );
               return (proposal: proposal, dbPath: dbPath, endpoint: endpoint);
             },
           );

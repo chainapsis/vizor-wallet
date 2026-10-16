@@ -32,10 +32,12 @@ import '../../accounts/widgets/account_profile_picture_modal.dart';
 import '../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
+import '../widgets/near_swap_privacy_info.dart';
 import '../widgets/network_privacy_control.dart';
 import '../widgets/enhance_pir_privacy_control.dart';
 import '../widgets/private_queries_turn_off.dart';
 import '../widgets/settings_new_badge.dart';
+import '../widgets/settings_sub_option.dart';
 import '../widgets/windows_update_download_flow.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
@@ -514,8 +516,14 @@ class _SettingsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enhancePirEnabled = ref.watch(privateQueriesControlEnabledProvider);
-    final enhancePirAvailable =
-        ref.watch(enhancePirAvailableProvider) || enhancePirEnabled;
+    // New swap addresses follow the private queries setting itself, which
+    // the NEAR swap privacy switch also checks.
+    final privateQueriesOn = ref.watch(enhancePirProvider);
+    final nearSwapPrivacy = ref.watch(nearSwapPrivacyProvider);
+    final enhancePirServiceAvailable = ref.watch(enhancePirAvailableProvider);
+    final hardwareAccount =
+        ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false;
+    final enhancePirAvailable = enhancePirServiceAvailable || enhancePirEnabled;
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
     final changingRecovery = recoveryTransition == kEnhancePirChangingMessage;
     return Column(
@@ -627,6 +635,33 @@ class _SettingsList extends ConsumerWidget {
                 onToggle: changingRecovery
                     ? null
                     : () => unawaited(togglePrivateQueries(context, ref)),
+              ),
+            ],
+            if (enhancePirServiceAvailable) ...[
+              const SizedBox(height: AppSpacing.sm),
+              // An option of Private queries: its icon sits under the label
+              // above, and the hook starts under that row's icon.
+              SettingsSubOption(
+                key: const ValueKey('settings_near_swap_privacy_sub_option'),
+                indent: AppSpacing.xs + 20,
+                lineX: AppSpacing.xxs + 10,
+                rowCenter: 22,
+                child: EnhancePirPrivacyControl(
+                  label: 'NEAR swap privacy',
+                  keyPrefix: 'settings_near_swap_privacy',
+                  description: nearSwapPrivacyDescription(
+                    hardwareAccount: hardwareAccount,
+                    privateQueriesOn: privateQueriesOn,
+                  ),
+                  onInfo: () => unawaited(showNearSwapPrivacyInfo(context)),
+                  enabled: nearSwapPrivacy,
+                  transition: null,
+                  onToggle: changingRecovery || !privateQueriesOn
+                      ? null
+                      : () => unawaited(
+                          ref.read(nearSwapPrivacyProvider.notifier).toggle(),
+                        ),
+                ),
               ),
             ],
           ],

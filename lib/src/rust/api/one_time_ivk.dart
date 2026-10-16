@@ -129,6 +129,22 @@ Future<void> observeSwapStatus({
   checkedAtSeconds: checkedAtSeconds,
 );
 
+/// Whether the wallet still scans the one-time key behind `account_uuid`'s swap address
+/// `address`. False once the key closed, as when an unpaid incoming reservation is
+/// reclaimed, and for any other address. Lets the app stop polling a finished swap's
+/// status.
+Future<bool> isSwapAddressScanning({
+  required String dbPath,
+  required String networkName,
+  required String accountUuid,
+  required String address,
+}) => RustLib.instance.api.crateApiOneTimeIvkIsSwapAddressScanning(
+  dbPath: dbPath,
+  networkName: networkName,
+  accountUuid: accountUuid,
+  address: address,
+);
+
 /// Queues one receiver-directory sweep of every closed swap key for the next sync,
 /// which finds a second refund or a late payout that arrived after its key stopped
 /// scanning. Called when the user turns NEAR swap privacy on.

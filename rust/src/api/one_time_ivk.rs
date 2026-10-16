@@ -268,6 +268,25 @@ pub fn observe_swap_status(
     })
 }
 
+/// Whether the wallet still scans the one-time key behind `account_uuid`'s swap address
+/// `address`. False once the key closed, as when an unpaid incoming reservation is
+/// reclaimed, and for any other address. Lets the app stop polling a finished swap's
+/// status.
+pub fn is_swap_address_scanning(
+    db_path: String,
+    network_name: String,
+    account_uuid: String,
+    address: String,
+) -> Result<bool, ReceiveError> {
+    let network = parse_network_and_migrate(&db_path, &network_name)?;
+    if !one_time_ivk::supported(network) {
+        return Ok(false);
+    }
+    with_db(&db_path, network, &account_uuid, |db, a| {
+        Ok(one_time_ivk::is_address_scanning(db, network, a, &address)?)
+    })
+}
+
 /// Queues one receiver-directory sweep of every closed swap key for the next sync,
 /// which finds a second refund or a late payout that arrived after its key stopped
 /// scanning. Called when the user turns NEAR swap privacy on.

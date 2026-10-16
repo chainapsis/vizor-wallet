@@ -96,6 +96,7 @@ class _FakeSwapProvider implements SwapProvider {
     List<SwapAsset>? supportedAssets,
     this.submitDepositError,
     this.quoteExpiresAt,
+    this.zecDepositMemo = 'memo-live',
   }) : supportedAssets = supportedAssets ?? swapExternalAssets;
 
   final requests = <SwapQuoteRequest>[];
@@ -108,6 +109,13 @@ class _FakeSwapProvider implements SwapProvider {
   /// When set, every quote carries this expiry so tests can exercise the
   /// review-quote expiry guard in [SwapNotifier.startIntent].
   final DateTime? quoteExpiresAt;
+
+  /// The memo on ZEC deposit instructions. NEAR gives none, and a swap refund key
+  /// requires none.
+  final String? zecDepositMemo;
+
+  /// The address on ZEC deposit instructions, read after the request is recorded.
+  String get zecDepositAddress => 't1live-deposit';
 
   @override
   String get providerLabel => 'NEAR Intents';
@@ -155,11 +163,13 @@ class _FakeSwapProvider implements SwapProvider {
       depositInstruction: SwapDepositInstruction(
         asset: estimate.sellAsset,
         address: request.direction == SwapDirection.zecToExternal
-            ? 't1live-deposit'
+            ? zecDepositAddress
             : '0xlive-deposit',
         expiresInLabel: '07:12',
         reuseWarning: 'Do not reuse this address',
-        memo: 'memo-live',
+        memo: request.direction == SwapDirection.zecToExternal
+            ? zecDepositMemo
+            : 'memo-live',
       ),
     );
   }
@@ -585,6 +595,46 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   void setStateForTest(NetworkPrivacyState next) {
     state = next;
   }
+}
+
+/// Swap address records that accept every quote without a wallet database.
+class _FakeReceiveReservationStore extends Fake
+    implements ReceiveReservationStore {
+  @override
+  Future<void> recordRefund(BigInt refundIndex, SwapQuote quote) async {}
+}
+
+/// Swap address records that bind each refund key to one deposit, as the wallet
+/// does.
+class _BindingReceiveReservationStore extends Fake
+    implements ReceiveReservationStore {
+  final bindings = <BigInt, String>{};
+
+  @override
+  Future<void> recordRefund(BigInt refundIndex, SwapQuote quote) async {
+    final deposit = quote.depositInstruction.address;
+    if ((bindings[refundIndex] ??= deposit) != deposit) {
+      throw StateError('refund key is bound to another deposit');
+    }
+  }
+}
+
+/// Quotes with a new address-only ZEC deposit address each time, as NEAR does.
+class _NewDepositPerQuoteSwapProvider extends _FakeSwapProvider {
+  _NewDepositPerQuoteSwapProvider() : super(zecDepositMemo: null);
+
+  @override
+  String get zecDepositAddress => 't1deposit${requests.length}';
+}
+
+/// NEAR swap privacy, off at first, that a test sets without the settings
+/// store or native calls.
+class _FakeNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
+  @override
+  bool build() => false;
+
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
 }
 
 class _FailingQuoteSwapProvider extends _FakeSwapProvider {

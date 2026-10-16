@@ -474,6 +474,110 @@ void main() {
     expect(provider.statusRequests, isEmpty);
   });
 
+  group('an incoming swap that expired unpaid', () {
+    final now = DateTime.now().toUtc();
+    SwapIntent expired({
+      required String id,
+      required DateTime deadline,
+      SwapDirection direction = SwapDirection.externalToZec,
+    }) =>
+        _intent(
+          id: id,
+          depositAddress: id,
+          depositTxHash: null,
+          status: SwapIntentStatus.expired,
+        ).copyWith(
+          direction: direction,
+          oneClickRecipient: 'u1swap-$id',
+          depositDeadline: deadline,
+          lastStatusCheckedAt: deadline,
+        );
+
+    test('is polled until the wallet reclaims its swap key', () async {
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({
+        'reclaim': _snapshot(
+          id: 'reclaim',
+          depositAddress: 'reclaim',
+          status: SwapIntentStatus.awaitingExternalDeposit,
+        ),
+      });
+      var scanning = true;
+      final checks = <String>[];
+      final recorded = <String>[];
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+        onProviderSnapshot: (intent, _, _) async => recorded.add(intent.id),
+        isSwapAddressScanning: (intent) async {
+          checks.add(intent.oneClickRecipient!);
+          return scanning;
+        },
+      );
+      final refresher = SwapActivityStatusRefresher(tracker: tracker);
+      await tracker.saveIntents(
+        accountUuid: 'account-1',
+        intents: [
+          expired(
+            id: 'reclaim',
+            deadline: now.subtract(
+              swapReceiveReclaimGrace + const Duration(minutes: 1),
+            ),
+          ),
+          // Too early for the wallet to reclaim, and long past its key's scanning.
+          expired(id: 'early', deadline: now.subtract(const Duration(hours: 1))),
+          expired(
+            id: 'finished',
+            deadline: now.subtract(
+              swapKeyCompletionLimit + const Duration(days: 1),
+            ),
+          ),
+          expired(
+            id: 'outgoing',
+            deadline: now.subtract(const Duration(hours: 3)),
+            direction: SwapDirection.zecToExternal,
+          ),
+        ],
+      );
+      Future<void> refresh() => refresher.refreshOpenActivities(
+        accountUuid: 'account-1',
+        force: true,
+      );
+
+      // The status reaches the wallet, which reclaims with it.
+      await refresh();
+      expect(provider.statusRequests, ['reclaim']);
+      expect(recorded, ['reclaim']);
+      expect(checks, ['u1swap-reclaim']);
+      final polled = (await tracker.loadIntents(accountUuid: 'account-1'))
+          .firstWhere((intent) => intent.id == 'reclaim');
+      expect(polled.status, SwapIntentStatus.expired);
+
+      // Polls are spaced out.
+      await refresh();
+      expect(provider.statusRequests, ['reclaim']);
+
+      // Once the key closes, polling stops for good.
+      store.savedRecords = [
+        for (final record in store.savedRecords)
+          record.id == 'reclaim'
+              ? SwapIntentRecord.fromIntent(
+                  polled.copyWith(
+                    lastStatusCheckedAt: now.subtract(
+                      swapReclaimStatusInterval,
+                    ),
+                  ),
+                )
+              : record,
+      ];
+      scanning = false;
+      await refresh();
+      await refresh();
+      expect(provider.statusRequests, ['reclaim']);
+      expect(checks, ['u1swap-reclaim', 'u1swap-reclaim']);
+    });
+  });
+
   test('status refresh over Tor names the blocked route', () async {
     final store = _MemorySwapActivityStore();
     final provider = _StatusSwapProvider({});

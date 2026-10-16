@@ -29,6 +29,7 @@ enum SwapFailureCategory {
   unverifiedResponse,
   retryLater,
   zecDepositFunding,
+  zecDepositIronwoodFunding,
   walletPreflight,
   depositNotFound,
   depositRejected,
@@ -64,6 +65,10 @@ SwapFailureCategory swapFailureCategory(
     return _oneClickCategory(operation, error, torEnabled: torEnabled);
   }
 
+  if (operation == SwapFailureOperation.sendZecDeposit &&
+      _isIronwoodFundingError(error)) {
+    return SwapFailureCategory.zecDepositIronwoodFunding;
+  }
   if (operation == SwapFailureOperation.sendZecDeposit &&
       _isZecDepositFundingError(error)) {
     return SwapFailureCategory.zecDepositFunding;
@@ -168,6 +173,10 @@ String _messageFor(
     SwapFailureCategory.zecDepositFunding =>
       'Not enough spendable ZEC to cover this swap and its network fee.\n'
           'Try a smaller amount or use Max.',
+    SwapFailureCategory.zecDepositIronwoodFunding =>
+      'Private swaps are funded from your Ironwood balance, which cannot '
+          'cover this swap and its network fee.\n'
+          'Move funds to Ironwood first or try a smaller amount.',
     SwapFailureCategory.walletPreflight =>
       'ZEC deposit could not be prepared.\nCheck your balance and try again.',
     SwapFailureCategory.depositNotFound =>
@@ -281,6 +290,14 @@ bool _isNoQuoteOrLiquidityError(OneClickApiException error) {
       message.contains('market maker') ||
       message.contains('cannot fulfill') ||
       message.contains("can't fulfill");
+}
+
+/// Matches the Rust error for a private swap deposit that Ironwood notes alone
+/// cannot fund (`SWAP_FUNDING_NEEDS_IRONWOOD` in `rust/src/wallet/sync/send.rs`).
+bool _isIronwoodFundingError(Object error) {
+  return error.toString().toLowerCase().contains(
+    'swap funding needs ironwood funds',
+  );
 }
 
 bool _isZecDepositFundingError(Object error) {

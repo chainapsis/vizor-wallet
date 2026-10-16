@@ -4,7 +4,8 @@
 
 use zakura_near_intents::NearStatus;
 use zcash_client_backend::data_api::{
-    one_time_ivk::restore::OneTimeIvkRestoreWrite as _, Account as _, WalletRead,
+    one_time_ivk::{restore::OneTimeIvkRestoreWrite as _, OneTimeIvkRead as _},
+    Account as _, WalletRead,
 };
 use zcash_client_sqlite::{wallet::one_time_ivk::OneTimeKey, AccountUuid};
 use zcash_keys::address::{Address, UnifiedAddress};
@@ -107,6 +108,34 @@ pub(crate) fn encode_address(key: &OneTimeKey, network: WalletNetwork) -> Result
     Ok(Address::Unified(address)
         .to_zcash_address(&network)
         .to_string())
+}
+
+/// Whether the wallet still scans `account`'s one-time key behind swap address
+/// `address`, as [`encode_address`] encodes it. False once the key closed, as when an
+/// unpaid reservation is reclaimed, and for an address that is not such a key's.
+pub(crate) fn is_address_scanning(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    account: AccountUuid,
+    address: &str,
+) -> Result<bool, String> {
+    let Some(Address::Unified(address)) = Address::decode(&network, address) else {
+        return Ok(false);
+    };
+    let Some(receiver) = address.orchard() else {
+        return Ok(false);
+    };
+    let Some(key) = db
+        .get_one_time_key_for_receiver(account, receiver)
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(false);
+    };
+    Ok(db
+        .get_one_time_scanning_keys()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .any(|scanning| scanning.key_id() == key.key_id()))
 }
 
 /// The current Unix time in seconds, as the library's lifecycle takes it.
@@ -307,6 +336,71 @@ mod tests {
         maintain_recovery(&mut db).unwrap();
         assert!(swept(&mut db), "S+1's sweep selects the key");
         assert!(!rescan_queued(&db), "its rescan follows that sweep");
+    }
+
+    /// A swap address counts as scanning while its key is open, and not once the key
+    /// closes, as reclaiming an unpaid reservation closes it.
+    #[test]
+    fn a_swap_address_scans_until_its_key_closes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let network = WalletNetwork::Regtest;
+        super::super::network::configure_regtest_nu6_3_activation_height(100).unwrap();
+        let (uuid, ordinary) = super::super::keys::init_db_and_create_account(
+            path,
+            network,
+            &SecretVec::new(vec![0; 32]),
+            Some(100),
+            "POC",
+        )
+        .unwrap();
+        let account = parse_account_uuid(&uuid).unwrap();
+        let mut db = open_wallet_db_with_timeout(path, network, WALLET_DB_BUSY_TIMEOUT).unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(110)).unwrap();
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO blocks(height,hash,time,sapling_tree) VALUES(110,zeroblob(32),0,X'000000');
+             DELETE FROM scan_queue;
+             INSERT INTO scan_queue(block_range_start,block_range_end,priority) VALUES(100,111,10);",
+        )
+        .unwrap();
+        maintain_recovery(&mut db).unwrap();
+        // Open the first incoming key, as issuing it on this device does.
+        conn.execute(
+            "UPDATE ironwood_one_time_keys SET active_from = 111
+             WHERE purpose = 1 AND key_index = X'0000000000000000'",
+            [],
+        )
+        .unwrap();
+        let receiver: Vec<u8> = conn
+            .query_row(
+                "SELECT receiver FROM ironwood_one_time_keys
+                 WHERE purpose = 1 AND key_index = X'0000000000000000'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let receiver =
+            orchard::Address::from_raw_address_bytes(&receiver.try_into().unwrap()).unwrap();
+        let address =
+            Address::Unified(UnifiedAddress::from_receivers(Some(receiver), None, None).unwrap())
+                .to_zcash_address(&network)
+                .to_string();
+        let scanning = |db: &WalletDatabase, address: &str| {
+            is_address_scanning(db, network, account, address).unwrap()
+        };
+
+        assert!(scanning(&db, &address));
+        assert!(!scanning(&db, &ordinary), "not a swap address");
+        assert!(!scanning(&db, "not an address"));
+        conn.execute(
+            "UPDATE ironwood_one_time_keys SET closed_at = 1
+             WHERE purpose = 1 AND key_index = X'0000000000000000'",
+            [],
+        )
+        .unwrap();
+        assert!(!scanning(&db, &address));
     }
 
     /// Accounts the app creates from a seed it generated start fresh, so no early restore
