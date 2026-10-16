@@ -28,6 +28,7 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
     required this.onCancel,
     required this.onFundingBroadcast,
     this.presentation,
+    this.birthdayHeight,
     this.batch,
     this.onBatchRefused,
     super.key,
@@ -36,6 +37,7 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
+  final int? birthdayHeight;
   final PaymentLinkBatchDraft? batch;
 
   /// A group whose proposal no longer matches its quote, or that its signer
@@ -100,6 +102,7 @@ class _PaymentLinkKeystoneSigningOverlayState
   }
 
   Future<void> _preparePczt() async {
+    final elapsed = Stopwatch()..start();
     try {
       final service = ref.read(paymentLinkHardwareSigningServiceProvider);
       _signingService = service;
@@ -108,6 +111,7 @@ class _PaymentLinkKeystoneSigningOverlayState
               amountZatoshi: widget.amountZatoshi,
               sourceAccountUuid: widget.sourceAccountUuid,
               presentation: widget.presentation,
+              birthdayHeight: widget.birthdayHeight,
             )
           : service.createBatchFundingPczt(widget.batch!);
       _draftCreation = creation;
@@ -141,6 +145,15 @@ class _PaymentLinkKeystoneSigningOverlayState
       }
 
       final urParts = await service.encodeSigningUrParts(draft: draft);
+      if (!mounted || _cancelled) return;
+      setState(() {
+        _phase = _PaymentLinkKeystonePhase.ready;
+        _urParts = urParts;
+        _saplingParams = saplingParams;
+      });
+      log(
+        'PaymentLinkKeystoneSigning: QR ready in ${elapsed.elapsedMilliseconds}ms',
+      );
       final pcztWithProofs = await service.addProofsForSigning(
         draft: draft,
         spendParamsPath: draft.needsSaplingParams
@@ -152,11 +165,11 @@ class _PaymentLinkKeystoneSigningOverlayState
       );
       if (!mounted || _cancelled) return;
       setState(() {
-        _phase = _PaymentLinkKeystonePhase.ready;
-        _urParts = urParts;
-        _saplingParams = saplingParams;
         _pcztWithProofs = pcztWithProofs;
       });
+      log(
+        'PaymentLinkKeystoneSigning: proofs ready in ${elapsed.elapsedMilliseconds}ms',
+      );
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._preparePczt: $error\n$stackTrace');
       if (_cancelled) return;
@@ -330,6 +343,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       amountZatoshi: widget.amountZatoshi,
       sourceAccountUuid: widget.sourceAccountUuid,
       presentation: widget.presentation,
+      birthdayHeight: widget.birthdayHeight,
     );
     _draftCreation = creation;
     final draft = await creation;
@@ -490,6 +504,9 @@ class _PaymentLinkKeystoneSigningOverlayState
                   ? 'Keep Vizor open while the transaction is sent.'
                   : _phase == _PaymentLinkKeystonePhase.failed
                   ? null
+                  : _phase == _PaymentLinkKeystonePhase.ready &&
+                        _pcztWithProofs == null
+                  ? 'Scan with Keystone while Vizor finishes preparing the transaction.'
                   : 'After you scanned, click Get signature.',
               primaryLabel:
                   _phase == _PaymentLinkKeystonePhase.failed || isBroadcasting
