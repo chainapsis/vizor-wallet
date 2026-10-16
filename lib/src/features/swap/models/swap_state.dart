@@ -29,12 +29,34 @@ class SwapComposerPreferences {
   const SwapComposerPreferences({
     required this.direction,
     required this.externalAsset,
-    this.slippageBps = defaultSwapSlippageBps,
   });
 
   final SwapDirection direction;
   final SwapAsset externalAsset;
-  final int slippageBps;
+}
+
+class SwapSlippageSessions {
+  const SwapSlippageSessions({
+    this.swapBps = defaultSwapSlippageBps,
+    this.payBps = defaultSwapSlippageBps,
+  });
+
+  final int swapBps;
+  final int payBps;
+
+  int forMode({required bool payMode}) => payMode ? payBps : swapBps;
+
+  SwapSlippageSessions update({
+    required bool payMode,
+    required int slippageBps,
+  }) {
+    return payMode
+        ? SwapSlippageSessions(swapBps: swapBps, payBps: slippageBps)
+        : SwapSlippageSessions(swapBps: slippageBps, payBps: payBps);
+  }
+
+  SwapSlippageSessions reset({required bool payMode}) =>
+      update(payMode: payMode, slippageBps: defaultSwapSlippageBps);
 }
 
 class SwapState {

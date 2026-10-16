@@ -368,7 +368,6 @@ void main() {
     const preferences = SwapComposerPreferences(
       direction: SwapDirection.externalToZec,
       externalAsset: SwapAsset.near,
-      slippageBps: 125,
     );
 
     await preferencesStore.savePreferences(
@@ -383,7 +382,33 @@ void main() {
     expect(restored, isNotNull);
     expect(restored!.direction, SwapDirection.externalToZec);
     expect(restored.externalAsset, SwapAsset.near);
-    expect(restored.slippageBps, 125);
+    final persisted =
+        jsonDecode(
+              (await secureStore.readString(
+                'zcash_swap_composer_preferences_v1:account-1',
+              ))!,
+            )
+            as Map<String, dynamic>;
+    expect(persisted, isNot(contains('slippageBps')));
+  });
+
+  test('ignores a slippage value from legacy composer preferences', () async {
+    await secureStore.writeString(
+      'zcash_swap_composer_preferences_v1:account-1',
+      jsonEncode({
+        'direction': SwapDirection.externalToZec.name,
+        'externalAsset': SwapAsset.near.toPersistedJson(),
+        'slippageBps': 50,
+      }),
+    );
+
+    final restored = await preferencesStore.loadPreferences(
+      accountUuid: 'account-1',
+    );
+
+    expect(restored, isNotNull);
+    expect(restored!.direction, SwapDirection.externalToZec);
+    expect(restored.externalAsset, SwapAsset.near);
   });
 
   test(
@@ -398,7 +423,6 @@ void main() {
       final preferences = SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: asset,
-        slippageBps: 150,
       );
 
       await preferencesStore.savePreferences(
@@ -415,7 +439,6 @@ void main() {
       expect(restored.externalAsset, asset);
       expect(restored.externalAsset.assetId, 'nep141:base-usdc.example');
       expect(restored.externalAsset.chainTicker, 'base');
-      expect(restored.slippageBps, 150);
     },
   );
 
@@ -425,12 +448,10 @@ void main() {
       const accountOnePreferences = SwapComposerPreferences(
         direction: SwapDirection.externalToZec,
         externalAsset: SwapAsset.near,
-        slippageBps: 125,
       );
       const accountTwoPreferences = SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
-        slippageBps: 200,
       );
 
       await preferencesStore.savePreferences(
@@ -451,10 +472,8 @@ void main() {
 
       expect(accountOne!.direction, SwapDirection.externalToZec);
       expect(accountOne.externalAsset, SwapAsset.near);
-      expect(accountOne.slippageBps, 125);
       expect(accountTwo!.direction, SwapDirection.zecToExternal);
       expect(accountTwo.externalAsset, SwapAsset.usdc);
-      expect(accountTwo.slippageBps, 200);
     },
   );
 }

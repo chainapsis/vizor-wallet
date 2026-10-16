@@ -3477,12 +3477,10 @@ void main() {
         'account-1': SwapComposerPreferences(
           direction: SwapDirection.zecToExternal,
           externalAsset: SwapAsset.usdc,
-          slippageBps: 50,
         ),
         'account-2': SwapComposerPreferences(
           direction: SwapDirection.externalToZec,
           externalAsset: SwapAsset.near,
-          slippageBps: 200,
         ),
       },
     );
@@ -3508,7 +3506,10 @@ void main() {
       tester.element(find.byType(SwapScreen)),
       listen: false,
     );
-    expect(container.read(swapStateProvider).slippageBps, 50);
+    expect(
+      container.read(swapStateProvider).slippageBps,
+      defaultSwapSlippageBps,
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),
@@ -3541,7 +3542,6 @@ void main() {
       initialPreferences: const SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.dai,
-        slippageBps: 150,
       ),
     );
 
@@ -3606,7 +3606,7 @@ void main() {
     final restoredSwapState = container.read(swapStateProvider);
     expect(restoredSwapState.payMode, isFalse);
     expect(restoredSwapState.externalAsset, SwapAsset.dai);
-    expect(restoredSwapState.slippageBps, 150);
+    expect(restoredSwapState.slippageBps, defaultSwapSlippageBps);
     expect(sessionStore.savePreferencesCount, savesBeforePay);
 
     notifier.selectExternalAsset(SwapAsset.eth);
@@ -3674,7 +3674,7 @@ void main() {
     },
   );
 
-  testWidgets('pay persists its asset separately and shares only slippage', (
+  testWidgets('pay persists its asset and keeps slippage session separate', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -3682,7 +3682,6 @@ void main() {
       initialPreferences: const SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.dai,
-        slippageBps: 150,
       ),
     );
 
@@ -3705,6 +3704,8 @@ void main() {
     final notifier = container.read(swapStateProvider.notifier);
     final savesBeforePay = sessionStore.savePreferencesCount;
 
+    notifier.updateSlippageBps(150);
+
     notifier.preparePayFromShieldedZec();
     notifier.selectPayExternalAsset(SwapAsset.sol);
     await tester.pump();
@@ -3713,17 +3714,12 @@ void main() {
     expect(sessionStore.savedPayAsset, SwapAsset.sol);
     expect(sessionStore.savePreferencesCount, savesBeforePay);
 
-    notifier.updateSlippageBps(200);
+    expect(container.read(swapStateProvider).slippageBps, 200);
+    notifier.updateSlippageBps(125);
     await tester.pump();
 
-    // Slippage is shared with swap, but Pay must not overwrite the saved
-    // swap composer direction/asset.
-    expect(sessionStore.savedPreferences?.slippageBps, 200);
-    expect(
-      sessionStore.savedPreferences?.direction,
-      SwapDirection.zecToExternal,
-    );
-    expect(sessionStore.savedPreferences?.externalAsset, SwapAsset.dai);
+    // Pay slippage is session-only and must not rewrite the swap preference.
+    expect(sessionStore.savePreferencesCount, savesBeforePay);
 
     notifier.prepareSwapComposer();
     await tester.pump();
@@ -3731,7 +3727,21 @@ void main() {
     final restored = container.read(swapStateProvider);
     expect(restored.payMode, isFalse);
     expect(restored.externalAsset, SwapAsset.dai);
-    expect(restored.slippageBps, 200);
+    expect(restored.slippageBps, 150);
+
+    notifier.preparePayFromShieldedZec();
+    expect(container.read(swapStateProvider).slippageBps, 125);
+
+    notifier.resetComposerSlippageSessions();
+    expect(
+      container.read(swapStateProvider).slippageBps,
+      defaultSwapSlippageBps,
+    );
+    notifier.prepareSwapComposer();
+    expect(
+      container.read(swapStateProvider).slippageBps,
+      defaultSwapSlippageBps,
+    );
   });
 
   testWidgets('pay restores its saved payout asset on startup', (tester) async {
@@ -4121,7 +4131,6 @@ void main() {
       initialPreferences: const SwapComposerPreferences(
         direction: SwapDirection.externalToZec,
         externalAsset: SwapAsset.near,
-        slippageBps: 125,
       ),
     );
 
@@ -4143,7 +4152,7 @@ void main() {
     expect(find.text('Add refund address...'), findsOneWidget);
     expect(find.text('NEAR'), findsWidgets);
     expect(find.text('Wallet staging'), findsNothing);
-    expect(find.text('1.25%'), findsWidgets);
+    expect(find.text('2%'), findsWidgets);
   });
 
   testWidgets('swap composer preserves the saved live asset chain', (
@@ -4161,7 +4170,6 @@ void main() {
       initialPreferences: SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: baseUsdc,
-        slippageBps: 50,
       ),
     );
     final swapProvider = _FakeSwapProvider(
@@ -4849,7 +4857,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
     expect(find.text('2%'), findsWidgets);
-    expect(sessionStore.savedPreferences?.slippageBps, 200);
+    expect(sessionStore.savedPreferences, isNull);
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),
@@ -5047,7 +5055,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
     expect(find.text('1.25%'), findsWidgets);
-    expect(sessionStore.savedPreferences?.slippageBps, 125);
+    expect(sessionStore.savedPreferences, isNull);
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),
@@ -5082,6 +5090,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+        listen: false,
+      );
       await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
       await tester.pumpAndSettle();
       final field = find.byKey(const ValueKey('swap_slippage_custom_input'));
@@ -5121,7 +5133,8 @@ void main() {
         find.byKey(const ValueKey('swap_slippage_update_button')),
       );
       await tester.pumpAndSettle();
-      expect(sessionStore.savedPreferences?.slippageBps, 50);
+      expect(container.read(swapStateProvider).slippageBps, 50);
+      expect(sessionStore.savedPreferences, isNull);
     },
   );
 
@@ -5156,7 +5169,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsOneWidget);
-    expect(sessionStore.savedPreferences?.slippageBps, isNull);
+    expect(sessionStore.savedPreferences, isNull);
   });
 
   testWidgets('slippage modal cancel keeps the existing setting', (
@@ -5187,7 +5200,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
-    expect(sessionStore.savedPreferences?.slippageBps, isNull);
+    expect(sessionStore.savedPreferences, isNull);
     expect(find.text('2%'), findsOneWidget);
   });
 
