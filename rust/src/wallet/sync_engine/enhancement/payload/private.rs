@@ -21,7 +21,7 @@ use zakura_pir_enhance::transport::{self, PendingClient};
 use zakura_pir_enhance::wallet::{Acceptance, PreparedWork};
 use zakura_pir_enhance::{ClientError, Manifest, RECORDS_PER_ROW};
 use zcash_client_backend::data_api::enhance_pir::{
-    EnhancePirStoreResult, IronwoodEnhanceDiscoveryRequest,
+    EnhancePirStoreResult, EnhancePirWork, IronwoodEnhanceDiscoveryRequest,
 };
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
@@ -319,18 +319,15 @@ impl RoutedPayloadEnhancement {
         if self.accepted_routing.is_none() {
             return Ok(());
         }
+        let mut batch = db.work()?.askable(&self.db_path, self.snapshot.as_ref());
         for attempt in 0..=1 {
-            // Re-read after a partial batch: successfully stored rows are no
-            // longer pending, and only the durable remainder is retried. Rows
-            // that failed on content stay out of the retry, as an honest
-            // reply would have completed them.
-            let work = db
-                .work()?
-                .askable(&self.db_path, self.snapshot.as_ref())
-                .prepared();
+            let work = batch.prepared();
             if work.query_count() == 0 {
                 break;
             }
+            // Positions whose row was asked before stale routing stopped the
+            // batch, whatever its reply said.
+            let mut asked = BTreeSet::new();
             // Rejected before any network I/O when the batch exceeds the
             // client's input limit.
             let stale_status = {
@@ -361,6 +358,12 @@ impl RoutedPayloadEnhancement {
                                     stale = Some(status);
                                     break;
                                 }
+                                record => {
+                                    asked.insert(result.position);
+                                    record
+                                }
+                            };
+                            let record = match record {
                                 Err(ClientError::Cancelled) => {
                                     return Err(EnhancePirRunError::ExitRequested)
                                 }
@@ -425,6 +428,21 @@ impl RoutedPayloadEnhancement {
             let Some(status) = stale_status else {
                 break;
             };
+            // The retry asks the batch's requests whose rows were not asked,
+            // never a fresh read of the wallet: a record that resolved or
+            // rerouted another request of the batch (its whole transaction
+            // moving to public enhancement, say) must not change which rows
+            // are asked again, or the retry would show the service what its
+            // reply said. A request a reply already resolved is answered
+            // again and changes nothing. Work that failed on content at this
+            // tip still stays out.
+            batch.private.retain(|work| match work {
+                EnhancePirWork::Query(request) => {
+                    !asked.contains(&u64::from(request.position()))
+                        && content_failures::may_ask(&self.db_path, work)
+                }
+                _ => false,
+            });
             if attempt == 1 {
                 return Err(ClientError::HttpStatus(status).into());
             }

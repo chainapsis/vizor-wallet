@@ -67,9 +67,15 @@ class TransparentDetailsSection extends StatelessWidget {
         ReviewListRow(
           key: const ValueKey('transparent_details_unavailable'),
           label: 'Details',
-          value: kTransparentDetailsUnavailableText,
+          // A given-up lookup is never asked again: it neither spins nor
+          // promises an update.
+          value: notice == rust_sync.TransparentDetailsState.gaveUp
+              ? kTransparentDetailsGaveUpText
+              : kTransparentDetailsUnavailableText,
           valueColor: colors.text.secondary,
-          leadingIconName: AppIcons.loader,
+          leadingIconName: notice == rust_sync.TransparentDetailsState.gaveUp
+              ? null
+              : AppIcons.loader,
           scaleValueToFit: true,
         ),
       // The outputs are the transaction's; none is named a recipient.

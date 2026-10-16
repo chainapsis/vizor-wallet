@@ -1869,6 +1869,98 @@ async fn expired_service_wait_retries_only_its_account() {
     );
 }
 
+/// A same-block catch-up, which a lagging publication's wait permits, asks
+/// about the addresses the first pass asked about, whatever that pass's reply
+/// said. A forged receive at the window's last address grows the window; the
+/// growth is watched from the next block, or the catch-up would let a service
+/// test new addresses every few seconds instead of once a block.
+#[tokio::test]
+async fn a_same_block_catch_up_asks_what_the_first_pass_asked() {
+    async fn asked(forge: bool) -> Vec<Vec<TransparentAddress>> {
+        let mut wallet = private_wallet();
+        let source = FixtureSource::new(main_hash);
+        if forge {
+            let last = last_watched_external(&wallet);
+            source.receive(receive(1, external(&wallet, last), 10_000, 150));
+        }
+        source.published_through(Some(TIP - 1));
+        let progress = |_: SyncProgressEvent| {};
+        let completed = (u64::from(TIP), u64::from(TIP));
+        followup(&mut wallet, &Observed(&source), &progress, completed).await;
+        // The lagging reply's wait expires and the publication caught up.
+        source.published_through(None);
+        set_not_before(&wallet.path, wallet.account, Instant::now(), Duration::ZERO);
+        followup(&mut wallet, &Observed(&source), &progress, completed).await;
+        assert_eq!(source.calls(), 2, "the pass, then the catch-up");
+        // The first pass stored the forged receive.
+        let stored = count(&wallet.path, "SELECT COUNT(*) FROM tpir_receive_events");
+        assert_eq!(stored, i64::from(forge));
+        source.asked()
+    }
+    let honest = asked(false).await;
+    let forged = asked(true).await;
+    assert_eq!(honest[1], honest[0]);
+    assert_eq!(
+        forged[1], forged[0],
+        "the catch-up asks about the first pass's addresses"
+    );
+    assert_eq!(
+        forged.iter().map(Vec::len).collect::<Vec<_>>(),
+        honest.iter().map(Vec::len).collect::<Vec<_>>(),
+    );
+}
+
+/// Turning recovery off leaves no expired service wait behind. The app's tip
+/// poll restarts a sync while one is due, so a wait no run will consume would
+/// start a sync every poll. That holds whether private queries are off for
+/// this sync, the wallet's durable policy is public, or the policy changed
+/// during a run before it reached every account.
+#[tokio::test]
+async fn turning_recovery_off_leaves_no_retry_due() {
+    for case in ["captured", "durable", "mid-run"] {
+        let mut wallet = private_wallet();
+        let (_, other) = add_account(&wallet);
+        let source = FixtureSource::new(main_hash);
+        source.published_through(Some(TIP - 1));
+        let progress = |_: SyncProgressEvent| {};
+        let completed = (u64::from(TIP), u64::from(TIP));
+        followup(&mut wallet, &Observed(&source), &progress, completed).await;
+        for account in [wallet.account, other] {
+            set_not_before(&wallet.path, account, Instant::now(), Duration::ZERO);
+        }
+        assert!(service_retry_due(&wallet.path), "{case}");
+        let policy = match case {
+            "captured" => policy(TransparentLedgerMode::Public),
+            "durable" => {
+                apply_policy(&wallet.path, TransparentLedgerMode::Public);
+                required()
+            }
+            _ => {
+                let path = wallet.path.clone();
+                source.on_call(move || apply_policy(&path, TransparentLedgerMode::Public));
+                required()
+            }
+        };
+        crate::wallet::sync_engine::transparent_followup(
+            1,
+            &mut wallet.db,
+            &wallet.path,
+            NETWORK,
+            policy,
+            &Observed(&source),
+            Some(wallet.account),
+            &|| false,
+            &progress,
+            completed,
+        )
+        .await;
+        assert!(
+            !service_retry_due(&wallet.path),
+            "{case}: no sync is due for a recovery that is off"
+        );
+    }
+}
+
 /// An active account can catch up to each new block after the publication
 /// briefly trails it, recovering spend authority before the next block.
 #[tokio::test]
@@ -2401,9 +2493,11 @@ async fn followup(
 /// A restoring account watches a fixed window of addresses whatever the
 /// replies show, so a receive inside it grows nothing. The forged receive
 /// sits at the window's last address, the only place a reply can grow it.
+/// The growth is stored, and watched from the next recovery target; these
+/// syncs all recover at one target, so the watch set stays as it was.
 #[tokio::test]
 async fn a_forged_receive_does_not_change_when_recovery_runs() {
-    async fn calls_per_sync(forge: bool) -> (Vec<usize>, usize) {
+    async fn calls_per_sync(forge: bool) -> (Vec<usize>, usize, i64) {
         let mut wallet = private_wallet();
         let window = watched(&wallet).len();
         let source = FixtureSource::new(main_hash);
@@ -2420,14 +2514,23 @@ async fn a_forged_receive_does_not_change_when_recovery_runs() {
                 calls.push(source.calls());
             }
         }
-        (calls, watched(&wallet).len() - window)
+        let stored = count(&wallet.path, "SELECT COUNT(*) FROM tpir_receive_events");
+        (calls, watched(&wallet).len() - window, stored)
     }
-    let (honest, honest_growth) = calls_per_sync(false).await;
-    let (forged, forged_growth) = calls_per_sync(true).await;
+    let (honest, honest_growth, honest_stored) = calls_per_sync(false).await;
+    let (forged, forged_growth, forged_stored) = calls_per_sync(true).await;
     assert_eq!(honest, [1, 1, 2, 2, 3, 3, 4, 4]);
     assert_eq!(forged, honest, "the same requests at the same blocks");
-    assert_eq!(honest_growth, 0);
-    assert!(forged_growth > 0, "the forged receive grew the window");
+    assert_eq!(
+        (honest_stored, forged_stored),
+        (0, 1),
+        "the forged receive was stored"
+    );
+    assert_eq!(
+        (honest_growth, forged_growth),
+        (0, 0),
+        "growth at this target is watched from the next"
+    );
 }
 
 /// A restore whose funds lie beyond the first window completes over the

@@ -1443,6 +1443,140 @@ mod tests {
         );
     }
 
+    /// An Enhance query that a private transparent recovery reply creates
+    /// waits for the next block, like one a status reply creates: recovery
+    /// runs after the sync's checkpoint, so without a record of what its
+    /// replies added, a resumed sync at the same block would count the query
+    /// towards a recovery-only restart and ask it.
+    #[tokio::test]
+    async fn an_enhance_query_a_recovery_reply_creates_waits_for_the_next_block() {
+        use super::super::content_failures;
+        use crate::wallet::sync_engine::test_lwd::CapturingLwd;
+        use crate::wallet::sync_engine::transparent_ledger::fixture::FixtureSource;
+        use zakura_transaction_status::StatusObservation;
+        use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
+
+        let (_dir, path, _) =
+            crate::wallet::sync::private_shielding_tests::wallet_with_a_private_memo_query();
+        let network = WalletNetwork::Regtest;
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let (txid, height): (Vec<u8>, u32) = conn
+            .query_row(
+                "SELECT q.txid, t.mined_height FROM tx_retrieval_queue q
+                 JOIN transactions t ON t.txid = q.txid WHERE q.query_type = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        // The query appears only once the transaction is known mined, which
+        // the recovery reply reveals, as a recovered spend can.
+        conn.execute("DELETE FROM tx_retrieval_queue WHERE query_type = 1", [])
+            .unwrap();
+        conn.execute(
+            "UPDATE transactions SET mined_height = NULL WHERE txid = ?1",
+            [&txid],
+        )
+        .unwrap();
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            network,
+            crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        // A lagging publication answers without a batch, so the reply
+        // changes nothing in the wallet's ledger but the query it creates.
+        let source = FixtureSource::new(|_| zcash_primitives::block::BlockHash([0; 32]));
+        source.pending(Some(zakura_pir_transparent::Outcome::Behind));
+        let unlock_path = path.clone();
+        source.on_call(move || {
+            let conn = rusqlite::Connection::open(&unlock_path).unwrap();
+            conn.execute(
+                "UPDATE transactions SET mined_height = ?2 WHERE txid = ?1",
+                rusqlite::params![txid, height],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO tx_retrieval_queue (txid, query_type) VALUES (?1, 1)
+                 ON CONFLICT (txid, query_type) DO NOTHING",
+                [&txid],
+            )
+            .unwrap();
+        });
+
+        let policy = super::super::EnhancementPolicy::current(network)
+            .with_private_queries()
+            .with_transparent_mode(TransparentLedgerMode::PrivateRequired);
+        let session = || {
+            let mut session = super::EnhancementSession::with_policy(network, &path, policy);
+            session.payload.set_endpoint("https://example.test");
+            session
+        };
+        let mut lwd = CapturingLwd::start(Vec::new()).await;
+        let enhance = RefusingEnhance::default();
+        let queries = |db: &mut WalletDatabase| {
+            policy.configure_db(db);
+            super::super::super::recovery_status_for(db, &path, String::new())
+                .unwrap()
+                .queries
+        };
+        assert_eq!(queries(&mut db), 0, "no query before the reply");
+        let tip = 2_000;
+        content_failures::at_tip(&path, tip);
+
+        crate::wallet::sync_engine::transparent_followup(
+            1,
+            &mut db,
+            &path,
+            network,
+            policy,
+            &source,
+            None,
+            &|| false,
+            &|_| {},
+            (tip, tip),
+        )
+        .await;
+        assert!(source.calls() > 0, "recovery asked the service");
+        assert_eq!(
+            queries(&mut db),
+            0,
+            "the query the recovery reply created is not counted"
+        );
+
+        // A resumed sync at the same block.
+        session()
+            .checkpoint_with(
+                &mut db,
+                &mut lwd.client,
+                None,
+                status_source(Ok(StatusObservation::NotFound)),
+                &enhance,
+                &|| false,
+            )
+            .await
+            .unwrap();
+        assert_eq!(enhance.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+        // The next block.
+        content_failures::at_tip(&path, tip + 1);
+        assert_eq!(queries(&mut db), 1, "the next block counts it");
+        session()
+            .checkpoint_with(
+                &mut db,
+                &mut lwd.client,
+                None,
+                status_source(Ok(StatusObservation::NotFound)),
+                &enhance,
+                &|| false,
+            )
+            .await
+            .unwrap();
+        assert!(
+            enhance.0.load(std::sync::atomic::Ordering::SeqCst) > 0,
+            "and asks it"
+        );
+    }
+
     /// Newly queued payload work is eligible without an artificial first-query delay.
     #[test]
     fn a_new_enhance_position_is_eligible_without_a_first_query_delay() {

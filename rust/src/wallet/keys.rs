@@ -1095,7 +1095,8 @@ fn delete_account_rows(
             zcash_client_sqlite::util::SystemClock,
             voting_crypto_deps::rand::rngs::OsRng,
         )
-        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network));
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network))
+        .with_transparent_pir_session(crate::wallet::db::transparent_pir_session(db_path));
         use zcash_client_backend::data_api::WalletWrite;
         db.delete_account(account_id)
             .map_err(|e| format!("Failed to delete account: {e}"))?;

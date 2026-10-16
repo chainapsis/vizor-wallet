@@ -252,6 +252,27 @@ assertions_on_constants = "allow"
 # Wallet and voting dependencies use their coordinated published releases.
 # Voting 5.2 is an explicit opt-in; keep the exact prerelease pin during validation.
 
+# Wallet-libraries main plus draft PR #213 (window growth is watched from the
+# next recovery target). The published rc9 family predates the follow-ups this
+# wallet needs: receipt lookups a private reply queues wait for the next chain
+# tip (#212), the randomized first Enhance query wait is gone (#205), and the
+# in-memory `TransparentPirSession` this wallet shares across its handles.
+# Every wallet-libraries crate in the graph is patched, including those only
+# `zcash_voting` reaches, so one copy of each crate resolves. Drop this patch
+# and move the version pins above once a release includes #213.
+[patch.crates-io]
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-one-time-ivk = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-pir-enhance = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-pir-enhance-types = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-pir-native = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-pir-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-pir-transparent = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-transaction-status = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+zakura-wallet-lib = { git = "https://github.com/zakura-core/wallet-libraries", rev = "52bc764de86d215732b597126bd8f105ab4b62c5" }
+
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
 # debug opt-level=0, so keep debug assertions and symbols while making local

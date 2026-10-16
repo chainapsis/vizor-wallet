@@ -27,6 +27,8 @@ use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
 #[cfg(test)]
 use zcash_client_backend::data_api::transparent_ledger::{AggregatePayment, WholeTransactionFee};
+#[cfg(test)]
+use zcash_client_backend::data_api::Account as _;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AccountActivity, Attribution, DetailCompleteness, FeeState, HistoryClassification,
@@ -35,7 +37,7 @@ use zcash_client_backend::data_api::{
         TransparentLedgerBalance, TransparentLedgerMode, TransparentLedgerRead,
         TransparentLedgerSnapshot,
     },
-    Account as _, Balance, WalletRead, WalletWrite,
+    Balance, WalletRead, WalletWrite,
 };
 use zcash_client_sqlite::{wallet::history::TransactionSummary, AccountUuid};
 use zcash_primitives::transaction::TxId;

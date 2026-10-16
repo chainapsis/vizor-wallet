@@ -290,7 +290,9 @@ impl EnhancementSession {
 
 /// The wallet's private Enhance work and private status lookups as they
 /// stand now.
-fn private_work(db: &WalletDatabase) -> Result<content_failures::PrivateWork, SyncError> {
+pub(super) fn private_work(
+    db: &WalletDatabase,
+) -> Result<content_failures::PrivateWork, SyncError> {
     use zcash_client_backend::data_api::enhance_pir::EnhancePirRead;
     Ok(content_failures::PrivateWork::new(
         db.transaction_enhancement_work()
