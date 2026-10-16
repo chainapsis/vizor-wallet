@@ -5,9 +5,18 @@
 use super::enhancement::transport::{RoutedHttpError, RoutedTransport};
 use super::WalletDatabase;
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use zakura_pir_receiver::{DirectoryError, Transport, WriteLock, MAINNET_GENESIS};
-use zcash_client_backend::data_api::{transparent_ledger::ChainPoint, WalletRead};
+use zcash_client_backend::data_api::{
+    one_time_ivk::restore::OneTimeIvkRestoreRead, transparent_ledger::ChainPoint, WalletRead,
+};
+use zcash_client_sqlite::AccountUuid;
 
 /// The receiver directory's default origin. Use explicit HTTPS origins and never follow
 /// service redirects.
@@ -24,6 +33,9 @@ const SEEN_BUDGET: Duration = Duration::from_secs(20);
 /// `getblockhash 0` displays it, which their receiver directory commits to. Release
 /// builds never read it.
 const RECEIVER_GENESIS_ENV: &str = "VIZOR_RECEIVER_PIR_GENESIS";
+/// Time a restore scan waits for its early restores to register their keys. Past it the
+/// scan starts, and an account whose early restore had not begun restores by sweeps.
+const EARLY_BEGIN_BUDGET: Duration = Duration::from_secs(20);
 /// The receiver directory's origin: [`DEFAULT_RECEIVER_ORIGIN`], or in a debug build
 /// a configured override.
 fn receiver_origin() -> String {
@@ -228,6 +240,124 @@ pub(crate) async fn fetch_seen(network: WalletNetwork) -> Option<zakura_pir_rece
         Err(_) => {
             log::warn!("Swap seen set unavailable: timed out");
             None
+        }
+    }
+}
+
+/// Starts the early restores of the software accounts that can have one (see
+/// `zakura_pir_receiver::begin_early_restore`) and waits up to [`EARLY_BEGIN_BUDGET`]
+/// for them to register their keys, so the scan that follows tries them. Call it after
+/// the sync updates the chain tip and before its first scan batch. A worker thread with its own runtime and database
+/// connection runs them, then looks up the paid keys while the scan goes on, stopping
+/// with `cancel`. Returns at once when no account needs one. Failures are logged, and
+/// what an early restore does not settle is left to restore sweeps.
+pub(super) async fn start_early_restores(
+    db: &WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    cancel: Arc<AtomicBool>,
+) {
+    let accounts: Vec<AccountUuid> = match crate::wallet::one_time_ivk::software_accounts(db) {
+        Ok(accounts) => accounts
+            .into_iter()
+            .filter(|account| matches!(db.one_time_early_restore_start(*account), Ok(Some(_))))
+            .collect(),
+        Err(e) => {
+            log::warn!("Early swap restore skipped: {e}");
+            return;
+        }
+    };
+    if accounts.is_empty() {
+        return;
+    }
+    let (begun, started) = tokio::sync::oneshot::channel();
+    let path = db_path.to_owned();
+    let spawned = std::thread::Builder::new()
+        .name("early-swap-restore".into())
+        .spawn(move || {
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => {
+                    runtime.block_on(early_restore(path, network, accounts, cancel, begun))
+                }
+                Err(e) => log::warn!("Early swap restore skipped: {e}"),
+            }
+        });
+    if let Err(e) = spawned {
+        log::warn!("Early swap restore skipped: {e}");
+        return;
+    }
+    if tokio::time::timeout(EARLY_BEGIN_BUDGET, started)
+        .await
+        .is_err()
+    {
+        log::warn!("Early swap restore did not begin before the scan");
+    }
+}
+
+/// Begins each of `accounts`' early restores on its own connection to `path`, signals
+/// `begun`, then looks up their paid keys (see [`start_early_restores`]).
+async fn early_restore(
+    path: String,
+    network: WalletNetwork,
+    accounts: Vec<AccountUuid>,
+    cancel: Arc<AtomicBool>,
+    begun: tokio::sync::oneshot::Sender<()>,
+) {
+    let should_exit = || {
+        crate::wallet::sync::proposal_locks::is_shutting_down() || cancel.load(Ordering::Relaxed)
+    };
+    let opened =
+        with_wallet_db_write_lock("one_time_ivk.early_open", || super::open_db(&path, network));
+    let (mut db, now) = match (opened, crate::wallet::one_time_ivk::now()) {
+        (Ok(db), Ok(now)) => (db, now),
+        (Err(e), _) => return log::warn!("Early swap restore skipped: {e}"),
+        (_, Err(e)) => return log::warn!("Early swap restore skipped: {e}"),
+    };
+    let genesis = match receiver_genesis(network) {
+        Ok(genesis) => genesis,
+        Err(e) => return log::warn!("Early swap restore skipped: {e}"),
+    };
+    let origin = receiver_origin();
+    let mut restores = Vec::new();
+    for account in accounts {
+        let transport = ReceiverTransport::new(&origin, &should_exit);
+        let begin = zakura_pir_receiver::begin_early_restore(
+            &mut db,
+            &network,
+            account,
+            genesis,
+            &origin,
+            transport,
+            &WalletWriteLock,
+            now,
+        );
+        match begin.await {
+            Ok(Some(restore)) => restores.push(restore),
+            // Only accounts that allowed one get here, so the wallet refused the
+            // publication. A restore whose birthday is near the tip expects that.
+            Ok(None) => log::info!(
+                "Early swap restore not begun: the directory's publication ends before \
+                 the restore starts or above the chain tip; restore sweeps take over"
+            ),
+            Err(e) => log::warn!("Early swap restore not begun: {e}"),
+        }
+    }
+    let _ = begun.send(());
+    for restore in restores {
+        if should_exit() {
+            return;
+        }
+        // Keys identify the wallet's swaps, so only the reasons are logged.
+        match restore.look_up(&mut db, &WalletWriteLock).await {
+            Ok(looked_up) => {
+                for (_, e) in &looked_up.failed {
+                    log::warn!("Early swap restore lookup left to a sweep: {e}");
+                }
+            }
+            Err(e) => log::warn!("Early swap restore lookups stopped: {e}"),
         }
     }
 }

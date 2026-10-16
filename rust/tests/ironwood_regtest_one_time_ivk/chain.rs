@@ -107,6 +107,14 @@ impl Stack {
         }
     }
 
+    /// Replaces every block above `fork` with a branch one block longer, mined at the
+    /// chain's clock, holding back the transactions the replaced blocks mined (see
+    /// `reorg.sh`), and waits for lightwalletd to serve the new tip.
+    pub fn reorg(&self, fork: u32) {
+        self.rpc("setmocktime", json!([self.now()]));
+        run_harness("reorg.sh", &[&fork.to_string()], &[]);
+    }
+
     /// Funds each of `addresses` with one pre-activation Orchard note from the node's
     /// faucet, splitting `zec` evenly, and mines 10 blocks.
     pub fn fund_orchard(&self, addresses: &[&str], zec: u64) {

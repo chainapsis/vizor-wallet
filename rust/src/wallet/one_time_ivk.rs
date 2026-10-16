@@ -200,7 +200,10 @@ pub(crate) fn close_finished_keys(db: &mut WalletDatabase, tip: BlockHeight) -> 
 mod tests {
     use super::*;
     use secrecy::SecretVec;
-    use zcash_client_backend::data_api::{one_time_ivk::OneTimeIvkRead as _, WalletWrite};
+    use zcash_client_backend::data_api::{
+        one_time_ivk::{restore::OneTimeIvkRestoreRead as _, OneTimeIvkRead as _},
+        WalletWrite,
+    };
     use zcash_client_sqlite::wallet::one_time_ivk::swap::RECEIVE_GAP_LIMIT;
 
     #[test]
@@ -236,6 +239,10 @@ mod tests {
         db.update_chain_tip(BlockHeight::from_u32(110)).unwrap();
         maintain_recovery(&mut db).unwrap();
         assert_eq!(keys(), (0, 0));
+        // An early restore needs neither switch either (see
+        // `sync_engine::swap_private::start_early_restores`).
+        let account = db.get_account_ids().unwrap()[0];
+        assert!(db.one_time_early_restore_start(account).unwrap().is_some());
         // Model completed ordinary scanning. Real note discovery and replay are
         // exercised by the shared library's compact-block recovery tests.
         let conn = rusqlite::Connection::open(path).unwrap();
