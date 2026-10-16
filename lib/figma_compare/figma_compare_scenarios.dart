@@ -58,6 +58,7 @@ import 'mobile_hardware_selection_capture.dart';
 import 'mobile_onboarding_intro_capture.dart';
 import 'ledger_recovery_capture.dart';
 import 'ledger_onboarding_guidance_capture.dart';
+import 'slippage_ux_capture.dart';
 import 'swap_asset_icons_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
@@ -2672,8 +2673,33 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   ),
   FigmaCompareScenario(
     id: 'swap-guidance-slippage-desktop',
-    description: 'Swap slippage rate-change guidance',
-    builder: buildSwapSlippageModalUseCase,
+    description: 'Desktop Swap slippage modal at 0.5% with refund guidance',
+    builder: buildSwapSlippageLowDesktopCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-default-desktop',
+    description: 'Desktop Swap slippage modal at the 2% default',
+    builder: buildSwapSlippageDefaultDesktopCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-invalid-desktop',
+    description: 'Desktop custom slippage with an out-of-range error',
+    builder: buildSwapSlippageModalInvalidUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-low-desktop',
+    description: 'Desktop Pay slippage modal at 0.5% with refund guidance',
+    builder: buildPaySlippageLowDesktopCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-default-desktop',
+    description: 'Desktop Pay slippage modal at the 2% default',
+    builder: buildPaySlippageDefaultDesktopCapture,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-low-text-scale-2-desktop',
+    description: 'Desktop low-slippage modal at 200% text scaling',
+    builder: buildSwapSlippageLowDesktopTextScale2Capture,
   ),
   FigmaCompareScenario(
     id: 'swap-guidance-failed-desktop',
@@ -2699,6 +2725,48 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'swap-guidance-deposit-mobile',
     description: 'Mobile deposit token and network guidance',
     builder: buildSwapGuidanceDepositMobileUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-low-mobile',
+    description: 'Mobile Swap slippage sheet at 0.5% with refund guidance',
+    builder: buildSwapSlippageLowMobileCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-default-mobile',
+    description: 'Mobile Swap slippage sheet at the 2% default',
+    builder: buildSwapSlippageDefaultMobileCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-slippage-low-text-scale-2-mobile',
+    description: 'Mobile low-slippage sheet at 200% text scaling',
+    builder: buildSwapSlippageLowMobileTextScale2Capture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-low-mobile',
+    description: 'Mobile Pay slippage sheet at 0.5% with refund guidance',
+    builder: buildPaySlippageLowMobileCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-default-mobile',
+    description: 'Mobile Pay slippage sheet at the 2% default',
+    builder: buildPaySlippageDefaultMobileCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-slippage-low-text-scale-2-mobile',
+    description: 'Mobile Pay low-slippage sheet at 200% text scaling',
+    builder: buildPaySlippageLowMobileTextScale2Capture,
     desktop: false,
     mobile: true,
   ),
