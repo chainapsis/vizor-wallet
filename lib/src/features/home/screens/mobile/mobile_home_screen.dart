@@ -59,6 +59,7 @@ import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_balance_display.dart';
 import '../../providers/backup_reminder_provider.dart';
+import '../../history_hold_notice.dart';
 import '../../widgets/mobile_home_carousel.dart';
 import '../../services/transparent_shielding_service.dart';
 import 'mobile_keystone_shield_screen.dart';
@@ -1036,14 +1037,19 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     // the payment-URI drain in `app.dart` cannot drift away from what this
     // button does.
     final sendDisabled = ref.watch(migrationSendGateProvider);
+    // Held value is still the account's: a history hold or a proposal
+    // nothing has signed yet.
     final shieldedBalance = migrationRequired
-        ? sync.orchardBalance + sync.orchardPendingBalance
+        ? sync.orchardBalance +
+              sync.orchardPendingBalance +
+              sync.orchardHeldBalance
         : sync.saplingBalance +
               sync.orchardBalance +
               sync.ironwoodBalance +
               sync.saplingPendingBalance +
               sync.orchardPendingBalance +
-              sync.ironwoodPendingBalance;
+              sync.ironwoodPendingBalance +
+              sync.heldBalance;
     final transparentBalance = TransparentBalanceDisplay.of(sync);
     final hasBalance =
         shieldedBalance > BigInt.zero ||
@@ -1149,6 +1155,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               context.go('/settings');
             },
           ),
+          const SizedBox(height: AppSpacing.s),
+        ],
+        if (historyHoldNoticeMessage(
+              sync,
+              privacyModeEnabled: privacyModeEnabled,
+            )
+            case final heldMessage?) ...[
+          _HistoryHoldNotice(message: heldMessage),
           const SizedBox(height: AppSpacing.s),
         ],
         Column(
@@ -1370,6 +1384,40 @@ class _PrivateStatusCoverageNotice extends StatelessWidget {
             variant: AppButtonVariant.secondary,
             onPressed: onSettings,
             child: const Text('Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryHoldNotice extends StatelessWidget {
+  const _HistoryHoldNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('mobile_history_hold_notice'),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppIcon(AppIcons.history, size: 20, color: colors.text.secondary),
+          const SizedBox(width: AppSpacing.s),
+          Expanded(
+            child: Text(
+              message,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
           ),
         ],
       ),

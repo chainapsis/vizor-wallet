@@ -1049,6 +1049,7 @@ fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("clear sync in-progress marker: {e}"))?;
+    crate::wallet::sync::history_hold::mark_verified_accounts(&tx)?;
     tx.commit()
         .map_err(|e| format!("commit completed sync transaction: {e}"))
 }
@@ -3225,6 +3226,14 @@ async fn run_sync_impl(
     let mut current_tip_height: u64 = tip.height;
     log::info!("[{}] sync: chain tip = {}", elapsed(), current_tip_height);
 
+    // After the tip update, so hold locks expire relative to the new tip
+    // rather than one the wallet may have fallen far behind.
+    let mut hold_change_unreported =
+        with_wallet_db_write_lock("sync_engine.history_hold.start", || {
+            crate::wallet::sync::history_hold::sweep_logged(db_data_path, &mut db, "sync start")
+        })
+        .changed;
+
     // Retained send-lock expiry requires a usable target height.
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
         .map_err(SyncError::db)?;
@@ -4085,6 +4094,7 @@ async fn run_sync_impl(
         // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
+        let mut history_hold_changed = false;
         let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
             // Persist before scanning advances scan_queue: cancellation or a crash
             // after the scan must not lose this account's recovery work.
@@ -4175,6 +4185,16 @@ async fn run_sync_impl(
                     crate::wallet::voting::snapshot_changes::record(db_data_path, u32::from(start) as u64);
                 }
                 summary
+            })
+            .inspect(|_| {
+                // Stabilization happens inside this scan; hold before any
+                // proposal can see the newly stabilized notes.
+                history_hold_changed = crate::wallet::sync::history_hold::sweep_logged(
+                    db_data_path,
+                    &mut db,
+                    "scan",
+                )
+                .changed;
             })
         });
 
@@ -4602,7 +4622,9 @@ async fn run_sync_impl(
         let has_new_tx = scan_summary.received_sapling_note_count() > 0
             || scan_summary.spent_sapling_note_count() > 0
             || scan_summary.received_orchard_note_count() > 0
-            || scan_summary.spent_orchard_note_count() > 0;
+            || scan_summary.spent_orchard_note_count() > 0
+            || history_hold_changed
+            || std::mem::take(&mut hold_change_unreported);
         let post_ranges = db
             .suggest_scan_ranges()
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
@@ -4718,6 +4740,11 @@ async fn run_sync_impl(
 
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&mut db, current_tip_height)?;
+    // No history is pending now, so the sweep releases every hold before
+    // migration locks are reconciled over the same notes.
+    with_wallet_db_write_lock("sync_engine.history_hold.complete", || {
+        crate::wallet::sync::history_hold::sweep_logged(db_data_path, &mut db, "completion");
+    });
     for id in db
         .get_account_ids()
         .map_err(|e| SyncError::db(e.to_string()))?

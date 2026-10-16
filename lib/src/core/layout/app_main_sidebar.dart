@@ -549,8 +549,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         orchardBalance:
                             accountSync.displayOrchardHoldingsBalance,
                         ironwoodBalance:
-                            accountSync.displayIronwoodBalance +
-                            accountSync.displayIronwoodPendingBalance,
+                            accountSync.displayIronwoodHoldingsBalance,
                         privacyModeEnabled: privacyModeEnabled,
                         active: _homeShouldBeActive,
                         onHome: () => _navigateTo('/home'),

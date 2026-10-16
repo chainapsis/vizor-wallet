@@ -808,11 +808,24 @@ pub struct WalletBalance {
     pub value_pending_spendability: u64,
     /// Notes at or below the ZIP-317 marginal fee, excluded from normal spendability.
     pub uneconomic_value: u64,
+    /// Shielded value a lock keeps from being sent that is still the
+    /// account's: notes held until older history is checked, and notes a
+    /// send, Gift Card, swap, or Immediate migration reserves before anything
+    /// has signed it. Not in `spendable` or `locked`; included in `total`.
+    pub sapling_held: u64,
+    pub orchard_held: u64,
+    pub ironwood_held: u64,
+    /// Sum of the `*_held` fields.
+    pub held: u64,
+    /// The part of `held` waiting for older history to be checked: received
+    /// before history still being scanned, where it may already have been
+    /// spent.
+    pub history_hold: u64,
     /// Sum of spendable shielded balances. Use this for "available to send".
     pub spendable: u64,
     /// Sum of owner-locked balances across all pools.
     pub locked: u64,
-    /// Sum of spendable + locked + pending balances across all pools.
+    /// Sum of spendable + locked + pending + held balances across all pools.
     pub total: u64,
 }
 
@@ -1075,6 +1088,9 @@ pub fn get_balance(
         let locked = b.transparent_locked + b.sapling_locked + b.orchard_locked + b.ironwood_locked;
         let pending =
             b.transparent_pending + b.sapling_pending + b.orchard_pending + b.ironwood_pending;
+        let held = b.sapling_held + b.orchard_held + b.ironwood_held;
+        let history_hold =
+            b.sapling_history_hold + b.orchard_history_hold + b.ironwood_history_hold;
         Ok(WalletBalance {
             availability,
             transparent_authority,
@@ -1096,9 +1112,14 @@ pub fn get_balance(
             change_pending_confirmation: b.change_pending_confirmation,
             value_pending_spendability: b.value_pending_spendability,
             uneconomic_value: b.uneconomic_value,
+            sapling_held: b.sapling_held,
+            orchard_held: b.orchard_held,
+            ironwood_held: b.ironwood_held,
+            held,
+            history_hold,
             spendable,
             locked,
-            total: total_spendable + locked + pending,
+            total: total_spendable + locked + pending + held,
         })
     })
 }
@@ -2017,9 +2038,10 @@ fn migration_status_from_balance(
             network,
             &account_uuid,
             balance.orchard,
-            balance.orchard_pending,
+            // Held Orchard waits like pending Orchard: it is still to migrate.
+            balance.orchard_pending + balance.orchard_history_hold,
             balance.ironwood,
-            balance.ironwood_pending,
+            balance.ironwood_pending + balance.ironwood_history_hold,
         )?;
         let proof_ready = wallet_sync::orchard_migration_proof_readiness(
             &db_path,

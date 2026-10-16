@@ -172,6 +172,11 @@ void main() {
       changePendingConfirmation: BigInt.from(7),
       valuePendingSpendability: BigInt.from(8),
       uneconomicValue: BigInt.from(9),
+      saplingHeld: BigInt.zero,
+      orchardHeld: BigInt.zero,
+      ironwoodHeld: BigInt.zero,
+      held: BigInt.zero,
+      historyHold: BigInt.zero,
       spendable: BigInt.from(5),
       locked: BigInt.from(10),
       total: BigInt.from(31),
@@ -276,6 +281,59 @@ void main() {
     );
   });
 
+  test('held funds count in the shielded total but not as spendable', () {
+    final held = SyncState().withFetchedAccountData(
+      balance: _balance(
+        orchard: BigInt.from(3),
+        orchardHeld: BigInt.from(50),
+        historyHold: BigInt.from(50),
+        ironwood: BigInt.zero,
+        spendable: BigInt.from(3),
+        total: BigInt.from(53),
+      ),
+      syncComplete: false,
+    );
+
+    expect(held.historyHoldBalance, BigInt.from(50));
+    expect(held.heldBalance, BigInt.from(50));
+    expect(held.spendableBalance, BigInt.from(3));
+    expect(held.displayShieldedBalance, BigInt.from(53));
+    expect(held.totalBalance, BigInt.from(53));
+    // Migration holdings count every locked Orchard note, held ones too.
+    expect(held.displayOrchardHoldingsBalance, BigInt.from(53));
+
+    final released = held.withFetchedAccountData(
+      balance: _balance(
+        orchard: BigInt.from(53),
+        ironwood: BigInt.zero,
+        spendable: BigInt.from(53),
+        total: BigInt.from(53),
+      ),
+      syncComplete: true,
+    );
+    expect(released.historyHoldBalance, BigInt.zero);
+    expect(released.displayShieldedBalance, BigInt.from(53));
+  });
+
+  test('an unsigned reservation is held without a history hold notice', () {
+    final reserved = SyncState().withFetchedAccountData(
+      balance: _balance(
+        orchard: BigInt.zero,
+        ironwood: BigInt.from(3),
+        ironwoodHeld: BigInt.from(125_000_000),
+        spendable: BigInt.from(3),
+        total: BigInt.from(125_000_003),
+      ),
+      syncComplete: true,
+    );
+
+    expect(reserved.heldBalance, BigInt.from(125_000_000));
+    expect(reserved.historyHoldBalance, BigInt.zero);
+    expect(reserved.spendableBalance, BigInt.from(3));
+    expect(reserved.displayShieldedBalance, BigInt.from(125_000_003));
+    expect(reserved.displayIronwoodHeldBalance, BigInt.from(125_000_000));
+  });
+
   test('fetched Ironwood-only balance feeds the spendable display', () {
     final balance = rust_sync.WalletBalance(
       availability: rust_sync.WalletBalanceAvailability.available,
@@ -296,6 +354,11 @@ void main() {
       changePendingConfirmation: BigInt.zero,
       valuePendingSpendability: BigInt.zero,
       uneconomicValue: BigInt.zero,
+      saplingHeld: BigInt.zero,
+      orchardHeld: BigInt.zero,
+      ironwoodHeld: BigInt.zero,
+      held: BigInt.zero,
+      historyHold: BigInt.zero,
       spendable: BigInt.from(100),
       locked: BigInt.zero,
       total: BigInt.from(100),
@@ -670,6 +733,9 @@ void main() {
 rust_sync.WalletBalance _balance({
   required BigInt orchard,
   BigInt? orchardLocked,
+  BigInt? orchardHeld,
+  BigInt? ironwoodHeld,
+  BigInt? historyHold,
   required BigInt ironwood,
   required BigInt spendable,
   required BigInt total,
@@ -693,6 +759,11 @@ rust_sync.WalletBalance _balance({
     changePendingConfirmation: BigInt.zero,
     valuePendingSpendability: BigInt.zero,
     uneconomicValue: BigInt.zero,
+    saplingHeld: BigInt.zero,
+    orchardHeld: orchardHeld ?? BigInt.zero,
+    ironwoodHeld: ironwoodHeld ?? BigInt.zero,
+    held: (orchardHeld ?? BigInt.zero) + (ironwoodHeld ?? BigInt.zero),
+    historyHold: historyHold ?? BigInt.zero,
     spendable: spendable,
     locked: BigInt.zero,
     total: total,

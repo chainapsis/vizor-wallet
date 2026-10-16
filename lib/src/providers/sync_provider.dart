@@ -143,6 +143,9 @@ class SyncState {
   final BigInt saplingBalance;
   final BigInt orchardBalance;
   final BigInt ironwoodBalance;
+
+  /// Orchard value under any lock, [orchardHeldBalance] included, as
+  /// migration holdings count it.
   final BigInt orchardLockedBalance;
   final BigInt transparentPendingBalance;
 
@@ -233,6 +236,28 @@ class SyncState {
   /// Current preparation, download, or scan phase. The Sidebar keeps its
   /// existing percentage copy and uses this only to estimate display progress.
   final String phase;
+
+  /// The part of [heldBalance] held until older history is checked; Home
+  /// names it in a notice.
+  final BigInt historyHoldBalance;
+
+  /// Shielded value of [accountUuid] that a lock keeps from being sent but is
+  /// still the account's: history holds and proposals nothing has signed yet.
+  /// Not in [spendableBalance]; included in [totalBalance] and
+  /// [displayShieldedBalance].
+  final BigInt heldBalance;
+  final BigInt orchardHeldBalance;
+  final BigInt ironwoodHeldBalance;
+
+  /// Stable [ironwoodHeldBalance] for the Ironwood-only Home balance while an
+  /// incremental sync is reconciling pool balances.
+  final BigInt displayIronwoodHeldBalance;
+
+  /// Stable Ironwood holdings: spendable, pending and held.
+  BigInt get displayIronwoodHoldingsBalance =>
+      displayIronwoodBalance +
+      displayIronwoodPendingBalance +
+      displayIronwoodHeldBalance;
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
   BigInt get pendingBalance =>
@@ -363,7 +388,9 @@ class SyncState {
       saplingBalance: balance?.sapling,
       orchardBalance: balance?.orchard,
       ironwoodBalance: balance?.ironwood,
-      orchardLockedBalance: balance?.orchardLocked,
+      orchardLockedBalance: balance == null
+          ? null
+          : balance.orchardLocked + balance.orchardHeld,
       transparentPendingBalance: balance?.transparentPending,
       transparentLockedBalance: balance?.transparentLocked,
       transparentAuthority: balance?.transparentAuthority,
@@ -390,6 +417,9 @@ class SyncState {
       displayIronwoodPendingBalance: preservePoolDisplay
           ? displayIronwoodPendingBalance
           : balance?.ironwoodPending,
+      displayIronwoodHeldBalance: preservePoolDisplay
+          ? displayIronwoodHeldBalance
+          : balance?.ironwoodHeld,
       displayOrchardBalance: preservePoolDisplay
           ? displayOrchardBalance
           : balance?.orchard,
@@ -398,7 +428,9 @@ class SyncState {
           : balance?.orchardPending,
       displayOrchardLockedBalance: preservePoolDisplay
           ? displayOrchardLockedBalance
-          : balance?.orchardLocked,
+          : balance == null
+          ? null
+          : balance.orchardLocked + balance.orchardHeld,
       displaySpendableFreshness: spendableDisplay.freshness,
       totalBalance: balance?.total,
       displayTotalBalance: preservePoolDisplay
@@ -413,7 +445,12 @@ class SyncState {
                 balance.ironwood +
                 balance.saplingPending +
                 balance.orchardPending +
-                balance.ironwoodPending,
+                balance.ironwoodPending +
+                balance.held,
+      historyHoldBalance: balance?.historyHold,
+      heldBalance: balance?.held,
+      orchardHeldBalance: balance?.orchardHeld,
+      ironwoodHeldBalance: balance?.ironwoodHeld,
       recentTransactions: fetchedRecentTransactions,
     );
   }
@@ -471,7 +508,18 @@ class SyncState {
     this.lastSyncCompletedAt,
     this.lastSyncFailedAt,
     this.phase = '',
+    BigInt? historyHoldBalance,
+    BigInt? heldBalance,
+    BigInt? orchardHeldBalance,
+    BigInt? ironwoodHeldBalance,
+    BigInt? displayIronwoodHeldBalance,
   }) : hasBalanceData = hasBalanceData ?? hasAccountScopedData,
+       historyHoldBalance = historyHoldBalance ?? BigInt.zero,
+       heldBalance = heldBalance ?? BigInt.zero,
+       orchardHeldBalance = orchardHeldBalance ?? BigInt.zero,
+       ironwoodHeldBalance = ironwoodHeldBalance ?? BigInt.zero,
+       displayIronwoodHeldBalance =
+           displayIronwoodHeldBalance ?? ironwoodHeldBalance ?? BigInt.zero,
        hasRecentTransactionsData =
            hasRecentTransactionsData ?? hasAccountScopedData,
        displayTargetPercentage = displayTargetPercentage ?? percentage,
@@ -514,7 +562,8 @@ class SyncState {
                (ironwoodBalance ?? BigInt.zero) +
                (saplingPendingBalance ?? BigInt.zero) +
                (orchardPendingBalance ?? BigInt.zero) +
-               (ironwoodPendingBalance ?? BigInt.zero),
+               (ironwoodPendingBalance ?? BigInt.zero) +
+               (heldBalance ?? BigInt.zero),
        totalBalance = totalBalance ?? BigInt.zero;
 
   SyncState copyWith({
@@ -574,6 +623,11 @@ class SyncState {
     DateTime? lastSyncCompletedAt,
     DateTime? lastSyncFailedAt,
     String? phase,
+    BigInt? historyHoldBalance,
+    BigInt? heldBalance,
+    BigInt? orchardHeldBalance,
+    BigInt? ironwoodHeldBalance,
+    BigInt? displayIronwoodHeldBalance,
   }) {
     return SyncState(
       accountUuid: accountUuid ?? this.accountUuid,
@@ -657,6 +711,12 @@ class SyncState {
       lastSyncCompletedAt: lastSyncCompletedAt ?? this.lastSyncCompletedAt,
       lastSyncFailedAt: lastSyncFailedAt ?? this.lastSyncFailedAt,
       phase: phase ?? this.phase,
+      historyHoldBalance: historyHoldBalance ?? this.historyHoldBalance,
+      heldBalance: heldBalance ?? this.heldBalance,
+      orchardHeldBalance: orchardHeldBalance ?? this.orchardHeldBalance,
+      ironwoodHeldBalance: ironwoodHeldBalance ?? this.ironwoodHeldBalance,
+      displayIronwoodHeldBalance:
+          displayIronwoodHeldBalance ?? this.displayIronwoodHeldBalance,
     );
   }
 
@@ -1378,6 +1438,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       totalBalance: initialBelongsToActiveAccount
           ? initial.totalBalance
           : BigInt.zero,
+      historyHoldBalance: initialBelongsToActiveAccount
+          ? initial.historyHoldBalance
+          : BigInt.zero,
+      heldBalance: initialBelongsToActiveAccount
+          ? initial.heldBalance
+          : BigInt.zero,
+      orchardHeldBalance: initialBelongsToActiveAccount
+          ? initial.orchardHeldBalance
+          : BigInt.zero,
+      ironwoodHeldBalance: initialBelongsToActiveAccount
+          ? initial.ironwoodHeldBalance
+          : BigInt.zero,
       recentTransactions: initialBelongsToActiveAccount
           ? initial.recentTransactions
           : const [],
@@ -1652,6 +1724,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displayIronwoodPendingBalance: canPreserveCompletedSpendable
             ? scopedPrev?.displayIronwoodPendingBalance
             : scopedPrev?.ironwoodPendingBalance,
+        displayIronwoodHeldBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayIronwoodHeldBalance
+            : scopedPrev?.ironwoodHeldBalance,
         displayOrchardBalance: canPreserveCompletedSpendable
             ? scopedPrev?.displayOrchardBalance
             : scopedPrev?.orchardBalance,
@@ -1677,7 +1752,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   scopedPrev.ironwoodBalance +
                   scopedPrev.saplingPendingBalance +
                   scopedPrev.orchardPendingBalance +
-                  scopedPrev.ironwoodPendingBalance,
+                  scopedPrev.ironwoodPendingBalance +
+                  scopedPrev.heldBalance,
+        historyHoldBalance: scopedPrev?.historyHoldBalance,
+        heldBalance: scopedPrev?.heldBalance,
+        orchardHeldBalance: scopedPrev?.orchardHeldBalance,
+        ironwoodHeldBalance: scopedPrev?.ironwoodHeldBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: startedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
@@ -2020,6 +2100,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         failure: failure,
         error: failure.rawMessage,
         isSyncComplete: false,
+        historyHoldBalance: scopedPrev?.historyHoldBalance,
+        heldBalance: scopedPrev?.heldBalance,
+        orchardHeldBalance: scopedPrev?.orchardHeldBalance,
+        ironwoodHeldBalance: scopedPrev?.ironwoodHeldBalance,
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
@@ -2043,6 +2127,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displayIronwoodBalance: scopedPrev?.displayIronwoodBalance,
         displayIronwoodPendingBalance:
             scopedPrev?.displayIronwoodPendingBalance,
+        displayIronwoodHeldBalance: scopedPrev?.displayIronwoodHeldBalance,
         displayOrchardBalance: scopedPrev?.displayOrchardBalance,
         displayOrchardPendingBalance: scopedPrev?.displayOrchardPendingBalance,
         displayOrchardLockedBalance: scopedPrev?.displayOrchardLockedBalance,
@@ -2149,6 +2234,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         checking: prev?.checking,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
+        historyHoldBalance: scopedPrev?.historyHoldBalance,
+        heldBalance: scopedPrev?.heldBalance,
+        orchardHeldBalance: scopedPrev?.orchardHeldBalance,
+        ironwoodHeldBalance: scopedPrev?.ironwoodHeldBalance,
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
@@ -2172,6 +2261,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displayIronwoodBalance: scopedPrev?.displayIronwoodBalance,
         displayIronwoodPendingBalance:
             scopedPrev?.displayIronwoodPendingBalance,
+        displayIronwoodHeldBalance: scopedPrev?.displayIronwoodHeldBalance,
         displayOrchardBalance: scopedPrev?.displayOrchardBalance,
         displayOrchardPendingBalance: scopedPrev?.displayOrchardPendingBalance,
         displayOrchardLockedBalance: scopedPrev?.displayOrchardLockedBalance,
@@ -2930,6 +3020,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? ironwoodPending;
     BigInt? spendable;
     BigInt? total;
+    BigInt? historyHold;
+    BigInt? held;
+    BigInt? orchardHeld;
+    BigInt? ironwoodHeld;
     bool? canShieldTransparentBalance;
     BigInt? shieldTransparentFee;
     BigInt? shieldTransparentAmount;
@@ -2954,7 +3048,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           sapling = balance.sapling;
           orchard = balance.orchard;
           ironwood = balance.ironwood;
-          orchardLocked = balance.orchardLocked;
+          orchardLocked = balance.orchardLocked + balance.orchardHeld;
           transparentPending = balance.transparentPending;
           transparentLocked = balance.transparentLocked;
           transparentAuthority = balance.transparentAuthority;
@@ -2966,6 +3060,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           ironwoodPending = balance.ironwoodPending;
           spendable = balance.spendable;
           total = balance.total;
+          historyHold = balance.historyHold;
+          held = balance.held;
+          orchardHeld = balance.orchardHeld;
+          ironwoodHeld = balance.ironwoodHeld;
           hasAuthoritativeBalance = true;
           _logSpendableDropBreakdown(balance, scopedPrev);
         } else {
@@ -3194,6 +3292,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             : useFetchedBalance
             ? ironwoodPending
             : carriedPrev?.ironwoodPendingBalance,
+        displayIronwoodHeldBalance: preservePoolDisplay
+            ? carriedPrev?.displayIronwoodHeldBalance
+            : useFetchedBalance
+            ? ironwoodHeld
+            : carriedPrev?.ironwoodHeldBalance,
         displayOrchardBalance: preservePoolDisplay
             ? carriedPrev?.displayOrchardBalance
             : useFetchedBalance
@@ -3224,8 +3327,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   (ironwood ?? BigInt.zero) +
                   (saplingPending ?? BigInt.zero) +
                   (orchardPending ?? BigInt.zero) +
-                  (ironwoodPending ?? BigInt.zero)
+                  (ironwoodPending ?? BigInt.zero) +
+                  (held ?? BigInt.zero)
             : carriedPrev?.displayShieldedBalance,
+        historyHoldBalance: useFetchedBalance
+            ? historyHold
+            : carriedPrev?.historyHoldBalance,
+        heldBalance: useFetchedBalance ? held : carriedPrev?.heldBalance,
+        orchardHeldBalance: useFetchedBalance
+            ? orchardHeld
+            : carriedPrev?.orchardHeldBalance,
+        ironwoodHeldBalance: useFetchedBalance
+            ? ironwoodHeld
+            : carriedPrev?.ironwoodHeldBalance,
         recentTransactions: useFetchedRecentTxs
             ? recentTxs
             : carriedPrev?.recentTransactions ?? const [],
@@ -3575,6 +3689,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? ironwoodPending;
     BigInt? spendable;
     BigInt? total;
+    BigInt? historyHold;
+    BigInt? held;
+    BigInt? orchardHeld;
+    BigInt? ironwoodHeld;
     bool? canShieldTransparentBalance;
     BigInt? shieldTransparentFee;
     BigInt? shieldTransparentAmount;
@@ -3608,7 +3726,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         sapling = balance.sapling;
         orchard = balance.orchard;
         ironwood = balance.ironwood;
-        orchardLocked = balance.orchardLocked;
+        orchardLocked = balance.orchardLocked + balance.orchardHeld;
         transparentPending = balance.transparentPending;
         transparentLocked = balance.transparentLocked;
         transparentAuthority = balance.transparentAuthority;
@@ -3620,6 +3738,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ironwoodPending = balance.ironwoodPending;
         spendable = balance.spendable;
         total = balance.total;
+        historyHold = balance.historyHold;
+        held = balance.held;
+        orchardHeld = balance.orchardHeld;
+        ironwoodHeld = balance.ironwoodHeld;
         hasAuthoritativeBalance = true;
         _logSpendableDropBreakdown(balance, scopedPrev);
       } else {
@@ -3798,6 +3920,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displayIronwoodPendingBalance: preservePoolDisplay
             ? accountFallback?.displayIronwoodPendingBalance
             : ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
+        displayIronwoodHeldBalance: preservePoolDisplay
+            ? accountFallback?.displayIronwoodHeldBalance
+            : ironwoodHeld ?? accountFallback?.ironwoodHeldBalance,
         displayOrchardBalance: preservePoolDisplay
             ? accountFallback?.displayOrchardBalance
             : orchard ?? accountFallback?.orchardBalance,
@@ -3820,8 +3945,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   (ironwood ?? BigInt.zero) +
                   (saplingPending ?? BigInt.zero) +
                   (orchardPending ?? BigInt.zero) +
-                  (ironwoodPending ?? BigInt.zero)
+                  (ironwoodPending ?? BigInt.zero) +
+                  (held ?? BigInt.zero)
             : accountFallback?.displayShieldedBalance,
+        historyHoldBalance: historyHold ?? accountFallback?.historyHoldBalance,
+        heldBalance: held ?? accountFallback?.heldBalance,
+        orchardHeldBalance: orchardHeld ?? accountFallback?.orchardHeldBalance,
+        ironwoodHeldBalance:
+            ironwoodHeld ?? accountFallback?.ironwoodHeldBalance,
         failure: current?.failure,
         error: current?.error,
         recentTransactions: didFetchRecentTxs

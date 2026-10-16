@@ -32,6 +32,7 @@ import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
+import '../history_hold_notice.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -298,8 +299,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final showsIronwoodOnlyBalance =
         balancePresentation == IronwoodHomeBalancePresentationMode.ironwoodOnly;
     final totalShieldedBalance = sync.displayShieldedBalance;
-    final ironwoodBalance =
-        sync.displayIronwoodBalance + sync.displayIronwoodPendingBalance;
+    final ironwoodBalance = sync.displayIronwoodHoldingsBalance;
     final displayedShieldedBalance = showsIronwoodOnlyBalance
         ? ironwoodBalance
         : totalShieldedBalance;
@@ -618,9 +618,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     final isImporting =
         !widget.sync.hasAccountScopedData && widget.sync.failure == null;
     final hasBalance = widget.showsIronwoodOnlyBalance
-        ? widget.sync.displayIronwoodBalance +
-                  widget.sync.displayIronwoodPendingBalance >
-              BigInt.zero
+        ? widget.sync.displayIronwoodHoldingsBalance > BigInt.zero
         : widget.sync.displayTotalBalance > BigInt.zero;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final migrationInProgress =
@@ -699,6 +697,13 @@ class _HomePaneState extends ConsumerState<_HomePane> {
             ? () => unawaited(ref.read(networkPrivacyProvider.notifier).retry())
             : widget.onRetrySync,
       );
+    }
+    final heldMessage = historyHoldNoticeMessage(
+      widget.sync,
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
+    if (heldMessage != null) {
+      return _HomeNoticeData(iconName: AppIcons.history, message: heldMessage);
     }
     return null;
   }
@@ -1054,15 +1059,17 @@ class _HomeNoticeData {
     required this.iconName,
     required this.message,
     this.detailMessage,
-    required this.actionLabel,
-    required this.onTap,
+    this.actionLabel,
+    this.onTap,
   });
 
   final String iconName;
   final String message;
   final String? detailMessage;
-  final String actionLabel;
-  final VoidCallback onTap;
+
+  /// Both or neither: a notice without an action only informs.
+  final String? actionLabel;
+  final VoidCallback? onTap;
 }
 
 class _HomeNoticeCard extends StatelessWidget {
@@ -1134,13 +1141,14 @@ class _HomeNoticeCard extends StatelessWidget {
               ],
             ),
           ),
-          AppButton(
-            onPressed: data.onTap,
-            variant: AppButtonVariant.ghost,
-            size: AppButtonSize.small,
-            trailing: const AppIcon(AppIcons.chevronForward),
-            child: Text(data.actionLabel),
-          ),
+          if (data.actionLabel case final actionLabel?)
+            AppButton(
+              onPressed: data.onTap,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.small,
+              trailing: const AppIcon(AppIcons.chevronForward),
+              child: Text(actionLabel),
+            ),
         ],
       ),
     );

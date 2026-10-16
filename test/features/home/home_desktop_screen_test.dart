@@ -1298,6 +1298,70 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
   });
 
+  testWidgets('home desktop notes funds held until sync finishes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          orchardBalance: BigInt.from(10_000_000),
+          spendableBalance: BigInt.from(10_000_000),
+          historyHoldBalance: BigInt.from(35_000_000),
+          heldBalance: BigInt.from(35_000_000),
+          orchardHeldBalance: BigInt.from(35_000_000),
+          totalBalance: BigInt.from(45_000_000),
+        ),
+      ),
+    );
+    // The syncing indicator keeps animating, so pump instead of settling.
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(_desktopBalanceText(tester), '0.45');
+
+    expect(find.byKey(const ValueKey('home_notice_card')), findsOneWidget);
+    expect(
+      find.text(
+        '0.35 ZEC is on hold until sync finishes, because it may have been '
+        'spent in history not checked yet.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Retry'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final ironwoodOnly in [false, true]) {
+    testWidgets('home desktop keeps funds an unsigned send reserves '
+        '(ironwood only: $ironwoodOnly)', (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            isSyncComplete: true,
+            heldBalance: BigInt.from(125_000_000),
+            ironwoodHeldBalance: BigInt.from(125_000_000),
+            totalBalance: BigInt.from(125_000_000),
+          ),
+          ironwoodHomeBalancePresentationMode: ironwoodOnly
+              ? IronwoodHomeBalancePresentationMode.ironwoodOnly
+              : IronwoodHomeBalancePresentationMode.allShielded,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(_desktopBalanceText(tester), '1.25');
+      // A reservation is not a history hold, so it names no hold.
+      expect(find.textContaining('on hold until sync finishes'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets('private status coverage notice opens privacy settings', (
     tester,
   ) async {
@@ -1980,3 +2044,9 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
     retryCalls++;
   }
 }
+
+String? _desktopBalanceText(WidgetTester tester) => tester
+    .widget<Text>(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    )
+    .data;

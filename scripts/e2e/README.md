@@ -47,6 +47,10 @@ scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
 
 # Competition, lost-response recovery, and removal after restart (three scenarios).
 scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh
+
+# Keep an unsigned Gift Card funding reservation in the Home balance.
+E2E_TEST_FILE=integration_test/regtest_payment_link_reserved_balance_test.dart \
+  scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
 ```
 
 The outcomes runner uses four process phases for three scenarios: competition

@@ -23,6 +23,8 @@ use crate::wallet::{
 };
 
 mod broadcast;
+mod held_value;
+pub(crate) mod history_hold;
 pub(crate) mod payment_link;
 pub(crate) use payment_link::{payment_link_resubmit_exclusions, payment_link_spend_evidence};
 pub(crate) mod hardware_authority;

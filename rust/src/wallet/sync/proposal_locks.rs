@@ -31,7 +31,7 @@ use crate::wallet::{
 
 use super::open_wallet_db;
 
-const TABLE: &str = "vizor_send_proposal_locks";
+pub(super) const TABLE: &str = "vizor_send_proposal_locks";
 const EPHEMERAL_TABLE: &str = "vizor_send_ephemeral_reservations";
 /// `KeyScope::Ephemeral` as encoded in the `addresses.key_scope` column.
 const EPHEMERAL_KEY_SCOPE: i64 = 2;

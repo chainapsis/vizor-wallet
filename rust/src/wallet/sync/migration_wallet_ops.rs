@@ -36,16 +36,25 @@ pub(super) type OrchardReceivedNote = ReceivedNote<ReceivedNoteId, orchard::Note
 ///
 /// V1 notes are intentionally excluded: the Orchard-to-Ironwood migration
 /// transaction shape is defined for the V2 notes created for NU6.3 migration.
+///
+/// This selector bypasses output locks, so notes held while their history is
+/// still being checked (`history_hold`) are removed here.
 pub(super) fn select_spendable_orchard_v2_notes(
     db: &WalletDatabase,
+    db_path: &str,
     account_id: AccountUuid,
     anchor_height: BlockHeight,
 ) -> Result<Vec<OrchardReceivedNote>, String> {
+    let held = super::history_hold::held_orchard_outputs(db_path)?;
     db.get_unspent_orchard_notes_at_historical_height(account_id, anchor_height)
         .map(|notes| {
             notes
                 .into_iter()
                 .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
+                .filter(|note| {
+                    let txid: [u8; 32] = *note.txid().as_ref();
+                    !held.contains(&(txid, u32::from(note.output_index())))
+                })
                 .collect()
         })
         .map_err(|e| format!("Failed to select Orchard notes: {e}"))

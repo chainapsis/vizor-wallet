@@ -759,6 +759,71 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('held funds show a notice until sync finishes', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState().copyWith(
+          isSyncing: true,
+          historyHoldBalance: BigInt.from(35_000_000),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final notice = find.byKey(const ValueKey('mobile_history_hold_notice'));
+    expect(
+      find.descendant(
+        of: notice,
+        matching: find.text(
+          '0.35 ZEC is on hold until sync finishes, because it may have been '
+          'spent in history not checked yet.',
+        ),
+      ),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('keeps funds an unsigned send reserves in the balance', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(_syncedState().copyWith(heldBalance: BigInt.from(125_000_000))),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('1.25 ZEC', findRichText: true), findsOneWidget);
+    // A reservation is not a history hold, so it names no hold.
+    expect(
+      find.byKey(const ValueKey('mobile_history_hold_notice')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'counts held Orchard in the balance while migration is required',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          _syncedState(orchardBalance: BigInt.from(50_000_000)).copyWith(
+            orchardHeldBalance: BigInt.from(100_000_000),
+            heldBalance: BigInt.from(125_000_000),
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.start(
+            network: 'main',
+            accountUuid: 'account-1',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // Migration-required Home shows Orchard only, so held Ironwood stays out.
+      expect(find.text('1.50 ZEC'), findsOneWidget);
+    },
+  );
+
   testWidgets('private status coverage notice opens settings', (tester) async {
     await tester.pumpWidget(
       _app(
