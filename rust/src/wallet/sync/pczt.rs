@@ -447,10 +447,12 @@ fn prepare_ironwood_commitments() {
 fn orchard_circuit_version_for_consensus_branch(
     consensus_branch_id: u32,
 ) -> orchard::circuit::OrchardCircuitVersion {
-    if matches!(
-        zcash_protocol::consensus::BranchId::try_from(consensus_branch_id),
-        Ok(zcash_protocol::consensus::BranchId::Nu6_3)
-    ) {
+    use zcash_protocol::consensus::{BranchId, OrchardProtocolRevision};
+
+    // NU7 keeps Orchard protocol V3, so it shares the post-NU6.3 circuit.
+    if BranchId::try_from(consensus_branch_id)
+        .is_ok_and(|branch| branch.orchard_protocol_revision() == Some(OrchardProtocolRevision::V3))
+    {
         return ironwood_orchard_circuit_version();
     }
     orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2
@@ -3027,6 +3029,13 @@ mod tests {
         // the same keys as a V6 one (both carry `orchard_v3`-format bundles).
         assert_eq!(
             orchard_circuit_version_for_consensus_branch(u32::from(BranchId::Nu6_3)),
+            orchard::bundle::BundleVersion::orchard_v3().circuit_version(),
+        );
+
+        // NU7 keeps Orchard protocol V3, so it must not fall back to the
+        // legacy circuit.
+        assert_eq!(
+            orchard_circuit_version_for_consensus_branch(u32::from(BranchId::Nu7)),
             orchard::bundle::BundleVersion::orchard_v3().circuit_version(),
         );
     }
