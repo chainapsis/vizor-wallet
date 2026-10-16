@@ -1031,7 +1031,7 @@ async fn projected_history_shows_a_known_debit_with_change_as_provisional() {
 async fn public_hardware_retry_of_own_stored_spend_reaches_submission() {
     use crate::wallet::sync_engine::{send_transaction_signalling, test_lwd::CapturingLwd};
     use transparent::bundle::TxOut;
-    use zcash_client_backend::data_api::wallet::decrypt_and_store_transaction;
+    use zcash_client_backend::data_api::wallet::decrypt_and_store_transaction_with_one_time_ivks;
     use zcash_client_backend::wallet::WalletTransparentOutput;
     let mut wallet = wallet();
     wallet
@@ -1066,7 +1066,7 @@ async fn public_hardware_retry_of_own_stored_spend_reaches_submission() {
     .unwrap();
     assert_eq!(lwd.count("/SendTransaction"), 1);
     // The real post-broadcast fallback store links this transaction's own spend.
-    decrypt_and_store_transaction(&NETWORK, &mut wallet.db, &tx, None).unwrap();
+    decrypt_and_store_transaction_with_one_time_ivks(&NETWORK, &mut wallet.db, &tx, None).unwrap();
     let spend_count: u32 = rusqlite::Connection::open(&wallet.path).unwrap().query_row(
         "SELECT COUNT(*) FROM transparent_received_output_spends s JOIN transactions t ON t.id_tx=s.transaction_id WHERE t.txid=?1",
         [tx.txid().as_ref()], |r| r.get(0),

@@ -119,6 +119,7 @@ pub fn import_wallet_with_passphrase_and_birthday(
         REGTEST_NETWORK.into(),
         path_str(&db_path),
         Some(account_name.into()),
+        false,
     )
     .expect("import_wallet");
     (tempdir, result)

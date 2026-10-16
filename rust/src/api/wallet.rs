@@ -2,7 +2,7 @@ use std::panic;
 
 use crate::wallet::sync_engine::transparent_ledger::import_discovery::PrivateAccountDiscovery;
 use crate::wallet::sync_engine::{enhancement::EnhancementPolicy, TransparentLookupGate};
-use crate::wallet::{keys, network::WalletNetwork, transparent_receive_cache};
+use crate::wallet::{keys, network::WalletNetwork, one_time_ivk, transparent_receive_cache};
 use bip0039::{Count, English, Mnemonic};
 use tonic::transport::Channel;
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
@@ -322,6 +322,7 @@ pub fn create_wallet(
 
         let (account_uuid, unified_address) =
             keys::init_db_and_create_account(&db_path, network, &seed, birthday_height, name)?;
+        one_time_ivk::mark_fresh(&db_path, network, &account_uuid);
 
         Ok(WalletCreationResult {
             mnemonic,
@@ -337,6 +338,9 @@ pub fn create_wallet(
 /// (the chain tip) and payment-link claims (the height from the shared link).
 /// Restores go through [`import_software_wallet_with_account_discovery`], which
 /// rounds the birthday instead.
+///
+/// `fresh` declares that the app generated `mnemonic` for this wallet, so it has no
+/// one-time payments to restore. A payment-link claim's mnemonic came from the link.
 pub fn import_wallet(
     mnemonic: String,
     bip39_passphrase: String,
@@ -344,6 +348,7 @@ pub fn import_wallet(
     network: String,
     db_path: String,
     account_name: Option<String>,
+    fresh: bool,
 ) -> Result<WalletImportResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
@@ -352,6 +357,9 @@ pub fn import_wallet(
 
         let (account_uuid, unified_address) =
             keys::init_db_and_create_account(&db_path, network, &seed, birthday_height, name)?;
+        if fresh {
+            one_time_ivk::mark_fresh(&db_path, network, &account_uuid);
+        }
 
         Ok(WalletImportResult {
             unified_address,
@@ -381,6 +389,7 @@ pub fn add_account(
         // with a different seed (seed fingerprint mismatch would cause an error).
         let (account_uuid, unified_address) =
             keys::add_account(&db_path, network, &name, &seed, birthday_height)?;
+        one_time_ivk::mark_fresh(&db_path, network, &account_uuid);
 
         Ok(AccountCreationResult {
             account_uuid,
@@ -1540,6 +1549,7 @@ mod tests {
             main(),
             from_mnemonic_db.clone(),
             None,
+            false,
         )
         .unwrap();
         assert_eq!(
@@ -1805,6 +1815,7 @@ mod tests {
                 network_name.clone(),
                 db_path.clone(),
                 Some("Gift Card".to_string()),
+                false,
             )
             .unwrap();
             assert_eq!(imported.unified_address, account.unified_address);
@@ -1836,6 +1847,7 @@ mod tests {
             "main".to_string(),
             db_path.clone(),
             Some("BIP39 vector".to_string()),
+            false,
         )
         .unwrap();
 
@@ -1863,6 +1875,7 @@ mod tests {
                 "main".to_string(),
                 db_path.to_str().unwrap().to_string(),
                 Some("Passphrase isolation".to_string()),
+                false,
             )
             .unwrap()
         }

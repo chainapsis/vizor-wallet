@@ -1732,7 +1732,7 @@ async fn store_and_broadcast_pczts_inner(
     proposal: Option<(u64, &str)>,
 ) -> Result<StoreAndBroadcastPcztsResult, WalletFailure> {
     use zcash_client_backend::data_api::wallet::{
-        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
+        decrypt_and_store_transaction_with_one_time_ivks, extract_and_store_transaction_from_pczt,
     };
 
     // This performs all correlation, dependency, signature, proof, and
@@ -2047,7 +2047,7 @@ async fn store_and_broadcast_pczts_inner(
                     if mined[index] {
                         continue;
                     }
-                    decrypt_and_store_transaction(
+                    decrypt_and_store_transaction_with_one_time_ivks(
                         &network,
                         transactional_db,
                         &item.extracted.tx,
@@ -2400,7 +2400,7 @@ pub async fn extract_and_broadcast_pczt(
     output_params_path: Option<&str>,
 ) -> Result<ExtractAndBroadcastPcztResult, WalletFailure> {
     use zcash_client_backend::data_api::wallet::{
-        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
+        decrypt_and_store_transaction_with_one_time_ivks, extract_and_store_transaction_from_pczt,
     };
 
     // Load Sapling verifying keys once if the caller supplied params.
@@ -2469,9 +2469,10 @@ pub async fn extract_and_broadcast_pczt(
                     // proprietary fields is lost, but correctness is
                     // preserved — the spent notes no longer appear
                     // spendable.
-                    decrypt_and_store_transaction(&network, &mut db, &tx, None).map_err(
-                        |fallback_err| format!("Primary: {primary_err}. Fallback: {fallback_err}"),
-                    )?;
+                    decrypt_and_store_transaction_with_one_time_ivks(&network, &mut db, &tx, None)
+                        .map_err(|fallback_err| {
+                            format!("Primary: {primary_err}. Fallback: {fallback_err}")
+                        })?;
                 }
             }
 

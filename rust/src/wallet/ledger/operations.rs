@@ -1402,7 +1402,7 @@ mod tests {
         use secrecy::ExposeSecret;
         use transparent::keys::{AccountPrivKey, NonHardenedChildIndex, TransparentKeyScope};
         use zcash_client_backend::{
-            data_api::{wallet::decrypt_and_store_transaction, WalletWrite},
+            data_api::{wallet::decrypt_and_store_transaction_with_one_time_ivks, WalletWrite},
             wallet::WalletTransparentOutput,
         };
         let dir = tempfile::tempdir().unwrap();
@@ -1560,7 +1560,7 @@ mod tests {
             zcash_protocol::consensus::BranchId::Nu5,
         )
         .unwrap();
-        decrypt_and_store_transaction(
+        decrypt_and_store_transaction_with_one_time_ivks(
             &WalletNetwork::Regtest,
             &mut db,
             &tx,

@@ -1129,7 +1129,7 @@ async fn interrupted_outcome_write_recovers_in_a_fresh_offline_process() {
         keys::{AccountPrivKey, NonHardenedChildIndex, TransparentKeyScope},
     };
     use zcash_client_backend::{
-        data_api::{wallet::decrypt_and_store_transaction, WalletWrite},
+        data_api::{wallet::decrypt_and_store_transaction_with_one_time_ivks, WalletWrite},
         wallet::WalletTransparentOutput,
     };
     use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
@@ -1231,7 +1231,7 @@ async fn interrupted_outcome_write_recovers_in_a_fresh_offline_process() {
     let mut db =
         open_wallet_db_with_timeout(&wallet.path, WalletNetwork::Regtest, WALLET_DB_BUSY_TIMEOUT)
             .unwrap();
-    decrypt_and_store_transaction(
+    decrypt_and_store_transaction_with_one_time_ivks(
         &WalletNetwork::Regtest,
         &mut db,
         &signed.tx,

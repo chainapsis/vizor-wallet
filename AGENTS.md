@@ -332,7 +332,7 @@ Flutter + Rust FFI via `flutter_rust_bridge` v2. All Zcash cryptography and sync
 
 ### Multi-Account Model
 
-Single DB (`zcash_wallet.db`) holds multiple accounts from different seeds. Single sync loop decrypts notes for all accounts simultaneously via `scan_cached_blocks` (uses all UFVKs). UI shows one "active account" at a time.
+Single DB (`zcash_wallet.db`) holds multiple accounts from different seeds. Single sync loop decrypts notes for all accounts simultaneously via `scan_cached_blocks_with_one_time_ivks` (uses all UFVKs and open one-time IVKs). UI shows one "active account" at a time.
 
 **Account creation strategy** (due to `zcash_client_sqlite` constraints):
 - **First account**: `create_account()` → `AccountSource::Derived`. Uses `init_wallet_db(Some(seed))` so the seed fingerprint is pinned to the DB and future seed-requiring migrations can verify relevance.
@@ -499,7 +499,11 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 1. tonic gRPC → lightwalletd (TLS via `tls-ring`)
 2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
 3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O)
-4. `scan_cached_blocks` from memory (100 blocks per batch)
+4. `scan_cached_blocks_with_one_time_ivks` from memory (100 blocks per batch).
+   Every scan and transaction decryption uses the library's one-time IVK entry
+   points, since the wallet DB refuses results that skipped its open one-time
+   IVKs; `rust/clippy.toml` disallows the plain `scan_cached_blocks` and
+   `decrypt_and_store_transaction`.
 5. Enhancement: process each work queue separately. Status observations come
    from `transaction_status_work()`, which routes each obligation to public
    `GetTransaction` or private Status PIR. Payload recovery comes from
@@ -512,15 +516,17 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 6. Progress streamed to Dart via FRB `StreamSink` per batch. Each event has a
    `kind` (`SyncEventKind` in `sync_engine/mod.rs`, which replaced the old
    `is_complete` flag): `Progress`, `Completed`, or `FollowupUpdated`.
-7. After `Completed`, two follow-up loops run under the same cancellation and
-   never fail the sync: private transparent recovery over the transparent PIR
-   service (`transparent_followup`,
-   `sync_engine/transparent_ledger.rs`, a no-op unless Private queries selects
-   it) and transparent txid details (`sync_engine/transparent_details.rs`, over
-   txid display PIR under private policy or gated `GetTransaction` otherwise).
-   Background preparation syncs (mode 2) skip both. When one changes wallet
-   data it reports `FollowupUpdated`, and Dart re-reads balances, history and
-   open receipts without counting a second completion. The stream and the
+7. After `Completed`, follow-ups run under the same cancellation and never fail
+   the sync: private transparent recovery over the transparent PIR service
+   (`transparent_followup`, `sync_engine/transparent_ledger.rs`, a no-op unless
+   Private queries selects it), transparent txid details
+   (`sync_engine/transparent_details.rs`, over txid display PIR under private
+   policy or gated `GetTransaction` otherwise), and, last and on mainnet only,
+   restore sweeps of one-time swap keys through the receiver directory
+   (`sync_engine/swap_private.rs`, at most three minutes). Background
+   preparation syncs (mode 2) skip all three. When one changes wallet data it
+   reports `FollowupUpdated`, and Dart re-reads balances, history and open
+   receipts without counting a second completion. The stream and the
    `SYNC_RUNNING` guard end only after the follow-ups (and the deferred
    inactive-account UTXO refresh) finish.
 
@@ -891,7 +897,7 @@ development; breaking them is a correctness or data-loss regression):
    as a send failure.** The primary store path is
    `extract_and_store_transaction_from_pczt` (preserves rich PCZT
    recipient/memo metadata). On failure, fall back to
-   `decrypt_and_store_transaction` — the same path sync uses when it
+   `decrypt_and_store_transaction_with_one_time_ivks` — the same path sync uses when it
    discovers one of our sent txs on-chain. Correctness is preserved
    (spent notes get marked spent via nullifier matching) at the cost of
    some PCZT-only display metadata. Only if both paths fail do we

@@ -223,6 +223,21 @@ class AccountSetupRecoveryGeneration extends Notifier<int> {
   void completed() => state++;
 }
 
+/// Counts completed software seed imports, Wallet Link restores of software
+/// accounts included; sync follows each one (see `kSeedImportSyncWindow`).
+/// Creating a wallet does not count.
+final seedImportProvider = NotifierProvider<SeedImportCounter, int>(
+  SeedImportCounter.new,
+);
+
+class SeedImportCounter extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// Records a completed seed import.
+  void imported() => state++;
+}
+
 class AccountNotifier extends AsyncNotifier<AccountState> {
   AccountNotifier() : _storage = AppSecureStore.instance;
 
@@ -390,6 +405,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           network: network,
           dbPath: dbPath,
           accountName: accountName,
+          fresh: true,
         );
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
@@ -526,6 +542,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           network: network,
           dbPath: dbPath,
           accountName: accountName,
+          fresh: true,
         );
         createdUuid = created.accountUuid;
         createdAddress = created.unifiedAddress;
@@ -945,6 +962,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
 
       if (isFirstWalletAccount) await _clearPendingAccountSetup();
+      ref.read(seedImportProvider.notifier).imported();
 
       log(
         'importAccount: success, active=$activeAccountUuid, '
@@ -2578,6 +2596,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       String? firstImportedAddress;
       var nextOrder = prev.accounts.length;
       var skippedDuplicateCount = 0;
+      var importedSoftware = false;
 
       for (final input in accountsToImport) {
         late final String accountUuid;
@@ -2634,6 +2653,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             input.mnemonic ?? '',
             bip39Passphrase: input.bip39Passphrase,
           );
+          importedSoftware = true;
         }
         firstImportedUuid ??= accountUuid;
         firstImportedAddress ??= unifiedAddress;
@@ -2678,6 +2698,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ),
       );
       if (prev.accounts.isEmpty) await _clearPendingAccountSetup();
+      if (importedSoftware) ref.read(seedImportProvider.notifier).imported();
       log(
         'importLinkedWalletAccounts: success, '
         'imported=${importedAccounts.length}, '

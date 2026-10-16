@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use zcash_client_backend::{
     data_api::{
         transparent_ledger::{TransparentLedgerMode, TransparentLedgerWrite},
-        wallet::{decrypt_and_store_transaction, ConfirmationsPolicy},
+        wallet::{decrypt_and_store_transaction_with_one_time_ivks, ConfirmationsPolicy},
         TransactionDataRequest,
     },
     proto::service::RawTransaction,
@@ -117,7 +117,7 @@ impl Wallet {
     /// Records the first leg of a ZIP 320 pair funding `address`.
     fn use_address(&mut self, address: TransparentAddress, n: u8) {
         let tx = legacy_transaction(OutPoint::new([n; 32], 0), address, 50_000);
-        decrypt_and_store_transaction(
+        decrypt_and_store_transaction_with_one_time_ivks(
             &self.network,
             &mut self.db,
             &tx,
@@ -131,7 +131,7 @@ impl Wallet {
     fn fund_first_leg(&mut self, address: TransparentAddress) -> Transaction {
         let external = self.external_address();
         let funding = legacy_transaction(OutPoint::new([7; 32], 0), external, 60_000);
-        decrypt_and_store_transaction(
+        decrypt_and_store_transaction_with_one_time_ivks(
             &self.network,
             &mut self.db,
             &funding,
@@ -144,7 +144,7 @@ impl Wallet {
             50_000,
             FIRST_LEG_EXPIRY,
         );
-        decrypt_and_store_transaction(
+        decrypt_and_store_transaction_with_one_time_ivks(
             &self.network,
             &mut self.db,
             &first_leg,
@@ -163,7 +163,7 @@ impl Wallet {
             40_000,
             expiry,
         );
-        decrypt_and_store_transaction(
+        decrypt_and_store_transaction_with_one_time_ivks(
             &self.network,
             &mut self.db,
             &second_leg,
@@ -355,7 +355,7 @@ async fn unmined_first_leg_addresses_are_not_queried() {
     let stale = w.ephemeral[0];
     // A first leg stored at creation whose broadcast never mined.
     let tx = legacy_transaction(OutPoint::new([1; 32], 0), stale, 50_000);
-    decrypt_and_store_transaction(&w.network, &mut w.db, &tx, None).unwrap();
+    decrypt_and_store_transaction_with_one_time_ivks(&w.network, &mut w.db, &tx, None).unwrap();
     let now = SystemTime::now();
     w.set_check_time(&stale, now - Duration::from_secs(60));
     assert!(
@@ -521,7 +521,7 @@ async fn a_newly_recognized_output_in_a_known_transaction_is_reported() {
     w.use_address(used, 1);
     // A stored transaction whose output to the address was not recognized.
     let returned = legacy_transaction(OutPoint::new([9; 32], 0), used, 70_000);
-    decrypt_and_store_transaction(
+    decrypt_and_store_transaction_with_one_time_ivks(
         &w.network,
         &mut w.db,
         &returned,

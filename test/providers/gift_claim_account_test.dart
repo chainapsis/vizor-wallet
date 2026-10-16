@@ -98,6 +98,77 @@ void main() {
     requireUnlockedSession: true,
   );
 
+  test('a seed import counts for the post-import sync window', () async {
+    await container
+        .read(appSecurityProvider.notifier)
+        .preparePasswordSetup(_passcode);
+    await accounts().importAccount(mnemonic: _mnemonic, name: _name);
+    expect(container.read(seedImportProvider), 1);
+  });
+
+  test('creating a wallet does not count as a seed import', () async {
+    await container
+        .read(appSecurityProvider.notifier)
+        .preparePasswordSetup(_passcode);
+    await accounts().createAccountFromMnemonic(
+      mnemonic: _mnemonic,
+      name: _name,
+    );
+    expect(container.read(accountProvider).requireValue.hasAccounts, isTrue);
+    expect(container.read(seedImportProvider), 0);
+  });
+
+  group('Wallet Link', () {
+    const software = LinkedWalletAccountImport(
+      name: _name,
+      birthdayHeight: 3000000,
+      zip32AccountIndex: 0,
+      isHardware: false,
+      isSeedAnchor: true,
+      mnemonic: _mnemonic,
+      sourceAccountUuid: 'source-1',
+    );
+    final hardware = LinkedWalletAccountImport(
+      name: 'Hardware wallet',
+      birthdayHeight: 3000000,
+      zip32AccountIndex: 3,
+      isHardware: true,
+      isSeedAnchor: false,
+      hardwareSignerKind: HardwareSignerKind.keystone,
+      ufvk: 'hardware-ufvk',
+      seedFingerprint: List.filled(32, 1),
+      sourceAccountUuid: 'source-hardware',
+    );
+
+    Future<void> import(List<LinkedWalletAccountImport> entries) async {
+      await container
+          .read(appSecurityProvider.notifier)
+          .preparePasswordSetup(_passcode);
+      await accounts().importLinkedWalletAccounts(
+        network: kZcashDefaultNetworkName,
+        accountsToImport: entries,
+      );
+    }
+
+    test('a software restore counts as a seed import', () async {
+      await import([hardware, software]);
+      expect(container.read(seedImportProvider), 1);
+    });
+
+    test('a hardware-only import does not count', () async {
+      await import([hardware]);
+      expect(container.read(accountProvider).requireValue.hasAccounts, isTrue);
+      expect(container.read(seedImportProvider), 0);
+    });
+
+    test('a duplicate-only import does not count', () async {
+      _rust.softwareAccountExists = true;
+      await import([hardware, software]);
+      expect(_rust.hardwareImportCalls, 1);
+      expect(container.read(seedImportProvider), 0);
+    });
+  });
+
   for (final key in ['zcash_account_mnemonic_uuid-1', 'zcash_accounts']) {
     test(
       'Wallet Link preserves its credential and recovers after $key fails',
@@ -602,6 +673,7 @@ void main() {
       jsonDecode(_rust.pendingAtImport!),
       containsPair('mnemonic', _mnemonic),
     );
+    expect(_rust.freshImports.last, isTrue);
     expect(await store.readAccountMnemonic(uuid), _mnemonic);
     await accounts().clearPendingGiftAccountSetup(accountUuid: 'uuid-1');
     expect(await pending(), isNull);
@@ -1588,12 +1660,15 @@ class _GiftAccountRustApi implements RustLibApi {
   bool importedAdditionalAccount = false;
   String? importedDbPath;
   int importCalls = 0;
+  final freshImports = <bool>[];
   int addCalls = 0;
   int hardwareImportCalls = 0;
   final hardwareUfvks = <String, String>{};
   int listCalls = 0;
+  bool softwareAccountExists = false;
 
   void reset() {
+    softwareAccountExists = false;
     importError = null;
     listError = null;
     createDbBeforeImportError = false;
@@ -1705,8 +1780,10 @@ class _GiftAccountRustApi implements RustLibApi {
     required String network,
     required String dbPath,
     String? accountName,
+    required bool fresh,
   }) async {
     importCalls++;
+    freshImports.add(fresh);
     importedDbPath = dbPath;
     pendingAtImport = await store.readSecretStringWithOptions(
       kPendingAccountMnemonicStorageKey,
@@ -1739,6 +1816,9 @@ class _GiftAccountRustApi implements RustLibApi {
     required int zip32AccountIndex,
     required bool isFirstWalletAccount,
   }) async {
+    if (softwareAccountExists) {
+      throw Exception('This account is already in your wallet.');
+    }
     importCalls++;
     importedDbPath = dbPath;
     pendingAtImport = await store.readSecretStringWithOptions(
@@ -1780,6 +1860,7 @@ class _GiftAccountRustApi implements RustLibApi {
       network: network,
       dbPath: dbPath,
       accountName: firstAccountName,
+      fresh: false,
     );
     importedBip39Passphrase = bip39Passphrase;
     importedAdditionalAccount = additionalAccountIndices.contains(1);

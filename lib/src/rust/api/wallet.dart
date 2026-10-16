@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `accounts_within_used_batches`, `block_height_from_u64`, `catch`, `discover_privately`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_error`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
@@ -64,6 +65,9 @@ Future<WalletCreationResult> createWallet({
 /// (the chain tip) and payment-link claims (the height from the shared link).
 /// Restores go through [`import_software_wallet_with_account_discovery`], which
 /// rounds the birthday instead.
+///
+/// `fresh` declares that the app generated `mnemonic` for this wallet, so it has no
+/// one-time payments to restore. A payment-link claim's mnemonic came from the link.
 Future<WalletImportResult> importWallet({
   required String mnemonic,
   required String bip39Passphrase,
@@ -71,6 +75,7 @@ Future<WalletImportResult> importWallet({
   required String network,
   required String dbPath,
   String? accountName,
+  required bool fresh,
 }) => RustLib.instance.api.crateApiWalletImportWallet(
   mnemonic: mnemonic,
   bip39Passphrase: bip39Passphrase,
@@ -78,6 +83,7 @@ Future<WalletImportResult> importWallet({
   network: network,
   dbPath: dbPath,
   accountName: accountName,
+  fresh: fresh,
 );
 
 /// Add a newly created account to an existing wallet database.

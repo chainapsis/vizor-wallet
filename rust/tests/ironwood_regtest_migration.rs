@@ -35,6 +35,7 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
         NETWORK.to_string(),
         db.clone(),
         Some("Ironwood migration E2E".to_string()),
+        false,
     )
     .expect("import deterministic regtest wallet");
 

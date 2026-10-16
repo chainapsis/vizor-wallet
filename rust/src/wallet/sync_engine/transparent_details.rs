@@ -63,7 +63,7 @@ use zcash_client_backend::data_api::{
         TransparentDetailOutcome, TransparentDetailRequest, TransparentDetailWrite,
         TransparentDisplayStore, TransparentLedgerMode, TransparentLedgerRead,
     },
-    wallet::decrypt_and_store_transaction,
+    wallet::decrypt_and_store_transaction_with_one_time_ivks,
     WalletRead,
 };
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
@@ -397,7 +397,12 @@ pub(crate) async fn run<S: DetailSource>(
                     if !gate.permits_applied(tx.applied_transparent_policy()?) {
                         return Ok(false);
                     }
-                    decrypt_and_store_transaction(&network, tx, &transaction, mined_height)?;
+                    decrypt_and_store_transaction_with_one_time_ivks(
+                        &network,
+                        tx,
+                        &transaction,
+                        mined_height,
+                    )?;
                     Ok::<_, SqliteClientError>(true)
                 })
             },
@@ -896,7 +901,12 @@ pub(crate) fn enhance_publicly(
                     if PublicLoadIdentity::of(tx)? != started {
                         return Ok(None);
                     }
-                    decrypt_and_store_transaction(&network, tx, &transaction, mined_height)?;
+                    decrypt_and_store_transaction_with_one_time_ivks(
+                        &network,
+                        tx,
+                        &transaction,
+                        mined_height,
+                    )?;
                     // Read through this transaction, not a second connection
                     // that could be opened on replacement storage.
                     Ok::<_, SqliteClientError>(Some(tx.get_transaction(txid)?.is_some()))

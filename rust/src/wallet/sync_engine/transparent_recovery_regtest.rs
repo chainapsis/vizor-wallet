@@ -212,6 +212,7 @@ fn pre_sapling_recovery_shields_and_other_wallet_detects_the_spend() {
             "regtest".into(),
             path.into(),
             Some("recovery".into()),
+            false,
         )
         .unwrap()
     };

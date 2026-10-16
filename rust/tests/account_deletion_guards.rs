@@ -62,6 +62,7 @@ fn fresh_process_refuses_incompatible_and_damaged_policy() {
             "regtest".into(),
             path.clone(),
             Some("First".into()),
+            false,
         )
         .unwrap()
         .account_uuid;
@@ -99,6 +100,7 @@ fn cleanup_failure_rolls_back_library_account_deletion() {
         "regtest".into(),
         path.clone(),
         Some("First".into()),
+        false,
     )
     .unwrap()
     .account_uuid;
@@ -137,6 +139,7 @@ fn missing_account_refuses_without_mutation() {
         "regtest".into(),
         path.clone(),
         Some("First".into()),
+        false,
     )
     .unwrap();
     wallet::add_account(

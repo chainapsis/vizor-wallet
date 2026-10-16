@@ -13,7 +13,7 @@ use rust_lib_zcash_wallet::{api::sync::get_balance, wallet::network::WalletNetwo
 use voting_crypto_deps::rand::{rngs::OsRng, Rng};
 use zcash_client_backend::{
     data_api::{
-        chain::{error::Error, scan_cached_blocks, BlockSource, ChainState},
+        chain::{error::Error, scan_cached_blocks_with_one_time_ivks, BlockSource, ChainState},
         Account as _, AccountBirthday, AccountPurpose, WalletWrite, Zip32Derivation,
     },
     proto::compact_formats::{ChainMetadata, CompactBlock, CompactOrchardAction, CompactTx},
@@ -111,7 +111,7 @@ pub(super) fn prepare_wallet(path: &str, ufvk: &str, fingerprint: &[u8]) -> Resu
     }
     db.update_chain_tip(height + 11)
         .map_err(|e| e.to_string())?;
-    scan_cached_blocks(
+    scan_cached_blocks_with_one_time_ivks(
         &network,
         &FixtureBlocks(blocks),
         &mut db,

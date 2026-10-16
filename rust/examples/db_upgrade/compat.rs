@@ -56,6 +56,9 @@ pub fn import_hardware_account(
 /// Stores `raw` through the build's library ingestion path, as sync and
 /// enhancement do; returns its txid. The handle is the one this base's own
 /// wallet code opens, unconfigured beyond what that base requires.
+// Base builds compile this file too, and their library may predate the one-time
+// IVK entry point. The probe's wallets never hold a one-time IVK.
+#[allow(clippy::disallowed_methods)]
 pub fn store_transaction(db_path: &str, raw: &[u8], mined_height: u32) -> String {
     use rust_lib_zcash_wallet::wallet::network::WalletNetwork;
     use voting_crypto_deps::rand::rngs::OsRng;
