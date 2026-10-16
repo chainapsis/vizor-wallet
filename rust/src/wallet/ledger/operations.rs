@@ -27,6 +27,7 @@ pub(crate) struct SignedOperationMetadata {
     pub kind: String,
     pub external_ref: Option<String>,
     pub expiry_height: Option<u32>,
+    pub shielded_zatoshi: Option<u64>,
     pub state: String,
     pub txid: Option<String>,
     pub status: Option<String>,
@@ -241,6 +242,86 @@ pub(crate) fn checkpoint_batch(
     })
 }
 
+/// Upgrade ownerless shielding checkpoints before the first balance snapshot.
+/// Wallet locks and outbox attribution share a transaction; no signed bytes change.
+pub(crate) fn recover_shield_reservations(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    use voting_crypto_deps::rand::rngs::OsRng;
+    use zcash_client_backend::{
+        data_api::OutputLockStore,
+        wallet::{LockOwner, OutputRef},
+    };
+    use zcash_client_sqlite::util::SystemClock;
+    use zcash_client_sqlite::{SqlTransaction, WalletDb};
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::{consensus::BlockHeight, PoolType};
+    with_wallet_db_write_lock("ledger.recover_shield_reservations", || {
+        let mut conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&conn)?;
+        proposal_locks::ensure_schema(&conn)?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let rows = {
+            let mut stmt = tx.prepare(&format!("SELECT operation_id, proof_pczt, expiry_height FROM {TABLE} op
+                WHERE network = ?1 AND kind = 'shield'
+                AND (state = 'signed_pending_broadcast' OR
+                    (state = 'result_pending_ack' AND status NOT IN ('broadcasted', 'expired')))
+                AND NOT EXISTS (SELECT 1 FROM vizor_send_proposal_locks l WHERE l.operation_id = op.operation_id)"))
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([network_name(network)], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, Option<u32>>(2)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| e.to_string())?
+        };
+        for (operation_id, bytes, expiry) in rows {
+            let mut inputs = std::collections::BTreeSet::new();
+            let mut owner = None;
+            for bytes in decode_pczt_batch(&bytes)? {
+                if let Some(bound) = proposal_locks::pczt_owner(&bytes)? {
+                    if owner.is_some_and(|old| old != bound) {
+                        return Err("Shield checkpoint has different reservation owners".into());
+                    }
+                    owner = Some(bound);
+                }
+                let pczt = pczt::Pczt::parse(&bytes)
+                    .map_err(|e| format!("Recover shield checkpoint: {e:?}"))?;
+                for input in pczt.transparent().inputs() {
+                    inputs.insert(OutputRef::new(
+                        TxId::from_bytes(*input.prevout_txid()),
+                        PoolType::TRANSPARENT,
+                        *input.prevout_index(),
+                    ));
+                }
+            }
+            let inputs = inputs.into_iter().collect::<Vec<_>>();
+            if inputs.is_empty() {
+                return Err("Shield checkpoint has no transparent inputs".into());
+            }
+            let owner = owner.unwrap_or_else(|| LockOwner::random(&mut OsRng));
+            let expiry = BlockHeight::from_u32(expiry.filter(|h| *h > 0).unwrap_or(u32::MAX));
+            {
+                let mut rng = OsRng;
+                let clock = SystemClock;
+                let mut db =
+                    WalletDb::from_connection(SqlTransaction::new(&tx), &network, &clock, &mut rng);
+                db.lock_outputs(&inputs, owner, expiry)
+                    .map_err(|e| format!("Restore shield checkpoint inputs: {e:?}"))?;
+            }
+            proposal_locks::restore_signed_owner(&tx, owner, &inputs, expiry, &operation_id)?;
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit shield reservation recovery: {e}"))
+    })
+}
+
 pub(crate) fn list(
     db_path: &str,
     network: WalletNetwork,
@@ -255,7 +336,8 @@ pub(crate) fn list(
         ensure_table(&conn)?;
         let sql = format!(
             "SELECT operation_id, account_uuid, kind, external_ref, expiry_height,
-                    state, txid, status, message, created_at_ms, updated_at_ms
+                    state, txid, status, message, created_at_ms, updated_at_ms,
+                    CASE WHEN kind = 'shield' THEN proof_pczt END
              FROM {TABLE}
              WHERE network = ?1 AND (?2 IS NULL OR account_uuid = ?2)
              ORDER BY created_at_ms, operation_id"
@@ -717,7 +799,8 @@ fn load_metadata(
     conn.query_row(
         &format!(
             "SELECT operation_id, account_uuid, kind, external_ref, expiry_height,
-                    state, txid, status, message, created_at_ms, updated_at_ms
+                    state, txid, status, message, created_at_ms, updated_at_ms,
+                    CASE WHEN kind = 'shield' THEN proof_pczt END
              FROM {TABLE} WHERE network = ?1 AND operation_id = ?2"
         ),
         params![network, operation_id],
@@ -729,6 +812,12 @@ fn load_metadata(
 
 fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperationMetadata> {
     let expiry_height: Option<i64> = row.get(4)?;
+    // Reconstruct display metadata from the durable payload, including old
+    // checkpoints. A malformed amount must not hide an operation from recovery.
+    let proof_pczt: Option<Vec<u8>> = row.get(11)?;
+    let shielded_zatoshi = proof_pczt
+        .as_deref()
+        .and_then(|bytes| checkpoint_shielded_zatoshi(bytes).ok());
     Ok(SignedOperationMetadata {
         operation_id: row.get(0)?,
         account_uuid: row.get(1)?,
@@ -741,6 +830,7 @@ fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperatio
                 Box::new(e),
             )
         })?,
+        shielded_zatoshi,
         state: row.get(5)?,
         txid: row.get(6)?,
         status: row.get(7)?,
@@ -748,6 +838,53 @@ fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperatio
         created_at_ms: row.get(9)?,
         updated_at_ms: row.get(10)?,
     })
+}
+
+/// A shielding transaction moves transparent inputs into shielded pools. The
+/// bundles' public value balances are spends minus outputs, so their negation
+/// gives the shielded amount after fees, even when individual values are redacted.
+fn checkpoint_shielded_zatoshi(encoded: &[u8]) -> Result<u64, String> {
+    decode_pczt_batch(encoded)?
+        .iter()
+        .try_fold(0u64, |total, bytes| {
+            let pczt = pczt::Pczt::parse(bytes)
+                .map_err(|e| format!("Parse shielding checkpoint: {e:?}"))?;
+            if pczt.transparent().inputs().is_empty()
+                || !pczt.transparent().outputs().is_empty()
+                || !pczt.sapling().spends().is_empty()
+            {
+                return Err("Checkpoint is not a transparent shielding transaction".into());
+            }
+            let amount = shielded_value_from_balances(
+                *pczt.sapling().value_sum(),
+                *pczt.orchard().value_sum(),
+                *pczt.ironwood().value_sum(),
+            )?;
+            total
+                .checked_add(amount)
+                .ok_or_else(|| "Shielding checkpoint total overflow".into())
+        })
+}
+
+fn shielded_value_from_balances(
+    sapling: i128,
+    orchard: (u64, bool),
+    ironwood: (u64, bool),
+) -> Result<u64, String> {
+    let signed_value = |(magnitude, negative): (u64, bool)| {
+        if negative {
+            -i128::from(magnitude)
+        } else {
+            i128::from(magnitude)
+        }
+    };
+    sapling
+        .checked_add(signed_value(orchard))
+        .and_then(|value| value.checked_add(signed_value(ironwood)))
+        .and_then(i128::checked_neg)
+        .and_then(|value| u64::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "Shielding checkpoint has no valid positive shielded value".into())
 }
 
 fn validate_identifier(label: &str, value: &str) -> Result<(), String> {
@@ -927,6 +1064,131 @@ mod tests {
             &signature,
         )
         .unwrap()
+    }
+
+    fn shielding_pczt(amount: u64) -> Vec<u8> {
+        #[derive(Clone, Copy, Debug)]
+        struct ShieldNetwork;
+        impl Parameters for ShieldNetwork {
+            fn network_type(&self) -> NetworkType {
+                NetworkType::Test
+            }
+            fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+                let _ = nu;
+                Some(BlockHeight::from_u32(1))
+            }
+        }
+        let fvk = orchard::keys::FullViewingKey::from(
+            &orchard::keys::SpendingKey::from_bytes([0x43; 32]).unwrap(),
+        );
+        let pubkey = secp256k1::SecretKey::from_secret_bytes([7; 32])
+            .unwrap()
+            .public_key();
+        let address = TransparentAddress::from_pubkey(&pubkey);
+        let mut builder = Builder::new(
+            ShieldNetwork,
+            100.into(),
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: None,
+                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
+        );
+        let recipient = fvk.address_at(0u32, orchard::keys::Scope::Internal);
+        builder
+            .add_ironwood_output::<zip317::FeeError>(
+                None,
+                recipient,
+                Zatoshis::from_u64(amount).unwrap(),
+                zcash_protocol::memo::MemoBytes::empty(),
+            )
+            .unwrap();
+        let fee = 15_000;
+        builder
+            .add_transparent_p2pkh_input(
+                pubkey,
+                OutPoint::new([1; 32], 0),
+                TxOut::new(
+                    Zatoshis::from_u64(amount + fee).unwrap(),
+                    address.script().into(),
+                ),
+            )
+            .unwrap();
+        let PcztResult { pczt_parts, .. } = builder
+            .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+            .unwrap();
+        Creator::build_from_parts(pczt_parts)
+            .unwrap()
+            .serialize()
+            .unwrap()
+    }
+
+    #[test]
+    fn recovers_shielded_amount_from_pczt_and_batch_without_fees() {
+        let orchard = shielding_pczt(990_000);
+        let ironwood = shielding_pczt(1_970_000);
+        for (pczt, expected) in [(&orchard, 990_000), (&ironwood, 1_970_000)] {
+            assert_eq!(
+                checkpoint_shielded_zatoshi(&encode_pczt_batch(&[pczt.clone()]).unwrap()).unwrap(),
+                expected
+            );
+        }
+        assert_eq!(
+            checkpoint_shielded_zatoshi(&encode_pczt_batch(&[orchard, ironwood]).unwrap()).unwrap(),
+            2_960_000
+        );
+        assert!(checkpoint_shielded_zatoshi(b"invalid").is_err());
+        assert!(
+            checkpoint_shielded_zatoshi(&encode_pczt_batch(&[signed_pczt(100).0]).unwrap())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn shielding_balances_cover_legacy_orchard_and_ironwood_and_reject_invalid_totals() {
+        assert_eq!(
+            shielded_value_from_balances(0, (990_000, true), (0, false)).unwrap(),
+            990_000
+        );
+        assert_eq!(
+            shielded_value_from_balances(0, (0, false), (1_970_000, true)).unwrap(),
+            1_970_000
+        );
+        assert_eq!(
+            shielded_value_from_balances(0, (990_000, true), (1_970_000, true)).unwrap(),
+            2_960_000
+        );
+        assert!(shielded_value_from_balances(0, (0, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(0, (1, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(i128::MIN, (0, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(0, (u64::MAX, true), (1, true)).is_err());
+    }
+
+    #[test]
+    fn existing_shield_checkpoint_gets_amount_without_schema_change() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+        checkpoint_test_operation(path, "old-shield", "shield");
+        let conn = rusqlite::Connection::open(path).unwrap();
+        let proof = encode_pczt_batch(&[shielding_pczt(990_000)]).unwrap();
+        conn.execute(
+            &format!("UPDATE {TABLE} SET proof_pczt = ?1 WHERE operation_id = 'old-shield'"),
+            [&proof],
+        )
+        .unwrap();
+        let recovered = list(path, WalletNetwork::Main, Some("account-1")).unwrap();
+        assert_eq!(recovered[0].shielded_zatoshi, Some(990_000));
+        // Unreadable display metadata does not suppress durable recovery work.
+        conn.execute(
+            &format!("UPDATE {TABLE} SET proof_pczt = x'00' WHERE operation_id = 'old-shield'"),
+            [],
+        )
+        .unwrap();
+        let recovered = list(path, WalletNetwork::Main, None).unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].shielded_zatoshi, None);
     }
 
     #[test]

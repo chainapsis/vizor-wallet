@@ -113,6 +113,25 @@ void runFigmaCompareCaptureTest({
       await tester.pump();
     }
 
+    if (scenario.id.startsWith('mobile-shield-')) {
+      // Rasterized glyph targets are prepared by the real engine outside the
+      // test clock. Use a fixed seed and fixed timestamps for motion captures.
+      for (var i = 0; i < 30; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 17));
+      }
+      for (var i = 0; i < 180; i++) {
+        await tester.pump(const Duration(milliseconds: 17));
+      }
+      if (scenario.id == 'mobile-shield-result' ||
+          scenario.id == 'mobile-shield-reference-result') {
+        for (var i = 0; i < 240; i++) {
+          await tester.pump(const Duration(milliseconds: 17));
+        }
+      }
+    }
     if (beforeCapture != null) await beforeCapture(tester);
     expect(tester.takeException(), isNull);
 

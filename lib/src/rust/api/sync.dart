@@ -923,11 +923,13 @@ Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   required String lightwalletdUrl,
   required String network,
   required String accountUuid,
+  required String sendFlowId,
 }) => RustLib.instance.api.crateApiSyncCreateShieldTransparentPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
 );
 
 /// Shield spendable transparent funds into the account's shielded balance.
@@ -2824,12 +2826,14 @@ class SendMaxEstimateResult {
 }
 
 class ShieldTransparentPcztResult {
+  final BigInt proposalId;
   final Uint8List pcztBytes;
   final BigInt feeZatoshi;
   final BigInt shieldedZatoshi;
   final bool needsSaplingParams;
 
   const ShieldTransparentPcztResult({
+    required this.proposalId,
     required this.pcztBytes,
     required this.feeZatoshi,
     required this.shieldedZatoshi,
@@ -2838,6 +2842,7 @@ class ShieldTransparentPcztResult {
 
   @override
   int get hashCode =>
+      proposalId.hashCode ^
       pcztBytes.hashCode ^
       feeZatoshi.hashCode ^
       shieldedZatoshi.hashCode ^
@@ -2848,6 +2853,7 @@ class ShieldTransparentPcztResult {
       identical(this, other) ||
       other is ShieldTransparentPcztResult &&
           runtimeType == other.runtimeType &&
+          proposalId == other.proposalId &&
           pcztBytes == other.pcztBytes &&
           feeZatoshi == other.feeZatoshi &&
           shieldedZatoshi == other.shieldedZatoshi &&

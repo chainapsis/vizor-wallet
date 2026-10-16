@@ -66,7 +66,7 @@ ActivityRowData buildTransactionActivityRow({
       transactionFeePresentation(transaction) !=
           TransactionFeePresentation.separate;
   final replacesPool =
-      showPendingEstimate && isPending && (isInbound || isSent);
+      showPendingEstimate && isPending && (isInbound || isSent || isShielded);
   final subtitle = replacesPool
       ? pendingLabel ?? 'Checking status'
       : isMigration
@@ -77,10 +77,11 @@ ActivityRowData buildTransactionActivityRow({
       ? _poolLabel(normalizeActivityPool(displayPool), ordinary: isPayment)
       : null;
 
-  // Unconfirmed sends/receives render as in-flight rows: a pulsing loader
+  // Unconfirmed transactions render as in-flight rows: a pulsing loader
   // in the leading slot and a progressive title, per the Content Line
   // pending variant in the design.
-  final isInFlight = isPending && (isInbound || isSent || isMigration);
+  final isInFlight =
+      isPending && (isInbound || isSent || isMigration || isShielded);
 
   return ActivityRowData(
     stableId:
@@ -103,6 +104,8 @@ ActivityRowData buildTransactionActivityRow({
                 ? 'Migrating to Ironwood'
                 : isSent
                 ? 'Sending'
+                : isShielded
+                ? 'Shielding'
                 : 'Receiving',
           )
         : isNetChange
@@ -286,7 +289,11 @@ String _txTitle(String kind) {
 String _txIcon(String kind, {required bool isPending}) {
   if (isPending) {
     return switch (kind) {
-      'receiving' || 'received' || 'sent' || 'migration' => AppIcons.loader,
+      'receiving' ||
+      'received' ||
+      'sent' ||
+      'migration' ||
+      'shielded' => AppIcons.loader,
       _ => AppIcons.history,
     };
   }

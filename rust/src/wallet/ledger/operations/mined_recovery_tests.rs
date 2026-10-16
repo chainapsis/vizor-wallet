@@ -57,51 +57,13 @@ struct SignedProposal {
 impl SignedProposal {
     fn new(wallet: &Wallet) -> Self {
         use crate::wallet::sync::{proposal_locks, StoredProposalLock, PROPOSAL_STORE};
-        use std::collections::BTreeMap;
-        use transparent::{address::TransparentAddress, bundle::TxOut};
-        use zcash_client_backend::{
-            data_api::wallet::ConfirmationsPolicy,
-            fees::TransactionBalance,
-            proposal::Proposal,
-            wallet::{LockOwner, OutputRef, WalletTransparentOutput},
-            zip321::{Payment, TransactionRequest},
-        };
-        use zcash_keys::address::Address;
-        use zcash_protocol::{consensus::BlockHeight, value::Zatoshis, PoolType};
-
-        let address = TransparentAddress::PublicKeyHash([7; 20]);
-        let input = WalletTransparentOutput::from_parts(
-            OutPoint::new([1; 32], 0),
-            TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
-            Some(BlockHeight::from_u32(150)),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let payment = Payment::new(
-            Address::Transparent(address).to_zcash_address(&WalletNetwork::Regtest),
-            Some(Zatoshis::const_from_u64(990_000)),
-            None,
-            None,
-            None,
-            vec![],
-        )
-        .unwrap();
-        let proposal = Proposal::single_step(
-            TransactionRequest::new(vec![payment]).unwrap(),
-            BTreeMap::from([(0, PoolType::TRANSPARENT)]),
-            vec![input],
-            None,
-            BlockHeight::from_u32(200),
-            TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
-            crate::wallet::sync::ConservativeZip317FeeRule,
-            wallet.signed[0].tx.expiry_height().into(),
-            ConfirmationsPolicy::default(),
-            false,
-            false,
-        )
-        .unwrap();
+        use zcash_client_backend::wallet::{LockOwner, OutputRef};
+        use zcash_protocol::PoolType;
+        let inputs = vec![OutputRef::new(
+            zcash_primitives::transaction::TxId::from_bytes([1; 32]),
+            PoolType::TRANSPARENT,
+            0,
+        )];
         let id = {
             let mut store = PROPOSAL_STORE.lock().unwrap();
             let id = store.next_id;
@@ -115,18 +77,14 @@ impl SignedProposal {
         proposal_locks::persist(
             &wallet.path,
             owner,
-            &[OutputRef::new(
-                zcash_primitives::transaction::TxId::from_bytes([1; 32]),
-                PoolType::TRANSPARENT,
-                0,
-            )],
+            &inputs,
             wallet.signed[0].tx.expiry_height(),
         )
         .unwrap();
         PROPOSAL_STORE.lock().unwrap().locks.insert(
             id,
             StoredProposalLock {
-                proposal,
+                inputs,
                 network: WalletNetwork::Regtest,
                 db_path: wallet.path.clone(),
                 owner,
@@ -342,7 +300,11 @@ impl Wallet {
             operation_id,
             "account-1",
             kind,
-            Some("deposit-1"),
+            if matches!(kind, "send" | "shield") {
+                None
+            } else {
+                Some("deposit-1")
+            },
             &self
                 .signed
                 .iter()
@@ -1297,4 +1259,193 @@ async fn offline_restart_child() {
     .unwrap();
     assert_eq!(result.status, "broadcasted");
     assert!(result.requires_ack);
+}
+
+#[test]
+fn legacy_shield_checkpoint_restores_reservation_before_balance_idempotently() {
+    let wallet = Wallet::funded(false);
+    wallet.checkpoint("legacy-shield", "shield");
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let original: (Vec<u8>, Vec<u8>) = conn
+        .query_row(
+            "SELECT proof_pczt, signature_pczt FROM vizor_ledger_signed_operations",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    crate::wallet::keys::ensure_db_migrated_once(&wallet.path, WalletNetwork::Regtest).unwrap();
+    recover_shield_reservations(&wallet.path, WalletNetwork::Regtest).unwrap();
+    let owners: Vec<Vec<u8>> = conn
+        .prepare("SELECT lock_owner FROM transparent_received_outputs WHERE lock_owner IS NOT NULL")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(owners.len(), 1);
+    let reservation: (Vec<u8>, String, bool) = conn.query_row(
+        "SELECT owner, phase, retain_until_expiry FROM vizor_send_proposal_locks WHERE operation_id = 'legacy-shield'", [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ).unwrap();
+    assert_eq!(reservation, (owners[0].clone(), "signed".into(), true));
+    let after: (Vec<u8>, Vec<u8>) = conn
+        .query_row(
+            "SELECT proof_pczt, signature_pczt FROM vizor_ledger_signed_operations",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(after, original, "legacy signed payload must not change");
+    conn.execute(
+        "UPDATE vizor_send_proposal_locks SET session_id = zeroblob(16)",
+        [],
+    )
+    .unwrap();
+    proposal_locks::recover_before_balance(&wallet.path, WalletNetwork::Regtest).unwrap();
+    let count: u32 = conn
+        .query_row("SELECT COUNT(*) FROM vizor_send_proposal_locks", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(count, 1, "signed reservation must survive a new session");
+    proposal_locks::release_operation(&conn, "legacy-shield").unwrap();
+    proposal_locks::recover_before_balance(&wallet.path, WalletNetwork::Regtest).unwrap();
+    let count: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transparent_received_outputs WHERE lock_owner IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "settled checkpoint releases only its own reservation"
+    );
+}
+
+#[test]
+fn legacy_shield_recovery_cannot_steal_foreign_reservations() {
+    use zcash_client_backend::{
+        data_api::OutputLockStore,
+        wallet::{LockOwner, OutputRef},
+    };
+    use zcash_protocol::{consensus::BlockHeight, PoolType};
+    let wallet = Wallet::funded(false);
+    wallet.checkpoint("legacy-conflict", "shield");
+    let owner = LockOwner::new([42; 32]);
+    let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        WALLET_DB_BUSY_TIMEOUT,
+    )
+    .unwrap();
+    db.lock_outputs(
+        &[OutputRef::new(
+            zcash_primitives::transaction::TxId::from_bytes([1; 32]),
+            PoolType::TRANSPARENT,
+            0,
+        )],
+        owner,
+        BlockHeight::from_u32(300),
+    )
+    .unwrap();
+    drop(db);
+    assert!(recover_shield_reservations(&wallet.path, WalletNetwork::Regtest).is_err());
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let actual: Vec<u8> = conn
+        .query_row(
+            "SELECT lock_owner FROM transparent_received_outputs",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(actual, owner.as_bytes());
+    let count: u32 = conn
+        .query_row("SELECT COUNT(*) FROM vizor_send_proposal_locks", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "failed restoration must leave no partial metadata"
+    );
+}
+
+#[test]
+fn shield_checkpoint_atomically_promotes_process_owner_and_rejects_late_save() {
+    let mut wallet = Wallet::funded(false);
+    let proposal = SignedProposal::new(&wallet);
+    let owner = crate::wallet::sync::PROPOSAL_STORE.lock().unwrap().locks[&proposal.id].owner;
+    wallet.signed[0].proof =
+        proposal_locks::bind_pczt(pczt::Pczt::parse(&wallet.signed[0].proof).unwrap(), owner)
+            .serialize()
+            .unwrap();
+    wallet.checkpoint("shield-owner", "shield");
+    crate::wallet::sync::discard_proposal(proposal.id, &proposal.flow).unwrap();
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let durable: bool = conn
+        .query_row(
+            "SELECT retain_until_expiry FROM vizor_send_proposal_locks",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        durable,
+        "ordinary cancellation must preserve the signed outbox owner"
+    );
+    assert!(checkpoint_batch(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        "another-shield",
+        "account-1",
+        "shield",
+        None,
+        &[wallet.signed[0].proof.clone()],
+        &[wallet.signed[0].signature.clone()],
+    )
+    .is_err());
+    let count: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM vizor_ledger_signed_operations",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        count, 1,
+        "a refused ownership transfer must roll back its outbox insert"
+    );
+}
+
+#[test]
+fn shield_checkpoint_after_cancellation_cannot_recreate_reservation() {
+    let mut wallet = Wallet::funded(false);
+    let proposal = SignedProposal::new(&wallet);
+    let owner = crate::wallet::sync::PROPOSAL_STORE.lock().unwrap().locks[&proposal.id].owner;
+    wallet.signed[0].proof =
+        proposal_locks::bind_pczt(pczt::Pczt::parse(&wallet.signed[0].proof).unwrap(), owner)
+            .serialize()
+            .unwrap();
+    crate::wallet::sync::discard_proposal(proposal.id, &proposal.flow).unwrap();
+    assert!(checkpoint_batch(
+        &wallet.path,
+        WalletNetwork::Regtest,
+        "late-shield",
+        "account-1",
+        "shield",
+        None,
+        &[wallet.signed[0].proof.clone()],
+        &[wallet.signed[0].signature.clone()],
+    )
+    .is_err());
+    let conn = rusqlite::Connection::open(&wallet.path).unwrap();
+    let count: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM vizor_ledger_signed_operations",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
 }

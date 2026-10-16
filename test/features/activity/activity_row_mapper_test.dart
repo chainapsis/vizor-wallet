@@ -23,6 +23,7 @@ void main() {
     bool privateQueriesEnabled = false,
     String? giftCardDisplayPool,
     String? pendingLabel,
+    bool showPendingEstimate = true,
   }) async {
     late ActivityRowData row;
     await tester.pumpWidget(
@@ -35,6 +36,7 @@ void main() {
               transaction: transaction,
               privateQueriesEnabled: privateQueriesEnabled,
               pendingLabel: pendingLabel,
+              showPendingEstimate: showPendingEstimate,
               giftCardKind: giftCardKind,
               giftCardAmountZatoshi: giftCardAmountZatoshi,
               giftCardBatchCount: giftCardBatchCount,
@@ -133,9 +135,63 @@ void main() {
         _transaction(txKind: 'shielded', minedHeight: BigInt.zero),
         pendingLabel: 'Est. 1–3 min',
       )).subtitle,
-      isNull,
+      'Est. 1–3 min',
     );
   });
+
+  testWidgets(
+    'shielding progresses until mined and keeps its unsigned amount',
+    (tester) async {
+      final pending = _transaction(
+        txKind: 'shielded',
+        minedHeight: BigInt.zero,
+      );
+      for (final label in [
+        null,
+        'Est. 1–3 min',
+        'Taking longer',
+        'Checking status',
+        'Waiting for connection',
+      ]) {
+        final row = await mapRow(tester, pending, pendingLabel: label);
+        expect(row.title, _pendingTitle('Shielding'));
+        expect(row.leadingIconName, AppIcons.loader);
+        expect(row.subtitle, label ?? 'Checking status');
+        expect(
+          row.subtitleIconName,
+          label == 'Est. 1–3 min' || label == 'Taking longer'
+              ? AppIcons.time
+              : isNull,
+        );
+        expect(row.amountText, isNot(startsWith('+')));
+        expect(row.amountText, isNot(startsWith('-')));
+      }
+      final hiddenEstimate = await mapRow(
+        tester,
+        pending,
+        pendingLabel: 'Est. 1–3 min',
+        showPendingEstimate: false,
+      );
+      expect(hiddenEstimate.leadingIconName, AppIcons.loader);
+      expect(hiddenEstimate.subtitle, isNull);
+
+      for (final expired in [false, true]) {
+        final row = await mapRow(
+          tester,
+          _transaction(
+            txKind: 'shielded',
+            minedHeight: expired ? BigInt.zero : BigInt.from(100),
+            expiredUnmined: expired,
+          ),
+          pendingLabel: 'Est. 1–3 min',
+        );
+        expect(row.title, 'Shielded');
+        expect(row.leadingIconName, AppIcons.shieldKeyholeOutline);
+        expect(row.subtitle, isNull);
+        expect(row.statusText, expired ? 'Failed' : 'Completed');
+      }
+    },
+  );
 
   testWidgets('ordinary sends and receipts label the exact output pool', (
     tester,

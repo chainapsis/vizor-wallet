@@ -13,6 +13,7 @@ import '../../../core/zcash/transparent_ledger_errors.dart';
 import '../../../core/zcash/wallet_error_code.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -71,6 +72,17 @@ String? shieldBalanceErrorDetails(Object error) {
   }
   return message.isEmpty ? null : message;
 }
+
+typedef SoftwareTransparentShieldRunner =
+    Future<rust_sync.ShieldTransparentResult> Function({
+      required WidgetRef ref,
+      required String accountUuid,
+      String logContext,
+    });
+final softwareTransparentShieldRunnerProvider =
+    Provider<SoftwareTransparentShieldRunner>(
+      (_) => shieldTransparentSoftwareBalance,
+    );
 
 Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
   required WidgetRef ref,
@@ -143,6 +155,12 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
       'broadcasted=${result.broadcastedCount}/${result.totalCount} '
       'fee=${result.feeZatoshi} shielded=${result.shieldedZatoshi}',
     );
+    observeShieldingBroadcast(
+      ref: ref,
+      accountUuid: accountUuid,
+      status: result.status,
+      txids: result.txids.split(','),
+    );
 
     final broadcastStatusMessage = shieldBalanceBroadcastStatusMessage(result);
     final broadcastDetailMessage = result.message?.trim();
@@ -186,6 +204,33 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
     }
     rethrow;
   }
+}
+
+/// Seed the existing activity ETA only from a confirmed successful broadcast.
+/// Keep the proposal's account identity even if the user switches accounts.
+/// Partial/unknown batches cannot identify which txids propagated, so they
+/// wait for independent mempool evidence instead.
+void observeShieldingBroadcast({
+  required WidgetRef ref,
+  required String? accountUuid,
+  required String status,
+  required Iterable<String> txids,
+}) {
+  if (status != 'broadcasted' ||
+      accountUuid == null ||
+      !ref.context.mounted ||
+      ref.read(appSecurityProvider).requiresUnlock ||
+      !(ref
+              .read(accountProvider)
+              .value
+              ?.accounts
+              .any((account) => account.uuid == accountUuid) ??
+          false)) {
+    return;
+  }
+  ref
+      .read(pendingActivityEvidenceProvider.notifier)
+      .observe(accountUuid: accountUuid, txids: txids);
 }
 
 String shieldPcztBroadcastStatusMessage(

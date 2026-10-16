@@ -117,7 +117,7 @@ use super::migration_wallet_ops::{
 use super::{
     consume_stored_proposal, finish_stored_proposal, open_readonly_conn, open_wallet_db,
     open_wallet_db_for_read, stored_proposal_lock, wallet_target_height, StoredOvkPolicy,
-    StoredProposal, StoredProposalLock, WalletDatabase, PROPOSAL_STORE,
+    StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
 
 /// Selects the confirmation and outgoing viewing key policies for a send.
@@ -544,6 +544,7 @@ pub(crate) struct ShieldTransparentStatus {
 }
 
 pub(crate) struct ShieldTransparentPcztResult {
+    pub proposal_id: u64,
     pub pczt_bytes: Vec<u8>,
     pub fee_zatoshi: u64,
     pub shielded_zatoshi: u64,
@@ -890,61 +891,20 @@ fn propose_send_with_request(
             .map(|step| u64::from(step.balance().fee_required()))
             .sum();
 
-        // Lock the selected inputs before exposing the proposal ID. This closes
-        // the review-screen race where a migration could otherwise reserve the
-        // same notes after proposal creation but before execution.
-        let lock_owner = LockOwner::random(&mut voting_crypto_deps::rand::rngs::OsRng);
+        let input_refs = proposal_input_refs(&proposal);
         let lock_expiry_height =
             send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()));
-        let input_refs = proposal_input_refs(&proposal);
-        // Persist the owner and generic output references before taking the DB
-        // locks. If the process dies at any later point, the next process can
-        // release exactly these ephemeral send locks without disturbing
-        // durable migration owners.
-        super::proposal_locks::persist(db_path, lock_owner, &input_refs, lock_expiry_height)?;
-        if let Err(error) = db.lock_outputs(&input_refs, lock_owner, lock_expiry_height) {
-            let cleanup = super::proposal_locks::remove(db_path, lock_owner);
-            return Err(match cleanup {
-                Ok(()) => format!("Lock send proposal inputs: {error:?}"),
-                Err(cleanup_error) => format!(
-                    "Lock send proposal inputs: {error:?}; \
-                     also failed to remove recovery rows: {cleanup_error}"
-                ),
-            });
-        }
-
-        let mut store = match PROPOSAL_STORE.lock() {
-            Ok(store) => store,
-            Err(e) => {
-                let unlock_result = wallet::unlock_proposal_inputs(&mut db, &proposal, lock_owner);
-                let recovery_cleanup = super::proposal_locks::remove(db_path, lock_owner);
-                return Err(match (unlock_result, recovery_cleanup) {
-                    (Ok(()), Ok(())) => format!("Lock proposal store: {e}"),
-                    (Err(unlock_error), Ok(())) => format!(
-                        "Lock proposal store: {e}; also failed to release proposal inputs: {unlock_error}"
-                    ),
-                    (Ok(()), Err(cleanup_error)) => format!(
-                        "Lock proposal store: {e}; also failed to remove recovery rows: {cleanup_error}"
-                    ),
-                    (Err(unlock_error), Err(cleanup_error)) => format!(
-                        "Lock proposal store: {e}; also failed to release proposal inputs: \
-                         {unlock_error}; also failed to remove recovery rows: {cleanup_error}"
-                    ),
-                });
-            }
-        };
-        let id = store.next_id;
-        store.next_id += 1;
-        store.locks.insert(
-            id,
-            StoredProposalLock {
-                proposal: proposal.clone(),
-                network,
-                db_path: db_path.to_string(),
-                owner: lock_owner,
-                send_flow_id: send_flow_id.to_string(),
-            },
-        );
+        let (id, _) = super::reserve_proposal_inputs(
+            &mut db,
+            db_path,
+            network,
+            input_refs,
+            lock_expiry_height,
+            send_flow_id,
+        )?;
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store: {e}"))?;
         store.proposals.insert(
             id,
             StoredProposal {
@@ -1278,6 +1238,7 @@ pub(crate) async fn create_shield_transparent_pczt(
     lightwalletd_url: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    send_flow_id: &str,
 ) -> Result<ShieldTransparentPcztResult, WalletFailure> {
     let live_expiry_height = {
         let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
@@ -1292,6 +1253,7 @@ pub(crate) async fn create_shield_transparent_pczt(
         db_path,
         network,
         account_uuid,
+        send_flow_id,
         Some(live_expiry_height),
     )
 }
@@ -1300,12 +1262,15 @@ fn create_shield_transparent_pczt_with_expiry(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    send_flow_id: &str,
     expiry_height: Option<BlockHeight>,
 ) -> Result<ShieldTransparentPcztResult, WalletFailure> {
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
     let shielding_threshold = shielding_threshold()?;
-    with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
+    let mut reservation = None;
+    let result = with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
+        super::proposal_locks::require_active_session()?;
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
         if !sync_engine::ledger_discovery::is_ready(db_path, network, account_id)? {
@@ -1335,6 +1300,30 @@ fn create_shield_transparent_pczt_with_expiry(
                 proposal.min_target_height(),
             )))
         });
+        let lock_expiry = expiry_height.unwrap_or_else(|| {
+            send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()))
+        });
+        let inputs = proposal
+            .steps()
+            .iter()
+            .flat_map(|step| step.transparent_inputs().iter())
+            .map(|utxo| {
+                OutputRef::new(
+                    TxId::from_bytes(*utxo.outpoint().hash()),
+                    PoolType::TRANSPARENT,
+                    utxo.outpoint().n(),
+                )
+            })
+            .collect();
+        let (proposal_id, owner) = super::reserve_proposal_inputs(
+            &mut db,
+            db_path,
+            network,
+            inputs,
+            lock_expiry,
+            send_flow_id,
+        )?;
+        reservation = Some(proposal_id);
         let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
@@ -1345,7 +1334,7 @@ fn create_shield_transparent_pczt_with_expiry(
             BundlePadding::DEFAULT,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
-        let pczt_bytes = pczt
+        let pczt_bytes = super::proposal_locks::bind_pczt(pczt, owner)
             .serialize()
             .map_err(|e| format!("Serialize shielding PCZT: {e:?}"))?;
         ensure_transparent_shielding_pczt_targets_expected_pool(
@@ -1354,12 +1343,20 @@ fn create_shield_transparent_pczt_with_expiry(
         )?;
 
         Ok(ShieldTransparentPcztResult {
+            proposal_id,
             pczt_bytes,
             fee_zatoshi,
             shielded_zatoshi,
             needs_sapling_params: false,
         })
-    })
+    });
+    if result.is_err() {
+        if let Some(id) = reservation {
+            super::finish_stored_proposal(id, send_flow_id, true)
+                .map_err(|e| format!("Shield PCZT failed; input cleanup failed: {e}"))?;
+        }
+    }
+    result
 }
 
 /// Shield spendable transparent funds for a software account to its

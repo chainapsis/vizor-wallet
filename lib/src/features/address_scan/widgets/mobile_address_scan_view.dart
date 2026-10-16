@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'mobile_scan_viewfinder_geometry.dart';
 
 import 'package:flutter/material.dart' show Colors, Icons, Material;
 import 'package:flutter/widgets.dart';
@@ -474,25 +475,14 @@ class _ViewfinderCornersPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
-    Path corner(double rotationQuarter) {
-      final path = Path()
-        ..moveTo(0, cornerLength)
-        ..lineTo(0, cornerRadius)
-        ..arcToPoint(
-          Offset(cornerRadius, 0),
-          radius: Radius.circular(cornerRadius),
-        )
-        ..lineTo(cornerLength, 0);
-      final matrix = Matrix4.identity()
-        ..translateByDouble(size.width / 2, size.height / 2, 0, 1)
-        ..rotateZ(rotationQuarter * 3.1415926535 / 2)
-        ..translateByDouble(-size.width / 2, -size.height / 2, 0, 1);
-      return path.transform(matrix.storage);
-    }
-
-    for (var quarter = 0; quarter < 4; quarter++) {
-      canvas.drawPath(corner(quarter.toDouble()), paint);
-    }
+    canvas.drawPath(
+      mobileScanViewfinderPath(
+        size,
+        cornerLength: cornerLength,
+        cornerRadius: cornerRadius,
+      ),
+      paint,
+    );
   }
 
   @override

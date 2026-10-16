@@ -31,6 +31,8 @@ bool incomingLinkNavigationInterruptsTask(String location) =>
     isRouteOrChild(location, '/pay') ||
     isRouteOrChild(location, '/migration') ||
     isRouteOrChild(location, '/home/keystone-shield') ||
+    isRouteOrChild(location, '/home/ledger-shield') ||
+    isRouteOrChild(location, '/home/shield') ||
     isRouteOrChild(location, '/voting/poll') ||
     isRouteOrChild(location, '/voting/keystone/scan') ||
     isRouteOrChild(location, '/settings/change-password') ||

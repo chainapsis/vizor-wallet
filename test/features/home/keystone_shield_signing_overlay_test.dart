@@ -7,6 +7,9 @@ import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/widgets/keystone_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../fakes/fake_sync_notifier.dart';
 
 /// The desktop shield overlay lives on `/home`, so the location-based rules in
 /// `payment_uri_drain_policy.dart` cannot see it. Its hold on
@@ -17,7 +20,10 @@ void main() {
     tester,
   ) async {
     final container = ProviderContainer(
-      overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        syncProvider.overrideWith(FakeSyncNotifier.new),
+      ],
     );
     addTearDown(container.dispose);
 

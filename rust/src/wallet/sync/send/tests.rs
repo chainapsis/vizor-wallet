@@ -2565,8 +2565,14 @@ fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result =
-        create_shield_transparent_pczt_with_expiry(db_path, network, &account_uuid, None).unwrap();
+    let result = create_shield_transparent_pczt_with_expiry(
+        db_path,
+        network,
+        &account_uuid,
+        "shield-test",
+        None,
+    )
+    .unwrap();
     let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
 
     assert_eq!(
@@ -2640,8 +2646,14 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result =
-        create_shield_transparent_pczt_with_expiry(db_path, network, &account_uuid, None).unwrap();
+    let result = create_shield_transparent_pczt_with_expiry(
+        db_path,
+        network,
+        &account_uuid,
+        "shield-test",
+        None,
+    )
+    .unwrap();
     let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
 
     assert_eq!(
@@ -2653,6 +2665,40 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     assert!(!result.needs_sapling_params);
     assert!(result.fee_zatoshi > 0);
     assert!(result.shielded_zatoshi > 0);
+    let owner = super::super::proposal_locks::pczt_owner(&result.pczt_bytes)
+        .unwrap()
+        .expect("shielding PCZT must bind its reservation");
+    let reserved = super::super::stored_proposal_lock(result.proposal_id, "shield-test").unwrap();
+    assert_eq!(reserved.owner, owner);
+    assert_eq!(reserved.inputs.len(), 1);
+    assert_eq!(*reserved.inputs[0].txid().as_ref(), [42; 32]);
+    assert!(
+        create_shield_transparent_pczt_with_expiry(
+            db_path,
+            network,
+            &account_uuid,
+            "other-flow",
+            None,
+        )
+        .is_err(),
+        "another flow must not select the reserved UTXO"
+    );
+    let signer = super::super::redact_pczt_for_signer(&result.pczt_bytes).unwrap();
+    assert!(super::super::proposal_locks::pczt_owner(&signer)
+        .unwrap()
+        .is_none());
+    assert!(super::super::discard_proposal(result.proposal_id, "wrong-flow").is_err());
+    super::super::discard_proposal(result.proposal_id, "shield-test").unwrap();
+    super::super::discard_proposal(result.proposal_id, "shield-test").unwrap();
+    let retry = create_shield_transparent_pczt_with_expiry(
+        db_path,
+        network,
+        &account_uuid,
+        "retry-flow",
+        None,
+    )
+    .unwrap();
+    super::super::discard_proposal(retry.proposal_id, "retry-flow").unwrap();
 }
 
 #[test]
@@ -3912,7 +3958,7 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
             .can_shield
     );
     assert!(
-        create_shield_transparent_pczt_with_expiry(path, network, &uuid, None)
+        create_shield_transparent_pczt_with_expiry(path, network, &uuid, "shield-test", None)
             .err()
             .unwrap()
             .message

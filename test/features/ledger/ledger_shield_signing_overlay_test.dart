@@ -20,8 +20,10 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/widgets/ledger_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
@@ -180,6 +182,13 @@ void main() {
     expect(operationService.broadcasts, [checkpoint.operationId]);
     expect(operationService.acknowledged, isEmpty);
     expect(sync.refreshCount, 1);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(LedgerShieldSigningOverlay)),
+    );
+    expect(
+      container.read(pendingActivityEvidenceProvider).observedAt.keys,
+      contains(('account-1', 'txid-1')),
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -214,6 +223,16 @@ void main() {
       await _pumpUntil(tester, () => completed);
       expect(completed, isTrue);
       expect(operations.broadcasts.length, counts.length ~/ 2);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(LedgerShieldSigningOverlay)),
+      );
+      expect(
+        container.read(pendingActivityEvidenceProvider).observedAt.keys,
+        unorderedEquals([
+          for (var round = 1; round <= operations.broadcasts.length; round++)
+            ('account-1', 'txid-$round'),
+        ]),
+      );
       expect(
         operations.checkpoints.map((c) => c.operationId).toSet().length,
         counts.length ~/ 2,
@@ -257,6 +276,51 @@ void main() {
       expect(find.text('Try again'), findsNothing);
     });
   }
+
+  testWidgets('the next device approval releases the previous broadcast lease', (
+    tester,
+  ) async {
+    final operations = _FakeLedgerSignedOperationService();
+    final nextSignature = Completer<List<int>>();
+    var signatures = 0;
+    var reads = 0;
+    var completed = false;
+    await tester.pumpWidget(
+      _harness(
+        operationService: operations,
+        sync: _FakeSyncNotifier(),
+        ledgerSigner: (_) async =>
+            ++signatures == 1 ? [7, 8, 9] : await nextSignature.future,
+        onComplete: () => completed = true,
+        progressReader:
+            ({required dbPath, required network, required accountUuid}) async =>
+                LedgerShieldingProgress(
+                  inputCount: [2, 1, 1, 0][reads++],
+                  inputLimit: 1,
+                  belowThreshold: false,
+                ),
+      ),
+    );
+    await _pumpUntil(tester, () => signatures == 2);
+    expect(signatures, 2);
+    final lifecycle = ProviderScope.containerOf(
+      tester.element(find.byType(LedgerShieldSigningOverlay)),
+    ).read(ledgerOperationLifecycleProvider);
+    var drained = false;
+    final drain = lifecycle.quiesceAndDrain().then((_) => drained = true);
+    await tester.pump();
+    expect(
+      drained,
+      isTrue,
+      reason:
+          'Device approval must not keep account mutations waiting for the prior broadcast',
+    );
+    await drain;
+    lifecycle.resume();
+    nextSignature.complete([7, 8, 9]);
+    await _pumpUntil(tester, () => completed);
+    expect(operations.broadcasts, hasLength(2));
+  });
 
   testWidgets('checkpoint retry retains signature and operation identity', (
     tester,
@@ -565,6 +629,9 @@ class _FakeWalletNotifier extends WalletNotifier {
 }
 
 class _FakeSyncNotifier extends SyncNotifier {
+  @override
+  Future<void> refreshAfterProposalRelease(String accountUuid) async {}
+
   int refreshCount = 0;
 
   @override
@@ -641,7 +708,7 @@ class _FakeLedgerSignedOperationService
     }
     return LedgerSignedOperationBroadcastResult(
       operationId: operationId,
-      txid: 'txid-1',
+      txid: 'txid-${broadcasts.length}',
       status: 'broadcasted',
       requiresAck: false,
     );
@@ -665,6 +732,12 @@ class _FakePathProviderPlatform extends Fake
 }
 
 class _RustApiFake implements RustLibApi {
+  @override
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {}
+
   int createShieldCalls = 0;
   int addProofsCalls = 0;
 
@@ -690,9 +763,11 @@ class _RustApiFake implements RustLibApi {
     required String lightwalletdUrl,
     required String network,
     required String accountUuid,
+    required String sendFlowId,
   }) async {
     createShieldCalls++;
     return ShieldTransparentPcztResult(
+      proposalId: BigInt.from(77),
       pcztBytes: Uint8List.fromList([1, 2, 3]),
       feeZatoshi: BigInt.from(10_000),
       shieldedZatoshi: BigInt.from(99_990_000),

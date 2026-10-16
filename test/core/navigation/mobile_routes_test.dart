@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
@@ -106,6 +107,98 @@ LocalKey? _sendPageKey(WidgetTester tester) =>
         .key;
 
 void main() {
+  testWidgets('home opens shielding over a frozen full-shell backdrop', (
+    tester,
+  ) async {
+    final router = _router();
+    await tester.pumpWidget(
+      _app(
+        router,
+        initialSyncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          percentage: 1,
+          orchardBalance: BigInt.from(1492000000),
+          transparentBalance: BigInt.from(1412000000),
+          canShieldTransparentBalance: true,
+          shieldTransparentAmount: BigInt.from(1411990000),
+          shieldTransparentFee: BigInt.from(10000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_home_shield_balance_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    final fade = find
+        .ancestor(
+          of: find.byType(MobileShieldScene),
+          matching: find.byType(FadeTransition),
+        )
+        .first;
+    expect(
+      tester.widget<FadeTransition>(fade).opacity.value,
+      closeTo(0.5, 0.01),
+    );
+    expect(
+      find.descendant(
+        of: find.byType(MobileShieldScene),
+        matching: find.byType(FadeTransition),
+      ),
+      findsNothing,
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    final scene = tester.widget<MobileShieldScene>(
+      find.byType(MobileShieldScene),
+    );
+    expect(scene.backdrop, isNotNull);
+    expect(scene.backdrop!.image.width, tester.view.physicalSize.width);
+    expect(scene.backdrop!.image.height, tester.view.physicalSize.height);
+    final route = ModalRoute.of(tester.element(find.byType(MobileShieldScene)));
+    expect(route!.opaque, isFalse);
+    expect(route.transitionDuration, const Duration(milliseconds: 240));
+    expect(route.reverseTransitionDuration, const Duration(milliseconds: 180));
+    expect(find.byType(ImageFiltered), findsWidgets);
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(
+      tester.widget<FadeTransition>(fade).opacity.value,
+      closeTo(0.5, 0.01),
+    );
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(tester.widget<FadeTransition>(fade).opacity.value, closeTo(0, 0.01));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(find.byType(MobileShieldScene), findsNothing);
+    expect(find.byType(MobileHomeScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final path in ['/home/keystone-shield', '/home/ledger-shield']) {
+    testWidgets('$path is a transparent full-screen route', (tester) async {
+      final router = _router();
+      await tester.pumpWidget(_app(router));
+      await tester.pumpAndSettle();
+      unawaited(router.push<void>(path));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      final route = ModalRoute.of(
+        tester.element(find.byType(MobileShieldScene)),
+      );
+      expect(route!.opaque, isFalse);
+      expect(route.transitionDuration, const Duration(milliseconds: 240));
+      expect(
+        route.reverseTransitionDuration,
+        const Duration(milliseconds: 180),
+      );
+      expect(find.text('Transparent Balance'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   test('registers the mobile payment-link intake route', () {
     final paths = buildMobileRoutes(
       entryRoutes: const [],

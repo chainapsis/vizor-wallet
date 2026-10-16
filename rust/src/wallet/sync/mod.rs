@@ -108,8 +108,6 @@ pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migratio
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::migration_anchor_retention_required;
-#[cfg(test)]
-pub(super) use send::ConservativeZip317FeeRule;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ProposalResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
@@ -618,14 +616,61 @@ pub(super) fn wallet_target_height(
 
 #[derive(Clone)]
 pub(super) struct StoredProposalLock {
-    pub proposal: zcash_client_backend::proposal::Proposal<
-        send::WalletFeeRule,
-        zcash_client_sqlite::ReceivedNoteId,
-    >,
+    pub inputs: Vec<zcash_client_backend::wallet::OutputRef>,
     pub network: WalletNetwork,
     pub db_path: String,
     pub owner: zcash_client_backend::wallet::LockOwner,
     pub send_flow_id: String,
+}
+
+/// Caller holds the wallet write lock. Recovery metadata precedes wallet locks
+/// so a process killed during creation can release only its own inputs.
+pub(super) fn reserve_proposal_inputs(
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    inputs: Vec<zcash_client_backend::wallet::OutputRef>,
+    expiry: BlockHeight,
+    flow_id: &str,
+) -> Result<(u64, zcash_client_backend::wallet::LockOwner), String> {
+    use zcash_client_backend::{data_api::OutputLockStore, wallet::LockOwner};
+    proposal_locks::require_active_session()?;
+    if flow_id.trim().is_empty() {
+        return Err("Signing flow ID must not be empty".into());
+    }
+    let owner = LockOwner::random(&mut voting_crypto_deps::rand::rngs::OsRng);
+    proposal_locks::persist(db_path, owner, &inputs, expiry)?;
+    if let Err(error) = db.lock_outputs(&inputs, owner, expiry) {
+        let cleanup = proposal_locks::remove(db_path, owner);
+        return Err(format!(
+            "Lock proposal inputs: {error:?}; cleanup: {cleanup:?}"
+        ));
+    }
+    let mut store = match PROPOSAL_STORE.lock() {
+        Ok(store) => store,
+        Err(error) => {
+            // Keep recovery rows if releasing an input fails.
+            for input in &inputs {
+                db.unlock_output(input, owner)
+                    .map_err(|e| format!("Release proposal after poisoned store: {e}"))?;
+            }
+            proposal_locks::release_with_timeout(db_path, owner, READ_DB_BUSY_TIMEOUT)?;
+            return Err(format!("Lock proposal store: {error}"));
+        }
+    };
+    let id = store.next_id;
+    store.next_id += 1;
+    store.locks.insert(
+        id,
+        StoredProposalLock {
+            inputs,
+            network,
+            db_path: db_path.to_string(),
+            owner,
+            send_flow_id: flow_id.to_string(),
+        },
+    );
+    Ok((id, owner))
 }
 
 pub(super) static PROPOSAL_STORE: std::sync::LazyLock<Mutex<ProposalStore>> =
@@ -741,12 +786,11 @@ fn unlock_stored_proposal_locked(
     {
         return Ok(());
     }
-    zcash_client_backend::data_api::wallet::unlock_proposal_inputs(
-        &mut db,
-        &current.proposal,
-        current.owner,
-    )
-    .map_err(|e| format!("Unlock abandoned send proposal inputs: {e}"))?;
+    use zcash_client_backend::data_api::OutputLockStore;
+    for input in &current.inputs {
+        db.unlock_output(input, current.owner)
+            .map_err(|e| format!("Unlock abandoned proposal input: {e}"))?;
+    }
     proposal_locks::release_with_timeout(&current.db_path, current.owner, metadata_timeout)?;
     store.locks.remove(&proposal_id);
     Ok(())

@@ -2613,15 +2613,20 @@ void main() {
     expect(hint.tapToShow, isTrue);
   });
 
-  testWidgets('Ledger shielding opens the dedicated mobile Ledger route', (
+  testWidgets('Ledger shielding returns Home with immediate balance updates', (
     tester,
   ) async {
+    final syncNotifier = FakeSyncNotifier(
+      _syncedState(
+        orchardBalance: BigInt.from(1492000000),
+        transparentBalance: BigInt.from(1412000000),
+        canShieldTransparentBalance: true,
+      ),
+    );
     await tester.pumpWidget(
       _app(
-        _syncedState(
-          transparentBalance: BigInt.from(242000000),
-          canShieldTransparentBalance: true,
-        ),
+        syncNotifier.initialState!,
+        syncNotifier: syncNotifier,
         accountState: const AccountState(
           accounts: [
             AccountInfo(
@@ -2649,6 +2654,27 @@ void main() {
       find.byKey(const ValueKey('mobile_ledger_shield_route')),
       findsOneWidget,
     );
+
+    syncNotifier.setSyncState(
+      _syncedState(orchardBalance: BigInt.from(2904000000)),
+    );
+    GoRouter.of(
+      tester.element(find.byKey(const ValueKey('mobile_ledger_shield_route'))),
+    ).pop();
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text('29.04 ZEC', findRichText: true, skipOffstage: false),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
+
+    syncNotifier.setSyncState(
+      _syncedState(orchardBalance: BigInt.from(3004000000)),
+    );
+    await tester.pump();
+    expect(find.text('30.04 ZEC', findRichText: true), findsOneWidget);
   });
 
   testWidgets('animates transparent balance tray away before removal', (

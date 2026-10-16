@@ -16,7 +16,7 @@ pub(crate) use operations::{
     checkpoint as checkpoint_signed_operation,
     checkpoint_batch as checkpoint_signed_operation_batch,
     delete_for_account_with_tx as delete_signed_operations_for_account_with_tx,
-    list as list_signed_operations, SignedOperationMetadata,
+    list as list_signed_operations, recover_shield_reservations, SignedOperationMetadata,
 };
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]

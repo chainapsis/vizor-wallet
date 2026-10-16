@@ -22,7 +22,6 @@ import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
@@ -58,11 +57,9 @@ import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_balance_display.dart';
+import '../../widgets/mobile/shield/mobile_shield_backdrop.dart';
 import '../../providers/backup_reminder_provider.dart';
 import '../../widgets/mobile_home_carousel.dart';
-import '../../services/transparent_shielding_service.dart';
-import 'mobile_keystone_shield_screen.dart';
-import 'mobile_ledger_shield_screen.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// up to ten recent activity rows — Figma `HOME` section frames
@@ -952,68 +949,26 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
   Future<void> _shieldTransparentBalance() async {
     if (_isShieldingBalance) return;
-
-    late final String accountUuid;
-    try {
-      accountUuid = activeShieldingAccountUuid(ref);
-    } catch (_) {
-      _showShieldToast('No active account.');
-      return;
-    }
-
-    final accountNotifier = ref.read(accountProvider.notifier);
-    final hardwareSignerKind = accountNotifier.hardwareSignerKindForAccount(
-      accountUuid,
-    );
-    if (hardwareSignerKind == HardwareSignerKind.ledger) {
-      final result = await context.push<MobileLedgerShieldResult>(
-        '/home/ledger-shield',
-      );
-      if (mounted && result != null) {
-        showAppToast(context, 'Shielding complete');
-      }
-      return;
-    }
-    if (hardwareSignerKind == HardwareSignerKind.keystone) {
-      final result = await context.push<MobileKeystoneShieldResult>(
-        '/home/keystone-shield',
-      );
-      if (!mounted || result == null) return;
-      final message = result.message;
-      if (message != null && message.isNotEmpty) {
-        _showShieldToast(message);
-      } else if (result.succeeded) {
-        showAppToast(context, 'Shielding complete');
-      }
-      return;
-    }
-
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    final kind = ref
+        .read(accountProvider.notifier)
+        .hardwareSignerKindForAccount(accountUuid);
+    final route = switch (kind) {
+      HardwareSignerKind.ledger => '/home/ledger-shield',
+      HardwareSignerKind.keystone => '/home/keystone-shield',
+      _ => '/home/shield',
+    };
+    final backdrop = MobileShieldBackdropHost.capture(context);
     setState(() => _isShieldingBalance = true);
     try {
-      final result = await shieldTransparentSoftwareBalance(
-        ref: ref,
-        accountUuid: accountUuid,
-        logContext: 'MobileHome',
-      );
-      if (!mounted) return;
-      final warning = shieldBalanceBroadcastStatusMessage(result);
-      if (warning != null) {
-        _showShieldToast(warning);
-      } else {
-        showAppToast(context, 'Shielding complete');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      _showShieldToast(friendlyShieldBalanceError(e));
+      await context.push<void>(route, extra: backdrop);
     } finally {
+      backdrop?.dispose();
       if (mounted) {
         setState(() => _isShieldingBalance = false);
       }
     }
-  }
-
-  void _showShieldToast(String message) {
-    showAppToast(context, message, iconName: AppIcons.warning);
   }
 
   String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {

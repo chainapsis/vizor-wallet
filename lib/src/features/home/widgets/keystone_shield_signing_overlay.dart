@@ -18,8 +18,12 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
+import '../services/hardware_shielding_session.dart';
 import '../services/transparent_shielding_service.dart'
-    show isHardwareBroadcastRetryable, kShieldWaitingForPrivateRecoveryMessage;
+    show
+        isHardwareBroadcastRetryable,
+        kShieldWaitingForPrivateRecoveryMessage,
+        observeShieldingBroadcast;
 
 enum _KeystoneShieldPhase {
   preparing,
@@ -59,6 +63,9 @@ class _KeystoneShieldSigningOverlayState
   String? _statusMessage;
   List<String> _urParts = const [];
   List<int>? _pcztWithProofs;
+  String? _accountUuid;
+  HardwareShieldingSession? _session;
+  bool _closed = false;
   SaplingParamsStatus? _saplingParams;
   bool _needsSaplingParams = false;
 
@@ -70,7 +77,7 @@ class _KeystoneShieldSigningOverlayState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _closed) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       unawaited(_preparePczt());
     });
@@ -78,6 +85,8 @@ class _KeystoneShieldSigningOverlayState
 
   @override
   void dispose() {
+    _closed = true;
+    unawaited(_session?.close());
     final promptCompleter = _saplingParamsPromptCompleter;
     _saplingParamsPromptCompleter = null;
     if (promptCompleter != null && !promptCompleter.isCompleted) {
@@ -119,21 +128,28 @@ class _KeystoneShieldSigningOverlayState
       if (accountUuid == null) {
         throw Exception('No active account.');
       }
+      _accountUuid = accountUuid;
+      final session = _session ??= HardwareShieldingSession.forRef(
+        ref,
+        accountUuid,
+      );
 
       final dbPath = await getWalletDbPath();
+      if (!mounted || _closed) return;
+      _requireOriginalAccount();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      final shieldPczt = await rust_sync.createShieldTransparentPczt(
+      final shieldPczt = await session.prepare(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
-        accountUuid: accountUuid,
       );
 
+      if (!mounted || _closed) return;
       var saplingParams = await loadSaplingParamsStatus();
       if (shieldPczt.needsSaplingParams && !saplingParams.complete) {
         final confirmed = await _showDownloadPrompt();
         if (!confirmed) {
-          if (!mounted) return;
+          if (!mounted || _closed) return;
           setState(() {
             _phase = _KeystoneShieldPhase.failed;
             _error =
@@ -166,7 +182,7 @@ class _KeystoneShieldSigningOverlayState
         maxFragmentLen: BigInt.from(140),
       );
 
-      if (!mounted) return;
+      if (!mounted || _closed) return;
       setState(() {
         _phase = _KeystoneShieldPhase.ready;
         _pcztWithProofs = pcztWithProofs;
@@ -176,11 +192,19 @@ class _KeystoneShieldSigningOverlayState
       });
     } catch (e, st) {
       log('KeystoneShieldConfirm._preparePczt: ERROR: $e\n$st');
-      if (!mounted) return;
+      await _session?.close();
+      if (!mounted || _closed) return;
       setState(() {
         _phase = _KeystoneShieldPhase.failed;
         _error = _friendlyError(e);
       });
+    }
+  }
+
+  void _requireOriginalAccount() {
+    if (_accountUuid == null ||
+        _accountUuid != ref.read(walletProvider).value?.activeAccountUuid) {
+      throw StateError('The selected account changed. Return to your wallet.');
     }
   }
 
@@ -194,7 +218,7 @@ class _KeystoneShieldSigningOverlayState
     }
 
     final signatures = await context.push<List<int>>('/send/keystone/scan');
-    if (signatures == null || !mounted) return;
+    if (signatures == null || !mounted || _closed) return;
     await _broadcast(pcztWithProofs, signatures, saplingParams);
   }
 
@@ -213,20 +237,28 @@ class _KeystoneShieldSigningOverlayState
     RpcEndpointConfig? attemptedEndpoint;
     try {
       final dbPath = await getWalletDbPath();
+      if (!mounted || _closed) return;
+      _requireOriginalAccount();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       attemptedEndpoint = endpoint;
-      final result = await rust_sync.extractAndBroadcastPczt(
+      final result = await _session!.broadcast(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
-        pcztWithProofsBytes: pcztWithProofs,
-        pcztWithSignaturesBytes: signatures,
+        proofs: pcztWithProofs,
+        signatures: signatures,
         spendParamsPath: _needsSaplingParams ? saplingParams.spendPath : null,
         outputParamsPath: _needsSaplingParams ? saplingParams.outputPath : null,
       );
       log(
         'KeystoneShieldConfirm: broadcast shield txid=${result.txid} '
         'status=${result.status}',
+      );
+      observeShieldingBroadcast(
+        ref: ref,
+        accountUuid: _accountUuid,
+        status: result.status,
+        txids: [result.txid],
       );
 
       if (result.status != 'broadcasted' && result.message != null) {
@@ -238,7 +270,7 @@ class _KeystoneShieldSigningOverlayState
       } catch (e) {
         log('KeystoneShieldConfirm: refreshAfterSend failed: $e');
       }
-      if (!mounted) return;
+      if (!mounted || _closed) return;
       if (result.status != 'broadcasted') {
         setState(() {
           _phase = _KeystoneShieldPhase.broadcastWarning;
@@ -250,7 +282,7 @@ class _KeystoneShieldSigningOverlayState
     } catch (e, st) {
       log('KeystoneShieldConfirm._broadcast: ERROR: $e\n$st');
       await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
-      if (!mounted) return;
+      if (!mounted || _closed) return;
       final postBroadcastMessage = _postBroadcastErrorMessage(e);
       if (postBroadcastMessage != null) {
         setState(() {
@@ -344,8 +376,20 @@ class _KeystoneShieldSigningOverlayState
     return 'Shield balance failed. Please try again.';
   }
 
-  void _cancelToHome() {
-    if (_phase == _KeystoneShieldPhase.broadcasting) return;
+  Future<void> _cancelToHome() async {
+    if (_closed || _phase == _KeystoneShieldPhase.broadcasting) return;
+    setState(() => _closed = true);
+    _resolveSaplingParamsDialog(false);
+    final released = await _session?.close() ?? true;
+    if (!mounted) return;
+    if (!released) {
+      setState(() {
+        _closed = false;
+        _phase = _KeystoneShieldPhase.failed;
+        _error = 'Could not finish cancelling. Please try again.';
+      });
+      return;
+    }
     widget.onCancel();
   }
 
@@ -367,52 +411,55 @@ class _KeystoneShieldSigningOverlayState
               'The shield transaction status is uncertain. Check activity before trying again.'
         : _error;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        AppPaneModalOverlay(
-          onDismiss: _cancelToHome,
-          child: KeystoneSigningModal(
-            phase: modalPhase,
-            urParts: _urParts,
-            error: error,
-            title: isBroadcasting
-                ? 'Broadcasting shield tx'
-                : 'Sign tx on your Keystone',
-            subtitle: isBroadcasting
-                ? 'Submitting transaction'
-                : 'Scan the QR code to sign',
-            instruction: isBroadcasting
-                ? 'Keep Vizor open while the transaction is sent.'
-                : isFailed || isBroadcastWarning
-                ? null
-                : 'After you scanned, click Get Signature.',
-            primaryLabel: canRetry
-                ? 'Try again'
-                : isFailed || isBroadcastWarning || isBroadcasting
-                ? null
-                : 'Get Signature',
-            onPrimary: canRetry
-                ? _retryBroadcast
-                : _phase == _KeystoneShieldPhase.ready
-                ? () => unawaited(_getSignature())
-                : null,
-            secondaryLabel: isBroadcasting
-                ? null
-                : isFailed || isBroadcastWarning
-                ? 'Back to Wallet'
-                : 'Reject',
-            onSecondary: _cancelToHome,
-          ),
-        ),
-        if (_showSaplingParamsPrompt)
-          Positioned.fill(
-            child: SaplingParamsPrompt(
-              onDownload: () => _resolveSaplingParamsDialog(true),
-              onCancel: () => _resolveSaplingParamsDialog(false),
+    return AbsorbPointer(
+      absorbing: _closed,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          AppPaneModalOverlay(
+            onDismiss: _cancelToHome,
+            child: KeystoneSigningModal(
+              phase: modalPhase,
+              urParts: _urParts,
+              error: error,
+              title: isBroadcasting
+                  ? 'Broadcasting shield tx'
+                  : 'Sign tx on your Keystone',
+              subtitle: isBroadcasting
+                  ? 'Submitting transaction'
+                  : 'Scan the QR code to sign',
+              instruction: isBroadcasting
+                  ? 'Keep Vizor open while the transaction is sent.'
+                  : isFailed || isBroadcastWarning
+                  ? null
+                  : 'After you scanned, click Get Signature.',
+              primaryLabel: canRetry
+                  ? 'Try again'
+                  : isFailed || isBroadcastWarning || isBroadcasting
+                  ? null
+                  : 'Get Signature',
+              onPrimary: canRetry
+                  ? _retryBroadcast
+                  : _phase == _KeystoneShieldPhase.ready
+                  ? () => unawaited(_getSignature())
+                  : null,
+              secondaryLabel: isBroadcasting
+                  ? null
+                  : isFailed || isBroadcastWarning
+                  ? 'Back to Wallet'
+                  : 'Reject',
+              onSecondary: _cancelToHome,
             ),
           ),
-      ],
+          if (_showSaplingParamsPrompt)
+            Positioned.fill(
+              child: SaplingParamsPrompt(
+                onDownload: () => _resolveSaplingParamsDialog(true),
+                onCancel: () => _resolveSaplingParamsDialog(false),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

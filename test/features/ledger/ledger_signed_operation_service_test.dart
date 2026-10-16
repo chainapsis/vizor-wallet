@@ -54,6 +54,33 @@ void main() {
   }
 
   test(
+    'list preserves optional recovered shielding amount from Rust',
+    () async {
+      final amount = BigInt.from(1970000);
+      api.operations = [
+        for (final value in [amount, null])
+          rust.LedgerSignedOperation(
+            operationId: 'shield-$value',
+            accountUuid: 'account',
+            kind: 'shield',
+            state: 'signed_pending_broadcast',
+            shieldedZatoshi: value,
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+      ];
+      final operations = await container()
+          .read(ledgerSignedOperationServiceProvider)
+          .list();
+      expect(operations.map((op) => op.shieldedZatoshi), [amount, null]);
+      expect(
+        operations.every((op) => op.kind == LedgerSignedOperationKind.shield),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'production service registers before DB lookup and holds through Rust completion',
     () async {
       final db = Completer<String>();
@@ -236,13 +263,23 @@ class _Api extends RustLibApi {
   Completer<void>? gate;
   String status = 'broadcasted';
   String? message;
+  List<rust.LedgerSignedOperation> operations = [];
   void reset() {
     urls.clear();
+    operations = [];
     error = null;
     gate = null;
     status = 'broadcasted';
     message = null;
   }
+
+  @override
+  Future<List<rust.LedgerSignedOperation>>
+  crateApiLedgerLedgerListSignedOperations({
+    required String dbPath,
+    required String network,
+    String? accountUuid,
+  }) async => operations;
 
   @override
   Future<rust.LedgerSignedOperationBroadcastResult>

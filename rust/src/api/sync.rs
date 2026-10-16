@@ -1459,6 +1459,7 @@ pub struct ShieldTransparentStatus {
 }
 
 pub struct ShieldTransparentPcztResult {
+    pub proposal_id: u64,
     pub pczt_bytes: Vec<u8>,
     pub fee_zatoshi: u64,
     pub shielded_zatoshi: u64,
@@ -2765,6 +2766,7 @@ pub fn create_shield_transparent_pczt(
     lightwalletd_url: String,
     network: String,
     account_uuid: String,
+    send_flow_id: String,
 ) -> Result<ShieldTransparentPcztResult, ApiWalletError> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -2774,8 +2776,10 @@ pub fn create_shield_transparent_pczt(
             &lightwalletd_url,
             network,
             &account_uuid,
+            &send_flow_id,
         ))?;
         Ok(ShieldTransparentPcztResult {
+            proposal_id: r.proposal_id,
             pczt_bytes: r.pczt_bytes,
             fee_zatoshi: r.fee_zatoshi,
             shielded_zatoshi: r.shielded_zatoshi,

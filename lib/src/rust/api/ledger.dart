@@ -423,6 +423,7 @@ class LedgerSignedOperation {
   final String kind;
   final String? externalRef;
   final int? expiryHeight;
+  final BigInt? shieldedZatoshi;
   final String state;
   final String? txid;
   final String? status;
@@ -436,6 +437,7 @@ class LedgerSignedOperation {
     required this.kind,
     this.externalRef,
     this.expiryHeight,
+    this.shieldedZatoshi,
     required this.state,
     this.txid,
     this.status,
@@ -451,6 +453,7 @@ class LedgerSignedOperation {
       kind.hashCode ^
       externalRef.hashCode ^
       expiryHeight.hashCode ^
+      shieldedZatoshi.hashCode ^
       state.hashCode ^
       txid.hashCode ^
       status.hashCode ^
@@ -468,6 +471,7 @@ class LedgerSignedOperation {
           kind == other.kind &&
           externalRef == other.externalRef &&
           expiryHeight == other.expiryHeight &&
+          shieldedZatoshi == other.shieldedZatoshi &&
           state == other.state &&
           txid == other.txid &&
           status == other.status &&

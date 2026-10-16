@@ -362,6 +362,27 @@ pub(crate) fn checkpoint_owner(
     Ok(())
 }
 
+/// Restores an old signed shield checkpoint in the caller's SQLite transaction.
+/// It has no process-local unlock capability and survives restart until settled.
+pub(crate) fn restore_signed_owner(
+    conn: &Connection,
+    owner: LockOwner,
+    inputs: &[OutputRef],
+    expiry: BlockHeight,
+    operation_id: &str,
+) -> Result<(), String> {
+    for input in inputs {
+        conn.execute(&format!("INSERT INTO {TABLE}
+            (owner, session_id, txid, pool, output_index, expiry_height, retain_until_expiry, phase, operation_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 'signed', ?7)"),
+            params![owner.as_bytes().as_slice(), PROCESS_SESSION_ID.as_slice(),
+                input.txid().as_ref(), pool_code(input.pool()), input.output_index(),
+                u32::from(expiry), operation_id],
+        ).map_err(|e| format!("Restore signed shielding reservation: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Must be committed with removal/terminalization of the outbox operation.
 pub(crate) fn release_operation(conn: &Connection, operation_id: &str) -> Result<(), String> {
     ensure_schema(conn)?;
@@ -849,7 +870,7 @@ mod tests {
                     PROPOSAL_STORE.lock().unwrap().locks.insert(
                         id,
                         StoredProposalLock {
-                            proposal: proposal.clone(),
+                            inputs: crate::wallet::sync::send::proposal_input_refs(&proposal),
                             network: WalletNetwork::Test,
                             db_path: writer_path.clone(),
                             owner,
@@ -1289,7 +1310,7 @@ mod tests {
         PROPOSAL_STORE.lock().unwrap().locks.insert(
             id,
             StoredProposalLock {
-                proposal,
+                inputs: crate::wallet::sync::send::proposal_input_refs(&proposal),
                 network: WalletNetwork::Test,
                 db_path: wallet.path.clone(),
                 owner,
@@ -1318,7 +1339,7 @@ mod tests {
         PROPOSAL_STORE.lock().unwrap().locks.insert(
             id,
             StoredProposalLock {
-                proposal: stored_proposal_fixture(),
+                inputs: crate::wallet::sync::send::proposal_input_refs(&stored_proposal_fixture()),
                 network: WalletNetwork::Test,
                 db_path: wallet.path.clone(),
                 owner,

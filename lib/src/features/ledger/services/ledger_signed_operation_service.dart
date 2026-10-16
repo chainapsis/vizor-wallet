@@ -42,6 +42,7 @@ class LedgerSignedOperationMetadata {
     required this.state,
     this.externalRef,
     this.expiryHeight,
+    this.shieldedZatoshi,
     this.txid,
     this.status,
     this.message,
@@ -52,6 +53,7 @@ class LedgerSignedOperationMetadata {
   final LedgerSignedOperationKind kind;
   final String? externalRef;
   final int? expiryHeight;
+  final BigInt? shieldedZatoshi;
   final String state;
   final String? txid;
   final String? status;
@@ -291,6 +293,7 @@ LedgerSignedOperationMetadata _metadataFromRust(
     kind: LedgerSignedOperationKind.parse(operation.kind),
     externalRef: operation.externalRef,
     expiryHeight: operation.expiryHeight,
+    shieldedZatoshi: operation.shieldedZatoshi,
     state: operation.state,
     txid: operation.txid,
     status: operation.status,

@@ -4121,7 +4121,7 @@ mod tests {
             store.locks.insert(
                 id,
                 StoredProposalLock {
-                    proposal: proposal.clone(),
+                    inputs: crate::wallet::sync::send::proposal_input_refs(&proposal),
                     network: WalletNetwork::Test,
                     db_path: path.clone(),
                     owner,

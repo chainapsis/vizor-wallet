@@ -1,3 +1,7 @@
+import '../src/core/navigation/mobile_shield_page.dart';
+import '../figma_compare/ledger_shield_capture.dart';
+import '../figma_compare/keystone_shield_capture.dart';
+import '../src/features/home/widgets/mobile/shield/mobile_shield_backdrop.dart';
 import '../src/features/onboarding/import/desktop_import_method_selection_screen.dart';
 import '../src/features/onboarding/import/desktop_hardware_selection_screen.dart';
 import '../src/providers/enhance_pir_provider.dart';
@@ -28,6 +32,7 @@ import '../src/features/payment_links/services/payment_link_received_store.dart'
 import '../src/features/payment_links/services/payment_link_recovery_reconciler.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/config/swap_feature_config.dart';
+import '../src/core/navigation/mobile_routes.dart';
 import '../src/core/layout/app_layout.dart';
 import '../src/features/activity/activity_eta_provider.dart';
 import '../src/features/swap/providers/swap_activity_store.dart';
@@ -50,6 +55,7 @@ import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
+import '../src/features/home/services/transparent_shielding_service.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -1685,6 +1691,84 @@ Widget buildMobileHomeDefaultUseCase(
     ),
   );
 }
+
+/// Interactive visual fixture: production home, routing, snapshot and software
+/// shield owner. Only balances and the transaction result are supplied samples.
+Widget buildMobileShieldHomeFlowUseCase(BuildContext context) =>
+    _buildMobileHomeUseCase(
+      accountState: _accountsDesignState,
+      votingVisible: false,
+      shieldFlow: true,
+      syncState:
+          _homeSyncedState(
+            orchardBalance: BigInt.from(1492000000),
+            transparentBalance: BigInt.from(1412000000),
+            canShieldTransparentBalance: true,
+            recentTransactions: [_homeTx(1), _homeTx(2)],
+          ).copyWith(
+            shieldTransparentAmount: BigInt.from(1411990000),
+            shieldTransparentFee: BigInt.from(10000),
+          ),
+    );
+
+/// Interactive Keystone capture using production Home and shielding visuals.
+Widget buildMobileKeystoneShieldHomeFlowUseCase(BuildContext context) =>
+    _buildMobileHomeUseCase(
+      accountState: _accountsDesignState.copyWith(
+        accounts: [
+          AccountInfo(
+            uuid: _accountsDesignState.activeAccountUuid!,
+            name: 'Keystone',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.keystone,
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+        ],
+      ),
+      votingVisible: false,
+      shieldFlow: true,
+      keystoneShieldPreview: true,
+      syncState:
+          _homeSyncedState(
+            orchardBalance: BigInt.from(1492000000),
+            transparentBalance: BigInt.from(1412000000),
+            canShieldTransparentBalance: true,
+            recentTransactions: [_homeTx(1), _homeTx(2)],
+          ).copyWith(
+            shieldTransparentAmount: BigInt.from(1411990000),
+            shieldTransparentFee: BigInt.from(10000),
+          ),
+    );
+
+Widget buildMobileLedgerShieldHomeFlowUseCase(BuildContext context) =>
+    _buildMobileHomeUseCase(
+      accountState: _accountsDesignState.copyWith(
+        accounts: [
+          AccountInfo(
+            uuid: _accountsDesignState.activeAccountUuid!,
+            name: 'Ledger',
+            order: 0,
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+        ],
+      ),
+      votingVisible: false,
+      shieldFlow: true,
+      ledgerShieldPreview: true,
+      syncState:
+          _homeSyncedState(
+            orchardBalance: BigInt.from(1492000000),
+            transparentBalance: BigInt.from(1412000000),
+            canShieldTransparentBalance: true,
+            recentTransactions: [_homeTx(1), _homeTx(2)],
+          ).copyWith(
+            shieldTransparentAmount: BigInt.from(1411990000),
+            shieldTransparentFee: BigInt.from(10000),
+          ),
+    );
 
 Widget buildMobileHomeGiftCardsUseCase(BuildContext context) {
   final transactions = _previewGiftCardActivityTransactions();
@@ -3336,6 +3420,9 @@ Widget _buildMobileHomeUseCase({
   Map<String, String>? etaLabels,
   bool setupPreview = false,
   bool inheritWalletState = false,
+  bool shieldFlow = false,
+  bool keystoneShieldPreview = false,
+  bool ledgerShieldPreview = false,
   bool votingVisible = true,
   required AccountState accountState,
   required SyncState syncState,
@@ -3358,6 +3445,9 @@ Widget _buildMobileHomeUseCase({
     initialLocation: initialLocation,
     openAccountsSheet: openAccountsSheet,
     showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
+    shieldFlow: shieldFlow,
+    keystoneShieldPreview: keystoneShieldPreview,
+    ledgerShieldPreview: ledgerShieldPreview,
   );
   return ProviderScope(
     overrides: [
@@ -3394,11 +3484,41 @@ Widget _buildMobileHomeUseCase({
       ),
       if (!inheritWalletState)
         syncProvider.overrideWith(
-          () => _PreviewSyncNotifier(
-            accountState.activeAccountUuid,
-            initialState: syncState,
-          ),
+          () => shieldFlow
+              ? _PreviewShieldSyncNotifier(
+                  accountState.activeAccountUuid,
+                  initialState: syncState,
+                )
+              : _PreviewSyncNotifier(
+                  accountState.activeAccountUuid,
+                  initialState: syncState,
+                ),
         ),
+      if (shieldFlow)
+        softwareTransparentShieldRunnerProvider.overrideWith((providerRef) {
+          Timer? timer;
+          providerRef.onDispose(() => timer?.cancel());
+          return ({
+            required ref,
+            required accountUuid,
+            logContext = 'preview',
+          }) async {
+            final ready = Completer<void>();
+            timer = Timer(const Duration(milliseconds: 4400), ready.complete);
+            await ready.future;
+            final amount = BigInt.from(1411990000);
+            (ref.read(syncProvider.notifier) as _PreviewShieldSyncNotifier)
+                .finishShielding(amount);
+            return rust_sync.ShieldTransparentResult(
+              txids: 'visual-preview',
+              status: 'broadcasted',
+              broadcastedCount: 1,
+              totalCount: 1,
+              feeZatoshi: BigInt.from(10000),
+              shieldedZatoshi: amount,
+            );
+          };
+        }),
       privacyModeProvider.overrideWith(_PreviewPrivacyModeNotifier.new),
       zecMarketDataSourceProvider.overrideWithValue(
         _PreviewZecMarketDataSource(marketData),
@@ -3421,10 +3541,23 @@ Widget _buildMobileHomeUseCase({
         return announcement;
       }),
     ],
-    child: _MobilePreviewFrame(
-      constrainToDesignSize: constrainToPreviewFrame,
-      child: previewChild ?? harness,
-    ),
+    child: shieldFlow
+        ? _ShieldMotionPreview(child: harness)
+        : _MobilePreviewFrame(
+            constrainToDesignSize: constrainToPreviewFrame,
+            child: previewChild ?? harness,
+          ),
+  );
+}
+
+class _ShieldMotionPreview extends StatelessWidget {
+  const _ShieldMotionPreview({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => MediaQuery(
+    data: MediaQuery.of(context).copyWith(disableAnimations: false),
+    child: child,
   );
 }
 
@@ -4102,11 +4235,17 @@ class _MobileHomeHarness extends StatefulWidget {
     this.initialLocation = '/home',
     required this.openAccountsSheet,
     required this.showStaticIronwoodAnnouncement,
+    this.shieldFlow = false,
+    this.keystoneShieldPreview = false,
+    this.ledgerShieldPreview = false,
   });
 
   final String initialLocation;
   final bool openAccountsSheet;
   final bool showStaticIronwoodAnnouncement;
+  final bool shieldFlow;
+  final bool keystoneShieldPreview;
+  final bool ledgerShieldPreview;
 
   @override
   State<_MobileHomeHarness> createState() => _MobileHomeHarnessState();
@@ -4116,9 +4255,55 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   late final GoRouter _router;
   final _privacyController = SensitivePrivacyOverlayController();
 
+  Widget _shieldPreview(BuildContext context, GoRouterState state) {
+    void submitted() =>
+        (ProviderScope.containerOf(
+                  context,
+                  listen: false,
+                ).read(syncProvider.notifier)
+                as _PreviewShieldSyncNotifier)
+            .finishShielding(BigInt.from(1411990000));
+    void close() => context.pop();
+    final backdrop = state.extra as MobileShieldBackdrop?;
+    return widget.ledgerShieldPreview
+        ? LedgerShieldMotionPreview(
+            backdrop: backdrop,
+            onSubmitted: submitted,
+            onClose: close,
+          )
+        : KeystoneShieldMotionPreview(
+            backdrop: backdrop,
+            onSubmitted: submitted,
+            onClose: close,
+          );
+  }
+
   @override
   void initState() {
     super.initState();
+    if (widget.shieldFlow) {
+      _router = GoRouter(
+        initialLocation: widget.initialLocation,
+        routes: [
+          for (final route in buildMobileRoutes(entryRoutes: const []))
+            if (route is GoRoute &&
+                ((widget.keystoneShieldPreview &&
+                        route.path == '/home/keystone-shield') ||
+                    (widget.ledgerShieldPreview &&
+                        route.path == '/home/ledger-shield')))
+              GoRoute(
+                path: route.path,
+                pageBuilder: (context, state) => MobileShieldPage(
+                  key: state.pageKey,
+                  child: _shieldPreview(context, state),
+                ),
+              )
+            else
+              route,
+        ],
+      );
+      return;
+    }
     _router = GoRouter(
       initialLocation: widget.initialLocation,
       routes: [
@@ -6290,6 +6475,23 @@ class _PreviewSyncNotifier extends SyncNotifier {
 
   @override
   Future<void> clearSensitiveStateForLock() async {}
+}
+
+class _PreviewShieldSyncNotifier extends _PreviewSyncNotifier {
+  _PreviewShieldSyncNotifier(super.activeAccountUuid, {super.initialState});
+
+  void finishShielding(BigInt amount) {
+    final current = state.value!;
+    state = AsyncData(
+      current.copyWith(
+        orchardBalance: current.orchardBalance + amount,
+        transparentBalance: BigInt.zero,
+        canShieldTransparentBalance: false,
+        shieldTransparentAmount: BigInt.zero,
+        shieldTransparentFee: BigInt.zero,
+      ),
+    );
+  }
 }
 
 class _PreviewPrivacyModeNotifier extends PrivacyModeNotifier {

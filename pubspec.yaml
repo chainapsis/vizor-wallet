@@ -117,6 +117,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/fonts/ShieldingSerif-OFL.txt
     - assets/animations/
     # Desktop artwork is omitted from iOS and Android bundles.
     - path: assets/animations/desktop/
@@ -179,3 +180,10 @@ flutter:
         # AppTypography display/headline tokens.
         - asset: assets/fonts/YoungSerif-Regular.ttf
           weight: 400
+    # Isolated reference-video weights; other app serif tokens keep their fonts.
+    - family: Shielding Serif
+      fonts:
+        - asset: assets/fonts/ShieldingSerif-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/ShieldingSerif-Bold.ttf
+          weight: 700

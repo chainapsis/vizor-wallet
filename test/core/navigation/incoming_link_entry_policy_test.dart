@@ -28,6 +28,9 @@ void main() {
   for (final location in [
     '/send',
     '/send/keystone-sign',
+    '/home/shield',
+    '/home/ledger-shield',
+    '/home/keystone-shield',
     '/voting/poll/1/status',
     '/payment-links/scan',
   ]) {

@@ -312,6 +312,7 @@ abstract class RustLibApi extends BaseApi {
     required String lightwalletdUrl,
     required String network,
     required String accountUuid,
+    required String sendFlowId,
   });
 
   Future<TexPcztPairResult> crateApiSyncCreateTexPcztsFromProposal({
@@ -3024,6 +3025,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String lightwalletdUrl,
     required String network,
     required String accountUuid,
+    required String sendFlowId,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3033,6 +3035,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
+          sse_encode_String(sendFlowId, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3045,7 +3048,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_api_wallet_error,
         ),
         constMeta: kCrateApiSyncCreateShieldTransparentPcztConstMeta,
-        argValues: [dbPath, lightwalletdUrl, network, accountUuid],
+        argValues: [dbPath, lightwalletdUrl, network, accountUuid, sendFlowId],
         apiImpl: this,
       ),
     );
@@ -3054,7 +3057,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncCreateShieldTransparentPcztConstMeta =>
       const TaskConstMeta(
         debugName: "create_shield_transparent_pczt",
-        argNames: ["dbPath", "lightwalletdUrl", "network", "accountUuid"],
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "sendFlowId",
+        ],
       );
 
   @override
@@ -13028,20 +13037,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   LedgerSignedOperation dco_decode_ledger_signed_operation(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return LedgerSignedOperation(
       operationId: dco_decode_String(arr[0]),
       accountUuid: dco_decode_String(arr[1]),
       kind: dco_decode_String(arr[2]),
       externalRef: dco_decode_opt_String(arr[3]),
       expiryHeight: dco_decode_opt_box_autoadd_u_32(arr[4]),
-      state: dco_decode_String(arr[5]),
-      txid: dco_decode_opt_String(arr[6]),
-      status: dco_decode_opt_String(arr[7]),
-      message: dco_decode_opt_String(arr[8]),
-      createdAtMs: dco_decode_i_64(arr[9]),
-      updatedAtMs: dco_decode_i_64(arr[10]),
+      shieldedZatoshi: dco_decode_opt_box_autoadd_u_64(arr[5]),
+      state: dco_decode_String(arr[6]),
+      txid: dco_decode_opt_String(arr[7]),
+      status: dco_decode_opt_String(arr[8]),
+      message: dco_decode_opt_String(arr[9]),
+      createdAtMs: dco_decode_i_64(arr[10]),
+      updatedAtMs: dco_decode_i_64(arr[11]),
     );
   }
 
@@ -14840,13 +14850,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return ShieldTransparentPcztResult(
-      pcztBytes: dco_decode_list_prim_u_8_strict(arr[0]),
-      feeZatoshi: dco_decode_u_64(arr[1]),
-      shieldedZatoshi: dco_decode_u_64(arr[2]),
-      needsSaplingParams: dco_decode_bool(arr[3]),
+      proposalId: dco_decode_u_64(arr[0]),
+      pcztBytes: dco_decode_list_prim_u_8_strict(arr[1]),
+      feeZatoshi: dco_decode_u_64(arr[2]),
+      shieldedZatoshi: dco_decode_u_64(arr[3]),
+      needsSaplingParams: dco_decode_bool(arr[4]),
     );
   }
 
@@ -17362,6 +17373,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_kind = sse_decode_String(deserializer);
     var var_externalRef = sse_decode_opt_String(deserializer);
     var var_expiryHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_shieldedZatoshi = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_state = sse_decode_String(deserializer);
     var var_txid = sse_decode_opt_String(deserializer);
     var var_status = sse_decode_opt_String(deserializer);
@@ -17374,6 +17386,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       kind: var_kind,
       externalRef: var_externalRef,
       expiryHeight: var_expiryHeight,
+      shieldedZatoshi: var_shieldedZatoshi,
       state: var_state,
       txid: var_txid,
       status: var_status,
@@ -20024,11 +20037,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_proposalId = sse_decode_u_64(deserializer);
     var var_pcztBytes = sse_decode_list_prim_u_8_strict(deserializer);
     var var_feeZatoshi = sse_decode_u_64(deserializer);
     var var_shieldedZatoshi = sse_decode_u_64(deserializer);
     var var_needsSaplingParams = sse_decode_bool(deserializer);
     return ShieldTransparentPcztResult(
+      proposalId: var_proposalId,
       pcztBytes: var_pcztBytes,
       feeZatoshi: var_feeZatoshi,
       shieldedZatoshi: var_shieldedZatoshi,
@@ -22435,6 +22450,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.kind, serializer);
     sse_encode_opt_String(self.externalRef, serializer);
     sse_encode_opt_box_autoadd_u_32(self.expiryHeight, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.shieldedZatoshi, serializer);
     sse_encode_String(self.state, serializer);
     sse_encode_opt_String(self.txid, serializer);
     sse_encode_opt_String(self.status, serializer);
@@ -24629,6 +24645,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.proposalId, serializer);
     sse_encode_list_prim_u_8_strict(self.pcztBytes, serializer);
     sse_encode_u_64(self.feeZatoshi, serializer);
     sse_encode_u_64(self.shieldedZatoshi, serializer);

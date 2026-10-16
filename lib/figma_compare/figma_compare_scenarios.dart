@@ -1,3 +1,4 @@
+import 'mobile_shield_capture.dart';
 import '../src/features/ledger/services/ledger_failure_guidance.dart';
 import 'desktop_welcome_capture.dart';
 import '../widgetbook/desktop_gift_onboarding_use_cases.dart';
@@ -90,6 +91,89 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'mobile-ledger-shield-home-flow',
+    description: 'Ledger shielding stages and continuous particle resolution',
+    allowPointer: true,
+    builder: buildMobileLedgerShieldHomeFlowUseCase,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-keystone-shield-home-flow',
+    description: 'Keystone shielding: QR and camera particle transitions',
+    allowPointer: true,
+    builder: buildMobileKeystoneShieldHomeFlowUseCase,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-home-flow',
+    description: 'Mobile home to shielding with a frozen blurred backdrop',
+    builder: buildMobileShieldHomeFlowUseCase,
+    desktop: false,
+    mobile: true,
+    allowPointer: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-reference-review',
+    description: 'Original video: Transparent Balance',
+    builder: buildMobileShieldReferenceReview,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-reference-result',
+    description: 'Original video: Shielded successfully',
+    builder: buildMobileShieldReferenceResult,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-review',
+    description: 'Mobile shielding: Review',
+    builder: buildMobileShieldReview,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-cloud',
+    description: 'Mobile shielding: Processing cloud',
+    builder: buildMobileShieldCloud,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-result',
+    description: 'Mobile shielding: Submitted result',
+    builder: buildMobileShieldResult,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-keystone',
+    description: 'Mobile shielding: Keystone approval',
+    builder: buildMobileShieldKeystone,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-shield-ledger',
+    description: 'Mobile shielding: Ledger approval',
+    builder: buildMobileShieldLedger,
+    desktop: false,
+    mobile: true,
+    renderShadows: true,
+  ),
   FigmaCompareScenario(
     id: 'ironwood-label-audit-desktop-activity',
     description:

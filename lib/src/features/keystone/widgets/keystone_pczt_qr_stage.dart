@@ -11,7 +11,7 @@ enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 const _scanOptimizedQrInk = Color(0xFF000000);
 // Keep every Keystone signing screen on the same camera-friendly cadence.
 // Screens select their layout, but cannot override the animation timing.
-const _keystoneQrFrameInterval = Duration(milliseconds: 200);
+const keystoneQrFrameInterval = Duration(milliseconds: 200);
 
 class KeystonePcztQrStage extends StatelessWidget {
   const KeystonePcztQrStage({
@@ -130,7 +130,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   void _startTimer() {
     _timer?.cancel();
     if (widget.urParts.length <= 1) return;
-    _timer = Timer.periodic(_keystoneQrFrameInterval, (_) {
+    _timer = Timer.periodic(keystoneQrFrameInterval, (_) {
       if (!mounted) return;
       setState(() {
         _index = (_index + 1) % widget.urParts.length;
