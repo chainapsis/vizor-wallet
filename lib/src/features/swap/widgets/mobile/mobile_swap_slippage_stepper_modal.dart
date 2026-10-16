@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart' show InputDecoration, TextField;
+import 'package:flutter/material.dart'
+    show InputBorder, InputDecoration, Scrollbar, TextField;
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -7,13 +8,14 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../swap_confidential_ui.dart';
+import '../swap_slippage_guidance.dart';
 
 /// Mobile slippage editor — Figma `Slippage` (`_Modal Type` 4755:84761): a
 /// 60px Young Serif value flanked by 60×50 minus/plus pills (0.1% steps within
 /// 0.1–5%), or typed directly via the system keypad, capped at two decimal
 /// places. Out-of-range input turns the value and a "Slippage must be 0.1 - 5%"
-/// message destructive and disables Update. The stepper keeps its 160px body;
-/// guidance and input scroll together when the keyboard limits the space.
+/// message destructive and disables Update. Guidance and input scroll together
+/// when large text or the keyboard limits the available space.
 /// The confidential route sits above slippage and applies as soon as it is
 /// switched, as in the desktop [SwapSlippageModal].
 class MobileSwapSlippageStepperModal extends StatefulWidget {
@@ -48,12 +50,10 @@ class _MobileSwapSlippageStepperModalState
   static const _maxBps = 500; // 5%
   static const _stepBps = 10; // 0.1%
 
-  /// Figma `Body` is a fixed 160px tall area that centers the stepper.
-  static const _bodyHeight = 160.0;
-
   late final TextEditingController _controller;
   late bool _confidential = widget.confidential;
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
   final GlobalKey _stepperKey = GlobalKey();
   double _keyboardInset = 0;
 
@@ -100,6 +100,7 @@ class _MobileSwapSlippageStepperModalState
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -139,6 +140,22 @@ class _MobileSwapSlippageStepperModalState
     // Out-of-range turns the value the destructive tone; in-range it is the
     // bright accent serif (Figma value = text.accent, not a dimmed primary).
     final valueColor = invalid ? colors.text.destructive : colors.text.accent;
+    final guidanceFontSize = AppTypography.bodySmall.fontSize!;
+    final guidanceTextScale =
+        MediaQuery.textScalerOf(context).scale(guidanceFontSize) /
+        guidanceFontSize;
+    // Move Pay guidance lower without changing the body height. Large text
+    // needs less extra spacing to keep the complete warning in view.
+    final guidanceOffset = widget.paymentMode
+        ? AppSpacing.base / (guidanceTextScale > 1 ? guidanceTextScale : 1)
+        : 0.0;
+    final guidance = SwapSlippageGuidance(
+      key: const ValueKey('mobile_swap_slippage_guidance'),
+      lowSlippage: _inRange && _bps! < 200,
+      paymentMode: widget.paymentMode,
+      // Swap's sits under the left-aligned heading; Pay's under the value.
+      textAlign: widget.paymentMode ? TextAlign.center : TextAlign.start,
+    );
 
     return MobileModalScaffold(
       title: widget.paymentMode ? 'Payment settings' : 'Swap settings',
@@ -151,91 +168,100 @@ class _MobileSwapSlippageStepperModalState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Flexible(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SwapConfidentialSetting(
-                    confidential: _confidential,
-                    onChanged: (value) {
-                      setState(() => _confidential = value);
-                      widget.onConfidentialChanged(value);
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Container(height: 1, color: colors.border.regular),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    'Slippage',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SwapConfidentialSetting(
+                      confidential: _confidential,
+                      onChanged: (value) {
+                        setState(() => _confidential = value);
+                        widget.onConfidentialChanged(value);
+                      },
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    widget.paymentMode
-                        ? 'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'
-                        : "Sets the maximum rate change you'll accept. Network fees are separate.",
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.secondary,
+                    const SizedBox(height: AppSpacing.sm),
+                    Container(height: 1, color: colors.border.regular),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Slippage',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  SizedBox(
-                    height: _bodyHeight,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            key: _stepperKey,
+                    const SizedBox(height: AppSpacing.xxs),
+                    if (!widget.paymentMode) ...[
+                      guidance,
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+                    ConstrainedBox(
+                      key: const ValueKey('mobile_swap_slippage_stepper_area'),
+                      constraints: const BoxConstraints(minHeight: 160),
+                      child: Padding(
+                        // Preserve the original 160px body at the default
+                        // scale, but let measured large-text content grow.
+                        padding: EdgeInsets.only(
+                          top: AppSpacing.base,
+                          bottom: AppSpacing.base - guidanceOffset,
+                        ),
+                        child: Center(
+                          heightFactor: 1,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              _StepperButton(
-                                key: const ValueKey(
-                                  'mobile_swap_slippage_minus',
-                                ),
-                                label: '-',
-                                enabled: (_bps ?? _minBps) > _minBps,
-                                onTap: () => _step(-1),
+                              Row(
+                                key: _stepperKey,
+                                children: [
+                                  _StepperButton(
+                                    key: const ValueKey(
+                                      'mobile_swap_slippage_minus',
+                                    ),
+                                    label: '-',
+                                    semanticLabel: 'Decrease slippage',
+                                    enabled: (_bps ?? _minBps) > _minBps,
+                                    onTap: () => _step(-1),
+                                  ),
+                                  Expanded(
+                                    child: _buildValueInput(
+                                      context,
+                                      valueColor,
+                                    ),
+                                  ),
+                                  _StepperButton(
+                                    key: const ValueKey(
+                                      'mobile_swap_slippage_plus',
+                                    ),
+                                    label: '+',
+                                    semanticLabel: 'Increase slippage',
+                                    enabled: (_bps ?? _maxBps) < _maxBps,
+                                    onTap: () => _step(1),
+                                  ),
+                                ],
                               ),
-                              Expanded(
-                                child: _buildValueInput(context, valueColor),
-                              ),
-                              _StepperButton(
-                                key: const ValueKey(
-                                  'mobile_swap_slippage_plus',
+                              if (widget.paymentMode) ...[
+                                SizedBox(
+                                  height: AppSpacing.sm + guidanceOffset,
                                 ),
-                                label: '+',
-                                enabled: (_bps ?? _maxBps) < _maxBps,
-                                onTap: () => _step(1),
+                                guidance,
+                              ],
+                              // Reserve the error line (Figma keeps an
+                              // opacity-0 slot) so the stepper stays put.
+                              const SizedBox(height: AppSpacing.sm),
+                              _SlippageErrorSlot(
+                                invalid: invalid,
+                                color: colors.text.destructive,
                               ),
                             ],
                           ),
-                          // Reserve the error line (Figma keeps an opacity-0 slot) so
-                          // the stepper stays put whether or not it shows.
-                          const SizedBox(height: AppSpacing.sm),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(minHeight: 16),
-                            child: invalid
-                                ? Text(
-                                    'Slippage must be 0.1 - 5%',
-                                    key: const ValueKey(
-                                      'mobile_swap_slippage_error',
-                                    ),
-                                    textAlign: TextAlign.center,
-                                    style: AppTypography.labelMedium.copyWith(
-                                      fontWeight: FontWeight.w500,
-                                      color: colors.text.destructive,
-                                    ),
-                                  )
-                                : const SizedBox(height: 16),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -307,36 +333,112 @@ class _MobileSwapSlippageStepperModalState
           scale = lower;
         }
         final fittedValueStyle = valueStyle.copyWith(fontSize: 60 * scale);
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: widthOf(text, fittedValueStyle) + 3,
-              child: TextField(
-                key: const ValueKey('mobile_swap_slippage_value'),
-                controller: _controller,
-                focusNode: _focusNode,
-                // No autofocus: the sheet also opens to flip confidential,
-                // and the keypad would cover its actions.
-                onChanged: _onChanged,
-                textAlign: TextAlign.center,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+        final fittedHeightPainter = TextPainter(
+          text: TextSpan(text: '0', style: fittedValueStyle),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final fittedHeight = fittedHeightPainter.height;
+        fittedHeightPainter.dispose();
+        final reservedHeightPainter = TextPainter(
+          text: TextSpan(text: '0', style: valueStyle),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final reservedHeight = reservedHeightPainter.height;
+        reservedHeightPainter.dispose();
+        final remainingHeight = reservedHeight - fittedHeight;
+        final verticalPadding = remainingHeight > 0 ? remainingHeight / 2 : 0.0;
+        return SizedBox(
+          height: reservedHeight,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: widthOf(text, fittedValueStyle) + 3,
+                height: reservedHeight,
+                child: Semantics(
+                  label: 'Slippage tolerance, percent',
+                  child: TextField(
+                    key: const ValueKey('mobile_swap_slippage_value'),
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    // No autofocus: the sheet also opens to flip confidential,
+                    // and the keypad would cover its actions.
+                    onChanged: _onChanged,
+                    textAlign: TextAlign.center,
+                    textAlignVertical: TextAlignVertical.center,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      const CommaToDotInputFormatter(),
+                      const DecimalAmountInputFormatter(maxFractionDigits: 2),
+                    ],
+                    style: fittedValueStyle,
+                    cursorColor: context.colors.text.accent,
+                    cursorWidth: 2,
+                    cursorRadius: const Radius.circular(AppRadii.full),
+                    decoration: InputDecoration(
+                      isCollapsed: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: verticalPadding,
+                      ),
+                      border: InputBorder.none,
+                      hintText: '0',
+                    ),
+                  ),
                 ),
-                inputFormatters: [
-                  const CommaToDotInputFormatter(),
-                  const DecimalAmountInputFormatter(maxFractionDigits: 2),
-                ],
-                style: fittedValueStyle,
-                cursorColor: context.colors.text.accent,
-                cursorWidth: 2,
-                cursorRadius: const Radius.circular(AppRadii.full),
-                decoration: const InputDecoration.collapsed(hintText: '0'),
               ),
-            ),
-            Text(' %', style: percentStyle.copyWith(fontSize: 45 * scale)),
-          ],
+              Text(' %', style: percentStyle.copyWith(fontSize: 45 * scale)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SlippageErrorSlot extends StatelessWidget {
+  const _SlippageErrorSlot({required this.invalid, required this.color});
+
+  static const _message = 'Slippage must be 0.1 - 5%';
+
+  final bool invalid;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AppTypography.labelMedium.copyWith(
+      fontWeight: FontWeight.w500,
+      color: color,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(text: _message, style: style),
+          textDirection: Directionality.of(context),
+          textAlign: TextAlign.center,
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final reservedHeight = painter.height;
+        painter.dispose();
+        return SizedBox(
+          height: reservedHeight,
+          child: invalid
+              ? Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    _message,
+                    key: const ValueKey('mobile_swap_slippage_error'),
+                    textAlign: TextAlign.center,
+                    style: style,
+                  ),
+                )
+              : null,
         );
       },
     );
@@ -346,12 +448,14 @@ class _MobileSwapSlippageStepperModalState
 class _StepperButton extends StatelessWidget {
   const _StepperButton({
     required this.label,
+    required this.semanticLabel,
     required this.enabled,
     required this.onTap,
     super.key,
   });
 
   final String label;
+  final String semanticLabel;
   final bool enabled;
   final VoidCallback onTap;
 
@@ -361,33 +465,37 @@ class _StepperButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: enabled ? onTap : null,
-        child: Container(
-          // Mobile button rhythm: 60×50 secondary pill.
-          width: 60,
-          height: AppButtonSizing.largeHeight,
-          decoration: BoxDecoration(
-            color: colors.button.secondary.bg,
-            borderRadius: BorderRadius.circular(AppRadii.full),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              // "+"/"-" are centered on the math axis, so the default
-              // `proportional` leading (which biases toward the larger ascent)
-              // drops the glyph low. `even` splits the line leading equally so
-              // the glyph sits dead-center in the 44px pill.
-              style: TextStyle(
-                fontFamily: 'Geist',
-                fontWeight: FontWeight.w500,
-                fontSize: 24,
-                height: 1,
-                leadingDistribution: TextLeadingDistribution.even,
-                color: enabled
-                    ? colors.button.secondary.label
-                    : colors.text.disabled,
+      label: semanticLabel,
+      onTap: enabled ? onTap : null,
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? onTap : null,
+          child: Container(
+            // Mobile button rhythm: 60×50 secondary pill.
+            width: 60,
+            height: AppButtonSizing.largeHeight,
+            decoration: BoxDecoration(
+              color: colors.button.secondary.bg,
+              borderRadius: BorderRadius.circular(AppRadii.full),
+            ),
+            child: Center(
+              child: Text(
+                label,
+                // "+"/"-" are centered on the math axis, so the default
+                // `proportional` leading (which biases toward the larger ascent)
+                // drops the glyph low. `even` splits the line leading equally so
+                // the glyph sits dead-center in the 44px pill.
+                style: TextStyle(
+                  fontFamily: 'Geist',
+                  fontWeight: FontWeight.w500,
+                  fontSize: 24,
+                  height: 1,
+                  leadingDistribution: TextLeadingDistribution.even,
+                  color: enabled
+                      ? colors.button.secondary.label
+                      : colors.text.disabled,
+                ),
               ),
             ),
           ),

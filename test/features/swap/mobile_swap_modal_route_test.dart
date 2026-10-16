@@ -229,9 +229,11 @@ void main() {
     await tester.pump();
 
     expect(
-      find.text(
-        "Sets the maximum rate change you'll accept. Network fees are separate.",
-      ),
+      find.byKey(const ValueKey('swap_slippage_low_warning')),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel('Price changes may cause a refund.'),
       findsOneWidget,
     );
     expect(
@@ -242,6 +244,60 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('mobile_swap_slippage_plus'))),
       const Size(60, 50),
     );
+    expect(find.bySemanticsLabel('Decrease slippage'), findsOneWidget);
+    expect(find.bySemanticsLabel('Increase slippage'), findsOneWidget);
+  });
+
+  testWidgets('guidance changes without moving the stepper below 2 percent', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppTheme(
+            data: AppThemeData.dark,
+            child: MobileSwapSlippageStepperModal(
+              slippageBps: 200,
+              confidential: false,
+              onConfidentialChanged: (_) {},
+              onSubmitted: (_) {},
+              onCancel: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    const warning = 'Price changes may cause a refund.';
+    expect(
+      find.byKey(const ValueKey('swap_slippage_description')),
+      findsOneWidget,
+    );
+    expect(find.text(warning), findsNothing);
+    final field = find.byKey(const ValueKey('mobile_swap_slippage_value'));
+    final minus = find.byKey(const ValueKey('mobile_swap_slippage_minus'));
+    final plus = find.byKey(const ValueKey('mobile_swap_slippage_plus'));
+    final fieldRect = tester.getRect(field);
+    final minusRect = tester.getRect(minus);
+    final plusRect = tester.getRect(plus);
+
+    await tester.tap(minus);
+    await tester.pump();
+
+    expect(find.text(warning), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_slippage_low_warning')),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel(warning), findsOneWidget);
+    // The value field widens for 1.9; its vertical bounds stay fixed.
+    expect(tester.getRect(field).top, fieldRect.top);
+    expect(tester.getRect(field).bottom, fieldRect.bottom);
+    expect(tester.getRect(minus), minusRect);
+    expect(tester.getRect(plus), plusRect);
+    semantics.dispose();
   });
 
   testWidgets(

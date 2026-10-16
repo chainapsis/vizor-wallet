@@ -826,12 +826,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_pay_slippage_button')));
     await tester.pump();
     expect(find.byType(MobileSwapSlippageStepperModal), findsOneWidget);
-    expect(
-      find.text(
-        'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Extra ZEC allowed for price movement.'), findsOneWidget);
 
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();

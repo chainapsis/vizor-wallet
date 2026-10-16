@@ -4841,12 +4841,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsOneWidget);
     expect(find.text('Slippage'), findsOneWidget);
-    expect(
-      find.text(
-        "Sets the maximum rate change you'll accept. Network fees are separate.",
-      ),
-      findsOneWidget,
-    );
+    expect(find.text("Maximum price movement you'll accept."), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('swap_slippage_200bps')));
     await tester.pumpAndSettle();
@@ -5007,14 +5002,14 @@ void main() {
     await tester.pumpAndSettle();
 
     final explainerTop = tester
-        .getTopLeft(find.textContaining("Sets the maximum rate change you'll"))
+        .getTopLeft(find.byKey(const ValueKey('swap_slippage_description')))
         .dy;
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
         .dy;
-    // Below the confidential setting, the slippage explainer (four lines in
-    // the test font) and a 16dp gap sit before the presets, as before.
-    expect(customCardTop - explainerTop, 232);
+    // Below the confidential setting, the compact explainer and a 16dp gap
+    // sit before the presets.
+    expect(customCardTop - explainerTop, 196);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_slippage_50bps'))).height,
       40,
