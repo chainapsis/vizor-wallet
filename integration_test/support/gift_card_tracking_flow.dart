@@ -159,7 +159,6 @@ Future<GiftCardUsage> consumeTrackedCard(
 }
 
 Future<void> cleanupTrackingE2e(WidgetTester tester) async {
-  await ensurePaymentLinkRegtestChain();
   final path = await getGiftCardTrackingDbPath('regtest');
   if (tester.any(find.byType(ZcashWalletApp))) {
     await trackingContainer(

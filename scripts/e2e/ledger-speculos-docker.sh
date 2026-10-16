@@ -191,34 +191,42 @@ run_flutter_scenario() {
 if [[ "$LANE" == voting-tally ]]; then
   cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --example ledger_zcash_speculos_poc
   export VIZOR_LEDGER_REGTEST_HELPER="$ROOT_DIR/rust/target/debug/examples/ledger_zcash_speculos_poc"
-  export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${RESOURCE//./-}-vote}"
+  scenarios=()
   case "${E2E_LEDGER_VOTING:-}" in
-    ''|true|false) ;;
+    '') scenarios=(flutter.macos.voting-final-tally flutter.macos.voting-ledger-final-tally) ;;
+    false) scenarios=(flutter.macos.voting-final-tally) ;;
+    true) scenarios=(flutter.macos.voting-ledger-final-tally) ;;
     *) echo 'E2E_LEDGER_VOTING must be true or false' >&2; exit 2 ;;
   esac
-  for ledger in ${E2E_LEDGER_VOTING:-false true}; do
-    stop_containers
-    start_instance device
-    export VIZOR_LEDGER_SPECULOS_UFVK_API_URL="$INSTANCE_URL"
-    export VIZOR_LEDGER_SPECULOS_SIGNING_API_URL="$INSTANCE_URL"
-    export VIZOR_LEDGER_REGTEST_ACCOUNT="$RUN_DIR/ledger-account.json"
-    "$VIZOR_LEDGER_REGTEST_HELPER" regtest-export "$INSTANCE_URL" unused "$VIZOR_LEDGER_REGTEST_ACCOUNT" \
-      > "$RUN_DIR/account-export-$ledger.log" 2>&1
-    echo "Running desktop final tally: ledger=$ledger"
-    E2E_LEDGER_VOTING="$ledger" E2E_FINAL_TALLY=true \
-      E2E_VOTE_WINDOW_SECS="${E2E_VOTE_WINDOW_SECS:-300}" \
-      FLUTTER_DEVICE=macos VIZOR_FORM_FACTOR=desktop \
-      E2E_VOTING_TEST_FILE=integration_test/regtest_voting_test.dart \
-      bash "$ROOT_DIR/scripts/e2e/flutter-macos-regtest-voting.sh" \
-      > "$RUN_DIR/voting-tally-$ledger.log" 2>&1 || {
-        docker logs "$RESOURCE-device" > "$RUN_DIR/voting-tally-$ledger-device.log" 2>&1 || true
-        echo "Desktop final tally failed: $RUN_DIR/voting-tally-$ledger.log" >&2
-        exit 1
-      }
-    cp "$ROOT_DIR/.regtest-voting/logs/final-tally-$ledger.json" "$RUN_DIR/"
-    docker logs "$RESOURCE-device" > "$RUN_DIR/voting-tally-$ledger-device.log" 2>&1 || true
-    echo "Desktop final tally passed: ledger=$ledger"
-  done
+  stop_containers
+  start_instance device
+  export VIZOR_LEDGER_SPECULOS_UFVK_API_URL="$INSTANCE_URL"
+  export VIZOR_LEDGER_SPECULOS_SIGNING_API_URL="$INSTANCE_URL"
+  export VIZOR_LEDGER_REGTEST_ACCOUNT="$RUN_DIR/ledger-account.json"
+  "$VIZOR_LEDGER_REGTEST_HELPER" regtest-export "$INSTANCE_URL" unused "$VIZOR_LEDGER_REGTEST_ACCOUNT" \
+    > "$RUN_DIR/account-export.log" 2>&1
+  # Each scenario votes on its own Zakura regtest chain; only the Ledger one signs
+  # on this Speculos instance.
+  echo "Running desktop final tally: ${scenarios[*]}"
+  code=0
+  E2E_VOTE_WINDOW_SECS="${E2E_VOTE_WINDOW_SECS:-300}" \
+    python3 "$ROOT_DIR/scripts/e2e/zakura-run.py" "${scenarios[@]}" \
+    > "$RUN_DIR/voting-tally.log" 2>&1 || code=$?
+  docker logs "$RESOURCE-device" > "$RUN_DIR/voting-tally-device.log" 2>&1 || true
+  report="$(sed -n 's/.* passed; report: //p' "$RUN_DIR/voting-tally.log" | tail -1)"
+  if [[ -f "$report" ]]; then
+    jq -r '.results[] | select(.status == "passed") | "\(.scenario_id) \(.evidence)"' "$report" |
+      while read -r scenario evidence; do
+        ledger=false
+        if [[ "$scenario" == *ledger* ]]; then ledger=true; fi
+        cp "$evidence/voting/logs/final-tally.json" "$RUN_DIR/final-tally-$ledger.json"
+      done
+  fi
+  if ((code != 0)); then
+    echo "Desktop final tally failed: $RUN_DIR/voting-tally.log" >&2
+    exit 1
+  fi
+  echo "Desktop final tally passed: ${scenarios[*]}"
   exit 0
 elif [[ "$LANE" == smoke ]]; then
   FILTER=""

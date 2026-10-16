@@ -63,6 +63,26 @@ class RegtestLightwalletdProxy
     await _channel.shutdown();
   }
 
+  /// Closes the listener and drops open connections, so clients get a refused
+  /// connection as from a stopped lightwalletd. [resumeServing] listens again.
+  Future<void> stopServing() async {
+    releaseStalledAddressUtxosStream();
+    final server = _server;
+    _server = null;
+    if (server != null) {
+      // Shutdown closes the listener at once but finishes each connection
+      // gracefully, which waits for open streams such as the mempool stream.
+      final closed = server.shutdown();
+      for (final connection in server.handlers.keys.toList()) {
+        await connection.terminate();
+      }
+      await closed;
+    }
+    _log('primary proxy stopped listening');
+  }
+
+  Future<void> resumeServing() => start();
+
   void setHealthy() {
     _mode = _ProxyMode.healthy;
     _slowHeight = null;
@@ -281,6 +301,13 @@ class RegtestLightwalletdProxy
     service.BlockID request,
   ) async {
     _throwIfDown();
+    final local = localTreeState(request);
+    if (local != null) return local;
+    return _client.getTreeState(request);
+  }
+
+  /// A local response still goes through the proxy's availability check.
+  service.TreeState? localTreeState(service.BlockID request) {
     if (_serveEmptyGenesisTreeState &&
         request.height == Int64.ZERO &&
         request.hash.isEmpty) {
@@ -290,7 +317,7 @@ class RegtestLightwalletdProxy
         hash: List.filled(64, '0').join(),
       );
     }
-    return _client.getTreeState(request);
+    return null;
   }
 
   @override

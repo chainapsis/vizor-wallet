@@ -1,5 +1,135 @@
 # End-to-end tests
 
+## Zakura regtest
+
+`scripts/e2e/zakura-run.py` runs regtest scenarios one at a time, each on its
+own fresh Zakura regtest chain. The Rust regtest suite
+(`./run-regtest-rust-tests.sh`) and the Flutter regtest runners
+(`scripts/e2e/flutter-*.sh`) run on it.
+
+For every scenario, the runner:
+
+1. starts a Zakura node and lightwalletd (`zakura_regtest.py`) on a private
+   Docker network with leased host ports;
+2. mines 100 blocks, or more for a few Flutter scenarios, so the chain's
+   coinbase can fund wallets;
+3. funds a Flutter scenario's wallets;
+4. starts the Dart lightwalletd shim (`zakura_lwd_shim.dart`), which serves the
+   node-verified genesis tree state and reports the chain as `regtest`;
+5. serves an HTTP control for funding, mining, activation, reorgs and
+   lightwalletd outages;
+6. runs the test, then removes the containers, network, volume and wallet files.
+
+The node runs the official `zakuracore/zakura` image (1.6.0), and lightwalletd
+the build Zcash Labs makes for Zakura
+(`ghcr.io/zcashlabs/thus-spoke-zakura-lightwalletd` 0.3.0). `zakura_regtest.py`
+pins both by digest. Tests steer the chain only with RPCs Zakura ships for
+Regtest: `generate`, `submitblock` and `invalidateblock`. Zakura cannot keep a
+mempool transaction out of the blocks it mines, so to hold transactions pending
+or to build a reorg branch, a second node without peers mines the blocks and
+the main node accepts them through `submitblock`.
+
+Ironwood (NU6.3) is active from height 1. Scenarios that fund Orchard before a
+controlled activation (`rust.ironwood.*`, `flutter.*.ironwood-*` and the voting
+scenarios) use a chain that activates it at height 500.
+
+Funding transactions are signed offline by
+`rust/examples/regtest_direct_funder.rs` from the chain's coinbase, which pays
+a public test-only key, and are broadcast with the node's `sendrawtransaction`.
+Nothing uses a node wallet. The signer and the Rust test executables are built
+from `git archive HEAD rust`, so the runner refuses to start while `rust/` has
+uncommitted changes.
+
+Every run asks for the same build, the signer with every catalog Rust target
+and the address tool, and keeps it in `.regtest-logs/build-cache/funder-v1`,
+keyed by the committed `rust/` tree, the Rust toolchain, the Apple linker and
+the Cargo dependencies. A later run with the same inputs, whatever scenarios it
+selects, skips the 8 to 16 minute build; `report.json` says whether it hit.
+Each entry is about 500 MB. `prune-build-cache.py` lists the cache, and with
+`--apply` removes all but each kind's two newest entries, skipping any that a
+running run holds:
+
+```bash
+python3 scripts/e2e/prune-build-cache.py
+python3 scripts/e2e/prune-build-cache.py --apply
+```
+
+Prerequisites: Python 3.11+, Docker, `grpcurl`, the fvm-pinned Flutter SDK after
+`fvm flutter pub get`, and fetched Cargo dependencies (`cargo fetch --locked` in
+`rust/`). Pinned images that Docker lacks are pulled by digest before the first
+scenario.
+
+```bash
+python3 scripts/e2e/zakura-run.py --list
+python3 scripts/e2e/zakura-run.py rust.import rust.send.basic
+python3 scripts/e2e/zakura-run.py flutter.ios
+```
+
+Each run writes `.regtest-logs/zakura-<run id>/report.json` with every
+scenario's status, phase durations and evidence directory, which holds its
+process logs and the chain's records. The run's build output (several GB) is
+removed when the run ends. `--keep-failed` keeps the stopped containers and
+wallet files of failed scenarios; the report lists their Docker IDs. Remove them
+with `docker rm`, `docker network rm` and `docker volume rm`, and the run
+directory, when done.
+
+The harness unit tests run offline with Docker mocked. Some replace modules,
+so run each file in its own interpreter, from `scripts/e2e`:
+
+```bash
+cd scripts/e2e && for test in test_*.py; do python3 -B -m unittest "${test%.py}" || break; done
+```
+
+### Flutter scenarios
+
+Each Flutter regtest runner, such as
+`scripts/e2e/flutter-macos-regtest-import-sync.sh`, runs `zakura-run.py` with
+its scenario IDs and passes its arguments on. `flutter-macos-regtest-full.sh`
+and `flutter-ios-regtest-mobile-full.sh` run the platform suites. The catalog,
+`zakura_flutter.py`, gives each scenario its test files, process phases,
+funding and defines. The tests fund, mine, reorg and stop lightwalletd through
+the control (`integration_test/support/regtest_control.dart`).
+
+The app's endpoints are compile-time defines, so Flutter scenarios use fixed
+loopback ports: the control on 18232 (`ZCASH_E2E_DRIVER_URL`), the shim on 9067
+and the in-test fault proxy on 19068. Port 19067 must stay unbound because the
+endpoint tests use it as an unavailable server. The screenshot scenarios also
+take 39070, and the voting scenarios take 1317, 13000, 18080 and 26657. Run one
+Flutter runner at a time on a host.
+
+macOS windows stay hidden unless `VIZOR_E2E_HIDDEN_WINDOW=false` is set. iOS
+scenarios run on a simulator that the run creates and deletes at the end:
+`Vizor Zakura E2E <run id>`, an iPhone 16 on the newest installed iOS runtime
+unless `--ios-runtime` names another one. `--keep-failed` keeps it along with
+the failed scenarios' chains. The run never uses other simulators. `--dart-define=NAME=VALUE`
+adds a define to every Flutter phase, but it cannot repeat a define the
+scenario already sets.
+
+Keep the Mac unlocked while Flutter scenarios run. A locked session makes the
+app's keychain writes fail and can leave platform calls unanswered, so a run
+with Flutter scenarios does not start, and stops before its next case, while
+the session is locked; a case that fails while it is locked says so in its
+error. When a phase prints nothing for four minutes or misses its deadline, the
+run saves the app's thread stacks (`sample`) in the case's `stacks/`.
+
+Before the first case, a run with voting scenarios fetches the pinned
+`valargroup/vote-sdk` and `valargroup/vote-nullifier-pir` revisions into
+`.regtest-voting/deps` and builds them (`voting-services.sh build`, logged to
+`voting-build.log`). This needs network access, Go, Cargo and `make`. Once the
+desktop setup phase has migrated the voting power, `voting-services.sh` starts
+the vote chain, the nullifier PIR server and the voting gateway against the
+case's chain. Their logs and the gateway's screenshots are written to the case's
+`voting/logs/`. The PIR data and the vote chain home, several GB that each case
+regenerates, are removed once the case stops. The final-tally scenarios,
+`flutter.macos.voting-final-tally` and
+`flutter.macos.voting-ledger-final-tally`, also wait for the round to finalize
+and check its tally. Their vote window is 300 seconds unless
+`E2E_VOTE_WINDOW_SECS` sets another. `scripts/e2e/ledger-speculos-docker.sh
+voting-tally` runs them, with the Ledger one signing on its Speculos device.
+
+The other Ledger Speculos lanes, the mainnet keychain runner and the payment-URI
+prefill runner need no regtest chain and run as before.
+
 ## Gift Cards
 
 Sender usage tracking and empty observer DB reuse:
@@ -8,31 +138,29 @@ Sender usage tracking and empty observer DB reuse:
 scripts/e2e/flutter-macos-regtest-gift-card-tracking.sh
 ```
 
-This runner resets the disposable regtest chain by default, imports the funded
-sender, drives creation and receipt in the UI, and checks `Unused`, `Use detected`
-at one confirmation, and `Used` plus automatic observer deletion at six. It then
-restarts the process after 200 mined blocks, checks persisted usage and the same
-empty DB path, and repeats the lifecycle for a new card. It uses the production
-tracking timer rather than forcing refreshes. Logs and app-content PNG captures
-are written to `.regtest-logs/gift-card-tracking/`. The window stays hidden by
-default. Run prepare/resume together: resume requires prepare's retained wallet
-and manifest.
+This runner imports the funded sender, drives creation and receipt in the UI,
+and checks `Unused`, `Use detected` at one confirmation, and `Used` plus
+automatic observer deletion at six. It then restarts the process after 200 mined
+blocks, checks persisted usage and the same empty DB path, and repeats the
+lifecycle for a new card. It uses the production tracking timer rather than
+forcing refreshes. The prepare and resume tests run as two processes of one
+scenario, because resume needs prepare's wallet and manifest. The runner copies
+the app-content PNG captures into the case's `captures/` directory.
 
 The companion Rust scenario verifies the skipped block interval directly with
 real shielded notes and a changed tree frontier, then imports an older card:
 
 ```bash
-cargo test --manifest-path rust/Cargo.toml --test regtest_gift_card_tracking -- --ignored --nocapture --test-threads=1
+./run-regtest-rust-tests.sh rust.gift-card.tracking-multiple rust.gift-card.empty-db-reuse
 ```
 
-Start a healthy regtest stack first. Do not run this command concurrently with
-an app E2E: both mine on the same chain. It uses temporary wallet DBs and does not
-inject scan queue rows. The test is excluded from ordinary Rust test runs.
+Each test starts its own Zakura regtest chain, so it does not share a chain
+with app E2Es. It uses temporary wallet DBs and does not inject scan queue rows.
+The test is excluded from ordinary Rust test runs.
 
 
-The macOS regtest runners cover the Gift Card (payment-link) flows. They
-share `scripts/e2e/lib-payment-link.sh`, which starts the regtest stack, funds
-the sender account, and passes the regtest + payment-link defines every phase
+The macOS regtest runners cover the Gift Card (payment-link) flows. Their
+scenarios fund the sender account and pass the payment-link defines every phase
 needs:
 
 ```bash
@@ -49,8 +177,9 @@ scripts/e2e/flutter-macos-regtest-payment-link-recovery.sh
 scripts/e2e/flutter-macos-regtest-gift-card-outcomes.sh
 ```
 
-The outcomes runner uses four process phases for three scenarios: competition
-leaves a real losing card, the next process removes it, and a separate
+The outcomes runner runs two scenarios of two processes each. In
+`flutter.macos.gift-card-competition`, the competition leaves a real losing card
+and the next process removes it. In `flutter.macos.gift-card-response`, a
 prepare/resume pair recovers a transaction whose accepted response was dropped.
 It checks five versus six confirmations, winner/loser balances, a fresh
 observer's spend evidence, retained secrets and claim databases, and zero
@@ -60,21 +189,12 @@ settled failures.
 Automatic claim recovery is gated only during the manual-check measurement,
 then released to execute the production recovery path.
 
-Run this suite serially: it uses the shared Docker regtest chain and resets it
-between the competition/removal and response-loss scenarios by default. The
-fault proxy and node are pinned to local ports 19068 and 18232. macOS windows
-remain hidden by default. Logs are saved to `.regtest-logs/gift-card-outcomes.log`;
-the chain remains available for inspection afterward. As with the other runners,
-run it only when regtest execution is intended.
+Each scenario gets its own chain, and the fault proxy listens on 19068.
+`--keep-failed` keeps a failed scenario's chain for inspection. As with the
+other runners, run it only when regtest execution is intended.
 
-The runners default `VIZOR_DEEPLINK_BASE_URL` to
-`https://link-dev.vizor.cash`. Override it explicitly when testing another
-deployment:
-
-```bash
-VIZOR_DEEPLINK_BASE_URL=https://example.vizor.cash \
-  scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh
-```
+The Gift Card scenarios set `VIZOR_DEEPLINK_BASE_URL` to
+`https://link-dev.vizor.cash`.
 
 The iOS simulator runs the round trip too, against the mobile Settings ›
 My Gift Cards surface:
@@ -87,24 +207,14 @@ scripts/e2e/flutter-ios-regtest-mobile-payment-link-round-trip.sh
 scripts/e2e/flutter-ios-regtest-mobile-gift-onboarding.sh
 ```
 
-It is part of `scripts/e2e/flutter-ios-regtest-mobile-full.sh` and follows
-the mobile lane rules: `run_mobile_e2e` injects `VIZOR_FORM_FACTOR=mobile`,
-`ZCASH_DEFAULT_NETWORK=regtest`, and `ZCASH_E2E_LIGHTWALLETD_URL`, and the
-runner passes `VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true` — without which
-payment links stay gated off — plus `VIZOR_DEEPLINK_BASE_URL`. Set
-`SIMULATOR_UDID` when more than one simulator is booted.
+It is part of `scripts/e2e/flutter-ios-regtest-mobile-full.sh`. Besides
+`VIZOR_FORM_FACTOR=mobile` and the regtest defines, the scenario passes
+`VIZOR_PAYMENT_LINK_REGTEST_ENABLED=true`, without which payment links stay
+gated off, and `VIZOR_DEEPLINK_BASE_URL`.
 
-The onboarding runner uses the Ironwood regtest stack. It prepares three
-independent faucet notes before activation, then funds fresh external Gift
-addresses through the Rust wallet's transaction builder, driven by
-`ironwood-regtest-driver.py`. Ironwood shares the Orchard receiver; the
-ordinary `zcashd z_sendmany` faucet cannot fund these cards after NU6.3.
-The runner supplies the same activation height to the node and app, defaults
-to lightwalletd port 19067 and node RPC port 19232, and accepts
-`IRONWOOD_LIGHTWALLETD_PORT`, `IRONWOOD_ZCASHD_RPC_PORT`,
-`E2E_LIGHTWALLETD_URL`, and `E2E_ZCASHD_RPC_URL` overrides. Use
-`IRONWOOD_COMPOSE_FILE` for an isolated Compose definition. `RESET_REGTEST=0`
-reuses an already running, activated chain with its prepared Gift funder DB.
+The onboarding test funds fresh external Gift addresses with Ironwood notes
+through the control. Each card takes one of three coinbases that the
+scenario reserves.
 
 The onboarding test drives **Activate gift card → Paste card link** in a walletless
 app. It verifies account/passcode persistence, real claim transactions and Home
@@ -113,8 +223,6 @@ backup deferral/completion and birthday, education, first-wallet passphrase
 import, and deletion of a waiting card with its removed recipient. The runner
 passes the mobile tag/define and opts into skipped mobile tests. It does not
 capture recovery words or bearer links, and skips native biometric enrollment.
-Both Gift runners reset their disposable chains by default; run them
-serially. `E2E_DRIVER_PORT` selects the onboarding driver's port.
 
 The desktop and simulator round-trip runners also accept
 `--dart-define=GIFT_CARD_E2E_AMOUNT_MODE=usd` or `usd-max` (the default is
@@ -127,8 +235,7 @@ ZEC Max quote through the copied card link and recipient balance:
 scripts/e2e/flutter-macos-regtest-payment-link-round-trip.sh \
   --dart-define=GIFT_CARD_E2E_AMOUNT_MODE=usd-max
 
-SIMULATOR_UDID=<simulator-udid> \
-  scripts/e2e/flutter-ios-regtest-mobile-payment-link-round-trip.sh \
+scripts/e2e/flutter-ios-regtest-mobile-payment-link-round-trip.sh \
   --dart-define=GIFT_CARD_E2E_AMOUNT_MODE=usd
 ```
 
@@ -178,5 +285,4 @@ The mobile scenario delivers the URI by pushing an `onUris` call over the
 macOS/Windows/Linux/Android/iOS runners implement — so the payment-request
 card is raised the way a real deep link raises it. It then answers the card
 through Review and broadcasts a real regtest transaction. It needs only the
-three defines `run_mobile_e2e` already injects; no payment-link or deeplink
-define applies.
+runner's mobile and regtest defines; no payment-link or deeplink define applies.

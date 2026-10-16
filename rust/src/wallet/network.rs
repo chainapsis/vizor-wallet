@@ -18,8 +18,8 @@ thread_local! {
 }
 
 pub fn configure_regtest_nu6_3_activation_height(height: u32) -> Result<(), String> {
-    if height < 2 {
-        return Err("Regtest NU6.3 activation height must be at least 2".to_string());
+    if height < 1 {
+        return Err("Regtest NU6.3 activation height must be at least 1".to_string());
     }
     #[cfg(not(test))]
     REGTEST_NU6_3_ACTIVATION_HEIGHT.store(height, Ordering::SeqCst);
@@ -106,6 +106,40 @@ impl Parameters for WalletNetwork {
                 NetworkUpgrade::Nu7 => None,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod activation_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_regtest_activation_default_is_unchanged() {
+        assert_eq!(
+            WalletNetwork::Regtest.activation_height(NetworkUpgrade::Nu6_3),
+            Some(BlockHeight::from_u32(u32::MAX))
+        );
+    }
+
+    #[test]
+    fn explicit_regtest_activation_accepts_height_one_and_later_heights() {
+        for height in [1, 500, u32::MAX] {
+            configure_regtest_nu6_3_activation_height(height).unwrap();
+            assert_eq!(
+                WalletNetwork::Regtest.activation_height(NetworkUpgrade::Nu6_3),
+                Some(BlockHeight::from_u32(height))
+            );
+        }
+    }
+
+    #[test]
+    fn zero_activation_is_rejected_without_changing_current_height() {
+        configure_regtest_nu6_3_activation_height(500).unwrap();
+        assert!(configure_regtest_nu6_3_activation_height(0).is_err());
+        assert_eq!(
+            WalletNetwork::Regtest.activation_height(NetworkUpgrade::Nu6_3),
+            Some(BlockHeight::from_u32(500))
+        );
     }
 }
 

@@ -5,6 +5,10 @@ local chain. It starts with Orchard active and NU6.3 inactive, funds arbitrary
 regtest unified addresses in Orchard, and activates NU6.3 only when the test
 mines the configured activation block.
 
+The Flutter Ironwood E2E runners below do not use this stack. Each runs on its
+own Zakura regtest chain that activates NU6.3 at height 500; see
+`scripts/e2e/README.md`. The stack remains for manual experiments.
+
 ## Pinned components
 
 - zcashd: Shielded Labs Zero v15, pinned by OCI digest. Upstream zcashd releases
@@ -27,9 +31,9 @@ Run the real Flutter desktop app on macOS:
 scripts/e2e/flutter-macos-ironwood-migration.sh
 ```
 
-This runner resets the chain, derives and funds the deterministic E2E wallet,
-starts a small local chain-control driver, and launches the Flutter integration
-test on the macOS device. It verifies all of the following through the app UI:
+This runner funds the deterministic E2E wallet in Orchard before activation and
+launches the Flutter integration test on the macOS device. It verifies all of
+the following through the app UI:
 
 - migration UI stays hidden before activation;
 - live NU6.3 activation is detected without restarting the app;
@@ -90,12 +94,12 @@ Test both denomination and final Ironwood transaction reorg recovery:
 scripts/e2e/flutter-macos-ironwood-migration-reorg.sh
 ```
 
-The runner replaces the chain after denomination confirmation and verifies that
+The test replaces the chain after denomination confirmation and verifies that
 the same migration run returns to denomination preparation, then rebuilds its
 Ironwood child. It mines that child below trusted depth, replaces the chain
 again, verifies the child becomes broadcastable, and completes the original run.
-The reusable `reorg.sh` primitive holds transactions displaced by the old chain
-out of replacement blocks until `release-reorg-transactions.sh` is called.
+The chain keeps the transactions it returns to the mempool out of blocks until
+the test releases them.
 
 Test a large balance that requires multiple denomination stages and migration
 transactions:
@@ -107,9 +111,7 @@ scripts/e2e/flutter-macos-ironwood-migration-large-balance.sh
 This funds the deterministic wallet with 99.0002 ZEC, verifies the exact
 two-stage padded denomination plan and 18 migration batches, observes partial
 split and transfer progress, and checks the exact ZIP 317 fee delta after all
-transactions confirm. The base runner accepts `E2E_ORCHARD_FUNDING_AMOUNT`,
-`E2E_ORCHARD_PREFUND_BLOCKS`, and `E2E_ORCHARD_FUNDING_COINBASE_LIMIT` so other
-large-balance scenarios can reuse the same setup.
+transactions confirm.
 
 Test a wallet with many independent Orchard notes:
 
@@ -119,9 +121,7 @@ scripts/e2e/flutter-macos-ironwood-migration-many-notes.sh
 
 This creates 20 Orchard notes whose values sum to 10.0002 ZEC, verifies that
 the wallet scans the full balance, and checks the exact two-stage denomination
-chain, migration batches, fees, and final pool balances. Set
-`E2E_ORCHARD_FUNDING_NOTE_COUNT` on the base runner to reuse this multi-note
-funding path with another scenario.
+chain, migration batches, fees, and final pool balances.
 
 Test uneven Orchard notes received across multiple transactions:
 
@@ -131,13 +131,11 @@ scripts/e2e/flutter-macos-ironwood-migration-mixed-notes.sh
 
 This spreads 20 notes across four funding transactions with transaction totals
 weighted 1:2:3:4. It verifies all four receive transactions, distinct txids and
-amounts, the chained denomination plan, migration fees, and final balances. Set
-`E2E_ORCHARD_FUNDING_TX_COUNT` to partition another scenario's addresses and
-total amount across multiple weighted funding transactions.
+amounts, the chained denomination plan, migration fees, and final balances.
 
-The base runner accepts `E2E_TEST_FILE` and `E2E_DRIVER_PORT` overrides so new
-single-process scenarios can reuse chain reset, deterministic Orchard funding,
-driver startup, and Flutter launch without duplicating the harness.
+A new scenario is an entry in `scripts/e2e/zakura_flutter.py`, which sets its
+test file, Orchard funding (total, note count and funding transactions) and
+defines.
 
 Run the lower-level Rust migration path independently:
 
@@ -145,7 +143,9 @@ Run the lower-level Rust migration path independently:
 scripts/e2e/ironwood-regtest-migration.sh
 ```
 
-The test imports a deterministic wallet, sends 1.0002 TAZ to its Orchard
+It runs on its own Zakura regtest chain, which activates NU6.3 at height 500,
+rather than on this stack (see `./run-regtest-rust-tests.sh --help`). The test
+imports a deterministic wallet, sends 1.0002 TAZ to its Orchard
 receiver, verifies that Ironwood is empty, activates NU6.3, runs the real
 migration pipeline, confirms both transaction stages, and verifies spendable
 Ironwood balance and a completed migration record.
@@ -177,9 +177,10 @@ scripts/ironwood-regtest/release-reorg-transactions.sh "<txid>"
 independent building blocks for additional account, reorg, interrupted
 migration, hardware-wallet, and retry scenarios.
 
-## Flutter E2E configuration
+## Flutter configuration
 
-The wallet must use the same activation height as zcashd:
+To point a manual Flutter run at this stack, use the same activation height as
+zcashd:
 
 ```bash
 fvm flutter test integration_test/<test>.dart -d macos \

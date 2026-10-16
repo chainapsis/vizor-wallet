@@ -60,6 +60,7 @@ void main() {
       );
       expect(started.activeRunId, isNotNull);
 
+      await waitForMobileRegtestMempoolSize(tester, 1);
       await postDriver('/mine', const {'blocks': 10});
       final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,

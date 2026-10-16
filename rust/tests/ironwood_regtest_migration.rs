@@ -3,6 +3,8 @@ use std::process::Command;
 
 use rust_lib_zcash_wallet::api::{simple as simple_api, sync as sync_api, wallet as wallet_api};
 
+mod common;
+
 const NETWORK: &str = "regtest";
 const MNEMONIC: &str = "winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used";
 const PENDING_PASSWORD: &str = "ironwood-regtest-password";
@@ -25,7 +27,7 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
         "test must begin before NU6.3: tip={pre_activation_tip}, activation={activation_height}"
     );
 
-    let tempdir = tempfile::tempdir().expect("wallet tempdir");
+    let tempdir = common::wallet_tempdir();
     let db_path = tempdir.path().join("zcash_wallet.db");
     let db = path_string(&db_path);
     let wallet = wallet_api::import_wallet(
@@ -38,10 +40,14 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
     )
     .expect("import deterministic regtest wallet");
 
-    run_harness(
-        "fund-orchard.sh",
-        &[&wallet.unified_address, "1.0002", "10"],
-    );
+    if common::isolated_activation_height().is_some() {
+        common::fund_isolated_orchard_wallet(&wallet.unified_address, 100_020_000, 10);
+    } else {
+        run_harness(
+            "fund-orchard.sh",
+            &[&wallet.unified_address, "1.0002", "10"],
+        );
+    }
     sync(&db);
 
     let orchard_funded = balance(&db, &wallet.account_uuid);
@@ -64,7 +70,11 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
         Some(u64::from(activation_height))
     );
 
-    run_harness("activate-ironwood.sh", &[]);
+    if common::isolated_activation_height().is_some() {
+        common::activate_isolated_ironwood();
+    } else {
+        run_harness("activate-ironwood.sh", &[]);
+    }
     let after = wallet_api::get_chain_upgrade_status(lightwalletd_url(), NETWORK.to_string())
         .expect("post-activation chain status");
     assert!(after.ironwood_active_at_tip);
@@ -170,6 +180,9 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
 }
 
 fn activation_height() -> u32 {
+    if let Some(height) = common::isolated_activation_height() {
+        return height;
+    }
     std::env::var("IRONWOOD_ACTIVATION_HEIGHT")
         .unwrap_or_else(|_| "500".to_string())
         .parse()
@@ -188,6 +201,10 @@ fn path_string(path: &Path) -> String {
 }
 
 fn run_harness(script: &str, args: &[&str]) -> String {
+    assert!(
+        common::isolated_activation_height().is_none(),
+        "isolated cases cannot run shared scripts"
+    );
     let path = repo_root()
         .join("scripts")
         .join("ironwood-regtest")
@@ -211,7 +228,11 @@ fn run_harness(script: &str, args: &[&str]) -> String {
 }
 
 fn ensure_stack_up() {
-    run_harness("up.sh", &[]);
+    if common::isolated_activation_height().is_some() {
+        common::require_isolated_regtest();
+    } else {
+        run_harness("up.sh", &[]);
+    }
 }
 
 fn latest_height() -> u64 {
@@ -220,6 +241,9 @@ fn latest_height() -> u64 {
 }
 
 fn lightwalletd_url() -> String {
+    if common::isolated_activation_height().is_some() {
+        return common::lightwalletd_url();
+    }
     let port = std::env::var("IRONWOOD_LIGHTWALLETD_PORT").unwrap_or_else(|_| "19067".to_string());
     format!("http://127.0.0.1:{port}")
 }
@@ -235,7 +259,11 @@ fn sync(db_path: &str) {
 }
 
 fn mine_and_sync(db_path: &str, blocks: u32) {
-    run_harness("mine.sh", &[&blocks.to_string()]);
+    if common::isolated_activation_height().is_some() {
+        common::mine_blocks(blocks);
+    } else {
+        run_harness("mine.sh", &[&blocks.to_string()]);
+    }
     sync(db_path);
 }
 

@@ -214,7 +214,7 @@ Future<void> initializeZcashWalletRuntime() async {
     enabled: kZcashFastTestnetMigration,
   );
   if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
-      kZcashRegtestIronwoodActivationHeight > 1) {
+      kZcashRegtestIronwoodActivationHeight >= 1) {
     await rust_simple.configureRegtestIronwoodActivationHeight(
       height: kZcashRegtestIronwoodActivationHeight,
     );

@@ -19,18 +19,13 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'desktop_regtest_flow.dart';
+import 'regtest_control.dart';
 
 const paymentLinkRegtestNetwork = 'regtest';
 const paymentLinkRegtestLightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
 );
-const paymentLinkRegtestZcashdRpcUrl = String.fromEnvironment(
-  'ZCASH_E2E_ZCASHD_RPC_URL',
-  defaultValue: 'http://127.0.0.1:18232',
-);
-const paymentLinkRegtestZcashdRpcUser = 'zcash';
-const paymentLinkRegtestZcashdRpcPassword = 'zcash';
 const paymentLinkRegtestProxyUrl = 'http://127.0.0.1:19068';
 const paymentLinkRestartManifestName =
     'payment_link_restart_regtest_manifest.json';
@@ -388,30 +383,10 @@ Future<rust_sync.WalletBalance> waitForPaymentLinkAccountBalance(
   );
 }
 
-var _regtestChainVerified = false;
-
-/// Fails before any destructive RPC (`generate`, `invalidateblock`,
-/// `prioritisetransaction`) when the node on the RPC port is not regtest.
-Future<void> ensurePaymentLinkRegtestChain() async {
-  if (_regtestChainVerified) return;
-  final info = await paymentLinkZcashdRpc<Map<String, Object?>>(
-    'getblockchaininfo',
-  );
-  final chain = info['chain'];
-  if (chain != paymentLinkRegtestNetwork) {
-    fail(
-      'Refusing to drive $paymentLinkRegtestZcashdRpcUrl: getblockchaininfo '
-      'reported chain "$chain", not $paymentLinkRegtestNetwork.',
-    );
-  }
-  _regtestChainVerified = true;
-}
-
 Future<void> minePaymentLinkRegtestBlocks(int blocks) async {
-  await ensurePaymentLinkRegtestChain();
   e2eLog('mining $blocks regtest block(s)');
-  final before = await paymentLinkZcashdRpc<int>('getblockcount');
-  await paymentLinkZcashdRpc<List<Object?>>('generate', [blocks]);
+  final before = await regtestTipHeight();
+  await mineRegtestFixture(blocks);
   final targetHeight = before + blocks;
   final deadline = DateTime.now().add(const Duration(seconds: 30));
   while (DateTime.now().isBefore(deadline)) {
@@ -425,50 +400,7 @@ Future<void> minePaymentLinkRegtestBlocks(int blocks) async {
   throw StateError('Timed out waiting for lightwalletd height $targetHeight.');
 }
 
-Future<T> paymentLinkZcashdRpc<T>(
-  String method, [
-  List<Object?> params = const [],
-]) async {
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(
-      Uri.parse(paymentLinkRegtestZcashdRpcUrl),
-    );
-    final credentials = base64Encode(
-      utf8.encode(
-        '$paymentLinkRegtestZcashdRpcUser:'
-        '$paymentLinkRegtestZcashdRpcPassword',
-      ),
-    );
-    request.headers
-      ..set(HttpHeaders.authorizationHeader, 'Basic $credentials')
-      ..contentType = ContentType.json;
-    request.write(
-      jsonEncode({
-        'jsonrpc': '1.0',
-        'id': 'payment-link-restart-regtest-e2e',
-        'method': method,
-        'params': params,
-      }),
-    );
-    final response = await request.close();
-    final body = await utf8.decoder.bind(response).join();
-    if (response.statusCode != HttpStatus.ok) {
-      throw StateError(
-        'zcashd RPC $method failed: HTTP ${response.statusCode}',
-      );
-    }
-    final decoded = jsonDecode(body) as Map<String, Object?>;
-    if (decoded['error'] case final error?) {
-      throw StateError('zcashd RPC $method failed: $error');
-    }
-    return decoded['result'] as T;
-  } finally {
-    client.close(force: true);
-  }
-}
-
-/// Converts a stored claim's protocol-order ID to zcashd RPC display order.
+/// Converts a stored claim's protocol-order ID to the node's display order.
 String paymentLinkClaimTxidToRpcOrder(String txid) {
   final normalized = normalizePaymentLinkTxid(txid);
   if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized)) {
@@ -489,7 +421,8 @@ Future<void> waitForPaymentLinkMempoolTxids(
   Set<String> last = const {};
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
-    final raw = await paymentLinkZcashdRpc<List<Object?>>('getrawmempool');
+    final raw =
+        (await regtestControlGet('/mempool'))['txids']! as List<Object?>;
     last = raw.map((txid) => normalizePaymentLinkTxid('$txid')).toSet();
     if (last.containsAll(expected)) return;
     await tester.pump(const Duration(milliseconds: 100));

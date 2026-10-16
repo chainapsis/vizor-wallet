@@ -75,6 +75,6 @@ sync engine. The test rejects any false visibility-provider transition and
 checks the rendered card on every pumped frame, including at least one syncing
 frame. It requires a newer scanned height and sync completion, and no additional
 participation RPCs. Screenshots are saved as `home-during-resync.png` and
-`home-after-resync.png` under `.regtest-voting/logs/screenshots/`.
+`home-after-resync.png` under the case's `voting/logs/screenshots/`.
 The same flow then completes voting and checks that Home hides the card; the
 reinstall runner also includes this pre-vote resync check.

@@ -79,6 +79,7 @@ void main() {
       final submittedBefore =
           started.broadcastedTxCount + started.confirmedTxCount;
       expect(started.totalCount - submittedBefore, greaterThanOrEqualTo(2));
+      await waitForMobileRegtestMempoolSize(tester, 1);
 
       // Pause Flutter before the chain advances so no foreground coordinator
       // work can be mistaken for native outbox transport progress.

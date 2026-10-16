@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_regtest_flow.dart';
 import 'support/payment_link_regtest_flow.dart';
+import 'support/regtest_control.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 void main() {
@@ -103,7 +104,11 @@ void main() {
       final forkHeight =
           minedTransactions.values.map((height) => height.toInt()).reduce(min) -
           1;
-      await _replaceClaimBranch(tester, forkHeight, claimTxids);
+      final heldTxids = await _replaceClaimBranch(
+        tester,
+        forkHeight,
+        claimTxids,
+      );
 
       for (final claim in manifest.claims) {
         await waitForPaymentLinkHistoryTransaction(
@@ -117,13 +122,10 @@ void main() {
       }
       await _expectReceivingClaimsAndDatabases(tester, manifest);
 
-      for (final txid in claimTxids) {
-        await paymentLinkZcashdRpc<bool>('prioritisetransaction', [
-          paymentLinkClaimTxidToRpcOrder(txid),
-          0,
-          100_000_000,
-        ]);
-      }
+      final released = await regtestControlPost('/release-held', {
+        'txids': heldTxids,
+      });
+      expect(released['released_txids'], heldTxids);
       // Recovery material is released only at claim finality.
       await minePaymentLinkRegtestBlocks(
         kPaymentLinkClaimRecoveryConfirmationTarget,
@@ -214,27 +216,24 @@ Future<void> _expectReceivingClaimsAndDatabases(
   }
 }
 
-Future<void> _replaceClaimBranch(
+/// Replaces the chain above [forkHeight] with a branch one block longer that
+/// leaves the claims out, and keeps them out of blocks until they are released.
+Future<List<String>> _replaceClaimBranch(
   WidgetTester tester,
   int forkHeight,
   Set<String> claimTxids,
 ) async {
-  await ensurePaymentLinkRegtestChain();
-  final oldTip = await paymentLinkZcashdRpc<int>('getblockcount');
+  final oldTip = await regtestTipHeight();
   expect(forkHeight, lessThan(oldTip));
-  final invalidatedHash = await paymentLinkZcashdRpc<String>('getblockhash', [
-    forkHeight + 1,
-  ]);
-  await paymentLinkZcashdRpc<Object?>('invalidateblock', [invalidatedHash]);
-  for (final txid in claimTxids) {
-    await paymentLinkZcashdRpc<bool>('prioritisetransaction', [
-      paymentLinkClaimTxidToRpcOrder(txid),
-      0,
-      -100_000_000,
-    ]);
-  }
-  await minePaymentLinkRegtestBlocks(oldTip - forkHeight + 1);
-  final newTip = await paymentLinkZcashdRpc<int>('getblockcount');
-  expect(newTip, oldTip + 1);
+  final required = claimTxids.map(paymentLinkClaimTxidToRpcOrder).toList()
+    ..sort();
+  final reorg = await regtestControlPost('/reorg-hold-fork', {
+    'fork_height': forkHeight,
+    'required_txids': required,
+  });
+  expect(reorg['new_tip_height'], oldTip + 1);
+  final held = (reorg['held_txids']! as List<Object?>).cast<String>();
+  expect(held, containsAll(required));
   await waitForPaymentLinkMempoolTxids(tester, claimTxids);
+  return held;
 }

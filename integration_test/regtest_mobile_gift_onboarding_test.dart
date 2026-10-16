@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/mobile_regtest_flow.dart';
+import 'support/regtest_control.dart';
 
 // Uses the real regtest chain, secure store, account DB, claim coordinator and
 // native UI. Never log or capture recovery phrases or bearer card links.
@@ -297,7 +298,7 @@ Future<void> _mountFreshApp(WidgetTester tester) async {
 }
 
 Future<VizorPaymentLink> _newGift() async {
-  final tip = await zcashdRpc<int>('getblockcount');
+  final tip = await regtestTipHeight();
   final gift = await rust_wallet.generateSoftwareAccount(
     network: mobileE2eNetwork,
   );
@@ -318,12 +319,13 @@ Future<void> _fundGift(
   VizorPaymentLink link, {
   required int confirmations,
 }) async {
-  await postDriver('/fund-confirmed', {
-    'address': link.address,
-    // Recipient value plus the actual Ironwood claim fee.
-    'amount': '0.1001',
-    'confirmations': confirmations,
-  }, timeout: const Duration(minutes: 5));
+  // Recipient value plus the actual Ironwood claim fee.
+  await fundRegtestFixture(
+    link.address,
+    '0.1001',
+    pool: 'ironwood',
+    confirmations: confirmations,
+  );
 }
 
 Future<void> _inspectGift(WidgetTester tester, VizorPaymentLink link) async {

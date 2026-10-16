@@ -75,6 +75,8 @@ void main() {
       expect(runId, isNotNull);
 
       await waitForMobileRegtestMempoolSize(tester, 1);
+      final denominationTxids = _txids(await getDriver('/mempool'), 'txids');
+      expect(denominationTxids, hasLength(1));
       await postDriver('/mine', const {'blocks': 10});
       final scheduled = await prepareMobilePrivateMigrationSchedule(
         tester,
@@ -99,12 +101,36 @@ void main() {
       );
 
       logE2e('reorging the mobile denomination split');
-      final reorg = await postDriver('/reorg', const {'forkHeight': 500});
-      expect(reorg['newTip'], (reorg['oldTip'] as int) + 1);
-      expect(reorg['newTipHash'], isNot(reorg['oldTipHash']));
-      final heldTransactions = _txids(reorg, 'heldTxids');
-      final reintroducedDenominations = _txids(reorg, 'reintroducedTxids');
-      expect(reintroducedDenominations, isNotEmpty);
+      final children = firstChild.scheduledBroadcasts
+          .where(
+            (entry) =>
+                entry.status == 'broadcasted' || entry.status == 'confirmed',
+          )
+          .map((entry) => entry.txidHex)
+          .toList();
+      expect(children, isNotEmpty);
+      expect(
+        _txids(await getDriver('/mempool'), 'txids'),
+        containsAll(children),
+      );
+      // The child spends against the mined denomination's anchor, which the
+      // fork removes, so only the denomination can return to the mempool.
+      final reorg = await postDriver('/reorg-hold-fork', {
+        'fork_height': 500,
+        'required_txids': denominationTxids,
+      });
+      expect(
+        _txids(
+          reorg['reintroduction']! as Map<String, Object?>,
+          'invalidated_pending_txids',
+        ),
+        containsAll(children),
+      );
+      expect(reorg['new_tip_height'], (reorg['old_tip_height']! as int) + 1);
+      expect(reorg['new_tip_hash'], isNot(reorg['old_tip_hash']));
+      final heldTransactions = _txids(reorg, 'held_txids');
+      final reintroducedDenominations = _txids(reorg, 'reintroduced_txids');
+      expect(reintroducedDenominations, containsAll(denominationTxids));
 
       final rolledBack = await waitForMobileRegtestMigrationStatus(
         tester,
@@ -217,5 +243,5 @@ List<String> _txids(Map<String, Object?> payload, String key) {
 
 Future<void> _releaseTransactions(List<String> txids) async {
   if (txids.isEmpty) return;
-  await postDriver('/reorg/release', {'txids': txids});
+  await postDriver('/release-held', {'txids': txids});
 }

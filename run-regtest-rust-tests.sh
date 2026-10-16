@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STATE_DIR="$ROOT_DIR/.regtest"
 LOG_DIR="$ROOT_DIR/.regtest-logs"
 LOG_FILE="$LOG_DIR/regtest-rust-tests.log"
 SAPLING_PARAMS_DIR="${SAPLING_PARAMS_DIR:-$HOME/.zcash-params}"
@@ -11,19 +10,30 @@ SAPLING_OUTPUT_PATH="$SAPLING_PARAMS_DIR/sapling-output.params"
 SAPLING_SPEND_HASH="a15ab54c2888880e53c823a3063820c728444126"
 SAPLING_OUTPUT_HASH="0ebc5a1ef3653948e1c46cf7a16071eac4b7e352"
 SAPLING_PARAM_BASE_URL="https://download.z.cash/downloads"
-KEEP_STATE=0
+RUNNER_ARGS=()
+SCENARIOS=()
 
 usage() {
   cat <<'EOF'
-Usage: ./run-regtest-rust-tests.sh [--keep]
+Usage: ./run-regtest-rust-tests.sh [--keep] [SCENARIO...]
 
-Resets the local zcashd/lightwalletd regtest state, starts a fresh regtest stack,
-runs the Rust regtest integration tests, streams the full output to the terminal,
-and saves a copy to:
+Runs the Rust regtest integration tests one at a time, each against its own
+fresh Zakura node and lightwalletd (scripts/e2e/zakura-run.py). The test
+executables are built once from the committed rust/ tree, so commit Rust
+changes first. Streams the output to the terminal and saves a copy to:
 
   .regtest-logs/regtest-rust-tests.log
 
-Sapling proving params are cached outside .regtest by default:
+Each run also writes a JSON report and per-test logs under
+.regtest-logs/zakura-<run id>/.
+
+Select scenarios by ID or dotted prefix; the default is every Rust scenario:
+
+  ./run-regtest-rust-tests.sh rust.import rust.send.basic
+
+List them with `python3 scripts/e2e/zakura-run.py --list`.
+
+Sapling proving params are cached outside the repository by default:
 
   ~/.zcash-params
 
@@ -33,40 +43,33 @@ Override with:
 
 Options:
 
-  --keep    Skip the final down/reset cleanup so the regtest state stays
-            available for debugging after the run.
+  --keep    Keep the Zakura containers and wallet files of failed tests for
+            debugging. Passing tests are always cleaned up.
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
-
 for arg in "$@"; do
   case "$arg" in
-    --keep)
-      KEEP_STATE=1
+    -h|--help)
+      usage
+      exit 0
       ;;
-    *)
+    --keep)
+      RUNNER_ARGS+=(--keep-failed)
+      ;;
+    -*)
       echo "Unknown argument: $arg" >&2
       usage >&2
       exit 1
       ;;
+    *)
+      SCENARIOS+=("$arg")
+      ;;
   esac
 done
-
-cleanup() {
-  if [[ "$KEEP_STATE" -eq 1 ]]; then
-    echo "==> Keeping regtest services and state for debugging"
-    return 0
-  fi
-
-  echo "==> Cleaning up regtest services and state"
-  "$ROOT_DIR/scripts/regtest/down.sh" >/dev/null 2>&1 || true
-  "$ROOT_DIR/scripts/regtest/reset.sh" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
+if [[ "${#SCENARIOS[@]}" -eq 0 ]]; then
+  SCENARIOS=(rust)
+fi
 
 mkdir -p "$LOG_DIR"
 
@@ -101,60 +104,19 @@ ensure_param_file() {
   fi
 }
 
-start_regtest_services() {
-  local attempt
-  for attempt in 1 2; do
-    if "$ROOT_DIR/scripts/regtest/up.sh"; then
-      return 0
-    fi
-
-    if [[ "$attempt" -eq 2 ]]; then
-      return 1
-    fi
-
-    echo "==> regtest startup failed; retrying once with a clean reset" >&2
-    "$ROOT_DIR/scripts/regtest/down.sh" >/dev/null 2>&1 || true
-    "$ROOT_DIR/scripts/regtest/reset.sh" >/dev/null 2>&1 || true
-    mkdir -p "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
-    chmod 0777 "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
-  done
-}
-
-echo "==> Resetting regtest services and state"
-"$ROOT_DIR/scripts/regtest/down.sh" >/dev/null 2>&1 || true
-"$ROOT_DIR/scripts/regtest/reset.sh"
-mkdir -p "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
-chmod 0777 "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
-
 echo "==> Ensuring Sapling params"
 mkdir -p "$SAPLING_PARAMS_DIR"
 ensure_param_file "$SAPLING_SPEND_PATH" "$SAPLING_SPEND_HASH" "$SAPLING_PARAM_BASE_URL/sapling-spend.params"
 ensure_param_file "$SAPLING_OUTPUT_PATH" "$SAPLING_OUTPUT_HASH" "$SAPLING_PARAM_BASE_URL/sapling-output.params"
+export REGTEST_SAPLING_PARAMS_DIR="$SAPLING_PARAMS_DIR"
 
-echo "==> Starting fresh regtest services"
-start_regtest_services
-
-echo "==> Running Rust regtest integration tests"
+echo "==> Running Rust regtest integration tests on Zakura regtest chains"
 echo "==> Log file: $LOG_FILE"
 
-(
-  cd "$ROOT_DIR/rust"
-  export REGTEST_SAPLING_PARAMS_DIR="$SAPLING_PARAMS_DIR"
-  if [[ -n "${RUSTFLAGS:-}" ]]; then
-    export RUSTFLAGS="$RUSTFLAGS -Awarnings"
-  else
-    export RUSTFLAGS="-Awarnings"
-  fi
-  for test_target in \
-    regtest_receive_sync \
-    regtest_send \
-    regtest_import \
-    regtest_multi_account
-  do
-    cargo test --test "$test_target" -- --ignored --nocapture --test-threads=1
-  done
-) 2>&1 | tee "$LOG_FILE"
+set +e
+python3 "$ROOT_DIR/scripts/e2e/zakura-run.py" ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} "${SCENARIOS[@]}" 2>&1 | tee "$LOG_FILE"
 test_status=${PIPESTATUS[0]}
+set -e
 
 echo
 if [[ "$test_status" -eq 0 ]]; then

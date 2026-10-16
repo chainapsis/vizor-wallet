@@ -1,0 +1,523 @@
+"""Real tiny Git/frozen files/owned children; modeled Rust compiler only."""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import funder_build as BUILD
+    import native_workspace as WORKSPACE
+finally:
+    sys.path.pop(0)
+
+
+class FunderBuildTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="vizor-funder-build-test-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.source = self.root / "source-cache"
+        self.source.mkdir(mode=0o700)
+        self.git("init", "-q")
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        self.git("config", "core.hooksPath", "/dev/null")
+        for name, value in (("rust/Cargo.toml", '[package]\nname="model"\nversion="0.0.0"\n'),
+                            ("rust/Cargo.lock", "# model lock\n"),
+                            ("rust/examples/regtest_direct_funder.rs", "fn main() {}\n")):
+            path = self.source / name
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            path.write_text(value)
+        self.git("add", "rust")
+        self.git("commit", "-qm", "model source")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+        self.artifacts = self.root / "artifacts"
+        self.artifacts.mkdir(mode=0o700)
+        self.cases = []
+        self.cargo_dependency = self.root/"cargo-dependency"
+        self.cargo_dependency.mkdir()
+        (self.cargo_dependency/"Cargo.toml").write_text('[package]\nname="dependency"\nversion="1.0.0"\n')
+        (self.cargo_dependency/"lib.rs").write_text("original Cargo dependency")
+        self.addCleanup(self.close_cases)
+        self.completed = True
+        self.candidate_mode = "original"
+        self.mutate_source = False
+        self.compiler_exit = 0
+        self.compile_calls = 0
+        self.binary_contents = "modeled-compiler-output"
+        self.rustc_identity = "rustc modeled\nhost: aarch64-apple-darwin"
+        self.compiler = self.root / "selected-rustc"
+        self.compiler.write_text("modeled compiler\n")
+        self.compiler.chmod(0o700)
+        self.compiler_entry = self.compiler
+        self.cargo = self.root / "selected-cargo"
+        self.cargo.write_text("modeled Cargo\n")
+        self.cargo.chmod(0o700)
+        self.cargo_entry = self.cargo
+        self.selected_cargo = None
+        self.rustup = None
+        self.hard_link_output = False
+        self.test_candidate_mode = "original"
+        self.address_candidate_mode = "original"
+        self.rust_sysroot = self.root/"rust-sysroot"
+        self.rust_libraries = (self.rust_sysroot/"lib/libLLVM.dylib",
+                               self.rust_sysroot/"lib/rustlib/host/lib/libstd.rlib")
+        for path in self.rust_libraries:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("modeled Rust compiler/runtime library")
+        self.apple_tools = {name:self.root/"native-toolchain/usr/bin"/name
+                            for name in ("clang", "ld", "cc", "ar", "path_ar")}
+        for path in self.apple_tools.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("modeled native tool")
+            path.chmod(0o700)
+        self.apple_trees = (self.root/"native-toolchain/usr/lib", self.root/"native-sdk")
+        for path in self.apple_trees:
+            path.mkdir(parents=True)
+            (path/"artifact").write_text("modeled SDK/library")
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.source), *args], check=True,
+                              capture_output=True, text=True).stdout
+
+    def case(self):
+        workspace = WORKSPACE.prepare_native_case_workspace(self.artifacts, platform="macos",
+            scenario_id="flutter.macos.funder-build-probe", run_id="a1b2c3d4e5", worker_id=0,
+            case_index=len(self.cases), ports={"rpc": 28232, "lwd": 29067, "proxy": 29068},
+            activation_height=500)
+        owner = BUILD.NativeCaseLifecycle(workspace)
+        self.cases.append(owner)
+        return owner
+
+    def close_cases(self):
+        for case in self.cases:
+            case.close()
+
+    def build(self, case=None, **updates):
+        case = case or self.case()
+        original = case.run_command
+        original_which = BUILD.shutil.which
+        def command(arguments, **options):
+            if arguments[0] in {"cargo", str(self.cargo)} and arguments[1:2] == ["metadata"]:
+                self.assertIn("--offline", arguments)
+                self.assertIn("--locked", arguments)
+                payload = {"version":1,"packages":[{"id":"dependency",
+                    "manifest_path":str(self.cargo_dependency/"Cargo.toml")}],
+                    "resolve":{"nodes":[{"id":"dependency"}]}}
+                return original([sys.executable, "-c", f"print({json.dumps(payload)!r})"], **options)
+            if arguments == [str(self.compiler), "--print", "sysroot"]:
+                return original([sys.executable, "-c", f"print({str(self.rust_sysroot)!r})"], **options)
+            if arguments[:1] == ["/usr/bin/which"] and arguments[1] in {"cc", "ar"}:
+                name = "path_ar" if arguments[1] == "ar" else "cc"
+                return original([sys.executable, "-c", f"print({str(self.apple_tools[name])!r})"], **options)
+            if arguments[:3] == ["/usr/bin/xcrun", "--sdk", "macosx"]:
+                path = self.apple_trees[-1] if "--show-sdk-path" in arguments else self.apple_tools[arguments[-1]]
+                return original([sys.executable, "-c", f"print({str(path)!r})"], **options)
+            if self.rustup is not None and arguments == [str(self.rustup), "which", "rustc"]:
+                return original([sys.executable, "-B", "-c", f"print({str(self.compiler)!r})"], **options)
+            if self.rustup is not None and arguments == [str(self.rustup), "which", "cargo"]:
+                return original([sys.executable, "-B", "-c", f"print({str(self.cargo)!r})"], **options)
+            if arguments == [str(self.compiler), "-vV"]:
+                return original([sys.executable, "-B", "-c", f"print({self.rustc_identity!r})"], **options)
+            if arguments[0] in {"cargo", str(self.cargo)} and arguments[1:2] == ["-V"]:
+                return original([sys.executable, "-B", "-c", "print('cargo modeled')"], **options)
+            if arguments[0] not in {"cargo", str(self.cargo)} or arguments[1:2] != ["build"]:
+                return original(arguments, **options)
+            self.selected_cargo = arguments[0]
+            self.last_build_env = options["env"]
+            self.compile_calls += 1
+            self.assertIn("--offline", arguments)
+            self.assertIn("--locked", arguments)
+            self.assertEqual(options["env"]["RUSTC"], str(self.compiler))
+            self.assertEqual(options["env"]["RUSTC_WRAPPER"], "")
+            self.assertEqual(options["env"]["RUSTC_WORKSPACE_WRAPPER"], "")
+            self.assertEqual(arguments[arguments.index("--target") + 1], "aarch64-apple-darwin")
+            target = Path(options["env"]["CARGO_TARGET_DIR"])
+            binary = target / "debug/examples/regtest_direct_funder"
+            if self.candidate_mode == "outside":
+                binary = self.root / "outside-binary"
+            manifest = Path(arguments[arguments.index("--manifest-path") + 1])
+            source_file = manifest.parent / "examples/regtest_direct_funder.rs"
+            message = {"reason": "compiler-artifact", "executable": str(binary),
+                "target": {"name": "regtest_direct_funder", "kind": ["example"], "src_path": str(source_file)},
+                "profile": {"test": self.candidate_mode == "test-harness"}}
+            if self.candidate_mode == "wrong-source":
+                message["target"]["src_path"] = str(self.source / "rust/examples/regtest_direct_funder.rs")
+            script = ("from pathlib import Path; import json,sys,os; "
+                f"p=Path({str(binary)!r}); p.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
+                f"p.write_text({self.binary_contents!r}); p.chmod(0o700); ")
+            if self.hard_link_output:
+                script += "os.link(p, p.with_name(p.name + '-hashed')); "
+            if self.mutate_source:
+                script += f"s=Path({str(source_file)!r}); s.chmod(0o600); s.write_text('changed'); "
+            finished = {"reason": "build-finished", "success": self.completed}
+            if "regtest_wallet_addresses" in arguments:
+                address_binary = target / "debug/examples/regtest_wallet_addresses"
+                address_message = {"reason":"compiler-artifact", "executable":str(address_binary),
+                    "target":{"name":"regtest_wallet_addresses", "kind":["example"],
+                        "src_path":str(manifest.parent / "examples/regtest_wallet_addresses.rs")},
+                    "profile":{"test":False}}
+                if self.address_candidate_mode == "wrong-source":
+                    address_message["target"]["src_path"] = str(self.source / "rust/examples/regtest_wallet_addresses.rs")
+                script += (f"a=Path({str(address_binary)!r}); a.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
+                    "a.write_text('modeled-address-output'); a.chmod(0o700); ")
+                if self.address_candidate_mode != "missing":
+                    script += f"print(json.dumps({address_message!r})); "
+            for index, argument in enumerate(arguments):
+                if argument != "--test":
+                    continue
+                name = arguments[index + 1]
+                test_binary = target / ("debug/deps/" + name + "-modeled")
+                test_message = {"reason": "compiler-artifact", "executable": str(test_binary),
+                    "target": {"name": name, "kind": ["test"], "src_path": str(manifest.parent / f"tests/{name}.rs")},
+                    "profile": {"test": self.test_candidate_mode != "wrong-profile"}}
+                if self.test_candidate_mode == "wrong-source":
+                    test_message["target"]["src_path"] = str(self.source / f"rust/tests/{name}.rs")
+                script += (f"t=Path({str(test_binary)!r}); t.parent.mkdir(mode=0o700,parents=True,exist_ok=True); "
+                    "t.write_text('modeled-test-output'); t.chmod(0o700); ")
+                if self.test_candidate_mode != "missing":
+                    script += f"print(json.dumps({test_message!r})); "
+            script += ("print('Compiling modeled transport', file=sys.stderr); "
+                f"print(json.dumps({message!r})); "
+                f"print(json.dumps({finished!r})); "
+                f"raise SystemExit({self.compiler_exit})")
+            return original([sys.executable, "-B", "-c", script], **options)
+        with patch.object(case, "run_command", side_effect=command), patch.object(
+                BUILD.shutil, "which", side_effect=lambda name, **options:
+                    str(self.cargo_entry) if name == "cargo" else str(self.compiler_entry)
+                    if name in {"rustc", os.environ.get("RUSTC", "rustc")}
+                    else original_which(name, **options)) as chosen:
+            artifact = BUILD.build_regtest_funder(case, source_root=self.source, source_commit=self.commit,
+                                                timeout=5, **updates)
+            self.selected_compiler_request = chosen.call_args_list[0].args[0]
+            return artifact
+
+    def test_original_git_bytes_not_dirty_checkout_and_published_only_after_join(self):
+        (self.source / "rust/examples/regtest_direct_funder.rs").write_text("dirty-checkout")
+        case = self.case()
+        artifact = self.build(case)
+        frozen = case.workspace.root / "funder-build/source/rust/examples/regtest_direct_funder.rs"
+        self.assertEqual(frozen.read_text(), "fn main() {}\n")
+        self.assertEqual(frozen.stat().st_mode & 0o777, 0o400)
+        self.assertFalse(case.accepting_launches)
+        self.assertIsNotNone(case._receipt)
+        self.assertTrue(all(process.cleanup_completed for process in case._processes))
+        self.assertEqual(artifact.binary.stat().st_mode & 0o777, 0o500)
+        self.assertEqual(self.compile_calls, 1)
+        self.assertEqual(artifact.identity()["source_commit"], self.commit)
+        self.assertEqual(artifact.identity()["host_target"], "aarch64-apple-darwin")
+        evidence = artifact.identity()
+        evidence["rust_blobs"].clear()
+        self.assertEqual(len(artifact.identity()["rust_blobs"]), 3)
+
+    @unittest.skipUnless(sys.platform == "darwin", "Apple linker inputs are macOS-only")
+    def test_linker_and_sdk_bytes_invalidate_cached_funder_with_same_rust(self):
+        cache = self.root/"funder-cache"
+        artifacts = (*self.apple_tools.values(), *(path/"artifact" for path in self.apple_trees))
+        for path in artifacts:
+            with self.subTest(input=path):
+                first = self.build(cache_root=cache).identity()
+                path.write_text("patched native compiler input")
+                second = self.build(cache_root=cache).identity()
+                self.assertEqual(first["rustc"], second["rustc"])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "default Apple archiver inputs are macOS-only")
+    def test_default_archiver_bytes_invalidate_with_same_compiler(self):
+        cache = self.root/"funder-cache"
+        first = self.build(cache_root=cache).identity()
+        self.apple_tools["path_ar"].write_text("patched default archiver")
+        second = self.build(cache_root=cache).identity()
+        self.assertEqual(first["rustc"], second["rustc"])
+        self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    def test_cargo_dependency_mutation_while_sealing_rejects_without_launch(self):
+        case = self.case()
+        close = case.close
+        def seal():
+            receipt = close()
+            (self.cargo_dependency/"lib.rs").write_text("changed dependency after join")
+            return receipt
+        with patch.object(case,"close",side_effect=seal), self.assertRaisesRegex(
+                BUILD.FunderBuildError,"Cargo dependency sources changed"):
+            self.build(case,cache_root=self.root/"funder-cache")
+        self.assertFalse(case.accepting_launches)
+
+    @unittest.skipUnless(sys.platform == "darwin", "Apple linker inputs are macOS-only")
+    def test_linker_mutation_while_sealing_rejects_publication_without_launch(self):
+        case = self.case()
+        close = case.close
+        def seal():
+            receipt = close()
+            self.apple_tools["ld"].write_text("changed linker after join")
+            return receipt
+        with patch.object(case, "close", side_effect=seal), self.assertRaisesRegex(
+                BUILD.FunderBuildError, "Apple linker/SDK inputs changed"):
+            self.build(case, cache_root=self.root/"funder-cache")
+        self.assertFalse(case.accepting_launches)
+
+    def test_rust_sysroot_changes_invalidate_without_compiler_or_version_changes(self):
+        for path in self.rust_libraries:
+            with self.subTest(input=path):
+                first = self.build(cache_root=self.root/"funder-cache").identity()
+                path.write_text("patched Rust sysroot library")
+                second = self.build(cache_root=self.root/"funder-cache").identity()
+                self.assertEqual(first["rustc"], second["rustc"])
+                self.assertNotEqual(first["cache_key"], second["cache_key"])
+
+    def add_test_sources(self, names=("regtest_receive_sync", "regtest_send")):
+        for name in names:
+            path = self.source / f"rust/tests/{name}.rs"
+            path.parent.mkdir(mode=0o700, exist_ok=True)
+            path.write_text("#[test] fn model() {}\n")
+        self.git("add", "rust")
+        self.git("commit", "-qm", "modeled tests")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+
+    def test_selected_test_binaries_share_one_joined_producer_and_detect_mutation(self):
+        self.add_test_sources()
+        artifact = self.build(test_targets=("regtest_receive_sync", "regtest_send"))
+        self.assertEqual(self.compile_calls, 1)
+        self.assertEqual(set(artifact.identity()["test_binaries"]), {"regtest_receive_sync", "regtest_send"})
+        test = artifact.test_binary("regtest_send")
+        self.assertEqual(test.stat().st_mode & 0o777, 0o500)
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.test_binary("regtest_missing")
+        test.chmod(0o700)
+        test.write_text("changed")
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.verify_unchanged()
+
+    def add_address_source(self):
+        (self.source / "rust/examples/regtest_wallet_addresses.rs").write_text("fn main() {}\n")
+        self.git("add", "rust")
+        self.git("commit", "-qm", "modeled address example")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+
+    def test_wallet_address_tool_shares_original_build_and_detects_mutation(self):
+        self.add_address_source()
+        artifact = self.build(wallet_addresses=True)
+        self.assertEqual(self.compile_calls, 1)
+        address = artifact.wallet_addresses_binary()
+        self.assertEqual(address.stat().st_mode & 0o777, 0o500)
+        self.assertEqual(artifact.identity()["wallet_addresses_binary"]["binary"], str(address))
+        address.chmod(0o700)
+        address.write_text("changed")
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.verify_unchanged()
+
+    def test_wallet_address_tool_must_have_original_completed_cargo_output(self):
+        self.add_address_source()
+        for mode in ("wrong-source", "missing"):
+            self.address_candidate_mode = mode
+            with self.subTest(mode=mode), self.assertRaises(BUILD.FunderBuildError):
+                self.build(wallet_addresses=True)
+
+    def test_unselected_or_uncommitted_wallet_address_tool_is_not_adopted(self):
+        artifact = self.build()
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.wallet_addresses_binary()
+        with self.assertRaises(BUILD.FunderBuildError):
+            self.build(wallet_addresses=True)
+        self.assertEqual(self.compile_calls, 1)
+
+    def test_existing_ironwood_targets_share_one_original_build(self):
+        targets = ("ironwood_regtest_migration", "ironwood_regtest_gift_card_claim")
+        self.add_test_sources(targets)
+        artifact = self.build(test_targets=targets)
+        self.assertEqual(self.compile_calls, 1)
+        self.assertEqual(set(artifact.identity()["test_binaries"]), set(targets))
+        for target in targets:
+            self.assertEqual(artifact.test_binary(target).stat().st_mode & 0o777, 0o500)
+
+    def test_missing_wrong_profile_or_wrong_source_test_output_never_publishes(self):
+        self.add_test_sources()
+        for mode in ("missing", "wrong-profile", "wrong-source"):
+            self.test_candidate_mode = mode
+            with self.subTest(mode=mode), self.assertRaises(BUILD.FunderBuildError):
+                self.build(test_targets=("regtest_send",))
+
+    def test_invalid_or_uncommitted_test_targets_fail_before_cargo(self):
+        for targets in (["regtest_send"], ("../outside",), ("regtest_send", "regtest_send"), ("regtest_missing",)):
+            with self.subTest(targets=targets), self.assertRaises(BUILD.FunderBuildError):
+                self.build(test_targets=targets)
+        self.assertEqual(self.compile_calls, 0)
+
+    def test_invalid_timeout_jobs_commit_or_nonfresh_case_never_launches_compiler(self):
+        for update in ({"jobs": True}, {"jobs": 0}, {"jobs": 9}):
+            with self.subTest(update=update), self.assertRaises(BUILD.FunderBuildError):
+                self.build(**update)
+        for timeout in (False, 0, float("nan")):
+            with self.assertRaises(BUILD.FunderBuildError):
+                BUILD.build_regtest_funder(self.case(), source_root=self.source,
+                    source_commit=self.commit, timeout=timeout)
+        with self.assertRaises(BUILD.FunderBuildError):
+            BUILD.build_regtest_funder(self.case(), source_root=self.source, source_commit="HEAD")
+        case = self.case()
+        case.run_command([sys.executable, "-c", "pass"], env=os.environ, timeout=3, cancel_event=threading.Event())
+        with self.assertRaises(BUILD.FunderBuildError):
+            self.build(case)
+        self.assertEqual(self.compile_calls, 0)
+
+    def test_unproven_cargo_finish_wrong_target_or_test_harness_never_publishes(self):
+        for mode in ("outside", "wrong-source", "test-harness"):
+            self.candidate_mode = mode
+            case = self.case()
+            with self.subTest(mode=mode), self.assertRaises((BUILD.FunderBuildError, ValueError)):
+                self.build(case)
+            self.assertFalse(case.accepting_launches)
+            self.assertTrue((case.workspace.root / "funder-build/target").exists())
+        self.candidate_mode = "original"
+        self.completed = False
+        with self.assertRaises(BUILD.FunderBuildError):
+            self.build()
+
+    def test_nonzero_compile_and_changed_input_remain_failures_with_evidence(self):
+        for kind in ("exit", "changed-source"):
+            self.compiler_exit = 23 if kind == "exit" else 0
+            self.mutate_source = kind == "changed-source"
+            case = self.case()
+            with self.subTest(kind=kind), self.assertRaises(BUILD.FunderBuildError):
+                self.build(case)
+            self.assertFalse(case.accepting_launches)
+            self.assertTrue((case.workspace.root / "funder-build/source.tar").exists())
+
+    def test_published_binary_change_is_sticky_even_if_bytes_are_restored(self):
+        artifact = self.build()
+        original = artifact.binary.read_bytes()
+        artifact.binary.chmod(0o700)
+        artifact.binary.write_text("changed")
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.verify_unchanged()
+        artifact.binary.write_bytes(original)
+        artifact.binary.chmod(0o500)
+        with self.assertRaises(BUILD.FunderBuildError):
+            artifact.identity()
+
+    def test_cancellation_seals_original_owner_without_any_git_or_cargo_launch(self):
+        cancellation = threading.Event()
+        cancellation.set()
+        case = self.case()
+        with self.assertRaises(BUILD.runtime.Cancelled):
+            self.build(case, cancel_event=cancellation)
+        self.assertFalse(case.accepting_launches)
+        self.assertEqual(case.launched_process_count, 0)
+        self.assertEqual(self.compile_calls, 0)
+
+    def test_replaced_source_parent_is_not_adopted_even_with_original_files_moved(self):
+        artifact = self.build()
+        parent = artifact._root / "source/rust/examples"
+        moved = parent.with_name("original-examples")
+        parent.rename(moved)
+        parent.mkdir(mode=0o700)
+        (moved / "regtest_direct_funder.rs").rename(parent / "regtest_direct_funder.rs")
+        moved.rmdir()
+        with self.assertRaisesRegex(BUILD.FunderBuildError, "directories changed"):
+            artifact.verify_unchanged()
+
+    def test_replaced_executable_parent_is_not_adopted_even_with_original_binary_moved(self):
+        artifact = self.build()
+        parent = artifact.binary.parent
+        moved = parent.with_name("original-executables")
+        parent.rename(moved)
+        parent.mkdir(mode=0o700)
+        (moved / artifact.binary.name).rename(artifact.binary)
+        with self.assertRaisesRegex(BUILD.FunderBuildError, "parent changed"):
+            artifact.verify_unchanged()
+
+    def test_git_export_ignore_cannot_silently_drop_a_frozen_input(self):
+        (self.source / ".gitattributes").write_text("rust/Cargo.lock export-ignore\n")
+        self.git("add", ".gitattributes")
+        self.git("commit", "-qm", "export filter model")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+        with self.assertRaisesRegex(BUILD.FunderBuildError, "omitted"):
+            self.build()
+        self.assertEqual(self.compile_calls, 0)
+
+    def test_missing_duplicate_or_invalid_host_target_never_launches_compiler(self):
+        for output in ("rustc modeled", "host: aarch64-apple-darwin\nhost: aarch64-apple-darwin",
+                       "host: ../outside"):
+            self.rustc_identity = output
+            with self.subTest(output=output), self.assertRaisesRegex(BUILD.FunderBuildError, "host target"):
+                self.build()
+        self.assertEqual(self.compile_calls, 0)
+
+    def test_every_nested_snapshot_parent_is_private(self):
+        path = self.source / "rust/src/nested/deep/module.rs"
+        path.parent.mkdir(mode=0o700, parents=True)
+        path.write_text("// nested Git source\n")
+        self.git("add", "rust")
+        self.git("commit", "-qm", "nested source")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+        artifact = self.build()
+        frozen = artifact._root / "source"
+        for directory, _, _ in os.walk(frozen):
+            self.assertEqual(Path(directory).stat().st_mode & 0o777, 0o700)
+        self.assertEqual((frozen / "rust/src/nested/deep/module.rs").read_text(), "// nested Git source\n")
+        self.assertEqual(len(artifact.identity()["rust_blobs"]), 4)
+
+    def test_git_export_substitution_cannot_change_frozen_blob_bytes(self):
+        (self.source / ".gitattributes").write_text("rust/examples/regtest_direct_funder.rs export-subst\n")
+        (self.source / "rust/examples/regtest_direct_funder.rs").write_text("// $Format:%H$\n")
+        self.git("add", ".gitattributes", "rust")
+        self.git("commit", "-qm", "export substitution model")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+        with self.assertRaisesRegex(BUILD.FunderBuildError, "exact Git blob"):
+            self.build()
+        self.assertEqual(self.compile_calls, 0)
+
+    def test_tracked_rust_symlink_is_rejected_before_compiler_launch(self):
+        (self.source / "rust/linked-input").symlink_to("../../outside")
+        self.git("add", "rust")
+        self.git("commit", "-qm", "linked source model")
+        self.commit = self.git("rev-parse", "HEAD").strip()
+        with self.assertRaisesRegex(BUILD.FunderBuildError, "regular Git blob"):
+            self.build()
+        self.assertEqual(self.compile_calls, 0)
+
+    def test_cargo_hard_links_are_copied_only_after_positive_join(self):
+        self.hard_link_output = True
+        case = self.case()
+        copy = BUILD._copy_cargo_executable
+        def joined_copy(source, destination):
+            self.assertFalse(case.accepting_launches)
+            self.assertIsNotNone(case._receipt)
+            self.assertTrue(all(process.cleanup_completed for process in case._processes))
+            self.assertEqual(source.stat().st_nlink, 2)
+            return copy(source, destination)
+        with patch.object(BUILD, "_copy_cargo_executable", side_effect=joined_copy):
+            artifact = self.build(case)
+        self.assertEqual(artifact.binary.stat().st_nlink, 1)
+        original = case.workspace.root / "funder-build/target/debug/examples/regtest_direct_funder"
+        self.assertEqual(artifact.binary.read_bytes(), original.read_bytes())
+        original.write_text("Cargo alias changed after publication")
+        self.assertEqual(artifact.binary.read_text(), "modeled-compiler-output")
+        artifact.verify_unchanged()
+
+    def test_explicit_compiler_and_wrappers_cannot_drift_from_probed_compiler(self):
+        with patch.dict(os.environ, {"RUSTC":"custom-rustc", "RUSTC_WRAPPER":"other-wrapper",
+                                    "RUSTC_WORKSPACE_WRAPPER":"other-workspace-wrapper"}):
+            artifact = self.build()
+        self.assertEqual(self.selected_compiler_request, "custom-rustc")
+        self.assertEqual(artifact.identity()["rustc_binary"], str(self.compiler))
+
+    def test_rustup_proxy_resolves_to_actual_compiler_before_probe_and_build(self):
+        self.rustup = self.root / "rustup"
+        self.rustup.write_text("modeled rustup\n")
+        self.rustup.chmod(0o700)
+        self.compiler_entry = self.root / "rustc"
+        self.compiler_entry.symlink_to(self.rustup)
+        artifact = self.build()
+        self.assertEqual(artifact.identity()["rustc_binary"], str(self.compiler))
+
+
+if __name__ == "__main__":
+    unittest.main()

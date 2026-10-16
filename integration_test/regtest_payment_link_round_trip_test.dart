@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,18 +20,13 @@ import '../test/support/legacy_payment_link.dart';
 import 'support/desktop_regtest_flow.dart';
 import 'support/gift_card_amount_regtest.dart';
 import 'support/payment_link_regtest_flow.dart' as payment_link_flow;
+import 'support/regtest_control.dart';
 
 const _network = 'regtest';
 const _lightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
 );
-const _zcashdRpcUrl = String.fromEnvironment(
-  'ZCASH_E2E_ZCASHD_RPC_URL',
-  defaultValue: 'http://127.0.0.1:18232',
-);
-const _zcashdRpcUser = 'zcash';
-const _zcashdRpcPassword = 'zcash';
 const _walletSpendableConfirmationTarget = 6;
 const _giftMessage = 'Congrats from the payment link E2E!';
 
@@ -363,8 +355,8 @@ Future<void> _tapText(WidgetTester tester, String text) async {
 
 Future<void> _mineRegtestBlocks(int blocks) async {
   e2eLog('mining $blocks regtest block(s)');
-  final before = await _zcashdRpc<int>('getblockcount');
-  await _zcashdRpc<List<Object?>>('generate', [blocks]);
+  final before = await regtestTipHeight();
+  await mineRegtestFixture(blocks);
   final targetHeight = before + blocks;
   final deadline = DateTime.now().add(const Duration(seconds: 30));
 
@@ -380,45 +372,6 @@ Future<void> _mineRegtestBlocks(int blocks) async {
     await Future<void>.delayed(const Duration(seconds: 1));
   }
   throw StateError('Timed out waiting for lightwalletd height $targetHeight.');
-}
-
-Future<T> _zcashdRpc<T>(
-  String method, [
-  List<Object?> params = const [],
-]) async {
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(Uri.parse(_zcashdRpcUrl));
-    final credentials = base64Encode(
-      utf8.encode('$_zcashdRpcUser:$_zcashdRpcPassword'),
-    );
-    request.headers
-      ..set(HttpHeaders.authorizationHeader, 'Basic $credentials')
-      ..contentType = ContentType.json;
-    request.write(
-      jsonEncode({
-        'jsonrpc': '1.0',
-        'id': 'payment-link-regtest-e2e',
-        'method': method,
-        'params': params,
-      }),
-    );
-    final response = await request.close();
-    final body = await utf8.decoder.bind(response).join();
-    if (response.statusCode != HttpStatus.ok) {
-      throw StateError(
-        'zcashd RPC $method failed: HTTP ${response.statusCode}',
-      );
-    }
-    final decoded = jsonDecode(body) as Map<String, Object?>;
-    final error = decoded['error'];
-    if (error != null) {
-      throw StateError('zcashd RPC $method failed: $error');
-    }
-    return decoded['result'] as T;
-  } finally {
-    client.close(force: true);
-  }
 }
 
 Future<rust_sync.TransactionInfo> _waitForHistoryTransaction(

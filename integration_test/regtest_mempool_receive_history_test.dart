@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -15,12 +14,9 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_activity_flow.dart';
 import 'support/desktop_onboarding_flow.dart';
+import 'support/regtest_control.dart';
 
 final _network = kZcashDefaultNetworkName;
-const _driverUrl = String.fromEnvironment(
-  'ZCASH_E2E_DRIVER_URL',
-  defaultValue: 'http://127.0.0.1:39067',
-);
 const _testMode = String.fromEnvironment(
   'ZCASH_E2E_MEMPOOL_TEST_MODE',
   defaultValue: 'steady',
@@ -385,13 +381,7 @@ Future<String> _fundPreparedUnmined(String address, String amount) async {
   _log(
     'requesting prepared external unmined funding of $amount $_currencyTicker to $address',
   );
-  final response = await _postDriver('/fund-unmined-prepared', {
-    'address': address,
-    'amount': amount,
-  }, timeout: const Duration(minutes: 2));
-  final txid = response['txid'] as String? ?? '';
-  if (txid.isEmpty) fail('E2E driver did not return a txid.');
-  return txid;
+  return (await fundRegtestFixtureUnmined(address, amount)).txid;
 }
 
 Future<_ExpiringFunding> _fundExpiringUnmined(
@@ -401,58 +391,25 @@ Future<_ExpiringFunding> _fundExpiringUnmined(
   _log(
     'requesting expiring external unmined funding of $amount $_currencyTicker to $address',
   );
-  final response = await _postDriver('/fund-unmined-expiring', {
-    'address': address,
-    'amount': amount,
-  }, timeout: const Duration(minutes: 2));
-  final txid = response['txid'] as String? ?? '';
-  final expiryHeight = (response['expiryHeight'] as num?)?.toInt() ?? 0;
-  if (txid.isEmpty) fail('E2E driver did not return a txid.');
-  if (expiryHeight <= 0) fail('E2E driver did not return an expiry height.');
-  return _ExpiringFunding(txid: txid, expiryHeight: expiryHeight);
+  final funding = await fundRegtestFixtureUnmined(
+    address,
+    amount,
+    expiring: true,
+  );
+  return _ExpiringFunding(
+    txid: funding.txid,
+    expiryHeight: funding.expiryHeight,
+  );
 }
 
 Future<void> _mineRegtestBlocks(int blocks) async {
   _log('requesting external mining of $blocks regtest blocks');
-  await _postDriver('/mine', {'blocks': blocks});
+  await mineRegtestFixture(blocks);
 }
 
 Future<void> _mineToExpiry(String txid, int expiryHeight) async {
   _log('requesting external mining to expiry height $expiryHeight for $txid');
-  await _postDriver('/mine-to-expiry', {
-    'txid': txid,
-    'expiryHeight': expiryHeight,
-  }, timeout: const Duration(minutes: 5));
-}
-
-Future<Map<String, Object?>> _postDriver(
-  String path,
-  Map<String, Object?> payload, {
-  Duration timeout = const Duration(minutes: 2),
-}) async {
-  final client = HttpClient();
-  try {
-    final request = await client
-        .postUrl(Uri.parse('$_driverUrl$path'))
-        .timeout(timeout);
-    final bodyBytes = utf8.encode(jsonEncode(payload));
-    request.headers.contentType = ContentType.json;
-    request.contentLength = bodyBytes.length;
-    request.add(bodyBytes);
-
-    final response = await request.close().timeout(timeout);
-    final body = await utf8.decoder.bind(response).join().timeout(timeout);
-    if (response.statusCode != HttpStatus.ok) {
-      throw StateError(
-        'E2E driver $path failed: HTTP '
-        '${response.statusCode}\n$body',
-      );
-    }
-    final decoded = jsonDecode(body) as Map<String, Object?>;
-    return decoded;
-  } finally {
-    client.close(force: true);
-  }
+  await mineRegtestFixtureToExpiry(txid, expiryHeight);
 }
 
 Future<void> _openWallet(WidgetTester tester) async {
@@ -700,8 +657,11 @@ Future<_ShieldedBalanceSnapshot> _shieldedBalance(String accountUuid) async {
     accountUuid: accountUuid,
   );
   return _ShieldedBalanceSnapshot(
-    pending: balance.saplingPending + balance.orchardPending,
-    spendable: balance.sapling + balance.orchard,
+    pending:
+        balance.saplingPending +
+        balance.orchardPending +
+        balance.ironwoodPending,
+    spendable: balance.sapling + balance.orchard + balance.ironwood,
   );
 }
 

@@ -305,13 +305,16 @@ scripts/e2e/flutter-ios-regtest-mobile-full.sh
 ```
 
 The runners manage the required `regtest` and mobile compile-time definitions.
-Docker Compose is required; `grpcurl` is optional but improves readiness checks.
+Every suite runs each test on its own Zakura regtest chain and needs Docker,
+Python 3.11+, `grpcurl`, `fvm flutter pub get` and committed `rust/` changes;
+see `scripts/e2e/README.md`.
 Use a targeted script under `scripts/e2e/` instead of a full suite when it
 covers the changed behavior. State which scenario you ran in the PR.
 
-Regtest runners reset local chain and wallet state. Never point them at mainnet
-or reuse production wallet material. Debug Rust crypto is substantially slower
-than release builds, so use release mode for performance conclusions.
+Regtest runners create and remove disposable chains and wallet state. Never
+point them at mainnet or reuse production wallet material. Debug Rust crypto is
+substantially slower than release builds, so use release mode for performance
+conclusions.
 
 ## Pull requests
 

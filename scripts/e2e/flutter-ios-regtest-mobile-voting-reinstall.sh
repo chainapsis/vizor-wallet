@@ -1,4 +1,3 @@
 #!/usr/bin/env bash
-set -euo pipefail
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-E2E_VOTING_REINSTALL=1 exec "$ROOT_DIR/scripts/e2e/flutter-ios-regtest-mobile-voting.sh"
+# Runs on Zakura regtest chains; see scripts/e2e/README.md.
+exec python3 "$(dirname "${BASH_SOURCE[0]}")/zakura-run.py" flutter.ios.voting-reinstall "$@"

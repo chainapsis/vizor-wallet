@@ -186,9 +186,8 @@ material is included.
 
 ## Mobile reinstall regtest E2E
 
-Run `scripts/e2e/flutter-ios-regtest-mobile-voting-reinstall.sh` with an explicit
-`SIMULATOR_UDID` when multiple simulators are booted. The existing mobile voting
-runner also asserts that a fully completed vote removes its Home card and
+Run `scripts/e2e/flutter-ios-regtest-mobile-voting-reinstall.sh`. The existing
+mobile voting runner also asserts that a fully completed vote removes its Home card and
 persists the confirmed hidden decision. Before voting it checks unused note
 observations on disk; after delegation it checks that used observations persist.
 
@@ -216,7 +215,7 @@ cannot satisfy the restored-check assertion. Both unused and used observations
 are reevaluated with a fresh client and a forced check, proving disk reuse without
 additional participation RPCs. Initial hidden UI alone never satisfies the test:
 it requires a confirmed hide decision. Screenshots are
-saved under `.regtest-voting/logs/screenshots/`.
+saved under the case's `voting/logs/screenshots/`.
 
 Home participation work stops at asynchronous boundaries when Home is left or
 the app backgrounds. An already dispatched request may finish; subsequent

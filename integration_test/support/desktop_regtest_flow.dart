@@ -131,6 +131,14 @@ Future<List<rust_wallet.AccountInfo>> desktopRegtestAccounts() {
 }
 
 Future<void> unlockDesktopRegtestWallet(WidgetTester tester) async {
+  // A restarted app rebuilds its unlock route while the startup lock state
+  // settles; text typed before that is lost.
+  await pumpUntil(
+    tester,
+    () => tester.any(find.byKey(const ValueKey('unlock_password_field'))),
+    description: 'unlock screen',
+  );
+  await tester.pump(const Duration(seconds: 1));
   await enterAppText(
     tester,
     const ValueKey('unlock_password_field'),

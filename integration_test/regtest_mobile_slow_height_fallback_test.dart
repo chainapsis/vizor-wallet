@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/mobile_regtest_flow.dart';
+import 'support/regtest_control.dart';
 import 'support/regtest_lightwalletd_proxy.dart';
 
 const _mnemonic =
@@ -134,11 +135,8 @@ Future<void> _fundWallet(String amountZec) async {
     fail('ZCASH_E2E_UNIFIED_ADDRESS define is required for this test.');
   }
   logE2e('funding $_unifiedAddress with $amountZec');
-  await postDriver('/fund-unmined-prepared', {
-    'address': _unifiedAddress,
-    'amount': amountZec,
-  });
-  await postDriver('/mine', {'blocks': 3});
+  await fundRegtestFixtureUnmined(_unifiedAddress, amountZec);
+  await mineRegtestFixture(3);
 }
 
 Future<void> _waitForAnyShieldedBalance(

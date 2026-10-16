@@ -9,6 +9,12 @@ The scenario implementation lives here. A two-line adapter under
 `integration_test/` is required so Flutter packages the macOS app and its Rust
 framework instead of treating the scenario as a host-only Dart test.
 
+The run scripts stop with an error for now. They drove
+`scripts/e2e/flutter-macos-ironwood-migration.sh` with `E2E_*` settings, and
+that runner now runs one fixed scenario on a Zakura regtest chain (see
+`scripts/e2e/README.md`). The scenarios need moving to those chains before
+the scripts run again.
+
 ## Full migration scenario
 
 ```bash

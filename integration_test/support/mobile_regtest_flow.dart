@@ -26,6 +26,8 @@ import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+import 'regtest_control.dart';
+
 const mobileE2ePasscode = '111111';
 const mobileIronwoodE2eMnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
@@ -42,12 +44,6 @@ const mobileE2eLightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
 );
-const mobileE2eZcashdRpcUrl = String.fromEnvironment(
-  'ZCASH_E2E_ZCASHD_RPC_URL',
-  defaultValue: 'http://127.0.0.1:18232',
-);
-const _zcashdRpcUser = 'zcash';
-const _zcashdRpcPassword = 'zcash';
 const _accountsKey = 'zcash_accounts';
 
 void logE2e(String message) {
@@ -1335,8 +1331,8 @@ Future<void> waitForMempoolObserver() async {
 Future<void> mineRegtestBlocks(int blocks) async {
   logE2e('mining $blocks regtest blocks');
 
-  final before = await zcashdRpc<int>('getblockcount');
-  await zcashdRpc<List<Object?>>('generate', [blocks]);
+  final before = await regtestTipHeight();
+  await mineRegtestFixture(blocks);
   final targetHeight = before + blocks;
   final deadline = DateTime.now().add(const Duration(seconds: 30));
 
@@ -1353,44 +1349,6 @@ Future<void> mineRegtestBlocks(int blocks) async {
   }
 
   throw StateError('Timed out waiting for lightwalletd height $targetHeight.');
-}
-
-Future<T> zcashdRpc<T>(String method, [List<Object?> params = const []]) async {
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(Uri.parse(mobileE2eZcashdRpcUrl));
-    final credentials = base64Encode(
-      utf8.encode('$_zcashdRpcUser:$_zcashdRpcPassword'),
-    );
-    request.headers
-      ..set(HttpHeaders.authorizationHeader, 'Basic $credentials')
-      ..contentType = ContentType.json;
-    request.write(
-      jsonEncode({
-        'jsonrpc': '1.0',
-        'id': 'mobile-regtest-e2e',
-        'method': method,
-        'params': params,
-      }),
-    );
-
-    final response = await request.close();
-    final body = await utf8.decoder.bind(response).join();
-    if (response.statusCode != HttpStatus.ok) {
-      throw StateError(
-        'zcashd RPC $method failed: HTTP ${response.statusCode}',
-      );
-    }
-
-    final decoded = jsonDecode(body) as Map<String, Object?>;
-    final error = decoded['error'];
-    if (error != null) {
-      throw StateError('zcashd RPC $method failed: $error');
-    }
-    return decoded['result'] as T;
-  } finally {
-    client.close(force: true);
-  }
 }
 
 // ── Host driver (python HTTP server started by the runner script) ────
@@ -1456,15 +1414,7 @@ Future<Map<String, Object?>> getDriver(
 /// Sends an external unmined funding tx to [address]; returns the txid.
 Future<String> fundUnmined(String address, String amount) async {
   logE2e('requesting external unmined funding of $amount to $address');
-  final response = await postDriver('/fund-unmined', {
-    'address': address,
-    'amount': amount,
-  }, timeout: const Duration(minutes: 5));
-  final txid = response['txid'];
-  if (txid is! String || txid.isEmpty) {
-    throw StateError('E2E driver returned no txid: $response');
-  }
-  return txid;
+  return (await fundRegtestFixtureUnmined(address, amount)).txid;
 }
 
 /// Variant of [waitForHistoryEntry] that also matches the txid. zcashd

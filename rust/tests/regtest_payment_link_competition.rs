@@ -26,7 +26,7 @@ fn claim(
         .then(|| sapling_params().expect("Sapling params"));
     api::execute_proposal(
         path_str(db),
-        LIGHTWALLETD_URL.into(),
+        lightwalletd_url(),
         proposal.proposal_id,
         flow.into(),
         mnemonic.as_bytes().to_vec(),
@@ -70,6 +70,10 @@ fn one_card_two_claimants_preserve_and_resolve_losing_transaction() {
     );
     assert_ne!(b.status, "broadcasted");
     assert_eq!(b.broadcast_failure_kind.as_deref(), Some("rejected"));
+    assert!(
+        !b.txids.is_empty(),
+        "the rejected claimant must retain its attempted transaction identity"
+    );
     // Wire IDs use display order; the evidence API uses storage/protocol order.
     let b_ids = b
         .txids
@@ -80,11 +84,17 @@ fn one_card_two_claimants_preserve_and_resolve_losing_transaction() {
             hex::encode(bytes)
         })
         .collect::<Vec<_>>();
+    assert!(
+        b_ids
+            .iter()
+            .all(|id| id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit())),
+        "losing transaction identities must be complete hexadecimal txids"
+    );
     mine_blocks(6);
     api::run_payment_link_claim_sync(
         "loser-read-only".into(),
         path_str(&b_db),
-        LIGHTWALLETD_URL.into(),
+        lightwalletd_url(),
         REGTEST_NETWORK.into(),
         false,
     )

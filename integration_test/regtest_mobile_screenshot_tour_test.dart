@@ -20,7 +20,7 @@ const _screenshotDriverUrl = String.fromEnvironment(
 /// every mobile screen/state on a funded regtest wallet and asks the
 /// host screenshot driver to grab the simulator screen at each stop.
 /// Run via scripts/e2e/flutter-ios-regtest-mobile-screenshot-tour.sh;
-/// PNGs land in .regtest-logs/screens/.
+/// PNGs land in the case's screenshots/ evidence directory.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
