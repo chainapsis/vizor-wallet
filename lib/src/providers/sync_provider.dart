@@ -1160,6 +1160,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
   bool _resumeTipCheckPending = false;
+  DateTime? _lastNewBlockCheckAt;
   int _sensitiveStateEpoch = 0;
   int _progressEventVersion = 0;
   int _balanceReadVersion = 0;
@@ -2800,6 +2801,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   ///   3. Skip refresh for inactive-account events. The wallet-wide
   ///      observer has already stored the tx, so switching accounts can
   ///      surface it through the normal account-scoped history read.
+  ///   4. On a `newBlock` event, check the tip at once
+  ///      ([_handleMempoolNewBlock]).
   ///
   /// Reuses [_mempoolSub] as the single subscription handle. The
   /// `startMempoolObserver` FRB call is guarded on the Rust side
@@ -2827,6 +2830,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             _requiresUnlock ||
             _isShuttingDown ||
             !ref.mounted) {
+          return;
+        }
+        if (event.newBlock) {
+          _handleMempoolNewBlock();
           return;
         }
         if (!event.matched) return;
@@ -2875,6 +2882,24 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         _mempoolSub = null;
       },
     );
+  }
+
+  /// The server ended the mempool stream, which lightwalletd does when a
+  /// block is mined: check the tip now instead of at the next poll. The
+  /// check is marked pending, as on resume, so one already running (or a
+  /// sync) is followed by another as soon as it ends. The poll keeps its
+  /// other duties. At most one such check per 5 s, so a server that ends
+  /// every stream at once (the observer reconnects after 1 s) cannot
+  /// multiply tip checks; the poll still covers a skipped block.
+  void _handleMempoolNewBlock() {
+    final now = DateTime.now();
+    final last = _lastNewBlockCheckAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastNewBlockCheckAt = now;
+    _resumeTipCheckPending = true;
+    unawaited(_checkAndSync());
   }
 
   void _scheduleMempoolRefresh() {
