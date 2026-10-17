@@ -59,6 +59,7 @@ mod lwd;
 pub(crate) mod mempool;
 #[cfg(test)]
 mod private_recovery_reorg_tests;
+mod progress_work;
 mod retry_progress;
 #[cfg(test)]
 pub(crate) mod test_lwd;
@@ -80,6 +81,7 @@ pub(crate) use lwd::{
     transparent_lookup::TransparentLookupGate,
 };
 use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
+use progress_work::{JobProgress, WorkModel};
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
     latest_block_for_transaction_with_client,
@@ -123,12 +125,12 @@ fn checking_progress(
     })
 }
 
-fn begin_checking(cycle: &mut u32, total: u64, tip: u64) -> SyncProgressEvent {
+fn begin_checking(cycle: &mut u32, total: u64, tip: u64, job: &JobProgress) -> SyncProgressEvent {
     *cycle += 1;
     SyncProgressEvent {
         checking: checking_progress(*cycle, total, total, 0),
         remaining_scan_blocks: Some(total),
-        ..preparation_progress_event(tip, "chain_prepare", 0, 0)
+        ..preparation_progress_event(tip, "chain_prepare", 0, 0, job.fraction(), job.id())
     }
 }
 
@@ -141,14 +143,15 @@ fn scan_queue_progress_event(
     total: u64,
     tip: u64,
     pending_start: Option<u64>,
+    job: &JobProgress,
 ) -> SyncProgressEvent {
     let mut event = if total > 0 && (*cycle > 0 || main_scan_complete) {
-        begin_checking(cycle, total, tip)
+        begin_checking(cycle, total, tip, job)
     } else {
         SyncProgressEvent {
             checking: checking_progress(*cycle, total, total, 0),
             remaining_scan_blocks: Some(total),
-            ..preparation_progress_event(tip, "chain_prepare", 0, 0)
+            ..preparation_progress_event(tip, "chain_prepare", 0, 0, job.fraction(), job.id())
         }
     };
     event.pending_scan_start_height = pending_start;
@@ -187,13 +190,34 @@ pub struct SyncProgressEvent {
     /// - `"scan"` — running `scan_cached_blocks` (CPU-intensive)
     /// - `""` — completion event or unspecified
     pub phase: String,
+    /// Id of the sync job `percentage` belongs to. A job lasts until a sync
+    /// completes, across retries, endpoint fallbacks and app relaunches, so a
+    /// new attempt with the same id continues the same fraction. Claimed
+    /// before the first event, so every event carries it.
+    pub sync_job_id: String,
 }
 
+/// Blocks per scan batch at most; the byte budget decides below it. Every
+/// batch pays a fixed serial cost after its scan (range and checkpoint
+/// bookkeeping, tip check), so sparse history wants long batches: on a
+/// 400,000-block stretch before the spam window, 10,000 instead of 2,000
+/// cut the scan from 81 to 32 s (medians of three runs) and its CPU time by
+/// a fifth. Mobile keeps 1,000 until measured on a phone.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const BATCH_SIZE_FOREGROUND: u32 = 2000;
+const BATCH_SIZE_FOREGROUND: u32 = 10_000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
+/// Scan batches downloading ahead of the one being scanned, each on its own
+/// request. A download is usually the bottleneck, and each request waits
+/// before its first block, so more requests in flight keep the link busy
+/// through those waits. On spam-window slices, four instead of two raised
+/// throughput by about 40% with the mobile byte budget (7.1 to 9.7-10.3 MB/s).
+/// With the desktop budget it depends on the link: on a dense slice four
+/// scanned 17% slower than two over a fast link and as fast or faster over a
+/// slower one. Queued batches stay encoded (`MemoryBlockSource`), so four
+/// ahead holds about two more batches of wire bytes, some 60 MB on desktop.
+const PREFETCH_DEPTH: usize = 4;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
@@ -212,19 +236,24 @@ fn current_active_sync_account(target: Option<&ActiveSyncAccountTarget>) -> Opti
     })?
 }
 
+/// A preparation event. `job_percentage` is the stored fraction of the job
+/// this attempt resumes, or 0 for a new job, so the display does not fall
+/// back to zero while the attempt prepares.
 fn preparation_progress_event(
     chain_tip_height: u64,
     phase: &str,
     phase_completed_units: u64,
     phase_total_units: u64,
+    job_percentage: f64,
+    sync_job_id: &str,
 ) -> SyncProgressEvent {
     SyncProgressEvent {
         kind: SyncEventKind::Progress,
         checking: None,
         scanned_height: 0,
         chain_tip_height,
-        percentage: 0.0,
-        display_target_percentage: 0.0,
+        percentage: job_percentage,
+        display_target_percentage: job_percentage,
         display_target_blocks: 0,
         remaining_scan_blocks: None,
         pending_scan_start_height: None,
@@ -233,6 +262,7 @@ fn preparation_progress_event(
         phase_completed_units,
         phase_total_units,
         phase: phase.into(),
+        sync_job_id: sync_job_id.into(),
     }
 }
 
@@ -255,23 +285,33 @@ pub(crate) fn followup_updated_event(completed: (u64, u64)) -> SyncProgressEvent
         phase_completed_units: 0,
         phase_total_units: 0,
         phase: String::new(),
+        // The job ended with the completion this follows.
+        sync_job_id: String::new(),
     }
 }
 
-/// Sandblasting attack range (Zcash mainnet). Blocks in this range
-/// contain a very large number of outputs from a sustained spam
-/// attack, making `scan_cached_blocks` significantly more expensive
-/// per block. We reduce the batch size to `BATCH_SIZE_SANDBLASTING`
-/// while the next batch falls inside this window to avoid excessive
-/// memory pressure and potential timeouts. Batches are clamped at both
-/// boundaries so a long historical range does not inherit the reduced
-/// size before reaching the window or keep it after leaving the window.
-///
-/// Matches `zcash-android-wallet-sdk`'s `SANDBLASTING_RANGE` in
-/// `CompactBlockProcessor.kt:1171-1181`.
-const SANDBLASTING_START: u32 = 1_710_000;
-const SANDBLASTING_END: u32 = 2_050_000;
-const BATCH_SIZE_SANDBLASTING: u32 = 100;
+/// Estimated compact-block bytes per scan batch (`WorkModel::batch_blocks`).
+/// Up to `1 + PREFETCH_DEPTH` batches are in memory at once.
+const BATCH_BYTE_BUDGET: f64 = if cfg!(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux"
+)) {
+    DESKTOP_BATCH_BYTE_BUDGET
+} else {
+    MOBILE_BATCH_BYTE_BUDGET
+};
+/// The heaviest batch the block-count planner made on desktop: 2,000 blocks
+/// right after the spam window.
+const DESKTOP_BATCH_BYTE_BUDGET: f64 = 31_000_000.0;
+/// The heaviest 100-block spam-window batch by the compiled tree sizes
+/// (1,780,000..1,790,000 averages 113 KB a block). By the subtree heights
+/// those batches came to about 15 MB, which leaves room for the estimate's
+/// error between subtree heights.
+const MOBILE_BATCH_BYTE_BUDGET: f64 = 11_300_000.0;
+/// Fewest blocks per batch, against a broken estimate; real data never needs
+/// it.
+const MIN_BATCH_BLOCKS: u32 = 10;
 
 const MAX_WITNESS_REPAIR_PASSES_PER_RUN: u32 = 3;
 const WITNESS_CHECK_POLICY_VERSION: u32 = 1;
@@ -299,8 +339,11 @@ pub(crate) fn elapsed() -> String {
         .unwrap_or_default()
 }
 
+/// The batch starting at `start`: its planned block count (as many as fit
+/// `BATCH_BYTE_BUDGET`, at most `max_blocks`) and its end, cut at `range_end`.
 fn planned_batch_end(
-    base_batch_size: u32,
+    model: &WorkModel,
+    max_blocks: u32,
     start: BlockHeight,
     range_end: BlockHeight,
 ) -> Option<(u32, BlockHeight)> {
@@ -308,22 +351,8 @@ fn planned_batch_end(
         return None;
     }
 
-    let start_u32 = u32::from(start);
-    let (batch_size, phase_end) = if start_u32 < SANDBLASTING_START {
-        (
-            base_batch_size,
-            std::cmp::min(range_end, BlockHeight::from_u32(SANDBLASTING_START)),
-        )
-    } else if start_u32 < SANDBLASTING_END {
-        (
-            BATCH_SIZE_SANDBLASTING,
-            std::cmp::min(range_end, BlockHeight::from_u32(SANDBLASTING_END)),
-        )
-    } else {
-        (base_batch_size, range_end)
-    };
-
-    let end = std::cmp::min(start + batch_size, phase_end);
+    let batch_size = model.batch_blocks(u64::from(u32::from(start)), max_blocks);
+    let end = std::cmp::min(start + batch_size, range_end);
     Some((batch_size, end))
 }
 
@@ -333,7 +362,8 @@ fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
 }
 
 fn scannable_batch_end(
-    base_batch_size: u32,
+    model: &WorkModel,
+    max_blocks: u32,
     start: BlockHeight,
     range_end: BlockHeight,
     current_tip_height: u64,
@@ -343,7 +373,31 @@ fn scannable_batch_end(
         return None;
     }
 
-    planned_batch_end(base_batch_size, start, available_end)
+    planned_batch_end(model, max_blocks, start, available_end)
+}
+
+/// The next `count` batch ranges from `start`, contiguous, inside the range
+/// and below the tip.
+fn prefetch_ranges(
+    model: &WorkModel,
+    max_blocks: u32,
+    start: BlockHeight,
+    range_end: BlockHeight,
+    current_tip_height: u64,
+    count: usize,
+) -> Vec<(BlockHeight, BlockHeight)> {
+    let mut ranges = Vec::with_capacity(count);
+    let mut next = start;
+    while ranges.len() < count {
+        let Some((_, end)) =
+            scannable_batch_end(model, max_blocks, next, range_end, current_tip_height)
+        else {
+            break;
+        };
+        ranges.push((next, end));
+        next = end;
+    }
+    ranges
 }
 
 fn effective_base_batch_size(default_batch_size: u32) -> u32 {
@@ -396,141 +450,24 @@ fn reset_promoted_scan_progress(
     *prev_remaining = pending;
 }
 
-fn chain_window_percentage(window_start_height: u64, tip_height: u64, scanned_height: u64) -> f64 {
-    if tip_height <= window_start_height {
-        return 1.0;
-    }
-    let scanned = scanned_height.saturating_sub(window_start_height);
-    let total = tip_height - window_start_height;
-    (scanned as f64 / total as f64).clamp(0.0, 1.0)
-}
-
-fn chain_window_frontier_height(ranges: &[ScanRange], fallback_height: u64) -> u64 {
-    earliest_pending_scan_start(ranges).unwrap_or(fallback_height)
-}
-
-fn chain_window_target_height_after_batch(
-    ranges: &[ScanRange],
-    batch_start: BlockHeight,
-    batch_end: BlockHeight,
-    fallback_height: u64,
-) -> u64 {
-    let frontier = chain_window_frontier_height(ranges, fallback_height);
-    if frontier == u32::from(batch_start) as u64 {
-        u32::from(batch_end) as u64
-    } else {
-        frontier
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ProgressDisplayMode {
-    Work,
-    ChainWindow { window_start_height: u64 },
-}
-
-impl ProgressDisplayMode {
-    fn percentage(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        scanned_height: u64,
-        tip_height: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::Work => {
-                if initial_total == 0 {
-                    1.0
-                } else {
-                    (1.0 - (remaining_blocks as f64 / initial_total as f64)).clamp(0.0, 1.0)
-                }
-            }
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(window_start_height, tip_height, scanned_height),
-        }
-    }
-
-    fn target_percentage_after_blocks(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        scanned_height: u64,
-        tip_height: u64,
-        blocks: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::Work => {
-                target_percentage_after_blocks(initial_total, remaining_blocks, blocks)
-            }
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(
-                window_start_height,
-                tip_height,
-                scanned_height.saturating_add(blocks),
-            ),
-        }
-    }
-
-    fn batch_start_height(self, ranges: &[ScanRange], batch_start: BlockHeight) -> u64 {
-        match self {
-            ProgressDisplayMode::ChainWindow { .. } => {
-                chain_window_frontier_height(ranges, u32::from(batch_start) as u64)
-            }
-            ProgressDisplayMode::Work => u32::from(batch_start) as u64,
-        }
-    }
-
-    fn batch_end_height(
-        self,
-        post_ranges: &[ScanRange],
-        batch_end: BlockHeight,
-        tip_height: u64,
-    ) -> u64 {
-        match self {
-            ProgressDisplayMode::ChainWindow { .. } => {
-                chain_window_frontier_height(post_ranges, tip_height)
-            }
-            ProgressDisplayMode::Work => u32::from(batch_end) as u64,
-        }
-    }
-
-    fn batch_target_percentage(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        ranges: &[ScanRange],
-        batch_start: BlockHeight,
-        batch_end: BlockHeight,
-        tip_height: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(
-                window_start_height,
-                tip_height,
-                chain_window_target_height_after_batch(
-                    ranges,
-                    batch_start,
-                    batch_end,
-                    u32::from(batch_start) as u64,
-                ),
-            ),
-            ProgressDisplayMode::Work => self.target_percentage_after_blocks(
-                initial_total,
-                remaining_blocks,
-                u32::from(batch_start) as u64,
-                tip_height,
-                u32::from(batch_end).saturating_sub(u32::from(batch_start)) as u64,
-            ),
-        }
-    }
-}
-
 fn is_pending_scan_range(range: &ScanRange) -> bool {
     range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
+}
+
+/// The pending range to scan next: the first, in priority order, that starts
+/// at or below the loop's tip. A ChainTip range the mempool observer queued
+/// past that tip waits behind history until a tip fetch reaches it. With no
+/// such range, the first pending range is returned and the loop's
+/// past-the-tip handling decides.
+fn next_pending_scan_range(ranges: &[ScanRange], current_tip_height: u64) -> Option<&ScanRange> {
+    let tip_end = chain_tip_exclusive_end(current_tip_height);
+    let mut pending = ranges.iter().filter(|range| is_pending_scan_range(range));
+    let first = pending.clone().next()?;
+    Some(
+        pending
+            .find(|range| range.block_range().start < tip_end)
+            .unwrap_or(first),
+    )
 }
 
 fn recovery_resubmit_exclusions(
@@ -677,19 +614,19 @@ fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
         .sum()
 }
 
-fn first_pending_scan_range(ranges: &[ScanRange]) -> Option<String> {
-    ranges
-        .iter()
-        .find(|r| is_pending_scan_range(r))
-        .map(|r| r.to_string())
-}
-
 fn earliest_pending_scan_start(ranges: &[ScanRange]) -> Option<u64> {
     ranges
         .iter()
         .filter(|r| is_pending_scan_range(r))
         .map(|r| u32::from(r.block_range().start) as u64)
         .min()
+}
+
+fn first_pending_scan_range(ranges: &[ScanRange]) -> Option<String> {
+    ranges
+        .iter()
+        .find(|r| is_pending_scan_range(r))
+        .map(|r| r.to_string())
 }
 
 fn block_range_len(range: &std::ops::Range<BlockHeight>) -> u64 {
@@ -996,7 +933,9 @@ pub(crate) fn completed_sync_height_for_status(
     }
 }
 
-fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
+/// Marks a sync in progress and returns its progress job: the unfinished one,
+/// or a newly claimed one.
+fn mark_sync_started(db_data_path: &str) -> Result<progress_work::StoredProgressJob, String> {
     let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
     ensure_sync_meta_table(&conn)?;
     let tx = conn
@@ -1017,8 +956,24 @@ fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("write sync in-progress marker: {e}"))?;
+    let job = progress_work::claim_progress_job(&tx)?;
     tx.commit()
-        .map_err(|e| format!("commit sync-start metadata: {e}"))
+        .map_err(|e| format!("commit sync-start metadata: {e}"))?;
+    Ok(job)
+}
+
+/// The unfinished sync job's id and last fraction, for the status a relaunch
+/// starts from.
+pub(crate) fn unfinished_progress_job(db_data_path: &str) -> Option<(String, f64)> {
+    match progress_work::read_progress_job(db_data_path) {
+        Ok(job) => job
+            .filter(|job| !job.is_finished())
+            .map(|job| (job.id, job.fraction)),
+        Err(e) => {
+            log::warn!("sync: stored progress job unreadable: {e}");
+            None
+        }
+    }
 }
 
 fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<(), String> {
@@ -1051,6 +1006,8 @@ fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("clear sync in-progress marker: {e}"))?;
+    // The job is done; the next sync measures its own work from zero.
+    progress_work::clear_progress_job(&tx)?;
     tx.commit()
         .map_err(|e| format!("commit completed sync transaction: {e}"))
 }
@@ -2603,6 +2560,150 @@ impl<T> Drop for Prefetch<T> {
     }
 }
 
+/// The queued tuple for batch `start..end`, if it is next. A batch that
+/// overlaps the queue any other way means the ranges changed under it, so
+/// the queue is dropped. A batch clear of it, such as a tip batch between
+/// history batches, leaves it for when the scan returns. Rewinds clear the
+/// queue where they happen.
+fn take_queued_batch<T>(
+    queue: &mut VecDeque<Prefetch<T>>,
+    start: BlockHeight,
+    end: BlockHeight,
+) -> Option<Prefetch<T>> {
+    if queue
+        .front()
+        .is_some_and(|queued| queued.start == start && queued.end == end)
+    {
+        return queue.pop_front();
+    }
+    if queue
+        .iter()
+        .any(|queued| queued.start < end && start < queued.end)
+    {
+        queue.clear();
+    }
+    None
+}
+
+/// The end of the queued tuple that starts at `start` and runs past `end`,
+/// when every block it adds is still pending. A chain tip that moves while
+/// the tip ranges scan puts a short Verify range at the scan frontier, inside
+/// the tuple queued next; scanning that tuple whole keeps the queue and the
+/// blocks it already downloaded.
+fn queued_batch_extension<T>(
+    queue: &VecDeque<Prefetch<T>>,
+    start: BlockHeight,
+    end: BlockHeight,
+    ranges: &[ScanRange],
+) -> Option<BlockHeight> {
+    let queued = queue.front()?;
+    if queued.start != start || queued.end <= end {
+        return None;
+    }
+    let mut next = end;
+    while next < queued.end {
+        next = ranges
+            .iter()
+            .find(|range| {
+                is_pending_scan_range(range)
+                    && range.block_range().start <= next
+                    && next < range.block_range().end
+            })?
+            .block_range()
+            .end;
+    }
+    Some(queued.end)
+}
+
+/// Where to queue more tuples after batch `..end` of a range ending at
+/// `range_end`: after the queue when it continues this batch, else right
+/// after this batch. A batch that cut in ahead of the queue keeps it only
+/// while it is the last of its range (one new block's tip range, say), so
+/// a longer range that cuts in still downloads ahead.
+fn prefetch_continues_from<T>(
+    queue: &mut VecDeque<Prefetch<T>>,
+    end: BlockHeight,
+    range_end: BlockHeight,
+) -> Option<BlockHeight> {
+    match (queue.front(), queue.back()) {
+        (None, _) => Some(end),
+        (Some(front), Some(back)) if front.start == end => Some(back.end),
+        _ if end < range_end => {
+            queue.clear();
+            Some(end)
+        }
+        _ => None,
+    }
+}
+
+/// The post-batch chain tip, fetched while the batch scans so the round trip
+/// overlaps CPU work instead of waiting after it. Dropping it aborts the
+/// request.
+struct TipPrefetch {
+    handle: Option<
+        tokio::task::JoinHandle<Result<zcash_client_backend::proto::service::BlockId, SyncError>>,
+    >,
+    /// When the request was sent. The tip it returns is as old as this, not
+    /// as old as the moment it is read after the scan.
+    requested_at: std::time::Instant,
+}
+
+impl TipPrefetch {
+    fn spawn(
+        mut client: CompactTxStreamerClient<Channel>,
+        lightwalletd_url: &str,
+        network: WalletNetwork,
+    ) -> Self {
+        let lightwalletd_url = lightwalletd_url.to_owned();
+        Self {
+            handle: Some(tokio::spawn(async move {
+                get_latest_block_recorded(&mut client, &lightwalletd_url, network).await
+            })),
+            requested_at: std::time::Instant::now(),
+        }
+    }
+
+    /// The tip, or `None` when cancellation or a mode handoff won.
+    async fn resolve(
+        mut self,
+        should_exit: &impl Fn() -> bool,
+    ) -> Option<Result<zcash_client_backend::proto::service::BlockId, SyncError>> {
+        let handle = self.handle.as_mut()?;
+        let result = tokio::select! {
+            biased;
+            _ = watch_for_exit(should_exit) => return None,
+            result = handle => result,
+        };
+        self.handle = None;
+        Some(result.unwrap_or_else(|error| {
+            Err(SyncError::other(format!(
+                "post-batch tip fetch task failed: {error}"
+            )))
+        }))
+    }
+}
+
+impl Drop for TipPrefetch {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
+
+/// Whether a pending range that starts past the loop's tip should trigger one
+/// tip refresh instead of ending the attempt. The mempool observer writes new
+/// tips to the wallet DB while the loop scans, so the next ChainTip range can
+/// start past the tip this loop last fetched. One refresh per range start: a
+/// server still behind it ends the attempt as before, without spinning.
+fn refresh_tip_for_queued_range(range_start: u32, refreshed_for: &mut Option<u32>) -> bool {
+    if *refreshed_for == Some(range_start) {
+        return false;
+    }
+    *refreshed_for = Some(range_start);
+    true
+}
+
 async fn resolve_prefetched_or_download<T, Download, DownloadFuture>(
     prefetch: Option<Prefetch<T>>,
     start: BlockHeight,
@@ -2675,7 +2776,8 @@ where
 
 /// Run the full sync loop with automatic retry on failure.
 /// Retries up to 3 times with exponential backoff (2s, 4s, 8s).
-/// Progress includes work completed by earlier attempts in this call.
+/// Progress is the sync job's fraction, which includes work completed by
+/// earlier attempts; the Checking stage carries across attempts in this call.
 /// This is the unified entry point called by both Dart (FRB) and Swift (C FFI).
 pub async fn run_sync_inner(
     db_data_path: &str,
@@ -2743,7 +2845,6 @@ pub async fn run_sync_inner(
             }
         }
 
-        progress.lock().unwrap().start_attempt();
         let (checking_cycle, main_scan_complete) = {
             let progress = progress.lock().unwrap();
             (progress.checking_cycle(), progress.main_scan_complete())
@@ -2930,6 +3031,9 @@ async fn run_payment_link_claim_sync_once(
 
     claim_roots::prepare_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
 
+    // Claim ranges start at a card's funding height, long after the spam
+    // window, so the compiled tree sizes are enough to size their batches.
+    let batch_model = WorkModel::compiled(network);
     let mut rewind_attempts = 0u32;
     loop {
         if should_exit() {
@@ -3014,9 +3118,13 @@ async fn run_payment_link_claim_sync_once(
 
         let start = range.block_range().start;
         let range_end = range.block_range().end;
-        let Some((_, end)) =
-            scannable_batch_end(BATCH_SIZE_FOREGROUND, start, range_end, current_tip_height)
-        else {
+        let Some((_, end)) = scannable_batch_end(
+            &batch_model,
+            BATCH_SIZE_FOREGROUND,
+            start,
+            range_end,
+            current_tip_height,
+        ) else {
             return Err(SyncError::continuity(
                 current_tip_height,
                 "payment-link pending scan range starts after the observed tip",
@@ -3127,10 +3235,17 @@ async fn run_sync_impl(
     // Persist the active session before any new sync work begins. A crash or
     // mode handoff cannot leave the previous completed tip looking like the
     // current run completed successfully.
-    with_wallet_db_write_lock("sync_engine.mark_sync_started", || {
+    //
+    // The progress job is the unfinished one from an earlier attempt or
+    // session, or a new one claimed now. Preparation reports its stored
+    // fraction; the job is measured, and rarely replaced, once pending work
+    // is known below.
+    let stored_progress_job = with_wallet_db_write_lock("sync_engine.mark_sync_started", || {
         mark_sync_started(db_data_path)
     })
     .map_err(SyncError::db)?;
+    let preparation_job_id = stored_progress_job.id.clone();
+    let preparation_job_percentage = stored_progress_job.fraction;
 
     // Declared before the channel open so a stopped session leaves the Tor wait.
     let should_exit = || {
@@ -3274,6 +3389,8 @@ async fn run_sync_impl(
             "active_utxo",
             completed,
             total,
+            preparation_job_percentage,
+            &preparation_job_id,
         ));
     };
     let defer_inactive_transparent_refresh = if let Some(active_account_uuid) =
@@ -3356,6 +3473,8 @@ async fn run_sync_impl(
             "chain_prepare",
             0,
             0,
+            preparation_job_percentage,
+            &preparation_job_id,
         ));
     }
 
@@ -3433,7 +3552,7 @@ async fn run_sync_impl(
     // If a deleted, only-partially-synced old-birthday account left scanned
     // blocks BELOW the surviving birthday, `max_scanned` sits below it and
     // `update_chain_tip` re-creates sub-birthday pending work. Pruning here —
-    // after the tip update, before `initial_total` is measured — demotes both
+    // after the tip update, before pending work is measured — demotes both
     // the original orphan and any such re-created range, so the orphaned history
     // is never scanned. No-op for healthy wallets; best-effort (a failure must
     // not block sync).
@@ -3454,20 +3573,44 @@ async fn run_sync_impl(
         .suggest_scan_ranges()
         .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
     let mut initial_total = pending_scan_blocks(&initial_ranges);
+    // Batches are counted at the platform's foreground cap even in
+    // background mode, so a mode switch does not move the fraction. The model
+    // also sizes the batches, and without the subtree heights its 10,000-block
+    // averages miss where dense spam starts and stops, so a failed read ends
+    // the attempt like any other DB read.
+    let work_model = WorkModel::load(db_data_path, network, BATCH_SIZE_FOREGROUND)
+        .map_err(|e| SyncError::db(format!("subtree heights: {e}")))?;
+    let (mut job, job_start) = JobProgress::start(
+        stored_progress_job,
+        work_model.pending_work(&initial_ranges, current_tip_height),
+        work_model.reference_batch_work(),
+    );
+    job.persist_if_due(db_data_path, true);
     progress_fn(scan_queue_progress_event(
         &mut checking_cycle,
         main_scan_complete,
         initial_total,
         current_tip_height,
         earliest_pending_scan_start(&initial_ranges),
+        &job,
     ));
-    let initial_window_start_height =
-        earliest_pending_scan_start(&initial_ranges).unwrap_or(current_tip_height);
     let mut queued_ranges = Some(initial_ranges);
     let mut voting_scan_end = None;
     let mut prev_remaining = initial_total;
-    let mut progress_display_mode = ProgressDisplayMode::Work;
-    log::info!("[{}] sync: {} blocks to scan", elapsed(), initial_total);
+    // Set when a queued range starts past the loop's tip (see
+    // `refresh_tip_for_queued_range`).
+    let mut force_tip_refresh = false;
+    let mut queued_tip_refreshed_for: Option<u32> = None;
+    log::info!(
+        "[{}] sync: {} blocks to scan; progress job {} {:?} at {:.1}% ({:.0} of {:.0} work units left)",
+        elapsed(),
+        initial_total,
+        job.id(),
+        job_start,
+        job.fraction() * 100.0,
+        job.remaining(),
+        job.total(),
+    );
 
     // Reorg-triggered rewinds are split between the verify and main scan
     // phases. The main budget was initialized before tip reconciliation;
@@ -3503,18 +3646,22 @@ async fn run_sync_impl(
     let mut completion_tip_validation_required = !initial_tip_identity_verified;
     let mut last_periodic_tip_refresh_attempt = initial_tip_observed_at;
 
-    // Prefetched scan batch from the previous iteration.
+    // Scan batches downloading ahead of the current one, in order.
     // When the scan loop processes a range that spans multiple batches,
-    // we start the next block-and-frontier tuple before scanning the current
-    // batch. This overlaps network I/O with CPU work on multithread runtimes
-    // and with later async stages on the iOS current-thread runtime, matching
-    // the SDK's `.buffer(1)` pipelining pattern in
-    // `CompactBlockProcessor.kt:1666`.
+    // we keep up to `PREFETCH_DEPTH` block-and-frontier tuples in flight
+    // before scanning the current batch. App syncs run on a multi-thread
+    // runtime on every platform (`bounded_runtime`), so the downloads overlap
+    // the scan; migration preparation's current-thread runtime overlaps only
+    // later async stages. The Android SDK pipelines one batch (`.buffer(1)`,
+    // `CompactBlockProcessor.kt:1666`) and the Swift SDK two
+    // (`DownloadAction`); this downloads four.
     //
-    // `None` on the first iteration and whenever the previous batch
-    // was the last in its range (so there's nothing to prefetch until
-    // `suggest_scan_ranges` runs again).
-    let mut prefetch: Option<Prefetch<ScanBatch>> = None;
+    // Empty on the first iteration, after a rewind, and once the last
+    // batch of a range is consumed (there's nothing to prefetch until
+    // `suggest_scan_ranges` runs again). A one-batch tip range that cuts
+    // in leaves it for the history batches it holds
+    // (`take_queued_batch`).
+    let mut prefetch: VecDeque<Prefetch<ScanBatch>> = VecDeque::new();
 
     // Retry enhancement work left by an interrupted/older sync before scanning.
     // Best-effort: a retryable public failure must not block compact sync; the
@@ -3555,7 +3702,9 @@ async fn run_sync_impl(
         // against the last validated tip. A lower, non-divergent response is
         // returned as a transient error to avoid repeatedly requesting an
         // empty range from a lagging replica.
-        if last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL {
+        if force_tip_refresh || last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL
+        {
+            force_tip_refresh = false;
             last_periodic_tip_refresh_attempt = std::time::Instant::now();
             let fresh_tip_result =
                 get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
@@ -3637,7 +3786,7 @@ async fn run_sync_impl(
                                 ));
                             }
                             main_rewinds_this_run += 1;
-                            prefetch = None;
+                            prefetch.clear();
                             let (actual_height, repair_ranges, pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
@@ -3661,6 +3810,7 @@ async fn run_sync_impl(
                                     &mut checking_cycle,
                                     pending_blocks,
                                     current_tip_height,
+                                    &job,
                                 ));
                             }
                             queued_ranges = Some(repair_ranges);
@@ -3686,7 +3836,7 @@ async fn run_sync_impl(
                 .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
         };
 
-        let range = match ranges.iter().find(|r| is_pending_scan_range(r)) {
+        let range = match next_pending_scan_range(&ranges, current_tip_height) {
             Some(r) => r.clone(),
             None => {
                 // A long catch-up can outlive the tip captured at startup.
@@ -3764,9 +3914,9 @@ async fn run_sync_impl(
                                     &mut checking_cycle,
                                     initial_total,
                                     current_tip_height,
+                                    &job,
                                 ));
                             }
-                            progress_display_mode = ProgressDisplayMode::Work;
                             queued_ranges = Some(promoted_ranges);
 
                             completion_tip_validation_required = true;
@@ -3786,7 +3936,7 @@ async fn run_sync_impl(
                                 ));
                             }
                             main_rewinds_this_run += 1;
-                            prefetch = None;
+                            prefetch.clear();
                             let (actual_height, repair_ranges, repair_pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
@@ -3809,6 +3959,7 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 repair_pending_blocks,
                                 current_tip_height,
+                                &job,
                             ));
                             queued_ranges = Some(repair_ranges);
                             completion_tip_validation_required = true;
@@ -3832,10 +3983,10 @@ async fn run_sync_impl(
                             &mut checking_cycle,
                             repair_pending_blocks,
                             current_tip_height,
+                            &job,
                         ));
                     }
-                    progress_display_mode = ProgressDisplayMode::Work;
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     db_data_path,
@@ -3855,17 +4006,10 @@ async fn run_sync_impl(
                             &mut checking_cycle,
                             repair_pending_blocks,
                             current_tip_height,
+                            &job,
                         ));
                     }
-                    let repair_ranges = db.suggest_scan_ranges().map_err(|e| {
-                        SyncError::db(format!("suggest_scan_ranges after anchor repair: {e}"))
-                    })?;
-                    let first_pending = earliest_pending_scan_start(&repair_ranges)
-                        .unwrap_or(initial_window_start_height);
-                    progress_display_mode = ProgressDisplayMode::ChainWindow {
-                        window_start_height: initial_window_start_height.min(first_pending),
-                    };
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 } else {
                     // A previous attempt may have scanned its final batch before
@@ -3920,9 +4064,9 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 initial_total,
                                 current_tip_height,
+                                &job,
                             ));
                         }
-                        progress_display_mode = ProgressDisplayMode::Work;
                         queued_ranges = Some(promoted_ranges);
                         completion_tip_validation_required = true;
                         continue;
@@ -3966,16 +4110,27 @@ async fn run_sync_impl(
         let frontier_height = u32::from(start)
             .checked_sub(1)
             .ok_or_else(|| SyncError::other("scan range starts before a usable frontier"))?;
-        // Adaptive batch size: shrink to BATCH_SIZE_SANDBLASTING
-        // while the next batch is inside the known Zcash mainnet
-        // sandblasting attack window. These blocks contain an
-        // order of magnitude more outputs than normal blocks,
-        // making scan_cached_blocks much slower per block and
-        // using more memory. Matches the SDK's
-        // `SANDBLASTING_RANGE` check.
-        let Some((batch_size, end)) =
-            scannable_batch_end(base_batch_size, start, range_end, current_tip_height)
-        else {
+        // Batch size: as many blocks as fit `BATCH_BYTE_BUDGET` of
+        // estimated compact-block bytes (compiled tree sizes and subtree
+        // completion heights), up to `base_batch_size`, so dense
+        // spam-window blocks get short batches without naming their heights.
+        let Some((batch_size, end)) = scannable_batch_end(
+            &work_model,
+            base_batch_size,
+            start,
+            range_end,
+            current_tip_height,
+        ) else {
+            if refresh_tip_for_queued_range(u32::from(start), &mut queued_tip_refreshed_for) {
+                log::info!(
+                    "[{}] sync: pending range {} starts after current tip {}; refreshing the tip",
+                    elapsed(),
+                    describe_block_range(range.block_range()),
+                    current_tip_height,
+                );
+                force_tip_refresh = true;
+                continue;
+            }
             log::info!(
                 "[{}] sync: pending range {} starts after current tip {}, waiting for tip advance",
                 elapsed(),
@@ -3984,26 +4139,22 @@ async fn run_sync_impl(
             );
             break;
         };
+        let (batch_size, end) = match queued_batch_extension(&prefetch, start, end, &ranges) {
+            Some(queued_end) => (u32::from(queued_end) - u32::from(start), queued_end),
+            None => (batch_size, end),
+        };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
-        let display_scanned_height = progress_display_mode.batch_start_height(&ranges, start);
-        let current_pct = progress_display_mode.percentage(
-            initial_total,
-            prev_remaining,
-            display_scanned_height,
-            current_tip_height,
-        );
-        let display_target_percentage = progress_display_mode.batch_target_percentage(
-            initial_total,
-            prev_remaining,
-            &ranges,
-            start,
-            end,
-            current_tip_height,
-        );
+        // Ranges can change between batches (a rewind, a repair, a new
+        // account); any added work raises the job total here.
+        job.observe(work_model.pending_work(&ranges, current_tip_height));
+        let batch_work =
+            work_model.range_work(u64::from(u32::from(start)), u64::from(u32::from(end)));
+        let (current_pct, display_target_percentage) =
+            (job.fraction(), job.fraction_after(batch_work));
         progress_fn(SyncProgressEvent {
             scanned_height: u32::from(start) as u64,
             chain_tip_height: current_tip_height,
-            percentage: current_pct.clamp(0.0, 1.0),
+            percentage: current_pct,
             display_target_percentage,
             display_target_blocks: batch_blocks,
             remaining_scan_blocks: Some(pending_scan_blocks(&ranges)),
@@ -4020,6 +4171,7 @@ async fn run_sync_impl(
             phase_completed_units: 0,
             phase_total_units: 0,
             phase: "download".into(),
+            sync_job_id: job.id().to_string(),
         });
         log::info!(
             "[{}] sync: scanning {}-{} (priority {:?}{}, batch={})",
@@ -4036,12 +4188,12 @@ async fn run_sync_impl(
         );
 
         // Download blocks and their preceding frontier together, or consume a
-        // matching tuple that the previous iteration prefetched.
-        let batch =
-            resolve_prefetched_or_download(prefetch.take(), start, end, &should_exit, || {
-                download_scan_batch(&mut client, start, end - 1, network)
-            })
-            .await?;
+        // matching tuple that an earlier iteration prefetched.
+        let queued = take_queued_batch(&mut prefetch, start, end);
+        let batch = resolve_prefetched_or_download(queued, start, end, &should_exit, || {
+            download_scan_batch(&mut client, start, end - 1, network)
+        })
+        .await?;
         let Some((block_source, from_state)) = batch else {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
@@ -4058,18 +4210,23 @@ async fn run_sync_impl(
         let incoming_orchard_checkpoint_heights =
             migration_anchor_retention_required.then(|| block_source.orchard_checkpoint_heights());
 
-        // Start the next tuple before scanning this batch. Dropping `prefetch`
-        // on any early return, error, or reorg aborts its network task.
-        if end < range_end && !should_exit() {
-            let prefetch_start = end;
-            if let Some((_, prefetch_end)) = scannable_batch_end(
+        // Start the next tuples before scanning this batch. Dropping `prefetch`
+        // on any early return, error, or reorg aborts their network tasks.
+        if let Some(next_start) = (!should_exit())
+            .then(|| prefetch_continues_from(&mut prefetch, end, range_end))
+            .flatten()
+        {
+            let planned = prefetch_ranges(
+                &work_model,
                 base_batch_size,
-                prefetch_start,
+                next_start,
                 range_end,
                 current_tip_height,
-            ) {
+                PREFETCH_DEPTH.saturating_sub(prefetch.len()),
+            );
+            for &(prefetch_start, prefetch_end) in &planned {
                 let mut prefetch_client = client.clone();
-                prefetch = Some(Prefetch::spawn(prefetch_start, prefetch_end, async move {
+                prefetch.push_back(Prefetch::spawn(prefetch_start, prefetch_end, async move {
                     download_scan_batch(
                         &mut prefetch_client,
                         prefetch_start,
@@ -4078,15 +4235,19 @@ async fn run_sync_impl(
                     )
                     .await
                 }));
-            } else {
+            }
+            let next_start = planned.last().map_or(next_start, |r| r.1);
+            if prefetch.len() < PREFETCH_DEPTH && next_start < range_end {
                 log::debug!(
                     "[{}] sync: skipping prefetch from {} past current tip {}",
                     elapsed(),
-                    u32::from(prefetch_start),
+                    u32::from(next_start),
                     current_tip_height,
                 );
             }
         }
+        let tip_prefetch =
+            (!should_exit()).then(|| TipPrefetch::spawn(client.clone(), lightwalletd_url, network));
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -4354,6 +4515,8 @@ async fn run_sync_impl(
                         ));
                     }
                     if post_rewind_pending > 0 {
+                        // Rewound blocks count as added job work, measured at
+                        // the next batch.
                         initial_total = post_rewind_pending;
                         prev_remaining = post_rewind_pending;
                         if checking_cycle > 0 && post_rewind_pending > 0 {
@@ -4361,15 +4524,11 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 post_rewind_pending,
                                 current_tip_height,
+                                &job,
                             ));
                         }
-                        let rewind_start = earliest_pending_scan_start(&post_rewind_ranges)
-                            .unwrap_or(actual_rewind_height_u64);
-                        progress_display_mode = ProgressDisplayMode::ChainWindow {
-                            window_start_height: initial_window_start_height.min(rewind_start),
-                        };
                     }
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 }
                 RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Fatal => {
@@ -4481,9 +4640,18 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        let fresh_tip_result =
-            get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
-        let Some(fresh_tip_result) = tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+        // Started before the scan; usually complete by now. A tip proved
+        // unchanged counts as validated when it was requested, so the final
+        // tip check before completion stays as strict as a fetch made here.
+        let tip_requested_at = tip_prefetch
+            .as_ref()
+            .map_or_else(std::time::Instant::now, |prefetch| prefetch.requested_at);
+        let fresh_tip_result = match tip_prefetch {
+            Some(tip_prefetch) => tip_prefetch.resolve(&should_exit).await,
+            None => Some(get_latest_block_recorded(&mut client, lightwalletd_url, network).await),
+        };
+        let Some(fresh_tip_result) = fresh_tip_result
+            .and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
         else {
             log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
             return Ok(());
@@ -4513,7 +4681,7 @@ async fn run_sync_impl(
                 let relation = relation?;
                 match relation {
                     RefreshedTipRelation::Unchanged => {
-                        last_completion_tip_validation = std::time::Instant::now();
+                        last_completion_tip_validation = tip_requested_at;
                         completion_tip_validation_required = false;
                         last_periodic_tip_refresh_attempt = std::time::Instant::now();
                     }
@@ -4560,7 +4728,7 @@ async fn run_sync_impl(
                             ));
                         }
                         main_rewinds_this_run += 1;
-                        prefetch = None;
+                        prefetch.clear();
                         let (actual_height, repair_ranges, pending_blocks) =
                             rewind_for_confirmed_tip_reorg(
                                 db_data_path,
@@ -4584,6 +4752,7 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 pending_blocks,
                                 current_tip_height,
+                                &job,
                             ));
                         }
                         queued_ranges = Some(repair_ranges);
@@ -4654,49 +4823,38 @@ async fn run_sync_impl(
                 checking_cycle += 1;
             }
         }
-        prev_remaining = remaining;
-        let display_scanned_height =
-            progress_display_mode.batch_end_height(&post_ranges, end, current_tip_height);
-        let pct = progress_display_mode.percentage(
-            initial_total,
-            remaining,
-            display_scanned_height,
-            current_tip_height,
+        job.observe_after_batch(
+            batch_work,
+            work_model.pending_work(&post_ranges, current_tip_height),
         );
-        let next_display_range = post_ranges
-            .iter()
-            .find(|r| is_pending_scan_range(r))
+        prev_remaining = remaining;
+        let next_display_range = next_pending_scan_range(&post_ranges, current_tip_height)
             .and_then(|r| {
                 let next_start = r.block_range().start;
-                planned_batch_end(base_batch_size, next_start, r.block_range().end)
-                    .map(|(_, next_end)| (next_start, next_end))
+                planned_batch_end(
+                    &work_model,
+                    base_batch_size,
+                    next_start,
+                    r.block_range().end,
+                )
+                .map(|(_, next_end)| (next_start, next_end))
             });
-        let next_display_target_blocks = next_display_range
+        let (next_display_target_blocks, next_work) = next_display_range
             .map(|(next_start, next_end)| {
-                u32::from(next_end).saturating_sub(u32::from(next_start)) as u64
+                (
+                    u32::from(next_end).saturating_sub(u32::from(next_start)) as u64,
+                    work_model.range_work(
+                        u64::from(u32::from(next_start)),
+                        u64::from(u32::from(next_end)),
+                    ),
+                )
             })
-            .unwrap_or(0);
-        let display_target_percentage = if let Some((next_start, next_end)) = next_display_range {
-            progress_display_mode.batch_target_percentage(
-                initial_total,
-                remaining,
-                &post_ranges,
-                next_start,
-                next_end,
-                current_tip_height,
-            )
-        } else {
-            progress_display_mode.percentage(
-                initial_total,
-                remaining,
-                current_tip_height,
-                current_tip_height,
-            )
-        };
+            .unwrap_or((0, 0.0));
+        let (pct, display_target_percentage) = (job.fraction(), job.fraction_after(next_work));
         let progress = SyncProgressEvent {
             scanned_height: u32::from(end) as u64,
             chain_tip_height: current_tip_height,
-            percentage: pct.clamp(0.0, 1.0),
+            percentage: pct,
             display_target_percentage,
             display_target_blocks: next_display_target_blocks,
             remaining_scan_blocks: Some(remaining),
@@ -4713,14 +4871,19 @@ async fn run_sync_impl(
             phase_completed_units: 0,
             phase_total_units: 0,
             phase: "scan".into(),
+            sync_job_id: job.id().to_string(),
         };
+        // Save the batch that finishes the scan at once, so a process killed
+        // in the Checking stage leaves a finished job rather than a fraction
+        // the next catch-up would have to stretch.
+        job.persist_if_due(db_data_path, job.remaining() <= 0.0);
         log::info!(
-            "[{}] sync: {:.1}% (remaining={}/{}, scanned={})",
+            "[{}] sync: {:.1}% (work remaining={:.0}/{:.0}, blocks remaining={})",
             elapsed(),
             progress.percentage * 100.0,
+            job.remaining(),
+            job.total(),
             remaining,
-            initial_total,
-            initial_total - remaining
         );
         progress_fn(progress);
         #[cfg(debug_assertions)]
@@ -4792,6 +4955,7 @@ async fn run_sync_impl(
         mark_sync_completed(db_data_path, final_tip_height)
     })
     .map_err(SyncError::db)?;
+    job.complete();
     // Final progress
     let final_progress = SyncProgressEvent {
         scanned_height: final_scanned_height,
@@ -4808,6 +4972,7 @@ async fn run_sync_impl(
         phase_completed_units: 0,
         phase_total_units: 0,
         phase: String::new(),
+        sync_job_id: job.id().to_string(),
     };
     progress_fn(final_progress);
 
@@ -4954,6 +5119,7 @@ async fn run_sync_impl(
                 phase_completed_units: 0,
                 phase_total_units: 0,
                 phase: String::new(),
+                sync_job_id: job.id().to_string(),
             });
         }
     }
@@ -4997,6 +5163,7 @@ async fn run_sync_impl(
                 phase_completed_units: 0,
                 phase_total_units: 0,
                 phase: String::new(),
+                sync_job_id: job.id().to_string(),
             });
         }
     }
@@ -5276,11 +5443,19 @@ mod tests {
     use tokio::sync::{Barrier, Notify, Semaphore};
     use zcash_client_backend::proto::compact_formats::CompactBlock;
 
+    /// The 2022-23 spam window (`zcash-android-wallet-sdk`'s
+    /// `SANDBLASTING_RANGE`), where the mobile byte budget comes from.
+    const SANDBLASTING_START: u32 = 1_710_000;
+    const SANDBLASTING_END: u32 = 2_050_000;
+
     #[test]
     fn checking_reports_only_additional_work_and_its_next_batch() {
         assert!(checking_progress(0, 1000, 750, 100).is_none());
         let mut cycle = 0;
-        let start = begin_checking(&mut cycle, 1000, 2000);
+        let (job, _) = JobProgress::start(progress_work::StoredProgressJob::unmeasured(), 0.0, 0.0);
+        let start = begin_checking(&mut cycle, 1000, 2000, &job);
+        // Checking events keep the job, so the display does not restart.
+        assert_eq!(start.sync_job_id, job.id());
         assert_eq!(start.kind, SyncEventKind::Progress);
         assert_eq!(start.phase, "chain_prepare");
         assert!(start.is_syncing);
@@ -5293,9 +5468,78 @@ mod tests {
             checking_progress(cycle, 1000, 0, 0).unwrap().percentage,
             1.0
         );
-        let new_work = begin_checking(&mut cycle, 200, 2000).checking.unwrap();
+        let new_work = begin_checking(&mut cycle, 200, 2000, &job)
+            .checking
+            .unwrap();
         assert_eq!(new_work.cycle, 2);
         assert_eq!(new_work.percentage, 0.0);
+    }
+
+    #[test]
+    fn a_range_past_the_tip_refreshes_the_tip_once_per_start() {
+        let mut refreshed_for = None;
+        // The observer queued blocks past the loop's tip: refresh once.
+        assert!(refresh_tip_for_queued_range(3_513_789, &mut refreshed_for));
+        // Still past it after the refresh (a lagging server): end as before.
+        assert!(!refresh_tip_for_queued_range(3_513_789, &mut refreshed_for));
+        // A later block queues a new range: refresh again.
+        assert!(refresh_tip_for_queued_range(3_513_790, &mut refreshed_for));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_tip_prefetch_returns_the_tip_requested_before_it_is_read() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let before = std::time::Instant::now();
+        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+        let requested_at = prefetch.requested_at;
+        let tip = prefetch.resolve(&|| false).await.unwrap().unwrap();
+
+        assert_eq!(tip.height, 3_516_998);
+        assert_eq!(lwd.count("/GetLatestBlock"), 1);
+        assert!(before <= requested_at && requested_at <= std::time::Instant::now());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_tip_prefetch_yields_to_an_exit_while_the_server_holds_it() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let _held = lwd.hold_responses("/GetLatestBlock");
+        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+
+        let resolved =
+            tokio::time::timeout(Duration::from_secs(5), prefetch.resolve(&|| true)).await;
+
+        assert!(matches!(resolved, Ok(None)));
+    }
+
+    #[test]
+    fn a_chain_tip_range_past_the_tip_waits_behind_history() {
+        // The observer wrote 3,516,998 while the loop's tip is 3,516,997.
+        let ranges = vec![
+            ScanRange::from_parts(
+                block_height(3_516_998)..block_height(3_516_999),
+                ScanPriority::ChainTip,
+            ),
+            ScanRange::from_parts(
+                block_height(1_800_000)..block_height(1_900_000),
+                ScanPriority::Scanned,
+            ),
+            ScanRange::from_parts(
+                block_height(1_900_000)..block_height(2_000_000),
+                ScanPriority::Historic,
+            ),
+        ];
+        let next = next_pending_scan_range(&ranges, 3_516_997).unwrap();
+        assert_eq!(next.priority(), ScanPriority::Historic);
+        assert_eq!(u32::from(next.block_range().start), 1_900_000);
+
+        // Once a tip fetch reaches it, the ChainTip range goes first again.
+        let next = next_pending_scan_range(&ranges, 3_516_998).unwrap();
+        assert_eq!(next.priority(), ScanPriority::ChainTip);
+
+        // With only that range left, it is returned for the tip refresh.
+        let next = next_pending_scan_range(&ranges[..2], 3_516_997).unwrap();
+        assert_eq!(next.priority(), ScanPriority::ChainTip);
+        assert!(next_pending_scan_range(&ranges[1..2], 3_516_997).is_none());
     }
 
     #[test]
@@ -5707,13 +5951,6 @@ mod tests {
         assert_eq!(marked.get(), 0);
     }
 
-    fn assert_pct(actual: f64, expected: f64) {
-        assert!(
-            (actual - expected).abs() < 0.000_001,
-            "expected {expected}, got {actual}"
-        );
-    }
-
     #[tokio::test]
     async fn scan_batch_inputs_start_concurrently() {
         let barrier = Arc::new(Barrier::new(3));
@@ -5764,6 +6001,100 @@ mod tests {
 
         assert!(matches!(result, Err(SyncError::Network(_))));
         assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn a_tip_batch_between_history_batches_keeps_the_prefetch_queue() {
+        let queued = |start, end| {
+            Prefetch::spawn(block_height(start), block_height(end), async {
+                Ok::<_, SyncError>(0u8)
+            })
+        };
+        let ranges = |queue: &VecDeque<Prefetch<u8>>| {
+            queue
+                .iter()
+                .map(|p| (u32::from(p.start), u32::from(p.end)))
+                .collect::<Vec<_>>()
+        };
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+
+        // A new block's tip batch cuts in: the history tuples wait for it.
+        let h = block_height;
+        assert!(take_queued_batch(&mut queue, h(5_000), h(5_001)).is_none());
+        assert_eq!(ranges(&queue), [(100, 200), (200, 300)]);
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(5_001), h(5_001)),
+            None
+        );
+        assert_eq!(ranges(&queue), [(100, 200), (200, 300)]);
+
+        // The scan returns to history and tops the queue up after its end.
+        let next = take_queued_batch(&mut queue, h(100), h(200)).expect("queued batch");
+        assert_eq!((u32::from(next.start), u32::from(next.end)), (100, 200));
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(200), h(1_000)),
+            Some(h(300))
+        );
+
+        // A longer range that cuts in downloads ahead instead.
+        assert!(take_queued_batch(&mut queue, h(5_000), h(5_100)).is_none());
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(5_100), h(6_000)),
+            Some(h(5_100))
+        );
+        assert!(queue.is_empty());
+
+        // A batch that overlaps the queue but is not next means the ranges
+        // changed under it.
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+        assert!(take_queued_batch(&mut queue, h(100), h(150)).is_none());
+        assert!(queue.is_empty());
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+        assert!(take_queued_batch(&mut queue, h(250), h(260)).is_none());
+        assert!(queue.is_empty());
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(260), h(1_000)),
+            Some(h(260))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_verify_range_inside_the_next_queued_batch_scans_it_whole() {
+        let h = block_height;
+        let queued =
+            |start, end| Prefetch::spawn(h(start), h(end), async { Ok::<_, SyncError>(0u8) });
+        let range = |start, end, priority| ScanRange::from_parts(h(start)..h(end), priority);
+        let queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+
+        // A new block put a Verify range at the frontier, inside the queued
+        // batch: scan the queued batch whole.
+        let split = [
+            range(100, 110, ScanPriority::Verify),
+            range(110, 500, ScanPriority::ChainTip),
+        ];
+        assert_eq!(
+            queued_batch_extension(&queue, h(100), h(110), &split),
+            Some(h(200))
+        );
+
+        // Blocks no longer pending are not scanned again.
+        let scanned = [
+            range(100, 110, ScanPriority::Verify),
+            range(110, 150, ScanPriority::Scanned),
+            range(150, 500, ScanPriority::ChainTip),
+        ];
+        assert_eq!(
+            queued_batch_extension(&queue, h(100), h(110), &scanned),
+            None
+        );
+
+        // Only a longer queued batch starting at the batch extends it.
+        assert_eq!(queued_batch_extension(&queue, h(100), h(200), &split), None);
+        assert_eq!(queued_batch_extension(&queue, h(110), h(150), &split), None);
+        assert_eq!(
+            queued_batch_extension(&VecDeque::<Prefetch<u8>>::new(), h(100), h(110), &split),
+            None
+        );
     }
 
     #[tokio::test]
@@ -6054,46 +6385,21 @@ mod tests {
         )];
         let (mut total, mut remaining) = (0, 0);
         reset_promoted_scan_progress(&ranges, &mut total, &mut remaining);
-        let mode = ProgressDisplayMode::Work;
-        assert_eq!(mode.percentage(total, remaining, 999, 1_299), 0.0);
+        assert_eq!(target_percentage_after_blocks(total, remaining, 0), 0.0);
         for batch in 1..=3 {
-            let target = mode.target_percentage_after_blocks(total, remaining, 0, 0, 100);
+            let target = target_percentage_after_blocks(total, remaining, 100);
             remaining -= 100;
-            let actual = mode.percentage(total, remaining, 0, 0);
+            let actual = target_percentage_after_blocks(total, remaining, 0);
             assert_eq!(target, actual);
             assert!((actual - batch as f64 / 3.0).abs() < 1e-9);
         }
         reset_promoted_scan_progress(&[], &mut total, &mut remaining);
-        assert_eq!(mode.percentage(total, remaining, 0, 0), 1.0);
-    }
-
-    #[test]
-    fn work_progress_matches_remaining_block_ratio() {
-        let mode = ProgressDisplayMode::Work;
-
-        assert_pct(mode.percentage(1_000, 300, 0, 0), 0.7);
-        assert_pct(
-            mode.target_percentage_after_blocks(1_000, 300, 0, 0, 100),
-            0.8,
-        );
-    }
-
-    #[test]
-    fn chain_window_progress_uses_session_window_not_absolute_height() {
-        let mode = ProgressDisplayMode::ChainWindow {
-            window_start_height: 1_000,
-        };
-
-        assert_pct(mode.percentage(0, 0, 1_700, 2_000), 0.7);
-        assert_pct(
-            mode.target_percentage_after_blocks(0, 0, 1_700, 2_000, 100),
-            0.8,
-        );
+        assert_eq!(target_percentage_after_blocks(total, remaining, 0), 1.0);
     }
 
     #[test]
     fn preparation_progress_does_not_claim_an_empty_scan_queue() {
-        let event = preparation_progress_event(2_000, "chain_prepare", 0, 0);
+        let event = preparation_progress_event(2_000, "chain_prepare", 0, 0, 0.0, "");
         assert_eq!(event.remaining_scan_blocks, None);
         assert_eq!(event.pending_scan_start_height, None);
     }
@@ -6118,42 +6424,6 @@ mod tests {
         assert_eq!(earliest_pending_scan_start(&ranges), Some(1_700));
         assert_eq!(pending_scan_blocks(&[]), 0);
         assert_eq!(earliest_pending_scan_start(&[]), None);
-    }
-
-    #[test]
-    fn chain_window_progress_waits_for_earliest_pending_range() {
-        let mode = ProgressDisplayMode::ChainWindow {
-            window_start_height: 1_000,
-        };
-        let high_range_start = BlockHeight::from_u32(1_900);
-        let high_range_end = BlockHeight::from_u32(2_000);
-        let ranges = vec![
-            ScanRange::from_parts(high_range_start..high_range_end, ScanPriority::Verify),
-            ScanRange::from_parts(
-                BlockHeight::from_u32(1_700)..BlockHeight::from_u32(1_800),
-                ScanPriority::Verify,
-            ),
-        ];
-
-        assert_eq!(pending_scan_blocks(&ranges), 200);
-        assert_eq!(earliest_pending_scan_start(&ranges), Some(1_700));
-        let display_height = mode.batch_start_height(&ranges, high_range_start);
-        assert_eq!(display_height, 1_700);
-        assert_pct(mode.percentage(0, 0, display_height, 2_000), 0.7);
-        assert_pct(
-            mode.batch_target_percentage(0, 0, &ranges, high_range_start, high_range_end, 2_000),
-            0.7,
-        );
-
-        let post_ranges = vec![ScanRange::from_parts(
-            BlockHeight::from_u32(1_700)..BlockHeight::from_u32(1_800),
-            ScanPriority::Verify,
-        )];
-        assert_eq!(pending_scan_blocks(&post_ranges), 100);
-        assert_eq!(earliest_pending_scan_start(&post_ranges), Some(1_700));
-        let display_height_after = mode.batch_end_height(&post_ranges, high_range_end, 2_000);
-        assert_eq!(display_height_after, 1_700);
-        assert_pct(mode.percentage(0, 0, display_height_after, 2_000), 0.7);
     }
 
     #[test]
@@ -6228,6 +6498,7 @@ mod tests {
     fn scannable_batch_end_clamps_to_current_tip() {
         assert_eq!(
             scannable_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 2_000,
                 BlockHeight::from_u32(121),
                 BlockHeight::from_u32(131),
@@ -6241,6 +6512,7 @@ mod tests {
     fn scannable_batch_end_skips_ranges_past_current_tip() {
         assert_eq!(
             scannable_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 2_000,
                 BlockHeight::from_u32(122),
                 BlockHeight::from_u32(131),
@@ -6251,56 +6523,163 @@ mod tests {
     }
 
     #[test]
-    fn planned_batch_end_uses_base_size_before_sandblasting() {
+    fn prefetch_ranges_stop_at_the_range_end_and_the_tip() {
+        let h = BlockHeight::from_u32;
+        let test = WorkModel::compiled(WalletNetwork::Test);
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(419_200),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((1_000, BlockHeight::from_u32(420_200))),
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 20_000, 2),
+            vec![(h(1_000), h(2_000)), (h(2_000), h(3_000))],
+        );
+        // The last batch of a range is short and nothing follows it.
+        assert_eq!(
+            prefetch_ranges(&test, 1_000, h(8_500), h(10_000), 20_000, 2),
+            vec![(h(8_500), h(9_500)), (h(9_500), h(10_000))],
+        );
+        assert_eq!(
+            prefetch_ranges(&test, 1_000, h(10_000), h(10_000), 20_000, 2),
+            vec![]
+        );
+        // Blocks past the tip are not requested.
+        assert_eq!(
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 1_499, 2),
+            vec![(h(1_000), h(1_500))],
+        );
+        assert_eq!(
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 20_000, 0),
+            vec![]
+        );
+    }
+
+    /// Queued batches must match the batches the loop then plans, or every
+    /// prefetch is thrown away.
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn prefetch_ranges_match_the_planned_batches() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let (_, first_end) = planned_batch_end(&main, 1_000, h(1_780_001), h(1_800_000)).unwrap();
+        let (_, second_end) = planned_batch_end(&main, 1_000, first_end, h(1_800_000)).unwrap();
+        assert!(first_end < h(1_781_001), "spam-window batches are short");
+        assert_eq!(
+            prefetch_ranges(&main, 1_000, h(1_780_001), h(1_800_000), 3_000_000, 2),
+            vec![(h(1_780_001), first_end), (first_end, second_end)],
         );
     }
 
     #[test]
-    fn planned_batch_end_stops_at_sandblasting_boundaries() {
+    fn planned_batch_end_uses_the_block_cap_where_blocks_are_sparse() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_START - 500),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((1_000, BlockHeight::from_u32(SANDBLASTING_START))),
+            planned_batch_end(&main, 1_000, h(419_200), h(3_500_000)),
+            Some((1_000, h(420_200))),
         );
+        // Past the compiled table.
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let past = u32::try_from(sizes.last().unwrap().0).unwrap() + 100_000;
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_START),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((
-                BATCH_SIZE_SANDBLASTING,
-                BlockHeight::from_u32(SANDBLASTING_START + BATCH_SIZE_SANDBLASTING),
-            )),
+            planned_batch_end(&main, 1_000, h(past), h(past + 5_000)),
+            Some((1_000, h(past + 1_000))),
         );
+        // No compiled data off mainnet, even at spam-window heights.
         assert_eq!(
             planned_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 1_000,
-                BlockHeight::from_u32(SANDBLASTING_END - 50),
-                BlockHeight::from_u32(3_500_000),
+                h(1_780_001),
+                h(3_500_000),
             ),
-            Some((
-                BATCH_SIZE_SANDBLASTING,
-                BlockHeight::from_u32(SANDBLASTING_END),
-            )),
+            Some((1_000, h(1_781_001))),
         );
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn planned_batch_end_fits_the_byte_budget() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let start = 1_780_001;
+        let (blocks, end) = planned_batch_end(&main, 1_000, h(start), h(3_500_000)).unwrap();
+        assert!(blocks < 1_000);
+        assert_eq!(end, h(start + blocks));
+        let bytes = |n: u32| main.plan_bytes(u64::from(start), u64::from(start + n));
+        assert!(bytes(blocks) <= BATCH_BYTE_BUDGET);
+        assert!(bytes(blocks + 1) > BATCH_BYTE_BUDGET);
+
+        // A batch is not cut where the spam window starts.
+        let (_, end) =
+            planned_batch_end(&main, 1_000, h(SANDBLASTING_START - 500), h(3_500_000)).unwrap();
+        assert!(end > h(SANDBLASTING_START));
+    }
+
+    /// The budgets follow from the compiled tree sizes at fixed heights, so a
+    /// longer table does not move them.
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn batch_byte_budget_matches_its_derivation() {
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        // The 2,000-block batch right after the window.
+        let desktop = main.download_bytes(2_050_001, 2_052_001);
+        // 100 blocks of the densest compiled step in the window.
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let mobile = sizes
+            .windows(2)
+            .filter(|pair| {
+                pair[0].0 >= u64::from(SANDBLASTING_START)
+                    && pair[1].0 <= u64::from(SANDBLASTING_END)
+            })
+            .map(|pair| {
+                let (from, to) = (pair[0].0 + 1, pair[1].0 + 1);
+                main.download_bytes(from, to) / (to - from) as f64
+            })
+            .fold(0.0, f64::max)
+            * 100.0;
+        for (budget, derived) in [
+            (DESKTOP_BATCH_BYTE_BUDGET, desktop),
+            (MOBILE_BATCH_BYTE_BUDGET, mobile),
+        ] {
+            assert!(
+                (budget / derived - 1.0).abs() < 0.01,
+                "budget {budget} vs derived {derived}",
+            );
+        }
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn plan_end_bounds_the_estimate() {
+        let h = BlockHeight::from_u32;
+        for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
+            let model = WorkModel::compiled(network);
+            assert_eq!(model.plan_bytes(1_780_001, 1_790_001), 0.0);
+            assert_eq!(
+                planned_batch_end(&model, 1_000, h(1_780_001), h(3_500_000)),
+                Some((1_000, h(1_781_001))),
+            );
+        }
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let plan_end = sizes.last().unwrap().0 + 1;
+        // Bytes stop at the last checkpoint instead of extrapolating.
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_END),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((1_000, BlockHeight::from_u32(SANDBLASTING_END + 1_000))),
+            main.plan_bytes(plan_end - 1, plan_end + 100_000),
+            main.plan_bytes(plan_end - 1, plan_end),
+        );
+        // A batch starting just before it is not cut there.
+        let start = u32::try_from(plan_end - 10).unwrap();
+        assert_eq!(
+            planned_batch_end(&main, 1_000, h(start), h(start + 5_000)),
+            Some((1_000, h(start + 1_000))),
+        );
+    }
+
+    #[test]
+    fn debug_cap_limits_every_batch() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        assert_eq!(
+            planned_batch_end(&main, 5, h(1_780_001), h(2_000_000)),
+            Some((5, h(1_780_006))),
         );
     }
 
@@ -6425,6 +6804,19 @@ mod tests {
                 Some(false)
             ),
         );
+    }
+
+    #[test]
+    fn sync_starts_share_one_progress_job_until_completion() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+        let first = mark_sync_started(path).unwrap();
+        assert_eq!(mark_sync_started(path).unwrap().id, first.id);
+        assert_eq!(unfinished_progress_job(path), Some((first.id.clone(), 0.0)));
+
+        mark_sync_completed(path, 100).unwrap();
+        assert_eq!(unfinished_progress_job(path), None);
+        assert_ne!(mark_sync_started(path).unwrap().id, first.id);
     }
 
     #[test]
