@@ -3269,6 +3269,8 @@ async fn run_sync_impl(
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
+    // Shard roots the wallet backend found wrong, as last reported.
+    let mut stored_root_mismatches_seen = 0;
 
     // 2. Get the chain tip. Reconcile it with the DB before treating it as
     // authoritative: `WalletDb::update_chain_tip` deliberately ignores a
@@ -4361,6 +4363,20 @@ async fn run_sync_impl(
                 summary
             })
         });
+
+        // A stored subtree root that disagrees with the scanned note commitments
+        // fails nothing: the backend counts it and builds every shard from then
+        // on, for the rest of the process.
+        let stored_root_mismatches =
+            zcash_client_backend::data_api::ll::wallet::stored_root_mismatches();
+        if stored_root_mismatches > stored_root_mismatches_seen {
+            log::warn!(
+                "[{}] sync: {stored_root_mismatches} downloaded subtree root(s) in this process \
+                 disagreed with the scanned note commitments; shards are built in full from now on",
+                elapsed(),
+            );
+            stored_root_mismatches_seen = stored_root_mismatches;
+        }
 
         // Handle the scan result. On a reorg we rewind the wallet to
         // `at_height - REWIND_DISTANCE` (bounded by `truncate_to_height`'s
