@@ -582,6 +582,11 @@ pub struct ApiMempoolTxEvent {
     /// uses this flag to decide whether to refresh balance + history
     /// immediately.
     pub matched: bool,
+    /// `true` when the server ended the mempool stream, which
+    /// lightwalletd does when a block is mined; the fields above are
+    /// then empty. Dart checks the tip on it instead of waiting for
+    /// its next poll.
+    pub new_block: bool,
 }
 
 /// Shared lifecycle state for the background mempool observer.
@@ -630,6 +635,7 @@ pub(crate) static MEMPOOL_OBSERVER_STATE: std::sync::LazyLock<
 /// observer returns on an unrecoverable setup error. Only parsed
 /// wallet-relevant mempool txs are pushed to `sink` as
 /// [`ApiMempoolTxEvent`]s; unrelated txs are filtered inside Rust.
+/// Each clean end of the stream is pushed too, with `new_block` set.
 ///
 /// The FRB layer runs this on the Rust isolate thread pool, so
 /// Dart can `await` the call while the observer keeps polling
@@ -666,6 +672,9 @@ pub fn start_mempool_observer(
     let result = catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let rt = crate::wallet::bounded_runtime::BoundedRuntime::new()?;
+        // One sink for both callbacks.
+        let sink = Arc::new(sink);
+        let block_sink = sink.clone();
         rt.block_on(async {
             crate::wallet::sync_engine::mempool::run_mempool_observer(
                 db_path,
@@ -678,10 +687,24 @@ pub fn start_mempool_observer(
                             txid_hex: event.txid_hex,
                             account_uuids: event.account_uuids,
                             matched: event.matched,
+                            new_block: false,
                         })
                         .is_err()
                     {
                         log::warn!("mempool: StreamSink closed, event not delivered");
+                    }
+                },
+                move || {
+                    if block_sink
+                        .add(ApiMempoolTxEvent {
+                            txid_hex: String::new(),
+                            account_uuids: Vec::new(),
+                            matched: false,
+                            new_block: true,
+                        })
+                        .is_err()
+                    {
+                        log::warn!("mempool: StreamSink closed, new-block event not delivered");
                     }
                 },
             )

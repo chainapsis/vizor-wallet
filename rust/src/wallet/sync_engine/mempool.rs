@@ -40,7 +40,9 @@
 //!
 //!   * **Reconnect semantics match the SDK.** lightwalletd closes
 //!     the stream every time a new block is mined — normal EOF,
-//!     not an error. We treat that as "sleep 1s, reconnect". Real
+//!     not an error. We treat that as "sleep 1s, reconnect", and
+//!     pass the end on through `on_new_block` so Dart can check the
+//!     tip at once instead of at its next poll. Real
 //!     errors use a 1s / 30s backoff ladder (first failure: 1s,
 //!     subsequent consecutive failures: 30s), reset to zero on any
 //!     successful connect. Cancel is checked inside the sleep so
@@ -388,15 +390,20 @@ fn average_ms(total: Duration, count: u64) -> f64 {
 /// heavy work inside `emit` blocks the next mempool tx from being
 /// processed; the Dart-facing FRB wrapper forwards to a
 /// `StreamSink` which is effectively a non-blocking push.
-pub(crate) async fn run_mempool_observer<F>(
+///
+/// `on_new_block` is called each time the server ends the stream
+/// cleanly, which lightwalletd does when a block is mined.
+pub(crate) async fn run_mempool_observer<F, B>(
     db_path: String,
     network: WalletNetwork,
     lightwalletd_url: String,
     cancel: Arc<AtomicBool>,
     emit: F,
+    on_new_block: B,
 ) -> Result<(), String>
 where
     F: Fn(MempoolTxEvent) + Send + Sync,
+    B: Fn() + Send + Sync,
 {
     const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
     const LATER_BACKOFF: Duration = Duration::from_secs(30);
@@ -577,6 +584,7 @@ where
                                 "mempool: stream closed by server (new block?)"
                             );
                             stats.record_stream_eof();
+                            on_new_block();
                             break StreamExit::CleanEof;
                         }
                         Err(e) => {
