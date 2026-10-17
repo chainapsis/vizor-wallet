@@ -1,22 +1,31 @@
 services:
   zcashd:
-    # Pin the exact runtime so a mutable `latest` tag cannot silently upgrade
-    # an existing datadir and trigger a long wallet reindex during E2E setup.
-    image: electriccoinco/zcashd@sha256:40cdcad6c32da8bedacf77caba149198c7674f79aeced4043128ffb3e967efba
+    # Upstream zcashd 6.20.0 halts permanently past its EOL height on mainnet
+    # only (regtest is exempt), but Electric Coin Co archived the repo and
+    # stopped publishing images, so the old pinned digest is no longer
+    # available to pull. Use Shielded Labs' zero-zcashd instead: the same
+    # zcashd-compatible build already proven for the Ironwood regtest stack
+    # (docker-compose.zcash-ironwood-regtest.yml), pinned the same way by OCI
+    # digest so a mutable tag cannot silently upgrade an existing datadir and
+    # trigger a long wallet reindex during E2E setup.
+    image: ghcr.io/shieldedlabs/zero-zcashd@sha256:dce56bfbfc64a3d7c5562ccd59d70aed005bea8cd68dce063d687bef7ce181f5
     platform: linux/amd64
     entrypoint: ["zcashd"]
     command:
       - "-printtoconsole"
       - "-conf=/etc/zcash/zcash.conf"
-      - "-datadir=/var/lib/zcash/.zcash"
+      - "-datadir=/srv/zcash/.zcash"
     ports:
       - "18232:18232"
       - "9067:9067"
     volumes:
-      - ./.regtest/zcashd:/var/lib/zcash/.zcash
+      - ./.regtest/zcashd:/srv/zcash/.zcash
       - ./scripts/regtest/zcash.conf:/etc/zcash/zcash.conf:ro
 
   lightwalletd:
+    # zero-zcashd is otherwise zcashd-RPC-compatible, so the standard
+    # lightwalletd image (no NU6.3/Ironwood wire support needed here) still
+    # works unmodified -- only the Ironwood stack needs the patched fork.
     image: electriccoinco/lightwalletd@sha256:a3dfb04b4054b78ae3107dcc804c3a15a6e38d1f0dfcadeac48da482dd1d3448
     platform: linux/amd64
     entrypoint: ["lightwalletd"]
@@ -34,6 +43,6 @@ services:
       - zcashd
     network_mode: "service:zcashd"
     volumes:
-      - ./.regtest/zcashd:/var/lib/zcash/.zcash:ro
+      - ./.regtest/zcashd:/srv/zcash/.zcash:ro
       - ./.regtest/lightwalletd:/var/lib/lightwalletd
       - ./scripts/regtest/lightwalletd-zcash.conf:/etc/zcash/lightwalletd-zcash.conf:ro
