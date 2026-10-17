@@ -8504,8 +8504,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-backend"
 version = "0.1.0-rc9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5992381bcb58449536da7823a777a97b178077d7e2be468a1163603f0def778e"
+source = "git+https://github.com/piatoss3612/wallet-libraries?rev=fb20653df6d465d39f0233d63e54e3847dcf608d#fb20653df6d465d39f0233d63e54e3847dcf608d"
 dependencies = [
  "ambassador",
  "arti-client",
@@ -8744,8 +8743,7 @@ dependencies = [
 [[package]]
 name = "zakura-one-time-ivk"
 version = "0.0.1-rc0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4975a9b1cde0a686abd9e26d4a2b98adaffb59c005544dbd6760f72ebfb57c1b"
+source = "git+https://github.com/piatoss3612/wallet-libraries?rev=fb20653df6d465d39f0233d63e54e3847dcf608d#fb20653df6d465d39f0233d63e54e3847dcf608d"
 dependencies = [
  "blake2b_simd",
  "ff 0.14.0",
@@ -8822,8 +8820,7 @@ dependencies = [
 [[package]]
 name = "zakura-pczt"
 version = "0.1.0-rc6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81af511f181cf680162b21b0ca04c74dab85a11e3d99a729d2e0e1923bb6a651"
+source = "git+https://github.com/piatoss3612/wallet-libraries?rev=fb20653df6d465d39f0233d63e54e3847dcf608d#fb20653df6d465d39f0233d63e54e3847dcf608d"
 dependencies = [
  "blake2b_simd",
  "document-features",
@@ -8877,8 +8874,7 @@ dependencies = [
 [[package]]
 name = "zakura-pir-enhance-types"
 version = "0.0.1-rc1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26c74b1db6e7ce961c67e441c723d1a78e3a141c45b149862b21c59505fa4227"
+source = "git+https://github.com/piatoss3612/wallet-libraries?rev=fb20653df6d465d39f0233d63e54e3847dcf608d#fb20653df6d465d39f0233d63e54e3847dcf608d"
 
 [[package]]
 name = "zakura-pir-native"
