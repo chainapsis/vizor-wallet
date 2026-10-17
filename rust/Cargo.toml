@@ -234,16 +234,17 @@ default-features = false
 features = ["zakura"]
 
 # The wallet backend from a fork of zakura-core/wallet-libraries at d08e55d, the
-# source of the crates.io releases above, plus two commits that make history
-# scans cheaper in `put_blocks`: checkpoints that would be pruned at once are not
+# source of the crates.io releases above, plus commits that make history scans
+# cheaper in `put_blocks`: checkpoints that would be pruned at once are not
 # added, and note-free shards already stored as their downloaded roots are not
-# rebuilt. `zakura-pczt`, `zakura-pir-enhance-types` and `zakura-one-time-ivk`
-# come from the same revision so the backend links against one copy of each.
+# rebuilt, apart from a random sample whose stored roots are checked.
+# `zakura-pczt`, `zakura-pir-enhance-types` and `zakura-one-time-ivk` come from
+# the same revision so the backend links against one copy of each.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "29f6e8bca6d641be322a5fbe5f3d59b0469a35fc" }
-zakura-pczt = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "29f6e8bca6d641be322a5fbe5f3d59b0469a35fc" }
-zakura-one-time-ivk = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "29f6e8bca6d641be322a5fbe5f3d59b0469a35fc" }
-zakura-pir-enhance-types = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "29f6e8bca6d641be322a5fbe5f3d59b0469a35fc" }
+zakura-client-backend = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "fb20653df6d465d39f0233d63e54e3847dcf608d" }
+zakura-pczt = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "fb20653df6d465d39f0233d63e54e3847dcf608d" }
+zakura-one-time-ivk = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "fb20653df6d465d39f0233d63e54e3847dcf608d" }
+zakura-pir-enhance-types = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "fb20653df6d465d39f0233d63e54e3847dcf608d" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
