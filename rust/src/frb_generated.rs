@@ -10434,10 +10434,12 @@ impl SseDecode for crate::api::sync::ApiMempoolTxEvent {
         let mut var_txidHex = <String>::sse_decode(deserializer);
         let mut var_accountUuids = <Vec<String>>::sse_decode(deserializer);
         let mut var_matched = <bool>::sse_decode(deserializer);
+        let mut var_newBlock = <bool>::sse_decode(deserializer);
         return crate::api::sync::ApiMempoolTxEvent {
             txid_hex: var_txidHex,
             account_uuids: var_accountUuids,
             matched: var_matched,
+            new_block: var_newBlock,
         };
     }
 }
@@ -15832,6 +15834,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiMempoolTxEvent {
             self.txid_hex.into_into_dart().into_dart(),
             self.account_uuids.into_into_dart().into_dart(),
             self.matched.into_into_dart().into_dart(),
+            self.new_block.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -20452,6 +20455,7 @@ impl SseEncode for crate::api::sync::ApiMempoolTxEvent {
         <String>::sse_encode(self.txid_hex, serializer);
         <Vec<String>>::sse_encode(self.account_uuids, serializer);
         <bool>::sse_encode(self.matched, serializer);
+        <bool>::sse_encode(self.new_block, serializer);
     }
 }
 

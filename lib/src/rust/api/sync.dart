@@ -165,6 +165,7 @@ void cancelPaymentLinkClaimSync({required String claimId}) => RustLib
 /// observer returns on an unrecoverable setup error. Only parsed
 /// wallet-relevant mempool txs are pushed to `sink` as
 /// [`ApiMempoolTxEvent`]s; unrelated txs are filtered inside Rust.
+/// Each clean end of the stream is pushed too, with `new_block` set.
 ///
 /// The FRB layer runs this on the Rust isolate thread pool, so
 /// Dart can `await` the call while the observer keeps polling
@@ -1478,15 +1479,25 @@ class ApiMempoolTxEvent {
   /// immediately.
   final bool matched;
 
+  /// `true` when the server ended the mempool stream, which
+  /// lightwalletd does when a block is mined; the fields above are
+  /// then empty. Dart checks the tip on it instead of waiting for
+  /// its next poll.
+  final bool newBlock;
+
   const ApiMempoolTxEvent({
     required this.txidHex,
     required this.accountUuids,
     required this.matched,
+    required this.newBlock,
   });
 
   @override
   int get hashCode =>
-      txidHex.hashCode ^ accountUuids.hashCode ^ matched.hashCode;
+      txidHex.hashCode ^
+      accountUuids.hashCode ^
+      matched.hashCode ^
+      newBlock.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1495,7 +1506,8 @@ class ApiMempoolTxEvent {
           runtimeType == other.runtimeType &&
           txidHex == other.txidHex &&
           accountUuids == other.accountUuids &&
-          matched == other.matched;
+          matched == other.matched &&
+          newBlock == other.newBlock;
 }
 
 /// Progress of one additional scan cycle; absent during ordinary syncing.

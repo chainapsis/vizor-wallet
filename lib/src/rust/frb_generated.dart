@@ -11720,12 +11720,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ApiMempoolTxEvent(
       txidHex: dco_decode_String(arr[0]),
       accountUuids: dco_decode_list_String(arr[1]),
       matched: dco_decode_bool(arr[2]),
+      newBlock: dco_decode_bool(arr[3]),
     );
   }
 
@@ -15791,10 +15792,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txidHex = sse_decode_String(deserializer);
     var var_accountUuids = sse_decode_list_String(deserializer);
     var var_matched = sse_decode_bool(deserializer);
+    var var_newBlock = sse_decode_bool(deserializer);
     return ApiMempoolTxEvent(
       txidHex: var_txidHex,
       accountUuids: var_accountUuids,
       matched: var_matched,
+      newBlock: var_newBlock,
     );
   }
 
@@ -21147,6 +21150,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.txidHex, serializer);
     sse_encode_list_String(self.accountUuids, serializer);
     sse_encode_bool(self.matched, serializer);
+    sse_encode_bool(self.newBlock, serializer);
   }
 
   @protected
