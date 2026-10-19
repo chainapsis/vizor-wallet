@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, RwLock};
 
 use futures::{stream, StreamExt, TryStreamExt};
@@ -337,6 +337,17 @@ pub(crate) fn elapsed() -> String {
         .ok()
         .and_then(|g| g.map(|t| format!("{:.1}s", t.elapsed().as_secs_f64())))
         .unwrap_or_default()
+}
+
+/// The wallet backend's count of stored subtree roots found wrong, as last
+/// logged. The backend counts for the whole process, so this is kept for the
+/// process too: a mismatch is logged once, not again by every later sync.
+static STORED_ROOT_MISMATCHES_LOGGED: AtomicU64 = AtomicU64::new(0);
+
+/// Whether `count` includes mismatches not yet logged, recording it in
+/// `logged` if so.
+fn mismatches_not_yet_logged(logged: &AtomicU64, count: u64) -> bool {
+    logged.fetch_max(count, Ordering::Relaxed) < count
 }
 
 /// The batch starting at `start`: its planned block count (as many as fit
@@ -3269,8 +3280,6 @@ async fn run_sync_impl(
     // The main-phase rewind budget also covers a reorg detected by the
     // initial tip response, before the scan queue has been created.
     let mut main_rewinds_this_run: u32 = 0;
-    // Shard roots the wallet backend found wrong, as last reported.
-    let mut stored_root_mismatches_seen = 0;
 
     // 2. Get the chain tip. Reconcile it with the DB before treating it as
     // authoritative: `WalletDb::update_chain_tip` deliberately ignores a
@@ -4369,13 +4378,12 @@ async fn run_sync_impl(
         // on, for the rest of the process.
         let stored_root_mismatches =
             zcash_client_backend::data_api::ll::wallet::stored_root_mismatches();
-        if stored_root_mismatches > stored_root_mismatches_seen {
+        if mismatches_not_yet_logged(&STORED_ROOT_MISMATCHES_LOGGED, stored_root_mismatches) {
             log::warn!(
                 "[{}] sync: {stored_root_mismatches} downloaded subtree root(s) in this process \
                  disagreed with the scanned note commitments; shards are built in full from now on",
                 elapsed(),
             );
-            stored_root_mismatches_seen = stored_root_mismatches;
         }
 
         // Handle the scan result. On a reorg we rewind the wallet to
@@ -5463,6 +5471,17 @@ mod tests {
     /// `SANDBLASTING_RANGE`), where the mobile byte budget comes from.
     const SANDBLASTING_START: u32 = 1_710_000;
     const SANDBLASTING_END: u32 = 2_050_000;
+
+    #[test]
+    fn a_stored_root_mismatch_is_logged_once_per_process() {
+        let logged = AtomicU64::new(0);
+        assert!(!mismatches_not_yet_logged(&logged, 0));
+        assert!(mismatches_not_yet_logged(&logged, 1));
+        // A later sync in the same process reads the same count.
+        assert!(!mismatches_not_yet_logged(&logged, 1));
+        assert!(mismatches_not_yet_logged(&logged, 3));
+        assert!(!mismatches_not_yet_logged(&logged, 2));
+    }
 
     #[test]
     fn checking_reports_only_additional_work_and_its_next_batch() {
