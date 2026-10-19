@@ -507,7 +507,12 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
    until the scan reads them (`MemoryBlockSource`), since decoded they take
    about 1.8 times their wire size; a tip batch that cuts in between
    history batches keeps the queued ones, and a Verify range a new tip puts at
-   the scan frontier is scanned together with the queued batch it falls in
+   the scan frontier is scanned together with the queued batch it falls in.
+   A queued batch whose download fails with a network error sooner than any
+   lightwalletd timeout (a stream reset, a refused connection) is retried in
+   the background after 1 s and again after 4 s
+   (`retry_quick_prefetch_failures`); a timeout, or a failure left after the
+   retries, is downloaded again inline when the scan reaches the batch
 4. `scan_cached_blocks` from memory. A batch takes as many blocks as fit a
    compact-block byte budget (about 31 MB on desktop, 11 MB on mobile), up to
    10,000 blocks on desktop, 1,000 on mobile and 300 in background mode (each
