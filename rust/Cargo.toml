@@ -234,8 +234,9 @@ default-features = false
 features = ["zakura"]
 
 # The wallet backend from a fork of zakura-core/wallet-libraries at d08e55d, the
-# source of the crates.io releases above, plus commits that make history scans
-# cheaper in `put_blocks`: checkpoints that would be pruned at once are not
+# source of the crates.io releases above, plus the reviewed commits of the fork's
+# pull requests #3 and #4. They make history scans cheaper in `put_blocks`:
+# checkpoints that would be pruned at once are not
 # added, and note-free shards already stored as their downloaded roots are not
 # rebuilt, apart from a random sample whose stored roots are checked. A tree a
 # batch inserts nothing into (Ironwood's before its activation) is also kept to
@@ -243,10 +244,10 @@ features = ["zakura"]
 # `zakura-pczt`, `zakura-pir-enhance-types` and `zakura-one-time-ivk` come from
 # the same revision so the backend links against one copy of each.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "c05262029c60d835145516c28fa7077c11951d19" }
-zakura-pczt = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "c05262029c60d835145516c28fa7077c11951d19" }
-zakura-one-time-ivk = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "c05262029c60d835145516c28fa7077c11951d19" }
-zakura-pir-enhance-types = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "c05262029c60d835145516c28fa7077c11951d19" }
+zakura-client-backend = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "60a8d1f10d7e73fc6b58ef82235bc7a33f410ed3" }
+zakura-pczt = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "60a8d1f10d7e73fc6b58ef82235bc7a33f410ed3" }
+zakura-one-time-ivk = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "60a8d1f10d7e73fc6b58ef82235bc7a33f410ed3" }
+zakura-pir-enhance-types = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "60a8d1f10d7e73fc6b58ef82235bc7a33f410ed3" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
