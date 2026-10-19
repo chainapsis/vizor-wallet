@@ -49,6 +49,16 @@ const LIGHTWALLETD_UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(20);
 const LIGHTWALLETD_STREAM_START_TIMEOUT: Duration = Duration::from_secs(20);
 const LIGHTWALLETD_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The shortest timeout above. A request that fails sooner did not time out.
+pub(super) const SHORTEST_LIGHTWALLETD_TIMEOUT: Duration = LIGHTWALLETD_CONNECT_TIMEOUT;
+const _: () = assert!(
+    SHORTEST_LIGHTWALLETD_TIMEOUT.as_millis() <= LIGHTWALLETD_UNARY_RPC_TIMEOUT.as_millis()
+        && SHORTEST_LIGHTWALLETD_TIMEOUT.as_millis()
+            <= LIGHTWALLETD_STREAM_START_TIMEOUT.as_millis()
+        && SHORTEST_LIGHTWALLETD_TIMEOUT.as_millis()
+            <= LIGHTWALLETD_STREAM_IDLE_TIMEOUT.as_millis()
+);
+
 fn timed_request<T>(message: T, timeout: Duration) -> Request<T> {
     let mut request = Request::new(message);
     request.set_timeout(timeout);

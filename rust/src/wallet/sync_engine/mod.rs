@@ -218,6 +218,14 @@ const BATCH_SIZE_BACKGROUND: u32 = 300;
 /// slower one. Queued batches stay encoded (`MemoryBlockSource`), so four
 /// ahead holds about two more batches of wire bytes, some 60 MB on desktop.
 const PREFETCH_DEPTH: usize = 4;
+/// Pauses before retrying a queued batch whose download failed quickly with a
+/// network error, while the scan is still busy with earlier batches. Without
+/// a retry the batch is downloaded again inline when the scan reaches it, on
+/// one request while nothing else downloads.
+const PREFETCH_RETRY_PAUSES: [std::time::Duration; 2] = [
+    std::time::Duration::from_secs(1),
+    std::time::Duration::from_secs(4),
+];
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
@@ -2571,6 +2579,45 @@ impl<T> Drop for Prefetch<T> {
     }
 }
 
+/// Runs `attempt` for queued batch `start..=last`, again after each of
+/// [`PREFETCH_RETRY_PAUSES`] while it fails with a network error sooner than
+/// any lightwalletd timeout, such as a stream reset or a refused connection.
+/// A slower failure is a timeout, which a retry would repeat, so it is
+/// returned at once: a server that stopped answering reaches the inline
+/// download, the sync retry and the endpoint fallback as soon as without this.
+/// The task running this future is aborted with its [`Prefetch`], so a pause
+/// ends with the queue.
+async fn retry_quick_prefetch_failures<T, Attempt, AttemptFuture>(
+    start: BlockHeight,
+    last: BlockHeight,
+    mut attempt: Attempt,
+) -> Result<T, SyncError>
+where
+    Attempt: FnMut() -> AttemptFuture,
+    AttemptFuture: Future<Output = Result<T, SyncError>>,
+{
+    let mut retries = 0;
+    loop {
+        let started = tokio::time::Instant::now();
+        let result = attempt().await;
+        let quick = started.elapsed() < lwd::SHORTEST_LIGHTWALLETD_TIMEOUT;
+        match result {
+            Err(SyncError::Network(message)) if quick && retries < PREFETCH_RETRY_PAUSES.len() => {
+                let pause = PREFETCH_RETRY_PAUSES[retries];
+                retries += 1;
+                log::warn!(
+                    "[{}] sync: prefetch {}-{} failed ({message}); retrying in background",
+                    elapsed(),
+                    u32::from(start),
+                    u32::from(last),
+                );
+                tokio::time::sleep(pause).await;
+            }
+            result => return result,
+        }
+    }
+}
+
 /// The queued tuple for batch `start..end`, if it is next. A batch that
 /// overlaps the queue any other way means the ranges changed under it, so
 /// the queue is dropped. A batch clear of it, such as a tip batch between
@@ -4236,16 +4283,23 @@ async fn run_sync_impl(
                 PREFETCH_DEPTH.saturating_sub(prefetch.len()),
             );
             for &(prefetch_start, prefetch_end) in &planned {
-                let mut prefetch_client = client.clone();
-                prefetch.push_back(Prefetch::spawn(prefetch_start, prefetch_end, async move {
-                    download_scan_batch(
-                        &mut prefetch_client,
-                        prefetch_start,
-                        prefetch_end - 1,
-                        network,
-                    )
-                    .await
-                }));
+                let prefetch_client = client.clone();
+                prefetch.push_back(Prefetch::spawn(
+                    prefetch_start,
+                    prefetch_end,
+                    retry_quick_prefetch_failures(prefetch_start, prefetch_end - 1, move || {
+                        let mut client = prefetch_client.clone();
+                        async move {
+                            download_scan_batch(
+                                &mut client,
+                                prefetch_start,
+                                prefetch_end - 1,
+                                network,
+                            )
+                            .await
+                        }
+                    }),
+                ));
             }
             let next_start = planned.last().map_or(next_start, |r| r.1);
             if prefetch.len() < PREFETCH_DEPTH && next_start < range_end {
@@ -5481,6 +5535,70 @@ mod tests {
         assert!(!mismatches_not_yet_logged(&logged, 1));
         assert!(mismatches_not_yet_logged(&logged, 3));
         assert!(!mismatches_not_yet_logged(&logged, 2));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_quick_prefetch_failure_is_retried_in_the_background() {
+        let attempts = AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let result = retry_quick_prefetch_failures(block_height(10), block_height(19), || {
+            let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if attempt == 0 {
+                    Err(SyncError::Network("stream reset".into()))
+                } else {
+                    Ok(7u8)
+                }
+            }
+        })
+        .await;
+        assert!(matches!(result, Ok(7)));
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(started.elapsed(), PREFETCH_RETRY_PAUSES[0]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_prefetch_keeps_failing_after_its_retries() {
+        let attempts = AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let result = retry_quick_prefetch_failures(block_height(10), block_height(19), || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async { Err::<u8, _>(SyncError::Network("stream reset".into())) }
+        })
+        .await;
+        assert!(matches!(result, Err(SyncError::Network(_))));
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            started.elapsed(),
+            PREFETCH_RETRY_PAUSES[0] + PREFETCH_RETRY_PAUSES[1]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_prefetch_that_timed_out_is_not_retried() {
+        let attempts = AtomicUsize::new(0);
+        let result = retry_quick_prefetch_failures(block_height(10), block_height(19), || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async {
+                tokio::time::sleep(lwd::SHORTEST_LIGHTWALLETD_TIMEOUT).await;
+                Err::<u8, _>(SyncError::Network("timed out".into()))
+            }
+        })
+        .await;
+        assert!(matches!(result, Err(SyncError::Network(_))));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_prefetch_that_failed_for_another_reason_is_not_retried() {
+        let attempts = AtomicUsize::new(0);
+        let result = retry_quick_prefetch_failures(block_height(10), block_height(19), || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async { Err::<u8, _>(SyncError::Parse("bad compact block".into())) }
+        })
+        .await;
+        assert!(matches!(result, Err(SyncError::Parse(_))));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 
     #[test]
