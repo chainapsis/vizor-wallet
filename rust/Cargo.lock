@@ -8504,7 +8504,7 @@ dependencies = [
 [[package]]
 name = "zakura-client-backend"
 version = "0.1.0-rc9"
-source = "git+https://github.com/piatoss3612/wallet-libraries?rev=fb20653df6d465d39f0233d63e54e3847dcf608d#fb20653df6d465d39f0233d63e54e3847dcf608d"
+source = "git+https://github.com/piatoss3612/wallet-libraries?rev=c05262029c60d835145516c28fa7077c11951d19#c05262029c60d835145516c28fa7077c11951d19"
 dependencies = [
  "ambassador",
  "arti-client",
@@ -8743,7 +8743,7 @@ dependencies = [
 [[package]]
 name = "zakura-one-time-ivk"
 version = "0.0.1-rc0"
-source = "git+https://github.com/piatoss3612/wallet-libraries?rev=fb20653df6d465d39f0233d63e54e3847dcf608d#fb20653df6d465d39f0233d63e54e3847dcf608d"
+source = "git+https://github.com/piatoss3612/wallet-libraries?rev=c05262029c60d835145516c28fa7077c11951d19#c05262029c60d835145516c28fa7077c11951d19"
 dependencies = [
  "blake2b_simd",
  "ff 0.14.0",
@@ -8820,7 +8820,7 @@ dependencies = [
 [[package]]
 name = "zakura-pczt"
 version = "0.1.0-rc6"
-source = "git+https://github.com/piatoss3612/wallet-libraries?rev=fb20653df6d465d39f0233d63e54e3847dcf608d#fb20653df6d465d39f0233d63e54e3847dcf608d"
+source = "git+https://github.com/piatoss3612/wallet-libraries?rev=c05262029c60d835145516c28fa7077c11951d19#c05262029c60d835145516c28fa7077c11951d19"
 dependencies = [
  "blake2b_simd",
  "document-features",
@@ -8874,7 +8874,7 @@ dependencies = [
 [[package]]
 name = "zakura-pir-enhance-types"
 version = "0.0.1-rc1"
-source = "git+https://github.com/piatoss3612/wallet-libraries?rev=fb20653df6d465d39f0233d63e54e3847dcf608d#fb20653df6d465d39f0233d63e54e3847dcf608d"
+source = "git+https://github.com/piatoss3612/wallet-libraries?rev=c05262029c60d835145516c28fa7077c11951d19#c05262029c60d835145516c28fa7077c11951d19"
 
 [[package]]
 name = "zakura-pir-native"
