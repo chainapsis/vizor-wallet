@@ -1160,6 +1160,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
   bool _resumeTipCheckPending = false;
+
+  /// A new block from the mempool observer awaits a tip check. Cleared only
+  /// when a check starts, so a block that lands during a check is checked
+  /// again once that check ends. [_resumeTipCheckPending] cannot carry it: a
+  /// check that stayed in the foreground clears that flag after reading the
+  /// tip, which may predate the block.
+  bool _newBlockCheckPending = false;
   DateTime? _lastNewBlockCheckAt;
   int _sensitiveStateEpoch = 0;
   int _progressEventVersion = 0;
@@ -1555,6 +1562,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// sends. Generation changes also reject preflight completions already queued.
   void _stopForAppExit() {
     _resumeTipCheckPending = false;
+    _newBlockCheckPending = false;
     _queuedSyncStart = null;
     ++_syncGen;
     ++_sensitiveStateEpoch;
@@ -2163,6 +2171,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void stopSync() {
     _resumeTipCheckPending = false;
+    _newBlockCheckPending = false;
     _queuedSyncStart = null;
     _syncStartDeferred = false;
     _deferredSyncLatestTipHeight = null;
@@ -2462,6 +2471,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // A public details load the user started stores nothing after a lock.
     ref.read(publicDetailsLoadsProvider).cancel();
     _resumeTipCheckPending = false;
+    _newBlockCheckPending = false;
     _queuedSyncStart = null;
     ref.read(pendingActivityEvidenceProvider.notifier).clear();
     _recoveryRestartGate.reset();
@@ -2642,7 +2652,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) return;
-    if (_resumeTipCheckPending &&
+    if ((_resumeTipCheckPending || _newBlockCheckPending) &&
         !_pollCheckInFlight &&
         !_isSyncing &&
         !_requiresUnlock &&
@@ -2684,6 +2694,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     _pollCheckInFlight = true;
     _resumeTipCheckPending = false;
+    _newBlockCheckPending = false;
     _stopPolling();
     try {
       final tip = await ref
@@ -2886,8 +2897,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   /// The server ended the mempool stream, which lightwalletd does when a
   /// block is mined: check the tip now instead of at the next poll. The
-  /// check is marked pending, as on resume, so one already running (or a
-  /// sync) is followed by another as soon as it ends. The poll keeps its
+  /// check is marked pending ([_newBlockCheckPending]), so one already
+  /// running (or a sync) is followed by another as soon as it ends, even if
+  /// it read the tip before the block. The poll keeps its
   /// other duties. At most one such check per 5 s, so a server that ends
   /// every stream at once (the observer reconnects after 1 s) cannot
   /// multiply tip checks; the poll still covers a skipped block.
@@ -2898,7 +2910,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     _lastNewBlockCheckAt = now;
-    _resumeTipCheckPending = true;
+    _newBlockCheckPending = true;
     unawaited(_checkAndSync());
   }
 
