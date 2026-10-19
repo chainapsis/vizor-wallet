@@ -1039,7 +1039,7 @@ Seed-relevance rule:
 - `build()` watches `accountProvider` via `ref.listen` (not `ref.watch` — avoids rebuild on switch/rename)
 - Account count increase triggers `startSync()` + `_startPolling()` (both first account and additional accounts)
 - `_checkAndSync()`: polls `getLatestBlockHeight` every 10s, re-syncs if tip > last synced height or previous sync incomplete (`percentage < 1.0`)
-- The mempool observer's `newBlock` event (the server ended the stream, which lightwalletd does when a block is mined) runs `_checkAndSync()` at once, marked pending like a resume so a check or sync already running is followed by another; at most one such check per 5 s. The 10 s poll stays, since its tick also refreshes the upgrade status, pending-activity evidence and recovery restarts
+- The mempool observer's `newBlock` event (the server ended the stream, which lightwalletd does when a block is mined) runs `_checkAndSync()` at once, marked pending (`_newBlockCheckPending`, cleared only when a check starts) so a check or sync already running is followed by another, even one that read the tip before the block; at most one such check per 5 s. The 10 s poll stays, since its tick also refreshes the upgrade status, pending-activity evidence and recovery restarts
 - `_checkAndSync()`, `_refreshBalance()`, and `_onSyncProgress()` all bail out while
   locked and discard late async completions via `_sensitiveStateEpoch`
 - Polling stops during `_checkAndSync` execution to prevent concurrent overlap, restarts after

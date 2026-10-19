@@ -147,12 +147,18 @@ class _Tip extends RpcEndpointFailoverNotifier {
 }
 
 class _Upgrade extends ChainUpgradeStatusNotifier {
+  /// When set, a tip check waits here after reading the tip.
+  static Completer<void>? hold;
+
   @override
   Future<ChainUpgradeStatusState> build() async =>
       ChainUpgradeStatusState.cachedActive(defaultRpcEndpointConfig('main'));
 
   @override
-  Future<void> refreshAtTip(BigInt tipHeight) async {}
+  Future<void> refreshAtTip(BigInt tipHeight) async {
+    final wait = hold;
+    if (wait != null) await wait.future;
+  }
 }
 
 class _NoPrivateQueries extends EnhancePirNotifier {
@@ -203,6 +209,7 @@ void main() {
     api.mempool = StreamController<rust_sync.ApiMempoolTxEvent>.broadcast();
     _Tip.height = 100;
     _Tip.checks = 0;
+    _Upgrade.hold = null;
   });
 
   /// A notifier whose first sync is running, with the mempool observer up.
@@ -281,5 +288,34 @@ void main() {
     api.syncs[0].add(_complete());
     await pumpEventQueue();
     expect(_Tip.checks, 1);
+  });
+
+  test('a new block during a tip check is checked again when that check '
+      'ends', () async {
+    final sync = await idle();
+    // A poll's check reads the old tip and is still finishing when the block
+    // lands.
+    final hold = Completer<void>();
+    _Upgrade.hold = hold;
+    final check = sync.checkTipForTesting();
+    await pumpEventQueue();
+    expect(_Tip.checks, 1);
+    _Upgrade.hold = null;
+    _Tip.height = 101;
+
+    api.newBlock();
+    await pumpEventQueue();
+    expect(_Tip.checks, 1, reason: 'the check in flight defers the new one');
+
+    hold.complete();
+    await check;
+    await pumpEventQueue();
+    expect(
+      _Tip.checks,
+      3,
+      reason:
+          "the held check, the new block's check, then the sync's preflight",
+    );
+    expect(api.syncs, hasLength(2), reason: 'the new tip started a sync');
   });
 }
