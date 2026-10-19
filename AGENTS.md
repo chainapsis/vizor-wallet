@@ -536,7 +536,12 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
    per process), and every shard with a wallet note, is rebuilt and its stored
    root compared; a mismatch is logged once per process
    (`stored_root_mismatches`), fails nothing, and turns the skip off for the
-   rest of the process.
+   rest of the process. The fork also keeps a tree that a batch inserts
+   nothing into, as Ironwood's is before its activation, to `max_checkpoints`
+   checkpoints. Upstream adds one at every height another pool checkpoints and
+   prunes only some of them once inserts begin: about 1.4 million Ironwood rows
+   after a full restore, or about 1,600 with the history skip above, against
+   784 with the pruning.
 5. Enhancement: process each work queue separately. Status observations come
    from `transaction_status_work()`, which routes each obligation to public
    `GetTransaction` or private Status PIR. Payload recovery comes from
@@ -1219,7 +1224,7 @@ edge in `MobileBottomSafeArea`
 
 Constrained in `rust/Cargo.toml` and resolved in `rust/Cargo.lock`. Key crates: `zcash_client_backend` 0.22.0, `zcash_client_sqlite` 0.20.2, `orchard` 0.13.1, `sapling-crypto` 0.7.0. These must stay compatible — check librustzcash releases before bumping.
 
-`zakura-client-backend`, `zakura-pczt` and `zakura-pir-enhance-types` are patched (`[patch.crates-io]`) to a revision of the `piatoss3612/wallet-libraries` fork: the zakura-core source of the crates.io releases plus the `put_blocks` history changes described under "Sync Engine". When bumping the zakura crates, move the fork onto the new release (or drop the patch once the changes are upstream) instead of leaving the patch at an older revision.
+`zakura-client-backend`, `zakura-pczt` and `zakura-pir-enhance-types` are patched (`[patch.crates-io]`) to a revision of the `piatoss3612/wallet-libraries` fork: the zakura-core source of the crates.io releases plus the `put_blocks` history changes and the Ironwood checkpoint pruning described under "Sync Engine". When bumping the zakura crates, move the fork onto the new release (or drop the patch once the changes are upstream) instead of leaving the patch at an older revision.
 
 `tonic` 0.14 with `tls-ring` + `tls-webpki-roots` features for gRPC TLS. `rustls` 0.23+ requires explicit crypto provider — `tls-ring` provides this.
 

@@ -237,14 +237,16 @@ features = ["zakura"]
 # source of the crates.io releases above, plus commits that make history scans
 # cheaper in `put_blocks`: checkpoints that would be pruned at once are not
 # added, and note-free shards already stored as their downloaded roots are not
-# rebuilt, apart from a random sample whose stored roots are checked.
+# rebuilt, apart from a random sample whose stored roots are checked. A tree a
+# batch inserts nothing into (Ironwood's before its activation) is also kept to
+# `max_checkpoints` checkpoints instead of gaining one at every height.
 # `zakura-pczt`, `zakura-pir-enhance-types` and `zakura-one-time-ivk` come from
 # the same revision so the backend links against one copy of each.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "fb20653df6d465d39f0233d63e54e3847dcf608d" }
-zakura-pczt = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "fb20653df6d465d39f0233d63e54e3847dcf608d" }
-zakura-one-time-ivk = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "fb20653df6d465d39f0233d63e54e3847dcf608d" }
-zakura-pir-enhance-types = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "fb20653df6d465d39f0233d63e54e3847dcf608d" }
+zakura-client-backend = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "c05262029c60d835145516c28fa7077c11951d19" }
+zakura-pczt = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "c05262029c60d835145516c28fa7077c11951d19" }
+zakura-one-time-ivk = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "c05262029c60d835145516c28fa7077c11951d19" }
+zakura-pir-enhance-types = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "c05262029c60d835145516c28fa7077c11951d19" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
