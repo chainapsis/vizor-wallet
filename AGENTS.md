@@ -520,10 +520,15 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
    after newer ranges: when no height in a batch is retained and each tree
    already holds `max_checkpoints` newer checkpoints, the batch adds none, and a
    note-free shard wholly inside it that is already stored as its downloaded
-   subtree root is not rebuilt. Rebuilding never checked that root either, so
-   the trust is unchanged, and the tree rows come out the same as without the
-   fork. About one in 16 such shards (random per process), and every shard with
-   a wallet note, is rebuilt and its stored root compared; a mismatch is logged
+   subtree root is not rebuilt. Rebuilding never compared that root with the
+   computed one, and the roots above the shards, which anchors and witnesses
+   use, come from the downloaded roots cached in the tree's cap either way, so
+   the trust is unchanged. Only the shard's own row differs: it keeps the
+   downloaded root instead of the computed subtree, which is read only if a
+   truncation drops the cached roots above it. With matching roots the tree rows
+   come out the same as without the fork. About one in 16 such shards (random
+   per process), and every shard with a wallet note, is rebuilt and its stored
+   root compared; a mismatch is logged once per process
    (`stored_root_mismatches`), fails nothing, and turns the skip off for the
    rest of the process.
 5. Enhancement: process each work queue separately. Status observations come
