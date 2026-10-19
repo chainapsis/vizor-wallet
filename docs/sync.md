@@ -22,7 +22,14 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
    the background after 1 s and again after 4 s
    (`retry_quick_prefetch_failures`); a timeout, or a failure left after the
    retries, is downloaded again inline when the scan reaches the batch
-4. `scan_cached_blocks` from memory. A batch takes as many blocks as fit a
+4. Scan from memory: trial decryption (`decrypt_cached_blocks`), then the
+   scan and write (`scan_decrypted_blocks`). While a batch is written
+   (`put_blocks`), the next queued batch, if its download has finished, is
+   already being decrypted on rayon's global pool (`start_next_decryption`),
+   so its decryption overlaps the write. The next scan uses that decryption
+   only if it covers the same blocks with the same viewing keys, and decrypts
+   again otherwise; it holds one more batch's decryption results in memory.
+   A batch takes as many blocks as fit a
    compact-block byte budget (about 31 MB on desktop, 11 MB on mobile), up to
    10,000 blocks on desktop, 1,000 on mobile and 300 in background mode (each
    batch also pays a fixed serial cost after its scan, so sparse history wants

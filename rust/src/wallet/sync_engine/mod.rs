@@ -3,13 +3,16 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, RwLock};
 
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{stream, FutureExt, StreamExt, TryStreamExt};
 use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
 use shardtree::error::{InsertionError, QueryError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
-    chain::{self, error::Error as ChainError, scan_cached_blocks},
+    chain::{
+        self, decrypt_cached_blocks, error::Error as ChainError, scan_cached_blocks,
+        scan_decrypted_blocks, BlockDecryption,
+    },
     ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
     wallet::ConfirmationsPolicy,
@@ -2550,6 +2553,8 @@ fn inconsistent_scan_batch_error(start: BlockHeight) -> SyncError {
 
 struct Prefetch<T> {
     handle: Option<tokio::task::JoinHandle<Result<T, SyncError>>>,
+    /// The task's result, once `finished` has taken it from `handle`.
+    done: Option<Result<Result<T, SyncError>, tokio::task::JoinError>>,
     start: BlockHeight,
     end: BlockHeight,
 }
@@ -2565,9 +2570,24 @@ where
     ) -> Self {
         Self {
             handle: Some(tokio::spawn(future)),
+            done: None,
             start,
             end,
         }
+    }
+
+    /// The downloaded tuple, if its download has finished, without waiting
+    /// for it. The result stays here for the iteration that scans it.
+    fn finished(&mut self) -> Option<&T> {
+        if self.done.is_none() {
+            let handle = self.handle.as_mut()?;
+            if !handle.is_finished() {
+                return None;
+            }
+            self.done = Some(handle.now_or_never()?);
+            self.handle = None;
+        }
+        self.done.as_ref()?.as_ref().ok()?.as_ref().ok()
     }
 }
 
@@ -2614,6 +2634,45 @@ where
                 tokio::time::sleep(pause).await;
             }
             result => return result,
+        }
+    }
+}
+
+/// Trial decryption of the queued batch `start..end`, started ahead of its scan.
+struct NextDecryption {
+    start: BlockHeight,
+    end: BlockHeight,
+    decryption: BlockDecryption<<WalletDatabase as WalletRead>::AccountId>,
+}
+
+/// Starts trial decryption of the queued batch that follows `end`, if its
+/// download has finished. Its work queues behind the current batch's on the
+/// rayon pool, so it overlaps the current batch's `put_blocks`. A failure here
+/// is left for that batch's own scan to report.
+fn start_next_decryption(
+    network: &WalletNetwork,
+    db: &WalletDatabase,
+    prefetch: &mut VecDeque<Prefetch<ScanBatch>>,
+    end: BlockHeight,
+) -> Option<NextDecryption> {
+    let next = prefetch.front_mut().filter(|next| next.start == end)?;
+    let (start, end) = (next.start, next.end);
+    let (block_source, _) = next.finished()?;
+    let blocks = u32::from(end).saturating_sub(u32::from(start)) as usize;
+    match decrypt_cached_blocks(network, block_source, db, start, blocks) {
+        Ok(decryption) => Some(NextDecryption {
+            start,
+            end,
+            decryption,
+        }),
+        Err(error) => {
+            log::debug!(
+                "[{}] sync: could not start decrypting {}-{} ahead: {error}",
+                elapsed(),
+                u32::from(start),
+                u32::from(end).saturating_sub(1),
+            );
+            None
         }
     }
 }
@@ -2781,15 +2840,18 @@ where
         if prefetch.start == start && prefetch.end == end {
             // Keep the handle inside `Prefetch` while suspended. If the sync
             // future is dropped here, `Prefetch::drop` still aborts the task.
-            let result = tokio::select! {
-                biased;
-                _ = watch_for_exit(should_exit) => return Ok(None),
-                result = prefetch.handle.as_mut().expect("prefetch handle present") => result,
+            let result = match prefetch.done.take() {
+                Some(result) => result,
+                None => tokio::select! {
+                    biased;
+                    _ = watch_for_exit(should_exit) => return Ok(None),
+                    result = prefetch.handle.as_mut().expect("prefetch handle present") => result,
+                },
             };
             if should_exit() {
                 return Ok(None);
             }
-            let _completed_handle = prefetch.handle.take().expect("prefetch handle present");
+            let _completed_handle = prefetch.handle.take();
             match result {
                 Ok(Ok(batch)) => return Ok(Some(batch)),
                 Ok(Err(error)) => log::warn!(
@@ -3720,6 +3782,11 @@ async fn run_sync_impl(
     // in leaves it for the history batches it holds
     // (`take_queued_batch`).
     let mut prefetch: VecDeque<Prefetch<ScanBatch>> = VecDeque::new();
+    // Trial decryption of the next queued batch, started before this batch is
+    // written so that it runs while `put_blocks` does. Keyed by the batch's
+    // range; `scan_decrypted_blocks` decrypts again unless it covers exactly
+    // the blocks scanned, with the current viewing keys.
+    let mut next_decryption: Option<NextDecryption> = None;
 
     // Retry enhancement work left by an interrupted/older sync before scanning.
     // Best-effort: a retryable public failure must not block compact sync; the
@@ -4368,14 +4435,32 @@ async fn run_sync_impl(
                 );
             }
             voting_scan_end = Some(end);
-            scan_cached_blocks(
-                &network,
-                &block_source,
-                &mut db,
-                start,
-                &from_state,
-                batch_blocks as usize,
-            )
+            // The decryption started while the previous batch was written, if it
+            // is this batch's.
+            match next_decryption.take() {
+                Some(next) if next.start == start && next.end == end => Ok(next.decryption),
+                _ => decrypt_cached_blocks(
+                    &network,
+                    &block_source,
+                    &db,
+                    start,
+                    batch_blocks as usize,
+                ),
+            }
+            .and_then(|decryption| {
+                // This batch's decryption was queued first, so the next
+                // batch's runs after it, while this batch is written.
+                next_decryption = start_next_decryption(&network, &db, &mut prefetch, end);
+                scan_decrypted_blocks(
+                    &network,
+                    &block_source,
+                    &mut db,
+                    start,
+                    &from_state,
+                    batch_blocks as usize,
+                    decryption,
+                )
+            })
             .map_err(|e| match e {
                 ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
                     let at_height = u32::from(scan_err.at_height()) as u64;
@@ -6272,6 +6357,50 @@ mod tests {
         let failed = Prefetch::spawn(start, end, async {
             Err::<u8, _>(SyncError::net("prefetch failed"))
         });
+        let value = resolve_prefetched_or_download(Some(failed), start, end, &keep_running, || {
+            fresh_calls.fetch_add(1, Ordering::SeqCst);
+            async { Ok(9) }
+        })
+        .await
+        .expect("fresh fallback")
+        .expect("sync remains active");
+        assert_eq!(value, 9);
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// A tuple read early to start its decryption is the one its batch then
+    /// scans; a failed one still falls back to a fresh download.
+    #[tokio::test]
+    async fn a_finished_prefetch_read_early_is_still_used_for_its_batch() {
+        let start = block_height(10);
+        let end = block_height(13);
+        let keep_running = || false;
+        let fresh_calls = AtomicUsize::new(0);
+
+        let mut prefetched = Prefetch::spawn(start, end, async { Ok::<_, SyncError>(7) });
+        while !prefetched.handle.as_ref().is_some_and(|h| h.is_finished()) {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(prefetched.finished(), Some(&7));
+        assert_eq!(prefetched.finished(), Some(&7));
+        let value =
+            resolve_prefetched_or_download(Some(prefetched), start, end, &keep_running, || {
+                fresh_calls.fetch_add(1, Ordering::SeqCst);
+                async { Ok(9) }
+            })
+            .await
+            .expect("finished prefetch")
+            .expect("sync remains active");
+        assert_eq!(value, 7);
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 0);
+
+        let mut failed = Prefetch::spawn(start, end, async {
+            Err::<u8, _>(SyncError::net("prefetch failed"))
+        });
+        while !failed.handle.as_ref().is_some_and(|h| h.is_finished()) {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(failed.finished(), None);
         let value = resolve_prefetched_or_download(Some(failed), start, end, &keep_running, || {
             fresh_calls.fetch_add(1, Ordering::SeqCst);
             async { Ok(9) }
