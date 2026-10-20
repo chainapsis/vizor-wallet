@@ -16,10 +16,12 @@ const kSyncShortCatchUpMaxDuration = Duration(seconds: 10);
 /// catch-up is still short at [now]: at most [kSyncShortCatchUpMaxBlocks]
 /// blocks to scan and less than [kSyncShortCatchUpMaxDuration] running.
 ///
-/// Only a sync that started from a completed one qualifies, so a wallet that
-/// never completed, a restore (whose tip is scanned first), and a restart
-/// after a failure or a stop are never short. Checking, a failure and a
-/// background run are not either.
+/// Only a sync that started from a completed one qualifies
+/// ([SyncState.startedFromCompletedSync], which a catch-up's restart after a
+/// failure, a stop or a lock keeps), so a wallet that never completed, a
+/// restore (whose tip is scanned first) and a sync after an account was
+/// added are never short. Checking, a failure and a background run are not
+/// either.
 bool isShortSyncCatchUp(SyncState sync, {required DateTime now}) {
   final startedAt = sync.lastSyncStartedAt;
   if (!sync.startedFromCompletedSync ||

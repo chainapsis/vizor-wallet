@@ -108,9 +108,14 @@ class _Tip extends RpcEndpointFailoverNotifier {
     fallbackCandidates: const [],
   );
 
+  /// When set, the tip request fails, as one cut off in the background does.
+  static bool fail = false;
+
   @override
-  Future<BigInt> getLatestBlockHeight() async =>
-      BigInt.from(_completedHeight + 4);
+  Future<BigInt> getLatestBlockHeight() async {
+    if (fail) throw StateError('connection reset');
+    return BigInt.from(_completedHeight + 4);
+  }
 }
 
 class _Upgrade extends ChainUpgradeStatusNotifier {
@@ -161,15 +166,11 @@ class _Sync extends SyncNotifier {
     required String network,
   }) async {
     statusReads++;
-    return rust_sync.SyncProgress(
-      scannedHeight: BigInt.from(_completedHeight),
-      chainTipHeight: BigInt.from(_completedHeight),
-      isSyncing: false,
-      isComplete: true,
-      syncJobId: '',
-      syncJobFraction: 0,
-    );
+    return storedStatus;
   }
+
+  /// The stored status: the last sync completed, unless a test says not.
+  rust_sync.SyncProgress storedStatus = _completedStatus;
 
   @override
   Future<rust_sync.WalletBalance> readWalletBalance({
@@ -194,6 +195,38 @@ class _Sync extends SyncNotifier {
 }
 
 final _balance = _walletBalance(orchard: 1);
+
+final _completedStatus = rust_sync.SyncProgress(
+  scannedHeight: BigInt.from(_completedHeight),
+  chainTipHeight: BigInt.from(_completedHeight),
+  isSyncing: false,
+  isComplete: true,
+  syncJobId: '',
+  syncJobFraction: 0,
+);
+
+/// The production build, whose stored status says the last sync completed.
+class _LiveSync extends SyncNotifier {
+  _LiveSync()
+    : super(
+        walletDbPathResolver: () async => 'wallet.db',
+        excludeCompanionsFromBackup: (_) async {},
+      );
+
+  @override
+  Future<rust_sync.SyncProgress> readSyncStatus({
+    required String dbPath,
+    required String network,
+  }) async => _completedStatus;
+
+  @override
+  Future<List<rust_sync.TransactionInfo>> readTransactionHistory({
+    required String dbPath,
+    required String network,
+    int? limit,
+    required String accountUuid,
+  }) async => const [];
+}
 
 rust_sync.WalletBalance _walletBalance({
   required int orchard,
@@ -246,7 +279,8 @@ void main() {
       ],
     );
     addTearDown(() {
-      sync.stopTipChecksForTesting();
+      // Ends a start's preflight still in flight before the container goes.
+      sync.stopSync();
       if (!sync.balanceRead.isCompleted) sync.balanceRead.complete();
       container.dispose();
     });
@@ -451,5 +485,140 @@ void main() {
       expect(state.transparentLastKnownBalance, BigInt.from(5));
       expect(sync.balanceReads, 1);
     });
+  });
+
+  group('a catch-up interrupted', () {
+    Future<(ProviderContainer, _Sync)> catchingUp() async {
+      final (container, sync) = await mounted();
+      sync.startSync(latestTipHeight: _completedHeight + 4);
+      expectCatchUp(container.read(syncProvider).requireValue);
+      return (container, sync);
+    }
+
+    test('by a failure continues as a catch-up when it retries', () async {
+      _Tip.fail = true;
+      addTearDown(() => _Tip.fail = false);
+      final (container, sync) = await catchingUp();
+
+      // Its preflight fails, as it does when the app is cut off.
+      await pumpEventQueue();
+      final failed = container.read(syncProvider).requireValue;
+      expect(failed.failure, isNotNull);
+      expect(failed.isSyncing, isFalse);
+      expect(failed.startedFromCompletedSync, isTrue);
+      sync.stopTipChecksForTesting();
+
+      _Tip.fail = false;
+      sync.startSync(latestTipHeight: _completedHeight + 4);
+      expectCatchUp(container.read(syncProvider).requireValue);
+    });
+
+    test('by a stop continues as a catch-up when it starts again', () async {
+      final (container, sync) = await catchingUp();
+
+      sync.stopSync();
+      expect(
+        container.read(syncProvider).requireValue.startedFromCompletedSync,
+        isTrue,
+      );
+
+      sync.startSync(latestTipHeight: _completedHeight + 4);
+      expectCatchUp(container.read(syncProvider).requireValue);
+    });
+
+    test('by a lock continues as a catch-up after the unlock', () async {
+      final (container, sync) = await catchingUp();
+      // The lock cancels it with its job unfinished.
+      sync.storedStatus = rust_sync.SyncProgress(
+        scannedHeight: BigInt.from(_completedHeight),
+        chainTipHeight: BigInt.from(_completedHeight + 4),
+        isSyncing: false,
+        isComplete: false,
+        syncJobId: 'job-2',
+        syncJobFraction: 0.5,
+      );
+      await sync.clearSensitiveStateForLock();
+
+      sync.balanceRead.complete();
+      await sync.refreshAfterUnlock();
+      sync.startSync();
+
+      final resumed = container.read(syncProvider).requireValue;
+      expectCatchUp(resumed);
+      expect(resumed.syncJobId, 'job-2');
+      expect(resumed.percentage, 0.5);
+    });
+
+    test('but a restore the lock interrupted stays a restore', () async {
+      final (container, sync) = await mounted(
+        initial: SyncState(
+          accountUuid: _accountUuid,
+          isSyncing: true,
+          percentage: 0.3,
+          syncJobId: 'restore',
+          scannedHeight: _completedHeight,
+          chainTipHeight: _completedHeight,
+        ),
+      );
+      sync.storedStatus = rust_sync.SyncProgress(
+        scannedHeight: BigInt.from(419200),
+        chainTipHeight: BigInt.from(_completedHeight),
+        isSyncing: false,
+        isComplete: false,
+        syncJobId: 'restore',
+        syncJobFraction: 0.3,
+      );
+      await sync.clearSensitiveStateForLock();
+
+      sync.balanceRead.complete();
+      await sync.refreshAfterUnlock();
+      sync.startSync();
+
+      final resumed = container.read(syncProvider).requireValue;
+      expect(resumed.isSyncing, isTrue);
+      expect(resumed.startedFromCompletedSync, isFalse);
+      expect(isShortSyncCatchUp(resumed, now: DateTime.now()), isFalse);
+    });
+  });
+
+  test(
+    'a sync after an account is added scans its history, not a catch-up',
+    () async {
+      final (container, sync) = await mounted();
+
+      sync.handleAccountAddedForTesting();
+
+      final rescan = container.read(syncProvider).requireValue;
+      expect(rescan.isSyncing, isTrue);
+      expect(rescan.startedFromCompletedSync, isFalse);
+      expect(isShortSyncCatchUp(rescan, now: DateTime.now()), isFalse);
+    },
+  );
+
+  test('a launch with no snapshot starts from the stored status', () async {
+    final sync = _LiveSync();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_Account.new),
+        rpcEndpointFailoverProvider.overrideWith(_Tip.new),
+        chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
+        enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+        syncProvider.overrideWith(() => sync),
+      ],
+    );
+    addTearDown(() {
+      sync.stopSync();
+      container.dispose();
+    });
+    container.listen(syncProvider, (_, _) {});
+    final initial = await container.read(syncProvider.future);
+    expect(initial.chainTipHeight, 0);
+
+    // The build schedules the initial sync; let it run.
+    await pumpEventQueue();
+
+    final started = container.read(syncProvider).requireValue;
+    expectCatchUp(started);
   });
 }

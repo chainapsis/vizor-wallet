@@ -275,10 +275,10 @@ class SyncState {
   /// above zero, so rates over the session measure from here.
   final double sessionStartPercentage;
 
-  /// Whether the running sync started from a completed one: a synced wallet
-  /// catching up to new blocks. False for a wallet that never completed,
-  /// and for a restart after a failure or a stop, which continues an
-  /// unfinished job.
+  /// Whether the sync started from a completed one: a synced wallet catching
+  /// up to new blocks. A stop, a failure or a lock between attempts keeps it,
+  /// so the next attempt continues the catch-up. False for a wallet that
+  /// never completed, a restore, and a sync after an account was added.
   final bool startedFromCompletedSync;
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
@@ -1319,6 +1319,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _storedStatusRestoreNeeded = false;
   Future<void>? _storedStatusRestore;
 
+  /// A lock interrupted a catch-up; its unfinished job, restored at unlock,
+  /// continues as a catch-up.
+  bool _lockedDuringCatchUp = false;
+
+  /// An account was added since the last sync start; the next sync scans
+  /// its history, so it is not a catch-up.
+  bool _accountAddedSinceSyncStart = false;
+
   @override
   Future<SyncState> build() async {
     final bootstrap = ref.watch(appBootstrapProvider);
@@ -1401,10 +1409,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         rust_sync.setActiveSyncAccount(accountUuid: nextAccountUuid);
         _clearAccountScopedStateFor(nextAccountUuid);
       }
-      if (nextCount > prevCount) {
-        startSync();
-        _startPolling();
-      }
+      if (nextCount > prevCount) _onAccountAdded();
     });
 
     // Initial check: if accounts already exist at build time
@@ -1617,10 +1622,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     }
 
+    // A launch whose bootstrap snapshot is empty starts from the stored
+    // status, as an unlock does, rather than from zero.
+    if (_storedStatusRestoreNeeded && !_requiresUnlock) {
+      await _restoreStoredStatus();
+    }
     if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
       log('Sync: skipping initial sync after lock transition');
       return;
     }
+    startSync();
+    _startPolling();
+  }
+
+  void _onAccountAdded() {
+    _accountAddedSinceSyncStart = true;
     startSync();
     _startPolling();
   }
@@ -1738,6 +1754,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final resumed = overtakenCompletionAt == null
         ? resumableSyncJob(prev)
         : (jobId: '', percentage: 0.0);
+    // A catch-up that a stop, a failure or a lock interrupted continues as
+    // one. An account added since brings history to scan: not a catch-up.
+    final startsFromCompletedSync =
+        !_accountAddedSinceSyncStart &&
+        ((prev?.isSyncComplete ?? false) ||
+            overtakenCompletionAt != null ||
+            (prev?.startedFromCompletedSync ?? false));
+    _accountAddedSinceSyncStart = false;
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
@@ -1811,8 +1835,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncCompletedAt: overtakenCompletionAt ?? prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
         phase: kSyncPhasePreflight,
-        startedFromCompletedSync:
-            (prev?.isSyncComplete ?? false) || overtakenCompletionAt != null,
+        startedFromCompletedSync: startsFromCompletedSync,
       ),
     );
 
@@ -2195,6 +2218,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
         lastSyncFailedAt: DateTime.now(),
+        // The retry continues the catch-up this attempt began.
+        startedFromCompletedSync: prev?.startedFromCompletedSync ?? false,
       ),
     );
     _startPolling();
@@ -2327,6 +2352,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
+        startedFromCompletedSync: prev?.startedFromCompletedSync ?? false,
       ),
     );
   }
@@ -2588,6 +2614,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lastKnownByAccount.clear();
     _storedStatusRestoreNeeded = true;
     _storedStatusRestore = null;
+    // Not wallet data: whether the unfinished job the unlock restores began
+    // as a catch-up.
+    final locked = state.value;
+    _lockedDuringCatchUp =
+        (locked?.startedFromCompletedSync ?? false) &&
+        !(locked?.isSyncComplete ?? false);
     state = AsyncData(SyncState());
 
     // Sign-out should cancel the current Rust run immediately so unlock
@@ -3452,6 +3484,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // Handle sync completion here (not in onDone) to avoid race with async state update.
     if (event.isComplete) {
       _isSyncing = false;
+      // A sync running when an account was added scanned its history too.
+      _accountAddedSinceSyncStart = false;
       _startPolling();
       if (!useFetchedBalance) {
         unawaited(_ensureAuthoritativeBalanceRecovery());
@@ -3566,6 +3600,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     if (epoch != _sensitiveStateEpoch || _requiresUnlock) return;
     _storedStatusRestoreNeeded = false;
+    final lockedDuringCatchUp = _lockedDuringCatchUp;
+    _lockedDuringCatchUp = false;
     final current = state.value ?? SyncState();
     // Completion is wallet-wide. Balance surfaces and checks also require
     // the account data, which the refresh after this read loads.
@@ -3597,6 +3633,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         percentage: percentage,
         displayTargetPercentage: percentage,
         sessionStartPercentage: percentage,
+        // A catch-up the lock interrupted continues as one, from the
+        // heights it had reached.
+        startedFromCompletedSync: lockedDuringCatchUp,
+        scannedHeight: lockedDuringCatchUp
+            ? status.scannedHeight.toInt()
+            : null,
+        chainTipHeight: lockedDuringCatchUp
+            ? status.chainTipHeight.toInt()
+            : null,
       ),
     );
   }
@@ -4358,6 +4403,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   @visibleForTesting
   void handleAccountSwitchForTesting(String? accountUuid) =>
       _clearAccountScopedStateFor(accountUuid);
+
+  @visibleForTesting
+  void handleAccountAddedForTesting() => _onAccountAdded();
+
+  @visibleForTesting
+  Future<void> startInitialSyncForTesting() => _startInitialSync();
 
   bool get _requiresUnlock {
     return ref.read(appSecurityProvider).requiresUnlock;
