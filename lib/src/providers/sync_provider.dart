@@ -1292,15 +1292,24 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       onResume: _handleAppResume,
       onHide: _handleAppHide,
     );
-    // Scan with less of the CPU when the device is hot or saving power, and
-    // let the keep-awake screen say why sync is slower.
-    final devicePower = devicePowerEvents().listen((power) {
-      rust_sync.setSyncScanPower(level: syncScanPowerFor(power));
-      ref
-          .read(syncScanSlowdownProvider.notifier)
-          .update(syncScanSlowdownFor(power));
-    });
+    // Scan with less of the CPU once a sync job has run a few minutes on a
+    // device that is hot or saving power; the keep-awake screen says why.
+    final slowdown = ref.read(syncScanSlowdownProvider.notifier);
+    final devicePower = devicePowerEvents().listen(
+      (power) => slowdown.updateDevicePower(syncScanSlowdownFor(power)),
+    );
     ref.onDispose(devicePower.cancel);
+    listenSelf((_, next) {
+      final sync = next.value;
+      if (sync == null) return;
+      scheduleMicrotask(() {
+        if (!ref.mounted) return;
+        slowdown.updateSyncJob(sync.syncJobId, complete: sync.isSyncComplete);
+      });
+    });
+    ref.listen(syncScanSlowdownProvider, (_, next) {
+      rust_sync.setSyncScanPower(level: syncScanPowerFor(next));
+    });
 
     ref.onDispose(() {
       ++_syncGen;

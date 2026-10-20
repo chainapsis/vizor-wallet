@@ -59,12 +59,12 @@ enum SyncScanSlowdown {
   powerSaving,
 }
 
-/// Full speed up to serious, slower at critical or in power saving. Three
-/// phones reached serious 1.5 to 7.5 minutes into a restore, where the OS
-/// already throttles, so slowing there ran almost the whole restore on fewer
-/// cores (about 1.8 times as long) and, on Android, kept about as many cores
-/// busy. Heat comes first: turning power saving off does not speed up a
-/// critical device.
+/// Why scans should run on fewer cores, if they should: full speed up to
+/// serious, slower at critical or in power saving. Three phones reached
+/// serious 1.5 to 7.5 minutes into a restore, where the OS already throttles,
+/// so slowing there ran almost the whole restore on fewer cores (about 1.8
+/// times as long) and, on Android, kept about as many cores busy. Heat comes
+/// first: turning power saving off does not speed up a critical device.
 SyncScanSlowdown? syncScanSlowdownFor(DevicePower power) {
   if (power.thermal >= 3) return SyncScanSlowdown.heat;
   if (power.lowPower) return SyncScanSlowdown.powerSaving;
@@ -72,7 +72,5 @@ SyncScanSlowdown? syncScanSlowdownFor(DevicePower power) {
 }
 
 /// How much of the CPU sync scans may use (`set_sync_scan_power`): 0 every
-/// core, 1 half the cores at a lower priority while [syncScanSlowdownFor]
-/// gives a reason.
-int syncScanPowerFor(DevicePower power) =>
-    syncScanSlowdownFor(power) == null ? 0 : 1;
+/// core, 1 half the cores at a lower priority while there is a [slowdown].
+int syncScanPowerFor(SyncScanSlowdown? slowdown) => slowdown == null ? 0 : 1;
