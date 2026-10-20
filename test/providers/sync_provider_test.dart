@@ -558,14 +558,37 @@ void main() {
       expect(resumableSyncJob(state).jobId, isEmpty);
     });
 
-    test('but not without the account balance', () async {
+    test('before the account balance loads', () async {
       final notifier = await unlockedNotifier(status: _completedSync);
+      notifier.gateFirstBalanceRead();
 
-      await notifier.refreshAfterUnlock();
+      final unlock = notifier.refreshAfterUnlock();
+      await notifier.firstBalanceReadStarted;
 
       final state = notifier.state.requireValue;
       expect(state.hasBalanceData, isFalse);
-      expect(state.isSyncComplete, isFalse);
+      expect(state.isSyncComplete, isTrue);
+      expect(state.chainTipHeight, 2000);
+      notifier.releaseFirstBalanceRead();
+      await unlock;
+    });
+
+    test('but an unfinished one stays unfinished', () async {
+      final notifier = await unlockedNotifier(
+        status: rust_sync.SyncProgress(
+          scannedHeight: BigInt.from(1000),
+          chainTipHeight: BigInt.from(2000),
+          isSyncing: false,
+          isComplete: false,
+          syncJobId: '',
+          syncJobFraction: 0,
+        ),
+      );
+      notifier.balance = _availableBalance(BigInt.from(100));
+
+      await notifier.refreshAfterUnlock();
+
+      expect(notifier.state.requireValue.isSyncComplete, isFalse);
     });
 
     test('and a failed read leaves the state for the sync to fill', () async {
@@ -602,8 +625,10 @@ void main() {
     container.listen(syncProvider, (_, _) {});
     await container.read(syncProvider.future);
 
-    final firstRefresh = notifier.refreshAfterUnlock();
-    final queuedRefresh = notifier.refreshAfterUnlock();
+    // Plain refreshes: an unlock reads the stored status first, which takes
+    // the first path resolution and keeps its failure to itself.
+    final firstRefresh = notifier.refreshAfterSend();
+    final queuedRefresh = notifier.refreshAfterSend();
     firstPathResolution.completeError(StateError('temporary path failure'));
 
     await expectLater(Future.wait([firstRefresh, queuedRefresh]), completes);

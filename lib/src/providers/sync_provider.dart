@@ -1301,6 +1301,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Callers of [_requestAccountDataRefresh] still waiting.
   List<Completer<void>> _accountDataWaiters = [];
 
+  /// Whether the state was cleared by a lock, or a locked launch skipped
+  /// the bootstrap snapshot, and the stored sync status has not been read
+  /// back since. A tip check reads it before starting a sync, so a sync the
+  /// unlock's resume starts still starts from a completed one.
+  bool _storedStatusRestoreNeeded = false;
+  Future<void>? _storedStatusRestore;
+
   @override
   Future<SyncState> build() async {
     final bootstrap = ref.watch(appBootstrapProvider);
@@ -1398,6 +1405,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     final initial = bootstrap.initialSyncSnapshot;
+    // A locked launch loads no snapshot; see [_storedStatusRestoreNeeded].
+    _storedStatusRestoreNeeded = initial.chainTipHeight == 0;
     final initialAccountUuid = accountState?.activeAccountUuid;
     final initialBelongsToActiveAccount =
         initial.accountUuid != null &&
@@ -2567,6 +2576,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
     _balanceRefreshQueuedRequireAuthoritativeBalance = false;
     _lastKnownByAccount.clear();
+    _storedStatusRestoreNeeded = true;
+    _storedStatusRestore = null;
     state = AsyncData(SyncState());
 
     // Sign-out should cancel the current Rust run immediately so unlock
@@ -2767,6 +2778,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _newBlockCheckPending = false;
     _stopPolling();
     try {
+      // After an unlock this can run before the unlock screen's refresh;
+      // start from the stored status, not the state the lock cleared.
+      if (_storedStatusRestoreNeeded) await _restoreStoredStatus();
       final tip = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .getLatestBlockHeight();
@@ -3495,12 +3509,22 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// then resumes from the fraction the last session showed instead of zero
   /// until its first event. A wallet whose last sync completed is complete
   /// again, as after a launch, so the sync that follows is its catch-up.
+  /// That cheap read comes first: a tip check the unlock's resume starts
+  /// waits for it too ([_storedStatusRestoreNeeded]), so its sync also
+  /// starts from the restored state.
   ///
   /// It waits for the account's balance and history, which Home needs, and
   /// not for the refreshes a running sync keeps queueing behind them.
   Future<void> refreshAfterUnlock() async {
+    await _restoreStoredStatus();
     await _requestAccountDataRefresh();
-    await _restoreStoredSyncJob();
+  }
+
+  /// [_restoreStoredSyncJob], once per lock: callers share the read in
+  /// flight, and a lock clears it for the next unlock.
+  Future<void> _restoreStoredStatus() {
+    if (_requiresUnlock) return Future<void>.value();
+    return _storedStatusRestore ??= _restoreStoredSyncJob();
   }
 
   Future<void> _restoreStoredSyncJob() async {
@@ -3514,13 +3538,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
     } catch (e) {
       log('SyncNotifier: stored sync job unavailable after unlock: $e');
+      if (epoch == _sensitiveStateEpoch) _storedStatusRestore = null;
       return;
     }
     if (epoch != _sensitiveStateEpoch || _requiresUnlock) return;
+    _storedStatusRestoreNeeded = false;
     final current = state.value ?? SyncState();
-    // Completion needs the account's balance, as bootstrap's does.
+    // Completion is wallet-wide. Balance surfaces and checks also require
+    // the account data, which the refresh after this read loads.
     if (status.isComplete &&
-        current.hasBalanceData &&
         current.failure == null &&
         current.syncJobId.isEmpty &&
         !current.isSyncing) {
@@ -3963,6 +3989,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       if (requireAuthoritativeBalance) {
         _balanceRefreshQueued = true;
         _balanceRefreshQueuedReleaseSnapshot = true;
+      } else if (_accountDataWaiters.isNotEmpty) {
+        // An unlock still waits for the account data this pass would have
+        // loaded (a sync started meanwhile superseded it).
+        _balanceRefreshQueued = true;
       }
       return;
     }
