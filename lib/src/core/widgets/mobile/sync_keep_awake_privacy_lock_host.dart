@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,11 +12,13 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_keep_awake_provider.dart';
+import '../../../providers/sync_scan_slowdown_provider.dart';
 import '../../../services/biometric_unlock.dart';
 import '../../feedback/app_haptics.dart';
 import '../../formatting/sync_status_label.dart';
 import '../../layout/app_form_factor.dart';
 import '../../layout/mobile/mobile_top_nav.dart';
+import '../../platform/device_power.dart';
 import '../../theme/app_theme.dart';
 import '../app_button.dart';
 import '../app_icon.dart';
@@ -186,6 +189,7 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerStatefulWidget {
   static const _doneStatusToButtonGap = 147.0;
   static const _minimumDoneStatusToButtonGap = 48.0;
   static const _bodyWidth = 130.0;
+  static const _slowdownWidth = 180.0;
   static const _doneBodyWidth = 200.0;
 
   @override
@@ -497,6 +501,7 @@ class _SyncKeepAwakeDisplayProgressLockup extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return _SyncKeepAwakeProgressLockup(
       progress: ref.watch(syncDisplayPercentageProvider),
+      slowdown: ref.watch(syncScanSlowdownProvider),
     );
   }
 }
@@ -789,11 +794,12 @@ class _SyncKeepAwakeStatusLockup extends StatelessWidget {
 }
 
 class _SyncKeepAwakeProgressLockup extends StatelessWidget {
-  const _SyncKeepAwakeProgressLockup({required this.progress});
+  const _SyncKeepAwakeProgressLockup({required this.progress, this.slowdown});
 
   static const _progressAnimationDuration = Duration(milliseconds: 420);
 
   final double progress;
+  final SyncScanSlowdown? slowdown;
 
   @override
   Widget build(BuildContext context) {
@@ -846,6 +852,25 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
                   ),
                 ),
               ),
+              if (slowdown case final slowdown?)
+                Positioned(
+                  top: 199,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: SizedBox(
+                      width: SyncKeepAwakePrivacyLockScreen._slowdownWidth,
+                      child: Text(
+                        _slowdownMessage(slowdown),
+                        key: const ValueKey('sync_keep_awake_privacy_slowdown'),
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           );
         },
@@ -853,6 +878,15 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
     );
   }
 }
+
+/// Why sync is slower, in the OS's own name for power saving.
+String _slowdownMessage(SyncScanSlowdown slowdown) => switch (slowdown) {
+  SyncScanSlowdown.heat => 'Slower while your phone cools down',
+  SyncScanSlowdown.powerSaving =>
+    defaultTargetPlatform == TargetPlatform.iOS
+        ? 'Slower in Low Power Mode'
+        : 'Slower in battery saver',
+};
 
 class _SyncKeepAwakeSegmentedRingPainter extends CustomPainter {
   const _SyncKeepAwakeSegmentedRingPainter({

@@ -16,6 +16,16 @@ void main() {
     expect(level(3, lowPower: true), 1);
   });
 
+  test('heat explains a slowdown before power saving does', () {
+    SyncScanSlowdown? slowdown(int thermal, {bool lowPower = false}) =>
+        syncScanSlowdownFor(DevicePower(thermal: thermal, lowPower: lowPower));
+
+    expect(slowdown(2), isNull);
+    expect(slowdown(2, lowPower: true), SyncScanSlowdown.powerSaving);
+    expect(slowdown(3), SyncScanSlowdown.heat);
+    expect(slowdown(3, lowPower: true), SyncScanSlowdown.heat);
+  });
+
   test('device power events need an int thermal state and a bool', () {
     expect(
       DevicePower.fromEvent({'thermal': 2, 'lowPower': true}),
