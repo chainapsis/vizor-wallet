@@ -22,6 +22,7 @@ typedef _SyncDisplayTarget = ({
   int phaseTotalUnits,
   String phase,
   DateTime? startedAt,
+  DateTime? completedAt,
   String jobId,
 });
 
@@ -39,6 +40,7 @@ _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
     phaseTotalUnits: sync.phaseTotalUnits,
     phase: sync.isChecking ? 'checking' : sync.phase,
     startedAt: sync.lastSyncStartedAt,
+    completedAt: sync.lastSyncCompletedAt,
     jobId: sync.syncJobId,
   );
 }
@@ -120,12 +122,19 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
   /// A job Rust replaced (different id) always restarts.
   bool _beginsNewSession(_SyncDisplayTarget input) {
     if (!input.isSyncing) return false;
-    final hasSession = _sessionJobId.isNotEmpty && !_sessionCompleted;
+    // A sync that completed after the session's attempt started ended its
+    // job, even when this notifier never saw the completed state.
+    final sessionStartedAt = _sessionStartedAt;
+    final sessionCompleted =
+        _sessionCompleted ||
+        (sessionStartedAt != null &&
+            (input.completedAt?.isAfter(sessionStartedAt) ?? false));
+    final hasSession = _sessionJobId.isNotEmpty && !sessionCompleted;
     final isNewAttempt =
         input.startedAt != null && input.startedAt != _sessionStartedAt;
     if (input.jobId.isNotEmpty && _sessionJobId.isNotEmpty) {
       if (input.jobId != _sessionJobId) return true;
-      return isNewAttempt && _sessionCompleted;
+      return isNewAttempt && sessionCompleted;
     }
     return isNewAttempt && !hasSession;
   }

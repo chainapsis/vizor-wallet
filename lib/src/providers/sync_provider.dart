@@ -1153,6 +1153,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _activeSyncStartedInForeground = true;
   int _lastLoggedHeight = 0;
   SyncProgressEvent? _lastForegroundSyncProgress;
+
+  /// When the last foreground stream delivered its completion, kept until the
+  /// next start so that start can tell the job finished.
+  DateTime? _lastForegroundCompletionAt;
   Future<void>? _lastForegroundProgressHandling;
   Future<void>? _foregroundSyncRecovery;
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
@@ -1656,7 +1660,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _activeSyncForegroundEpoch = _foregroundEpoch;
     _activeSyncStartedInForeground = _isInForeground;
     _lastLoggedHeight = 0;
+    // A completion the last stream delivered ends its job even when a stop, a
+    // lock or a newer event overtook its handler before the state recorded it,
+    // so this sync starts a new job instead of resuming the finished one.
+    final overtakenCompletionAt =
+        (_lastForegroundSyncProgress?.isComplete ?? false) &&
+            !(state.value?.isSyncComplete ?? false)
+        ? _lastForegroundCompletionAt
+        : null;
     _lastForegroundSyncProgress = null;
+    _lastForegroundCompletionAt = null;
     _lastForegroundProgressHandling = null;
     final gen = ++_syncGen;
     final prev = state.value;
@@ -1677,7 +1690,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       privatePolicyMayApply: _privatePolicyMayApply,
       crossesTip: nextChainTipHeight != previousChainTipHeight,
     );
-    final resumed = resumableSyncJob(prev);
+    final resumed = overtakenCompletionAt == null
+        ? resumableSyncJob(prev)
+        : (jobId: '', percentage: 0.0);
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
@@ -1748,7 +1763,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   scopedPrev.ironwoodPendingBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: startedAt,
-        lastSyncCompletedAt: prev?.lastSyncCompletedAt,
+        lastSyncCompletedAt: overtakenCompletionAt ?? prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
         phase: kSyncPhasePreflight,
       ),
@@ -1840,6 +1855,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 syncJobId: event.syncJobId,
               );
               _lastForegroundSyncProgress = progress;
+              if (progress.isComplete) {
+                _lastForegroundCompletionAt = DateTime.now();
+              }
               final handling = _onSyncProgress(progress);
               _lastForegroundProgressHandling = handling;
               unawaited(
