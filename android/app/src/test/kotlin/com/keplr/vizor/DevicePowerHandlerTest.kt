@@ -1,10 +1,11 @@
 package com.keplr.vizor
 
+import android.content.BroadcastReceiver
 import android.content.Context
-import android.os.Looper
+import android.content.Intent
+import android.os.Build
 import android.os.PowerManager
 import io.flutter.plugin.common.EventChannel
-import java.time.Duration
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -14,27 +15,23 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Mockito.*
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.annotation.LooperMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30, 33], manifest = Config.NONE)
-@LooperMode(LooperMode.Mode.PAUSED)
 class DevicePowerHandlerTest {
+    private lateinit var context: Context
     private lateinit var powerManager: PowerManager
     private lateinit var handler: DevicePowerHandler
     private val sent = mutableListOf<Map<*, *>>()
     private var status = PowerManager.THERMAL_STATUS_NONE
-    private var headroom = 0.5f
     private var lowPower = false
 
     @Before fun setUp() {
         powerManager = mock(PowerManager::class.java)
-        val context = mock(Context::class.java)
+        context = mock(Context::class.java)
         `when`(context.getSystemService(Context.POWER_SERVICE)).thenReturn(powerManager)
         `when`(powerManager.currentThermalStatus).thenAnswer { status }
-        `when`(powerManager.getThermalHeadroom(anyInt())).thenAnswer { headroom }
         `when`(powerManager.isPowerSaveMode).thenAnswer { lowPower }
         handler = DevicePowerHandler(context)
     }
@@ -45,88 +42,64 @@ class DevicePowerHandlerTest {
         handler.onListen(null, sink)
     }
 
-    private fun advance(seconds: Long) {
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(seconds))
+    private fun thermalListener(): PowerManager.OnThermalStatusChangedListener {
+        val listener = ArgumentCaptor.forClass(PowerManager.OnThermalStatusChangedListener::class.java)
+        verify(powerManager).addThermalStatusListener(any(), listener.capture())
+        return listener.value
     }
 
-    private fun thermal() = sent.last()["thermal"]
+    private fun powerSaveReceiver(): BroadcastReceiver {
+        val receiver = ArgumentCaptor.forClass(BroadcastReceiver::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            verify(context).registerReceiver(receiver.capture(), any(), anyInt())
+        } else {
+            verify(context).registerReceiver(receiver.capture(), any())
+        }
+        return receiver.value
+    }
 
-    @Test fun headroomWarmsTheStateWhileTheStatusStaysNone() {
+    @Test fun mapsTheThermalStatusOntoTheIosScale() {
         listen()
         assertEquals(mapOf("thermal" to 0, "lowPower" to false), sent.single())
 
-        headroom = 0.9f
-        advance(10)
-        assertEquals(1, thermal())
-
-        // 1.0 is the severe threshold; headroom never reports critical.
-        headroom = 1.4f
-        advance(10)
-        assertEquals(2, thermal())
-
-        headroom = 0.4f
-        advance(10)
-        assertEquals(0, thermal())
+        val listener = thermalListener()
+        for ((next, expected) in listOf(
+            PowerManager.THERMAL_STATUS_LIGHT to 1,
+            PowerManager.THERMAL_STATUS_MODERATE to 1,
+            PowerManager.THERMAL_STATUS_SEVERE to 2,
+            PowerManager.THERMAL_STATUS_CRITICAL to 3,
+            PowerManager.THERMAL_STATUS_EMERGENCY to 3,
+            PowerManager.THERMAL_STATUS_SHUTDOWN to 3,
+            PowerManager.THERMAL_STATUS_NONE to 0,
+        )) {
+            status = next
+            listener.onThermalStatusChanged(next)
+            assertEquals(expected, sent.last()["thermal"])
+        }
     }
 
-    @Test fun theWarmerOfStatusAndHeadroomWins() {
-        status = PowerManager.THERMAL_STATUS_LIGHT
-        headroom = 1.02f
+    @Test fun sendsPowerSavingChangesOnly() {
         listen()
-        assertEquals(2, thermal())
+        val receiver = powerSaveReceiver()
+        val intent = Intent(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
 
-        status = PowerManager.THERMAL_STATUS_CRITICAL
-        advance(10)
-        assertEquals(3, thermal())
-
-        status = PowerManager.THERMAL_STATUS_SEVERE
-        headroom = 0.2f
-        advance(10)
-        assertEquals(2, thermal())
-    }
-
-    @Test fun anUnreadableHeadroomLeavesTheStatus() {
-        status = PowerManager.THERMAL_STATUS_MODERATE
-        headroom = Float.NaN
-        listen()
-        assertEquals(1, thermal())
-    }
-
-    @Test fun statusChangesReuseTheLastHeadroomReading() {
-        headroom = 0.9f
-        listen()
-        val listener = ArgumentCaptor.forClass(PowerManager.OnThermalStatusChangedListener::class.java)
-        verify(powerManager).addThermalStatusListener(any(), listener.capture())
-
-        // A second read this soon would return NaN on a device.
-        headroom = Float.NaN
-        status = PowerManager.THERMAL_STATUS_SEVERE
-        listener.value.onThermalStatusChanged(status)
-        assertEquals(2, thermal())
-        status = PowerManager.THERMAL_STATUS_NONE
-        listener.value.onThermalStatusChanged(status)
-        assertEquals(1, thermal())
-        verify(powerManager, times(1)).getThermalHeadroom(anyInt())
-    }
-
-    @Test fun pollsEveryTenSecondsAndSendsOnlyChanges() {
-        listen()
-        advance(30)
-        verify(powerManager, times(4)).getThermalHeadroom(0)
+        receiver.onReceive(context, intent)
         assertEquals(1, sent.size)
 
         lowPower = true
-        advance(10)
+        receiver.onReceive(context, intent)
         assertEquals(mapOf("thermal" to 0, "lowPower" to true), sent.last())
         assertEquals(2, sent.size)
     }
 
-    @Test fun cancellingStopsThePoll() {
+    @Test fun cancellingUnregistersOnce() {
         listen()
+        val listener = thermalListener()
+        val receiver = powerSaveReceiver()
+
         handler.onCancel(null)
-        headroom = 1.2f
-        advance(30)
-        verify(powerManager, times(1)).getThermalHeadroom(anyInt())
-        assertEquals(1, sent.size)
+        handler.onCancel(null)
+        verify(powerManager, times(1)).removeThermalStatusListener(listener)
+        verify(context, times(1)).unregisterReceiver(receiver)
     }
 }
