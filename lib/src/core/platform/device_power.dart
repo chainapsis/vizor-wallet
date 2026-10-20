@@ -51,11 +51,12 @@ Stream<DevicePower> devicePowerEvents() {
 }
 
 /// How much of the CPU sync scans may use (`set_sync_scan_power`): 0 every
-/// core, 1 half the cores at a lower priority. Full speed while the device is
-/// nominal or fair, the efficiency cores in power saving or when the OS says
-/// it is hot. Fair keeps full speed because a long scan can reach it early,
-/// and a restore spent mostly at level 1 would take about 1.8 times as long.
+/// core, 1 half the cores at a lower priority. Full speed up to serious, the
+/// efficiency cores at critical or in power saving. Three phones reached
+/// serious 1.5 to 7.5 minutes into a restore, where the OS already throttles,
+/// so lowering there ran almost the whole restore at level 1 (about 1.8 times
+/// as long) and, on Android, kept about as many cores busy.
 int syncScanPowerFor(DevicePower power) {
-  if (power.thermal >= 2 || power.lowPower) return 1;
+  if (power.thermal >= 3 || power.lowPower) return 1;
   return 0;
 }
