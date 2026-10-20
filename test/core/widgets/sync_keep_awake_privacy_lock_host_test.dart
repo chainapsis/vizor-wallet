@@ -910,15 +910,15 @@ void main() {
       expect(
         find.text(
           defaultTargetPlatform == TargetPlatform.iOS
-              ? 'Slower in Low Power Mode'
-              : 'Slower in battery saver',
+              ? 'Turn off Low Power Mode to sync faster'
+              : 'Turn off power saving to sync faster',
         ),
         findsOneWidget,
       );
 
       notifier.updateDevicePower(SyncScanSlowdown.heat);
       await tester.pump();
-      expect(find.text('Slower while your phone cools down'), findsOneWidget);
+      expect(find.text('Slowed down so your phone can cool'), findsOneWidget);
       expect(find.text('Vizor is syncing'), findsOneWidget);
 
       notifier.updateDevicePower(null);

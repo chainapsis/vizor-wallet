@@ -879,13 +879,15 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
   }
 }
 
-/// Why sync is slower, in the OS's own name for power saving.
+/// Why sync is slower. Power saving says how to speed up again, naming Low
+/// Power Mode on iOS and power saving in general on Android, whose setting
+/// name varies by maker (Battery Saver, Power saving).
 String _slowdownMessage(SyncScanSlowdown slowdown) => switch (slowdown) {
-  SyncScanSlowdown.heat => 'Slower while your phone cools down',
+  SyncScanSlowdown.heat => 'Slowed down so your phone can cool',
   SyncScanSlowdown.powerSaving =>
     defaultTargetPlatform == TargetPlatform.iOS
-        ? 'Slower in Low Power Mode'
-        : 'Slower in battery saver',
+        ? 'Turn off Low Power Mode to sync faster'
+        : 'Turn off power saving to sync faster',
 };
 
 class _SyncKeepAwakeSegmentedRingPainter extends CustomPainter {
