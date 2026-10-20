@@ -32,31 +32,18 @@ use crate::wallet::db::{
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::tree_states::mainnet_tree_sizes;
 
-// Relative scan cost of each unit; only the ratios matter. Desktop: seconds on
-// a desktop mainnet benchmark.
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const WORK_PER_BLOCK: f64 = 0.37e-3;
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const WORK_PER_SAPLING_OUTPUT: f64 = 21e-6;
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const WORK_PER_ORCHARD_ACTION: f64 = 40e-6;
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const WORK_PER_BATCH: f64 = 0.25;
-// Mobile: fitted to the time each batch took in full restores from Sapling
-// activation on a Galaxy A53 and an iPhone 16 Pro, and checked on an iPhone
-// 12 mini and a two-account restore on the A53. With the desktop weights the
-// bar ran 8 to 13 points ahead of the time early in a restore, as the spam
-// window took 76 to 83% of the time and 64 to 68% of the work; with these, no run
-// strayed more than 5 points. A phone's 1,000-block batches cost about the
-// same whether their blocks are empty or not, so blocks add nothing beyond
-// their batches.
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+// Relative scan cost of each unit; only the ratios matter. Fitted to the time
+// each batch took in full restores from Sapling activation on a Galaxy A53 and
+// an iPhone 16 Pro, and checked on an iPhone 12 mini, a two-account restore on
+// the A53 and the desktop app. The earlier weights, from a desktop benchmark,
+// ran the bar 8 to 13 points ahead of the time early in a phone restore, as the
+// spam window took 76 to 83% of the time and 64 to 68% of the work; with these,
+// no phone run strayed more than 5 points, and the desktop app reached half the
+// time at 51% (52% before). A batch costs about the same whether its blocks are
+// empty or not, so blocks add nothing beyond their batches.
 const WORK_PER_BLOCK: f64 = 0.0;
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const WORK_PER_SAPLING_OUTPUT: f64 = 21e-6;
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const WORK_PER_ORCHARD_ACTION: f64 = 54e-6;
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const WORK_PER_BATCH: f64 = 0.15;
 
 // Compact-block bytes on the wire per output: field bytes plus protobuf
