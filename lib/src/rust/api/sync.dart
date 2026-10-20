@@ -20,10 +20,10 @@ void setSyncMode({required int mode}) =>
 int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
 
 /// Set how much of the device sync scans may use, from the device's thermal
-/// state and power mode: 0 scans on every core at the default priority, 1 on
-/// half the cores at a lower priority (the efficiency cores on Apple devices),
-/// 2 on the fewest threads at background priority. A running sync applies it
-/// from its next batch; later syncs start with it.
+/// state and power mode: 0 scans on every core at the default priority, 1 (or
+/// any other value) on half the cores at a lower priority (the efficiency
+/// cores on Apple devices). A running sync applies it from its next batch;
+/// later syncs start with it.
 void setSyncScanPower({required int level}) =>
     RustLib.instance.api.crateApiSyncSetSyncScanPower(level: level);
 
