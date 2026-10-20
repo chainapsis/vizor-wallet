@@ -237,10 +237,11 @@ version = "=0.7.0"
 default-features = false
 features = ["zakura"]
 
-# The wallet backend from a fork of zakura-core/wallet-libraries at d08e55d, the
-# source of the crates.io releases above, plus the reviewed commits of the fork's
-# pull requests #3 and #4 and the commit of its pull request #5. #3 and #4 make
-# history scans cheaper in `put_blocks`:
+# The wallet backend and SQLite store from a fork of zakura-core/wallet-libraries
+# at d08e55d, the source of the crates.io releases above, plus the reviewed
+# commits of the fork's pull requests #3, #4 and #5 (zakura-core/wallet-libraries
+# #276, #277 and #278) and the scan progress change proposed after them. #3 and
+# #4 make history scans cheaper in `put_blocks`:
 # checkpoints that would be pruned at once are not
 # added, and note-free shards already stored as their downloaded roots are not
 # rebuilt, apart from a random sample whose stored roots are checked. A tree a
@@ -248,14 +249,18 @@ features = ["zakura"]
 # `max_checkpoints` checkpoints instead of gaining one at every height. #5 splits
 # `scan_cached_blocks` into `decrypt_cached_blocks` and `scan_decrypted_blocks`,
 # so that the sync engine can start a batch's trial decryption while the
-# previous batch is written.
+# previous batch is written, and checks each block against the decryption it
+# reuses. The SQLite store computes `get_wallet_summary`'s scan progress without
+# looking up every scanned block in the scan queue, which took about a second on
+# a desktop for a wallet restored from Sapling activation.
 # `zakura-pczt`, `zakura-pir-enhance-types` and `zakura-one-time-ivk` come from
 # the same revision so the backend links against one copy of each.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "a833101db4e8dacfd7fae03b5f9782ca4540f727" }
-zakura-pczt = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "a833101db4e8dacfd7fae03b5f9782ca4540f727" }
-zakura-one-time-ivk = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "a833101db4e8dacfd7fae03b5f9782ca4540f727" }
-zakura-pir-enhance-types = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "a833101db4e8dacfd7fae03b5f9782ca4540f727" }
+zakura-client-backend = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "441f5494350fa94ea45a9a6ae9288c478823380c" }
+zakura-pczt = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "441f5494350fa94ea45a9a6ae9288c478823380c" }
+zakura-one-time-ivk = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "441f5494350fa94ea45a9a6ae9288c478823380c" }
+zakura-pir-enhance-types = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "441f5494350fa94ea45a9a6ae9288c478823380c" }
+zakura-client-sqlite = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "441f5494350fa94ea45a9a6ae9288c478823380c" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
