@@ -169,6 +169,10 @@ final syncKeepAwakeActiveProvider = Provider<bool>((ref) {
   final settings = ref.watch(syncKeepAwakeProvider);
   final sync = ref.watch(syncProvider).asData?.value;
   if (sync == null) return false;
+  // A synced wallet's short catch-up runs on each new block; it keeps
+  // neither the screen nor the privacy lock up. Past its limits, or for a
+  // restore or a wallet that never completed, the usual rule applies.
+  if (ref.watch(syncShortCatchUpProvider)) return false;
   return shouldKeepScreenAwakeForSync(settings: settings, sync: sync);
 });
 

@@ -381,6 +381,72 @@ void main() {
     expect(container.read(syncKeepAwakeActiveProvider), isFalse);
   });
 
+  test('screen keep-awake stays off for a synced wallet\'s short catch-up, '
+      'and comes on past it or for a sync that is not a catch-up', () async {
+    const settings = SyncKeepAwakeSettings(enabled: true, promptSeen: true);
+    final startedAt = DateTime.now();
+    // A catch-up preparing, before its scan queue is known.
+    final catchUp = _sync(
+      percentage: 0,
+      scannedHeight: 200,
+      chainTipHeight: 204,
+      lastSyncStartedAt: startedAt,
+      phase: kSyncPhasePreflight,
+      scanWorkKnown: false,
+      startedFromCompletedSync: true,
+    );
+    final syncNotifier = FakeSyncNotifier(catchUp);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrap(
+            syncKeepAwakeEnabled: true,
+            syncKeepAwakePromptSeen: true,
+            isPasswordConfigured: true,
+            isUnlocked: true,
+          ),
+        ),
+        syncProvider.overrideWith(() => syncNotifier),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(syncProvider.future);
+
+    // The per-state rule alone keeps unknown scan work awake.
+    expect(
+      shouldKeepScreenAwakeForSync(settings: settings, sync: catchUp),
+      isTrue,
+    );
+    expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+
+    // Past 1,000 blocks, the catch-up keeps the screen awake.
+    syncNotifier.emit(
+      _sync(
+        percentage: 0.1,
+        scannedHeight: 200,
+        chainTipHeight: 5200,
+        lastSyncStartedAt: startedAt,
+        phase: 'scan',
+        startedFromCompletedSync: true,
+      ),
+    );
+    expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+
+    // A sync that did not start from a completed one (a restore, a wallet
+    // that never completed) keeps it awake from the start.
+    syncNotifier.emit(
+      _sync(
+        percentage: 0,
+        scannedHeight: 200,
+        chainTipHeight: 204,
+        lastSyncStartedAt: startedAt.add(const Duration(seconds: 1)),
+        phase: kSyncPhasePreflight,
+        scanWorkKnown: false,
+      ),
+    );
+    expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+  });
+
   test('privacy lock mode shows done after a locked sync completes', () async {
     final syncNotifier = FakeSyncNotifier(
       _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
