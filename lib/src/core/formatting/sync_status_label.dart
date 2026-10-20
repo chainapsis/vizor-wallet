@@ -59,7 +59,13 @@ class SyncStatusLabel {
           semanticsLabel: kSyncStatusTorFailedSemanticsLabel,
         );
       }
-      if (syncIsWaitingOnTor(networkPrivacy, sync)) {
+      // Over a connected route, a short catch-up's wait for its first answer
+      // is part of the catch-up; only a bootstrap reads as connecting.
+      final shortCatchUpOverConnectedTor =
+          shortCatchUp &&
+          networkPrivacy.status == NetworkPrivacyConnectionStatus.connected;
+      if (syncIsWaitingOnTor(networkPrivacy, sync) &&
+          !shortCatchUpOverConnectedTor) {
         return const SyncStatusLabel(
           kind: SyncStatusKind.syncing,
           label: kSyncStatusConnectingToTorLabel,

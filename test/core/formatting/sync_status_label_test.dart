@@ -101,7 +101,8 @@ void main() {
     expect(status.semanticsLabel, 'Syncing');
   });
 
-  test('checking, failures and Tor keep their labels in a short catch-up', () {
+  test('checking, failures and Tor failures keep their labels in a short '
+      'catch-up', () {
     final checking = SyncState(
       isSyncing: true,
       percentage: 1,
@@ -125,19 +126,45 @@ void main() {
     );
     expect(
       SyncStatusLabel.from(
-        SyncState(isSyncing: true, phase: kSyncPhasePreflight),
-        networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
-        shortCatchUp: true,
-      ).label,
-      kSyncStatusConnectingToTorLabel,
-    );
-    expect(
-      SyncStatusLabel.from(
         SyncState(isSyncing: true, phase: 'scan'),
         networkPrivacy: _tor(NetworkPrivacyConnectionStatus.failed),
         shortCatchUp: true,
       ).label,
       kSyncStatusTorFailedLabel,
+    );
+  });
+
+  test('a short catch-up over a connected Tor route does not flash '
+      'connecting', () {
+    final preflight = SyncState(
+      isSyncing: true,
+      phase: kSyncPhasePreflight,
+      startedFromCompletedSync: true,
+    );
+    expect(
+      SyncStatusLabel.from(
+        preflight,
+        networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
+      ).label,
+      kSyncStatusConnectingToTorLabel,
+    );
+
+    final status = SyncStatusLabel.from(
+      preflight,
+      networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
+      shortCatchUp: true,
+    );
+    expect(status.label, kSyncStatusCatchingUpLabel);
+    expect(status.semanticsLabel, kSyncStatusCatchingUpSemanticsLabel);
+
+    // A Tor route still coming up reads as connecting.
+    expect(
+      SyncStatusLabel.from(
+        preflight,
+        networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connecting),
+        shortCatchUp: true,
+      ).label,
+      kSyncStatusConnectingToTorLabel,
     );
   });
 
