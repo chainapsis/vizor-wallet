@@ -3,8 +3,9 @@ import 'package:zcash_wallet/src/core/platform/device_power.dart';
 
 void main() {
   test('scan power follows the thermal state and power saving', () {
-    int level(int thermal, {bool lowPower = false}) =>
-        syncScanPowerFor(DevicePower(thermal: thermal, lowPower: lowPower));
+    int level(int thermal, {bool lowPower = false}) => syncScanPowerFor(
+      syncScanSlowdownFor(DevicePower(thermal: thermal, lowPower: lowPower)),
+    );
 
     expect(level(0), 0);
     expect(level(0, lowPower: true), 1);

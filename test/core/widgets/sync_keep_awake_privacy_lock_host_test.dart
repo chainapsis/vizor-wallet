@@ -903,9 +903,10 @@ void main() {
       final container = ProviderScope.containerOf(
         tester.element(find.byType(SyncKeepAwakePrivacyLockScreen)),
       );
-      final notifier = container.read(syncScanSlowdownProvider.notifier);
-      notifier.update(SyncScanSlowdown.powerSaving);
-      await tester.pump();
+      final notifier = container.read(syncScanSlowdownProvider.notifier)
+        ..updateSyncJob('job', complete: false)
+        ..updateDevicePower(SyncScanSlowdown.powerSaving);
+      await tester.pump(kSyncScanSlowdownAfter);
       expect(
         find.text(
           defaultTargetPlatform == TargetPlatform.iOS
@@ -915,12 +916,12 @@ void main() {
         findsOneWidget,
       );
 
-      notifier.update(SyncScanSlowdown.heat);
+      notifier.updateDevicePower(SyncScanSlowdown.heat);
       await tester.pump();
       expect(find.text('Slower while your phone cools down'), findsOneWidget);
       expect(find.text('Vizor is syncing'), findsOneWidget);
 
-      notifier.update(null);
+      notifier.updateDevicePower(null);
       await tester.pump();
       expect(slowdown, findsNothing);
     },
