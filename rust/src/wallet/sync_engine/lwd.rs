@@ -19,6 +19,8 @@ use std::{future::Future, time::Duration};
 use futures::{Stream, StreamExt};
 use http::Uri;
 use hyper_util::client::legacy::connect::HttpConnector;
+use incrementalmerkletree::Address;
+use shardtree::{error::ShardTreeError, store::ShardStore};
 use tonic::{
     transport::{Channel, ClientTlsConfig, Endpoint},
     Request, Response, Status,
@@ -33,6 +35,7 @@ use zcash_client_backend::{
         SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
+use zcash_client_sqlite::wallet::commitment_tree;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
@@ -647,11 +650,62 @@ pub(crate) async fn next_stream_message<T>(
     await_stream_message(label, LIGHTWALLETD_STREAM_IDLE_TIMEOUT, stream.message()).await
 }
 
+/// The subtree index a root download starts from, given the stored shard
+/// roots in index order. The last shard is incomplete and the next range
+/// should overlap the last complete one, so this is the second-to-last
+/// root's index, or 0 with fewer than two roots. It is the rule
+/// `zcash_client_sqlite` uses for `WalletSummary::next_*_subtree_index`.
+fn next_subtree_index(roots: &[Address]) -> u64 {
+    roots.iter().rev().nth(1).map_or(0, |addr| addr.index())
+}
+
+/// The Sapling, Orchard and Ironwood start indices for
+/// [`download_subtree_roots`], read from the stored shard roots: the values
+/// of the wallet summary's `next_*_subtree_index` without the summary's
+/// balance and scan-progress queries. Ironwood is read only when `ironwood`
+/// is set and is 0 otherwise.
+pub(super) fn next_subtree_indices(
+    db: &mut WalletDatabase,
+    ironwood: bool,
+) -> Result<(u64, u64, u64), SyncError> {
+    type TreeError = ShardTreeError<commitment_tree::Error>;
+    let sapling = db
+        .with_sapling_tree_mut::<_, _, TreeError>(|tree| {
+            tree.store()
+                .get_shard_roots()
+                .map_err(ShardTreeError::Storage)
+        })
+        .map_err(|e| SyncError::db(format!("sapling shard roots: {e}")))?;
+    let orchard = db
+        .with_orchard_tree_mut::<_, _, TreeError>(|tree| {
+            tree.store()
+                .get_shard_roots()
+                .map_err(ShardTreeError::Storage)
+        })
+        .map_err(|e| SyncError::db(format!("orchard shard roots: {e}")))?;
+    let ironwood = if ironwood {
+        db.with_ironwood_tree_mut::<_, _, TreeError>(|tree| {
+            tree.store()
+                .get_shard_roots()
+                .map_err(ShardTreeError::Storage)
+        })
+        .map_err(|e| SyncError::db(format!("ironwood shard roots: {e}")))?
+        .map_or(0, |roots| next_subtree_index(&roots))
+    } else {
+        0
+    };
+    Ok((
+        next_subtree_index(&sapling),
+        next_subtree_index(&orchard),
+        ironwood,
+    ))
+}
+
 /// Pulls the latest shielded subtree roots from lightwalletd
 /// and writes them into `db` via `put_*_subtree_roots`. The starting
-/// index for each protocol comes from `db`'s wallet summary, so a
-/// follow-up sync only fetches roots for subtrees the wallet has not
-/// seen yet.
+/// index for each protocol comes from the shard roots already stored in
+/// `db` ([`next_subtree_indices`]), so a follow-up sync only fetches
+/// roots for subtrees the wallet has not seen yet.
 ///
 /// Every byte slice from the wire is length-checked: a subtree root
 /// is exactly 32 bytes, and a short or long payload is rejected as a
@@ -661,24 +715,11 @@ pub(crate) async fn next_stream_message<T>(
 pub(super) async fn download_subtree_roots(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
-    db_path: &str,
     network: WalletNetwork,
     chain_tip: BlockHeight,
 ) -> Result<(), SyncError> {
     let ironwood_enabled = ironwood_sync_enabled(network, chain_tip);
-    let (sap_start, orch_start, ironwood_start) = {
-        let summary =
-            crate::wallet::wallet_summary_cache::get_wallet_summary_cached(db_path, network)
-                .map_err(SyncError::db)?;
-        match summary {
-            Some(s) => (
-                s.next_sapling_subtree_index(),
-                s.next_orchard_subtree_index(),
-                s.next_ironwood_subtree_index(),
-            ),
-            None => (0, 0, 0),
-        }
-    };
+    let (sap_start, orch_start, ironwood_start) = next_subtree_indices(db, ironwood_enabled)?;
     if ironwood_enabled {
         log::info!(
             "[{}] sync: subtree roots start: sapling={}, orchard={}, ironwood={}",
@@ -1347,6 +1388,116 @@ mod tests {
         assert!(
             matches!(timeout_error, SyncError::Network(message) if message.contains("timed out"))
         );
+    }
+
+    fn shard_roots(indices: &[u64]) -> Vec<Address> {
+        indices
+            .iter()
+            .map(|&index| Address::from_parts(incrementalmerkletree::Level::new(16), index))
+            .collect()
+    }
+
+    #[test]
+    fn next_subtree_index_is_the_second_to_last_shard_root() {
+        assert_eq!(next_subtree_index(&[]), 0);
+        assert_eq!(next_subtree_index(&shard_roots(&[0])), 0);
+        assert_eq!(next_subtree_index(&shard_roots(&[7])), 0);
+        assert_eq!(next_subtree_index(&shard_roots(&[0, 1])), 0);
+        assert_eq!(next_subtree_index(&shard_roots(&[0, 1, 2])), 1);
+        // The index is the stored address, not the position in the list.
+        assert_eq!(next_subtree_index(&shard_roots(&[4, 9, 12])), 9);
+    }
+
+    const ROOTS_BIRTHDAY: u32 = 2_000_000;
+
+    /// A wallet with one account and `counts` (Sapling, Orchard, Ironwood)
+    /// downloaded subtree roots, the last completed after the birthday.
+    fn wallet_with_roots(counts: (u32, u32, u32)) -> (tempfile::TempDir, WalletDatabase) {
+        use incrementalmerkletree::{Hashable, Level};
+        use orchard::tree::MerkleHashOrchard;
+        use zcash_client_backend::data_api::WalletWrite;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_string();
+        let network = WalletNetwork::Main;
+        let seed = crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic())
+            .unwrap();
+        crate::wallet::keys::init_db_and_create_account(
+            &path,
+            network,
+            &seed,
+            Some(u64::from(ROOTS_BIRTHDAY)),
+            "roots",
+        )
+        .unwrap();
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            &path,
+            network,
+            crate::wallet::db::SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(ROOTS_BIRTHDAY + 100))
+            .unwrap();
+
+        // Distinct hashes (stored root hashes are unique), completed every 10
+        // blocks, the last one 5 blocks after the birthday.
+        fn roots<H: Hashable>(count: u32) -> Vec<CommitmentTreeRoot<H>> {
+            (0..count)
+                .map(|i| {
+                    let end = ROOTS_BIRTHDAY + 5 + 10 * i - 10 * (count - 1);
+                    let hash = H::empty_root(Level::new(i as u8));
+                    CommitmentTreeRoot::from_parts(BlockHeight::from_u32(end), hash)
+                })
+                .collect()
+        }
+        let (sapling, orchard, ironwood) = counts;
+        db.put_sapling_subtree_roots(0, &roots::<sapling_crypto::Node>(sapling))
+            .unwrap();
+        db.put_orchard_subtree_roots(0, &roots::<MerkleHashOrchard>(orchard))
+            .unwrap();
+        db.put_ironwood_subtree_roots(0, &roots::<MerkleHashOrchard>(ironwood))
+            .unwrap();
+        (dir, db)
+    }
+
+    #[test]
+    fn next_subtree_indices_match_the_wallet_summary() {
+        use zcash_client_backend::data_api::WalletRead;
+
+        for (counts, expected) in [
+            ((0, 0, 0), (0, 0, 0)),
+            ((1, 1, 1), (0, 0, 0)),
+            ((2, 1, 0), (0, 0, 0)),
+            ((5, 3, 4), (3, 1, 2)),
+        ] {
+            let (_dir, mut db) = wallet_with_roots(counts);
+            let summary = db
+                .get_wallet_summary(crate::wallet::confirmations_policy())
+                .unwrap();
+            // Without roots there is no progress estimate and so no summary;
+            // downloads then started from 0.
+            assert_eq!(summary.is_some(), counts != (0, 0, 0), "{counts:?}");
+            assert_eq!(
+                summary.map_or((0, 0, 0), |s| (
+                    s.next_sapling_subtree_index(),
+                    s.next_orchard_subtree_index(),
+                    s.next_ironwood_subtree_index(),
+                )),
+                expected,
+                "summary for {counts:?}",
+            );
+            assert_eq!(
+                next_subtree_indices(&mut db, true).unwrap(),
+                expected,
+                "{counts:?}"
+            );
+            // Before Ironwood activation its tree is not read.
+            assert_eq!(
+                next_subtree_indices(&mut db, false).unwrap(),
+                (expected.0, expected.1, 0),
+                "{counts:?}",
+            );
+        }
     }
 }
 
