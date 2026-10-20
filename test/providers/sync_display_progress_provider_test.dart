@@ -454,6 +454,56 @@ void main() {
       expect(container.read(syncDisplayPercentageProvider), 0);
     });
 
+    test(
+      'a new attempt after a completion it never saw starts from zero',
+      () async {
+        final (container, sync) = await start(
+          scanState(percentage: 1, jobId: 'job-a'),
+        );
+        expect(
+          container.read(syncDisplayPercentageProvider),
+          closeTo(0.99, 0.001),
+        );
+
+        // The job completed after its attempt started, but its completed state
+        // was overtaken before this notifier saw it.
+        sync.emit(
+          SyncState(
+            isSyncing: true,
+            phase: kSyncPhasePreflight,
+            lastSyncStartedAt: secondStartedAt,
+            lastSyncCompletedAt: firstStartedAt.add(
+              const Duration(seconds: 30),
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(container.read(syncDisplayPercentageProvider), 0);
+      },
+    );
+
+    test('a completion from before the attempt still holds its job', () async {
+      final (container, sync) = await start(
+        scanState(percentage: 0.5, jobId: 'job-a'),
+      );
+
+      sync.emit(
+        SyncState(
+          isSyncing: true,
+          phase: kSyncPhasePreflight,
+          lastSyncStartedAt: secondStartedAt,
+          lastSyncCompletedAt: firstStartedAt.subtract(
+            const Duration(minutes: 5),
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(syncDisplayPercentageProvider),
+        closeTo(0.52, 0.001),
+      );
+    });
+
     test('a sync after a completed job starts from zero', () async {
       final (container, sync) = await start(
         scanState(percentage: 0.5, jobId: 'job-a'),
