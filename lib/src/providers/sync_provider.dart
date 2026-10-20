@@ -1199,7 +1199,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   DateTime? _lastNewBlockCheckAt;
   int _sensitiveStateEpoch = 0;
   int _progressEventVersion = 0;
+
+  /// Bumped when an account-data read in flight can no longer be committed:
+  /// an account switch, a lock, a wallet mutation, a stop, a transport
+  /// change, disposal. A sync start is not one: the wallet data a read
+  /// returns does not change when a sync starts, and a read that spans the
+  /// start is carried like the start's own state (see [_refreshBalance]).
   int _balanceReadVersion = 0;
+
+  /// Order of account-data reads. A read whose data a later-started read
+  /// has already committed is older than the state and is dropped.
+  int _balanceReadSequence = 0;
+  int _committedBalanceReadSequence = 0;
   int _authoritativeBalanceVersion = 0;
   Future<void>? _authoritativeBalanceRecovery;
   int _authoritativeSpendableOperationCount = 0;
@@ -1689,7 +1700,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     _queuedSyncStart = null;
     ++_progressEventVersion;
-    ++_balanceReadVersion;
     _authoritativeBalanceRecovery = null;
     _isSyncing = true;
     _activeSyncForegroundEpoch = _foregroundEpoch;
@@ -3111,10 +3121,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     var hasAuthoritativeBalance = false;
     var didFetchRecentTxs = false;
     int? balanceReadVersion;
+    int? balanceReadSequence;
     var recentTxs =
         scopedPrev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     if (event.hasNewTx || event.isComplete) {
-      balanceReadVersion = ++_balanceReadVersion;
+      balanceReadVersion = _balanceReadVersion;
+      balanceReadSequence = ++_balanceReadSequence;
       try {
         final balance = await rust_sync.getBalance(
           dbPath: dbPath,
@@ -3184,7 +3196,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final stateAccountUuid = _getActiveAccountUuid();
     final useFetchedAccountData = accountUuid == stateAccountUuid;
     final balanceReadIsCurrent =
-        balanceReadVersion == null || balanceReadVersion == _balanceReadVersion;
+        balanceReadSequence == null ||
+        (balanceReadVersion == _balanceReadVersion &&
+            balanceReadSequence > _committedBalanceReadSequence);
     final useFetchedBalance =
         useFetchedAccountData &&
         hasAuthoritativeBalance &&
@@ -3198,6 +3212,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         currentState?.failure != null &&
         (!identical(currentState?.failure, prev?.failure) ||
             currentState?.lastSyncFailedAt != prev?.lastSyncFailedAt);
+    if (useFetchedBalance || useFetchedRecentTxs) {
+      _markBalanceReadCommitted(balanceReadSequence);
+    }
     if (progressEventVersion != _progressEventVersion ||
         failureRecordedWhileAwaiting) {
       _mergeFetchedAccountDataIntoLatestState(
@@ -3439,6 +3456,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       if (!useFetchedBalance) {
         unawaited(_ensureAuthoritativeBalanceRecovery());
       }
+    }
+  }
+
+  void _markBalanceReadCommitted(int? sequence) {
+    if (sequence != null && sequence > _committedBalanceReadSequence) {
+      _committedBalanceReadSequence = sequence;
     }
   }
 
@@ -3860,9 +3883,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       state = AsyncData(SyncState());
       return;
     }
-    final balanceReadVersion = ++_balanceReadVersion;
+    final balanceReadVersion = _balanceReadVersion;
+    final balanceReadSequence = ++_balanceReadSequence;
     final epoch = _sensitiveStateEpoch;
     final prev = state.value;
+    final readSyncStartedAt = prev?.lastSyncStartedAt;
+    final readTipHeight = prev?.chainTipHeight ?? 0;
     final dbPath = await _getDbPath();
     final network = _endpointConfig.networkName;
     final accountUuid = _getActiveAccountUuid();
@@ -3984,14 +4010,22 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
       return;
     }
-    if (balanceReadVersion != _balanceReadVersion) {
-      log('SyncNotifier: discarding superseded balance refresh');
+    final invalidated = balanceReadVersion != _balanceReadVersion;
+    if (invalidated || _committedBalanceReadSequence > balanceReadSequence) {
+      log(
+        invalidated
+            ? 'SyncNotifier: discarding balance refresh after a wallet '
+                  'transition'
+            : 'SyncNotifier: discarding balance refresh older than a '
+                  'committed read',
+      );
       if (requireAuthoritativeBalance) {
         _balanceRefreshQueued = true;
         _balanceRefreshQueuedReleaseSnapshot = true;
-      } else if (_accountDataWaiters.isNotEmpty) {
+      } else if (_accountDataWaiters.isNotEmpty &&
+          !(state.value?.hasDataForAccount(accountUuid) ?? false)) {
         // An unlock still waits for the account data this pass would have
-        // loaded (a sync started meanwhile superseded it).
+        // loaded.
         _balanceRefreshQueued = true;
       }
       return;
@@ -4030,6 +4064,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               : accountFallback?.recentTransactions ?? const [],
         ),
       );
+      _markBalanceReadCommitted(balanceReadSequence);
       return;
     }
     if (hasAuthoritativeBalance) {
@@ -4050,109 +4085,121 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         spendableDisplay.freshness ==
         SpendableBalanceFreshness.lastCompletedSync;
 
-    state = AsyncData(
-      SyncState(
-        accountUuid: accountUuid,
-        hasBalanceData:
-            hasAuthoritativeBalance ||
-            (accountFallback?.hasBalanceData ?? false),
-        hasRecentTransactionsData:
-            didFetchRecentTxs ||
-            (accountFallback?.hasRecentTransactionsData ?? false),
-        isSyncing: current?.isSyncing ?? false,
-        isBackgroundMode: current?.isBackgroundMode ?? false,
-        isSyncComplete: current?.isSyncComplete ?? false,
-        percentage: current?.percentage ?? 0.0,
-        displayTargetPercentage:
-            current?.displayTargetPercentage ?? current?.percentage ?? 0.0,
-        displayTargetBlocks: current?.displayTargetBlocks ?? 0,
-        checking: current?.checking,
-        remainingScanBlocks: current?.remainingScanBlocks,
-        pendingScanStartHeight: current?.pendingScanStartHeight,
-        phaseCompletedUnits: current?.phaseCompletedUnits ?? 0,
-        phaseTotalUnits: current?.phaseTotalUnits ?? 0,
-        scannedHeight: current?.scannedHeight ?? 0,
-        chainTipHeight: current?.chainTipHeight ?? 0,
-        transparentBalance: transparent ?? accountFallback?.transparentBalance,
-        saplingBalance: sapling ?? accountFallback?.saplingBalance,
-        orchardBalance: orchard ?? accountFallback?.orchardBalance,
-        ironwoodBalance: ironwood ?? accountFallback?.ironwoodBalance,
-        orchardLockedBalance:
-            orchardLocked ?? accountFallback?.orchardLockedBalance,
-        transparentPendingBalance:
-            transparentPending ?? accountFallback?.transparentPendingBalance,
-        transparentLockedBalance:
-            transparentLocked ?? accountFallback?.transparentLockedBalance,
-        transparentAuthority:
-            transparentAuthority ?? accountFallback?.transparentAuthority,
-        transparentLastKnownBalance: transparentAuthority != null
-            ? transparentLastKnown
-            : accountFallback?.transparentLastKnownBalance,
-        transparentStop: transparentAuthority != null
-            ? transparentStop
-            : accountFallback?.transparentStop,
-        transparentPrivate:
-            transparentPrivate ?? accountFallback?.transparentPrivate,
-        saplingPendingBalance:
-            saplingPending ?? accountFallback?.saplingPendingBalance,
-        orchardPendingBalance:
-            orchardPending ?? accountFallback?.orchardPendingBalance,
-        ironwoodPendingBalance:
-            ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
-        canShieldTransparentBalance:
-            canShieldTransparentBalance ??
-            accountFallback?.canShieldTransparentBalance ??
-            false,
-        shieldTransparentFee:
-            shieldTransparentFee ?? accountFallback?.shieldTransparentFee,
-        shieldTransparentAmount:
-            shieldTransparentAmount ?? accountFallback?.shieldTransparentAmount,
-        spendableBalance: nextSpendableBalance,
-        displaySpendableBalance: spendableDisplay.balance,
-        displayIronwoodBalance: preservePoolDisplay
-            ? accountFallback?.displayIronwoodBalance
-            : ironwood ?? accountFallback?.ironwoodBalance,
-        displayIronwoodPendingBalance: preservePoolDisplay
-            ? accountFallback?.displayIronwoodPendingBalance
-            : ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
-        displayOrchardBalance: preservePoolDisplay
-            ? accountFallback?.displayOrchardBalance
-            : orchard ?? accountFallback?.orchardBalance,
-        displayOrchardPendingBalance: preservePoolDisplay
-            ? accountFallback?.displayOrchardPendingBalance
-            : orchardPending ?? accountFallback?.orchardPendingBalance,
-        displayOrchardLockedBalance: preservePoolDisplay
-            ? accountFallback?.displayOrchardLockedBalance
-            : orchardLocked ?? accountFallback?.orchardLockedBalance,
-        displaySpendableFreshness: spendableDisplay.freshness,
-        totalBalance: total ?? accountFallback?.totalBalance,
-        displayTotalBalance: preservePoolDisplay
-            ? accountFallback?.displayTotalBalance
-            : total ?? accountFallback?.totalBalance,
-        displayShieldedBalance: preservePoolDisplay
-            ? accountFallback?.displayShieldedBalance
-            : hasAuthoritativeBalance
-            ? (sapling ?? BigInt.zero) +
-                  (orchard ?? BigInt.zero) +
-                  (ironwood ?? BigInt.zero) +
-                  (saplingPending ?? BigInt.zero) +
-                  (orchardPending ?? BigInt.zero) +
-                  (ironwoodPending ?? BigInt.zero)
-            : accountFallback?.displayShieldedBalance,
-        failure: current?.failure,
-        error: current?.error,
-        recentTransactions: didFetchRecentTxs
-            ? recentTxs
-            : accountFallback?.recentTransactions ?? const [],
-        lastSyncStartedAt: current?.lastSyncStartedAt,
-        lastSyncCompletedAt: current?.lastSyncCompletedAt,
-        lastSyncFailedAt: current?.lastSyncFailedAt,
-        phase: current?.phase ?? '',
-        syncJobId: current?.syncJobId ?? '',
-        sessionStartPercentage: current?.sessionStartPercentage ?? 0,
-        startedFromCompletedSync: current?.startedFromCompletedSync ?? false,
-      ),
+    final next = SyncState(
+      accountUuid: accountUuid,
+      hasBalanceData:
+          hasAuthoritativeBalance || (accountFallback?.hasBalanceData ?? false),
+      hasRecentTransactionsData:
+          didFetchRecentTxs ||
+          (accountFallback?.hasRecentTransactionsData ?? false),
+      isSyncing: current?.isSyncing ?? false,
+      isBackgroundMode: current?.isBackgroundMode ?? false,
+      isSyncComplete: current?.isSyncComplete ?? false,
+      percentage: current?.percentage ?? 0.0,
+      displayTargetPercentage:
+          current?.displayTargetPercentage ?? current?.percentage ?? 0.0,
+      displayTargetBlocks: current?.displayTargetBlocks ?? 0,
+      checking: current?.checking,
+      remainingScanBlocks: current?.remainingScanBlocks,
+      pendingScanStartHeight: current?.pendingScanStartHeight,
+      phaseCompletedUnits: current?.phaseCompletedUnits ?? 0,
+      phaseTotalUnits: current?.phaseTotalUnits ?? 0,
+      scannedHeight: current?.scannedHeight ?? 0,
+      chainTipHeight: current?.chainTipHeight ?? 0,
+      transparentBalance: transparent ?? accountFallback?.transparentBalance,
+      saplingBalance: sapling ?? accountFallback?.saplingBalance,
+      orchardBalance: orchard ?? accountFallback?.orchardBalance,
+      ironwoodBalance: ironwood ?? accountFallback?.ironwoodBalance,
+      orchardLockedBalance:
+          orchardLocked ?? accountFallback?.orchardLockedBalance,
+      transparentPendingBalance:
+          transparentPending ?? accountFallback?.transparentPendingBalance,
+      transparentLockedBalance:
+          transparentLocked ?? accountFallback?.transparentLockedBalance,
+      transparentAuthority:
+          transparentAuthority ?? accountFallback?.transparentAuthority,
+      transparentLastKnownBalance: transparentAuthority != null
+          ? transparentLastKnown
+          : accountFallback?.transparentLastKnownBalance,
+      transparentStop: transparentAuthority != null
+          ? transparentStop
+          : accountFallback?.transparentStop,
+      transparentPrivate:
+          transparentPrivate ?? accountFallback?.transparentPrivate,
+      saplingPendingBalance:
+          saplingPending ?? accountFallback?.saplingPendingBalance,
+      orchardPendingBalance:
+          orchardPending ?? accountFallback?.orchardPendingBalance,
+      ironwoodPendingBalance:
+          ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
+      canShieldTransparentBalance:
+          canShieldTransparentBalance ??
+          accountFallback?.canShieldTransparentBalance ??
+          false,
+      shieldTransparentFee:
+          shieldTransparentFee ?? accountFallback?.shieldTransparentFee,
+      shieldTransparentAmount:
+          shieldTransparentAmount ?? accountFallback?.shieldTransparentAmount,
+      spendableBalance: nextSpendableBalance,
+      displaySpendableBalance: spendableDisplay.balance,
+      displayIronwoodBalance: preservePoolDisplay
+          ? accountFallback?.displayIronwoodBalance
+          : ironwood ?? accountFallback?.ironwoodBalance,
+      displayIronwoodPendingBalance: preservePoolDisplay
+          ? accountFallback?.displayIronwoodPendingBalance
+          : ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
+      displayOrchardBalance: preservePoolDisplay
+          ? accountFallback?.displayOrchardBalance
+          : orchard ?? accountFallback?.orchardBalance,
+      displayOrchardPendingBalance: preservePoolDisplay
+          ? accountFallback?.displayOrchardPendingBalance
+          : orchardPending ?? accountFallback?.orchardPendingBalance,
+      displayOrchardLockedBalance: preservePoolDisplay
+          ? accountFallback?.displayOrchardLockedBalance
+          : orchardLocked ?? accountFallback?.orchardLockedBalance,
+      displaySpendableFreshness: spendableDisplay.freshness,
+      totalBalance: total ?? accountFallback?.totalBalance,
+      displayTotalBalance: preservePoolDisplay
+          ? accountFallback?.displayTotalBalance
+          : total ?? accountFallback?.totalBalance,
+      displayShieldedBalance: preservePoolDisplay
+          ? accountFallback?.displayShieldedBalance
+          : hasAuthoritativeBalance
+          ? (sapling ?? BigInt.zero) +
+                (orchard ?? BigInt.zero) +
+                (ironwood ?? BigInt.zero) +
+                (saplingPending ?? BigInt.zero) +
+                (orchardPending ?? BigInt.zero) +
+                (ironwoodPending ?? BigInt.zero)
+          : accountFallback?.displayShieldedBalance,
+      failure: current?.failure,
+      error: current?.error,
+      recentTransactions: didFetchRecentTxs
+          ? recentTxs
+          : accountFallback?.recentTransactions ?? const [],
+      lastSyncStartedAt: current?.lastSyncStartedAt,
+      lastSyncCompletedAt: current?.lastSyncCompletedAt,
+      lastSyncFailedAt: current?.lastSyncFailedAt,
+      phase: current?.phase ?? '',
+      syncJobId: current?.syncJobId ?? '',
+      sessionStartPercentage: current?.sessionStartPercentage ?? 0,
+      startedFromCompletedSync: current?.startedFromCompletedSync ?? false,
     );
+    // A sync that started, or a tip that moved, during the read carried the
+    // state it replaces; the read follows the same rule, as one not read past
+    // that tip. See [SyncState.carryingTransparentAuthority].
+    final crossedDuringRead =
+        current?.lastSyncStartedAt != readSyncStartedAt ||
+        (readTipHeight != 0 && current?.chainTipHeight != readTipHeight);
+    state = AsyncData(
+      hasAuthoritativeBalance && crossedDuringRead
+          ? next.carryingTransparentAuthority(
+              privatePolicyMayApply: _privatePolicyMayApply,
+              crossesTip: true,
+            )
+          : next,
+    );
+    _markBalanceReadCommitted(balanceReadSequence);
   }
 
   String? _getActiveAccountUuid() {

@@ -23,6 +23,30 @@ const _completedHeight = 3000000;
 class _Api extends RustLibApi {
   final syncs = <StreamController<rust_sync.ApiSyncProgressEvent>>[];
 
+  /// What a progress event's own balance read returns.
+  rust_sync.WalletBalance progressBalance = _walletBalance(orchard: 5);
+
+  /// When set, a progress event's balance read waits for it.
+  Completer<void>? progressHold;
+
+  @override
+  Future<rust_sync.WalletBalance> crateApiSyncGetBalance({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    await progressHold?.future;
+    return progressBalance;
+  }
+
+  @override
+  Future<List<rust_sync.TransactionInfo>> crateApiSyncGetTransactionHistory({
+    required String dbPath,
+    required String network,
+    int? limit,
+    required String accountUuid,
+  }) async => const [];
+
   @override
   bool crateApiSyncIsSyncRunning() => false;
 
@@ -106,25 +130,30 @@ class _NoPrivateQueries extends EnhancePirNotifier {
 /// A synced wallet whose stored status says its last sync completed. The
 /// balance read can be held open, as a slow wallet summary does.
 class _Sync extends SyncNotifier {
-  _Sync()
+  _Sync({this.initial})
     : super(
         walletDbPathResolver: () async => 'wallet.db',
         excludeCompanionsFromBackup: (_) async {},
       );
 
+  final SyncState? initial;
   int statusReads = 0;
+  int balanceReads = 0;
+  rust_sync.WalletBalance balance = _balance;
   final balanceRead = Completer<void>();
   final balanceReadStarted = Completer<void>();
 
   @override
-  Future<SyncState> build() async => SyncState(
-    accountUuid: _accountUuid,
-    hasAccountScopedData: true,
-    isSyncComplete: true,
-    percentage: 1,
-    scannedHeight: _completedHeight,
-    chainTipHeight: _completedHeight,
-  );
+  Future<SyncState> build() async =>
+      initial ??
+      SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        percentage: 1,
+        scannedHeight: _completedHeight,
+        chainTipHeight: _completedHeight,
+      );
 
   @override
   Future<rust_sync.SyncProgress> readSyncStatus({
@@ -148,9 +177,11 @@ class _Sync extends SyncNotifier {
     required String network,
     required String accountUuid,
   }) async {
+    balanceReads++;
+    final result = balance;
     if (!balanceReadStarted.isCompleted) balanceReadStarted.complete();
     await balanceRead.future;
-    return _balance;
+    return result;
   }
 
   @override
@@ -162,13 +193,19 @@ class _Sync extends SyncNotifier {
   }) async => const [];
 }
 
-final _balance = rust_sync.WalletBalance(
+final _balance = _walletBalance(orchard: 1);
+
+rust_sync.WalletBalance _walletBalance({
+  required int orchard,
+  int transparent = 0,
+  bool transparentPrivate = false,
+}) => rust_sync.WalletBalance(
   availability: rust_sync.WalletBalanceAvailability.available,
   transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
-  transparentPrivate: false,
-  transparent: BigInt.zero,
+  transparentPrivate: transparentPrivate,
+  transparent: BigInt.from(transparent),
   sapling: BigInt.zero,
-  orchard: BigInt.one,
+  orchard: BigInt.from(orchard),
   ironwood: BigInt.zero,
   transparentLocked: BigInt.zero,
   saplingLocked: BigInt.zero,
@@ -181,9 +218,9 @@ final _balance = rust_sync.WalletBalance(
   changePendingConfirmation: BigInt.zero,
   valuePendingSpendability: BigInt.zero,
   uneconomicValue: BigInt.zero,
-  spendable: BigInt.one,
+  spendable: BigInt.from(orchard),
   locked: BigInt.zero,
-  total: BigInt.one,
+  total: BigInt.from(orchard + transparent),
 );
 
 void main() {
@@ -191,12 +228,13 @@ void main() {
   final api = _Api();
   setUpAll(() => RustLib.initMock(api: api));
   tearDownAll(RustLib.dispose);
-  setUp(api.syncs.clear);
+  setUp(() {
+    api.syncs.clear();
+    api.progressHold = null;
+  });
 
-  /// A synced wallet that was locked (its state cleared) and is unlocked
-  /// again, before the unlock screen has refreshed anything.
-  Future<(ProviderContainer, _Sync)> unlockedAfterLock() async {
-    final sync = _Sync();
+  Future<(ProviderContainer, _Sync)> mounted({SyncState? initial}) async {
+    final sync = _Sync(initial: initial);
     final container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -214,6 +252,13 @@ void main() {
     });
     container.listen(syncProvider, (_, _) {});
     await container.read(syncProvider.future);
+    return (container, sync);
+  }
+
+  /// A synced wallet that was locked (its state cleared) and is unlocked
+  /// again, before the unlock screen has refreshed anything.
+  Future<(ProviderContainer, _Sync)> unlockedAfterLock() async {
+    final (container, sync) = await mounted();
     await sync.clearSensitiveStateForLock();
     final cleared = container.read(syncProvider).requireValue;
     expect(cleared.isSyncComplete, isFalse);
@@ -265,10 +310,146 @@ void main() {
     expect(sync.statusReads, 1);
     sync.balanceRead.complete();
     await unlock;
-    // Home opens on the account's balance, not the import screen.
+    // Home opens on the account's balance, not the import screen, and the
+    // read the sync start overlapped is used rather than made again.
     expect(
       container.read(syncProvider).requireValue.hasDataForAccount(_accountUuid),
       isTrue,
     );
+    expect(sync.balanceReads, 1);
+  });
+
+  group('a balance read in flight', () {
+    SyncProgressEvent newNotes() => const SyncProgressEvent(
+      scannedHeight: _completedHeight + 2,
+      chainTipHeight: _completedHeight,
+      percentage: 0.5,
+      displayTargetPercentage: 0.5,
+      displayTargetBlocks: 0,
+      isSyncing: true,
+      isComplete: false,
+      hasNewTx: true,
+      phase: 'scan',
+    );
+
+    test('is dropped once a later read has committed, and an unlock it held '
+        'does not read again', () async {
+      final (container, sync) = await mounted();
+
+      final unlock = sync.refreshAfterUnlock();
+      await sync.balanceReadStarted.future;
+      // The sync's own read of new notes lands first, with newer data.
+      await sync.handleSyncProgressForTesting(newNotes());
+      expect(
+        container.read(syncProvider).requireValue.orchardBalance,
+        BigInt.from(5),
+      );
+
+      sync.balanceRead.complete();
+      await unlock;
+
+      expect(
+        container.read(syncProvider).requireValue.orchardBalance,
+        BigInt.from(5),
+      );
+      expect(sync.balanceReads, 1);
+    });
+
+    test('is used when it lands before a later read that is still in '
+        'flight, which then replaces it', () async {
+      final (container, sync) = await mounted();
+      api.progressHold = Completer<void>();
+
+      final refresh = sync.refreshAfterSend();
+      await sync.balanceReadStarted.future;
+      // The sync's read of new notes starts later and is slower.
+      final progress = sync.handleSyncProgressForTesting(newNotes());
+      await pumpEventQueue();
+
+      sync.balanceRead.complete();
+      await refresh;
+      expect(
+        container.read(syncProvider).requireValue.orchardBalance,
+        BigInt.one,
+      );
+
+      api.progressHold!.complete();
+      await progress;
+      expect(
+        container.read(syncProvider).requireValue.orchardBalance,
+        BigInt.from(5),
+      );
+      expect(sync.balanceReads, 1);
+    });
+
+    test('is dropped after an account switch', () async {
+      final (container, sync) = await mounted();
+      sync.balance = _walletBalance(orchard: 7);
+
+      final refresh = sync.refreshAfterSend();
+      await sync.balanceReadStarted.future;
+      sync.handleAccountSwitchForTesting(_accountUuid);
+      sync.balanceRead.complete();
+      await refresh;
+
+      expect(
+        container.read(syncProvider).requireValue.orchardBalance,
+        isNot(BigInt.from(7)),
+      );
+    });
+
+    test('is dropped after a lock', () async {
+      final (container, sync) = await mounted();
+      sync.balance = _walletBalance(orchard: 7);
+
+      final refresh = sync.refreshAfterSend();
+      await sync.balanceReadStarted.future;
+      await sync.clearSensitiveStateForLock();
+      sync.balanceRead.complete();
+      await refresh;
+
+      final state = container.read(syncProvider).requireValue;
+      expect(state.hasBalanceData, isFalse);
+      expect(state.orchardBalance, BigInt.zero);
+    });
+
+    test('that spans a sync start is carried like the start: a private '
+        'current transparent amount becomes last known', () async {
+      final (container, sync) = await mounted(
+        initial: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          percentage: 1,
+          scannedHeight: _completedHeight,
+          chainTipHeight: _completedHeight,
+          transparentBalance: BigInt.from(5),
+          totalBalance: BigInt.from(6),
+          transparentPrivate: true,
+          canShieldTransparentBalance: true,
+        ),
+      );
+      sync.balance = _walletBalance(
+        orchard: 1,
+        transparent: 5,
+        transparentPrivate: true,
+      );
+
+      final refresh = sync.refreshAfterSend();
+      await sync.balanceReadStarted.future;
+      sync.startSync(latestTipHeight: _completedHeight + 4);
+      sync.balanceRead.complete();
+      await refresh;
+
+      final state = container.read(syncProvider).requireValue;
+      expect(state.orchardBalance, BigInt.one);
+      expect(
+        state.transparentAuthority,
+        rust_sync.TransparentBalanceAuthority.lastKnown,
+      );
+      expect(state.transparentBalance, BigInt.zero);
+      expect(state.transparentLastKnownBalance, BigInt.from(5));
+      expect(sync.balanceReads, 1);
+    });
   });
 }
