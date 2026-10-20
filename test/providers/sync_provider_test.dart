@@ -367,6 +367,90 @@ void main() {
     },
   );
 
+  test('refreshAfterUnlock settles once the account balance and history are '
+      'loaded, not after the refreshes queued behind them', () async {
+    late _BalanceRefreshTestSyncNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(
+          () => notifier = _BalanceRefreshTestSyncNotifier(
+            () async => 'wallet.db',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    notifier.balance = _availableBalance(BigInt.from(100));
+    notifier.gateFirstBalanceRead();
+    final laterReads = Completer<void>();
+    notifier.holdLaterBalanceReads = laterReads;
+
+    final unlock = notifier.refreshAfterUnlock();
+    await notifier.firstBalanceReadStarted;
+    // A running sync keeps asking for refreshes, and the chain keeps going.
+    var chainDone = false;
+    final queued = notifier.refreshAfterSend().whenComplete(
+      () => chainDone = true,
+    );
+    notifier.releaseFirstBalanceRead();
+
+    await unlock.timeout(const Duration(seconds: 5));
+    final state = container.read(syncProvider).requireValue;
+    expect(state.hasDataForAccount(_accountUuid), isTrue);
+    expect(state.spendableBalance, BigInt.from(100));
+    expect(chainDone, isFalse);
+
+    laterReads.complete();
+    await queued;
+    expect(notifier.balanceReadCount, 2);
+  });
+
+  test('refreshAfterUnlock waits for a later pass when the first one does not '
+      'load the account data', () async {
+    late _BalanceRefreshTestSyncNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(
+          () => notifier = _BalanceRefreshTestSyncNotifier(
+            () async => 'wallet.db',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    // The first read finds the balance unavailable; the queued one finds it.
+    notifier.gateFirstBalanceRead();
+    final laterReads = Completer<void>();
+    notifier.holdLaterBalanceReads = laterReads;
+    var unlockDone = false;
+    final unlock = notifier.refreshAfterUnlock().whenComplete(
+      () => unlockDone = true,
+    );
+    await notifier.firstBalanceReadStarted;
+    final queued = notifier.refreshAfterSend();
+    notifier.releaseFirstBalanceRead();
+    await pumpEventQueue();
+    expect(notifier.balanceReadCount, 2);
+    expect(unlockDone, isFalse);
+
+    notifier.balance = _availableBalance(BigInt.from(100));
+    laterReads.complete();
+    await Future.wait([unlock, queued]);
+    expect(notifier.balanceReadCount, 2);
+    expect(
+      container.read(syncProvider).requireValue.hasDataForAccount(_accountUuid),
+      isTrue,
+    );
+  });
+
   test('refreshAfterUnlock propagates DB path resolution failures', () async {
     final container = ProviderContainer(
       overrides: [
@@ -1445,6 +1529,10 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
 
   void releaseFirstBalanceRead() => _firstBalanceReadReleased.complete();
 
+  /// When set, every balance read after the first waits for it, then
+  /// returns [balance] as it is by then.
+  Completer<void>? holdLaterBalanceReads;
+
   @override
   Future<SyncState> build() async => initialState ?? SyncState();
 
@@ -1459,6 +1547,9 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     if (_gateFirstBalanceRead && !_firstBalanceReadStarted.isCompleted) {
       _firstBalanceReadStarted.complete();
       await _firstBalanceReadReleased.future;
+    } else if (balanceReadCount > 1 && holdLaterBalanceReads != null) {
+      await holdLaterBalanceReads!.future;
+      return balance ?? _unavailableBalance;
     }
     return result;
   }

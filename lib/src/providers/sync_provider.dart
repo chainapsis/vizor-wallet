@@ -120,6 +120,17 @@ enum SpendableBalanceFreshness { authoritative, lastCompletedSync }
   return (jobId: previous.syncJobId, percentage: previous.percentage);
 }
 
+/// Starts the foreground sync after an unlock without holding up the unlock
+/// screen, which has moved on to Home by the time a start that waited out a
+/// cancelled sync fails; the failure is logged.
+Future<void> startSyncAfterUnlock(SyncNotifier sync) async {
+  try {
+    await sync.startSyncAnyway();
+  } catch (e, st) {
+    log('Sync: start after unlock failed: $e\n$st');
+  }
+}
+
 class SyncState {
   /// Account UUID that owns the balance, shield status, and recent transaction
   /// fields below. Sync progress itself is wallet-wide.
@@ -1286,6 +1297,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
   bool _balanceRefreshQueuedRequireAuthoritativeBalance = false;
   Future<void>? _balanceRefreshChain;
+
+  /// Callers of [_requestAccountDataRefresh] still waiting.
+  List<Completer<void>> _accountDataWaiters = [];
 
   @override
   Future<SyncState> build() async {
@@ -3481,8 +3495,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// then resumes from the fraction the last session showed instead of zero
   /// until its first event. A wallet whose last sync completed is complete
   /// again, as after a launch, so the sync that follows is its catch-up.
+  ///
+  /// It waits for the account's balance and history, which Home needs, and
+  /// not for the refreshes a running sync keeps queueing behind them.
   Future<void> refreshAfterUnlock() async {
-    await _requestBalanceRefresh();
+    await _requestAccountDataRefresh();
     await _restoreStoredSyncJob();
   }
 
@@ -3576,6 +3593,43 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return chain;
   }
 
+  /// A balance refresh that settles once the active account's balance and
+  /// history are loaded, after whichever pass loads them. A chain keeps
+  /// running while refreshes are queued, which a sync does through a whole
+  /// catch-up, so waiting for the chain can take as long as the sync. When
+  /// the chain ends without loading them, this settles with its outcome.
+  Future<void> _requestAccountDataRefresh() {
+    final waiter = Completer<void>();
+    _accountDataWaiters.add(waiter);
+    // The waiter carries the outcome.
+    _requestBalanceRefresh().ignore();
+    return waiter.future;
+  }
+
+  void _settleAccountDataWaiters({
+    required bool chainEnded,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    if (_accountDataWaiters.isEmpty) return;
+    if (!chainEnded) {
+      final accountUuid = _getActiveAccountUuid();
+      if (accountUuid != null &&
+          !(state.value?.hasDataForAccount(accountUuid) ?? false)) {
+        return;
+      }
+    }
+    final waiters = _accountDataWaiters;
+    _accountDataWaiters = [];
+    for (final waiter in waiters) {
+      if (chainEnded && error != null) {
+        waiter.completeError(error, stackTrace);
+      } else {
+        waiter.complete();
+      }
+    }
+  }
+
   Future<void> _runCoalescedBalanceRefresh() async {
     Object? terminalError;
     StackTrace? terminalStackTrace;
@@ -3611,6 +3665,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           terminalError = e;
           terminalStackTrace = st;
         }
+        _settleAccountDataWaiters(chainEnded: false);
       } while (_balanceRefreshQueued && !_requiresUnlock);
 
       final error = terminalError;
@@ -3625,6 +3680,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
       _balanceRefreshQueuedRequireAuthoritativeBalance = false;
       _balanceRefreshChain = null;
+      _settleAccountDataWaiters(
+        chainEnded: true,
+        error: terminalError,
+        stackTrace: terminalStackTrace,
+      );
     }
   }
 
