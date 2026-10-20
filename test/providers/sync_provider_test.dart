@@ -457,6 +457,33 @@ void main() {
       expect(state.percentage, 0.5);
     });
 
+    test('and a completed wallet is complete again, as after a launch, so '
+        'its next sync is a catch-up', () async {
+      final notifier = await unlockedNotifier(status: _completedSync);
+      notifier.balance = _availableBalance(BigInt.from(100));
+
+      await notifier.refreshAfterUnlock();
+
+      final state = notifier.state.requireValue;
+      expect(state.hasBalanceData, isTrue);
+      expect(state.isSyncComplete, isTrue);
+      expect(state.percentage, 1);
+      expect(state.scannedHeight, 2000);
+      expect(state.chainTipHeight, 2000);
+      expect(state.syncJobId, isEmpty);
+      expect(resumableSyncJob(state).jobId, isEmpty);
+    });
+
+    test('but not without the account balance', () async {
+      final notifier = await unlockedNotifier(status: _completedSync);
+
+      await notifier.refreshAfterUnlock();
+
+      final state = notifier.state.requireValue;
+      expect(state.hasBalanceData, isFalse);
+      expect(state.isSyncComplete, isFalse);
+    });
+
     test('and a failed read leaves the state for the sync to fill', () async {
       final notifier = await unlockedNotifier(
         statusError: StateError('status unavailable'),
@@ -1468,6 +1495,15 @@ rust_sync.SyncProgress _storedJob(String id, double fraction) =>
     );
 
 final _noStoredJob = _storedJob('', 0);
+
+final _completedSync = rust_sync.SyncProgress(
+  scannedHeight: BigInt.from(2000),
+  chainTipHeight: BigInt.from(2000),
+  isSyncing: false,
+  isComplete: true,
+  syncJobId: '',
+  syncJobFraction: 0,
+);
 
 class _UnavailableSwitchBalanceNotifier extends SyncNotifier {
   _UnavailableSwitchBalanceNotifier(this.fetchedTx)

@@ -136,3 +136,5 @@ All sync log messages include `[Xs]` elapsed time from sync start (set once in `
 - `onHide`: stops polling (no wasted network in background)
 - `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
 - All balance/history queries pass `activeAccountUuid` from `AccountProvider`
+
+**Status during a catch-up:** a sync that starts from a completed one (`SyncState.startedFromCompletedSync`; unlock restores a completed wallet as a launch does) keeps the sync status reading as synced on Home, the desktop sidebar and the keep-awake screen while it has at most 1,000 blocks to scan (about 21 hours of 75-second blocks) and has run under 10 seconds (`syncShortCatchUpProvider`). Past either limit the percentage shows, and it stays for the rest of that attempt. Checking, failures and Tor states keep their own labels.

@@ -264,6 +264,12 @@ class SyncState {
   /// above zero, so rates over the session measure from here.
   final double sessionStartPercentage;
 
+  /// Whether the running sync started from a completed one: a synced wallet
+  /// catching up to new blocks. False for a wallet that never completed,
+  /// and for a restart after a failure or a stop, which continues an
+  /// unfinished job.
+  final bool startedFromCompletedSync;
+
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
   BigInt get pendingBalance =>
       transparentPendingBalance +
@@ -503,6 +509,7 @@ class SyncState {
     this.phase = '',
     this.syncJobId = '',
     this.sessionStartPercentage = 0,
+    this.startedFromCompletedSync = false,
   }) : hasBalanceData = hasBalanceData ?? hasAccountScopedData,
        hasRecentTransactionsData =
            hasRecentTransactionsData ?? hasAccountScopedData,
@@ -608,6 +615,7 @@ class SyncState {
     String? phase,
     String? syncJobId,
     double? sessionStartPercentage,
+    bool? startedFromCompletedSync,
   }) {
     return SyncState(
       accountUuid: accountUuid ?? this.accountUuid,
@@ -694,6 +702,8 @@ class SyncState {
       syncJobId: syncJobId ?? this.syncJobId,
       sessionStartPercentage:
           sessionStartPercentage ?? this.sessionStartPercentage,
+      startedFromCompletedSync:
+          startedFromCompletedSync ?? this.startedFromCompletedSync,
     );
   }
 
@@ -812,6 +822,7 @@ class SyncState {
       phase: current.phase,
       syncJobId: current.syncJobId,
       sessionStartPercentage: current.sessionStartPercentage,
+      startedFromCompletedSync: current.startedFromCompletedSync,
     );
   }
 
@@ -841,6 +852,7 @@ class SyncState {
       phase: phase,
       syncJobId: syncJobId,
       sessionStartPercentage: sessionStartPercentage,
+      startedFromCompletedSync: startedFromCompletedSync,
     );
   }
 }
@@ -1766,6 +1778,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncCompletedAt: overtakenCompletionAt ?? prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
         phase: kSyncPhasePreflight,
+        startedFromCompletedSync:
+            (prev?.isSyncComplete ?? false) || overtakenCompletionAt != null,
       ),
     );
 
@@ -3383,6 +3397,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncCompletedAt: syncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
         phase: event.phase,
+        startedFromCompletedSync:
+            event.isSyncing &&
+            !event.isComplete &&
+            (currentState?.startedFromCompletedSync ?? false),
       ),
     );
 
@@ -3461,7 +3479,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// A locked launch skips the bootstrap sync snapshot, and locking clears
   /// the in-memory one, so the stored sync job is read here too: the sync
   /// then resumes from the fraction the last session showed instead of zero
-  /// until its first event.
+  /// until its first event. A wallet whose last sync completed is complete
+  /// again, as after a launch, so the sync that follows is its catch-up.
   Future<void> refreshAfterUnlock() async {
     await _requestBalanceRefresh();
     await _restoreStoredSyncJob();
@@ -3482,6 +3501,23 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     if (epoch != _sensitiveStateEpoch || _requiresUnlock) return;
     final current = state.value ?? SyncState();
+    // Completion needs the account's balance, as bootstrap's does.
+    if (status.isComplete &&
+        current.hasBalanceData &&
+        current.failure == null &&
+        current.syncJobId.isEmpty &&
+        !current.isSyncing) {
+      state = AsyncData(
+        current.copyWith(
+          isSyncComplete: true,
+          percentage: 1,
+          displayTargetPercentage: 1,
+          scannedHeight: status.scannedHeight.toInt(),
+          chainTipHeight: status.chainTipHeight.toInt(),
+        ),
+      );
+      return;
+    }
     // A sync that already reported owns the job and its percentage.
     if (status.syncJobId.isEmpty ||
         current.syncJobId.isNotEmpty ||
@@ -4024,6 +4060,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         phase: current?.phase ?? '',
         syncJobId: current?.syncJobId ?? '',
         sessionStartPercentage: current?.sessionStartPercentage ?? 0,
+        startedFromCompletedSync: current?.startedFromCompletedSync ?? false,
       ),
     );
   }

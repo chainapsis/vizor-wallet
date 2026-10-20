@@ -15,6 +15,7 @@ import '../../providers/privacy_mode_provider.dart';
 import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_display_progress_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/sync_short_catch_up_provider.dart';
 import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
@@ -640,6 +641,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       child: _SidebarSyncStatus(
                         sync: sync,
                         networkPrivacy: networkPrivacy,
+                        shortCatchUp: ref.watch(syncShortCatchUpProvider),
                       ),
                     ),
                   ],
@@ -1536,10 +1538,15 @@ class _SidebarPopoverHoverTargetState
 /// small shimmer/motion helpers are intentionally duplicated rather than
 /// shared so the two surfaces ship as independent changes.)
 class _SidebarSyncStatus extends ConsumerStatefulWidget {
-  const _SidebarSyncStatus({required this.sync, required this.networkPrivacy});
+  const _SidebarSyncStatus({
+    required this.sync,
+    required this.networkPrivacy,
+    this.shortCatchUp = false,
+  });
 
   final SyncState sync;
   final NetworkPrivacyState networkPrivacy;
+  final bool shortCatchUp;
 
   @override
   ConsumerState<_SidebarSyncStatus> createState() => _SidebarSyncStatusState();
@@ -1555,6 +1562,10 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
 
   AnimationController? _controller;
 
+  /// Height of the last completed sync, still shown while a short catch-up
+  /// keeps the row synced.
+  int? _completedHeight;
+
   AnimationController get _activeController {
     return _controller ??= AnimationController(
       vsync: this,
@@ -1566,6 +1577,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
       SyncStatusLabel.from(
         widget.sync,
         networkPrivacy: widget.networkPrivacy,
+        shortCatchUp: widget.shortCatchUp,
       ).kind ==
       SyncStatusKind.syncing;
 
@@ -1616,12 +1628,17 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
       widget.sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
       networkPrivacy: widget.networkPrivacy,
+      shortCatchUp: widget.shortCatchUp,
     );
-    final syncedHeight =
-        status.kind == SyncStatusKind.synced &&
-            widget.sync.isSyncComplete &&
-            widget.sync.scannedHeight > 0
+    if (widget.sync.isSyncComplete && widget.sync.scannedHeight > 0) {
+      _completedHeight = widget.sync.scannedHeight;
+    }
+    final syncedHeight = status.kind != SyncStatusKind.synced
+        ? null
+        : widget.sync.isSyncComplete && widget.sync.scannedHeight > 0
         ? widget.sync.scannedHeight
+        : widget.shortCatchUp
+        ? _completedHeight
         : null;
     final label = status.kind == SyncStatusKind.synced
         ? 'Synced'

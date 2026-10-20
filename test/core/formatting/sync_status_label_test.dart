@@ -79,6 +79,67 @@ void main() {
     expect(status.label, '99% Syncing...');
   });
 
+  test('a short catch-up of a synced wallet still reads as synced', () {
+    final catchUp = SyncState(
+      isSyncing: true,
+      phase: 'scan',
+      startedFromCompletedSync: true,
+    );
+    expect(
+      SyncStatusLabel.from(catchUp, displayWholePercentage: 0).label,
+      '0% Syncing...',
+    );
+
+    final status = SyncStatusLabel.from(
+      catchUp,
+      displayWholePercentage: 0,
+      shortCatchUp: true,
+    );
+    expect(status.kind, SyncStatusKind.synced);
+    expect(status.label, 'Vizor is synced');
+    expect(status.semanticsLabel, 'Vizor is synced');
+  });
+
+  test('checking, failures and Tor keep their labels in a short catch-up', () {
+    final checking = SyncState(
+      isSyncing: true,
+      percentage: 1,
+      startedFromCompletedSync: true,
+      checking: const SyncCheckingProgress(
+        cycle: 1,
+        percentage: 0.25,
+        displayTargetPercentage: 0.5,
+      ),
+    );
+    expect(
+      SyncStatusLabel.from(checking, shortCatchUp: true).label,
+      '25% checking',
+    );
+    expect(
+      SyncStatusLabel.from(
+        SyncState(failure: _networkFailure('connection refused')),
+        shortCatchUp: true,
+      ).kind,
+      SyncStatusKind.failed,
+    );
+    expect(
+      SyncStatusLabel.from(
+        SyncState(isSyncing: true, phase: kSyncPhasePreflight),
+        networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
+        shortCatchUp: true,
+      ).label,
+      kSyncStatusConnectingToTorLabel,
+    );
+    expect(
+      SyncStatusLabel.from(
+        SyncState(isSyncing: true, phase: 'scan'),
+        networkPrivacy: _tor(NetworkPrivacyConnectionStatus.failed),
+        shortCatchUp: true,
+      ).label,
+      kSyncStatusTorFailedLabel,
+    );
+  });
+
   test('failed state names the failure reason', () {
     final status = SyncStatusLabel.from(
       SyncState(

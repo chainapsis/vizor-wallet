@@ -547,6 +547,78 @@ void main() {
     },
   );
 
+  test('privacy lock mode stays done through a short catch-up of the synced '
+      'wallet', () async {
+    final syncNotifier = FakeSyncNotifier(
+      _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrap(
+            syncKeepAwakeEnabled: true,
+            syncKeepAwakePromptSeen: true,
+            isPasswordConfigured: true,
+            isUnlocked: true,
+          ),
+        ),
+        syncProvider.overrideWith(() => syncNotifier),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(syncProvider.future);
+    container
+        .read(syncKeepAwakePrivacyLockProvider.notifier)
+        .lock(at: DateTime(2026, 7, 9, 12, 1));
+    syncNotifier.emit(
+      _sync(
+        isSyncing: false,
+        percentage: 1,
+        scannedHeight: 200,
+        chainTipHeight: 200,
+        lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+      ),
+    );
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.done,
+    );
+
+    final startedAt = DateTime.now();
+    syncNotifier.emit(
+      _sync(
+        percentage: 0,
+        scannedHeight: 200,
+        chainTipHeight: 204,
+        lastSyncStartedAt: startedAt,
+        phase: kSyncPhasePreflight,
+        scanWorkKnown: false,
+        startedFromCompletedSync: true,
+      ),
+    );
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.done,
+    );
+
+    // The catch-up turns out large: its progress shows.
+    syncNotifier.emit(
+      _sync(
+        percentage: 0.1,
+        scannedHeight: 200,
+        chainTipHeight: 5200,
+        lastSyncStartedAt: startedAt,
+        phase: 'scan',
+        startedFromCompletedSync: true,
+      ),
+    );
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.syncing,
+    );
+  });
+
   test('interaction notifier records the last user activity time', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -833,6 +905,7 @@ SyncState _sync({
   int? pendingScanStartHeight,
   bool scanWorkKnown = true,
   double sessionStartPercentage = 0,
+  bool startedFromCompletedSync = false,
 }) {
   return SyncState(
     isSyncing: isSyncing,
@@ -852,5 +925,6 @@ SyncState _sync({
     lastSyncStartedAt: lastSyncStartedAt,
     phase: phase,
     sessionStartPercentage: sessionStartPercentage,
+    startedFromCompletedSync: startedFromCompletedSync,
   );
 }

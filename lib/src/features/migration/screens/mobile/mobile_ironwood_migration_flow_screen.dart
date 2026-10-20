@@ -29,6 +29,7 @@ import '../../../../providers/account_provider.dart';
 import '../../../../providers/network_privacy_provider.dart';
 import '../../../../providers/sync_display_progress_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../providers/sync_short_catch_up_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../models/ironwood_migration_presentation.dart';
 import '../../../ledger/ledger_capability.dart';

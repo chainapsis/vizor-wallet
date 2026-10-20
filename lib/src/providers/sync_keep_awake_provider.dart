@@ -4,6 +4,7 @@ import '../app_bootstrap.dart';
 import '../core/storage/app_secure_store.dart';
 import 'app_security_provider.dart';
 import 'sync_provider.dart';
+import 'sync_short_catch_up_provider.dart';
 
 const kSyncKeepAwakePromptEtaThreshold = Duration(minutes: 1);
 const kSyncKeepAwakePrivacyIdleTimeout = Duration(minutes: 1);
@@ -181,6 +182,11 @@ final syncKeepAwakePrivacyLockModeProvider =
       }
       final sync = ref.watch(syncProvider).asData?.value;
       if (sync != null && isSyncKeepAwakeCompletedSync(sync)) {
+        return SyncKeepAwakePrivacyLockMode.done;
+      }
+      // A synced wallet's short catch-up stays complete here too, as it does
+      // in the sync status.
+      if (ref.watch(syncShortCatchUpProvider)) {
         return SyncKeepAwakePrivacyLockMode.done;
       }
       if (sync?.isSyncing == true && sync?.isBackgroundMode != true) {

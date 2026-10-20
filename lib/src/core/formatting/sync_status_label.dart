@@ -32,10 +32,14 @@ class SyncStatusLabel {
   /// [networkPrivacy] wins over the sync-derived state: a failed Tor route is
   /// the root cause of whatever the sync recorded, and while Tor is still
   /// coming up the carried-over sync state is stale.
+  ///
+  /// [shortCatchUp] (`syncShortCatchUpProvider`) keeps a synced wallet's
+  /// catch-up reading as synced while it is short. Checking keeps its label.
   factory SyncStatusLabel.from(
     SyncState sync, {
     int? displayWholePercentage,
     NetworkPrivacyState? networkPrivacy,
+    bool shortCatchUp = false,
   }) {
     if (networkPrivacy != null) {
       // `failed` is a Tor connection failure only while the runtime is on
@@ -65,6 +69,7 @@ class SyncStatusLabel {
         semanticsLabel: 'Syncing failed. $reason',
       );
     }
+    if (shortCatchUp && !sync.isChecking) return _synced;
 
     final complete =
         !sync.isSyncing &&
@@ -87,12 +92,14 @@ class SyncStatusLabel {
       );
     }
 
-    return const SyncStatusLabel(
-      kind: SyncStatusKind.synced,
-      label: 'Vizor is synced',
-      semanticsLabel: 'Vizor is synced',
-    );
+    return _synced;
   }
+
+  static const _synced = SyncStatusLabel(
+    kind: SyncStatusKind.synced,
+    label: 'Vizor is synced',
+    semanticsLabel: 'Vizor is synced',
+  );
 }
 
 String formatSyncProgressLabel(Object percentage, {required bool isChecking}) =>
