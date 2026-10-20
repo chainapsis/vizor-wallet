@@ -10,7 +10,9 @@ void main() {
     expect(level(0, lowPower: true), 1);
     expect(level(1), 0);
     expect(level(1, lowPower: true), 1);
-    expect(level(2), 1);
+    expect(level(2), 0);
+    expect(level(2, lowPower: true), 1);
+    expect(level(3), 1);
     expect(level(3, lowPower: true), 1);
   });
 
