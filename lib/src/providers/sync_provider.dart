@@ -24,6 +24,7 @@ import 'network_privacy_provider.dart'
     show excludeTransparentRecoveryCompanionsFromBackup;
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
+import 'sync_scan_slowdown_provider.dart';
 
 const kSyncPhasePreflight = 'preflight';
 const kSyncPhaseSetup = 'setup';
@@ -1291,9 +1292,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       onResume: _handleAppResume,
       onHide: _handleAppHide,
     );
-    // Scan with less of the CPU as the device warms or saves power.
+    // Scan with less of the CPU when the device is hot or saving power, and
+    // let the keep-awake screen say why sync is slower.
     final devicePower = devicePowerEvents().listen((power) {
       rust_sync.setSyncScanPower(level: syncScanPowerFor(power));
+      ref
+          .read(syncScanSlowdownProvider.notifier)
+          .update(syncScanSlowdownFor(power));
     });
     ref.onDispose(devicePower.cancel);
 

@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_numeric_keyboard_toolbar.dart';
@@ -10,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/platform/device_power.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/sync_keep_awake_interaction_listener.dart';
@@ -20,6 +22,7 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_scan_slowdown_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -885,6 +888,47 @@ void main() {
 
     expect(find.text('63%'), findsOneWidget);
   });
+
+  testWidgets(
+    'says why sync is slower while scans run on fewer cores',
+    (tester) async {
+      _setMobileViewport(tester);
+      await tester.pumpWidget(_privacyScreenApp());
+      await _settleInitialSync(tester);
+      final slowdown = find.byKey(
+        const ValueKey('sync_keep_awake_privacy_slowdown'),
+      );
+      expect(slowdown, findsNothing);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SyncKeepAwakePrivacyLockScreen)),
+      );
+      final notifier = container.read(syncScanSlowdownProvider.notifier);
+      notifier.update(SyncScanSlowdown.powerSaving);
+      await tester.pump();
+      expect(
+        find.text(
+          defaultTargetPlatform == TargetPlatform.iOS
+              ? 'Slower in Low Power Mode'
+              : 'Slower in battery saver',
+        ),
+        findsOneWidget,
+      );
+
+      notifier.update(SyncScanSlowdown.heat);
+      await tester.pump();
+      expect(find.text('Slower while your phone cools down'), findsOneWidget);
+      expect(find.text('Vizor is syncing'), findsOneWidget);
+
+      notifier.update(null);
+      await tester.pump();
+      expect(slowdown, findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
+  );
 
   testWidgets('animates display sync percentage changes', (tester) async {
     _setMobileViewport(tester);

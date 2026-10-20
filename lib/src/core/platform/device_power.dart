@@ -50,13 +50,29 @@ Stream<DevicePower> devicePowerEvents() {
       .handleError((Object _) {});
 }
 
-/// How much of the CPU sync scans may use (`set_sync_scan_power`): 0 every
-/// core, 1 half the cores at a lower priority. Full speed up to serious, the
-/// efficiency cores at critical or in power saving. Three phones reached
-/// serious 1.5 to 7.5 minutes into a restore, where the OS already throttles,
-/// so lowering there ran almost the whole restore at level 1 (about 1.8 times
-/// as long) and, on Android, kept about as many cores busy.
-int syncScanPowerFor(DevicePower power) {
-  if (power.thermal >= 3 || power.lowPower) return 1;
-  return 0;
+/// Why sync scans run on fewer cores, if they do.
+enum SyncScanSlowdown {
+  /// The device reached the critical thermal state.
+  heat,
+
+  /// Low Power Mode or Battery Saver is on.
+  powerSaving,
 }
+
+/// Full speed up to serious, slower at critical or in power saving. Three
+/// phones reached serious 1.5 to 7.5 minutes into a restore, where the OS
+/// already throttles, so slowing there ran almost the whole restore on fewer
+/// cores (about 1.8 times as long) and, on Android, kept about as many cores
+/// busy. Heat comes first: turning power saving off does not speed up a
+/// critical device.
+SyncScanSlowdown? syncScanSlowdownFor(DevicePower power) {
+  if (power.thermal >= 3) return SyncScanSlowdown.heat;
+  if (power.lowPower) return SyncScanSlowdown.powerSaving;
+  return null;
+}
+
+/// How much of the CPU sync scans may use (`set_sync_scan_power`): 0 every
+/// core, 1 half the cores at a lower priority while [syncScanSlowdownFor]
+/// gives a reason.
+int syncScanPowerFor(DevicePower power) =>
+    syncScanSlowdownFor(power) == null ? 0 : 1;
