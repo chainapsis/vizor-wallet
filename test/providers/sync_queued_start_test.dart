@@ -430,6 +430,49 @@ void main() {
     },
   );
 
+  test('clearing wallet state drops a pending completion', () async {
+    final sync = _Sync();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_Account.new),
+        rpcEndpointFailoverProvider.overrideWith(_Tip.new),
+        chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
+        enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+        syncProvider.overrideWith(() => sync),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    sync.stopTipChecksForTesting();
+    sync.startSync();
+    await pumpEventQueue();
+    api.syncs[0].add(_scanned(jobId: 'job-a'));
+    await pumpEventQueue();
+
+    // A sign-out or reset clears the wallet while the completion's handler
+    // still waits on its balance read.
+    api.balanceGate = Completer<void>();
+    api.syncs[0].add(_complete());
+    await pumpEventQueue();
+    await sync.clearSensitiveStateForLock();
+    api.running = false;
+    api.balanceGate!.complete();
+    await pumpEventQueue();
+
+    sync.startSync();
+    await pumpEventQueue();
+    sync.stopTipChecksForTesting();
+    final next = container.read(syncProvider).requireValue;
+    expect(next.syncJobId, isEmpty);
+    expect(
+      next.lastSyncCompletedAt,
+      isNull,
+      reason: "the next wallet's sync does not inherit the completion",
+    );
+  });
+
   test('stopping sync discards the queued start', () async {
     final sync = await inFollowUp();
     sync.startSync();

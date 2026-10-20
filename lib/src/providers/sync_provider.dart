@@ -2525,6 +2525,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopPolling();
     _syncSub?.cancel();
     _syncSub = null;
+    // Another wallet may sync next; its start must not take this wallet's
+    // completion for its own.
+    _lastForegroundSyncProgress = null;
+    _lastForegroundCompletionAt = null;
     _stopMempoolObserver();
     _mempoolRefreshInFlight = false;
     _mempoolRefreshQueued = false;
