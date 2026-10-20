@@ -1271,6 +1271,50 @@ void main() {
     expect(find.text('No activity, yet...'), findsOneWidget);
   });
 
+  testWidgets('a short catch-up reads as syncing without a percentage', (
+    tester,
+  ) async {
+    final synced = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      percentage: 1,
+      scannedHeight: 3000000,
+      chainTipHeight: 3000000,
+    );
+    final notifier = FakeSyncNotifier(synced);
+    await tester.pumpWidget(_app(synced, syncNotifier: notifier));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Vizor is synced'), findsOneWidget);
+
+    final startedAt = DateTime.now();
+    SyncState catchUp(int remainingScanBlocks) => SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncing: true,
+      phase: 'scan',
+      scannedHeight: 3000000,
+      chainTipHeight: 3000000 + remainingScanBlocks,
+      remainingScanBlocks: remainingScanBlocks,
+      lastSyncStartedAt: startedAt,
+      startedFromCompletedSync: true,
+    );
+    notifier.emit(catchUp(3));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Syncing...'), findsOneWidget);
+    expect(find.text('Vizor is synced'), findsNothing);
+    expect(find.textContaining('% Syncing'), findsNothing);
+
+    // The catch-up turns out large: its percentage shows.
+    notifier.emit(catchUp(5000));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Syncing...'), findsNothing);
+    expect(find.textContaining('% Syncing...'), findsOneWidget);
+  });
+
   testWidgets('empty activity is centered with the original vertical spacing', (
     tester,
   ) async {

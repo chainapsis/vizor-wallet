@@ -39,9 +39,9 @@ bool isShortSyncCatchUp(SyncState sync, {required DateTime now}) {
   return now.difference(startedAt) < kSyncShortCatchUpMaxDuration;
 }
 
-/// Whether the sync status keeps reading as synced during a synced wallet's
-/// catch-up ([isShortSyncCatchUp]). It turns false when the time limit
-/// passes, and once a catch-up has shown its progress it keeps showing it
+/// Whether the sync status shows a synced wallet's catch-up without a
+/// percentage ([isShortSyncCatchUp]). It turns false when the time limit
+/// passes, and once a catch-up has shown its percentage it keeps showing it
 /// until that attempt ends.
 final syncShortCatchUpProvider =
     NotifierProvider<SyncShortCatchUpNotifier, bool>(

@@ -1562,10 +1562,6 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
 
   AnimationController? _controller;
 
-  /// Height of the last completed sync, still shown while a short catch-up
-  /// keeps the row synced.
-  int? _completedHeight;
-
   AnimationController get _activeController {
     return _controller ??= AnimationController(
       vsync: this,
@@ -1630,15 +1626,12 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
       networkPrivacy: widget.networkPrivacy,
       shortCatchUp: widget.shortCatchUp,
     );
-    if (widget.sync.isSyncComplete && widget.sync.scannedHeight > 0) {
-      _completedHeight = widget.sync.scannedHeight;
-    }
-    final syncedHeight = status.kind != SyncStatusKind.synced
-        ? null
-        : widget.sync.isSyncComplete && widget.sync.scannedHeight > 0
+    // A short catch-up reads as syncing, so it shows no height either.
+    final syncedHeight =
+        status.kind == SyncStatusKind.synced &&
+            widget.sync.isSyncComplete &&
+            widget.sync.scannedHeight > 0
         ? widget.sync.scannedHeight
-        : widget.shortCatchUp
-        ? _completedHeight
         : null;
     final label = status.kind == SyncStatusKind.synced
         ? 'Synced'

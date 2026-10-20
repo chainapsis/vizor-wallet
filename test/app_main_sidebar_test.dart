@@ -1022,59 +1022,61 @@ void main() {
     _expectSyncIndicatorGlow(tester, blurRadius: 12);
   });
 
-  testWidgets('sidebar stays synced at its block during a short catch-up', (
-    tester,
-  ) async {
-    final semantics = tester.ensureSemantics();
-    await tester.pumpWidget(
-      _sidebarHarness(
-        SyncState(
-          isSyncComplete: true,
-          percentage: 1,
-          scannedHeight: 3_428_143,
-          chainTipHeight: 3_428_143,
+  testWidgets(
+    'sidebar shows a short catch-up as syncing without a percentage',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _sidebarHarness(
+          SyncState(
+            isSyncComplete: true,
+            percentage: 1,
+            scannedHeight: 3_428_143,
+            chainTipHeight: 3_428_143,
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    final sync =
-        ProviderScope.containerOf(
-              tester.element(find.byType(AppMainSidebar)),
-            ).read(syncProvider.notifier)
-            as _FakeSyncNotifier;
-    final startedAt = DateTime.now();
-    SyncState catchUp({required int remainingScanBlocks}) => SyncState(
-      isSyncing: true,
-      phase: 'scan',
-      scannedHeight: 3_428_144,
-      chainTipHeight: 3_428_143 + remainingScanBlocks,
-      remainingScanBlocks: remainingScanBlocks,
-      lastSyncStartedAt: startedAt,
-      startedFromCompletedSync: true,
-    );
+      );
+      await tester.pump();
+      final sync =
+          ProviderScope.containerOf(
+                tester.element(find.byType(AppMainSidebar)),
+              ).read(syncProvider.notifier)
+              as _FakeSyncNotifier;
+      final startedAt = DateTime.now();
+      SyncState catchUp({required int remainingScanBlocks}) => SyncState(
+        isSyncing: true,
+        phase: 'scan',
+        scannedHeight: 3_428_144,
+        chainTipHeight: 3_428_143 + remainingScanBlocks,
+        remainingScanBlocks: remainingScanBlocks,
+        lastSyncStartedAt: startedAt,
+        startedFromCompletedSync: true,
+      );
 
-    sync.emit(catchUp(remainingScanBlocks: 3));
-    await tester.pump();
+      sync.emit(catchUp(remainingScanBlocks: 3));
+      await tester.pump();
 
-    expect(find.text('Synced'), findsOneWidget);
-    expect(find.text('3,428,143'), findsOneWidget);
-    expect(find.textContaining('Syncing'), findsNothing);
-    expect(
-      tester
-          .getSemantics(find.byKey(const ValueKey('sidebar_sync_text')))
-          .label,
-      contains('Synced at block 3,428,143'),
-    );
+      expect(find.text('Syncing...'), findsOneWidget);
+      expect(find.text('Synced'), findsNothing);
+      expect(find.textContaining('% Syncing'), findsNothing);
+      expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
+      expect(
+        tester
+            .getSemantics(find.byKey(const ValueKey('sidebar_sync_text')))
+            .label,
+        contains('Syncing'),
+      );
 
-    // The catch-up turns out large: its progress shows.
-    sync.emit(catchUp(remainingScanBlocks: 5000));
-    await tester.pump();
+      // The catch-up turns out large: its progress shows.
+      sync.emit(catchUp(remainingScanBlocks: 5000));
+      await tester.pump();
 
-    expect(find.text('Synced'), findsNothing);
-    expect(find.textContaining('% Syncing...'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
-    semantics.dispose();
-  });
+      expect(find.text('Syncing...'), findsNothing);
+      expect(find.textContaining('% Syncing...'), findsOneWidget);
+      expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
+      semantics.dispose();
+    },
+  );
 
   testWidgets('sidebar omits block height until sync completion is confirmed', (
     tester,

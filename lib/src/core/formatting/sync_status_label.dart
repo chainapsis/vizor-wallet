@@ -18,6 +18,12 @@ const kSyncStatusConnectingToTorSemanticsLabel = 'Connecting to Tor';
 const kSyncStatusTorFailedLabel = "Tor couldn't connect...";
 const kSyncStatusTorFailedSemanticsLabel = "Tor couldn't connect";
 
+/// Shown while a synced wallet catches up to new blocks and the catch-up is
+/// still short (`syncShortCatchUpProvider`): its percentage would start
+/// from zero for a few blocks.
+const kSyncStatusCatchingUpLabel = 'Syncing...';
+const kSyncStatusCatchingUpSemanticsLabel = 'Syncing';
+
 class SyncStatusLabel {
   const SyncStatusLabel({
     required this.kind,
@@ -33,8 +39,9 @@ class SyncStatusLabel {
   /// the root cause of whatever the sync recorded, and while Tor is still
   /// coming up the carried-over sync state is stale.
   ///
-  /// [shortCatchUp] (`syncShortCatchUpProvider`) keeps a synced wallet's
-  /// catch-up reading as synced while it is short. Checking keeps its label.
+  /// [shortCatchUp] (`syncShortCatchUpProvider`) shows a synced wallet's
+  /// catch-up without a percentage while it is short. Checking keeps its
+  /// label.
   factory SyncStatusLabel.from(
     SyncState sync, {
     int? displayWholePercentage,
@@ -69,7 +76,13 @@ class SyncStatusLabel {
         semanticsLabel: 'Syncing failed. $reason',
       );
     }
-    if (shortCatchUp && !sync.isChecking) return _synced;
+    if (shortCatchUp && !sync.isChecking) {
+      return const SyncStatusLabel(
+        kind: SyncStatusKind.syncing,
+        label: kSyncStatusCatchingUpLabel,
+        semanticsLabel: kSyncStatusCatchingUpSemanticsLabel,
+      );
+    }
 
     final complete =
         !sync.isSyncing &&
@@ -92,14 +105,12 @@ class SyncStatusLabel {
       );
     }
 
-    return _synced;
+    return const SyncStatusLabel(
+      kind: SyncStatusKind.synced,
+      label: 'Vizor is synced',
+      semanticsLabel: 'Vizor is synced',
+    );
   }
-
-  static const _synced = SyncStatusLabel(
-    kind: SyncStatusKind.synced,
-    label: 'Vizor is synced',
-    semanticsLabel: 'Vizor is synced',
-  );
 }
 
 String formatSyncProgressLabel(Object percentage, {required bool isChecking}) =>

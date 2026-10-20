@@ -79,7 +79,8 @@ void main() {
     expect(status.label, '99% Syncing...');
   });
 
-  test('a short catch-up of a synced wallet still reads as synced', () {
+  test('a short catch-up of a synced wallet reads as syncing without a '
+      'percentage', () {
     final catchUp = SyncState(
       isSyncing: true,
       phase: 'scan',
@@ -95,9 +96,9 @@ void main() {
       displayWholePercentage: 0,
       shortCatchUp: true,
     );
-    expect(status.kind, SyncStatusKind.synced);
-    expect(status.label, 'Vizor is synced');
-    expect(status.semanticsLabel, 'Vizor is synced');
+    expect(status.kind, SyncStatusKind.syncing);
+    expect(status.label, 'Syncing...');
+    expect(status.semanticsLabel, 'Syncing');
   });
 
   test('checking, failures and Tor keep their labels in a short catch-up', () {
