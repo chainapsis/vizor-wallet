@@ -277,6 +277,34 @@ void main() {
     expect(find.text('Unlock Vizor'), findsOneWidget);
   });
 
+  testWidgets('with animations reduced, the percentage ring jumps to each '
+      'value', (tester) async {
+    _setMobileViewport(tester);
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(
+      _app(
+        syncNotifier: FakeSyncNotifier(
+          _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+        ),
+      ),
+    );
+    await _settleInitialSync(tester);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump();
+
+    expect(find.text('25%'), findsOneWidget);
+    expect(
+      tester
+          .widget<TweenAnimationBuilder<double>>(
+            find.byType(TweenAnimationBuilder<double>),
+          )
+          .duration,
+      Duration.zero,
+    );
+  });
+
   testWidgets('does not show the privacy screen for near-tip catch-up', (
     tester,
   ) async {

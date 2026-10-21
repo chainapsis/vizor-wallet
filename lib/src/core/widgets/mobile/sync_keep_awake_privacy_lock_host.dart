@@ -815,11 +815,13 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final targetProgress = progress.clamp(0.0, 1.0).toDouble();
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     return SizedBox.square(
       dimension: SyncKeepAwakePrivacyLockScreen._ringSize,
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: targetProgress, end: targetProgress),
-        duration: _progressAnimationDuration,
+        // With animations reduced, the ring and number jump to each value.
+        duration: reduceMotion ? Duration.zero : _progressAnimationDuration,
         curve: Curves.easeOutCubic,
         builder: (context, animatedProgress, _) {
           return Stack(
