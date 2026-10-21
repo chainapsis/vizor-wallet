@@ -8,7 +8,7 @@ enum SyncStatusKind { syncing, failed, synced }
 
 /// Shown while the wallet waits on Tor: the client is still bootstrapping, or
 /// the sync's first lightwalletd connection over it has not answered yet
-/// (otherwise the row sits on the preflight "1% Syncing..." floor). Copy is
+/// (otherwise the row sits on "0% Syncing..." through preflight). Copy is
 /// provisional.
 const kSyncStatusConnectingToTorLabel = 'Connecting to Tor…';
 const kSyncStatusConnectingToTorSemanticsLabel = 'Connecting to Tor';

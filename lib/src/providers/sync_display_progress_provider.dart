@@ -6,10 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'sync_provider.dart';
 
 const _displayTickDuration = Duration(milliseconds: 20);
-const _preparationCeiling = 0.05;
 const _scanCeiling = 0.99;
-const _timeEstimateShare = 0.85;
-const _timeEstimateSettleFactor = 6.0;
 
 typedef _SyncDisplayTarget = ({
   bool isSyncing,
@@ -18,8 +15,6 @@ typedef _SyncDisplayTarget = ({
   double targetPercentage,
   int targetBlocks,
   int checkingCycle,
-  int phaseCompletedUnits,
-  int phaseTotalUnits,
   String phase,
   DateTime? startedAt,
   DateTime? completedAt,
@@ -36,8 +31,6 @@ _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
         sync.checking?.displayTargetPercentage ?? sync.displayTargetPercentage,
     targetBlocks: sync.displayTargetBlocks,
     checkingCycle: sync.checking?.cycle ?? 0,
-    phaseCompletedUnits: sync.phaseCompletedUnits,
-    phaseTotalUnits: sync.phaseTotalUnits,
     phase: sync.isChecking ? 'checking' : sync.phase,
     startedAt: sync.lastSyncStartedAt,
     completedAt: sync.lastSyncCompletedAt,
@@ -47,11 +40,9 @@ _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
 
 /// UI-only sync progress interpolated between authoritative Rust events.
 ///
-/// Preparation occupies a bounded 0-5% display range. Measurable preparation
-/// work (currently active-account transparent UTXO batches) advances from real
-/// committed work units, while indeterminate waits approach—but never reach—
-/// their phase ceiling over time. Authoritative block progress is then mapped
-/// into 5-99%; only a real completion event can produce 100%.
+/// The job's share of scan work is shown as 0-99%; only a real completion
+/// event can produce 100%. Preparation adds nothing: a new job stays at 0%
+/// and a resumed job holds its stored percentage.
 ///
 /// A display session restarts from zero only for a new sync job. A new
 /// attempt of an unfinished job (Rust retry, endpoint fallback, relaunch)
@@ -85,9 +76,7 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
   DateTime? _sessionStartedAt;
   String _sessionJobId = '';
   bool _sessionCompleted = false;
-  String _phase = '';
   int _checkingCycle = 0;
-  Stopwatch? _phaseStopwatch;
   double _displayValue = 0;
 
   @override
@@ -98,8 +87,6 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
     if (isNewSession || isNewStage) {
       _stopTimer();
       _displayValue = 0;
-      _phase = '';
-      _phaseStopwatch = null;
     }
     _trackSession(input, isNewSession: isNewSession);
     _target = input;
@@ -150,32 +137,20 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
 
   double _initialValue(_SyncDisplayTarget input) {
     if (input.isSyncComplete) return 1;
-    if (!input.isSyncing) return _resumedFloor(input);
-    if (isSyncPreparationPhase(input.phase)) {
-      final range = _preparationRange(input.phase);
-      return math.max(
-        _resumedFloor(input),
-        math.max(range.floor, _measuredPreparation(input, range)),
-      );
-    }
-    return _mappedScanPercentage(input.percentage, input.phase);
+    return _mappedPercentage(input.percentage);
   }
 
-  /// The scan-range value of a resumed job's stored percentage, so
-  /// preparation of a later attempt does not show 0-5% again. Zero for a
-  /// new job. Also the idle value, so starting a sync does not jump.
-  double _resumedFloor(_SyncDisplayTarget input) {
-    if (input.percentage <= 0) return 0;
-    return _mappedScanPercentage(input.percentage, 'scan');
-  }
+  /// A resumed job's stored percentage, held through preparation of a later
+  /// attempt; zero for a new job. Also the idle value, so starting a sync
+  /// does not jump.
+  double _resumedFloor(_SyncDisplayTarget input) =>
+      _mappedPercentage(input.percentage);
 
   void _applyTarget(_SyncDisplayTarget input) {
     final isNewSession = _beginsNewSession(input);
     if (isNewSession) {
       _stopTimer();
       _publish(0);
-      _phase = '';
-      _phaseStopwatch = null;
     }
     _trackSession(input, isNewSession: isNewSession);
     _target = input;
@@ -196,68 +171,19 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
     }
 
     if (isSyncPreparationPhase(input.phase)) {
-      _applyPreparationTarget(input);
+      // Preparation reports no scan work: hold what the job has reached.
+      _stopTimer();
+      _publish(math.max(_displayValue, _resumedFloor(input)));
     } else {
       _applyScanTarget(input);
     }
   }
 
-  void _applyPreparationTarget(_SyncDisplayTarget input) {
-    final range = _preparationRange(input.phase);
-    if (_phase != input.phase) {
-      _stopTimer();
-      _phase = input.phase;
-      _phaseStopwatch = Stopwatch()..start();
-    }
-    final measured = _measuredPreparation(input, range);
-    _publish(
-      math.max(
-        math.max(_displayValue, _resumedFloor(input)),
-        math.max(range.floor, measured),
-      ),
-    );
-    final elapsedMs = _phaseStopwatch?.elapsedMilliseconds.toDouble() ?? 0;
-    if (_timer == null &&
-        _displayValue < range.ceiling &&
-        !_timeEstimateHasSettled(elapsedMs, range)) {
-      _timer = Timer.periodic(_displayTickDuration, (_) {
-        final current = _target;
-        if (!ref.mounted ||
-            current == null ||
-            !current.isSyncing ||
-            current.phase != _phase) {
-          _stopTimer();
-          return;
-        }
-        final currentRange = _preparationRange(_phase);
-        final elapsedMs = _phaseStopwatch?.elapsedMilliseconds.toDouble() ?? 0;
-        final timeFraction =
-            _timeEstimateShare *
-            (1 - math.exp(-elapsedMs / currentRange.timeConstantMs));
-        final temporal =
-            currentRange.floor +
-            (currentRange.ceiling - currentRange.floor) * timeFraction;
-        final actual = _measuredPreparation(current, currentRange);
-        final next = math.min(
-          currentRange.ceiling,
-          math.max(_displayValue, math.max(temporal, actual)),
-        );
-        if (next > _displayValue) _publish(next);
-        if (_timeEstimateHasSettled(elapsedMs, currentRange)) {
-          _stopTimer();
-        }
-      });
-    }
-  }
-
   void _applyScanTarget(_SyncDisplayTarget input) {
     _stopTimer();
-    _phase = input.phase;
-    _phaseStopwatch = null;
-    final base = _mappedScanPercentage(input.percentage, input.phase);
-    final target = _mappedScanPercentage(
+    final base = _mappedPercentage(input.percentage);
+    final target = _mappedPercentage(
       input.targetPercentage,
-      input.phase,
     ).clamp(base, _scanCeiling).toDouble();
     _publish(math.max(_displayValue, base));
     if (input.targetBlocks <= 0 || target <= _displayValue) return;
@@ -278,41 +204,8 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
     });
   }
 
-  double _mappedScanPercentage(double raw, String phase) {
-    final clamped = raw.clamp(0.0, 1.0).toDouble();
-    if (phase != 'download' && phase != 'scan') {
-      return clamped.clamp(0.0, _scanCeiling).toDouble();
-    }
-    return (_preparationCeiling +
-            (_scanCeiling - _preparationCeiling) * clamped)
-        .clamp(_preparationCeiling, _scanCeiling)
-        .toDouble();
-  }
-
-  double _measuredPreparation(
-    _SyncDisplayTarget input,
-    _PreparationRange range,
-  ) {
-    if (input.phaseTotalUnits <= 0) return range.floor;
-    final fraction = (input.phaseCompletedUnits / input.phaseTotalUnits).clamp(
-      0.0,
-      1.0,
-    );
-    return range.floor + (range.ceiling - range.floor) * fraction;
-  }
-
-  _PreparationRange _preparationRange(String phase) {
-    return switch (phase) {
-      kSyncPhasePreflight => const _PreparationRange(0, 0.01, 400),
-      kSyncPhaseSetup => const _PreparationRange(0.01, 0.02, 800),
-      kSyncPhaseActiveUtxo => const _PreparationRange(0.02, 0.04, 1500),
-      kSyncPhaseChainPrepare => const _PreparationRange(0.04, 0.05, 1000),
-      _ => const _PreparationRange(0, 0, 1000),
-    };
-  }
-
-  bool _timeEstimateHasSettled(double elapsedMs, _PreparationRange range) =>
-      elapsedMs >= range.timeConstantMs * _timeEstimateSettleFactor;
+  double _mappedPercentage(double raw) =>
+      raw.clamp(0.0, _scanCeiling).toDouble();
 
   void _stopTimer() {
     _timer?.cancel();
@@ -323,12 +216,4 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
     _displayValue = next;
     state = next;
   }
-}
-
-class _PreparationRange {
-  final double floor;
-  final double ceiling;
-  final double timeConstantMs;
-
-  const _PreparationRange(this.floor, this.ceiling, this.timeConstantMs);
 }

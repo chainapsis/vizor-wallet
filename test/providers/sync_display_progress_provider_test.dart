@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/sync_display_progress_provider.dart';
@@ -8,70 +6,11 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import '../fakes/fake_sync_notifier.dart';
 
 void main() {
-  test(
-    'time-interpolates preparation without reaching its phase cap',
-    () async {
-      final initial = SyncState(
-        isSyncing: true,
-        phase: kSyncPhasePreflight,
-        lastSyncStartedAt: DateTime.utc(2026, 8, 18),
-      );
-      final container = ProviderContainer(
-        overrides: [syncProvider.overrideWith(() => FakeSyncNotifier(initial))],
-      );
-      addTearDown(container.dispose);
-      final subscription = container.listen(
-        syncDisplayPercentageProvider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(subscription.close);
-      await container.read(syncProvider.future);
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-
-      final progress = container.read(syncDisplayPercentageProvider);
-      expect(progress, greaterThan(0.005));
-      expect(progress, lessThan(0.01));
-    },
-  );
-
-  test(
-    'uses elapsed time when preparation timer delivery is delayed',
-    () async {
-      final initial = SyncState(
-        isSyncing: true,
-        phase: kSyncPhasePreflight,
-        lastSyncStartedAt: DateTime.utc(2026, 8, 18),
-      );
-      final container = ProviderContainer(
-        overrides: [syncProvider.overrideWith(() => FakeSyncNotifier(initial))],
-      );
-      addTearDown(container.dispose);
-      final subscription = container.listen(
-        syncDisplayPercentageProvider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(subscription.close);
-      await container.read(syncProvider.future);
-      await Future<void>.delayed(Duration.zero);
-
-      // Simulate a busy/throttled UI isolate. Only one periodic callback should
-      // be needed afterward because progress is based on real elapsed time.
-      sleep(const Duration(milliseconds: 500));
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-
-      expect(container.read(syncDisplayPercentageProvider), greaterThan(0.005));
-    },
-  );
-
-  test('uses committed UTXO work units inside the preparation range', () async {
-    final startedAt = DateTime.utc(2026, 8, 18);
+  test('a new job stays at zero through preparation', () async {
     final initial = SyncState(
       isSyncing: true,
-      phase: kSyncPhaseActiveUtxo,
-      phaseTotalUnits: 4,
-      lastSyncStartedAt: startedAt,
+      phase: kSyncPhasePreflight,
+      lastSyncStartedAt: DateTime.utc(2026, 8, 18),
     );
     late FakeSyncNotifier syncNotifier;
     final container = ProviderContainer(
@@ -89,47 +28,38 @@ void main() {
     );
     addTearDown(subscription.close);
     await container.read(syncProvider.future);
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    expect(container.read(syncDisplayPercentageProvider), 0);
 
-    expect(container.read(syncDisplayPercentageProvider), closeTo(0.02, 0.001));
-    syncNotifier.emit(initial.copyWith(phaseCompletedUnits: 2));
-    await Future<void>.delayed(Duration.zero);
-    expect(container.read(syncDisplayPercentageProvider), closeTo(0.03, 0.001));
-
-    syncNotifier.emit(initial.copyWith(phaseCompletedUnits: 4));
-    await Future<void>.delayed(Duration.zero);
-    expect(container.read(syncDisplayPercentageProvider), closeTo(0.04, 0.001));
+    // Committed preparation work moves nothing either.
+    syncNotifier.emit(initial.copyWith(phase: kSyncPhaseActiveUtxo));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(container.read(syncDisplayPercentageProvider), 0);
   });
 
-  test(
-    'maps authoritative block progress into the 5-99 percent range',
-    () async {
-      final initial = SyncState(
-        isSyncing: true,
-        phase: 'scan',
-        percentage: 0.5,
-        displayTargetPercentage: 0.5,
-        lastSyncStartedAt: DateTime.utc(2026, 8, 18),
-      );
-      final container = ProviderContainer(
-        overrides: [syncProvider.overrideWith(() => FakeSyncNotifier(initial))],
-      );
-      addTearDown(container.dispose);
-      final subscription = container.listen(
-        syncDisplayPercentageProvider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(subscription.close);
-      await container.read(syncProvider.future);
-      await Future<void>.delayed(Duration.zero);
+  test('maps the work fraction of the job onto 0-99 percent', () async {
+    final initial = SyncState(
+      isSyncing: true,
+      phase: 'scan',
+      percentage: 0.5,
+      displayTargetPercentage: 0.5,
+      lastSyncStartedAt: DateTime.utc(2026, 8, 18),
+    );
+    final container = ProviderContainer(
+      overrides: [syncProvider.overrideWith(() => FakeSyncNotifier(initial))],
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      syncDisplayPercentageProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+    await Future<void>.delayed(Duration.zero);
 
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.52, 0.001),
-      );
-    },
-  );
+    expect(container.read(syncDisplayPercentageProvider), 0.5);
+  });
 
   test('does not regress when a Rust retry returns to preparation', () async {
     final startedAt = DateTime.utc(2026, 8, 18);
@@ -198,27 +128,18 @@ void main() {
       addTearDown(subscription.close);
       await container.read(syncProvider.future);
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.4636, 1e-9),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.44);
 
       syncNotifier.emit(initial.copyWith(phase: kSyncPhaseChainPrepare));
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.4636, 1e-9),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.44);
 
       // Rust retains 44% completed and reports 1% of the remaining 56%.
       syncNotifier.emit(
         initial.copyWith(percentage: 0.4456, displayTargetPercentage: 0.4456),
       );
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.468864, 1e-9),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.4456);
     },
   );
 
@@ -248,7 +169,7 @@ void main() {
     addTearDown(subscription.close);
     await container.read(syncProvider.future);
     await Future<void>.delayed(Duration.zero);
-    expect(container.read(syncDisplayPercentageProvider), closeTo(0.52, 0.001));
+    expect(container.read(syncDisplayPercentageProvider), 0.5);
 
     syncNotifier.emit(
       SyncState(
@@ -306,10 +227,7 @@ void main() {
       final (container, sync) = await start(
         scanState(percentage: 0.5, jobId: 'job-a'),
       );
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.52, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.5);
 
       sync.emit(
         SyncState(
@@ -321,19 +239,13 @@ void main() {
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 80));
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.52, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.5);
 
       sync.emit(
         scanState(percentage: 0.51, jobId: 'job-a', startedAt: secondStartedAt),
       );
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.05 + 0.94 * 0.51, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.51);
     });
 
     test('holds until the new attempt names its job, then restarts '
@@ -350,19 +262,13 @@ void main() {
         ),
       );
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.52, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.5);
 
       sync.emit(
         scanState(percentage: 0, jobId: 'job-b', startedAt: secondStartedAt),
       );
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.05, 1e-9),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0);
     });
 
     test('restarts when Rust replaces the job mid-session', () async {
@@ -373,28 +279,25 @@ void main() {
       sync.emit(scanState(percentage: 0.01, jobId: 'job-b'));
       await Future<void>.delayed(Duration.zero);
 
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.05 + 0.94 * 0.01, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.01);
     });
 
-    test('a resumed job skips the 0-5% preparation range', () async {
-      final (container, _) = await start(
-        SyncState(
-          isSyncing: true,
-          phase: kSyncPhaseActiveUtxo,
-          percentage: 0.4,
-          lastSyncStartedAt: firstStartedAt,
-          syncJobId: 'job-a',
-        ),
-      );
+    test(
+      'a resumed job keeps its stored percentage through preparation',
+      () async {
+        final (container, _) = await start(
+          SyncState(
+            isSyncing: true,
+            phase: kSyncPhaseActiveUtxo,
+            percentage: 0.4,
+            lastSyncStartedAt: firstStartedAt,
+            syncJobId: 'job-a',
+          ),
+        );
 
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.05 + 0.94 * 0.4, 0.001),
-      );
-    });
+        expect(container.read(syncDisplayPercentageProvider), 0.4);
+      },
+    );
 
     test('keeps its value between attempts', () async {
       final (container, sync) = await start(
@@ -410,10 +313,7 @@ void main() {
       );
       await Future<void>.delayed(Duration.zero);
 
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.52, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.5);
     });
 
     test('a relaunch with a stored job resumes where it stopped', () async {
@@ -421,10 +321,7 @@ void main() {
       final (container, sync) = await start(
         SyncState(percentage: 0.4, syncJobId: 'job-a'),
       );
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.05 + 0.94 * 0.4, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.4);
 
       sync.emit(
         SyncState(
@@ -436,10 +333,7 @@ void main() {
         ),
       );
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.05 + 0.94 * 0.4, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.4);
     });
 
     test('an idle state without a job drops the held value', () async {
@@ -498,10 +392,7 @@ void main() {
         ),
       );
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(syncDisplayPercentageProvider),
-        closeTo(0.52, 0.001),
-      );
+      expect(container.read(syncDisplayPercentageProvider), 0.5);
     });
 
     test('a sync after a completed job starts from zero', () async {
