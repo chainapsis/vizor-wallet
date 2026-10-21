@@ -1427,16 +1427,25 @@ class _HomeImportingContent extends StatelessWidget {
             height: 414,
             child: Stack(
               children: [
+                // The number's slot. Under a larger text scale the number
+                // scales down to fit it rather than clip.
                 Positioned(
+                  key: const ValueKey('home_desktop_importing_progress_slot'),
                   left: 0,
                   top: 0,
                   width: 340,
                   height: 48,
-                  child: Text(
-                    '$pct%',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.displayMedium.copyWith(
-                      color: colors.text.accent,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '$pct%',
+                        maxLines: 1,
+                        softWrap: false,
+                        style: AppTypography.displayMedium.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
                     ),
                   ),
                 ),
