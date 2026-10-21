@@ -140,6 +140,13 @@ pub struct ChainUpgradeActivationStatus {
     pub ironwood_active_at_tip: bool,
 }
 
+/// Target block spacing before and from NU7, for time estimates in the UI.
+pub struct BlockSpacingSchedule {
+    pub nu7_activation_height: Option<u64>,
+    pub pre_nu7_block_seconds: u32,
+    pub nu7_block_seconds: u32,
+}
+
 /// Catches panics and converts them to Result<T, String>.
 fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
     match panic::catch_unwind(f) {
@@ -301,6 +308,19 @@ pub fn get_chain_upgrade_status_at_height(
             nu6_3_activation_height: nu6_3_activation_height(network),
             ironwood_active_at_tip: is_ironwood_active_at_height(network, tip_height)?,
         })
+    })
+}
+
+/// Target block spacing for `network`; the NU7 height is absent until scheduled.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_block_spacing_schedule(network: String) -> Result<BlockSpacingSchedule, String> {
+    let network = keys::parse_network(&network)?;
+    Ok(BlockSpacingSchedule {
+        nu7_activation_height: network
+            .activation_height(NetworkUpgrade::Nu7)
+            .map(|height| u64::from(u32::from(height))),
+        pre_nu7_block_seconds: crate::wallet::block_times::PRE_NU7_BLOCK_SECONDS,
+        nu7_block_seconds: crate::wallet::block_times::NU7_BLOCK_SECONDS,
     })
 }
 
@@ -1917,6 +1937,19 @@ mod tests {
             get_chain_upgrade_status_at_height("main".to_string(), activation).unwrap();
         assert_eq!(at_activation.tip_height, activation);
         assert!(at_activation.ironwood_active_at_tip);
+    }
+
+    #[test]
+    fn block_spacing_schedule_reports_nu7_heights_and_spacing() {
+        let main = get_block_spacing_schedule("main".to_string()).unwrap();
+        assert_eq!(main.nu7_activation_height, Some(3_543_405));
+        assert_eq!(
+            (main.pre_nu7_block_seconds, main.nu7_block_seconds),
+            (75, 25)
+        );
+
+        let test = get_block_spacing_schedule("test".to_string()).unwrap();
+        assert_eq!(test.nu7_activation_height, Some(4_465_026));
     }
 
     #[test]
