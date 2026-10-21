@@ -375,13 +375,7 @@ class _SyncKeepAwakeStatusScreen extends ConsumerWidget {
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
     final main = switch (mode) {
-      SyncKeepAwakePrivacyLockMode.done => const _SyncKeepAwakeStatusLockup(
-        iconName: AppIcons.checkCircle,
-        iconKey: ValueKey('sync_keep_awake_privacy_done_check'),
-        title: 'Sync Complete',
-        body: 'Unlock Vizor to continue',
-        success: true,
-      ),
+      SyncKeepAwakePrivacyLockMode.done => const _SyncKeepAwakeDoneLockup(),
       SyncKeepAwakePrivacyLockMode.interrupted =>
         const _SyncKeepAwakeStatusLockup(
           iconName: AppIcons.warning,
@@ -735,6 +729,26 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
   }
 }
 
+/// "Sync Complete". While a catch-up runs beneath it (a short catch-up, or
+/// one held past the short limits), the subtitle says new blocks are
+/// syncing, in the same slot.
+class _SyncKeepAwakeDoneLockup extends ConsumerWidget {
+  const _SyncKeepAwakeDoneLockup();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final catchingUp = ref.watch(syncKeepAwakeCompleteThroughCatchUpProvider);
+    return _SyncKeepAwakeStatusLockup(
+      iconName: AppIcons.checkCircle,
+      iconKey: const ValueKey('sync_keep_awake_privacy_done_check'),
+      title: 'Sync Complete',
+      body: catchingUp ? 'Syncing new blocks…' : 'Unlock Vizor to continue',
+      bodySemanticsLabel: catchingUp ? 'Syncing new blocks' : null,
+      success: true,
+    );
+  }
+}
+
 class _SyncKeepAwakeStatusLockup extends StatelessWidget {
   const _SyncKeepAwakeStatusLockup({
     required this.iconName,
@@ -742,12 +756,16 @@ class _SyncKeepAwakeStatusLockup extends StatelessWidget {
     required this.title,
     required this.body,
     required this.success,
+    this.bodySemanticsLabel,
   });
 
   final String iconName;
   final Key iconKey;
   final String title;
   final String body;
+
+  /// What a screen reader announces for [body]; the body itself when null.
+  final String? bodySemanticsLabel;
   final bool success;
 
   @override
@@ -792,6 +810,8 @@ class _SyncKeepAwakeStatusLockup extends StatelessWidget {
                 width: SyncKeepAwakePrivacyLockScreen._doneBodyWidth,
                 child: Text(
                   body,
+                  key: const ValueKey('sync_keep_awake_privacy_status_body'),
+                  semanticsLabel: bodySemanticsLabel,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: colors.text.primary,

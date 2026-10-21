@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_scan_slowdown_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_short_catch_up_provider.dart';
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -350,6 +351,122 @@ void main() {
       TargetPlatform.android,
     }),
   );
+
+  group('Sync Complete over a catch-up', () {
+    const synced = 3000000;
+    SyncState completed() => SyncState(
+      isSyncComplete: true,
+      percentage: 1,
+      scannedHeight: synced,
+      chainTipHeight: synced,
+      lastSyncStartedAt: DateTime(2026, 7, 9, 12),
+    );
+    SyncState catchUp(DateTime startedAt, {int scanned = synced}) => SyncState(
+      isSyncing: true,
+      phase: 'scan',
+      scannedHeight: scanned,
+      chainTipHeight: synced + 3,
+      remainingScanBlocks: synced + 3 - scanned,
+      lastSyncStartedAt: startedAt,
+      startedFromCompletedSync: true,
+    );
+
+    /// A locked screen on "Sync Complete" over a synced wallet.
+    Future<(ProviderContainer, FakeSyncNotifier)> lockedComplete(
+      WidgetTester tester,
+    ) async {
+      _setMobileViewport(tester);
+      final sync = FakeSyncNotifier(completed());
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+          biometricUnlockProvider.overrideWith(
+            () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+          ),
+          syncProvider.overrideWith(() => sync),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(container: container, child: _themedApp()),
+      );
+      await _settleInitialSync(tester);
+      container.read(syncKeepAwakePrivacyLockProvider.notifier).lock();
+      await tester.pump();
+      return (container, sync);
+    }
+
+    final body = find.byKey(
+      const ValueKey('sync_keep_awake_privacy_status_body'),
+    );
+
+    testWidgets('idle Sync Complete still reads Unlock Vizor to continue', (
+      tester,
+    ) async {
+      await lockedComplete(tester);
+      expect(find.text('Sync Complete'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('sync_keep_awake_privacy_done_check')),
+        findsOneWidget,
+      );
+      expect(tester.widget<Text>(body).data, 'Unlock Vizor to continue');
+    });
+
+    testWidgets('the subtitle says new blocks are syncing during a short '
+        'catch-up and reverts when it ends', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final (container, sync) = await lockedComplete(tester);
+      final idleRect = tester.getRect(body);
+
+      sync.emit(catchUp(DateTime.now()));
+      await tester.pump();
+      expect(container.read(syncShortCatchUpProvider), isTrue);
+      expect(find.text('Sync Complete'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('sync_keep_awake_privacy_done_check')),
+        findsOneWidget,
+      );
+      expect(tester.widget<Text>(body).data, 'Syncing new blocks…');
+      expect(find.bySemanticsLabel('Syncing new blocks'), findsOneWidget);
+      // The same slot: nothing moves.
+      expect(tester.getRect(body).topLeft, idleRect.topLeft);
+      expect(tester.getRect(body).height, idleRect.height);
+
+      sync.emit(completed());
+      await tester.pump();
+      expect(tester.widget<Text>(body).data, 'Unlock Vizor to continue');
+      semantics.dispose();
+    });
+
+    testWidgets('the subtitle stays on syncing new blocks through the hold '
+        'past 10 s', (tester) async {
+      final (container, sync) = await lockedComplete(tester);
+      // A catch-up just short of its 10 s limit.
+      final startedAt = DateTime.now().subtract(
+        kSyncShortCatchUpMaxDuration - const Duration(milliseconds: 200),
+      );
+      sync.emit(catchUp(startedAt));
+      await tester.pump();
+      expect(container.read(syncShortCatchUpProvider), isTrue);
+      expect(tester.widget<Text>(body).data, 'Syncing new blocks…');
+
+      // The limit passes on the wall clock the catch-up reads, then its timer
+      // fires: the catch-up is no longer short, and the hold keeps the screen.
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 400)),
+      );
+      sync.emit(catchUp(startedAt, scanned: synced + 1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(container.read(syncShortCatchUpProvider), isFalse);
+      expect(find.text('Sync Complete'), findsOneWidget);
+      expect(tester.widget<Text>(body).data, 'Syncing new blocks…');
+
+      sync.emit(completed());
+      await tester.pump();
+      expect(tester.widget<Text>(body).data, 'Unlock Vizor to continue');
+    });
+  });
 
   testWidgets('does not show the privacy screen for near-tip catch-up', (
     tester,

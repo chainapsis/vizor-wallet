@@ -188,7 +188,7 @@ final syncKeepAwakePrivacyLockModeProvider =
       if (sync != null && isSyncKeepAwakeCompletedSync(sync)) {
         return SyncKeepAwakePrivacyLockMode.done;
       }
-      if (ref.watch(_syncKeepAwakeCompleteThroughCatchUpProvider)) {
+      if (ref.watch(syncKeepAwakeCompleteThroughCatchUpProvider)) {
         return SyncKeepAwakePrivacyLockMode.done;
       }
       if (sync?.isSyncing == true && sync?.isBackgroundMode != true) {
@@ -203,8 +203,8 @@ final syncKeepAwakePrivacyLockModeProvider =
 /// "Syncing…" in its synced look meanwhile. Once a catch-up has run under
 /// "Sync Complete", the screen keeps it until that attempt ends, even when
 /// the catch-up outgrows the short limits, rather than flash to the ring
-/// and back.
-final _syncKeepAwakeCompleteThroughCatchUpProvider =
+/// and back. While it holds, the screen says new blocks are syncing.
+final syncKeepAwakeCompleteThroughCatchUpProvider =
     NotifierProvider<_SyncKeepAwakeCompleteThroughCatchUpNotifier, bool>(
       _SyncKeepAwakeCompleteThroughCatchUpNotifier.new,
     );
