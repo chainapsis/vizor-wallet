@@ -631,9 +631,9 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
                   return MobileTopNav.back(
                     title: title,
                     titleSemanticsLabel: titleSemanticsLabel,
-                    titleStyle: AppTypography.bodyMediumStrong.copyWith(
-                      color: colors.text.accent,
-                    ),
+                    titleStyle: withTabularFigures(
+                      AppTypography.bodyMediumStrong,
+                    ).copyWith(color: colors.text.accent),
                     height: _topNavHeight,
                     onBack: submitting ? null : onBack,
                   );
@@ -842,9 +842,9 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
                 child: Text(
                   '${formatSyncStatusPercentage(animatedProgress)}%',
                   textAlign: TextAlign.center,
-                  style: AppTypography.displayLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
+                  style: withTabularFigures(
+                    AppTypography.displayLarge,
+                  ).copyWith(color: colors.text.accent),
                 ),
               ),
               Positioned(

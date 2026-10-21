@@ -65,6 +65,33 @@ void main() {
     expect(sync.style?.color, AppThemeData.dark.colors.sync.text);
   });
 
+  testWidgets('MobileTopNav.account keeps the synced label width for shorter '
+      'labels and sets figures tabular', (tester) async {
+    Future<Rect> slotFor(String label) async {
+      await tester.pumpWidget(
+        _harness(
+          MobileTopNav.account(accountName: 'Account1', syncLabel: label),
+        ),
+      );
+      return tester.getRect(
+        find.byKey(const ValueKey('mobile_top_nav_sync_label_slot')),
+      );
+    }
+
+    final synced = await slotFor('Vizor is synced');
+    expect(await slotFor('Syncing\u2026'), synced);
+    expect(await slotFor('45% Syncing\u2026'), synced);
+    // The label sits at the slot's trailing edge, next to the bar.
+    expect(tester.getTopRight(find.text('45% Syncing\u2026')).dx, synced.right);
+    expect(
+      tester.widget<Text>(find.text('45% Syncing\u2026')).style?.fontFeatures,
+      contains(const FontFeature.tabularFigures()),
+    );
+    // A longer label still gets its full width.
+    final failed = await slotFor('Syncing failed. Wallet data error...');
+    expect(failed.width, greaterThan(synced.width));
+  });
+
   testWidgets('MobileTopNav.account syncing shimmers the label', (
     tester,
   ) async {

@@ -15,6 +15,7 @@ import '../../../../main.dart' show log;
 import '../../../app_bootstrap.dart';
 import '../../../core/config/network_config.dart';
 import '../../../core/config/swap_feature_config.dart';
+import '../../../core/formatting/sync_status_label.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
@@ -1442,9 +1443,9 @@ class _HomeImportingContent extends StatelessWidget {
                         '$pct%',
                         maxLines: 1,
                         softWrap: false,
-                        style: AppTypography.displayMedium.copyWith(
-                          color: colors.text.accent,
-                        ),
+                        style: withTabularFigures(
+                          AppTypography.displayMedium,
+                        ).copyWith(color: colors.text.accent),
                       ),
                     ),
                   ),

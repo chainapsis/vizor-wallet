@@ -97,7 +97,8 @@ void main() {
       displayWholePercentage: 0,
       shortCatchUp: true,
     );
-    expect(status.kind, SyncStatusKind.syncing);
+    // It keeps the synced look.
+    expect(status.kind, SyncStatusKind.catchingUp);
     expect(status.label, 'Syncing\u2026');
     expect(status.semanticsLabel, 'Syncing');
   });

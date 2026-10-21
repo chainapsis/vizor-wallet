@@ -1626,30 +1626,35 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
       networkPrivacy: widget.networkPrivacy,
       shortCatchUp: widget.shortCatchUp,
     );
-    // A short catch-up reads as syncing, so it shows no height either.
-    final syncedHeight =
-        status.kind == SyncStatusKind.synced &&
-            widget.sync.isSyncComplete &&
-            widget.sync.scannedHeight > 0
+    // A short catch-up keeps the synced look, block height included; the
+    // height follows the scan.
+    final showsHeight = switch (status.kind) {
+      SyncStatusKind.synced => widget.sync.isSyncComplete,
+      SyncStatusKind.catchingUp => true,
+      SyncStatusKind.syncing || SyncStatusKind.failed => false,
+    };
+    final syncedHeight = showsHeight && widget.sync.scannedHeight > 0
         ? widget.sync.scannedHeight
         : null;
     final label = status.kind == SyncStatusKind.synced
         ? 'Synced'
         : status.label;
+    final labelSemantics = status.kind == SyncStatusKind.synced
+        ? 'Synced'
+        : status.semanticsLabel;
     final semanticsLabel = syncedHeight == null
-        ? (status.kind == SyncStatusKind.synced
-              ? 'Synced'
-              : status.semanticsLabel)
-        : 'Synced at block ${formatGroupedInteger(syncedHeight)}';
+        ? labelSemantics
+        : '$labelSemantics at block ${formatGroupedInteger(syncedHeight)}';
     final textColor = switch (status.kind) {
       SyncStatusKind.syncing => colors.sync.textSyncing,
       SyncStatusKind.failed => colors.sync.textError,
-      SyncStatusKind.synced => colors.sync.text,
+      SyncStatusKind.synced || SyncStatusKind.catchingUp => colors.sync.text,
     };
     final indicatorColor = switch (status.kind) {
       SyncStatusKind.syncing => colors.text.muted,
       SyncStatusKind.failed => colors.sync.lightError,
-      SyncStatusKind.synced => colors.sync.lightSuccess,
+      SyncStatusKind.synced ||
+      SyncStatusKind.catchingUp => colors.sync.lightSuccess,
     };
 
     final Widget body = _shouldAnimate
@@ -1679,7 +1684,9 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
               label: label,
               tooltipMessage: status.semanticsLabel,
               showTooltipOnOverflow: status.kind == SyncStatusKind.failed,
-              style: AppTypography.labelLarge.copyWith(color: textColor),
+              style: withTabularFigures(
+                AppTypography.labelLarge,
+              ).copyWith(color: textColor),
             ),
           );
 
@@ -1898,9 +1905,9 @@ class _SidebarSyncShimmerLabel extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: AppTypography.labelLarge.copyWith(
-          color: const Color(0xFFFFFFFF),
-        ),
+        style: withTabularFigures(
+          AppTypography.labelLarge,
+        ).copyWith(color: const Color(0xFFFFFFFF)),
       ),
     );
   }

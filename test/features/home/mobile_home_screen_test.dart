@@ -22,6 +22,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/privacy_mask.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -1301,6 +1302,25 @@ void main() {
       lastSyncStartedAt: startedAt,
       startedFromCompletedSync: true,
     );
+    final nav = find.byType(MobileTopNav);
+    final slot = find.byKey(const ValueKey('mobile_top_nav_sync_label_slot'));
+    final syncedSlot = tester.getRect(slot);
+    final syncedColor = tester
+        .widget<Text>(find.text('Vizor is synced'))
+        .style
+        ?.color;
+    final colors = AppThemeData.dark.colors;
+    bool navBarIs(Color color) => tester
+        .widgetList<Container>(
+          find.descendant(of: nav, matching: find.byType(Container)),
+        )
+        .any(
+          (c) =>
+              c.decoration is BoxDecoration &&
+              (c.decoration as BoxDecoration).color == color,
+        );
+    expect(navBarIs(colors.sync.lightSuccess), isTrue);
+
     notifier.emit(catchUp(3));
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -1308,13 +1328,30 @@ void main() {
     expect(find.bySemanticsLabel('Syncing'), findsOneWidget);
     expect(find.text('Vizor is synced'), findsNothing);
     expect(find.textContaining('% Syncing'), findsNothing);
+    // The synced look stays: color, bar, no shimmer, and the label's slot.
+    expect(
+      tester.widget<Text>(find.text('Syncing\u2026')).style?.color,
+      syncedColor,
+    );
+    expect(navBarIs(colors.sync.lightSuccess), isTrue);
+    expect(
+      find.descendant(of: nav, matching: find.byType(ShaderMask)),
+      findsNothing,
+    );
+    expect(tester.getRect(slot), syncedSlot);
 
-    // The catch-up turns out large: its percentage shows.
+    // The catch-up turns out large: its percentage shows, as syncing.
     notifier.emit(catchUp(5000));
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Syncing\u2026'), findsNothing);
     expect(find.textContaining('% Syncing\u2026'), findsOneWidget);
+    expect(navBarIs(colors.text.muted), isTrue);
+    expect(
+      find.descendant(of: nav, matching: find.byType(ShaderMask)),
+      findsOneWidget,
+    );
+    expect(tester.getRect(slot), syncedSlot);
     expect(find.bySemanticsLabel(RegExp(r'^\d+% Syncing$')), findsOneWidget);
     semantics.dispose();
   });

@@ -1060,24 +1060,43 @@ void main() {
       sync.emit(catchUp(remainingScanBlocks: 3));
       await tester.pump();
 
-      expect(find.text('Syncing…'), findsOneWidget);
+      expect(find.text('Syncing\u2026'), findsOneWidget);
       expect(find.text('Synced'), findsNothing);
       expect(find.textContaining('% Syncing'), findsNothing);
-      expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
+      // The synced look stays: color, bar, no shimmer, and the block height,
+      // which follows the scan.
+      final colors = AppThemeData.light.colors;
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('sidebar_sync_text')))
+            .style
+            ?.color,
+        colors.sync.text,
+      );
+      expect(_syncIndicatorColor(tester), colors.sync.lightSuccess);
+      expect(
+        find.descendant(
+          of: find.byType(AppMainSidebar),
+          matching: find.byType(ShaderMask),
+        ),
+        findsNothing,
+      );
+      expect(find.text('3,428,144'), findsOneWidget);
       expect(
         tester
             .getSemantics(find.byKey(const ValueKey('sidebar_sync_text')))
             .label,
-        'Syncing',
+        'Syncing at block 3,428,144',
       );
 
-      // The catch-up turns out large: its progress shows.
+      // The catch-up turns out large: its progress shows, as syncing.
       sync.emit(catchUp(remainingScanBlocks: 5000));
       await tester.pump();
 
-      expect(find.text('Syncing…'), findsNothing);
-      expect(find.textContaining('% Syncing…'), findsOneWidget);
+      expect(find.text('Syncing\u2026'), findsNothing);
+      expect(find.textContaining('% Syncing\u2026'), findsOneWidget);
       expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
+      expect(_syncIndicatorColor(tester), colors.text.muted);
       semantics.dispose();
     },
   );

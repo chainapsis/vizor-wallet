@@ -1,10 +1,27 @@
+import 'package:flutter/painting.dart';
+
 import '../../providers/network_privacy_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
 
 /// Presentation of the wallet sync state shared by the desktop sidebar
 /// status row and the mobile top nav sync widget.
-enum SyncStatusKind { syncing, failed, synced }
+enum SyncStatusKind {
+  syncing,
+  failed,
+  synced,
+
+  /// A synced wallet's short catch-up (`syncShortCatchUpProvider`): the
+  /// label says it is syncing, but the status keeps the synced look (color,
+  /// no shimmer, the sidebar block height) so a routine catch-up does not
+  /// flash the syncing state every block.
+  catchingUp,
+}
+
+/// The status label of a synced wallet. The mobile top nav reserves its
+/// width, the widest label it shows for long, so shorter labels do not move
+/// the nav.
+const kSyncStatusSyncedLabel = 'Vizor is synced';
 
 /// Shown while the wallet waits on Tor: the client is still bootstrapping, or
 /// the sync's first lightwalletd connection over it has not answered yet
@@ -84,7 +101,7 @@ class SyncStatusLabel {
     }
     if (shortCatchUp && !sync.isChecking) {
       return const SyncStatusLabel(
-        kind: SyncStatusKind.syncing,
+        kind: SyncStatusKind.catchingUp,
         label: kSyncStatusCatchingUpLabel,
         semanticsLabel: kSyncStatusCatchingUpSemanticsLabel,
       );
@@ -115,8 +132,8 @@ class SyncStatusLabel {
 
     return const SyncStatusLabel(
       kind: SyncStatusKind.synced,
-      label: 'Vizor is synced',
-      semanticsLabel: 'Vizor is synced',
+      label: kSyncStatusSyncedLabel,
+      semanticsLabel: kSyncStatusSyncedLabel,
     );
   }
 }
@@ -130,6 +147,11 @@ String formatSyncProgressSemanticsLabel(
   Object percentage, {
   required bool isChecking,
 }) => isChecking ? '$percentage% checking' : '$percentage% Syncing';
+
+/// [style] with tabular figures, so a changing percentage keeps its width.
+TextStyle withTabularFigures(TextStyle style) => style.copyWith(
+  fontFeatures: [...?style.fontFeatures, const FontFeature.tabularFigures()],
+);
 
 /// Whether Tor is where the route is heading. A disable in progress keeps
 /// `torEnabled` true while it drains, so the flag alone would read a route
