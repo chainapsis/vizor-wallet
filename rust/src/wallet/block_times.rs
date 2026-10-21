@@ -21,14 +21,19 @@
 mod mainnet_data;
 
 use mainnet_data::{START_HEIGHT, STEP, TIMES};
-use zcash_protocol::consensus::{Network, NetworkUpgrade, Parameters};
+use zcash_protocol::consensus::{
+    Network, NetworkUpgrade, Parameters, NU7_POW_TARGET_SPACING_RATIO,
+};
 
 use crate::wallet::network::WalletNetwork;
 
-/// Mainnet target block spacing since Blossom.
-const TARGET_SPACING_SECONDS: u64 = 75;
-/// Mainnet target block spacing from NU7 activation.
-const NU7_TARGET_SPACING_SECONDS: u64 = 25;
+/// Target block spacing since Blossom, in seconds.
+pub(crate) const PRE_NU7_BLOCK_SECONDS: u32 = 75;
+/// Target block spacing from NU7 activation (ZIP 218), in seconds.
+pub(crate) const NU7_BLOCK_SECONDS: u32 = PRE_NU7_BLOCK_SECONDS / NU7_POW_TARGET_SPACING_RATIO;
+
+const TARGET_SPACING_SECONDS: u64 = PRE_NU7_BLOCK_SECONDS as u64;
+const NU7_TARGET_SPACING_SECONDS: u64 = NU7_BLOCK_SECONDS as u64;
 
 /// Mainnet NU7 activation height, once the protocol crate schedules it.
 fn mainnet_nu7_activation() -> Option<u64> {
