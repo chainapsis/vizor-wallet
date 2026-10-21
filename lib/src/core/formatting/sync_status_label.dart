@@ -8,7 +8,7 @@ enum SyncStatusKind { syncing, failed, synced }
 
 /// Shown while the wallet waits on Tor: the client is still bootstrapping, or
 /// the sync's first lightwalletd connection over it has not answered yet
-/// (otherwise the row sits on "0% Syncing..." through preflight). Copy is
+/// (otherwise the row sits on "0% Syncing…" through preflight). Copy is
 /// provisional.
 const kSyncStatusConnectingToTorLabel = 'Connecting to Tor…';
 const kSyncStatusConnectingToTorSemanticsLabel = 'Connecting to Tor';
@@ -21,7 +21,7 @@ const kSyncStatusTorFailedSemanticsLabel = "Tor couldn't connect";
 /// Shown while a synced wallet catches up to new blocks and the catch-up is
 /// still short (`syncShortCatchUpProvider`): its percentage would start
 /// from zero for a few blocks.
-const kSyncStatusCatchingUpLabel = 'Syncing...';
+const kSyncStatusCatchingUpLabel = 'Syncing…';
 const kSyncStatusCatchingUpSemanticsLabel = 'Syncing';
 
 class SyncStatusLabel {
@@ -106,8 +106,10 @@ class SyncStatusLabel {
       return SyncStatusLabel(
         kind: SyncStatusKind.syncing,
         label: formatSyncProgressLabel(pct, isChecking: sync.isChecking),
-        semanticsLabel:
-            '${sync.isChecking ? 'Checking' : 'Syncing'} $pct percent',
+        semanticsLabel: formatSyncProgressSemanticsLabel(
+          pct,
+          isChecking: sync.isChecking,
+        ),
       );
     }
 
@@ -120,7 +122,14 @@ class SyncStatusLabel {
 }
 
 String formatSyncProgressLabel(Object percentage, {required bool isChecking}) =>
-    isChecking ? '$percentage% checking' : '$percentage% Syncing...';
+    isChecking ? '$percentage% checking' : '$percentage% Syncing…';
+
+/// [formatSyncProgressLabel] as read by a screen reader: the same words,
+/// without the trailing ellipsis.
+String formatSyncProgressSemanticsLabel(
+  Object percentage, {
+  required bool isChecking,
+}) => isChecking ? '$percentage% checking' : '$percentage% Syncing';
 
 /// Whether Tor is where the route is heading. A disable in progress keeps
 /// `torEnabled` true while it drains, so the flag alone would read a route

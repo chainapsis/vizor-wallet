@@ -621,19 +621,23 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
           child: Column(
             children: [
               Consumer(
-                builder: (context, ref, _) => MobileTopNav.back(
-                  title: _titleForMode(
+                builder: (context, ref, _) {
+                  final (title, titleSemanticsLabel) = _titleForMode(
                     mode == SyncKeepAwakePrivacyLockMode.syncing ||
                             mode == SyncKeepAwakePrivacyLockMode.hidden
                         ? ref.watch(syncDisplayWholePercentageProvider)
                         : 0,
-                  ),
-                  titleStyle: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
-                  height: _topNavHeight,
-                  onBack: submitting ? null : onBack,
-                ),
+                  );
+                  return MobileTopNav.back(
+                    title: title,
+                    titleSemanticsLabel: titleSemanticsLabel,
+                    titleStyle: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
+                    height: _topNavHeight,
+                    onBack: submitting ? null : onBack,
+                  );
+                },
               ),
               Expanded(
                 child: LayoutBuilder(
@@ -699,13 +703,19 @@ class _SyncKeepAwakePasscodeConfirmScreen extends StatelessWidget {
     );
   }
 
-  String _titleForMode(int displayWholePercentage) {
+  /// The title and what a screen reader announces for it.
+  (String, String?) _titleForMode(int displayWholePercentage) {
     return switch (mode) {
-      SyncKeepAwakePrivacyLockMode.done => 'Synced',
-      SyncKeepAwakePrivacyLockMode.interrupted => 'Sync paused',
+      SyncKeepAwakePrivacyLockMode.done => ('Synced', null),
+      SyncKeepAwakePrivacyLockMode.interrupted => ('Sync paused', null),
       SyncKeepAwakePrivacyLockMode.hidden ||
-      SyncKeepAwakePrivacyLockMode.syncing =>
-        '$displayWholePercentage% Syncing...',
+      SyncKeepAwakePrivacyLockMode.syncing => (
+        formatSyncProgressLabel(displayWholePercentage, isChecking: false),
+        formatSyncProgressSemanticsLabel(
+          displayWholePercentage,
+          isChecking: false,
+        ),
+      ),
     };
   }
 

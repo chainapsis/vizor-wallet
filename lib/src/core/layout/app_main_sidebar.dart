@@ -1686,7 +1686,13 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
     return SizedBox(
       width: double.infinity,
       height: _height,
-      child: Semantics(label: semanticsLabel, child: body),
+      // The label stands in for the row's text (the visible label and the
+      // block height) so it is announced once.
+      child: Semantics(
+        label: semanticsLabel,
+        excludeSemantics: true,
+        child: body,
+      ),
     );
   }
 

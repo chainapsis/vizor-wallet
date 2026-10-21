@@ -54,7 +54,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text('75% checking'), findsOneWidget);
-    expect(find.text('99% Syncing...'), findsNothing);
+    expect(find.text('99% Syncing…'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -69,12 +69,16 @@ void main() {
   };
 
   testWidgets('sidebar shows in-progress sync percentage', (tester) async {
+    final semantics = tester.ensureSemantics();
     await tester.pumpWidget(
       _sidebarHarness(SyncState(isSyncing: true, percentage: 1)),
     );
     await tester.pump();
 
-    expect(find.text('99% Syncing...'), findsOneWidget);
+    expect(find.text('99% Syncing\u2026'), findsOneWidget);
+    // Announced once, as the words shown.
+    expect(find.bySemanticsLabel('99% Syncing'), findsOneWidget);
+    semantics.dispose();
     expect(find.text('Synced'), findsNothing);
     expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
@@ -1056,7 +1060,7 @@ void main() {
       sync.emit(catchUp(remainingScanBlocks: 3));
       await tester.pump();
 
-      expect(find.text('Syncing...'), findsOneWidget);
+      expect(find.text('Syncing…'), findsOneWidget);
       expect(find.text('Synced'), findsNothing);
       expect(find.textContaining('% Syncing'), findsNothing);
       expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
@@ -1064,15 +1068,15 @@ void main() {
         tester
             .getSemantics(find.byKey(const ValueKey('sidebar_sync_text')))
             .label,
-        contains('Syncing'),
+        'Syncing',
       );
 
       // The catch-up turns out large: its progress shows.
       sync.emit(catchUp(remainingScanBlocks: 5000));
       await tester.pump();
 
-      expect(find.text('Syncing...'), findsNothing);
-      expect(find.textContaining('% Syncing...'), findsOneWidget);
+      expect(find.text('Syncing…'), findsNothing);
+      expect(find.textContaining('% Syncing…'), findsOneWidget);
       expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
       semantics.dispose();
     },
@@ -1113,7 +1117,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Synced'), findsOneWidget);
-    expect(find.text('99% Syncing...'), findsNothing);
+    expect(find.text('99% Syncing…'), findsNothing);
     expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
 

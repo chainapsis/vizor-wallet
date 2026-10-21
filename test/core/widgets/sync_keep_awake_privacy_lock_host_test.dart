@@ -176,7 +176,7 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.text('25% Syncing...'), findsOneWidget);
+      expect(find.text('25% Syncing…'), findsOneWidget);
       expect(find.text('Synced'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -420,7 +420,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Welcome Back'), findsOneWidget);
-    expect(find.text('25% Syncing...'), findsOneWidget);
+    expect(find.text('25% Syncing\u2026'), findsOneWidget);
+    expect(find.bySemanticsLabel('25% Syncing'), findsOneWidget);
     expect(find.text('Unlock to continue'), findsOneWidget);
     expect(find.byType(PasscodeNumpad), findsOneWidget);
     expect(find.bySemanticsLabel('Passcode help'), findsNothing);

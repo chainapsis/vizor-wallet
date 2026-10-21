@@ -325,7 +325,7 @@ class _SyncStatus extends StatelessWidget {
         ),
         const SizedBox(width: 19),
         Text(
-          '34% Syncing...',
+          '34% Syncing…',
           style: AppTypography.labelMedium.copyWith(
             color: colors.sync.textSyncing,
             fontWeight: FontWeight.w400,

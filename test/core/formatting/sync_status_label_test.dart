@@ -22,7 +22,7 @@ void main() {
         SyncStatusLabel.from(sync, displayWholePercentage: 40).label,
         '40% checking',
       );
-      expect(SyncStatusLabel.from(sync).semanticsLabel, 'Checking 25 percent');
+      expect(SyncStatusLabel.from(sync).semanticsLabel, '25% checking');
       expect(
         SyncStatusLabel.from(
           sync,
@@ -76,7 +76,8 @@ void main() {
       displayWholePercentage: 99,
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, '99% Syncing...');
+    expect(status.label, '99% Syncing\u2026');
+    expect(status.semanticsLabel, '99% Syncing');
   });
 
   test('a short catch-up of a synced wallet reads as syncing without a '
@@ -88,7 +89,7 @@ void main() {
     );
     expect(
       SyncStatusLabel.from(catchUp, displayWholePercentage: 0).label,
-      '0% Syncing...',
+      '0% Syncing…',
     );
 
     final status = SyncStatusLabel.from(
@@ -97,7 +98,7 @@ void main() {
       shortCatchUp: true,
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, 'Syncing...');
+    expect(status.label, 'Syncing\u2026');
     expect(status.semanticsLabel, 'Syncing');
   });
 
@@ -228,7 +229,7 @@ void main() {
       displayWholePercentage: 40,
       networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
     );
-    expect(status.label, '40% Syncing...');
+    expect(status.label, '40% Syncing…');
   });
 
   test('direct-route preflight keeps the percentage label', () {
@@ -237,7 +238,7 @@ void main() {
       displayWholePercentage: 1,
       networkPrivacy: const NetworkPrivacyState.off(),
     );
-    expect(status.label, '1% Syncing...');
+    expect(status.label, '1% Syncing…');
   });
 
   test('a failed enable with Tor still off leaves the sync state alone', () {
@@ -263,7 +264,7 @@ void main() {
       ),
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, '40% Syncing...');
+    expect(status.label, '40% Syncing…');
   });
 
   test('turning Tor off does not read as connecting to it', () {
@@ -290,7 +291,7 @@ void main() {
       ),
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, '40% Syncing...');
+    expect(status.label, '40% Syncing…');
   });
 
   test('an enable in flight reads as connecting to Tor', () {

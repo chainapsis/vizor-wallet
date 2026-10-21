@@ -1274,6 +1274,7 @@ void main() {
   testWidgets('a short catch-up reads as syncing without a percentage', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     final synced = SyncState(
       accountUuid: 'account-1',
       hasAccountScopedData: true,
@@ -1303,7 +1304,8 @@ void main() {
     notifier.emit(catchUp(3));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Syncing...'), findsOneWidget);
+    expect(find.text('Syncing\u2026'), findsOneWidget);
+    expect(find.bySemanticsLabel('Syncing'), findsOneWidget);
     expect(find.text('Vizor is synced'), findsNothing);
     expect(find.textContaining('% Syncing'), findsNothing);
 
@@ -1311,8 +1313,10 @@ void main() {
     notifier.emit(catchUp(5000));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Syncing...'), findsNothing);
-    expect(find.textContaining('% Syncing...'), findsOneWidget);
+    expect(find.text('Syncing\u2026'), findsNothing);
+    expect(find.textContaining('% Syncing\u2026'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'^\d+% Syncing$')), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('empty activity is centered with the original vertical spacing', (

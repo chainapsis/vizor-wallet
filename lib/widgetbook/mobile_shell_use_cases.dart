@@ -51,7 +51,7 @@ Widget buildMobileTopNavVariantsUseCase(BuildContext context) {
         ),
         MobileTopNav.account(
           accountName: 'Account1',
-          syncLabel: '20% Syncing...',
+          syncLabel: '20% Syncing…',
           syncLabelColor: context.colors.sync.textSyncing,
           syncIndicatorColor: context.colors.text.muted,
           syncHighlightColor: context.colors.sync.lightSuccess,

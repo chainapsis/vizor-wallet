@@ -51,6 +51,7 @@ class MobileTopNavAccount extends ConsumerWidget {
         badgeRingColor: context.colors.background.window,
       ),
       syncLabel: showSyncStatus ? status.label : null,
+      syncSemanticsLabel: status.semanticsLabel,
       syncLabelColor: syncColors.label,
       syncIndicatorColor: syncColors.indicator,
       syncAnimated: showSyncStatus && isSyncing,

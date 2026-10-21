@@ -585,7 +585,7 @@ class _PayPreviewSidebar extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Text(
-                    '34% Syncing...',
+                    '34% Syncing…',
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.sync.textSyncing,
                     ),

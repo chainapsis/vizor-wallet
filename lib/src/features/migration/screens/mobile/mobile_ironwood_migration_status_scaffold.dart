@@ -30,21 +30,25 @@ class _MobileMigrationStatusScaffold extends ConsumerWidget {
           children: [
             if (showAccountNav) ...[
               Consumer(
-                builder: (context, ref, _) => MobileTopNav.account(
-                  accountName: data.accountName,
-                  syncLabel: SyncStatusLabel.from(
+                builder: (context, ref, _) {
+                  final status = SyncStatusLabel.from(
                     sync,
                     displayWholePercentage: ref.watch(
                       syncDisplayWholePercentageProvider,
                     ),
                     networkPrivacy: ref.watch(networkPrivacyProvider),
                     shortCatchUp: ref.watch(syncShortCatchUpProvider),
-                  ).label,
-                  avatar: AppProfilePicture(
-                    profilePictureId: data.profilePictureId,
-                    size: AppProfilePictureSize.navLarge,
-                  ),
-                ),
+                  );
+                  return MobileTopNav.account(
+                    accountName: data.accountName,
+                    syncLabel: status.label,
+                    syncSemanticsLabel: status.semanticsLabel,
+                    avatar: AppProfilePicture(
+                      profilePictureId: data.profilePictureId,
+                      size: AppProfilePictureSize.navLarge,
+                    ),
+                  );
+                },
               ),
             ],
             Expanded(

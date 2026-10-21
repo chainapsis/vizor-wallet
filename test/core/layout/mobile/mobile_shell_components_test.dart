@@ -72,7 +72,7 @@ void main() {
       _harness(
         MobileTopNav.account(
           accountName: 'Account1',
-          syncLabel: '20% Syncing...',
+          syncLabel: '20% Syncing…',
           syncLabelColor: AppThemeData.dark.colors.sync.textSyncing,
           syncIndicatorColor: AppThemeData.dark.colors.text.muted,
           syncHighlightColor: AppThemeData.dark.colors.sync.lightSuccess,
@@ -86,10 +86,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(tester.takeException(), isNull);
-    expect(find.text('20% Syncing...'), findsOneWidget);
+    expect(find.text('20% Syncing…'), findsOneWidget);
     // The label is wrapped in a shimmer ShaderMask over a solid-color Text.
     expect(find.byType(ShaderMask), findsOneWidget);
-    final label = tester.widget<Text>(find.text('20% Syncing...'));
+    final label = tester.widget<Text>(find.text('20% Syncing…'));
     expect(label.style?.color, const Color(0xFFFFFFFF));
 
     // Unmount so the active ticker is disposed cleanly.
@@ -108,7 +108,7 @@ void main() {
             data: MediaQuery.of(context).copyWith(disableAnimations: true),
             child: MobileTopNav.account(
               accountName: 'Account1',
-              syncLabel: '20% Syncing...',
+              syncLabel: '20% Syncing…',
               syncLabelColor: mutedGreen,
               syncIndicatorColor: greyBar,
               syncHighlightColor: AppThemeData.dark.colors.sync.lightSuccess,
@@ -123,7 +123,7 @@ void main() {
     // is a neutral grey. The brighter shimmer peak only appears in the
     // animated state.
     expect(find.byType(ShaderMask), findsNothing);
-    final label = tester.widget<Text>(find.text('20% Syncing...'));
+    final label = tester.widget<Text>(find.text('20% Syncing…'));
     expect(label.style?.color, mutedGreen);
 
     final greyBars = tester
