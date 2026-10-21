@@ -1,7 +1,7 @@
+import '../../../core/zcash/block_spacing.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'ironwood_migration_phases.dart';
 
-const _estimatedSecondsPerBlock = 75;
 const _preparationConfirmationBlocks = 3;
 const _preparationBroadcastBufferBlocks = 1;
 
@@ -618,22 +618,24 @@ String migrationPlanCompletionLabel(
 }
 
 String migrationPlanCompletionDurationLabel(
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) {
+  rust_sync.OrchardMigrationPrivatePlan plan, {
+  required BlockTimeEstimate blockTimes,
+}) {
   final blocks = _migrationPlanCompletionBlocks(plan);
   if (blocks <= 0) return 'Not scheduled';
-  return _formatMigrationDuration(blocks);
+  return _formatMigrationDuration(blockTimes.secondsForBlocks(blocks));
 }
 
 String migrationPlanCompletionTimingLabel(
   rust_sync.OrchardMigrationPrivatePlan plan, {
+  required BlockTimeEstimate blockTimes,
   DateTime? now,
   bool abbreviateMonth = true,
 }) {
   final blocks = _migrationPlanCompletionBlocks(plan);
   if (blocks <= 0) return 'Schedule pending';
   return _estimatedLocalCompletionTime(
-    blocks,
+    blockTimes.secondsForBlocks(blocks),
     now: now,
     abbreviateMonth: abbreviateMonth,
   );
@@ -670,16 +672,18 @@ int migrationPlanNoteSplitDelayBlocks(
           _preparationBroadcastBufferBlocks;
 
 String migrationPlanNoteSplitDurationLabel(
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) => _formatMigrationDuration(migrationPlanNoteSplitDelayBlocks(plan));
+  rust_sync.OrchardMigrationPrivatePlan plan, {
+  required BlockTimeEstimate blockTimes,
+}) => _formatMigrationDuration(
+  blockTimes.secondsForBlocks(migrationPlanNoteSplitDelayBlocks(plan)),
+);
 
 int migrationPlanPartDelayBlocks({
   required int preparationDelayBlocks,
   required int scheduleOffsetBlocks,
 }) => preparationDelayBlocks + scheduleOffsetBlocks;
 
-String _formatMigrationDuration(int blocks) {
-  final seconds = blocks * _estimatedSecondsPerBlock;
+String _formatMigrationDuration(int seconds) {
   final minutes = (seconds / Duration.secondsPerMinute).ceil();
   if (minutes < 60) return minutes == 1 ? '~1 min' : '~$minutes mins';
 
@@ -693,8 +697,12 @@ String _formatMigrationDuration(int blocks) {
 String migrationBlockOffsetLabel(int blocks) =>
     blocks > 0 ? '~$blocks blocks' : 'Schedule pending';
 
-String migrationBlockOffsetDurationLabel(int blocks) =>
-    blocks > 0 ? _formatMigrationDuration(blocks) : 'Schedule pending';
+String migrationBlockOffsetDurationLabel(
+  int blocks, {
+  required BlockTimeEstimate blockTimes,
+}) => blocks > 0
+    ? _formatMigrationDuration(blockTimes.secondsForBlocks(blocks))
+    : 'Schedule pending';
 
 String migrationScheduledBroadcastLabel(
   rust_sync.MigrationScheduledBroadcast broadcast, {
@@ -747,11 +755,17 @@ String migrationDispatchTimingLabel(
 
 String migrationCompletionTimingLabel(
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   DateTime? now,
   int? currentHeight,
   bool abbreviateMonth = true,
 }) {
   final useScheduledHeight = currentHeight != null && currentHeight > 0;
+  final fromHeight = currentHeight != null && currentHeight > 0
+      ? currentHeight
+      : blockTimes.tipHeight;
+  int secondsFor(int blocks) =>
+      blockTimes.secondsBetween(fromHeight, fromHeight + blocks);
   final estimatedCompletionHeight = status.estimatedCompletionHeight;
   if (useScheduledHeight && status.activeRunId != null) {
     final overdueScheduledCount = status.scheduledBroadcasts
@@ -776,7 +790,7 @@ String migrationCompletionTimingLabel(
       remainingBlocks = status.denominationConfirmationTarget;
     }
     return _estimatedLocalCompletionTime(
-      remainingBlocks,
+      secondsFor(remainingBlocks),
       now: now,
       abbreviateMonth: abbreviateMonth,
     );
@@ -796,7 +810,7 @@ String migrationCompletionTimingLabel(
     final estimatedBlocks = status.scheduleMeanDelayBlocks * batchCount;
     if (estimatedBlocks <= 0) return 'Schedule pending';
     return _estimatedLocalCompletionTime(
-      estimatedBlocks,
+      secondsFor(estimatedBlocks),
       now: now,
       abbreviateMonth: abbreviateMonth,
     );
@@ -807,7 +821,7 @@ String migrationCompletionTimingLabel(
         ? latest.scheduledHeight - currentHeight
         : 0;
     return _estimatedLocalCompletionTime(
-      remainingBlocks,
+      secondsFor(remainingBlocks),
       now: now,
       abbreviateMonth: abbreviateMonth,
     );
@@ -829,12 +843,14 @@ String migrationCompletionTimingLabel(
 /// continue to use the persisted Rust state.
 String migrationApproximateCompletionTimingLabel(
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   DateTime? now,
   required int currentHeight,
   bool abbreviateMonth = true,
 }) {
   final exact = migrationCompletionTimingLabel(
     status,
+    blockTimes: blockTimes,
     now: now,
     currentHeight: currentHeight,
     abbreviateMonth: abbreviateMonth,
@@ -865,7 +881,7 @@ String migrationApproximateCompletionTimingLabel(
   if (estimatedBlocks <= 0) return exact;
 
   return _estimatedLocalCompletionTime(
-    estimatedBlocks,
+    blockTimes.secondsBetween(currentHeight, currentHeight + estimatedBlocks),
     now: now,
     abbreviateMonth: abbreviateMonth,
   );
@@ -873,6 +889,7 @@ String migrationApproximateCompletionTimingLabel(
 
 String? migrationNextActionTimingLabel(
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   required int? currentHeight,
   DateTime? now,
 }) {
@@ -882,6 +899,7 @@ String? migrationNextActionTimingLabel(
   }
   return migrationHeightTimingLabel(
     nextHeight,
+    blockTimes: blockTimes,
     currentHeight: currentHeight,
     now: now,
   );
@@ -889,6 +907,7 @@ String? migrationNextActionTimingLabel(
 
 String migrationHeightTimingLabel(
   int targetHeight, {
+  required BlockTimeEstimate blockTimes,
   required int currentHeight,
   DateTime? now,
 }) {
@@ -896,9 +915,7 @@ String migrationHeightTimingLabel(
 
   final localNow = (now ?? DateTime.now()).toLocal();
   final nextTime = localNow.add(
-    Duration(
-      seconds: (targetHeight - currentHeight) * _estimatedSecondsPerBlock,
-    ),
+    Duration(seconds: blockTimes.secondsBetween(currentHeight, targetHeight)),
   );
   final time = '${_twoDigits(nextTime.hour)}:${_twoDigits(nextTime.minute)}';
   if (nextTime.year == localNow.year &&
@@ -911,27 +928,25 @@ String migrationHeightTimingLabel(
 
 String migrationHeightRemainingDurationLabel(
   int targetHeight, {
+  required BlockTimeEstimate blockTimes,
   required int currentHeight,
 }) {
   if (targetHeight <= currentHeight) return 'ready now';
-  final remainingBlocks = targetHeight - currentHeight;
-  final seconds = remainingBlocks * _estimatedSecondsPerBlock;
+  final seconds = blockTimes.secondsBetween(currentHeight, targetHeight);
   final minutes = (seconds / Duration.secondsPerMinute).ceil();
   if (minutes < 60) {
     return minutes == 1 ? '~in 1 minute' : '~in $minutes minutes';
   }
-  return _formatMigrationDuration(remainingBlocks);
+  return _formatMigrationDuration(seconds);
 }
 
 String _estimatedLocalCompletionTime(
-  int blocks, {
+  int seconds, {
   DateTime? now,
   required bool abbreviateMonth,
 }) {
   final utcNow = (now ?? DateTime.now()).toUtc();
-  final completionUtc = utcNow.add(
-    Duration(seconds: blocks * _estimatedSecondsPerBlock),
-  );
+  final completionUtc = utcNow.add(Duration(seconds: seconds));
   return _migrationDateTime(
     completionUtc.toLocal(),
     abbreviateMonth: abbreviateMonth,
