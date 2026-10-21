@@ -188,7 +188,10 @@ class SyncKeepAwakePrivacyLockScreen extends ConsumerStatefulWidget {
   static const _doneStatusHeight = 200.0;
   static const _doneStatusToButtonGap = 147.0;
   static const _minimumDoneStatusToButtonGap = 48.0;
-  static const _bodyWidth = 130.0;
+  // Wide enough to keep "Vizor is syncing" on one line up to about 1.5x
+  // text scale. The text is centered, so at 1.0x it sits where the 130px
+  // Figma box puts it.
+  static const _bodyWidth = 180.0;
   static const _slowdownWidth = 180.0;
   static const _doneBodyWidth = 200.0;
 
@@ -808,6 +811,11 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
 
   static const _progressAnimationDuration = Duration(milliseconds: 420);
 
+  /// Where the number's line starts inside the ring (Figma).
+  static const _numberTop = 118.0;
+  static const _numberToBodyGap = 12.0;
+  static const _bodyToSlowdownGap = 4.0;
+
   final double progress;
   final SyncScanSlowdown? slowdown;
 
@@ -816,6 +824,7 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
     final colors = context.colors;
     final targetProgress = progress.clamp(0.0, 1.0).toDouble();
     final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final slowdown = this.slowdown;
     return SizedBox.square(
       dimension: SyncKeepAwakePrivacyLockScreen._ringSize,
       child: TweenAnimationBuilder<double>(
@@ -835,54 +844,56 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
                   ),
                 ),
               ),
+              // The number, then the body and the slowdown note in flow, so
+              // a larger text scale pushes the note down instead of drawing
+              // the two over each other.
               Positioned(
-                top: 118,
+                top: _numberTop,
                 left: 0,
                 right: 0,
-                child: Text(
-                  '${formatSyncStatusPercentage(animatedProgress)}%',
-                  textAlign: TextAlign.center,
-                  style: withTabularFigures(
-                    AppTypography.displayLarge,
-                  ).copyWith(color: colors.text.accent),
-                ),
-              ),
-              Positioned(
-                top: 170,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: SizedBox(
-                    width: SyncKeepAwakePrivacyLockScreen._bodyWidth,
-                    child: Text(
-                      'Vizor is syncing',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${formatSyncStatusPercentage(animatedProgress)}%',
+                      key: const ValueKey('sync_keep_awake_privacy_number'),
                       textAlign: TextAlign.center,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.primary,
-                      ),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: withTabularFigures(
+                        AppTypography.displayLarge,
+                      ).copyWith(color: colors.text.accent),
                     ),
-                  ),
-                ),
-              ),
-              if (slowdown case final slowdown?)
-                Positioned(
-                  top: 199,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: SizedBox(
-                      width: SyncKeepAwakePrivacyLockScreen._slowdownWidth,
+                    const SizedBox(height: _numberToBodyGap),
+                    SizedBox(
+                      width: SyncKeepAwakePrivacyLockScreen._bodyWidth,
                       child: Text(
-                        _slowdownMessage(slowdown),
-                        key: const ValueKey('sync_keep_awake_privacy_slowdown'),
+                        'Vizor is syncing',
                         textAlign: TextAlign.center,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: colors.text.secondary,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.primary,
                         ),
                       ),
                     ),
-                  ),
+                    if (slowdown != null) ...[
+                      const SizedBox(height: _bodyToSlowdownGap),
+                      SizedBox(
+                        width: SyncKeepAwakePrivacyLockScreen._slowdownWidth,
+                        child: Text(
+                          _slowdownMessage(slowdown),
+                          key: const ValueKey(
+                            'sync_keep_awake_privacy_slowdown',
+                          ),
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodySmall.copyWith(
+                            color: colors.text.secondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+              ),
             ],
           );
         },

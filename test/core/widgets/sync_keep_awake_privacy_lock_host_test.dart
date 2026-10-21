@@ -305,6 +305,52 @@ void main() {
     );
   });
 
+  testWidgets(
+    'the body and the slowdown note stack without overlapping at the larger '
+    'default text sizes',
+    (tester) async {
+      _setMobileViewport(tester);
+      // iOS xxLarge and Android's largest non-accessibility step.
+      tester.platformDispatcher.textScaleFactorTestValue =
+          defaultTargetPlatform == TargetPlatform.iOS ? 1.235 : 1.3;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(_privacyScreenApp());
+      await _settleInitialSync(tester);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SyncKeepAwakePrivacyLockScreen)),
+      );
+      container.read(syncScanSlowdownProvider.notifier)
+        ..updateSyncJob('job', complete: false)
+        ..updateDevicePower(SyncScanSlowdown.powerSaving);
+      await tester.pump(kSyncScanSlowdownAfter);
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final numberRect = tester.getRect(
+        find.byKey(const ValueKey('sync_keep_awake_privacy_number')),
+      );
+      final bodyRect = tester.getRect(find.text('Vizor is syncing'));
+      final noteRect = tester.getRect(
+        find.byKey(const ValueKey('sync_keep_awake_privacy_slowdown')),
+      );
+      expect(bodyRect.top, greaterThanOrEqualTo(numberRect.bottom));
+      expect(noteRect.top, greaterThanOrEqualTo(bodyRect.bottom));
+      // One line of body copy.
+      expect(
+        bodyRect.height,
+        closeTo(
+          tester.platformDispatcher.textScaleFactor *
+              AppTypography.bodyMediumStrong.fontSize! *
+              AppTypography.bodyMediumStrong.height!,
+          0.5,
+        ),
+      );
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
+  );
+
   testWidgets('does not show the privacy screen for near-tip catch-up', (
     tester,
   ) async {

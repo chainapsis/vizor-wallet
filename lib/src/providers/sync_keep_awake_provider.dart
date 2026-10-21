@@ -188,9 +188,7 @@ final syncKeepAwakePrivacyLockModeProvider =
       if (sync != null && isSyncKeepAwakeCompletedSync(sync)) {
         return SyncKeepAwakePrivacyLockMode.done;
       }
-      // A synced wallet's short catch-up stays complete here too, as it does
-      // in the sync status.
-      if (ref.watch(syncShortCatchUpProvider)) {
+      if (ref.watch(_syncKeepAwakeCompleteThroughCatchUpProvider)) {
         return SyncKeepAwakePrivacyLockMode.done;
       }
       if (sync?.isSyncing == true && sync?.isBackgroundMode != true) {
@@ -198,6 +196,48 @@ final syncKeepAwakePrivacyLockModeProvider =
       }
       return SyncKeepAwakePrivacyLockMode.interrupted;
     });
+
+/// Whether the locked screen keeps "Sync Complete" through a synced wallet's
+/// catch-up. A short catch-up (`syncShortCatchUpProvider`) does not bring
+/// the progress ring back over "Sync Complete"; the sync status reads
+/// "Syncing…" in its synced look meanwhile. Once a catch-up has run under
+/// "Sync Complete", the screen keeps it until that attempt ends, even when
+/// the catch-up outgrows the short limits, rather than flash to the ring
+/// and back.
+final _syncKeepAwakeCompleteThroughCatchUpProvider =
+    NotifierProvider<_SyncKeepAwakeCompleteThroughCatchUpNotifier, bool>(
+      _SyncKeepAwakeCompleteThroughCatchUpNotifier.new,
+    );
+
+class _SyncKeepAwakeCompleteThroughCatchUpNotifier extends Notifier<bool> {
+  /// The start of the catch-up attempt that ran under "Sync Complete".
+  DateTime? _attempt;
+
+  @override
+  bool build() {
+    final locked =
+        !ref.watch(appSecurityProvider).requiresUnlock &&
+        ref.watch(syncKeepAwakePrivacyLockProvider).isLocked;
+    final sync = ref.watch(syncProvider).asData?.value;
+    final startedAt = sync?.lastSyncStartedAt;
+    final shortCatchUp = ref.watch(syncShortCatchUpProvider);
+    if (!locked || sync == null || startedAt == null) {
+      _attempt = null;
+      return false;
+    }
+    if (shortCatchUp) {
+      _attempt = startedAt;
+      return true;
+    }
+    final sameAttemptRunning =
+        startedAt == _attempt &&
+        sync.isSyncing &&
+        !sync.isBackgroundMode &&
+        sync.failure == null;
+    if (!sameAttemptRunning) _attempt = null;
+    return sameAttemptRunning;
+  }
+}
 
 final syncKeepAwakePrivacyLockVisibleProvider = Provider<bool>((ref) {
   return ref.watch(syncKeepAwakePrivacyLockModeProvider) !=

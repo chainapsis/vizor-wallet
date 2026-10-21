@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_short_catch_up_provider.dart';
 
 import '../fakes/fake_sync_notifier.dart';
 
@@ -668,7 +669,8 @@ void main() {
       SyncKeepAwakePrivacyLockMode.done,
     );
 
-    // The catch-up turns out large: its progress shows.
+    // The catch-up turns out large: "Sync Complete" stays until it ends
+    // rather than flash to the ring and back.
     syncNotifier.emit(
       _sync(
         percentage: 0.1,
@@ -679,6 +681,82 @@ void main() {
         startedFromCompletedSync: true,
       ),
     );
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.done,
+    );
+
+    syncNotifier.emit(
+      _sync(
+        isSyncing: false,
+        percentage: 1,
+        scannedHeight: 5200,
+        chainTipHeight: 5200,
+        lastSyncStartedAt: startedAt,
+        startedFromCompletedSync: true,
+      ),
+    );
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.done,
+    );
+
+    // A later attempt that is large from its start shows its progress.
+    syncNotifier.emit(
+      _sync(
+        percentage: 0.1,
+        scannedHeight: 5200,
+        chainTipHeight: 12000,
+        lastSyncStartedAt: startedAt.add(const Duration(minutes: 5)),
+        phase: 'scan',
+        startedFromCompletedSync: true,
+      ),
+    );
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.syncing,
+    );
+  });
+
+  test('privacy lock mode shows the ring for a catch-up past its short '
+      'limits when the lock comes up after "Sync Complete" was gone', () async {
+    final startedAt = DateTime.now();
+    SyncState catchUp(int chainTipHeight) => _sync(
+      percentage: 0.1,
+      scannedHeight: 200,
+      chainTipHeight: chainTipHeight,
+      lastSyncStartedAt: startedAt,
+      phase: 'scan',
+      startedFromCompletedSync: true,
+    );
+    final syncNotifier = FakeSyncNotifier(catchUp(204));
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrap(
+            syncKeepAwakeEnabled: true,
+            syncKeepAwakePromptSeen: true,
+            isPasswordConfigured: true,
+            isUnlocked: true,
+          ),
+        ),
+        syncProvider.overrideWith(() => syncNotifier),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(syncProvider.future);
+    expect(container.read(syncShortCatchUpProvider), isTrue);
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.hidden,
+    );
+
+    // The catch-up outgrows its limits while unlocked, then the lock comes
+    // up: there was no "Sync Complete" to keep.
+    syncNotifier.emit(catchUp(5200));
+    container
+        .read(syncKeepAwakePrivacyLockProvider.notifier)
+        .lock(at: DateTime.now());
     expect(
       container.read(syncKeepAwakePrivacyLockModeProvider),
       SyncKeepAwakePrivacyLockMode.syncing,
