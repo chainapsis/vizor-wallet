@@ -37,6 +37,58 @@ void main() {
     expect(container.read(syncDisplayPercentageProvider), 0);
   });
 
+  test('a scanning job shows at least 1%', () async {
+    final initial = SyncState(
+      isSyncing: true,
+      phase: kSyncPhaseChainPrepare,
+      lastSyncStartedAt: DateTime.utc(2026, 8, 18),
+      syncJobId: 'job',
+    );
+    late FakeSyncNotifier syncNotifier;
+    final container = ProviderContainer(
+      overrides: [
+        syncProvider.overrideWith(
+          () => syncNotifier = FakeSyncNotifier(initial),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      syncDisplayPercentageProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(syncDisplayPercentageProvider), 0);
+
+    // The first scan event of a full restore holds a fraction that rounds to
+    // 0%; it shows 1% from the start of the scan.
+    syncNotifier.emit(
+      initial.copyWith(
+        phase: 'scan',
+        percentage: 0.001,
+        displayTargetPercentage: 0.002,
+        displayTargetBlocks: 1000,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(container.read(syncDisplayPercentageProvider), 0.01);
+    expect(container.read(syncDisplayWholePercentageProvider), 1);
+
+    // Past 1% the work fraction shows as it is.
+    syncNotifier.emit(
+      initial.copyWith(
+        phase: 'scan',
+        percentage: 0.03,
+        displayTargetPercentage: 0.03,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(syncDisplayPercentageProvider), 0.03);
+  });
+
   test('maps the work fraction of the job onto 0-99 percent', () async {
     final initial = SyncState(
       isSyncing: true,
@@ -268,7 +320,8 @@ void main() {
         scanState(percentage: 0, jobId: 'job-b', startedAt: secondStartedAt),
       );
       await Future<void>.delayed(Duration.zero);
-      expect(container.read(syncDisplayPercentageProvider), 0);
+      // The new job restarts the display at the 1% a scanning job shows.
+      expect(container.read(syncDisplayPercentageProvider), 0.01);
     });
 
     test('restarts when Rust replaces the job mid-session', () async {

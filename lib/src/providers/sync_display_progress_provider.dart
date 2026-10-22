@@ -8,6 +8,12 @@ import 'sync_provider.dart';
 const _displayTickDuration = Duration(milliseconds: 20);
 const _scanCeiling = 0.99;
 
+/// The least a scanning job shows. A whole-percent label rounds a new full
+/// restore's first scan work to 0% for about its first minute; 1% from the
+/// first scan event shows that preparation is over and scanning has begun.
+const _scanFloor = 0.01;
+const _checkingPhase = 'checking';
+
 typedef _SyncDisplayTarget = ({
   bool isSyncing,
   bool isSyncComplete,
@@ -31,7 +37,7 @@ _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
         sync.checking?.displayTargetPercentage ?? sync.displayTargetPercentage,
     targetBlocks: sync.displayTargetBlocks,
     checkingCycle: sync.checking?.cycle ?? 0,
-    phase: sync.isChecking ? 'checking' : sync.phase,
+    phase: sync.isChecking ? _checkingPhase : sync.phase,
     startedAt: sync.lastSyncStartedAt,
     completedAt: sync.lastSyncCompletedAt,
     jobId: sync.syncJobId,
@@ -42,7 +48,8 @@ _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
 ///
 /// The job's share of scan work is shown as 0-99%; only a real completion
 /// event can produce 100%. Preparation adds nothing: a new job stays at 0%
-/// and a resumed job holds its stored percentage.
+/// and a resumed job holds its stored percentage. Once the job scans it shows
+/// at least 1% (Checking keeps its own fraction).
 ///
 /// A display session restarts from zero only for a new sync job. A new
 /// attempt of an unfinished job (Rust retry, endpoint fallback, relaunch)
@@ -137,7 +144,19 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
 
   double _initialValue(_SyncDisplayTarget input) {
     if (input.isSyncComplete) return 1;
-    return _mappedPercentage(input.percentage);
+    return _scanBase(input);
+  }
+
+  /// The job's percentage, at least [_scanFloor] once Rust reports a scan
+  /// phase.
+  double _scanBase(_SyncDisplayTarget input) {
+    final mapped = _mappedPercentage(input.percentage);
+    final scanning =
+        input.isSyncing &&
+        input.phase.isNotEmpty &&
+        !isSyncPreparationPhase(input.phase) &&
+        input.phase != _checkingPhase;
+    return scanning ? math.max(mapped, _scanFloor) : mapped;
   }
 
   /// A resumed job's stored percentage, held through preparation of a later
@@ -181,7 +200,7 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
 
   void _applyScanTarget(_SyncDisplayTarget input) {
     _stopTimer();
-    final base = _mappedPercentage(input.percentage);
+    final base = _scanBase(input);
     final target = _mappedPercentage(
       input.targetPercentage,
     ).clamp(base, _scanCeiling).toDouble();
