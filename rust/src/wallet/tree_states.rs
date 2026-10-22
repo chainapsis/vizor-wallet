@@ -42,9 +42,13 @@ fn checkpoint_height(index: usize) -> u64 {
     START_HEIGHT + index as u64 * STEP
 }
 
-#[cfg(test)]
-fn last_checkpoint_height() -> u64 {
-    checkpoint_height(CHECKPOINTS.len() - 1)
+/// Height of the newest compiled checkpoint. The weekly table update only
+/// appends, so it also names the table's version.
+pub(crate) fn last_checkpoint_height() -> u64 {
+    CHECKPOINTS
+        .len()
+        .checked_sub(1)
+        .map_or(0, checkpoint_height)
 }
 
 fn checkpoint_index(height: u64) -> Option<usize> {

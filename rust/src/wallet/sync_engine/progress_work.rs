@@ -30,7 +30,7 @@ use crate::wallet::db::{
     open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, SYNC_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::tree_states::mainnet_tree_sizes;
+use crate::wallet::tree_states::{last_checkpoint_height, mainnet_tree_sizes};
 
 // Relative scan cost of each unit; only the ratios matter. Fitted to the time
 // each batch took in full restores from Sapling activation on a Galaxy A53 and
@@ -410,14 +410,18 @@ impl StoredProgressJob {
 }
 
 /// Identifies the units a job's work is measured in: the batch sizes, byte
-/// budget and weights [`WorkModel`] counts with. Production measures with the
+/// budget and weights [`WorkModel`] counts with, and the compiled tree sizes it
+/// estimates from. The weekly table update appends checkpoints, which changes
+/// both the output estimate and where byte budgets apply, so an app update
+/// resumes a job at its fraction. Production measures with the
 /// [`BATCH_SIZE_FOREGROUND`] reference (`WorkModel::load` in the sync loop); a
 /// second reference size would have to be part of this too.
 pub(super) fn work_model_fingerprint() -> String {
     format!(
         "{BATCH_SIZE_FOREGROUND}/{BATCH_BYTE_BUDGET}/{MIN_BATCH_BLOCKS}/{UNPLANNED_BATCH_BLOCKS}/\
          {WORK_PER_BLOCK}/{WORK_PER_SAPLING_OUTPUT}/{WORK_PER_ORCHARD_ACTION}/{WORK_PER_BATCH}/\
-         {COMPACT_SAPLING_OUTPUT_BYTES}/{COMPACT_ACTION_BYTES}/{SUBTREE_LEAVES}"
+         {COMPACT_SAPLING_OUTPUT_BYTES}/{COMPACT_ACTION_BYTES}/{SUBTREE_LEAVES}/{}",
+        last_checkpoint_height()
     )
 }
 
@@ -1343,6 +1347,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(read_progress_job(path).unwrap(), other_units);
+    }
+
+    #[test]
+    fn the_work_model_names_the_compiled_table() {
+        // An app update that appends checkpoints counts work differently.
+        let newest = last_checkpoint_height();
+        assert!(newest > 0);
+        assert!(work_model_fingerprint().ends_with(&format!("/{newest}")));
     }
 
     #[test]
