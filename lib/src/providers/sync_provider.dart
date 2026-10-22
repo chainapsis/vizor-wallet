@@ -1409,6 +1409,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         rust_sync.setActiveSyncAccount(accountUuid: nextAccountUuid);
         _clearAccountScopedStateFor(nextAccountUuid);
       }
+      if (nextCount == 0 && prevCount > 0) _forgetSyncJob();
       if (nextCount > prevCount) _onAccountAdded();
     });
 
@@ -1639,6 +1640,22 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _accountAddedSinceSyncStart = true;
     startSync();
     _startPolling();
+  }
+
+  /// The last account is gone (a wallet reset): its sync job went with the
+  /// wallet DB, so the next wallet's first sync starts from zero instead of
+  /// resuming the old job's percentage until Rust names a new one.
+  void _forgetSyncJob() {
+    final current = state.value;
+    if (current == null || current.syncJobId.isEmpty) return;
+    state = AsyncData(
+      current.copyWith(
+        syncJobId: '',
+        percentage: 0,
+        displayTargetPercentage: 0,
+        sessionStartPercentage: 0,
+      ),
+    );
   }
 
   bool get _isShuttingDown =>
@@ -4406,6 +4423,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   @visibleForTesting
   void handleAccountAddedForTesting() => _onAccountAdded();
+
+  @visibleForTesting
+  void handleWalletResetForTesting() => _forgetSyncJob();
 
   @visibleForTesting
   Future<void> startInitialSyncForTesting() => _startInitialSync();

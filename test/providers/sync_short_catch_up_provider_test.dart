@@ -329,6 +329,29 @@ void main() {
       expect(scanning.remainingScanBlocks, 4);
       expect(scanning.startedFromCompletedSync, isFalse);
     });
+
+    test('after a wallet reset starts from zero', () async {
+      final unfinished = SyncState(
+        accountUuid: 'account-1',
+        percentage: 0.4,
+        syncJobId: 'job-1',
+        scannedHeight: 2000000,
+        chainTipHeight: _completedHeight,
+      );
+      final (resumed, _) = await _startedFrom(unfinished);
+      expect(resumed.read(syncProvider).requireValue.syncJobId, 'job-1');
+      expect(resumed.read(syncProvider).requireValue.percentage, 0.4);
+
+      final (container, _) = await _startedFrom(
+        unfinished,
+        beforeStart: (notifier) => notifier.handleWalletResetForTesting(),
+      );
+      final preparing = container.read(syncProvider).requireValue;
+      expect(preparing.isSyncing, isTrue);
+      expect(preparing.syncJobId, isEmpty);
+      expect(preparing.percentage, 0);
+      expect(preparing.sessionStartPercentage, 0);
+    });
   });
 }
 
@@ -386,7 +409,10 @@ ProviderContainer _container(
 /// Runs a real sync start from [initial]. The start's own wallet path read
 /// never resolves, so it publishes its preparing state and goes no further;
 /// progress events handled afterwards read the path normally.
-Future<(ProviderContainer, _StartSync)> _startedFrom(SyncState initial) async {
+Future<(ProviderContainer, _StartSync)> _startedFrom(
+  SyncState initial, {
+  void Function(_StartSync notifier)? beforeStart,
+}) async {
   final notifier = _StartSync(initial);
   final container = ProviderContainer(
     overrides: [
@@ -399,6 +425,7 @@ Future<(ProviderContainer, _StartSync)> _startedFrom(SyncState initial) async {
   container.listen(syncProvider, (_, _) {});
   await container.read(accountProvider.future);
   await container.read(syncProvider.future);
+  beforeStart?.call(notifier);
   notifier.startSync();
   return (container, notifier);
 }
