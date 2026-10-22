@@ -887,6 +887,10 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
 
   /// Where the number's line starts inside the ring (Figma).
   static const _numberTop = 118.0;
+
+  /// Where the default layout's two-line slowdown note ends. A larger text
+  /// scale raises the text instead of taking it lower, into the ring's ticks.
+  static const _textBottom = 240.0;
   static const _numberToBodyGap = 12.0;
   static const _bodyToSlowdownGap = 4.0;
 
@@ -921,51 +925,51 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
               // The number, then the body and the slowdown note in flow, so
               // a larger text scale pushes the note down instead of drawing
               // the two over each other.
-              Positioned(
-                top: _numberTop,
-                left: 0,
-                right: 0,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${formatSyncStatusPercentage(animatedProgress)}%',
-                      key: const ValueKey('sync_keep_awake_privacy_number'),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: withTabularFigures(
-                        AppTypography.displayLarge,
-                      ).copyWith(color: colors.text.accent),
-                    ),
-                    const SizedBox(height: _numberToBodyGap),
-                    SizedBox(
-                      width: SyncKeepAwakePrivacyLockScreen._bodyWidth,
-                      child: Text(
-                        'Vizor is syncing',
+              Positioned.fill(
+                child: CustomSingleChildLayout(
+                  delegate: const _SyncKeepAwakeLockupTextLayout(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${formatSyncStatusPercentage(animatedProgress)}%',
+                        key: const ValueKey('sync_keep_awake_privacy_number'),
                         textAlign: TextAlign.center,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.primary,
-                        ),
+                        maxLines: 1,
+                        softWrap: false,
+                        style: withTabularFigures(
+                          AppTypography.displayLarge,
+                        ).copyWith(color: colors.text.accent),
                       ),
-                    ),
-                    if (slowdown != null) ...[
-                      const SizedBox(height: _bodyToSlowdownGap),
+                      const SizedBox(height: _numberToBodyGap),
                       SizedBox(
-                        width: SyncKeepAwakePrivacyLockScreen._slowdownWidth,
+                        width: SyncKeepAwakePrivacyLockScreen._bodyWidth,
                         child: Text(
-                          _slowdownMessage(slowdown),
-                          key: const ValueKey(
-                            'sync_keep_awake_privacy_slowdown',
-                          ),
+                          'Vizor is syncing',
                           textAlign: TextAlign.center,
-                          style: AppTypography.bodySmall.copyWith(
-                            color: colors.text.secondary,
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: colors.text.primary,
                           ),
                         ),
                       ),
+                      if (slowdown != null) ...[
+                        const SizedBox(height: _bodyToSlowdownGap),
+                        SizedBox(
+                          width: SyncKeepAwakePrivacyLockScreen._slowdownWidth,
+                          child: Text(
+                            _slowdownMessage(slowdown),
+                            key: const ValueKey(
+                              'sync_keep_awake_privacy_slowdown',
+                            ),
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodySmall.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ],
@@ -974,6 +978,28 @@ class _SyncKeepAwakeProgressLockup extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Places the lockup's text at its Figma position, raised as far as a larger
+/// text scale would take it below [_SyncKeepAwakeProgressLockup._textBottom].
+class _SyncKeepAwakeLockupTextLayout extends SingleChildLayoutDelegate {
+  const _SyncKeepAwakeLockupTextLayout();
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints.tightFor(width: constraints.maxWidth);
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final top = math.min(
+      _SyncKeepAwakeProgressLockup._numberTop,
+      _SyncKeepAwakeProgressLockup._textBottom - childSize.height,
+    );
+    return Offset(0, math.max(0, top));
+  }
+
+  @override
+  bool shouldRelayout(_SyncKeepAwakeLockupTextLayout oldDelegate) => false;
 }
 
 /// Why sync is slower. Power saving says how to speed up again, naming Low

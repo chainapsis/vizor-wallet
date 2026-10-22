@@ -2,10 +2,11 @@
 library;
 
 import 'dart:async';
-import 'dart:ui' show SemanticsAction, SemanticsActionEvent;
+import 'dart:ui' show BoxHeightStyle, SemanticsAction, SemanticsActionEvent;
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_exit_back_guard.dart';
 import 'package:flutter/services.dart';
@@ -566,6 +567,12 @@ void main() {
       );
       expect(bodyRect.top, greaterThanOrEqualTo(numberRect.bottom));
       expect(noteRect.top, greaterThanOrEqualTo(bodyRect.bottom));
+      _expectLockupTextInsideRingTicks(tester);
+      container
+          .read(syncScanSlowdownProvider.notifier)
+          .updateDevicePower(SyncScanSlowdown.heat);
+      await tester.pump();
+      _expectLockupTextInsideRingTicks(tester);
       // One line of body copy.
       expect(
         bodyRect.height,
@@ -582,6 +589,55 @@ void main() {
       TargetPlatform.android,
     }),
   );
+
+  testWidgets('at iOS xxxLarge the text rises instead of reaching lower', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.353;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(_privacyScreenApp());
+    await _settleInitialSync(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SyncKeepAwakePrivacyLockScreen)),
+    );
+    container.read(syncScanSlowdownProvider.notifier)
+      ..updateSyncJob('job', complete: false)
+      ..updateDevicePower(SyncScanSlowdown.powerSaving);
+    await tester.pump(kSyncScanSlowdownAfter);
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final ring = _ringRect(tester);
+    final number = tester.getRect(
+      find.byKey(const ValueKey('sync_keep_awake_privacy_number')),
+    );
+    final note = tester.getRect(
+      find.byKey(const ValueKey('sync_keep_awake_privacy_slowdown')),
+    );
+    expect(number.top - ring.top, lessThan(118));
+    expect(note.bottom - ring.top, lessThanOrEqualTo(240));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('the number keeps its Figma position at the default text size', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    await tester.pumpWidget(_privacyScreenApp());
+    await _settleInitialSync(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SyncKeepAwakePrivacyLockScreen)),
+    );
+    container.read(syncScanSlowdownProvider.notifier)
+      ..updateSyncJob('job', complete: false)
+      ..updateDevicePower(SyncScanSlowdown.powerSaving);
+    await tester.pump(kSyncScanSlowdownAfter);
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final numberTop = tester
+        .getRect(find.byKey(const ValueKey('sync_keep_awake_privacy_number')))
+        .top;
+    expect(numberTop - _ringRect(tester).top, 118);
+  });
 
   group('Sync Complete over a catch-up', () {
     const synced = 3000000;
@@ -1848,4 +1904,52 @@ class _PendingSecurityNotifier extends _FakeSecurityNotifier {
   final Completer<bool> pending;
   @override
   Future<bool> confirmPassword(String password) => pending.future;
+}
+
+Rect _ringRect(WidgetTester tester) => tester.getRect(
+  find.byWidgetPredicate(
+    (widget) =>
+        widget is CustomPaint &&
+        widget.painter.runtimeType.toString() ==
+            '_SyncKeepAwakeSegmentedRingPainter',
+  ),
+);
+
+/// Every line of the lockup's body and slowdown note lies within the inner
+/// ends of the ring's filled ticks (radius 122.5, less half their stroke),
+/// [inset] pixels inside them.
+void _expectLockupTextInsideRingTicks(WidgetTester tester, {double inset = 2}) {
+  final center = _ringRect(tester).center;
+  final limit = 122.5 - 1.25 - inset;
+  for (final finder in [
+    find.text('Vizor is syncing'),
+    find.descendant(
+      of: find.byKey(const ValueKey('sync_keep_awake_privacy_slowdown')),
+      matching: find.byType(RichText),
+    ),
+  ]) {
+    final paragraph = tester.renderObject<RenderParagraph>(finder);
+    final length = paragraph.text.toPlainText().length;
+    // Tight boxes span the glyphs' ascent and descent, not the line's
+    // leading.
+    final boxes = paragraph.getBoxesForSelection(
+      TextSelection(baseOffset: 0, extentOffset: length),
+      boxHeightStyle: BoxHeightStyle.tight,
+    );
+    for (final box in boxes) {
+      for (final corner in [
+        Offset(box.left, box.top),
+        Offset(box.right, box.top),
+        Offset(box.left, box.bottom),
+        Offset(box.right, box.bottom),
+      ]) {
+        final distance = (paragraph.localToGlobal(corner) - center).distance;
+        expect(
+          distance,
+          lessThanOrEqualTo(limit),
+          reason: '"${paragraph.text.toPlainText()}" reaches the ring ticks',
+        );
+      }
+    }
+  }
 }
