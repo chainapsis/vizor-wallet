@@ -394,15 +394,17 @@ pub(super) fn read_progress_job(db_data_path: &str) -> Result<Option<StoredProgr
     read_job(&conn)
 }
 
-/// Returns the unfinished job, or claims a new unmeasured one, inside the
+/// Returns the stored job, or claims a new unmeasured one, inside the
 /// transaction that marks a sync started. Every event of the attempt then
 /// names the job, and an attempt that fails before measuring keeps the id.
-/// A finished job is not resumed: the next catch-up is a new job from zero,
-/// as after a completed sync.
+/// A finished job (the scan finished, the attempt stopped before completing)
+/// is returned too, so preparation keeps showing where it ended; measuring
+/// it starts a new job from zero only when there is work to scan
+/// ([`JobProgress::start`]), as after a completed sync.
 pub(super) fn claim_progress_job(
     tx: &rusqlite::Transaction<'_>,
 ) -> Result<StoredProgressJob, String> {
-    if let Some(job) = read_job(tx)?.filter(|job| !job.is_finished()) {
+    if let Some(job) = read_job(tx)? {
         return Ok(job);
     }
     let job = StoredProgressJob::unmeasured();
@@ -558,8 +560,8 @@ impl JobProgress {
                 // where it stopped: it scanned past its last periodic save.
                 (id, stored_total, JobStart::Resumed)
             } else if growth > 0.0 && (expected <= eps || growth > done.max(min_replace_growth)) {
-                // Claiming already starts over after a finished job; nothing
-                // is left to stretch over here either.
+                // A finished job has no remaining share to stretch new work
+                // over, and more new work than was finished outgrows one.
                 (new_job_id(), pending, JobStart::Replaced)
             } else {
                 (id, pending / (1.0 - fraction), JobStart::Resumed)
@@ -1120,7 +1122,8 @@ mod tests {
 
     #[test]
     fn a_finished_job_has_no_remaining_share_to_stretch() {
-        // Claiming replaces such a job first; start() must not divide by zero.
+        // A finished job with new work starts over; start() must not divide
+        // by zero. Without new work it stays finished.
         let (job, start) = JobProgress::start(stored(1_000.0, 1.0), 0.5, 1.0);
         assert_eq!(start, JobStart::Replaced);
         assert_ne!(job.id(), "abc");
@@ -1169,7 +1172,7 @@ mod tests {
     }
 
     #[test]
-    fn claiming_keeps_an_unfinished_job_and_names_a_new_one_otherwise() {
+    fn claiming_keeps_the_stored_job_and_names_a_new_one_otherwise() {
         let (_dir, path) = temp_db();
         let claim = || {
             let mut conn = rusqlite::Connection::open(&path).unwrap();
@@ -1197,21 +1200,19 @@ mod tests {
         assert_eq!(claim(), measured);
 
         // The scan finished but the attempt stopped before completing: the
-        // next catch-up is a new job.
+        // next attempt's preparation keeps the job; measuring replaces it.
         let finished = StoredProgressJob {
             fraction: 1.0,
             ..measured
         };
         write_progress_job(&path, &finished).unwrap();
-        let after_finished = claim();
-        assert_ne!(after_finished.id, first.id);
-        assert_eq!(after_finished.total_work, 0.0);
+        assert_eq!(claim(), finished);
 
         let mut conn = rusqlite::Connection::open(&path).unwrap();
         let tx = conn.transaction().unwrap();
         clear_progress_job(&tx).unwrap();
         tx.commit().unwrap();
-        assert_ne!(claim().id, after_finished.id);
+        assert_ne!(claim().id, first.id);
     }
 
     #[test]

@@ -3357,10 +3357,10 @@ async fn run_sync_impl(
     // mode handoff cannot leave the previous completed tip looking like the
     // current run completed successfully.
     //
-    // The progress job is the unfinished one from an earlier attempt or
-    // session, or a new one claimed now. Preparation reports its stored
-    // fraction; the job is measured, and rarely replaced, once pending work
-    // is known below.
+    // The progress job is the one an earlier attempt or session left, even
+    // one whose scan finished before it could complete, or a new one claimed
+    // now. Preparation reports its stored fraction; the job is measured, and
+    // rarely replaced, once pending work is known below.
     let stored_progress_job = with_wallet_db_write_lock("sync_engine.mark_sync_started", || {
         mark_sync_started(db_data_path)
     })
