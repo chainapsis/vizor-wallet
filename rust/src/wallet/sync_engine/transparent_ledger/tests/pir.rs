@@ -27,8 +27,8 @@ const MAIN: WalletNetwork = WalletNetwork::Main;
 pub(super) const BIRTHDAY: u32 = 3_000_000;
 /// The highest scanned block in every mainnet wallet.
 pub(super) const TOP: u32 = BIRTHDAY + 9;
-pub(super) const MAP: &str = "/v2/filters/shards";
-pub(super) const INIT: &str = "/v2/shards/init";
+pub(super) const MAP: &str = "/transparent/v1/filters/shards";
+pub(super) const INIT: &str = "/transparent/v1/shards/init";
 
 pub(super) struct MainWallet {
     _dir: tempfile::TempDir,
@@ -153,20 +153,20 @@ pub(super) fn refusing() -> RequestObserver {
 
 /// The history service's six routes, as `METHOD path`: the library's
 /// end-to-end check, verbatim.
-pub(super) const HISTORY_ROUTES: &str = r"^(GET /v2/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))|POST /v2/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages))$";
+pub(super) const HISTORY_ROUTES: &str = r"^(GET /transparent/v1/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))|POST /transparent/v1/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages))$";
 
 /// The txid display service's six routes, as `METHOD path`: the public init,
 /// recent map and archive index chunks, then a shard revision's manifest,
 /// setup and queries, named by tier, shard, revision, table and segment only.
-pub(crate) const TXID_ROUTES: &str = r"^(GET /v2/txid/(init|map|map/[0-9]+/[0-9a-f]{64}|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/directory-[0-9]+/[0-9]+)|POST /v2/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/directory-[0-9]+)$";
+pub(crate) const TXID_ROUTES: &str = r"^(GET /transparent/v1/txid/(init|map|map/[0-9]+/[0-9a-f]{64}|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/directory-[0-9]+/[0-9]+)|POST /transparent/v1/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/directory-[0-9]+)$";
 
 /// Every route either service serves.
 pub(crate) const ROUTES: &str = concat!(
     r"^(",
-    r"GET /v2/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))",
-    r"|POST /v2/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages)",
-    r"|GET /v2/txid/(init|map|map/[0-9]+/[0-9a-f]{64}|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/directory-[0-9]+/[0-9]+)",
-    r"|POST /v2/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/directory-[0-9]+",
+    r"GET /transparent/v1/(filters/shards(/[0-9]+/filter)?|shards/init|shards/[0-9]+/revisions/[0-9a-f]{64}/(manifest|setup/(directory|pages)/[0-9]+))",
+    r"|POST /transparent/v1/shards/[0-9]+/revisions/[0-9a-f]{64}/query/(directory|pages)",
+    r"|GET /transparent/v1/txid/(init|map|map/[0-9]+/[0-9a-f]{64}|shards/[0-9]+/revisions/[0-9a-f]{64}/manifest|(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/setup/directory-[0-9]+/[0-9]+)",
+    r"|POST /transparent/v1/txid/(archive|recent)/shards/[0-9]+/revisions/[0-9a-f]{64}/query/directory-[0-9]+",
     r")$"
 );
 
@@ -225,7 +225,7 @@ fn paths(requests: &[ObservedRequest]) -> Vec<&str> {
 
 /// `uuid`'s companion file for the default origin.
 fn companion(path: &str, uuid: &str) -> PathBuf {
-    pir::companion_dir(path).companion_path(uuid, pir::DEFAULT_MAINNET_ORIGIN)
+    pir::companion_dir(path).companion_path(uuid, pir::TEST_ORIGIN)
 }
 
 fn with_suffix(base: &Path, suffix: &str) -> PathBuf {
@@ -312,10 +312,8 @@ async fn settle(source: &TransparentPirSource, path: &str, account: AccountUuid)
 #[tokio::test(flavor = "multi_thread")]
 async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
     let custom = "https://transparent-pir.example".to_owned();
-    assert_eq!(
-        pir::origin_for(MAIN, None).as_deref(),
-        Some(pir::DEFAULT_MAINNET_ORIGIN)
-    );
+    // No selected server means no origin: there is no default service.
+    assert_eq!(pir::origin_for(MAIN, None), None);
     assert_eq!(
         pir::origin_for(MAIN, Some(custom.clone())),
         Some(custom.clone())
@@ -324,12 +322,6 @@ async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
         assert_eq!(pir::origin_for(network, None), None);
         assert_eq!(pir::origin_for(network, Some(custom.clone())), None);
     }
-    // Only a debug build reads the override.
-    let read = pir::origin_override(|name| {
-        assert_eq!(name, "VIZOR_TRANSPARENT_PIR_URL");
-        Some(custom.clone())
-    });
-    assert_eq!(read, cfg!(debug_assertions).then(|| custom.clone()));
 
     let wallet = main_wallet(1);
     let account = wallet.accounts[0].1;
@@ -355,6 +347,32 @@ async fn new_selects_the_origin_gates_mainnet_and_uses_the_wallet_route() {
     );
     assert_eq!(paths(&seam.seam.observer.requests()), [MAP]);
     assert_eq!(seam.seam.transports(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn with_no_server_selected_a_pass_sends_nothing() {
+    let wallet = main_wallet(1);
+    let account = wallet.accounts[0].1;
+    let watch = watched_by(&wallet, account);
+
+    // No seam: what a release build with no selected server sees.
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Err(SourceError::Unavailable)
+    );
+    assert!(!pir::companion_dir(&wallet.path).path().exists());
+
+    // The same with a transport that would record every request.
+    let seam = test_transport::set_unserved(&wallet.path, refusing());
+    let source = TransparentPirSource::new(&wallet.path, MAIN);
+    assert_eq!(
+        source.recover(request(account, &watch, &|| false)).await,
+        Err(SourceError::Unavailable)
+    );
+    assert!(seam.seam.observer.requests().is_empty());
+    assert_eq!(seam.seam.transports(), 0);
+    assert!(!pir::companion_dir(&wallet.path).path().exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -399,15 +417,14 @@ async fn companions_are_per_account_and_bound_to_origin_and_schema() {
 
     // The adapter binds the source, the account's UUID, the origin and its
     // schema into the companion, and refuses it under any other.
-    let config = pir::recovery_config(a, pir::DEFAULT_MAINNET_ORIGIN);
+    let config = pir::recovery_config(a, pir::TEST_ORIGIN);
     assert_eq!(config.source, b"vizor/transparent-pir/v1");
     assert_eq!(config.account_binding, a.expose_uuid().as_bytes());
-    assert_eq!(config.origin, pir::DEFAULT_MAINNET_ORIGIN);
-    assert!(TransparentHistoryRecovery::open(
-        &a_path,
-        pir::recovery_config(b, pir::DEFAULT_MAINNET_ORIGIN)
-    )
-    .is_err());
+    assert_eq!(config.origin, pir::TEST_ORIGIN);
+    assert!(
+        TransparentHistoryRecovery::open(&a_path, pir::recovery_config(b, pir::TEST_ORIGIN))
+            .is_err()
+    );
     let other = "https://transparent-pir.example";
     assert!(TransparentHistoryRecovery::open(&a_path, pir::recovery_config(a, other)).is_err());
     TransparentHistoryRecovery::open(&a_path, config).unwrap();
@@ -975,7 +992,7 @@ async fn passes_and_acknowledgments_on_one_companion_are_serialized() {
 }
 
 /// The route of the one shard's activity filter.
-const FILTER: &str = "/v2/filters/shards/0/filter";
+const FILTER: &str = "/transparent/v1/filters/shards/0/filter";
 
 /// A range filter with no element: no script matches it.
 const EMPTY_FILTER: [u8; 1] = [0];
@@ -1392,27 +1409,27 @@ fn routes_are_the_union_of_both_services() {
     let txid = regex::Regex::new(TXID_ROUTES).unwrap();
     let digest = "ab".repeat(32);
     for line in [
-        "GET /v2/filters/shards".to_owned(),
-        "GET /v2/shards/init".to_owned(),
-        format!("POST /v2/shards/3/revisions/{digest}/query/pages"),
-        "GET /v2/txid/init".to_owned(),
-        "GET /v2/txid/map".to_owned(),
-        format!("GET /v2/txid/map/32/{digest}"),
-        format!("GET /v2/txid/shards/3/revisions/{digest}/manifest"),
-        format!("GET /v2/txid/archive/shards/3/revisions/{digest}/setup/directory-0/0"),
-        format!("POST /v2/txid/recent/shards/3/revisions/{digest}/query/directory-1"),
+        "GET /transparent/v1/filters/shards".to_owned(),
+        "GET /transparent/v1/shards/init".to_owned(),
+        format!("POST /transparent/v1/shards/3/revisions/{digest}/query/pages"),
+        "GET /transparent/v1/txid/init".to_owned(),
+        "GET /transparent/v1/txid/map".to_owned(),
+        format!("GET /transparent/v1/txid/map/32/{digest}"),
+        format!("GET /transparent/v1/txid/shards/3/revisions/{digest}/manifest"),
+        format!("GET /transparent/v1/txid/archive/shards/3/revisions/{digest}/setup/directory-0/0"),
+        format!("POST /transparent/v1/txid/recent/shards/3/revisions/{digest}/query/directory-1"),
     ] {
         assert!(all.is_match(&line), "{line}");
         assert!(history.is_match(&line) != txid.is_match(&line), "{line}");
     }
     for line in [
-        format!("GET /v2/txid/recent/shards/3/revisions/{digest}/query/directory-0"),
-        format!("POST /v2/txid/recent/shards/3/revisions/{digest}/query/pages"),
-        format!("GET /v2/txid/recent/shards/3/revisions/{digest}/setup/pages/0"),
-        format!("POST /v2/txid/archive/shards/3/revisions/{digest}/query/txdirectory"),
-        format!("GET /v2/txid/{digest}"),
-        "GET /v2/txid/shards".to_owned(),
-        "GET /v2/txid/map?txid=1".to_owned(),
+        format!("GET /transparent/v1/txid/recent/shards/3/revisions/{digest}/query/directory-0"),
+        format!("POST /transparent/v1/txid/recent/shards/3/revisions/{digest}/query/pages"),
+        format!("GET /transparent/v1/txid/recent/shards/3/revisions/{digest}/setup/pages/0"),
+        format!("POST /transparent/v1/txid/archive/shards/3/revisions/{digest}/query/txdirectory"),
+        format!("GET /transparent/v1/txid/{digest}"),
+        "GET /transparent/v1/txid/shards".to_owned(),
+        "GET /transparent/v1/txid/map?txid=1".to_owned(),
     ] {
         assert!(!all.is_match(&line), "{line}");
     }
@@ -1453,12 +1470,12 @@ async fn txid_routes_whitelisted_no_secret_leak() {
     let requests = service.requests();
     let digest = "[0-9a-f]{64}";
     let transcript = [
-        "^/v2/txid/init$".to_owned(),
-        "^/v2/txid/map$".to_owned(),
-        format!("^/v2/txid/shards/0/revisions/{digest}/manifest$"),
-        format!("^/v2/txid/recent/shards/0/revisions/{digest}/setup/directory-0/0$"),
+        "^/transparent/v1/txid/init$".to_owned(),
+        "^/transparent/v1/txid/map$".to_owned(),
+        format!("^/transparent/v1/txid/shards/0/revisions/{digest}/manifest$"),
+        format!("^/transparent/v1/txid/recent/shards/0/revisions/{digest}/setup/directory-0/0$"),
         // The one-query layout answers a lookup with a single directory query.
-        format!("^/v2/txid/recent/shards/0/revisions/{digest}/query/directory-0$"),
+        format!("^/transparent/v1/txid/recent/shards/0/revisions/{digest}/query/directory-0$"),
     ];
     assert_eq!(requests.len(), transcript.len(), "{:?}", paths(&requests));
     for (request, expected) in requests.iter().zip(&transcript) {

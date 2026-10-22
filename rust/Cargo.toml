@@ -7,7 +7,10 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-zakura-pir-client = { version = "=0.0.1-rc1", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
+zakura-pir-protocol = { version = "=0.0.1-rc2", default-features = false, features = ["http-endpoint"] }
+zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-pir-client = { version = "=0.0.1-rc2", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
 zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
 flutter_rust_bridge = "=2.11.1"
 
@@ -216,7 +219,7 @@ features = ["test-fixtures"]
 # display publication the loop-4 tests serve, and a real shard service in
 # process. Keep the version aligned with the runtime dependency above.
 [dev-dependencies.zakura-pir-client]
-version = "=0.0.1-rc1"
+version = "=0.0.1-rc2"
 default-features = false
 features = ["testing"]
 
@@ -257,3 +260,17 @@ opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Shared PIR configuration and product routes are not released yet.
+[patch.crates-io]
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-filters = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-pir-client = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-pir-protocol = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-pir-publisher = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-pir-query-server = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+zakura-pir-server-core = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "91446d3e7b2e9511e36eafd229ffc578b78e09ed" }
+# The library above takes `ipir-sp` from git. Keep the app's test evaluator on that source.
+ipir-sp = { git = "https://github.com/valargroup/ipir-sp", rev = "5ea080a3281a01c5459f585e0a1bbbde50ec2bd2" }

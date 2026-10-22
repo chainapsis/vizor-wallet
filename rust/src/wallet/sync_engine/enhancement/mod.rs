@@ -35,10 +35,6 @@ mod policy;
 pub(crate) mod status;
 mod transport;
 
-/// Default mainnet endpoint shared by payload and status PIR. Each lane keeps
-/// its own env-var override.
-pub(super) const DEFAULT_MAINNET_ENDPOINT: &str = "https://enhance-pir.valargroup.dev";
-
 pub(super) use auxiliary::transparent_history::store_address_transaction;
 pub(super) use payload::public::decode_enhancement_payload;
 pub(super) use payload::{phase, queue_stored_transactions};

@@ -1,7 +1,7 @@
 //! The two sources loop 4 chooses between, once per run.
 //!
 //! - [`PirSource`] (`PrivateRequired`): txid display PIR at
-//!   [`DEFAULT_MAINNET_ORIGIN`](crate::wallet::sync_engine::transparent_ledger::pir::DEFAULT_MAINNET_ORIGIN)`/v2/txid/`, mainnet only, through the
+//!   the selected wallet PIR server's `/transparent/v1/txid/`, mainnet only, through the
 //!   process's [`TxidDisplayService`] for the origin over a [`RoutedExchange`].
 //!   It holds no lightwalletd client, so it cannot make a public request.
 //! - [`GateSource`] (every other policy): lightwalletd `GetTransaction`
@@ -32,11 +32,11 @@ use crate::wallet::bounded_runtime::CANCEL_GRACE;
 use crate::wallet::bounded_runtime::{run_detached, Detached};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::enhancement::{decode_enhancement_payload, RoutedExchange};
-use crate::wallet::sync_engine::transparent_ledger::pir::{origin_for, origin_override};
+use crate::wallet::sync_engine::transparent_ledger::pir::{origin_for, selected_origin};
 use crate::wallet::sync_engine::{watch_for_exit, TransparentLookupGate};
 
 #[cfg(test)]
-pub(crate) use crate::wallet::sync_engine::transparent_ledger::pir::DEFAULT_MAINNET_ORIGIN;
+pub(crate) use crate::wallet::sync_engine::transparent_ledger::pir::TEST_ORIGIN;
 
 /// A transaction lightwalletd returned, decoded.
 #[derive(Debug)]
@@ -91,6 +91,15 @@ pub(crate) trait DetailSource {
 static SERVICES: LazyLock<Mutex<HashMap<String, Arc<TxidDisplayService>>>> =
     LazyLock::new(Default::default);
 
+/// Drops every service but the one for `keep`, so nothing derived from a
+/// previously selected server outlives the switch.
+pub(crate) fn retain_service_for(keep: Option<&str>) {
+    SERVICES
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|origin, _| Some(origin.as_str()) == keep);
+}
+
 /// The process-wide service for `origin`.
 pub(crate) fn service_for(origin: &str) -> Arc<TxidDisplayService> {
     SERVICES
@@ -101,10 +110,10 @@ pub(crate) fn service_for(origin: &str) -> Arc<TxidDisplayService> {
         .clone()
 }
 
-/// The txid display origin for `network`: the transparent PIR origin, with
-/// the same debug-build override. `None` off mainnet.
+/// The txid display origin for `network`: the selected wallet PIR server.
+/// `None` off mainnet or with no server selected.
 pub(crate) fn txid_origin(network: WalletNetwork) -> Option<String> {
-    origin_for(network, origin_override(|name| std::env::var(name).ok()))
+    origin_for(network, selected_origin())
 }
 
 /// Private lookups through txid display PIR.
@@ -118,11 +127,19 @@ pub(crate) struct PirSource {
 impl PirSource {
     /// The source for the wallet at `db_path`; `None` off mainnet.
     pub(crate) fn new(db_path: &str, network: WalletNetwork) -> Option<Self> {
+        // A test names its origin through its seam, which replaces the
+        // selection; without one it sees what a release build sees.
+        #[cfg(test)]
+        let seam = test_seam::get(db_path);
+        #[cfg(test)]
+        let origin = match &seam {
+            Some(seam) => origin_for(network, seam.origin.clone()),
+            None => txid_origin(network),
+        }?;
+        #[cfg(not(test))]
         let origin = txid_origin(network)?;
         // A test's fake service gets a service of its own, shared while its
         // seam is set.
-        #[cfg(test)]
-        let seam = test_seam::get(db_path);
         #[cfg(test)]
         let service = seam
             .as_ref()
@@ -398,8 +415,9 @@ impl DetailSource for GateSource {
 
 /// Test seam: the request observer the private source of one wallet file
 /// sends through, standing in for the network, and the service its sources
-/// share, standing in for the process-wide service of the origin. A source
-/// without a seam defers every lookup as unavailable without a request.
+/// share, standing in for the process-wide service of the origin. Without a
+/// seam a source takes the selected server, as in a release build, so with
+/// none selected there is no private source.
 #[cfg(test)]
 pub(crate) mod test_seam {
     use std::collections::HashMap;
@@ -413,6 +431,8 @@ pub(crate) mod test_seam {
     #[derive(Clone)]
     pub(crate) struct Seam {
         pub(crate) observer: RequestObserver,
+        /// Stands in for the selected server.
+        pub(crate) origin: Option<String>,
         /// Shared by every source built while the seam is set, as sources
         /// share the process-wide service; a new seam is a restart.
         pub(crate) service: Arc<TxidDisplayService>,
@@ -431,9 +451,20 @@ pub(crate) mod test_seam {
             .cloned()
     }
 
-    /// Private sources built for `db_path` send through `observer`, sharing
-    /// one new service, until the guard drops.
+    /// Private sources built for `db_path` look up at [`TEST_ORIGIN`]
+    /// through `observer`, sharing one new service, until the guard drops.
+    ///
+    /// [`TEST_ORIGIN`]: super::TEST_ORIGIN
     pub(crate) fn set(db_path: &str, observer: RequestObserver) -> SeamGuard {
+        set_origin(db_path, Some(super::TEST_ORIGIN.to_owned()), observer)
+    }
+
+    /// Like [`set`], with no server selected.
+    pub(crate) fn set_unserved(db_path: &str, observer: RequestObserver) -> SeamGuard {
+        set_origin(db_path, None, observer)
+    }
+
+    fn set_origin(db_path: &str, origin: Option<String>, observer: RequestObserver) -> SeamGuard {
         seams()
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -441,6 +472,7 @@ pub(crate) mod test_seam {
                 db_path.to_owned(),
                 Seam {
                     observer,
+                    origin,
                     service: Default::default(),
                 },
             );

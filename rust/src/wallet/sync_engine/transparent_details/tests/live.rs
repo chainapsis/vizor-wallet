@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use zakura_pir_client::transparent::{Placement, TxidDisplayService, TxidLookup};
 
-use super::super::source::{BlockingLookup, DEFAULT_MAINNET_ORIGIN};
+use super::super::source::{BlockingLookup, TEST_ORIGIN};
 use super::*;
 use crate::wallet::sync_engine::transparent_ledger::tests::pir::assert_private;
 
@@ -56,7 +56,7 @@ async fn txid_live() {
         tokio::task::spawn_blocking(move || {
             let started = Instant::now();
             let found = BlockingLookup {
-                origin: DEFAULT_MAINNET_ORIGIN.to_owned(),
+                origin: TEST_ORIGIN.to_owned(),
                 service,
                 txid,
                 mined_height: height,

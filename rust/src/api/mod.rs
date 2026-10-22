@@ -1,6 +1,7 @@
 pub mod keystone;
 pub mod ledger;
 pub mod network_privacy;
+pub mod pir_config;
 pub mod secret;
 pub mod simple;
 pub mod sync;

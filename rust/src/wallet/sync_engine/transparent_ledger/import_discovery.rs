@@ -34,7 +34,7 @@ use zakura_pir_client::transparent::{
 };
 
 use super::pir::{
-    origin_for, origin_override, MAX_PRIVATE_BYTES, MAX_QUERIES, MAX_RESPONSE_BYTES, MAX_SHARDS,
+    origin_for, source_origin, MAX_PRIVATE_BYTES, MAX_QUERIES, MAX_RESPONSE_BYTES, MAX_SHARDS,
 };
 use crate::wallet::bounded_runtime::{run_detached, Detached};
 use crate::wallet::network::WalletNetwork;
@@ -68,12 +68,10 @@ pub(crate) type Canned = (
 
 impl PrivateAccountDiscovery {
     /// Discovery for an import into the wallet at `db_path`, existing or not:
-    /// the path keys only the test transport.
+    /// the path keys only a test's transport and origin.
     pub(crate) fn new(db_path: &str, network: WalletNetwork) -> Self {
-        #[cfg(not(test))]
-        let _ = db_path;
         Self {
-            origin: origin_for(network, origin_override(|name| std::env::var(name).ok())),
+            origin: origin_for(network, source_origin(db_path)),
             #[cfg(test)]
             transport: super::pir::test_transport::get(db_path),
             #[cfg(test)]
@@ -86,7 +84,7 @@ impl PrivateAccountDiscovery {
     #[cfg(test)]
     pub(crate) fn canned(answer: Result<BTreeSet<usize>, PrivateDiscoveryFailed>) -> Self {
         Self {
-            origin: Some(super::pir::DEFAULT_MAINNET_ORIGIN.to_owned()),
+            origin: Some(super::pir::TEST_ORIGIN.to_owned()),
             transport: None,
             canned: Some((answer, Default::default())),
         }
@@ -279,9 +277,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn without_a_test_transport_nothing_is_sent() {
+    async fn without_a_selected_server_there_is_no_private_discovery() {
         let discovery = PrivateAccountDiscovery::new("/nonexistent", WalletNetwork::Main);
-        assert!(discovery.is_available());
+        assert!(!discovery.is_available());
         assert_eq!(
             discovery
                 .active(1, vec![TransparentAddress::PublicKeyHash([1; 20])])

@@ -410,7 +410,7 @@ fn a_shard_map_of_another_chain_recovers_nothing() {
     }
     misbehaving(
         |request, _, body| {
-            if request.path == "/v2/filters/shards" {
+            if request.path == "/transparent/v1/filters/shards" {
                 replace(
                     body,
                     filter::MAINNET_GENESIS_DISPLAY.as_bytes(),
@@ -435,7 +435,7 @@ fn a_service_on_another_schema_recovers_nothing() {
     }
     misbehaving(
         |request, _, body| {
-            if request.path == "/v2/shards/init" {
+            if request.path == "/transparent/v1/shards/init" {
                 replace(
                     body,
                     shard::manifest::SCHEMA.as_bytes(),

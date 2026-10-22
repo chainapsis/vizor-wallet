@@ -1,0 +1,587 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/enhance_pir_privacy_control.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/mobile/mobile_private_queries_control.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/wallet_pir_server_popup.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/wallet_pir_server_settings.dart';
+import 'package:zcash_wallet/src/providers/wallet_pir_server_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
+import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_config.dart';
+
+const _sourceA = 'https://config.example/a/static.json?checksum=sha256:aaaa';
+const _sourceB = 'https://config.example/b/static.json?checksum=sha256:bbbb';
+const _mirror = 'https://config.example/dynamic.json';
+
+class _MemoryStore implements WalletPirConfigStore {
+  final cached = <String, WalletPirCachedConfig>{};
+
+  /// Holds open the next write whose selection names a key's base.
+  final writeGates = <String, Completer<void>>{};
+
+  @override
+  Future<WalletPirCachedConfig?> readCached(String network, String src) async =>
+      cached['$network|$src'];
+
+  @override
+  Future<void> writeCached(
+    String network,
+    String src,
+    WalletPirCachedConfig value,
+  ) async {
+    final selection = value.selectionJson ?? '';
+    for (final base in [...writeGates.keys]) {
+      if (selection.contains(base)) await writeGates.remove(base)!.future;
+    }
+    cached['$network|$src'] = value;
+  }
+}
+
+/// Serves the static document (whose body names its source) and a dynamic
+/// document per source. A gate holds a source's fetch open for race tests.
+class _Fetcher implements WalletPirConfigFetcher {
+  final servers = <String, List<List<String>>>{};
+  final failing = <String>{};
+  final gates = <String, Completer<void>>{};
+  String _lastStatic = '';
+
+  @override
+  Future<Uint8List> fetch(Uri uri) async {
+    final url = uri.toString();
+    if (url != _mirror) {
+      final source = [
+        _sourceA,
+        _sourceB,
+      ].firstWhere((s) => walletPirConfigTransportUri(s).toString() == url);
+      await gates[source]?.future;
+      if (failing.contains(source)) throw Exception('offline');
+      _lastStatic = source;
+      return Uint8List.fromList(utf8.encode(source));
+    }
+    return Uint8List.fromList(
+      utf8.encode(jsonEncode(servers[_lastStatic] ?? const [])),
+    );
+  }
+}
+
+/// Stands in for the Rust profile with its selection rules: keep an
+/// advertised choice, require a new one when it is removed, default to the
+/// first server only without an earlier choice in the scope.
+class _Resolver implements WalletPirConfigResolver {
+  @override
+  List<String> resolveStatic({
+    required String source,
+    required String network,
+    required Uint8List staticBytes,
+  }) {
+    if (utf8.decode(staticBytes) != source) {
+      throw const WalletPirConfigException('hash-pin mismatch');
+    }
+    return const [_mirror];
+  }
+
+  @override
+  WalletPirConfigView resolve({
+    required String source,
+    required String network,
+    required Uint8List staticBytes,
+    required List<WalletPirMirrorAttempt> attempts,
+    String? savedSelectionJson,
+  }) {
+    final bytes = attempts.last.bytes;
+    if (bytes == null) throw WalletPirConfigException(attempts.last.error!);
+    final snapshot = jsonEncode({
+      'source': source,
+      'servers': jsonDecode(utf8.decode(bytes)),
+    });
+    return revalidate(
+      source: source,
+      network: network,
+      snapshotJson: snapshot,
+      savedSelectionJson: savedSelectionJson,
+    );
+  }
+
+  @override
+  WalletPirConfigView revalidate({
+    required String source,
+    required String network,
+    required String snapshotJson,
+    String? savedSelectionJson,
+  }) {
+    final snapshot = jsonDecode(snapshotJson) as Map<String, dynamic>;
+    if (snapshot['source'] != source) {
+      throw const WalletPirConfigException('snapshot from another source');
+    }
+    final servers = [
+      for (final s in snapshot['servers'] as List)
+        WalletPirServerOption(label: s[0] as String, baseUrl: s[1] as String),
+    ];
+    final saved = savedSelectionJson == null
+        ? null
+        : jsonDecode(savedSelectionJson) as Map<String, dynamic>;
+    final inScope = saved != null && saved['scope'] == source ? saved : null;
+    String selection(String base) =>
+        jsonEncode({'scope': source, 'base': base});
+    final base = inScope?['base'] as String?;
+    if (base != null) {
+      final kept = servers.any((s) => s.baseUrl == base);
+      return WalletPirConfigView(
+        scope: source,
+        snapshotJson: snapshotJson,
+        servers: servers,
+        selectionState: kept
+            ? WalletPirSelectionState.kept
+            : WalletPirSelectionState.selectionRequired,
+        selectedBaseUrl: kept ? base : null,
+        selectionJson: kept ? selection(base) : null,
+        removedBaseUrl: kept ? null : base,
+      );
+    }
+    if (servers.isEmpty) {
+      return WalletPirConfigView(
+        scope: source,
+        snapshotJson: snapshotJson,
+        servers: servers,
+        selectionState: WalletPirSelectionState.noServers,
+      );
+    }
+    return WalletPirConfigView(
+      scope: source,
+      snapshotJson: snapshotJson,
+      servers: servers,
+      selectionState: WalletPirSelectionState.defaulted,
+      selectedBaseUrl: servers.first.baseUrl,
+      selectionJson: selection(servers.first.baseUrl),
+    );
+  }
+
+  @override
+  String select({
+    required String source,
+    required String network,
+    required String snapshotJson,
+    required String baseUrl,
+  }) {
+    final view = revalidate(
+      source: source,
+      network: network,
+      snapshotJson: snapshotJson,
+    );
+    if (!view.servers.any((s) => s.baseUrl == baseUrl)) {
+      throw const WalletPirConfigException('not advertised');
+    }
+    return jsonEncode({'scope': source, 'base': baseUrl});
+  }
+}
+
+class _Harness {
+  _Harness({String? source = _sourceA, bool privateQueriesOn = true}) {
+    container = ProviderContainer(
+      overrides: [
+        walletPirConfigStoreProvider.overrideWithValue(store),
+        walletPirConfigResolverProvider.overrideWithValue(_Resolver()),
+        walletPirConfigFetcherProvider.overrideWithValue(fetcher),
+        walletPirConfigSourceProvider.overrideWithValue(source),
+        walletPirNetworkProvider.overrideWithValue('mainnet'),
+        enhancePirAvailableProvider.overrideWithValue(true),
+        privateQueriesControlEnabledProvider.overrideWithValue(
+          privateQueriesOn,
+        ),
+        walletPirServerApplierProvider.overrideWithValue((base) async {
+          applying++;
+          if (applying > maxApplying) maxApplying = applying;
+          try {
+            await applyGates.remove(base)?.future;
+            applied.add(base);
+          } finally {
+            applying--;
+          }
+        }),
+      ],
+    );
+  }
+
+  final store = _MemoryStore();
+  final fetcher = _Fetcher();
+
+  /// Servers in the order their apply finished.
+  final applied = <String?>[];
+
+  /// Holds open the next apply of a base.
+  final applyGates = <String?, Completer<void>>{};
+  var applying = 0;
+  var maxApplying = 0;
+  late ProviderContainer container;
+
+  WalletPirServerNotifier get notifier =>
+      container.read(walletPirServerProvider.notifier);
+
+  WalletPirServerState get state =>
+      container.read(walletPirServerProvider).requireValue;
+
+  Future<void> start() async {
+    await container.read(walletPirServerProvider.future);
+    await pumpEventQueue();
+  }
+
+  /// A fresh app start over the same storage.
+  _Harness restart() {
+    final next = _Harness();
+    next.store.cached.addAll(store.cached);
+    next.fetcher.servers.addAll(fetcher.servers);
+    next.fetcher.failing.addAll(fetcher.failing);
+    container.dispose();
+    return next;
+  }
+}
+
+const _a = ['Server A', 'https://a.example'];
+const _b = ['Server B', 'https://b.example'];
+const _c = ['Server C', 'https://c.example'];
+
+String? _savedBase(_Harness h, [String source = _sourceA]) {
+  final json = h.store.cached['mainnet|$source']?.selectionJson;
+  return json == null ? null : (jsonDecode(json) as Map)['base'] as String?;
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('the settings popup offers both servers and saves the choice', (
+    tester,
+  ) async {
+    const primary = 'https://wallet-pir.valargroup.dev';
+    const secondary = 'https://wallet-pir-secondary.valargroup.dev';
+    final h = _Harness();
+    var toggles = 0;
+    h.fetcher.servers[_sourceA] = [
+      ['Valargroup Wallet PIR', primary],
+      ['Valargroup Wallet PIR Secondary', secondary],
+    ];
+    await tester.runAsync(h.start);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: h.container,
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: Scaffold(
+              body: kAppFormFactor == AppFormFactor.mobile
+                  ? MobilePrivateQueriesControl(
+                      onRequest: () async => toggles++,
+                    )
+                  : EnhancePirPrivacyControl(
+                      enabled: true,
+                      onToggle: () => toggles++,
+                      transition: null,
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(WalletPirServerSettingsButton), findsOneWidget);
+    expect(find.text('Valargroup Wallet PIR'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('wallet_pir_server_settings_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      toggles,
+      0,
+      reason: 'opening settings does not toggle private queries',
+    );
+    expect(find.text('Valargroup Wallet PIR'), findsOneWidget);
+    expect(find.text('Valargroup Wallet PIR Secondary'), findsOneWidget);
+    expect(find.text('Change server list'), findsNothing);
+    expect(find.byType(EditableText), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('wallet_pir_server_option_$secondary')),
+    );
+    await tester.runAsync(() => pumpEventQueue());
+    await tester.pumpAndSettle();
+    expect(h.applied.last, secondary);
+    expect(h.state.selectedBaseUrl, secondary);
+    expect(_savedBase(h), secondary);
+    expect(
+      find.text('Choose a server'),
+      findsNothing,
+      reason: 'selection closes the popup',
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    final restarted = h.restart();
+    await tester.runAsync(restarted.start);
+    expect(restarted.state.selectedBaseUrl, secondary);
+    expect(restarted.applied.last, secondary);
+    restarted.container.dispose();
+  });
+
+  testWidgets('the settings icon is disabled when private queries are off', (
+    tester,
+  ) async {
+    final h = _Harness(privateQueriesOn: false);
+    var toggles = 0;
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: h.container,
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: Scaffold(
+              body: kAppFormFactor == AppFormFactor.mobile
+                  ? MobilePrivateQueriesControl(
+                      onRequest: () async => toggles++,
+                    )
+                  : EnhancePirPrivacyControl(
+                      enabled: false,
+                      onToggle: () => toggles++,
+                      transition: null,
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final button = find.byKey(
+      const ValueKey('wallet_pir_server_settings_button'),
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Choose a server'), findsNothing);
+    expect(
+      toggles,
+      0,
+      reason: 'the disabled icon does not turn private queries on',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    h.container.dispose();
+  });
+
+  test('first load picks the first server and keeps it', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    await h.start();
+
+    expect(h.state.selectedBaseUrl, 'https://a.example');
+    expect(h.applied.last, 'https://a.example');
+    expect(
+      h.store.cached['mainnet|$_sourceA']!.selectionJson,
+      contains('a.example'),
+    );
+  });
+
+  test('an empty list selects nothing and sends no traffic', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [];
+    await h.start();
+
+    expect(h.state.hasNoServers, isTrue);
+    expect(h.applied.whereType<String>(), isEmpty);
+    expect(
+      walletPirServerStatusText(h.state)!.text,
+      contains('No servers are offered'),
+    );
+  });
+
+  test('reorder and relabel keep the explicit choice', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    await h.start();
+    await h.notifier.selectServer('https://b.example');
+    expect(h.applied.last, 'https://b.example');
+
+    h.fetcher.servers[_sourceA] = [
+      ['Renamed B', 'https://b.example'],
+      _a,
+    ];
+    await h.notifier.refresh();
+    expect(h.state.selectedBaseUrl, 'https://b.example');
+    expect(h.state.selectedServer!.label, 'Renamed B');
+  });
+
+  test('a removed choice needs a new one, across restarts', () async {
+    var h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    await h.start();
+    await h.notifier.selectServer('https://b.example');
+
+    h.fetcher.servers[_sourceA] = [_a];
+    await h.notifier.refresh();
+    expect(h.state.needsSelection, isTrue);
+    expect(h.applied.last, isNull, reason: 'never falls back to server A');
+
+    h = h.restart();
+    await h.start();
+    expect(h.state.needsSelection, isTrue);
+    expect(h.applied, isNot(contains('https://a.example')));
+
+    await h.notifier.selectServer('https://a.example');
+    expect(h.state.needsSelection, isFalse);
+    expect(h.applied.last, 'https://a.example');
+  });
+
+  test('an outage keeps the last good list and says so', () async {
+    var h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    await h.start();
+
+    h = h.restart();
+    h.fetcher.failing.add(_sourceA);
+    await h.start();
+    expect(h.state.selectedBaseUrl, 'https://a.example');
+    expect(h.state.refreshError, isNotNull);
+    expect(h.applied, isNot(contains(null)));
+    expect(
+      walletPirServerStatusText(h.state)!.text,
+      contains('Using the last list loaded'),
+    );
+  });
+
+  test('an older refresh cannot replace a newer server list', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a];
+    await h.start();
+
+    final gate = h.fetcher.gates[_sourceA] = Completer<void>();
+    final older = h.notifier.refresh();
+    await pumpEventQueue();
+    h.fetcher.gates.remove(_sourceA);
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    await h.notifier.refresh();
+    await h.notifier.selectServer('https://b.example');
+    gate.complete();
+    await older;
+
+    expect(h.state.servers, hasLength(2));
+    expect(h.state.selectedBaseUrl, 'https://b.example');
+    expect(h.applied.last, 'https://b.example');
+  });
+
+  test('a delayed older apply cannot outlast a newer choice', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b, _c];
+    await h.start();
+    expect(h.applied.last, 'https://a.example');
+
+    final slow = h.applyGates['https://b.example'] = Completer<void>();
+    final older = h.notifier.selectServer('https://b.example');
+    await pumpEventQueue();
+    final newer = h.notifier.selectServer('https://c.example');
+    await pumpEventQueue();
+    slow.complete();
+    await Future.wait([older, newer]);
+
+    expect(h.applied.last, 'https://c.example');
+    expect(h.state.selectedBaseUrl, 'https://c.example');
+    expect(_savedBase(h), 'https://c.example');
+    expect(h.maxApplying, 1, reason: 'applies never overlap');
+  });
+
+  test('a delayed older write cannot outlast a newer choice', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b, _c];
+    await h.start();
+
+    final slow = h.store.writeGates['https://b.example'] = Completer<void>();
+    final older = h.notifier.selectServer('https://b.example');
+    await pumpEventQueue();
+    final newer = h.notifier.selectServer('https://c.example');
+    await pumpEventQueue();
+    slow.complete();
+    await Future.wait([older, newer]);
+
+    expect(_savedBase(h), 'https://c.example');
+    expect(h.applied.last, 'https://c.example');
+    expect(h.state.selectedBaseUrl, 'https://c.example');
+  });
+
+  test('a choice made during a refresh survives the refresh', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    await h.start();
+
+    final gate = h.fetcher.gates[_sourceA] = Completer<void>();
+    final refreshing = h.notifier.refresh();
+    await pumpEventQueue();
+    await h.notifier.selectServer('https://b.example');
+    gate.complete();
+    await refreshing;
+
+    expect(h.state.selectedBaseUrl, 'https://b.example');
+    expect(h.applied.last, 'https://b.example');
+    expect(_savedBase(h), 'https://b.example');
+  });
+
+  test('commits keep running after a failed apply', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    await h.start();
+
+    final failing = h.applyGates['https://b.example'] = Completer<void>();
+    final failed = expectLater(
+      h.notifier.selectServer('https://b.example'),
+      throwsStateError,
+    );
+    await pumpEventQueue();
+    failing.completeError(StateError('db busy'));
+    await failed;
+    // The queue keeps going after a failure.
+    await h.notifier.selectServer('https://b.example');
+    expect(h.applied.last, 'https://b.example');
+    expect(h.state.selectedBaseUrl, 'https://b.example');
+  });
+
+  test('another source cache cannot replace the fixed source', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    h.store.cached['mainnet|$_sourceB'] = WalletPirCachedConfig(
+      snapshotJson: jsonEncode({
+        'source': _sourceB,
+        'servers': [_c],
+      }),
+      selectionJson: jsonEncode({'scope': _sourceB, 'base': _c[1]}),
+    );
+    await h.start();
+    await h.notifier.selectServer('https://b.example');
+
+    final restarted = h.restart();
+    await restarted.start();
+    expect(restarted.state.source, _sourceA);
+    expect(restarted.state.selectedBaseUrl, 'https://b.example');
+    expect(restarted.applied, isNot(contains('https://c.example')));
+  });
+
+  test('with no source there is no server', () async {
+    final h = _Harness(source: null);
+    await h.start();
+    expect(h.state.source, isNull);
+    expect(h.applied, [null]);
+    expect(walletPirServerStatusText(h.state)!.warning, isTrue);
+  });
+
+  test('the transport URL drops only the pin', () {
+    expect(
+      walletPirConfigTransportUri(
+        'https://h.example/s.json?v=1&checksum=sha256:ab',
+      ).toString(),
+      'https://h.example/s.json?v=1',
+    );
+    expect(
+      walletPirConfigTransportUri(_sourceA).toString(),
+      'https://config.example/a/static.json',
+    );
+  });
+}

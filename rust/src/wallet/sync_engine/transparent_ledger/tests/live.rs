@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use zakura_pir_client::transparent::{FilterSource, TransparentPirHttp};
 
-use super::super::pir::{test_transport, TransparentPirSource, DEFAULT_MAINNET_ORIGIN};
+use super::super::pir::{test_transport, TransparentPirSource, TEST_ORIGIN};
 use super::super::policy::POLICY_DRAIN;
 use super::pir::assert_private;
 use super::*;
@@ -51,7 +51,7 @@ async fn published() -> Vec<Shard> {
     let handle = tokio::runtime::Handle::current();
     let map: serde_json::Value = tokio::task::spawn_blocking(move || {
         let exit = || false;
-        let exchange = RoutedExchange::transparent(DEFAULT_MAINNET_ORIGIN, &exit, handle)
+        let exchange = RoutedExchange::transparent(TEST_ORIGIN, &exit, handle)
             .expect("the default origin is HTTPS");
         let mut http = TransparentPirHttp::new(exchange, MAP_LIMIT);
         let (mut filters, _) = http.split();
@@ -241,7 +241,7 @@ async fn a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service(
     // the target, at most one each. The map may move during the run, so
     // either publication bounds it.
     let after = published().await;
-    let filter = regex::Regex::new(r"^/v2/filters/shards/([0-9]+)/filter$").unwrap();
+    let filter = regex::Regex::new(r"^/transparent/v1/filters/shards/([0-9]+)/filter$").unwrap();
     let filtered: Vec<u64> = requests
         .iter()
         .filter_map(|request| filter.captures(&request.path))
@@ -334,7 +334,7 @@ async fn a_fresh_phrase_discovers_no_accounts_against_the_live_service() {
     // Filters only for shards overlapping the floor through the end, at most
     // one each; the map may move during the run.
     let after = published().await;
-    let filter = regex::Regex::new(r"^/v2/filters/shards/([0-9]+)/filter$").unwrap();
+    let filter = regex::Regex::new(r"^/transparent/v1/filters/shards/([0-9]+)/filter$").unwrap();
     let filtered: Vec<u64> = requests
         .iter()
         .filter_map(|request| filter.captures(&request.path))
