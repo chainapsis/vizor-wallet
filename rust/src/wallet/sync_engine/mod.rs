@@ -206,7 +206,12 @@ pub struct SyncProgressEvent {
 /// bookkeeping, tip check), so sparse history wants long batches: on a
 /// 400,000-block stretch before the spam window, 10,000 instead of 2,000
 /// cut the scan from 81 to 32 s (medians of three runs) and its CPU time by
-/// a fifth. Mobile keeps 1,000 until measured on a phone.
+/// a fifth. On an iPhone 16 Pro, 5,000 instead of 1,000 made a restore from
+/// Sapling activation no faster (68.5 against 67.3 minutes, a day apart):
+/// the byte budget decides the batches of the spam window, which took three
+/// quarters of the time, and the blocks before it are nearly empty. With
+/// 5,000 the spam-window runs held about 20 MB more memory, so mobile keeps
+/// 1,000.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const BATCH_SIZE_FOREGROUND: u32 = 10_000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -319,7 +324,9 @@ const DESKTOP_BATCH_BYTE_BUDGET: f64 = 31_000_000.0;
 /// The heaviest 100-block spam-window batch by the compiled tree sizes
 /// (1,780,000..1,790,000 averages 113 KB a block). By the subtree heights
 /// those batches came to about 15 MB, which leaves room for the estimate's
-/// error between subtree heights.
+/// error between subtree heights. On an iPhone 16 Pro a 4 MB budget, with
+/// spam-window batches a third as long, scanned 6,000 of those blocks about
+/// a third slower.
 const MOBILE_BATCH_BYTE_BUDGET: f64 = 11_300_000.0;
 /// Fewest blocks per batch, against a broken estimate; real data never needs
 /// it.
