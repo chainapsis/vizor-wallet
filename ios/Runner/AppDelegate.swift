@@ -1371,8 +1371,6 @@ private enum WindowAppearanceHandler {
   }
 }
 
-/// Streams a tick to Dart whenever iOS reports a user screenshot.
-/// Lives in this file so it doesn't need a project.pbxproj entry.
 /// Emits `{thermal, lowPower}` on listen and whenever either changes.
 /// `thermal` is the `ProcessInfo.ThermalState` raw value (0 nominal through
 /// 3 critical).
@@ -1411,6 +1409,8 @@ class DevicePowerStreamHandler: NSObject, FlutterStreamHandler {
   }
 }
 
+/// Streams a tick to Dart whenever iOS reports a user screenshot.
+/// Lives in this file so it doesn't need a project.pbxproj entry.
 class ScreenshotStreamHandler: NSObject, FlutterStreamHandler {
   private var observer: NSObjectProtocol?
 
