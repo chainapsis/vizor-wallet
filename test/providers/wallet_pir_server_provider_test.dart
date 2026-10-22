@@ -370,6 +370,49 @@ void main() {
     h.container.dispose();
   });
 
+  testWidgets('a failed server change stays open and can be retried', (
+    tester,
+  ) async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a, _b];
+    await tester.runAsync(h.start);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: h.container,
+        child: MaterialApp(
+          home: AppTheme(
+            data: AppThemeData.dark,
+            child: const Scaffold(
+              body: WalletPirServerSettingsButton(enabled: true),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('wallet_pir_server_settings_button')),
+    );
+    await tester.pumpAndSettle();
+    final failing = h.applyGates[_b[1]] = Completer<void>();
+    final second = find.byKey(ValueKey('wallet_pir_server_option_${_b[1]}'));
+    await tester.tap(second);
+    await tester.runAsync(() => pumpEventQueue());
+    failing.completeError(StateError('db busy'));
+    await tester.runAsync(() => pumpEventQueue());
+    await tester.pumpAndSettle();
+    expect(find.text("Couldn't change server. Try again."), findsOneWidget);
+    expect(find.text('Choose a server'), findsOneWidget);
+    expect(h.state.selectedBaseUrl, _a[1]);
+
+    await tester.tap(second);
+    await tester.runAsync(() => pumpEventQueue());
+    await tester.pumpAndSettle();
+    expect(h.state.selectedBaseUrl, _b[1]);
+    expect(find.text('Choose a server'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    h.container.dispose();
+  });
+
   test('first load picks the first server and keeps it', () async {
     final h = _Harness();
     h.fetcher.servers[_sourceA] = [_a, _b];
