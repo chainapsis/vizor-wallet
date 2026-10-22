@@ -659,6 +659,23 @@ fn scans_only_after_completion(
     }
 }
 
+/// Drops `job`'s catch-up flag when `ranges` reach below the sync that
+/// completed at `completed_height`: an account added since, before or during
+/// the attempt, brings its history to scan. Returns whether it dropped it.
+fn reclassify_catch_up(
+    job: &mut JobProgress,
+    ranges: &[ScanRange],
+    completed_height: Option<u64>,
+) -> bool {
+    if !job.from_completed_sync()
+        || scans_only_after_completion(earliest_pending_scan_start(ranges), completed_height)
+    {
+        return false;
+    }
+    job.clear_from_completed_sync();
+    true
+}
+
 fn earliest_pending_scan_start(ranges: &[ScanRange]) -> Option<u64> {
     ranges
         .iter()
@@ -3758,18 +3775,15 @@ async fn run_sync_impl(
         work_model.reference_batch_work(),
     );
     // A job claimed after a completed sync is a catch-up only while it scans
-    // the blocks since: an account added since brings its history to scan.
-    if job.from_completed_sync() {
-        let completed_height = read_sync_completion_meta(db_data_path)
+    // the blocks since; checked again whenever the loop reads new ranges.
+    let catch_up_completed_height = if job.from_completed_sync() {
+        read_sync_completion_meta(db_data_path)
             .ok()
-            .and_then(|(_, height, _)| height);
-        if !scans_only_after_completion(
-            earliest_pending_scan_start(&initial_ranges),
-            completed_height,
-        ) {
-            job.clear_from_completed_sync();
-        }
-    }
+            .and_then(|(_, height, _)| height)
+    } else {
+        None
+    };
+    reclassify_catch_up(&mut job, &initial_ranges, catch_up_completed_height);
     job.persist_if_due(db_data_path, true);
     progress_fn(scan_queue_progress_event(
         &mut checking_cycle,
@@ -4339,6 +4353,9 @@ async fn run_sync_impl(
         // Ranges can change between batches (a rewind, a repair, a new
         // account); any added work raises the job total here.
         job.observe(work_model.pending_work(&ranges, current_tip_height));
+        if reclassify_catch_up(&mut job, &ranges, catch_up_completed_height) {
+            job.persist_if_due(db_data_path, true);
+        }
         let batch_work =
             work_model.range_work(u64::from(u32::from(start)), u64::from(u32::from(end)));
         let (current_pct, display_target_percentage) =
@@ -7252,6 +7269,30 @@ mod tests {
         assert!(!scans_only_after_completion(Some(2_999_899), completed));
         assert!(!scans_only_after_completion(Some(2_500_000), completed));
         assert!(!scans_only_after_completion(Some(3_000_001), None));
+    }
+
+    #[test]
+    fn a_catch_up_that_meets_account_history_is_one_no_longer() {
+        let h = BlockHeight::from_u32;
+        let claimed = progress_work::StoredProgressJob {
+            from_completed_sync: true,
+            ..progress_work::StoredProgressJob::unmeasured()
+        };
+        let (mut job, _) = JobProgress::start(claimed, 10.0, 1.0);
+        let completed = Some(3_000_000);
+        let tip = ScanRange::from_parts(h(3_000_001)..h(3_000_005), ScanPriority::ChainTip);
+        assert!(!reclassify_catch_up(&mut job, &[tip.clone()], completed));
+        assert!(job.from_completed_sync());
+
+        // An account added during the attempt queues its history.
+        let history = ScanRange::from_parts(h(2_500_000)..h(3_000_001), ScanPriority::Historic);
+        assert!(reclassify_catch_up(
+            &mut job,
+            &[history, tip.clone()],
+            completed
+        ));
+        assert!(!job.from_completed_sync());
+        assert!(!reclassify_catch_up(&mut job, &[tip], completed));
     }
 
     #[test]
