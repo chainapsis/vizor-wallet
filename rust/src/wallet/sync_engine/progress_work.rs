@@ -614,6 +614,16 @@ impl JobProgress {
         &self.id
     }
 
+    /// See [`StoredProgressJob::from_completed_sync`].
+    pub(super) fn from_completed_sync(&self) -> bool {
+        self.from_completed_sync
+    }
+
+    /// Not a catch-up after all; the next save stores that.
+    pub(super) fn clear_from_completed_sync(&mut self) {
+        self.from_completed_sync = false;
+    }
+
     pub(super) fn total(&self) -> f64 {
         self.total
     }
@@ -1179,13 +1189,17 @@ mod tests {
         assert_eq!(start, JobStart::New);
         assert!(job.from_completed_sync);
         let (_dir, path) = temp_db();
-        job.persist_if_due(&path, true);
-        assert!(
-            read_progress_job(&path)
+        let stored_catch_up = |path: &str| {
+            read_progress_job(path)
                 .unwrap()
                 .unwrap()
                 .from_completed_sync
-        );
+        };
+        job.persist_if_due(&path, true);
+        assert!(stored_catch_up(&path));
+        job.clear_from_completed_sync();
+        job.persist_if_due(&path, true);
+        assert!(!stored_catch_up(&path));
 
         let (job, start) = JobProgress::start(catch_up(1_000.0, 0.6), 400.0, 1.0);
         assert_eq!(start, JobStart::Resumed);

@@ -642,6 +642,23 @@ fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
         .sum()
 }
 
+/// The deepest reorg the wallet backend handles (its pruning depth).
+const CATCH_UP_REORG_DEPTH: u64 = 100;
+
+/// Whether pending work starting at `earliest_pending` scans only the blocks
+/// since a sync completed at `completed_height`, give or take a reorg: a
+/// catch-up. History below it, such as an account added since, is not.
+fn scans_only_after_completion(
+    earliest_pending: Option<u64>,
+    completed_height: Option<u64>,
+) -> bool {
+    match (earliest_pending, completed_height) {
+        (None, _) => true,
+        (Some(start), Some(completed)) => start.saturating_add(CATCH_UP_REORG_DEPTH) >= completed,
+        (Some(_), None) => false,
+    }
+}
+
 fn earliest_pending_scan_start(ranges: &[ScanRange]) -> Option<u64> {
     ranges
         .iter()
@@ -3740,6 +3757,19 @@ async fn run_sync_impl(
         work_model.pending_work(&initial_ranges, current_tip_height),
         work_model.reference_batch_work(),
     );
+    // A job claimed after a completed sync is a catch-up only while it scans
+    // the blocks since: an account added since brings its history to scan.
+    if job.from_completed_sync() {
+        let completed_height = read_sync_completion_meta(db_data_path)
+            .ok()
+            .and_then(|(_, height, _)| height);
+        if !scans_only_after_completion(
+            earliest_pending_scan_start(&initial_ranges),
+            completed_height,
+        ) {
+            job.clear_from_completed_sync();
+        }
+    }
     job.persist_if_due(db_data_path, true);
     progress_fn(scan_queue_progress_event(
         &mut checking_cycle,
@@ -7208,6 +7238,20 @@ mod tests {
                 Some(false)
             ),
         );
+    }
+
+    #[test]
+    fn only_work_since_the_completed_sync_is_a_catch_up() {
+        let completed = Some(3_000_000);
+        // The blocks since, or a reorg the backend handles below them.
+        assert!(scans_only_after_completion(Some(3_000_001), completed));
+        assert!(scans_only_after_completion(Some(2_999_990), completed));
+        assert!(scans_only_after_completion(Some(2_999_900), completed));
+        assert!(scans_only_after_completion(None, completed));
+        // History below them: an account added since, from its birthday.
+        assert!(!scans_only_after_completion(Some(2_999_899), completed));
+        assert!(!scans_only_after_completion(Some(2_500_000), completed));
+        assert!(!scans_only_after_completion(Some(3_000_001), None));
     }
 
     #[test]
