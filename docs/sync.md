@@ -39,7 +39,8 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine/mod.rs`). A sing
    are estimated from the compiled mainnet tree sizes and the downloaded subtree
    completion heights, so the dense spam window gets short batches without
    hardcoded heights and the estimate sends no request; past the compiled table
-   and off mainnet the block caps alone apply. The wallet backend comes from a
+   and off mainnet, where nothing says how dense blocks are, a batch takes at
+   most 2,000 blocks (`UNPLANNED_BATCH_BLOCKS`). The wallet backend comes from a
    fork (see "Crate Versions") whose `put_blocks` skips work on history scanned
    after newer ranges: when no height in a batch is retained and each tree
    already holds `max_checkpoints` newer checkpoints, the batch adds none, and a

@@ -8,7 +8,7 @@
 //! downloaded ahead of it.
 //!
 //!   1. Batches are sized by a compact-block byte budget where the
-//!      compiled mainnet estimate reaches, and by the block caps alone past
+//!      compiled mainnet estimate reaches, and by a smaller block cap past
 //!      it, so the memory footprint stays bounded. Blocks stay encoded
 //!      until the scan reads them: decoded, every output field is its own
 //!      small allocation, and a batch takes about 1.8 times its wire size.

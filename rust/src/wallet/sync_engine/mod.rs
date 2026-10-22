@@ -324,6 +324,11 @@ const MOBILE_BATCH_BYTE_BUDGET: f64 = 11_300_000.0;
 /// Fewest blocks per batch, against a broken estimate; real data never needs
 /// it.
 const MIN_BATCH_BLOCKS: u32 = 10;
+/// Most blocks a batch takes past the compiled mainnet tree sizes, and off
+/// mainnet, where no estimate says how dense they are: the desktop cap before
+/// byte budgets. Blocks as dense as the 2022 spam window there would
+/// otherwise fill the desktop's 10,000-block batches, five of them in memory.
+const UNPLANNED_BATCH_BLOCKS: u32 = 2_000;
 
 const MAX_WITNESS_REPAIR_PASSES_PER_RUN: u32 = 3;
 const WITNESS_CHECK_POLICY_VERSION: u32 = 1;
@@ -6936,6 +6941,44 @@ mod tests {
                 h(3_500_000),
             ),
             Some((1_000, h(1_781_001))),
+        );
+    }
+
+    #[test]
+    fn unplanned_blocks_take_at_most_the_unplanned_cap() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let plan_end = u32::try_from(sizes.last().unwrap().0).unwrap() + 1;
+        let unplanned = UNPLANNED_BATCH_BLOCKS;
+
+        // Sparse blocks the compiled sizes cover take the desktop cap.
+        assert_eq!(
+            planned_batch_end(&main, 10_000, h(419_200), h(3_500_000)),
+            Some((10_000, h(429_200))),
+        );
+        // Past the compiled table, at most the unplanned cap.
+        let past = plan_end + 100_000;
+        assert_eq!(
+            planned_batch_end(&main, 10_000, h(past), h(past + 50_000)),
+            Some((unplanned, h(past + unplanned))),
+        );
+        // A batch that starts before the end of the table takes the rest of
+        // it and at most the unplanned cap past it.
+        let start = plan_end - 500;
+        assert_eq!(
+            planned_batch_end(&main, 10_000, h(start), h(start + 50_000)),
+            Some((500 + unplanned, h(plan_end + unplanned))),
+        );
+        // Off mainnet, at most the unplanned cap; smaller caps stay.
+        let test = WorkModel::compiled(WalletNetwork::Test);
+        assert_eq!(
+            planned_batch_end(&test, 10_000, h(1_000), h(50_000)),
+            Some((unplanned, h(1_000 + unplanned))),
+        );
+        assert_eq!(
+            planned_batch_end(&test, 300, h(1_000), h(50_000)),
+            Some((300, h(1_300))),
         );
     }
 

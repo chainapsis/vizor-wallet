@@ -24,7 +24,7 @@ use zcash_client_backend::data_api::scanning::ScanRange;
 
 use super::{
     elapsed, ensure_sync_meta_table, is_pending_scan_range, BATCH_BYTE_BUDGET,
-    BATCH_SIZE_FOREGROUND, MIN_BATCH_BLOCKS,
+    BATCH_SIZE_FOREGROUND, MIN_BATCH_BLOCKS, UNPLANNED_BATCH_BLOCKS,
 };
 use crate::wallet::db::{
     open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, SYNC_DB_BUSY_TIMEOUT,
@@ -242,9 +242,13 @@ impl WorkModel {
 
     /// Blocks in the batch starting at `start`: as many as fit
     /// [`BATCH_BYTE_BUDGET`], at most `max_blocks` and at least
-    /// [`MIN_BATCH_BLOCKS`] (or `max_blocks` when smaller).
+    /// [`MIN_BATCH_BLOCKS`] (or `max_blocks` when smaller). Past `plan_end`
+    /// it takes at most [`UNPLANNED_BATCH_BLOCKS`].
     pub(super) fn batch_blocks(&self, start: u64, max_blocks: u32) -> u32 {
-        let max = max_blocks.max(1);
+        let planned = u32::try_from(self.plan_end.saturating_sub(start)).unwrap_or(u32::MAX);
+        let max = max_blocks
+            .min(planned.saturating_add(UNPLANNED_BATCH_BLOCKS))
+            .max(1);
         let min = MIN_BATCH_BLOCKS.min(max);
         let fits =
             |blocks: u32| self.plan_bytes(start, start + u64::from(blocks)) <= BATCH_BYTE_BUDGET;
@@ -271,12 +275,14 @@ impl WorkModel {
     /// counted fractionally so the count of a range equals the sum over any
     /// split of it. Between neighbouring knots bytes per block are constant,
     /// so each piece holds the larger of its bytes over the budget and its
-    /// blocks over the cap, and at most its blocks over the minimum.
+    /// blocks over the cap, and at most its blocks over the minimum. Past
+    /// `plan_end` the cap is at most [`UNPLANNED_BATCH_BLOCKS`].
     fn planned_batches(&self, start: u64, end: u64) -> f64 {
         if end <= start {
             return 0.0;
         }
-        let cap = f64::from(self.reference_batch_size);
+        let planned_cap = f64::from(self.reference_batch_size);
+        let unplanned_cap = f64::from(self.reference_batch_size.min(UNPLANNED_BATCH_BLOCKS));
         let min = f64::from(MIN_BATCH_BLOCKS.min(self.reference_batch_size));
         let first = self.plan_knots.partition_point(|&knot| knot <= start);
         let cuts = self.plan_knots[first..]
@@ -288,6 +294,12 @@ impl WorkModel {
         let mut batches = 0.0;
         for to in cuts {
             let blocks = (to - from) as f64;
+            // Knots end at `plan_end`, so no piece crosses it.
+            let cap = if from < self.plan_end {
+                planned_cap
+            } else {
+                unplanned_cap
+            };
             batches += (self.plan_bytes(from, to) / BATCH_BYTE_BUDGET)
                 .max(blocks / cap)
                 .min(blocks / min);
@@ -868,6 +880,17 @@ mod tests {
         // Without compiled data every batch is the cap.
         let model = model_without_outputs(2_000);
         assert!((model.planned_batches(419_200, 3_390_000) - 2_970_800.0 / 2_000.0).abs() < 1e-9);
+        // A larger cap counts the unplanned cap there, as the planner sizes
+        // those batches.
+        let model = model_without_outputs(10_000);
+        let unplanned = f64::from(UNPLANNED_BATCH_BLOCKS);
+        assert!((model.planned_batches(0, 20_000) - 20_000.0 / unplanned).abs() < 1e-9);
+        let sparse = WorkModel::from_points(Default::default(), 10_000, 100_000);
+        assert!((sparse.planned_batches(0, 120_000) - (10.0 + 20_000.0 / unplanned)).abs() < 1e-9);
+        assert_eq!(
+            plan(&sparse, 90_000, 104_000, 10_000),
+            [(90_000, 10_000), (100_000, 2_000), (102_000, 2_000)]
+        );
 
         // Sapling outputs worth one budget per 100 blocks over 1,000,000..
         // 1,100,000, then one budget per 2 blocks over 1,100,000..1,101,000.
