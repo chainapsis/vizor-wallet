@@ -251,7 +251,7 @@ class _WalletPirServerSettingsState
             onPressed: _selecting ? null : () => unawaited(_shareRepository()),
             variant: AppButtonVariant.ghost,
             size: AppButtonSize.small,
-            child: const Text('Share your server publicly'),
+            child: const Text('Share your server'),
           ),
         ),
         if (_linkError != null)
