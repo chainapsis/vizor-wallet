@@ -763,6 +763,65 @@ void main() {
     );
   });
 
+  test('privacy lock keeps the ring and the screen awake when a catch-up '
+      'that showed progress restarts with few blocks left', () async {
+    final startedAt = DateTime.now();
+    SyncState catchUp({
+      required DateTime at,
+      required int scannedHeight,
+      String phase = 'scan',
+    }) => _sync(
+      percentage: 0.84,
+      scannedHeight: scannedHeight,
+      chainTipHeight: 5200,
+      lastSyncStartedAt: at,
+      phase: phase,
+      startedFromCompletedSync: true,
+      syncJobId: 'job-1',
+    );
+    final syncNotifier = FakeSyncNotifier(
+      catchUp(at: startedAt, scannedHeight: 1200),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          _bootstrap(
+            syncKeepAwakeEnabled: true,
+            syncKeepAwakePromptSeen: true,
+            isPasswordConfigured: true,
+            isUnlocked: true,
+          ),
+        ),
+        syncProvider.overrideWith(() => syncNotifier),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(syncProvider.future);
+    container
+        .read(syncKeepAwakePrivacyLockProvider.notifier)
+        .lock(at: DateTime.now());
+    expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.syncing,
+    );
+
+    // An endpoint fallback restarts the job with 800 blocks left.
+    syncNotifier.emit(
+      catchUp(
+        at: startedAt.add(const Duration(minutes: 3)),
+        scannedHeight: 4400,
+        phase: kSyncPhasePreflight,
+      ),
+    );
+    expect(container.read(syncShortCatchUpProvider), isFalse);
+    expect(container.read(syncKeepAwakeActiveProvider), isTrue);
+    expect(
+      container.read(syncKeepAwakePrivacyLockModeProvider),
+      SyncKeepAwakePrivacyLockMode.syncing,
+    );
+  });
+
   test('interaction notifier records the last user activity time', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -1050,8 +1109,10 @@ SyncState _sync({
   bool scanWorkKnown = true,
   double sessionStartPercentage = 0,
   bool startedFromCompletedSync = false,
+  String syncJobId = '',
 }) {
   return SyncState(
+    syncJobId: syncJobId,
     isSyncing: isSyncing,
     isBackgroundMode: isBackgroundMode,
     percentage: percentage,

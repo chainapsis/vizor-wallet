@@ -220,6 +220,64 @@ void main() {
       );
       expect(container.read(syncShortCatchUpProvider), isTrue);
     });
+    test('a restart of a catch-up that showed progress is not short', () async {
+      final startedAt = DateTime.now();
+      late FakeSyncNotifier sync;
+      final container = _container(
+        _catchUp(startedAt: startedAt, remainingScanBlocks: 5000),
+        onCreate: (notifier) => sync = notifier,
+      );
+      await container.read(syncProvider.future);
+      expect(container.read(syncShortCatchUpProvider), isFalse);
+
+      // The first event names the job.
+      sync.emit(
+        _catchUp(
+          startedAt: startedAt,
+          remainingScanBlocks: 4000,
+          syncJobId: 'job-1',
+        ),
+      );
+      expect(container.read(syncShortCatchUpProvider), isFalse);
+
+      // An endpoint fallback or a retry resumes the job with 800 blocks
+      // left, before the scan queue is known: still the same catch-up.
+      final restartedAt = startedAt.add(const Duration(seconds: 1));
+      sync.emit(
+        _catchUp(
+          startedAt: restartedAt,
+          scannedHeight: _completedHeight,
+          chainTipHeight: _completedHeight + 800,
+          syncJobId: 'job-1',
+        ),
+      );
+      expect(container.read(syncShortCatchUpProvider), isFalse);
+      sync.emit(
+        _catchUp(
+          startedAt: restartedAt,
+          remainingScanBlocks: 800,
+          syncJobId: 'job-1',
+        ),
+      );
+      expect(container.read(syncShortCatchUpProvider), isFalse);
+
+      // The next catch-up, a new job after a completion, starts short.
+      sync.emit(
+        SyncState(
+          isSyncComplete: true,
+          scannedHeight: _completedHeight,
+          chainTipHeight: _completedHeight,
+          lastSyncStartedAt: restartedAt,
+        ),
+      );
+      final nextAt = restartedAt.add(const Duration(seconds: 1));
+      sync.emit(_catchUp(startedAt: nextAt, remainingScanBlocks: 4));
+      expect(container.read(syncShortCatchUpProvider), isTrue);
+      sync.emit(
+        _catchUp(startedAt: nextAt, remainingScanBlocks: 4, syncJobId: 'job-2'),
+      );
+      expect(container.read(syncShortCatchUpProvider), isTrue);
+    });
   });
 
   group('a sync start', () {
@@ -287,7 +345,9 @@ SyncState _catchUp({
   String phase = 'scan',
   SyncCheckingProgress? checking,
   SyncFailure? failure,
+  String syncJobId = '',
 }) => SyncState(
+  syncJobId: syncJobId,
   isSyncing: isSyncing,
   isBackgroundMode: isBackgroundMode,
   remainingScanBlocks: remainingScanBlocks,

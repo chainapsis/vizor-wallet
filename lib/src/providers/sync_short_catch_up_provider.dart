@@ -44,7 +44,9 @@ bool isShortSyncCatchUp(SyncState sync, {required DateTime now}) {
 /// Whether the sync status shows a synced wallet's catch-up without a
 /// percentage ([isShortSyncCatchUp]). It turns false when the time limit
 /// passes, and once a catch-up has shown its percentage it keeps showing it
-/// until that attempt ends.
+/// for the rest of that attempt and for later attempts of the same sync job:
+/// a restart after a failure, an endpoint fallback or a lock resumes the job
+/// with fewer blocks left, which is not a new catch-up.
 final syncShortCatchUpProvider =
     NotifierProvider<SyncShortCatchUpNotifier, bool>(
       SyncShortCatchUpNotifier.new,
@@ -52,7 +54,11 @@ final syncShortCatchUpProvider =
 
 class SyncShortCatchUpNotifier extends Notifier<bool> {
   Timer? _timeLimit;
+
+  /// The attempt, and the sync job once an event names it, of the catch-up
+  /// that showed its percentage.
   DateTime? _progressShownFor;
+  String _progressShownForJob = '';
 
   @override
   bool build() {
@@ -60,11 +66,17 @@ class SyncShortCatchUpNotifier extends Notifier<bool> {
     ref.onDispose(_cancelTimeLimit);
     final startedAt = sync?.lastSyncStartedAt;
     if (sync == null || startedAt == null) return false;
-    if (startedAt == _progressShownFor) return false;
+    final jobId = sync.syncJobId;
+    if (startedAt == _progressShownFor ||
+        (jobId.isNotEmpty && jobId == _progressShownForJob)) {
+      if (jobId.isNotEmpty) _progressShownForJob = jobId;
+      return false;
+    }
     final now = DateTime.now();
     if (!isShortSyncCatchUp(sync, now: now)) {
       if (sync.startedFromCompletedSync && sync.isSyncing) {
         _progressShownFor = startedAt;
+        _progressShownForJob = jobId;
       }
       return false;
     }
