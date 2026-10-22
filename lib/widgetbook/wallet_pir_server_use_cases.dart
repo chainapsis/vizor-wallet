@@ -8,6 +8,7 @@ import '../src/core/widgets/mobile/mobile_surface_card.dart';
 import '../src/features/settings/widgets/wallet_pir_server_settings.dart';
 import '../src/providers/wallet_pir_server_provider.dart';
 import '../src/services/wallet_pir/wallet_pir_config.dart';
+import '../src/services/wallet_pir/wallet_pir_latency.dart';
 
 // Demo fixtures only: hosts are reserved example names, never contacted.
 final _source =
@@ -132,7 +133,14 @@ class _DemoPreviewState extends State<_DemoPreview> {
     final view = WalletPirServerSettingsView(
       state: _state,
       onSelect: _select,
-      onRefresh: () {},
+      pingSamples: {
+        _first.baseUrl: const WalletPirPingSample.available(
+          Duration(milliseconds: 42),
+        ),
+        _second.baseUrl: const WalletPirPingSample.available(
+          Duration(milliseconds: 76),
+        ),
+      },
     );
     return Center(
       child: SizedBox(

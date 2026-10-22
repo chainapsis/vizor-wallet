@@ -1,14 +1,27 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/wallet_pir_server_provider.dart';
+import '../../../providers/wallet_pir_latency_provider.dart';
 import '../../../services/wallet_pir/wallet_pir_config.dart';
+import '../../../services/wallet_pir/wallet_pir_latency.dart';
+
+final walletPirConfigRepositoryUri = Uri.parse(
+  'https://github.com/valargroup/wallet-pir-config',
+);
+final walletPirConfigRepositoryLauncherProvider =
+    Provider<Future<bool> Function(Uri)>(
+      (ref) =>
+          (uri) => launchUrl(uri, mode: LaunchMode.externalApplication),
+    );
 
 /// The shared server picker content for desktop dialogs and mobile sheets.
 class WalletPirServerSettings extends ConsumerStatefulWidget {
@@ -27,10 +40,73 @@ class _WalletPirServerSettingsState
   String? _selectionError;
   bool _editingCustom = false;
   final _customController = TextEditingController();
+  late WalletPirLatencyMonitor _ping;
+  AppLifecycleListener? _pingLifecycle;
+  Set<String> _pingTargets = {};
+  String? _linkError;
+
+  @override
+  void initState() {
+    super.initState();
+    _ping = WalletPirLatencyMonitor(
+      probe: (url, cancelled) =>
+          ref.read(walletPirServerProbeProvider)(url, cancelled),
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
+    _pingLifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        if (state == AppLifecycleState.resumed) {
+          _ping.resume();
+        } else {
+          _ping.pause();
+        }
+      },
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      if (lifecycle == null || lifecycle == AppLifecycleState.resumed) {
+        _ping.resume();
+      }
+      unawaited(
+        ref.read(walletPirServerProvider.notifier).refreshAutomatically(),
+      );
+    });
+  }
+
+  void _updatePingTargets(WalletPirServerState state) {
+    final targets = {
+      for (final server in state.servers) server.baseUrl,
+      if (state.customServer case final custom? when custom.isValid)
+        custom.baseUrl,
+    };
+    if (setEquals(targets, _pingTargets)) return;
+    _pingTargets = targets;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _ping.updateTargets(_pingTargets);
+    });
+  }
+
+  Future<void> _shareRepository() async {
+    setState(() => _linkError = null);
+    try {
+      final opened = await ref.read(walletPirConfigRepositoryLauncherProvider)(
+        walletPirConfigRepositoryUri,
+      );
+      if (opened) return;
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _linkError = "Couldn't open the config repository.");
+    }
+  }
 
   @override
   void dispose() {
     _customController.dispose();
+    _pingLifecycle?.dispose();
+    _ping.dispose();
     super.dispose();
   }
 
@@ -76,7 +152,6 @@ class _WalletPirServerSettingsState
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(walletPirServerProvider);
-    final notifier = ref.read(walletPirServerProvider.notifier);
     final state = async.value;
     if (state == null) {
       return async.hasError
@@ -85,6 +160,7 @@ class _WalletPirServerSettingsState
             )
           : const Text('Loading the server list…');
     }
+    _updatePingTargets(state);
     final customMessage = _customMessage();
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -158,7 +234,7 @@ class _WalletPirServerSettingsState
             onSelect: _selecting
                 ? null
                 : (baseUrl) => unawaited(_select(baseUrl)),
-            onRefresh: _selecting ? null : () => unawaited(notifier.refresh()),
+            pingSamples: _ping.samples,
             onCustom: _selecting || state.source == null
                 ? null
                 : () => setState(() {
@@ -166,6 +242,24 @@ class _WalletPirServerSettingsState
                     _editingCustom = true;
                     _selectionError = null;
                   }),
+          ),
+        const SizedBox(height: AppSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppButton(
+            key: const ValueKey('wallet_pir_share_server'),
+            onPressed: _selecting ? null : () => unawaited(_shareRepository()),
+            variant: AppButtonVariant.ghost,
+            size: AppButtonSize.small,
+            child: const Text('Share your server publicly'),
+          ),
+        ),
+        if (_linkError != null)
+          Text(
+            _linkError!,
+            style: AppTypography.bodySmall.copyWith(
+              color: context.colors.text.secondary,
+            ),
           ),
       ],
     );
@@ -178,21 +272,21 @@ class WalletPirServerSettingsView extends StatelessWidget {
   const WalletPirServerSettingsView({
     required this.state,
     required this.onSelect,
-    required this.onRefresh,
     this.onCustom,
+    this.pingSamples = const {},
     super.key,
   }) : _message = null;
 
   const WalletPirServerSettingsView.message(String message, {super.key})
     : state = null,
       onSelect = null,
-      onRefresh = null,
       onCustom = null,
+      pingSamples = const {},
       _message = message;
 
   final WalletPirServerState? state;
   final ValueChanged<String>? onSelect;
-  final VoidCallback? onRefresh;
+  final Map<String, WalletPirPingSample> pingSamples;
   final VoidCallback? onCustom;
   final String? _message;
 
@@ -236,6 +330,7 @@ class WalletPirServerSettingsView extends StatelessWidget {
                   state.customServer == null &&
                   server.baseUrl == state.selectedBaseUrl,
               onTap: onSelect == null ? null : () => onSelect!(server.baseUrl),
+              ping: pingSamples[server.baseUrl],
             ),
             const SizedBox(height: AppSpacing.xxs),
           ],
@@ -248,6 +343,7 @@ class WalletPirServerSettingsView extends StatelessWidget {
             ),
             selected: custom.isValid,
             onTap: onCustom,
+            ping: pingSamples[custom.baseUrl],
           ),
           const SizedBox(height: AppSpacing.xxs),
         ],
@@ -265,19 +361,6 @@ class WalletPirServerSettingsView extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
         ],
-        const SizedBox(height: AppSpacing.xs),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: AppButton(
-            key: const ValueKey('wallet_pir_server_refresh'),
-            onPressed: state.source == null || state.refreshing
-                ? null
-                : onRefresh,
-            variant: AppButtonVariant.secondary,
-            size: AppButtonSize.small,
-            child: const Text('Check for updates'),
-          ),
-        ),
       ],
     );
   }
@@ -354,11 +437,13 @@ class _ServerRow extends StatelessWidget {
     required this.server,
     required this.selected,
     required this.onTap,
+    this.ping,
   });
 
   final WalletPirServerOption server;
   final bool selected;
   final VoidCallback? onTap;
+  final WalletPirPingSample? ping;
 
   @override
   Widget build(BuildContext context) {
@@ -408,6 +493,16 @@ class _ServerRow extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.bodySmall.copyWith(
                             color: colors.text.muted,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          ping?.label ?? 'Checking...',
+                          key: ValueKey(
+                            'wallet_pir_server_ping_${server.baseUrl}',
+                          ),
+                          style: AppTypography.labelMedium.copyWith(
+                            color: colors.text.secondary,
                           ),
                         ),
                       ],

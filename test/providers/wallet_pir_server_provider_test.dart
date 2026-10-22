@@ -13,8 +13,10 @@ import 'package:zcash_wallet/src/features/settings/widgets/mobile/mobile_private
 import 'package:zcash_wallet/src/features/settings/widgets/wallet_pir_server_popup.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/wallet_pir_server_settings.dart';
 import 'package:zcash_wallet/src/providers/wallet_pir_server_provider.dart';
+import 'package:zcash_wallet/src/providers/wallet_pir_latency_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_config.dart';
+import 'package:zcash_wallet/src/services/wallet_pir/wallet_pir_latency.dart';
 
 const _sourceA = 'https://config.example/a/static.json?checksum=sha256:aaaa';
 const _sourceB = 'https://config.example/b/static.json?checksum=sha256:bbbb';
@@ -48,6 +50,7 @@ class _MemoryStore implements WalletPirConfigStore {
 /// Serves the static document (whose body names its source) and a dynamic
 /// document per source. A gate holds a source's fetch open for race tests.
 class _Fetcher implements WalletPirConfigFetcher {
+  int requests = 0;
   final servers = <String, List<List<String>>>{};
   final failing = <String>{};
   final gates = <String, Completer<void>>{};
@@ -55,6 +58,7 @@ class _Fetcher implements WalletPirConfigFetcher {
 
   @override
   Future<Uint8List> fetch(Uri uri) async {
+    requests++;
     final url = uri.toString();
     if (url != _mirror) {
       final source = [
@@ -209,6 +213,16 @@ class _Harness {
         walletPirConfigFetcherProvider.overrideWithValue(fetcher),
         walletPirConfigSourceProvider.overrideWithValue(source),
         walletPirNetworkProvider.overrideWithValue('mainnet'),
+        walletPirServerProbeProvider.overrideWithValue(
+          (_, _) async =>
+              const WalletPirPingSample.available(Duration(milliseconds: 42)),
+        ),
+        walletPirConfigRepositoryLauncherProvider.overrideWithValue((
+          uri,
+        ) async {
+          openedRepositories.add(uri);
+          return true;
+        }),
         enhancePirAvailableProvider.overrideWithValue(true),
         privateQueriesControlEnabledProvider.overrideWithValue(
           privateQueriesOn,
@@ -225,6 +239,7 @@ class _Harness {
         }),
       ],
     );
+    addTearDown(dispose);
   }
 
   final store = _MemoryStore();
@@ -232,6 +247,14 @@ class _Harness {
 
   /// Servers in the order their apply finished.
   final applied = <String?>[];
+  final openedRepositories = <Uri>[];
+  bool _disposed = false;
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    container.dispose();
+  }
 
   /// Holds open the next apply of a base.
   final applyGates = <String?, Completer<void>>{};
@@ -256,7 +279,7 @@ class _Harness {
     next.store.cached.addAll(store.cached);
     next.fetcher.servers.addAll(fetcher.servers);
     next.fetcher.failing.addAll(fetcher.failing);
-    container.dispose();
+    dispose();
     return next;
   }
 }
@@ -272,6 +295,55 @@ String? _savedBase(_Harness h, [String source = _sourceA]) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'the list refreshes every five minutes and pauses in the background',
+    (tester) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final h = _Harness();
+      h.fetcher.servers[_sourceA] = [_a];
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: h.container,
+          child: Consumer(
+            builder: (_, ref, _) {
+              ref.watch(walletPirServerProvider);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(h.fetcher.requests, 2);
+      await tester.pump(kWalletPirConfigRefreshInterval);
+      await tester.pumpAndSettle();
+      expect(h.fetcher.requests, 4);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump(const Duration(minutes: 10));
+      expect(h.fetcher.requests, 4);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(h.fetcher.requests, 6);
+      h.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(minutes: 5));
+      expect(h.fetcher.requests, 6);
+    },
+  );
+
+  test('automatic triggers do not replace an in-flight config fetch', () async {
+    final h = _Harness();
+    h.fetcher.servers[_sourceA] = [_a];
+    await h.start();
+    final gate = h.fetcher.gates[_sourceA] = Completer<void>();
+    final first = h.notifier.refreshAutomatically();
+    await pumpEventQueue();
+    final inFlightRequests = h.fetcher.requests;
+    await h.notifier.refreshAutomatically();
+    expect(h.fetcher.requests, inFlightRequests);
+    gate.complete();
+    await first;
+  });
 
   testWidgets('the settings popup offers both servers and saves the choice', (
     tester,
@@ -321,6 +393,14 @@ void main() {
     );
     expect(find.text('Valargroup Wallet PIR'), findsOneWidget);
     expect(find.text('Valargroup Wallet PIR Secondary'), findsOneWidget);
+    expect(find.text('Check for updates'), findsNothing);
+    expect(find.text('42ms'), findsNWidgets(2));
+    await tester.tap(find.byKey(const ValueKey('wallet_pir_share_server')));
+    await tester.pumpAndSettle();
+    expect(h.openedRepositories, [
+      Uri.parse('https://github.com/valargroup/wallet-pir-config'),
+    ]);
+    expect(h.state.selectedBaseUrl, primary);
     expect(find.text('Change server list'), findsNothing);
     expect(find.byType(EditableText), findsNothing);
     await tester.tap(
@@ -342,7 +422,7 @@ void main() {
     await tester.runAsync(restarted.start);
     expect(restarted.state.selectedBaseUrl, secondary);
     expect(restarted.applied.last, secondary);
-    restarted.container.dispose();
+    restarted.dispose();
   });
 
   testWidgets('the settings icon is disabled when private queries are off', (
@@ -385,7 +465,7 @@ void main() {
       reason: 'the disabled icon does not turn private queries on',
     );
     await tester.pumpWidget(const SizedBox.shrink());
-    h.container.dispose();
+    h.dispose();
   });
 
   testWidgets('a failed server change stays open and can be retried', (
@@ -428,7 +508,7 @@ void main() {
     expect(h.state.selectedBaseUrl, _b[1]);
     expect(find.text('Choose a server'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
-    h.container.dispose();
+    h.dispose();
   });
 
   testWidgets(
@@ -496,7 +576,7 @@ void main() {
       expect(find.text('Custom server'), findsOneWidget);
       expect(find.text('custom.example/pir'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
-      h.container.dispose();
+      h.dispose();
     },
   );
 
@@ -543,7 +623,7 @@ void main() {
       await h.start();
       expect(h.applied.last, _b[1]);
       expect(h.state.customServer, isNull);
-      h.container.dispose();
+      h.dispose();
     },
   );
 
@@ -560,7 +640,7 @@ void main() {
       expect(h.applied.last, _a[1]);
       expect(h.state.customServer, isNull);
       expect(h.store.cached['mainnet|$_sourceA']?.customBaseUrl, isNull);
-      h.container.dispose();
+      h.dispose();
     },
   );
 
@@ -579,7 +659,7 @@ void main() {
       await h.notifier.selectServer(_a[1]);
       expect(h.state.customServer, isNull);
       expect(h.applied.last, _a[1]);
-      h.container.dispose();
+      h.dispose();
     },
   );
 
@@ -598,7 +678,7 @@ void main() {
         walletPirServerStatusText(h.state)?.text,
         contains('custom server is still selected'),
       );
-      h.container.dispose();
+      h.dispose();
     },
   );
 
@@ -616,7 +696,7 @@ void main() {
       await refresh;
       expect(h.applied.last, 'https://custom.example');
       expect(h.state.selectedBaseUrl, 'https://custom.example');
-      h.container.dispose();
+      h.dispose();
     },
   );
 

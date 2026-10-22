@@ -28,6 +28,16 @@ pub fn normalize_wallet_pir_server_base(base_url: String) -> Result<String, Stri
         .map_err(|error| error.to_string())
 }
 
+/// The same public Enhance initialization route used by the client. A ping
+/// measures its HTTPS response and does not create a private query session.
+#[flutter_rust_bridge::frb(sync)]
+pub fn wallet_pir_server_ping_url(base_url: String) -> Result<String, String> {
+    let base = ServerBase::parse(&base_url).map_err(|error| error.to_string())?;
+    base.endpoint()
+        .product_url(zakura_pir_protocol::endpoint::PirProduct::Enhance, "/init")
+        .map_err(|error| error.to_string())
+}
+
 /// A static document the profile accepted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiWalletPirStaticConfig {
@@ -302,6 +312,15 @@ mod tests {
                 "{url}"
             );
         }
+    }
+
+    #[test]
+    fn ping_uses_the_shared_product_path_and_preserves_the_base_path() {
+        assert_eq!(
+            wallet_pir_server_ping_url("https://server.example/wallet/".into()),
+            Ok("https://server.example/wallet/enhance/v1/init".into())
+        );
+        assert!(wallet_pir_server_ping_url("http://server.example".into()).is_err());
     }
 
     const MIRROR_A: &str = "https://valargroup.github.io/wallet-pir-config/prod/dynamic.json";

@@ -11,6 +11,7 @@ import 'account_provider.dart';
 import 'sync_provider.dart';
 
 const kWalletPirConfigCacheKeyPrefix = 'zcash_wallet_pir_config_v1_';
+const kWalletPirConfigRefreshInterval = Duration(minutes: 5);
 
 /// Plain (non-secret) persistence of the last good snapshot and server choice,
 /// scoped to the app's fixed source and network. A future app source/pin change
@@ -256,6 +257,7 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
   /// however long an earlier apply or write took.
   Future<void> _commits = Future.value();
   AppLifecycleListener? _lifecycle;
+  Timer? _refreshTimer;
 
   WalletPirConfigStore get _store => ref.read(walletPirConfigStoreProvider);
   WalletPirConfigResolver get _resolver =>
@@ -267,12 +269,25 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
   @override
   Future<WalletPirServerState> build() async {
     _lifecycle?.dispose();
-    _lifecycle = AppLifecycleListener(onResume: () => unawaited(refresh()));
+    _refreshTimer?.cancel();
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        if (state == AppLifecycleState.resumed) {
+          _startAutomaticRefresh();
+          unawaited(refreshAutomatically());
+        } else {
+          _refreshTimer?.cancel();
+          _refreshTimer = null;
+        }
+      },
+    );
     ref.onDispose(() {
       _lifecycleGeneration++;
       _refreshGeneration++;
       _lifecycle?.dispose();
       _lifecycle = null;
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
     });
     final generation = ++_lifecycleGeneration;
     _refreshGeneration++;
@@ -282,9 +297,28 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
       await _applier(initial.selectedBaseUrl);
     });
     if (generation == _lifecycleGeneration && initial.source != null) {
-      scheduleMicrotask(() => unawaited(refresh()));
+      _startAutomaticRefresh();
+      scheduleMicrotask(() => unawaited(refreshAutomatically()));
     }
     return initial;
+  }
+
+  void _startAutomaticRefresh() {
+    if (ref.read(walletPirConfigSourceProvider) == null) return;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(
+      kWalletPirConfigRefreshInterval,
+      (_) => unawaited(refreshAutomatically()),
+    );
+  }
+
+  /// Automatic triggers keep the active fetch running instead of repeatedly
+  /// superseding it while a slow mirror is still responding.
+  Future<void> refreshAutomatically() async {
+    if (state.value?.refreshing ?? true) return;
+    await refresh();
   }
 
   /// Fetches the source's documents again. A failure keeps the last good
