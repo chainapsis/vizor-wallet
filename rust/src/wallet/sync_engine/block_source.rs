@@ -3,11 +3,13 @@
 //! `scan_cached_blocks` expects a `BlockSource`-shaped input so it can
 //! iterate compact blocks one at a time. Historically librustzcash
 //! wallets pointed that input at an on-disk SQLite cache
-//! (`FsBlockDb`). We deliberately skip the file-cache step and keep a
-//! single batch of compact blocks in memory:
+//! (`FsBlockDb`). We deliberately skip the file-cache step and keep
+//! compact blocks in memory: the batch being scanned and the few
+//! downloaded ahead of it.
 //!
-//!   1. Batches are bounded by a compact-block byte budget, so the
-//!      memory footprint is small and predictable. Blocks stay encoded
+//!   1. Batches are sized by a compact-block byte budget where the
+//!      compiled mainnet estimate reaches, and by the block caps alone past
+//!      it, so the memory footprint stays bounded. Blocks stay encoded
 //!      until the scan reads them: decoded, every output field is its own
 //!      small allocation, and a batch takes about 1.8 times its wire size.
 //!   2. Avoiding the cache DB means one less file format to keep in
@@ -18,9 +20,9 @@
 //!      scan down.
 //!
 //! The type is visible only to the `sync_engine` module tree
-//! (`pub(super)`); callers construct one via
-//! [`MemoryBlockSource::new`] and hand it straight to
-//! `scan_cached_blocks`.
+//! (`pub(super)`); the download fills one with
+//! [`MemoryBlockSource::with_capacity`] and [`MemoryBlockSource::push`],
+//! and the scan reads it straight from there.
 
 use std::collections::BTreeSet;
 use std::fmt;

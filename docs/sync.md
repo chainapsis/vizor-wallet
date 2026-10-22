@@ -5,7 +5,7 @@ blocks, and the Dart provider that starts it and keeps the wallet current.
 
 ## Sync Engine (Rust-only)
 
-The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single call from Dart (`startFullSync()`) triggers the full pipeline:
+The entire sync loop runs in Rust (`rust/src/wallet/sync_engine/mod.rs`). A single call from Dart (`startFullSync()`) triggers the full pipeline:
 
 1. tonic gRPC → lightwalletd (TLS via `tls-ring`)
 2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
@@ -103,8 +103,8 @@ All sync log messages include `[Xs]` elapsed time from sync start (set once in `
 **Auto-sync lifecycle:**
 - `build()` watches `accountProvider` via `ref.listen` (not `ref.watch` — avoids rebuild on switch/rename)
 - Account count increase triggers `startSync()` + `_startPolling()` (both first account and additional accounts)
-- `_checkAndSync()`: polls `getLatestBlockHeight` every 10s, re-syncs if tip > last synced height or previous sync incomplete (`percentage < 1.0`)
-- The mempool observer's `newBlock` event (the server ended the stream, which lightwalletd does when a block is mined) runs `_checkAndSync()` at once, marked pending (`_newBlockCheckPending`, cleared only when a check starts) so a check or sync already running is followed by another, even one that read the tip before the block; at most one such check per 5 s. The 10 s poll stays, since its tick also refreshes the upgrade status, pending-activity evidence and recovery restarts
+- `_checkAndSync()`: polls `getLatestBlockHeight` every 10s, re-syncs if tip > last synced height or previous sync incomplete (`!isSyncComplete`)
+- The mempool observer's `newBlock` event (the server ended the stream, which lightwalletd does when a block is mined) runs `_checkAndSync()` at once, marked pending (`_newBlockCheckPending`, cleared when a check starts, and by `stopSync()`, the lock and app exit) so a check or sync already running is followed by another, even one that read the tip before the block; at most one such check per 5 s. The 10 s poll stays, since its tick also refreshes the upgrade status, pending-activity evidence and recovery restarts
 - `_checkAndSync()`, `_refreshBalance()`, and `_onSyncProgress()` all bail out while
   locked and discard late async completions via `_sensitiveStateEpoch`
 - Polling stops during `_checkAndSync` execution to prevent concurrent overlap, restarts after
@@ -119,7 +119,7 @@ All sync log messages include `[Xs]` elapsed time from sync start (set once in `
 **startSync() is fire-and-forget:**
 - Sets up FRB stream listener and returns immediately (no Completer, no await)
 - `_syncGen` generation counter: incremented by `stopSync()`, checked in `.then()` callbacks to invalidate pending operations after user-initiated stop
-- Stream `onDone` → `_onSyncDone()` (balance refresh + start polling), then any queued start
+- Stream `onDone` (handled inline in `startSync()`): balance refresh + start polling, then any queued start
 - `FollowupUpdated` event → `_onSyncFollowupUpdated()` (re-read balances and open receipts; not a new completion)
 - Stream `onError` → sets error state + starts polling for auto-retry
 
@@ -134,7 +134,7 @@ All sync log messages include `[Xs]` elapsed time from sync start (set once in `
 
 **Lifecycle:**
 - `onResume`: refreshes balance → `_checkAndSync()` (which starts polling)
-- `onHide`: stops polling (no wasted network in background)
+- `onHide`: stops polling where the app does no work in the background (`canRunAppProcessWork`; mobile), so no network is wasted there
 - `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
 - All balance/history queries pass `activeAccountUuid` from `AccountProvider`
 
