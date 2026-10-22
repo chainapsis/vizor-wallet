@@ -821,8 +821,9 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
     }
     final scannedHeight = syncStatus.scannedHeight.toInt();
     final chainTipHeight = syncStatus.chainTipHeight.toInt();
-    // An unfinished job reports its own fraction, so the next sync resumes
-    // from what the last session showed.
+    // A stored job reports its own fraction (1.0 for one whose scan finished
+    // before the attempt could complete), so the next sync resumes from what
+    // the last session showed.
     final syncJobId = syncStatus.syncJobId;
     final percentage = syncJobId.isNotEmpty
         ? syncStatus.syncJobFraction.clamp(0.0, 1.0)

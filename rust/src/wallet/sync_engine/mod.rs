@@ -985,13 +985,13 @@ fn mark_sync_started(db_data_path: &str) -> Result<progress_work::StoredProgress
     Ok(job)
 }
 
-/// The unfinished sync job's id and last fraction, for the status a relaunch
-/// starts from.
-pub(crate) fn unfinished_progress_job(db_data_path: &str) -> Option<(String, f64)> {
+/// The stored sync job's id and last fraction, for the status a relaunch or
+/// an unlock starts from: an unfinished job, or one whose scan finished
+/// before the attempt could complete, which the next attempt resumes too.
+/// A completed sync clears it.
+pub(crate) fn stored_progress_job(db_data_path: &str) -> Option<(String, f64)> {
     match progress_work::read_progress_job(db_data_path) {
-        Ok(job) => job
-            .filter(|job| !job.is_finished())
-            .map(|job| (job.id, job.fraction)),
+        Ok(job) => job.map(|job| (job.id, job.fraction)),
         Err(e) => {
             log::warn!("sync: stored progress job unreadable: {e}");
             None
@@ -7158,10 +7158,21 @@ mod tests {
         let path = file.path().to_str().unwrap();
         let first = mark_sync_started(path).unwrap();
         assert_eq!(mark_sync_started(path).unwrap().id, first.id);
-        assert_eq!(unfinished_progress_job(path), Some((first.id.clone(), 0.0)));
+        assert_eq!(stored_progress_job(path), Some((first.id.clone(), 0.0)));
+
+        // The scan finished, but the attempt stopped before completing: the
+        // status still names the job the next attempt resumes.
+        let finished = progress_work::StoredProgressJob {
+            total_work: 500.0,
+            fraction: 1.0,
+            ..first.clone()
+        };
+        progress_work::write_progress_job(path, &finished).unwrap();
+        assert_eq!(stored_progress_job(path), Some((first.id.clone(), 1.0)));
+        assert_eq!(mark_sync_started(path).unwrap(), finished);
 
         mark_sync_completed(path, 100).unwrap();
-        assert_eq!(unfinished_progress_job(path), None);
+        assert_eq!(stored_progress_job(path), None);
         assert_ne!(mark_sync_started(path).unwrap().id, first.id);
     }
 

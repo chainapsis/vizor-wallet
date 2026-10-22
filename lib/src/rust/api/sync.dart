@@ -3066,7 +3066,8 @@ class SyncProgress {
   final bool isSyncing;
   final bool isComplete;
 
-  /// Id of the unfinished sync job, or empty when none is stored.
+  /// Id of the stored sync job (unfinished, or scanned to the end by an
+  /// attempt that stopped before completing), or empty when none is stored.
   final String syncJobId;
 
   /// Last reported fraction of that job, in the units of

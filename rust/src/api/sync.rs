@@ -776,7 +776,8 @@ pub struct SyncProgress {
     pub chain_tip_height: u64,
     pub is_syncing: bool,
     pub is_complete: bool,
-    /// Id of the unfinished sync job, or empty when none is stored.
+    /// Id of the stored sync job (unfinished, or scanned to the end by an
+    /// attempt that stopped before completing), or empty when none is stored.
     pub sync_job_id: String,
     /// Last reported fraction of that job, in the units of
     /// `ApiSyncProgressEvent::percentage`.
@@ -1062,7 +1063,7 @@ pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress,
         let network = parse_network_and_migrate(&db_path, &network)?;
         let p = wallet_sync::get_sync_progress(&db_path, network)?;
         let (sync_job_id, sync_job_fraction) =
-            crate::wallet::sync_engine::unfinished_progress_job(&db_path).unwrap_or_default();
+            crate::wallet::sync_engine::stored_progress_job(&db_path).unwrap_or_default();
         Ok(SyncProgress {
             scanned_height: p.scanned_height,
             chain_tip_height: p.chain_tip_height,

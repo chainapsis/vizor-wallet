@@ -381,12 +381,6 @@ impl StoredProgressJob {
             closed: false,
         }
     }
-
-    /// Scanned everything it measured; only an attempt that stopped before
-    /// marking the sync complete leaves such a job behind.
-    pub(super) fn is_finished(&self) -> bool {
-        self.total_work > 0.0 && self.fraction >= 1.0
-    }
 }
 
 pub(super) fn read_progress_job(db_data_path: &str) -> Result<Option<StoredProgressJob>, String> {
@@ -454,7 +448,10 @@ fn read_job(conn: &rusqlite::Connection) -> Result<Option<StoredProgressJob>, St
     }
 }
 
-fn write_progress_job(db_data_path: &str, job: &StoredProgressJob) -> Result<(), String> {
+pub(super) fn write_progress_job(
+    db_data_path: &str,
+    job: &StoredProgressJob,
+) -> Result<(), String> {
     let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
     ensure_sync_meta_table(&conn)?;
     let tx = conn
