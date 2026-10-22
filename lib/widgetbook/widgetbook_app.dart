@@ -43,6 +43,7 @@ import 'token_use_cases.dart';
 import 'toast_use_cases.dart';
 import 'typography_use_cases.dart';
 import 'voting_use_cases.dart';
+import 'wallet_pir_server_use_cases.dart';
 
 /// Top-level Widgetbook app for the Zcash design system.
 ///
@@ -87,6 +88,7 @@ class WidgetbookApp extends StatelessWidget {
         WidgetbookFolder(
           name: 'Screens',
           children: [
+            buildWalletPirServerWidgetbookComponent(),
             WidgetbookComponent(
               name: 'Voting',
               useCases: [

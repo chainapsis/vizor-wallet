@@ -13,6 +13,7 @@ import 'src/core/feedback/app_review.dart';
 import 'src/core/feedback/app_review_host.dart';
 import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
+import 'src/providers/wallet_pir_server_provider.dart';
 import 'src/providers/account_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
@@ -1844,6 +1845,7 @@ class ZcashWalletApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(votingShareTrackingRestorerProvider);
     ref.watch(paymentLinkClaimCoordinatorProvider);
+    ref.watch(walletPirServerActivatorProvider);
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);

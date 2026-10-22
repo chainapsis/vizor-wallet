@@ -9,12 +9,12 @@ use super::{
     super::{
         super::SyncError,
         transport::{client_protocol_error, RoutedHttpError},
-        DEFAULT_MAINNET_ENDPOINT,
     },
     coordinator::{EnhancementEffects, RecoveryWallet, RoutedWork},
     diagnostics::{mark_routing_refresh, routing_refresh_due, set_phase, RecoveryPhase},
 };
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::pir_config::{client_origin, PirProduct};
 use futures::StreamExt;
 use std::collections::BTreeSet;
 use zakura_pir_client::enhance::transport::{self, PendingClient};
@@ -25,19 +25,14 @@ use zcash_client_backend::data_api::enhance_pir::{
 };
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
-/// Debug builds only: overrides the Enhance PIR endpoint. Release builds
-/// always use [`DEFAULT_MAINNET_ENDPOINT`] and never read it.
-#[cfg(debug_assertions)]
-const ENDPOINT_ENV: &str = "VIZOR_ENHANCE_PIR_URL";
-
-/// The Enhance PIR endpoint: the production service, or in a debug build a
-/// configured override.
+/// The Enhance PIR endpoint: the selected wallet PIR server.
+///
+/// With no server selected the endpoint is empty. Private Enhance stays
+/// enabled, so the empty endpoint fails URI validation before any request and
+/// the sync defers exactly as for an unreachable service. It never turns
+/// into public transaction retrieval.
 fn enhance_endpoint() -> String {
-    #[cfg(debug_assertions)]
-    if let Ok(endpoint) = std::env::var(ENDPOINT_ENV) {
-        return endpoint;
-    }
-    DEFAULT_MAINNET_ENDPOINT.into()
+    client_origin(PirProduct::Enhance).unwrap_or_default()
 }
 
 const REDISCOVERY_COVER_BLOCKS: u32 = 100;
@@ -644,12 +639,13 @@ mod tests {
 
     #[test]
     fn every_route_requires_an_https_endpoint() {
-        assert!(secure_endpoint_uri(DEFAULT_MAINNET_ENDPOINT).is_ok());
+        assert!(secure_endpoint_uri("https://wallet-pir.example").is_ok());
         for url in [
             "http://enhance-pir.valargroup.dev",
             "http://127.0.0.1:8080",
             "enhance-pir.valargroup.dev",
             "not a url",
+            "",
         ] {
             assert!(secure_endpoint_uri(url).is_err(), "accepted {url}");
         }
