@@ -1437,6 +1437,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       isSyncComplete: initialBelongsToActiveAccount && initial.isSyncComplete,
       percentage: initial.percentage,
       syncJobId: initial.syncJobId,
+      startedFromCompletedSync: initial.startedFromCompletedSync,
       scannedHeight: initial.scannedHeight,
       chainTipHeight: initial.chainTipHeight,
       transparentBalance: initialBelongsToActiveAccount
@@ -3644,21 +3645,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     final percentage = status.syncJobFraction.clamp(0.0, 1.0);
+    // A catch-up the lock interrupted, or one an earlier session left (a
+    // locked launch), continues as one, from the heights it had reached.
+    final catchUp = lockedDuringCatchUp || status.syncJobFromCompletedSync;
     state = AsyncData(
       current.copyWith(
         syncJobId: status.syncJobId,
         percentage: percentage,
         displayTargetPercentage: percentage,
         sessionStartPercentage: percentage,
-        // A catch-up the lock interrupted continues as one, from the
-        // heights it had reached.
-        startedFromCompletedSync: lockedDuringCatchUp,
-        scannedHeight: lockedDuringCatchUp
-            ? status.scannedHeight.toInt()
-            : null,
-        chainTipHeight: lockedDuringCatchUp
-            ? status.chainTipHeight.toInt()
-            : null,
+        startedFromCompletedSync: catchUp,
+        scannedHeight: catchUp ? status.scannedHeight.toInt() : null,
+        chainTipHeight: catchUp ? status.chainTipHeight.toInt() : null,
       ),
     );
   }

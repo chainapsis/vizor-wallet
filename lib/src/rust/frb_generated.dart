@@ -15172,8 +15172,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SyncProgress dco_decode_sync_progress(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return SyncProgress(
       scannedHeight: dco_decode_u_64(arr[0]),
       chainTipHeight: dco_decode_u_64(arr[1]),
@@ -15181,6 +15181,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isComplete: dco_decode_bool(arr[3]),
       syncJobId: dco_decode_String(arr[4]),
       syncJobFraction: dco_decode_f_64(arr[5]),
+      syncJobFromCompletedSync: dco_decode_bool(arr[6]),
     );
   }
 
@@ -20406,6 +20407,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_isComplete = sse_decode_bool(deserializer);
     var var_syncJobId = sse_decode_String(deserializer);
     var var_syncJobFraction = sse_decode_f_64(deserializer);
+    var var_syncJobFromCompletedSync = sse_decode_bool(deserializer);
     return SyncProgress(
       scannedHeight: var_scannedHeight,
       chainTipHeight: var_chainTipHeight,
@@ -20413,6 +20415,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isComplete: var_isComplete,
       syncJobId: var_syncJobId,
       syncJobFraction: var_syncJobFraction,
+      syncJobFromCompletedSync: var_syncJobFromCompletedSync,
     );
   }
 
@@ -24966,6 +24969,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.isComplete, serializer);
     sse_encode_String(self.syncJobId, serializer);
     sse_encode_f_64(self.syncJobFraction, serializer);
+    sse_encode_bool(self.syncJobFromCompletedSync, serializer);
   }
 
   @protected

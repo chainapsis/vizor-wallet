@@ -14673,6 +14673,7 @@ impl SseDecode for crate::api::sync::SyncProgress {
         let mut var_isComplete = <bool>::sse_decode(deserializer);
         let mut var_syncJobId = <String>::sse_decode(deserializer);
         let mut var_syncJobFraction = <f64>::sse_decode(deserializer);
+        let mut var_syncJobFromCompletedSync = <bool>::sse_decode(deserializer);
         return crate::api::sync::SyncProgress {
             scanned_height: var_scannedHeight,
             chain_tip_height: var_chainTipHeight,
@@ -14680,6 +14681,7 @@ impl SseDecode for crate::api::sync::SyncProgress {
             is_complete: var_isComplete,
             sync_job_id: var_syncJobId,
             sync_job_fraction: var_syncJobFraction,
+            sync_job_from_completed_sync: var_syncJobFromCompletedSync,
         };
     }
 }
@@ -19616,6 +19618,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::SyncProgress {
             self.is_complete.into_into_dart().into_dart(),
             self.sync_job_id.into_into_dart().into_dart(),
             self.sync_job_fraction.into_into_dart().into_dart(),
+            self.sync_job_from_completed_sync
+                .into_into_dart()
+                .into_dart(),
         ]
         .into_dart()
     }
@@ -23710,6 +23715,7 @@ impl SseEncode for crate::api::sync::SyncProgress {
         <bool>::sse_encode(self.is_complete, serializer);
         <String>::sse_encode(self.sync_job_id, serializer);
         <f64>::sse_encode(self.sync_job_fraction, serializer);
+        <bool>::sse_encode(self.sync_job_from_completed_sync, serializer);
     }
 }
 

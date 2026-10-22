@@ -66,12 +66,14 @@ const PROGRESS_JOB_ID_KEY: &str = "progress_job_id";
 const PROGRESS_JOB_TOTAL_KEY: &str = "progress_job_total_work";
 const PROGRESS_JOB_FRACTION_KEY: &str = "progress_job_fraction";
 const PROGRESS_JOB_CLOSED_KEY: &str = "progress_job_closed";
-pub(super) const PROGRESS_JOB_KEYS: [&str; 5] = [
+const PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY: &str = "progress_job_from_completed_sync";
+pub(super) const PROGRESS_JOB_KEYS: [&str; 6] = [
     PROGRESS_JOB_POLICY_VERSION_KEY,
     PROGRESS_JOB_ID_KEY,
     PROGRESS_JOB_TOTAL_KEY,
     PROGRESS_JOB_FRACTION_KEY,
     PROGRESS_JOB_CLOSED_KEY,
+    PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY,
 ];
 const PROGRESS_JOB_PERSIST_INTERVAL: Duration = Duration::from_secs(15);
 // Persist sooner when the total grows by more than this share.
@@ -381,6 +383,10 @@ pub(super) struct StoredProgressJob {
     /// scanned, so less pending work at the next start went away unscanned.
     /// After a killed process the last save can be up to 15 seconds behind.
     pub(super) closed: bool,
+    /// Claimed while the last sync stood completed: a catch-up. The status
+    /// reports it, so a relaunch shows an interrupted catch-up as one.
+    /// Missing in a job saved before the key existed, and read as false.
+    pub(super) from_completed_sync: bool,
 }
 
 impl StoredProgressJob {
@@ -391,6 +397,7 @@ impl StoredProgressJob {
             total_work: 0.0,
             fraction: 0.0,
             closed: false,
+            from_completed_sync: false,
         }
     }
 }
@@ -407,13 +414,18 @@ pub(super) fn read_progress_job(db_data_path: &str) -> Result<Option<StoredProgr
 /// is returned too, so preparation keeps showing where it ended; measuring
 /// it starts a new job from zero only when there is work to scan
 /// ([`JobProgress::start`]), as after a completed sync.
+/// A new job is a catch-up when `from_completed_sync`.
 pub(super) fn claim_progress_job(
     tx: &rusqlite::Transaction<'_>,
+    from_completed_sync: bool,
 ) -> Result<StoredProgressJob, String> {
     if let Some(job) = read_job(tx)? {
         return Ok(job);
     }
-    let job = StoredProgressJob::unmeasured();
+    let job = StoredProgressJob {
+        from_completed_sync,
+        ..StoredProgressJob::unmeasured()
+    };
     write_job(tx, &job)?;
     Ok(job)
 }
@@ -443,6 +455,7 @@ fn read_job(conn: &rusqlite::Connection) -> Result<Option<StoredProgressJob>, St
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(0.0);
     let closed = read(PROGRESS_JOB_CLOSED_KEY)?.as_deref() == Some("1");
+    let from_completed_sync = read(PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY)?.as_deref() == Some("1");
     match (id, total_work) {
         (Some(id), Some(total_work)) if total_work.is_finite() && total_work >= 0.0 => {
             Ok(Some(StoredProgressJob {
@@ -454,6 +467,7 @@ fn read_job(conn: &rusqlite::Connection) -> Result<Option<StoredProgressJob>, St
                     0.0
                 },
                 closed,
+                from_completed_sync,
             }))
         }
         _ => Ok(None),
@@ -484,6 +498,10 @@ fn write_job(tx: &rusqlite::Transaction<'_>, job: &StoredProgressJob) -> Result<
         (PROGRESS_JOB_TOTAL_KEY, job.total_work.to_string()),
         (PROGRESS_JOB_FRACTION_KEY, job.fraction.to_string()),
         (PROGRESS_JOB_CLOSED_KEY, u8::from(job.closed).to_string()),
+        (
+            PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY,
+            u8::from(job.from_completed_sync).to_string(),
+        ),
     ] {
         tx.execute(
             "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
@@ -533,6 +551,8 @@ pub(super) struct JobProgress {
     /// Wallet DB the job is saved to, recorded by the first save. Dropping
     /// the job saves it there as closed, unless the sync completed.
     store: Option<String>,
+    /// See [`StoredProgressJob::from_completed_sync`].
+    from_completed_sync: bool,
 }
 
 impl JobProgress {
@@ -555,6 +575,7 @@ impl JobProgress {
             total_work: stored_total,
             fraction,
             closed,
+            from_completed_sync,
         } = stored;
         let (id, total, start) = if stored_total <= 0.0 {
             // Claimed when the attempt began; this is its first measurement.
@@ -583,6 +604,8 @@ impl JobProgress {
             persisted_total: 0.0,
             persisted_at: None,
             store: None,
+            // A replacement follows a job that never completed.
+            from_completed_sync: from_completed_sync && start != JobStart::Replaced,
         };
         (job, start)
     }
@@ -689,6 +712,7 @@ impl JobProgress {
             total_work: self.total,
             fraction: self.fraction(),
             closed,
+            from_completed_sync: self.from_completed_sync,
         };
         crate::wallet::db::with_wallet_db_write_lock("sync_engine.progress_job", || {
             write_progress_job(db_data_path, &stored)
@@ -758,6 +782,7 @@ mod tests {
             total_work,
             fraction,
             closed: false,
+            from_completed_sync: false,
         }
     }
 
@@ -1141,6 +1166,38 @@ mod tests {
     }
 
     #[test]
+    fn a_catch_up_stays_one_unless_its_job_is_replaced() {
+        let catch_up = |total_work, fraction| StoredProgressJob {
+            from_completed_sync: true,
+            ..stored(total_work, fraction)
+        };
+        let claimed = StoredProgressJob {
+            from_completed_sync: true,
+            ..StoredProgressJob::unmeasured()
+        };
+        let (mut job, start) = JobProgress::start(claimed, 40.0, 1.0);
+        assert_eq!(start, JobStart::New);
+        assert!(job.from_completed_sync);
+        let (_dir, path) = temp_db();
+        job.persist_if_due(&path, true);
+        assert!(
+            read_progress_job(&path)
+                .unwrap()
+                .unwrap()
+                .from_completed_sync
+        );
+
+        let (job, start) = JobProgress::start(catch_up(1_000.0, 0.6), 400.0, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert!(job.from_completed_sync);
+        // More new work than was finished: a new job, after one that never
+        // completed.
+        let (job, start) = JobProgress::start(catch_up(1_000.0, 0.6), 1_500.0, 1.0);
+        assert_eq!(start, JobStart::Replaced);
+        assert!(!job.from_completed_sync);
+    }
+
+    #[test]
     fn a_finished_job_has_no_remaining_share_to_stretch() {
         // A finished job with new work starts over; start() must not divide
         // by zero. Without new work it stays finished.
@@ -1173,12 +1230,13 @@ mod tests {
         let path = path.as_str();
         assert_eq!(read_progress_job(path).unwrap(), None);
 
-        for closed in [false, true] {
+        for (closed, from_completed_sync) in [(false, false), (true, false), (false, true)] {
             let job = StoredProgressJob {
                 id: "0123456789abcdef".into(),
                 total_work: 1234.5,
                 fraction: 0.42,
                 closed,
+                from_completed_sync,
             };
             write_progress_job(path, &job).unwrap();
             assert_eq!(read_progress_job(path).unwrap(), Some(job));
@@ -1189,19 +1247,47 @@ mod tests {
         clear_progress_job(&tx).unwrap();
         tx.commit().unwrap();
         assert_eq!(read_progress_job(path).unwrap(), None);
+        let catch_up_keys: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM ext_vizor_sync_meta WHERE key LIKE 'progress_job_%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(catch_up_keys, 0);
+
+        // A job saved before the catch-up key existed reads as not one.
+        let job = StoredProgressJob {
+            from_completed_sync: true,
+            ..stored(10.0, 0.5)
+        };
+        write_progress_job(path, &job).unwrap();
+        conn.execute(
+            "DELETE FROM ext_vizor_sync_meta WHERE key = ?1",
+            params![PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY],
+        )
+        .unwrap();
+        assert_eq!(
+            read_progress_job(path).unwrap(),
+            Some(StoredProgressJob {
+                from_completed_sync: false,
+                ..job
+            })
+        );
     }
 
     #[test]
     fn claiming_keeps_the_stored_job_and_names_a_new_one_otherwise() {
         let (_dir, path) = temp_db();
-        let claim = || {
+        let claim_after = |completed: bool| {
             let mut conn = rusqlite::Connection::open(&path).unwrap();
             ensure_sync_meta_table(&conn).unwrap();
             let tx = conn.transaction().unwrap();
-            let job = claim_progress_job(&tx).unwrap();
+            let job = claim_progress_job(&tx, completed).unwrap();
             tx.commit().unwrap();
             job
         };
+        let claim = || claim_after(false);
 
         let first = claim();
         assert_eq!(first.total_work, 0.0);
@@ -1215,6 +1301,7 @@ mod tests {
             total_work: 500.0,
             fraction: 0.25,
             closed: false,
+            from_completed_sync: false,
         };
         write_progress_job(&path, &measured).unwrap();
         assert_eq!(claim(), measured);
@@ -1233,6 +1320,16 @@ mod tests {
         clear_progress_job(&tx).unwrap();
         tx.commit().unwrap();
         assert_ne!(claim().id, first.id);
+
+        // After a completed sync the new job is a catch-up, and stays one
+        // for the attempts that resume it.
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        let tx = conn.transaction().unwrap();
+        clear_progress_job(&tx).unwrap();
+        tx.commit().unwrap();
+        let catch_up = claim_after(true);
+        assert!(catch_up.from_completed_sync);
+        assert_eq!(claim_after(false), catch_up);
     }
 
     #[test]
@@ -1287,16 +1384,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("wallet.db");
         let path = path.to_str().unwrap();
-        write_progress_job(
-            path,
-            &StoredProgressJob {
-                id: "abc".into(),
-                total_work: 10.0,
-                fraction: 0.5,
-                closed: false,
-            },
-        )
-        .unwrap();
+        write_progress_job(path, &stored(10.0, 0.5)).unwrap();
         let conn = rusqlite::Connection::open(path).unwrap();
         conn.execute(
             "UPDATE ext_vizor_sync_meta SET value = '0' WHERE key = ?1",

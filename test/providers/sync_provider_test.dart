@@ -582,6 +582,7 @@ void main() {
           isComplete: false,
           syncJobId: '',
           syncJobFraction: 0,
+          syncJobFromCompletedSync: false,
         ),
       );
       notifier.balance = _availableBalance(BigInt.from(100));
@@ -1608,6 +1609,7 @@ rust_sync.SyncProgress _storedJob(String id, double fraction) =>
       isComplete: false,
       syncJobId: id,
       syncJobFraction: fraction,
+      syncJobFromCompletedSync: false,
     );
 
 final _noStoredJob = _storedJob('', 0);
@@ -1619,6 +1621,7 @@ final _completedSync = rust_sync.SyncProgress(
   isComplete: true,
   syncJobId: '',
   syncJobFraction: 0,
+  syncJobFromCompletedSync: false,
 );
 
 class _UnavailableSwitchBalanceNotifier extends SyncNotifier {

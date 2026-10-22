@@ -3074,6 +3074,10 @@ class SyncProgress {
   /// `ApiSyncProgressEvent::percentage`.
   final double syncJobFraction;
 
+  /// Whether that job started from a completed sync: a catch-up, which a
+  /// relaunch keeps showing as one.
+  final bool syncJobFromCompletedSync;
+
   const SyncProgress({
     required this.scannedHeight,
     required this.chainTipHeight,
@@ -3081,6 +3085,7 @@ class SyncProgress {
     required this.isComplete,
     required this.syncJobId,
     required this.syncJobFraction,
+    required this.syncJobFromCompletedSync,
   });
 
   @override
@@ -3090,7 +3095,8 @@ class SyncProgress {
       isSyncing.hashCode ^
       isComplete.hashCode ^
       syncJobId.hashCode ^
-      syncJobFraction.hashCode;
+      syncJobFraction.hashCode ^
+      syncJobFromCompletedSync.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3102,7 +3108,8 @@ class SyncProgress {
           isSyncing == other.isSyncing &&
           isComplete == other.isComplete &&
           syncJobId == other.syncJobId &&
-          syncJobFraction == other.syncJobFraction;
+          syncJobFraction == other.syncJobFraction &&
+          syncJobFromCompletedSync == other.syncJobFromCompletedSync;
 }
 
 class TexPcztPairResult {

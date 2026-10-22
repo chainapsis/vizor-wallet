@@ -782,6 +782,9 @@ pub struct SyncProgress {
     /// Last reported fraction of that job, in the units of
     /// `ApiSyncProgressEvent::percentage`.
     pub sync_job_fraction: f64,
+    /// Whether that job started from a completed sync: a catch-up, which a
+    /// relaunch keeps showing as one.
+    pub sync_job_from_completed_sync: bool,
 }
 
 pub enum WalletBalanceAvailability {
@@ -1062,7 +1065,7 @@ pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress,
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let p = wallet_sync::get_sync_progress(&db_path, network)?;
-        let (sync_job_id, sync_job_fraction) =
+        let (sync_job_id, sync_job_fraction, sync_job_from_completed_sync) =
             crate::wallet::sync_engine::stored_progress_job(&db_path).unwrap_or_default();
         Ok(SyncProgress {
             scanned_height: p.scanned_height,
@@ -1071,6 +1074,7 @@ pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress,
             is_complete: p.is_complete,
             sync_job_id,
             sync_job_fraction,
+            sync_job_from_completed_sync,
         })
     })
 }

@@ -961,14 +961,27 @@ pub(crate) fn completed_sync_height_for_status(
     }
 }
 
-/// Marks a sync in progress and returns its progress job: the unfinished one,
-/// or a newly claimed one.
+/// Marks a sync in progress and returns its progress job: the stored one, or
+/// a newly claimed one, a catch-up when the last sync stood completed.
 fn mark_sync_started(db_data_path: &str) -> Result<progress_work::StoredProgressJob, String> {
     let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
     ensure_sync_meta_table(&conn)?;
     let tx = conn
         .transaction()
         .map_err(|e| format!("begin sync-start metadata transaction: {e}"))?;
+    let from_completed_sync = parse_sync_meta_u32(
+        SYNC_COMPLETION_POLICY_VERSION_KEY,
+        read_sync_meta_value(&tx, SYNC_COMPLETION_POLICY_VERSION_KEY)?,
+    ) == Some(SYNC_COMPLETION_POLICY_VERSION)
+        && parse_sync_meta_u32(
+            SYNC_IN_PROGRESS_KEY,
+            read_sync_meta_value(&tx, SYNC_IN_PROGRESS_KEY)?,
+        ) == Some(0)
+        && parse_sync_meta_u64(
+            LAST_COMPLETED_SYNC_HEIGHT_KEY,
+            read_sync_meta_value(&tx, LAST_COMPLETED_SYNC_HEIGHT_KEY)?,
+        )
+        .is_some();
     tx.execute(
         "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -984,19 +997,19 @@ fn mark_sync_started(db_data_path: &str) -> Result<progress_work::StoredProgress
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("write sync in-progress marker: {e}"))?;
-    let job = progress_work::claim_progress_job(&tx)?;
+    let job = progress_work::claim_progress_job(&tx, from_completed_sync)?;
     tx.commit()
         .map_err(|e| format!("commit sync-start metadata: {e}"))?;
     Ok(job)
 }
 
-/// The stored sync job's id and last fraction, for the status a relaunch or
-/// an unlock starts from: an unfinished job, or one whose scan finished
-/// before the attempt could complete, which the next attempt resumes too.
-/// A completed sync clears it.
-pub(crate) fn stored_progress_job(db_data_path: &str) -> Option<(String, f64)> {
+/// The stored sync job's id, last fraction and whether it is a catch-up, for
+/// the status a relaunch or an unlock starts from: an unfinished job, or one
+/// whose scan finished before the attempt could complete, which the next
+/// attempt resumes too. A completed sync clears it.
+pub(crate) fn stored_progress_job(db_data_path: &str) -> Option<(String, f64, bool)> {
     match progress_work::read_progress_job(db_data_path) {
-        Ok(job) => job.map(|job| (job.id, job.fraction)),
+        Ok(job) => job.map(|job| (job.id, job.fraction, job.from_completed_sync)),
         Err(e) => {
             log::warn!("sync: stored progress job unreadable: {e}");
             None
@@ -7202,8 +7215,15 @@ mod tests {
         let file = tempfile::NamedTempFile::new().unwrap();
         let path = file.path().to_str().unwrap();
         let first = mark_sync_started(path).unwrap();
+        assert!(
+            !first.from_completed_sync,
+            "the first sync is not a catch-up"
+        );
         assert_eq!(mark_sync_started(path).unwrap().id, first.id);
-        assert_eq!(stored_progress_job(path), Some((first.id.clone(), 0.0)));
+        assert_eq!(
+            stored_progress_job(path),
+            Some((first.id.clone(), 0.0, false))
+        );
 
         // The scan finished, but the attempt stopped before completing: the
         // status still names the job the next attempt resumes.
@@ -7213,10 +7233,26 @@ mod tests {
             ..first.clone()
         };
         progress_work::write_progress_job(path, &finished).unwrap();
-        assert_eq!(stored_progress_job(path), Some((first.id.clone(), 1.0)));
+        assert_eq!(
+            stored_progress_job(path),
+            Some((first.id.clone(), 1.0, false))
+        );
         assert_eq!(mark_sync_started(path).unwrap(), finished);
 
         mark_sync_completed(path, 100).unwrap();
+        assert_eq!(stored_progress_job(path), None);
+
+        // The next sync starts from a completed one: a catch-up, which the
+        // status reports until it completes.
+        let catch_up = mark_sync_started(path).unwrap();
+        assert_ne!(catch_up.id, first.id);
+        assert!(catch_up.from_completed_sync);
+        assert_eq!(
+            stored_progress_job(path),
+            Some((catch_up.id.clone(), 0.0, true))
+        );
+        assert_eq!(mark_sync_started(path).unwrap(), catch_up);
+        mark_sync_completed(path, 101).unwrap();
         assert_eq!(stored_progress_job(path), None);
         assert_ne!(mark_sync_started(path).unwrap().id, first.id);
     }

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -203,21 +204,25 @@ final _completedStatus = rust_sync.SyncProgress(
   isComplete: true,
   syncJobId: '',
   syncJobFraction: 0,
+  syncJobFromCompletedSync: false,
 );
 
 /// The production build, whose stored status says the last sync completed.
 class _LiveSync extends SyncNotifier {
-  _LiveSync()
+  _LiveSync([this.status])
     : super(
         walletDbPathResolver: () async => 'wallet.db',
         excludeCompanionsFromBackup: (_) async {},
       );
 
+  /// The stored status; the last sync completed when null.
+  final rust_sync.SyncProgress? status;
+
   @override
   Future<rust_sync.SyncProgress> readSyncStatus({
     required String dbPath,
     required String network,
-  }) async => _completedStatus;
+  }) async => status ?? _completedStatus;
 
   @override
   Future<List<rust_sync.TransactionInfo>> readTransactionHistory({
@@ -536,6 +541,7 @@ void main() {
         isComplete: false,
         syncJobId: 'job-2',
         syncJobFraction: 0.5,
+        syncJobFromCompletedSync: false,
       );
       await sync.clearSensitiveStateForLock();
 
@@ -567,6 +573,7 @@ void main() {
         isComplete: false,
         syncJobId: 'restore',
         syncJobFraction: 0.3,
+        syncJobFromCompletedSync: false,
       );
       await sync.clearSensitiveStateForLock();
 
@@ -594,6 +601,107 @@ void main() {
       expect(isShortSyncCatchUp(rescan, now: DateTime.now()), isFalse);
     },
   );
+
+  /// A launch of the production build: [bootstrap]'s snapshot, or none (a
+  /// locked launch), and the initial sync the build schedules.
+  Future<SyncState> launched(
+    _LiveSync sync, {
+    AppBootstrapState? bootstrap,
+  }) async {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(
+          bootstrap ?? AppBootstrapState.empty,
+        ),
+        accountProvider.overrideWith(_Account.new),
+        rpcEndpointFailoverProvider.overrideWith(_Tip.new),
+        chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
+        enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+        syncProvider.overrideWith(() => sync),
+      ],
+    );
+    addTearDown(() {
+      sync.stopSync();
+      container.dispose();
+    });
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    await pumpEventQueue();
+    return container.read(syncProvider).requireValue;
+  }
+
+  /// A job the last session left at 0%, a catch-up when [catchUp].
+  rust_sync.SyncProgress storedJob({required bool catchUp}) =>
+      rust_sync.SyncProgress(
+        scannedHeight: BigInt.from(_completedHeight),
+        chainTipHeight: BigInt.from(_completedHeight + 4),
+        isSyncing: false,
+        isComplete: false,
+        syncJobId: 'job-1',
+        syncJobFraction: 0,
+        syncJobFromCompletedSync: catchUp,
+      );
+
+  group('a catch-up the app was killed during', () {
+    test('continues as one after a launch', () async {
+      final snapshot = AppSyncSnapshot(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        scannedHeight: _completedHeight,
+        chainTipHeight: _completedHeight + 4,
+        percentage: 0,
+        syncJobId: 'job-1',
+        startedFromCompletedSync: true,
+        transparentBalance: BigInt.zero,
+        saplingBalance: BigInt.zero,
+        orchardBalance: BigInt.one,
+        ironwoodBalance: BigInt.zero,
+        orchardLockedBalance: BigInt.zero,
+        transparentPendingBalance: BigInt.zero,
+        saplingPendingBalance: BigInt.zero,
+        orchardPendingBalance: BigInt.zero,
+        ironwoodPendingBalance: BigInt.zero,
+        canShieldTransparentBalance: false,
+        shieldTransparentFee: BigInt.zero,
+        shieldTransparentAmount: BigInt.zero,
+        spendableBalance: BigInt.one,
+        totalBalance: BigInt.one,
+        recentTransactions: const [],
+      );
+      final bootstrap = AppBootstrapState(
+        initialLocation: '/home',
+        initialAccountState: AccountState(),
+        initialSyncSnapshot: snapshot,
+        network: kZcashDefaultNetworkName,
+        rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+        themeMode: ThemeMode.system,
+        privacyModeEnabled: false,
+        isPasswordConfigured: false,
+        isUnlocked: false,
+        passwordRotationRecoveryFailed: false,
+      );
+
+      final started = await launched(
+        _LiveSync(storedJob(catchUp: true)),
+        bootstrap: bootstrap,
+      );
+      expectCatchUp(started);
+      expect(started.syncJobId, 'job-1');
+    });
+
+    test('continues as one after a locked launch', () async {
+      final started = await launched(_LiveSync(storedJob(catchUp: true)));
+      expectCatchUp(started);
+      expect(started.syncJobId, 'job-1');
+    });
+
+    test('but a stored job that was no catch-up is not one', () async {
+      final started = await launched(_LiveSync(storedJob(catchUp: false)));
+      expect(started.isSyncing, isTrue);
+      expect(started.startedFromCompletedSync, isFalse);
+      expect(isShortSyncCatchUp(started, now: DateTime.now()), isFalse);
+    });
+  });
 
   test('a launch with no snapshot starts from the stored status', () async {
     final sync = _LiveSync();
