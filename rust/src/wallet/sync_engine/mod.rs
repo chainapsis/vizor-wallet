@@ -5072,8 +5072,10 @@ async fn run_sync_impl(
             sync_job_id: job.id().to_string(),
         };
         // Save the batch that finishes the scan at once, so a process killed
-        // in the Checking stage leaves a finished job rather than a fraction
-        // the next catch-up would have to stretch.
+        // before the sync completes leaves a finished job for the next
+        // attempt. Work the Checking stage finds afterwards raises the total
+        // and is saved like other new work: a process killed in that stage
+        // resumes at the lower fraction, as a main scan.
         job.persist_if_due(db_data_path, job.remaining() <= 0.0);
         log::info!(
             "[{}] sync: {:.1}% (work remaining={:.0}/{:.0}, blocks remaining={})",
