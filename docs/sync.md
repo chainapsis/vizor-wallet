@@ -29,7 +29,8 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
    Scan power), so its decryption overlaps the write. The next scan uses that
    decryption only if it covers the same blocks with the same viewing keys,
    and decrypts again otherwise; it holds one more batch's decryption results
-   in memory.
+   in memory. A tip batch scanned between history batches keeps that
+   decryption for the queued batch, whose work cannot be stopped once started.
    A batch takes as many blocks as fit a
    compact-block byte budget (about 31 MB on desktop, 11 MB on mobile), up to
    10,000 blocks on desktop, 1,000 on mobile and 300 in background mode (each

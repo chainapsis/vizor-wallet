@@ -2640,10 +2640,26 @@ where
 }
 
 /// Trial decryption of the queued batch `start..end`, started ahead of its scan.
-struct NextDecryption {
+struct NextDecryption<D = BlockDecryption<<WalletDatabase as WalletRead>::AccountId>> {
     start: BlockHeight,
     end: BlockHeight,
-    decryption: BlockDecryption<<WalletDatabase as WalletRead>::AccountId>,
+    decryption: D,
+}
+
+/// `next` while the queued batch it decrypts is still first in `queue`. A tip
+/// batch scanned between history batches leaves the queue as it was, and
+/// dropping a decryption already running would not stop its work, only
+/// repeat it when the scan returns. Ranges that changed under the queue
+/// cleared it, and the decryption with it.
+fn decryption_still_next<D, T>(
+    next: Option<NextDecryption<D>>,
+    queue: &VecDeque<Prefetch<T>>,
+) -> Option<NextDecryption<D>> {
+    next.filter(|next| {
+        queue
+            .front()
+            .is_some_and(|queued| queued.start == next.start && queued.end == next.end)
+    })
 }
 
 /// Starts trial decryption of the queued batch that follows `end`, if its
@@ -4448,9 +4464,9 @@ async fn run_sync_impl(
             scan_power::install(power, || {
                 // The decryption started while the previous batch was written, if
                 // it is this batch's.
-                match next_decryption.take() {
-                    Some(next) if next.start == start && next.end == end => Ok(next.decryption),
-                    _ => decrypt_cached_blocks(
+                match next_decryption.take_if(|next| next.start == start && next.end == end) {
+                    Some(next) => Ok(next.decryption),
+                    None => decrypt_cached_blocks(
                         &network,
                         &block_source,
                         &db,
@@ -4460,8 +4476,10 @@ async fn run_sync_impl(
                 }
                 .and_then(|decryption| {
                     // This batch's decryption was queued first, so the next
-                    // batch's runs after it, while this batch is written.
-                    next_decryption = start_next_decryption(&network, &db, &mut prefetch, end);
+                    // batch's runs after it, while this batch is written. One
+                    // already running for the queued batch is kept.
+                    next_decryption = decryption_still_next(next_decryption.take(), &prefetch)
+                        .or_else(|| start_next_decryption(&network, &db, &mut prefetch, end));
                     scan_decrypted_blocks(
                         &network,
                         &block_source,
@@ -6306,6 +6324,40 @@ mod tests {
             prefetch_continues_from(&mut queue, h(260), h(1_000)),
             Some(h(260))
         );
+    }
+
+    #[tokio::test]
+    async fn a_tip_batch_keeps_the_decryption_started_for_the_queued_batch() {
+        let h = block_height;
+        let queued =
+            |start, end| Prefetch::spawn(h(start), h(end), async { Ok::<_, SyncError>(0u8) });
+        let started = |start, end| {
+            Some(NextDecryption {
+                start: h(start),
+                end: h(end),
+                decryption: (),
+            })
+        };
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+
+        // Scanning 0..100 started decrypting 100..200. A new block's tip
+        // batch cuts in and leaves the queue: the decryption waits with it.
+        assert!(take_queued_batch(&mut queue, h(5_000), h(5_001)).is_none());
+        let kept = decryption_still_next(started(100, 200), &queue);
+        assert_eq!(kept.map(|next| u32::from(next.start)), Some(100));
+
+        // Not the queued batch's range: not kept.
+        assert!(decryption_still_next(started(100, 150), &queue).is_none());
+
+        // The scan returns and takes the queued batch; the next decryption
+        // is for whatever is first now.
+        assert!(take_queued_batch(&mut queue, h(100), h(200)).is_some());
+        assert!(decryption_still_next(started(100, 200), &queue).is_none());
+
+        // Ranges that changed under the queue clear it, and the decryption.
+        assert!(take_queued_batch(&mut queue, h(250), h(260)).is_none());
+        assert!(queue.is_empty());
+        assert!(decryption_still_next(started(200, 300), &queue).is_none());
     }
 
     #[tokio::test]
