@@ -115,6 +115,10 @@ class WalletPirConfigException implements Exception {
 
 /// The Rust profile boundary. Injectable so provider tests need no Rust.
 abstract interface class WalletPirConfigResolver {
+  /// Validates and normalizes an explicit custom server using the shared
+  /// server-base rules. This does not add it to the published configuration.
+  String normalizeCustomServer(String baseUrl);
+
   /// Returns the dynamic mirrors to fetch, in order.
   List<String> resolveStatic({
     required String source,
@@ -162,6 +166,15 @@ class WalletPirMirrorAttempt {
 
 class RustWalletPirConfigResolver implements WalletPirConfigResolver {
   const RustWalletPirConfigResolver();
+
+  @override
+  String normalizeCustomServer(String baseUrl) {
+    try {
+      return rust.normalizeWalletPirServerBase(baseUrl: baseUrl);
+    } on String catch (message) {
+      throw WalletPirConfigException(message);
+    }
+  }
 
   @override
   List<String> resolveStatic({

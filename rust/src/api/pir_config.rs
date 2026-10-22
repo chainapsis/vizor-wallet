@@ -19,6 +19,15 @@ use std::sync::{Mutex, PoisonError};
 use crate::wallet::pir_config::{process_selection, selected_server_base, SelectedServer};
 use crate::wallet::sync_engine::transparent_details::source::retain_service_for;
 
+/// Validates a user-entered HTTPS base with the same rules as advertised
+/// servers. Returns its canonical identity without contacting the server.
+#[flutter_rust_bridge::frb(sync)]
+pub fn normalize_wallet_pir_server_base(base_url: String) -> Result<String, String> {
+    ServerBase::parse(base_url.trim())
+        .map(|base| base.as_str().to_owned())
+        .map_err(|error| error.to_string())
+}
+
 /// A static document the profile accepted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiWalletPirStaticConfig {
@@ -273,6 +282,27 @@ fn apply_server(
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+
+    #[test]
+    fn custom_servers_use_the_shared_https_base_rules() {
+        assert_eq!(
+            normalize_wallet_pir_server_base(" HTTPS://Server.Example:443/pir/ ".into()),
+            Ok("https://server.example/pir".into())
+        );
+        for url in [
+            "http://server.example",
+            "https://user@server.example",
+            "https://server.example?query=1",
+            "https://server.example#fragment",
+            "https://server.example/pir//other",
+            "not a url",
+        ] {
+            assert!(
+                normalize_wallet_pir_server_base(url.into()).is_err(),
+                "{url}"
+            );
+        }
+    }
 
     const MIRROR_A: &str = "https://valargroup.github.io/wallet-pir-config/prod/dynamic.json";
     const MIRROR_B: &str =

@@ -36,7 +36,8 @@ class _MemoryStore implements WalletPirConfigStore {
     String src,
     WalletPirCachedConfig value,
   ) async {
-    final selection = value.selectionJson ?? '';
+    final selection =
+        '${value.selectionJson ?? ''}|${value.customBaseUrl ?? ''}';
     for (final base in [...writeGates.keys]) {
       if (selection.contains(base)) await writeGates.remove(base)!.future;
     }
@@ -75,6 +76,23 @@ class _Fetcher implements WalletPirConfigFetcher {
 /// advertised choice, require a new one when it is removed, default to the
 /// first server only without an earlier choice in the scope.
 class _Resolver implements WalletPirConfigResolver {
+  @override
+  String normalizeCustomServer(String baseUrl) {
+    final uri = Uri.tryParse(baseUrl.trim());
+    if (uri == null ||
+        uri.scheme.toLowerCase() != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      throw const WalletPirConfigException('invalid custom server');
+    }
+    return uri
+        .replace(scheme: 'https', host: uri.host.toLowerCase())
+        .toString()
+        .replaceFirst(RegExp(r'/+$'), '');
+  }
+
   @override
   List<String> resolveStatic({
     required String source,
@@ -413,6 +431,75 @@ void main() {
     h.container.dispose();
   });
 
+  testWidgets(
+    'the custom editor validates, cancels and saves without changing the source',
+    (tester) async {
+      final h = _Harness();
+      h.fetcher.servers[_sourceA] = [_a, _b];
+      await tester.runAsync(h.start);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: h.container,
+          child: MaterialApp(
+            home: AppTheme(
+              data: AppThemeData.dark,
+              child: const Scaffold(
+                body: WalletPirServerSettingsButton(enabled: true),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('wallet_pir_server_settings_button')),
+      );
+      await tester.pumpAndSettle();
+      final customOption = find.byKey(
+        const ValueKey('wallet_pir_custom_server_option'),
+      );
+      await tester.tap(customOption);
+      await tester.pumpAndSettle();
+      final save = find.byKey(const ValueKey('wallet_pir_custom_server_save'));
+      await tester.enterText(
+        find.byType(EditableText),
+        'http://custom.example',
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<AppButton>(save).onPressed, isNull);
+      expect(find.textContaining('Enter an HTTPS base URL'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(h.state.selectedBaseUrl, _a[1]);
+
+      await tester.tap(customOption);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(EditableText),
+        'https://custom.example/pir/',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(save);
+      await tester.runAsync(() => pumpEventQueue());
+      await tester.pumpAndSettle();
+      expect(h.state.source, _sourceA);
+      expect(h.state.selectedBaseUrl, 'https://custom.example/pir');
+      expect(
+        h.store.cached['mainnet|$_sourceA']?.customBaseUrl,
+        'https://custom.example/pir',
+      );
+      expect(find.byType(EditableText), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('wallet_pir_server_settings_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Custom server'), findsOneWidget);
+      expect(find.text('custom.example/pir'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      h.container.dispose();
+    },
+  );
+
   test('first load picks the first server and keeps it', () async {
     final h = _Harness();
     h.fetcher.servers[_sourceA] = [_a, _b];
@@ -425,6 +512,113 @@ void main() {
       contains('a.example'),
     );
   });
+
+  test(
+    'a custom choice survives refresh and restart until a listed server is chosen',
+    () async {
+      var h = _Harness();
+      h.fetcher.servers[_sourceA] = [_a, _b];
+      await h.start();
+      await h.notifier.selectCustomServer('https://custom.example/pir/');
+      expect(h.state.selectedBaseUrl, 'https://custom.example/pir');
+      expect(h.state.customServer?.isValid, isTrue);
+      expect(
+        h.state.servers.map((server) => server.baseUrl),
+        isNot(contains('https://custom.example/pir')),
+      );
+
+      h.fetcher.servers[_sourceA] = [_b];
+      await h.notifier.refresh();
+      expect(h.state.selectedBaseUrl, 'https://custom.example/pir');
+      expect(h.state.needsSelection, isFalse);
+      h = h.restart();
+      await h.start();
+      expect(h.applied.last, 'https://custom.example/pir');
+      expect(h.state.selectedServer?.label, 'Custom server');
+
+      await h.notifier.selectServer(_b[1]);
+      expect(h.state.customServer, isNull);
+      expect(h.store.cached['mainnet|$_sourceA']?.customBaseUrl, isNull);
+      h = h.restart();
+      await h.start();
+      expect(h.applied.last, _b[1]);
+      expect(h.state.customServer, isNull);
+      h.container.dispose();
+    },
+  );
+
+  test(
+    'invalid custom input changes neither the server nor saved preference',
+    () async {
+      final h = _Harness();
+      h.fetcher.servers[_sourceA] = [_a];
+      await h.start();
+      await expectLater(
+        h.notifier.selectCustomServer('http://custom.example'),
+        throwsA(isA<WalletPirConfigException>()),
+      );
+      expect(h.applied.last, _a[1]);
+      expect(h.state.customServer, isNull);
+      expect(h.store.cached['mainnet|$_sourceA']?.customBaseUrl, isNull);
+      h.container.dispose();
+    },
+  );
+
+  test(
+    'an invalid saved custom server never falls back to a listed server',
+    () async {
+      final h = _Harness();
+      h.fetcher.servers[_sourceA] = [_a];
+      h.store.cached['mainnet|$_sourceA'] = const WalletPirCachedConfig(
+        customBaseUrl: 'http://custom.example',
+      );
+      await h.start();
+      expect(h.state.selectedBaseUrl, isNull);
+      expect(h.state.needsSelection, isTrue);
+      expect(h.applied.whereType<String>(), isEmpty);
+      await h.notifier.selectServer(_a[1]);
+      expect(h.state.customServer, isNull);
+      expect(h.applied.last, _a[1]);
+      h.container.dispose();
+    },
+  );
+
+  test(
+    'a custom server can be used while the published list is unavailable',
+    () async {
+      var h = _Harness();
+      h.fetcher.failing.add(_sourceA);
+      await h.start();
+      await h.notifier.selectCustomServer('https://custom.example');
+      h = h.restart();
+      await h.start();
+      expect(h.state.config, isNull);
+      expect(h.applied.last, 'https://custom.example');
+      expect(
+        walletPirServerStatusText(h.state)?.text,
+        contains('custom server is still selected'),
+      );
+      h.container.dispose();
+    },
+  );
+
+  test(
+    'a custom choice made during a refresh survives its completion',
+    () async {
+      final h = _Harness();
+      h.fetcher.servers[_sourceA] = [_a, _b];
+      await h.start();
+      final gate = h.fetcher.gates[_sourceA] = Completer<void>();
+      final refresh = h.notifier.refresh();
+      await pumpEventQueue();
+      await h.notifier.selectCustomServer('https://custom.example');
+      gate.complete();
+      await refresh;
+      expect(h.applied.last, 'https://custom.example');
+      expect(h.state.selectedBaseUrl, 'https://custom.example');
+      h.container.dispose();
+    },
+  );
 
   test('an empty list selects nothing and sends no traffic', () async {
     final h = _Harness();

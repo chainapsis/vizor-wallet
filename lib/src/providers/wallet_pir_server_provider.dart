@@ -25,22 +25,33 @@ abstract interface class WalletPirConfigStore {
 }
 
 class WalletPirCachedConfig {
-  const WalletPirCachedConfig({this.snapshotJson, this.selectionJson});
+  const WalletPirCachedConfig({
+    this.snapshotJson,
+    this.selectionJson,
+    this.customBaseUrl,
+  });
 
   final String? snapshotJson;
   final String? selectionJson;
+  final String? customBaseUrl;
 
   WalletPirCachedConfig copyWith({
     String? snapshotJson,
     String? selectionJson,
+    String? customBaseUrl,
+    bool clearCustomServer = false,
   }) => WalletPirCachedConfig(
     snapshotJson: snapshotJson ?? this.snapshotJson,
     selectionJson: selectionJson ?? this.selectionJson,
+    customBaseUrl: clearCustomServer
+        ? null
+        : customBaseUrl ?? this.customBaseUrl,
   );
 
   Map<String, Object?> toJson() => {
     'snapshot': snapshotJson,
     'selection': selectionJson,
+    'customBaseUrl': customBaseUrl,
   };
 
   static WalletPirCachedConfig fromJson(Object? json) {
@@ -48,6 +59,7 @@ class WalletPirCachedConfig {
     return WalletPirCachedConfig(
       snapshotJson: json['snapshot'] as String?,
       selectionJson: json['selection'] as String?,
+      customBaseUrl: json['customBaseUrl'] as String?,
     );
   }
 }
@@ -98,6 +110,17 @@ class AppSecureStoreWalletPirConfigStore implements WalletPirConfigStore {
 /// Makes `baseUrl` (or no server) the one all four private products use.
 typedef WalletPirServerApplier = Future<void> Function(String? baseUrl);
 
+/// An explicit custom choice. Invalid saved input requires another choice
+/// instead of silently activating a server from the published list.
+@immutable
+class WalletPirCustomServer {
+  const WalletPirCustomServer(this.baseUrl, {this.error});
+
+  final String baseUrl;
+  final String? error;
+  bool get isValid => error == null;
+}
+
 /// Where the settings screen stands. Labels are display text; the base URL is
 /// the identity.
 @immutable
@@ -105,6 +128,7 @@ class WalletPirServerState {
   const WalletPirServerState({
     required this.source,
     this.config,
+    this.customServer,
     this.refreshing = false,
     this.refreshError,
   });
@@ -114,21 +138,31 @@ class WalletPirServerState {
 
   /// The last good config for [source]; kept when a refresh fails.
   final WalletPirConfigView? config;
+  final WalletPirCustomServer? customServer;
   final bool refreshing;
 
   /// Why the latest refresh failed, if it did.
   final String? refreshError;
 
   List<WalletPirServerOption> get servers => config?.servers ?? const [];
-  String? get selectedBaseUrl => config?.selectedBaseUrl;
-  bool get needsSelection =>
-      config?.selectionState == WalletPirSelectionState.selectionRequired;
+  String? get selectedBaseUrl => customServer == null
+      ? config?.selectedBaseUrl
+      : customServer!.isValid
+      ? customServer!.baseUrl
+      : null;
+  bool get needsSelection => customServer == null
+      ? config?.selectionState == WalletPirSelectionState.selectionRequired
+      : !customServer!.isValid;
   bool get hasNoServers =>
+      customServer == null &&
       config?.selectionState == WalletPirSelectionState.noServers;
 
   WalletPirServerOption? get selectedServer {
     final base = selectedBaseUrl;
     if (base == null) return null;
+    if (customServer != null) {
+      return WalletPirServerOption(label: 'Custom server', baseUrl: base);
+    }
     for (final server in servers) {
       if (server.baseUrl == base) return server;
     }
@@ -137,12 +171,15 @@ class WalletPirServerState {
 
   WalletPirServerState copyWith({
     WalletPirConfigView? config,
+    WalletPirCustomServer? customServer,
+    bool clearCustomServer = false,
     bool? refreshing,
     String? refreshError,
     bool clearRefreshError = false,
   }) => WalletPirServerState(
     source: source,
     config: config ?? this.config,
+    customServer: clearCustomServer ? null : customServer ?? this.customServer,
     refreshing: refreshing ?? this.refreshing,
     refreshError: clearRefreshError ? null : refreshError ?? this.refreshError,
   );
@@ -242,7 +279,7 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
     final initial = await _loadCached();
     await _commit(() async {
       if (generation != _lifecycleGeneration) return;
-      await _applier(initial.config?.selectedBaseUrl);
+      await _applier(initial.selectedBaseUrl);
     });
     if (generation == _lifecycleGeneration && initial.source != null) {
       scheduleMicrotask(() => unawaited(refresh()));
@@ -296,14 +333,15 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
             selectionJson: view.selectionJson,
           ),
         );
-        await _applier(view.selectedBaseUrl);
-        state = AsyncData(
-          (state.value ?? current).copyWith(
-            config: view,
-            refreshing: false,
-            clearRefreshError: true,
-          ),
+        final next = (state.value ?? current).copyWith(
+          config: view,
+          customServer: _validateSavedCustomServer(cached?.customBaseUrl),
+          clearCustomServer: cached?.customBaseUrl == null,
+          refreshing: false,
+          clearRefreshError: true,
         );
+        await _applier(next.selectedBaseUrl);
+        state = AsyncData(next);
       });
     } catch (error) {
       if (!live()) return;
@@ -347,13 +385,65 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
         (cached ?? const WalletPirCachedConfig()).copyWith(
           snapshotJson: config.snapshotJson,
           selectionJson: selectionJson,
+          clearCustomServer: true,
         ),
       );
       if (generation != _lifecycleGeneration) return;
       await _applier(view.selectedBaseUrl);
       if (generation != _lifecycleGeneration) return;
-      state = AsyncData((state.value ?? current).copyWith(config: view));
+      state = AsyncData(
+        (state.value ?? current).copyWith(
+          config: view,
+          clearCustomServer: true,
+        ),
+      );
     });
+  }
+
+  /// Uses an explicit custom base, separate from the published list. The
+  /// serialized commit queue also orders this choice against refreshes.
+  Future<void> selectCustomServer(String input) {
+    final generation = _lifecycleGeneration;
+    return _commit(() async {
+      if (generation != _lifecycleGeneration) return;
+      final current = state.value;
+      final source = current?.source;
+      if (current == null || source == null) {
+        throw const WalletPirConfigException(
+          'Private queries are unavailable on this network.',
+        );
+      }
+      final baseUrl = _resolver.normalizeCustomServer(input);
+      final cached = await _store.readCached(_network, source);
+      if (generation != _lifecycleGeneration) return;
+      await _store.writeCached(
+        _network,
+        source,
+        (cached ?? const WalletPirCachedConfig()).copyWith(
+          customBaseUrl: baseUrl,
+        ),
+      );
+      if (generation != _lifecycleGeneration) return;
+      await _applier(baseUrl);
+      if (generation != _lifecycleGeneration) return;
+      state = AsyncData(
+        (state.value ?? current).copyWith(
+          customServer: WalletPirCustomServer(baseUrl),
+        ),
+      );
+    });
+  }
+
+  WalletPirCustomServer? _validateSavedCustomServer(String? baseUrl) {
+    if (baseUrl == null) return null;
+    try {
+      return WalletPirCustomServer(_resolver.normalizeCustomServer(baseUrl));
+    } catch (_) {
+      return WalletPirCustomServer(
+        baseUrl,
+        error: 'Choose a valid HTTPS server.',
+      );
+    }
   }
 
   Future<WalletPirServerState> _loadCached() async {
@@ -361,11 +451,13 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
     final base = WalletPirServerState(source: source);
     if (source == null) return base;
     final cached = await _store.readCached(_network, source);
+    final withCustom = base.copyWith(
+      customServer: _validateSavedCustomServer(cached?.customBaseUrl),
+    );
     final snapshot = cached?.snapshotJson;
-    if (snapshot == null) return base;
+    if (snapshot == null) return withCustom;
     try {
-      return WalletPirServerState(
-        source: source,
+      return withCustom.copyWith(
         config: _resolver.revalidate(
           source: source,
           network: _network,
@@ -375,7 +467,7 @@ class WalletPirServerNotifier extends AsyncNotifier<WalletPirServerState> {
       );
     } catch (error) {
       // A cached config that no longer passes is not used.
-      return base;
+      return withCustom;
     }
   }
 
