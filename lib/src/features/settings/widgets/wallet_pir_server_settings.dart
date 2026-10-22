@@ -107,6 +107,7 @@ class _WalletPirServerSettingsState
               label: 'Custom server',
               hintText: 'https://pir.example',
               controller: _customController,
+              enabled: !_selecting,
               autofocus: true,
               leading: const AppIcon(AppIcons.endpoint),
               keyboardType: TextInputType.url,
