@@ -67,13 +67,15 @@ const PROGRESS_JOB_TOTAL_KEY: &str = "progress_job_total_work";
 const PROGRESS_JOB_FRACTION_KEY: &str = "progress_job_fraction";
 const PROGRESS_JOB_CLOSED_KEY: &str = "progress_job_closed";
 const PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY: &str = "progress_job_from_completed_sync";
-pub(super) const PROGRESS_JOB_KEYS: [&str; 6] = [
+const PROGRESS_JOB_WORK_MODEL_KEY: &str = "progress_job_work_model";
+pub(super) const PROGRESS_JOB_KEYS: [&str; 7] = [
     PROGRESS_JOB_POLICY_VERSION_KEY,
     PROGRESS_JOB_ID_KEY,
     PROGRESS_JOB_TOTAL_KEY,
     PROGRESS_JOB_FRACTION_KEY,
     PROGRESS_JOB_CLOSED_KEY,
     PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY,
+    PROGRESS_JOB_WORK_MODEL_KEY,
 ];
 const PROGRESS_JOB_PERSIST_INTERVAL: Duration = Duration::from_secs(15);
 // Persist sooner when the total grows by more than this share.
@@ -387,6 +389,10 @@ pub(super) struct StoredProgressJob {
     /// reports it, so a relaunch shows an interrupted catch-up as one.
     /// Missing in a job saved before the key existed, and read as false.
     pub(super) from_completed_sync: bool,
+    /// Measured in this build's work units ([`work_model_fingerprint`]). A
+    /// job saved by a build that sized batches or weighted work differently,
+    /// or before the key existed, reads false.
+    pub(super) current_work_model: bool,
 }
 
 impl StoredProgressJob {
@@ -398,8 +404,21 @@ impl StoredProgressJob {
             fraction: 0.0,
             closed: false,
             from_completed_sync: false,
+            current_work_model: true,
         }
     }
+}
+
+/// Identifies the units a job's work is measured in: the batch sizes, byte
+/// budget and weights [`WorkModel`] counts with. Production measures with the
+/// [`BATCH_SIZE_FOREGROUND`] reference (`WorkModel::load` in the sync loop); a
+/// second reference size would have to be part of this too.
+pub(super) fn work_model_fingerprint() -> String {
+    format!(
+        "{BATCH_SIZE_FOREGROUND}/{BATCH_BYTE_BUDGET}/{MIN_BATCH_BLOCKS}/{UNPLANNED_BATCH_BLOCKS}/\
+         {WORK_PER_BLOCK}/{WORK_PER_SAPLING_OUTPUT}/{WORK_PER_ORCHARD_ACTION}/{WORK_PER_BATCH}/\
+         {COMPACT_SAPLING_OUTPUT_BYTES}/{COMPACT_ACTION_BYTES}/{SUBTREE_LEAVES}"
+    )
 }
 
 pub(super) fn read_progress_job(db_data_path: &str) -> Result<Option<StoredProgressJob>, String> {
@@ -456,6 +475,8 @@ fn read_job(conn: &rusqlite::Connection) -> Result<Option<StoredProgressJob>, St
         .unwrap_or(0.0);
     let closed = read(PROGRESS_JOB_CLOSED_KEY)?.as_deref() == Some("1");
     let from_completed_sync = read(PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY)?.as_deref() == Some("1");
+    let current_work_model =
+        read(PROGRESS_JOB_WORK_MODEL_KEY)?.as_deref() == Some(work_model_fingerprint().as_str());
     match (id, total_work) {
         (Some(id), Some(total_work)) if total_work.is_finite() && total_work >= 0.0 => {
             Ok(Some(StoredProgressJob {
@@ -468,6 +489,7 @@ fn read_job(conn: &rusqlite::Connection) -> Result<Option<StoredProgressJob>, St
                 },
                 closed,
                 from_completed_sync,
+                current_work_model,
             }))
         }
         _ => Ok(None),
@@ -502,6 +524,7 @@ fn write_job(tx: &rusqlite::Transaction<'_>, job: &StoredProgressJob) -> Result<
             PROGRESS_JOB_FROM_COMPLETED_SYNC_KEY,
             u8::from(job.from_completed_sync).to_string(),
         ),
+        (PROGRESS_JOB_WORK_MODEL_KEY, work_model_fingerprint()),
     ] {
         tx.execute(
             "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
@@ -564,6 +587,8 @@ impl JobProgress {
     /// the rest, so the display neither drops nor jumps.
     /// Growth beyond what the job had finished, and at least
     /// `min_replace_growth`, starts a new job.
+    /// A job measured in other work units keeps its fraction and rescales the
+    /// rest whichever way the new measurement differs.
     pub(super) fn start(
         stored: StoredProgressJob,
         pending: f64,
@@ -576,6 +601,7 @@ impl JobProgress {
             fraction,
             closed,
             from_completed_sync,
+            current_work_model,
         } = stored;
         let (id, total, start) = if stored_total <= 0.0 {
             // Claimed when the attempt began; this is its first measurement.
@@ -585,7 +611,12 @@ impl JobProgress {
             let expected = stored_total - done;
             let growth = pending - expected;
             let eps = 1e-9 * stored_total.max(1.0);
-            if growth.abs() <= eps || (growth < 0.0 && !closed) {
+            if !current_work_model && expected > eps && pending > eps {
+                // Saved by a build that counted work differently: its units do
+                // not compare with this measurement, so a difference is neither
+                // scanned work nor new work.
+                (id, pending / (1.0 - fraction), JobStart::Resumed)
+            } else if growth.abs() <= eps || (growth < 0.0 && !closed) {
                 // Unchanged, or less work after an attempt that did not save
                 // where it stopped: it scanned past its last periodic save.
                 (id, stored_total, JobStart::Resumed)
@@ -723,6 +754,7 @@ impl JobProgress {
             fraction: self.fraction(),
             closed,
             from_completed_sync: self.from_completed_sync,
+            current_work_model: true,
         };
         crate::wallet::db::with_wallet_db_write_lock("sync_engine.progress_job", || {
             write_progress_job(db_data_path, &stored)
@@ -793,6 +825,7 @@ mod tests {
             fraction,
             closed: false,
             from_completed_sync: false,
+            current_work_model: true,
         }
     }
 
@@ -1251,6 +1284,7 @@ mod tests {
                 fraction: 0.42,
                 closed,
                 from_completed_sync,
+                current_work_model: true,
             };
             write_progress_job(path, &job).unwrap();
             assert_eq!(read_progress_job(path).unwrap(), Some(job));
@@ -1288,6 +1322,56 @@ mod tests {
                 ..job
             })
         );
+
+        // A job saved by a build that counted work differently, or before the
+        // work model key existed, reads as measured in other units.
+        let job = stored(10.0, 0.5);
+        write_progress_job(path, &job).unwrap();
+        conn.execute(
+            "UPDATE ext_vizor_sync_meta SET value = 'older' WHERE key = ?1",
+            params![PROGRESS_JOB_WORK_MODEL_KEY],
+        )
+        .unwrap();
+        let other_units = Some(StoredProgressJob {
+            current_work_model: false,
+            ..job.clone()
+        });
+        assert_eq!(read_progress_job(path).unwrap(), other_units);
+        conn.execute(
+            "DELETE FROM ext_vizor_sync_meta WHERE key = ?1",
+            params![PROGRESS_JOB_WORK_MODEL_KEY],
+        )
+        .unwrap();
+        assert_eq!(read_progress_job(path).unwrap(), other_units);
+    }
+
+    #[test]
+    fn a_job_measured_in_other_units_resumes_at_its_fraction() {
+        let other_units = |total_work: f64, fraction: f64| StoredProgressJob {
+            current_work_model: false,
+            ..stored(total_work, fraction)
+        };
+
+        // Fewer units under the new model: read as scanned work, the stored
+        // 4.7% would jump to a third.
+        let (job, start) = JobProgress::start(other_units(145.86, 0.047), 97.5, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert_eq!(job.id(), "abc");
+        assert!((job.fraction() - 0.047).abs() < 1e-9, "{}", job.fraction());
+        let (same_units, _) = JobProgress::start(stored(145.86, 0.047), 97.5, 1.0);
+        assert!(same_units.fraction() > 0.3);
+
+        // More units than the job had finished: read as new work, the job
+        // would start over from zero.
+        let (job, start) = JobProgress::start(other_units(1_000.0, 0.1), 2_000.0, 1.0);
+        assert_eq!(start, JobStart::Resumed);
+        assert!((job.fraction() - 0.1).abs() < 1e-9, "{}", job.fraction());
+        let (_, start) = JobProgress::start(stored(1_000.0, 0.1), 2_000.0, 1.0);
+        assert_eq!(start, JobStart::Replaced);
+
+        // A finished job still starts over when there is work to scan.
+        let (_, start) = JobProgress::start(other_units(1_000.0, 1.0), 50.0, 1.0);
+        assert_eq!(start, JobStart::Replaced);
     }
 
     #[test]
@@ -1316,6 +1400,7 @@ mod tests {
             fraction: 0.25,
             closed: false,
             from_completed_sync: false,
+            current_work_model: true,
         };
         write_progress_job(&path, &measured).unwrap();
         assert_eq!(claim(), measured);
