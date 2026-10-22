@@ -84,6 +84,10 @@ const PROGRESS_JOB_TOTAL_PERSIST_GROWTH: f64 = 0.001;
 // least this many blocks, so a short final segment does not set the rate.
 const EXTRAPOLATION_LOOKBACK_BLOCKS: u64 = 10_000;
 
+/// Raised when the estimate's code changes in a way the constants in
+/// [`work_model_fingerprint`] do not show.
+const WORK_MODEL_REVISION: u32 = 1;
+
 /// Cumulative output count of one pool: outputs in blocks below a height.
 #[derive(Debug, Clone, Default)]
 struct OutputCurve {
@@ -409,8 +413,9 @@ impl StoredProgressJob {
     }
 }
 
-/// Identifies the units a job's work is measured in: the batch sizes, byte
-/// budget and weights [`WorkModel`] counts with, and the compiled tree sizes it
+/// Identifies the units a job's work is measured in: every constant
+/// [`WorkModel`] reads (batch sizes, byte budget, weights, output bytes and the
+/// extrapolation lookback), its code revision, and the compiled tree sizes it
 /// estimates from. The weekly table update appends checkpoints, which changes
 /// both the output estimate and where byte budgets apply, so an app update
 /// resumes a job at its fraction. Production measures with the
@@ -418,9 +423,10 @@ impl StoredProgressJob {
 /// second reference size would have to be part of this too.
 pub(super) fn work_model_fingerprint() -> String {
     format!(
-        "{BATCH_SIZE_FOREGROUND}/{BATCH_BYTE_BUDGET}/{MIN_BATCH_BLOCKS}/{UNPLANNED_BATCH_BLOCKS}/\
-         {WORK_PER_BLOCK}/{WORK_PER_SAPLING_OUTPUT}/{WORK_PER_ORCHARD_ACTION}/{WORK_PER_BATCH}/\
-         {COMPACT_SAPLING_OUTPUT_BYTES}/{COMPACT_ACTION_BYTES}/{SUBTREE_LEAVES}/{}",
+        "{WORK_MODEL_REVISION}/{BATCH_SIZE_FOREGROUND}/{BATCH_BYTE_BUDGET}/{MIN_BATCH_BLOCKS}/\
+         {UNPLANNED_BATCH_BLOCKS}/{WORK_PER_BLOCK}/{WORK_PER_SAPLING_OUTPUT}/\
+         {WORK_PER_ORCHARD_ACTION}/{WORK_PER_BATCH}/{COMPACT_SAPLING_OUTPUT_BYTES}/\
+         {COMPACT_ACTION_BYTES}/{SUBTREE_LEAVES}/{EXTRAPOLATION_LOOKBACK_BLOCKS}/{}",
         last_checkpoint_height()
     )
 }
@@ -1350,11 +1356,13 @@ mod tests {
     }
 
     #[test]
-    fn the_work_model_names_the_compiled_table() {
+    fn the_work_model_names_the_compiled_table_and_lookback() {
         // An app update that appends checkpoints counts work differently.
         let newest = last_checkpoint_height();
         assert!(newest > 0);
-        assert!(work_model_fingerprint().ends_with(&format!("/{newest}")));
+        let fingerprint = work_model_fingerprint();
+        assert!(fingerprint.starts_with(&format!("{WORK_MODEL_REVISION}/")));
+        assert!(fingerprint.ends_with(&format!("/{EXTRAPOLATION_LOOKBACK_BLOCKS}/{newest}")));
     }
 
     #[test]
