@@ -56,12 +56,14 @@ pub(super) use transport::RoutedExchange;
 pub(super) use transport::{response, ObservedRequest, RequestObserver};
 
 use std::collections::HashSet;
+use std::time::Instant;
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{status::TransactionStatusRead, WalletRead};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 use super::{block_source::MemoryBlockSource, SyncError, TransparentLookupGate, WalletDatabase};
 use auxiliary::{fees::backfill_stored_fees, transparent_history::HistoryPass};
+use payload::public::PublicPayloadRetries;
 use payload::{EnhancePirRunError, ProductionEnhancementEffects, RoutedPayloadEnhancement};
 use transport::RoutedTransport;
 
@@ -74,6 +76,9 @@ pub(super) struct EnhancementSession {
     /// Set by the first failed private status lookup; later checkpoints in this
     /// session leave private status work pending instead of retrying the service.
     private_status_failed: bool,
+    /// Public payloads that failed in this session, held back until their
+    /// retry time instead of failing the sync.
+    public_payload_retries: PublicPayloadRetries,
     ready_resubmission: HashSet<Vec<u8>>,
 }
 
@@ -94,6 +99,7 @@ impl EnhancementSession {
             network,
             db_path: db_path.into(),
             private_status_failed: false,
+            public_payload_retries: PublicPayloadRetries::default(),
             ready_resubmission: HashSet::new(),
         }
     }
@@ -272,13 +278,25 @@ impl EnhancementSession {
             &self.db_path,
             self.network,
         )?;
-        let mut effects =
-            ProductionEnhancementEffects::new(self.network, &self.db_path, client, cached, gate);
+        let held = self.public_payload_retries.held(Instant::now());
+        let mut effects = ProductionEnhancementEffects::new(
+            self.network,
+            &self.db_path,
+            client,
+            cached,
+            gate,
+            held,
+        );
         self.payload.snapshot = Some(snapshot.clone());
         let result = Box::pin(self.payload.run(db, route, &mut effects, should_exit)).await;
         self.payload.snapshot = None;
         match result {
-            Ok(()) => effects.finish().map(|()| false),
+            Ok(()) => {
+                let failed = effects.finish()?;
+                self.public_payload_retries
+                    .record_failures(failed, Instant::now());
+                Ok(false)
+            }
             Err(EnhancePirRunError::ExitRequested) => Ok(true),
             Err(EnhancePirRunError::HttpStatus(status)) => Err(SyncError::net(format!(
                 "transaction enhancement returned HTTP {status}"

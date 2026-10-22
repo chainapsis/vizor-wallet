@@ -3870,8 +3870,9 @@ async fn run_sync_impl(
     let mut next_decryption: Option<NextDecryption> = None;
 
     // Retry enhancement work left by an interrupted/older sync before scanning.
-    // Best-effort: a retryable public failure must not block compact sync; the
-    // work stays durable and later passes retry it.
+    // Best-effort: a failed public payload stays durable and the session holds
+    // it back until its retry time; a local failure here is logged, and the
+    // checkpoints after scanning report it.
     match enhancement
         .run_payload_recovery(&mut db, &mut client, None, &should_exit)
         .await
