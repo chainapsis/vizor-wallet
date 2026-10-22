@@ -16,6 +16,7 @@ class MobileWindowLayout {
     this.sidebar,
     this.rail,
     this.contentSafeRect,
+    this.availableContentRect,
     this.navigationViewport,
   });
   final MobileNavigationMode mode;
@@ -26,6 +27,10 @@ class MobileWindowLayout {
 
   /// Foreground safety remains pane-local while wide surfaces reach the bottom.
   final Rect? contentSafeRect;
+
+  /// Contiguous foreground space before the default 440-point page cap.
+  /// Individual routes may opt into more width without crossing obstructions.
+  final Rect? availableContentRect;
   final Rect? navigationViewport;
 
   /// Page transitions include the surrounding space; content keeps [body].
@@ -97,6 +102,7 @@ class MobileWindowLayout {
               windowPolicy: windowPolicy,
               sidebar: sidebar,
               contentSafeRect: safe,
+              availableContentRect: bodyArea,
               navigationViewport: viewport,
               body: Rect.fromLTWH(
                 bodyArea.center.dx - width / 2,

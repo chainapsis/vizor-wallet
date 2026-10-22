@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `api_proposal_result`, `api_transaction_info`, `catch`, `enhance_pir_enabled`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `payment_link_batch_pairs`, `run_full_sync_internal`, `to_wallet_action_sigs`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
@@ -1030,6 +1030,23 @@ Future<List<TransactionInfo>> getTransactionHistory({
   network: network,
   limit: limit,
   accountUuid: accountUuid,
+);
+
+/// The Activity rows of one transaction, `txid_hex` as
+/// [`TransactionInfo::txid_hex`], exactly as [`get_transaction_history`]
+/// lists them, without reading the history of the account's other
+/// transactions. Empty when the account has no row for it. A receipt reads
+/// its transaction with this instead of the whole history.
+Future<List<TransactionInfo>> getTransactionRows({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String txidHex,
+}) => RustLib.instance.api.crateApiSyncGetTransactionRows(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  txidHex: txidHex,
 );
 
 Future<int> getPreviousTransactionCountForAddress({

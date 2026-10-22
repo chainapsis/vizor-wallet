@@ -14,6 +14,13 @@ bool paymentLinkTxidsMatch(String first, String second) {
   return _reverseHexBytes(normalizedFirst) == normalizedSecond;
 }
 
+/// [txid] in the other byte order, which [paymentLinkTxidsMatch] also
+/// accepts; `null` when it is not a transaction ID.
+String? paymentLinkTxidInOtherByteOrder(String txid) {
+  final normalized = normalizePaymentLinkTxid(txid);
+  return _isTransactionIdHex(normalized) ? _reverseHexBytes(normalized) : null;
+}
+
 /// Converts broadcast display-order IDs to the protocol order used by claim
 /// records and TransactionInfo. Call only at the broadcast-result boundary;
 /// recovered IDs from wallet history already have protocol byte order.

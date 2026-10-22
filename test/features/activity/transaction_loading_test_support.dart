@@ -30,11 +30,12 @@ rust_sync.TransactionInfo _tx({
   String kind = 'received',
   int height = 100,
   int amount = 1,
+  bool provisional = false,
 }) => rust_sync.TransactionInfo(
   amountIncludesFee: false,
   detailsComplete: true,
   feeState: rust_sync.TransactionFeeState.known,
-  provisional: false,
+  provisional: provisional,
   txidHex: _txid,
   txKind: kind,
   minedHeight: BigInt.from(height),
@@ -72,7 +73,7 @@ void transactionLoadingTests({required bool mobile}) {
     await _pump(
       tester,
       mobile: mobile,
-      history: (_) => history.future,
+      history: (_, _) => history.future,
       detail: (_, _) {
         detailReads++;
         return detail.future;
@@ -84,10 +85,13 @@ void transactionLoadingTests({required bool mobile}) {
       find.textContaining(RegExp(r'1(?:\.0+)? ZEC'), findRichText: true),
       findsWidgets,
     );
-    expect(detailReads, 0);
+    // The tapped row's detail is asked for at once, not after the row read.
+    expect(detailReads, 1);
+    expect(find.byType(ReceiptMemoSkeleton), findsOneWidget);
     history.complete([_tx()]);
     await tester.pump();
     await tester.pump();
+    // The row read reuses the detail already asked for.
     expect(detailReads, 1);
     expect(find.text(receivedTitle), findsOneWidget);
     expect(find.byType(ReceiptMemoSkeleton), findsOneWidget);
@@ -96,6 +100,159 @@ void transactionLoadingTests({required bool mobile}) {
     await tester.pump();
     expect(find.text('Loaded memo'), findsOneWidget);
     expect(find.byType(ReceiptValueSkeleton), findsNothing);
+  });
+
+  testWidgets(
+    'the tapped row\'s detail ends the skeleton before its row read',
+    (tester) async {
+      final history = Completer<List<rust_sync.TransactionInfo>>();
+      await _pump(
+        tester,
+        mobile: mobile,
+        history: (_, _) => history.future,
+        detail: (_, _) async =>
+            _completeDetail(kind: 'received', memo: 'Early memo'),
+      );
+      await tester.pump();
+      await tester.pump();
+      // The row read has not returned, yet the receipt shows its detail.
+      expect(history.isCompleted, isFalse);
+      expect(find.text('Early memo'), findsOneWidget);
+      expect(find.byType(ReceiptValueSkeleton), findsNothing);
+      expect(find.byType(ReceiptMemoSkeleton), findsNothing);
+      history.complete([_tx()]);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Early memo'), findsOneWidget);
+      expect(find.byType(ReceiptValueSkeleton), findsNothing);
+    },
+  );
+
+  testWidgets('the receipt reads its own transaction, not the history', (
+    tester,
+  ) async {
+    final reads = <String>[];
+    final sync = FakeSyncNotifier(_sync());
+    await _pump(
+      tester,
+      mobile: mobile,
+      sync: sync,
+      history: (uuid, txid) async {
+        reads.add('$uuid $txid');
+        return [_tx()];
+      },
+      detail: (_, _) async => _detail('Memo'),
+    );
+    sync.emit(_sync(height: 101));
+    await tester.pump();
+    await tester.pump();
+    expect(reads, ['account-1 $_txid', 'account-1 $_txid']);
+  });
+
+  testWidgets('a detail asked for a role the transaction left is not shown', (
+    tester,
+  ) async {
+    // The tapped row was a provisional debit; its single row is now a
+    // receive. The detail asked for the old role never reaches the receipt.
+    final staleDetail = Completer<rust_sync.TransactionDetail?>();
+    final kinds = <String>[];
+    await _pump(
+      tester,
+      mobile: mobile,
+      kind: 'sent',
+      provisional: true,
+      history: (_, _) async => [_tx()],
+      detail: (_, tx) {
+        kinds.add(tx.txKind);
+        return tx.txKind == 'sent'
+            ? staleDetail.future
+            : Future.value(_detail('Receive memo'));
+      },
+    );
+    expect(kinds, ['sent', 'received']);
+    expect(find.text('Receive memo'), findsOneWidget);
+    staleDetail.complete(_detail('Debit memo', kind: 'sent'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Debit memo'), findsNothing);
+    expect(find.text('Receive memo'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a provisional row keeps its skeleton until the row read names its role',
+    (tester) async {
+      // The debit's detail answers first, but the row read turns the
+      // transaction into a receive: no content may show and then give way
+      // to the receive's skeleton.
+      final rows = Completer<List<rust_sync.TransactionInfo>>();
+      final receiveDetail = Completer<rust_sync.TransactionDetail?>();
+      final memoSkeletonSeen = <bool>[];
+      void sample() => memoSkeletonSeen.add(
+        find.byType(ReceiptMemoSkeleton).evaluate().isNotEmpty,
+      );
+      await _pump(
+        tester,
+        mobile: mobile,
+        kind: 'sent',
+        provisional: true,
+        history: (_, _) => rows.future,
+        detail: (_, tx) => tx.txKind == 'sent'
+            ? Future.value(_detail('Debit memo', kind: 'sent'))
+            : receiveDetail.future,
+      );
+      await tester.pump();
+      await tester.pump();
+      sample();
+      expect(find.text('Debit memo'), findsNothing);
+      rows.complete([_tx()]);
+      await tester.pump();
+      await tester.pump();
+      sample();
+      receiveDetail.complete(_detail('Receive memo'));
+      await tester.pump();
+      await tester.pump();
+      sample();
+      expect(find.text('Debit memo'), findsNothing);
+      expect(find.text('Receive memo'), findsOneWidget);
+      expect(memoSkeletonSeen, [true, true, false]);
+    },
+  );
+
+  testWidgets('a receive that became mined keeps its detail while it reloads', (
+    tester,
+  ) async {
+    // The tapped row was unmined; the row read reports it received. The
+    // receiving detail still fits the received row, so it stays shown, with
+    // no skeleton, until the received detail replaces it.
+    final rows = Completer<List<rust_sync.TransactionInfo>>();
+    final receivedDetail = Completer<rust_sync.TransactionDetail?>();
+    final kinds = <String>[];
+    await _pump(
+      tester,
+      mobile: mobile,
+      kind: 'receiving',
+      history: (_, _) => rows.future,
+      detail: (_, tx) {
+        kinds.add(tx.txKind);
+        return tx.txKind == 'receiving'
+            ? Future.value(_detail('Early memo', kind: 'receiving'))
+            : receivedDetail.future;
+      },
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Early memo'), findsOneWidget);
+    rows.complete([_tx()]);
+    await tester.pump();
+    await tester.pump();
+    expect(kinds, ['receiving', 'received']);
+    expect(find.text('Early memo'), findsOneWidget);
+    expect(find.byType(ReceiptMemoSkeleton), findsNothing);
+    expect(find.byType(ReceiptValueSkeleton), findsNothing);
+    receivedDetail.complete(_detail('Mined memo'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Mined memo'), findsOneWidget);
   });
 
   for (final kind in ['sent', 'received', 'shielded']) {
@@ -109,7 +266,7 @@ void transactionLoadingTests({required bool mobile}) {
           tester,
           mobile: mobile,
           kind: kind,
-          history: (_) => history.future,
+          history: (_, _) => history.future,
           detail: (_, _) => detail.future,
         );
         double y(String label) => tester.getTopLeft(find.text(label).first).dy;
@@ -160,7 +317,7 @@ void transactionLoadingTests({required bool mobile}) {
       tester,
       mobile: mobile,
       kind: 'sent',
-      history: (_) async => [_tx(kind: 'sent')],
+      history: (_, _) async => [_tx(kind: 'sent')],
       detail: (_, _) => detail.future,
     );
     expect(find.byType(ReceiptCounterpartySkeleton), findsOneWidget);
@@ -185,7 +342,7 @@ void transactionLoadingTests({required bool mobile}) {
       mobile: mobile,
       sync: sync,
       initialDetail: _completeDetail(kind: 'received', memo: 'Existing memo'),
-      history: (_) async => [_tx()],
+      history: (_, _) async => [_tx()],
       detail: (_, _) => detail.future,
     );
     expect(find.byType(ReceiptValueSkeleton), findsNothing);
@@ -214,7 +371,7 @@ void transactionLoadingTests({required bool mobile}) {
             tester,
             mobile: mobile,
             kind: kind,
-            history: (_) => history.future,
+            history: (_, _) => history.future,
             detail: (_, _) => detail.future,
           );
           if (failDetail) {
@@ -255,7 +412,7 @@ void transactionLoadingTests({required bool mobile}) {
       tester,
       mobile: mobile,
       seeded: false,
-      history: (_) => history.future,
+      history: (_, _) => history.future,
     );
     expect(find.text('Loading transaction…'), findsOneWidget);
     expect(find.text('Completed'), findsNothing);
@@ -273,7 +430,7 @@ void transactionLoadingTests({required bool mobile}) {
       tester,
       mobile: mobile,
       seeded: false,
-      history: (_) => history.future,
+      history: (_, _) => history.future,
     );
     history.completeError(StateError('read failed'));
     await tester.pump();
@@ -289,7 +446,7 @@ void transactionLoadingTests({required bool mobile}) {
       mobile: mobile,
       sourceAccount: 'account-2',
       initialDetail: _detail('Other account memo'),
-      history: (_) => Completer<List<rust_sync.TransactionInfo>>().future,
+      history: (_, _) => Completer<List<rust_sync.TransactionInfo>>().future,
     );
     expect(find.text('Loading transaction…'), findsOneWidget);
     expect(find.text(receivedTitle), findsNothing);
@@ -303,13 +460,14 @@ void transactionLoadingTests({required bool mobile}) {
       await _pump(
         tester,
         mobile: mobile,
-        history: (_) async => [_tx(kind: 'sent')],
+        history: (_, _) async => [_tx(kind: 'sent')],
         detail: (_, _) async {
           detailReads++;
           return _detail('Wrong kind', kind: 'sent');
         },
       );
-      expect(detailReads, 0);
+      // Only the tapped row's own detail is read; the other row's never.
+      expect(detailReads, 1);
       expect(find.text(receivedTitle), findsOneWidget);
       expect(find.text('Wrong kind'), findsNothing);
     },
@@ -326,7 +484,7 @@ void transactionLoadingTests({required bool mobile}) {
           tester,
           mobile: mobile,
           accounts: account,
-          history: (uuid) async => uuid == 'account-1' ? [_tx()] : [],
+          history: (uuid, _) async => uuid == 'account-1' ? [_tx()] : [],
           detail: (_, _) {
             aReads++;
             return aReads == 1
@@ -380,7 +538,7 @@ void transactionLoadingTests({required bool mobile}) {
       tester,
       mobile: mobile,
       sync: sync,
-      history: (_) async {
+      history: (_, _) async {
         reads++;
         return [_tx()];
       },
@@ -411,7 +569,7 @@ void transactionLoadingTests({required bool mobile}) {
       tester,
       mobile: mobile,
       sync: sync,
-      history: (_) => ++reads == 1 ? first.future : second.future,
+      history: (_, _) => ++reads == 1 ? first.future : second.future,
       detail: (_, _) async => _detail('Latest memo'),
     );
     sync.emit(_sync(height: 101));
@@ -434,7 +592,7 @@ void transactionLoadingTests({required bool mobile}) {
 
   testWidgets('completion after disposal is ignored', (tester) async {
     final history = Completer<List<rust_sync.TransactionInfo>>();
-    await _pump(tester, mobile: mobile, history: (_) => history.future);
+    await _pump(tester, mobile: mobile, history: (_, _) => history.future);
     await tester.pumpWidget(const SizedBox());
     history.completeError(StateError('late failure'));
     await tester.pump();
@@ -484,6 +642,7 @@ Future<void> _pump(
   ActivityTxDetailLoader? detail,
   bool seeded = true,
   String kind = 'received',
+  bool provisional = false,
   String sourceAccount = 'account-1',
   rust_sync.TransactionDetail? initialDetail,
   _Accounts? accounts,
@@ -503,7 +662,9 @@ Future<void> _pump(
                 args: MobileTransactionStatusArgs(
                   txidHex: _txid,
                   txKind: kind,
-                  initialTransaction: seeded ? _tx(kind: kind) : null,
+                  initialTransaction: seeded
+                      ? _tx(kind: kind, provisional: provisional)
+                      : null,
                   initialDetail: initialDetail,
                   sourceAccountUuid: seeded ? sourceAccount : null,
                 ),
@@ -514,7 +675,9 @@ Future<void> _pump(
                 args: ActivityTransactionStatusArgs(
                   txidHex: _txid,
                   txKind: kind,
-                  initialTransaction: seeded ? _tx(kind: kind) : null,
+                  initialTransaction: seeded
+                      ? _tx(kind: kind, provisional: provisional)
+                      : null,
                   initialDetail: initialDetail,
                   sourceAccountUuid: seeded ? sourceAccount : null,
                 ),

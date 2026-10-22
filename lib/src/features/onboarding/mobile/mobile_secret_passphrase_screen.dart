@@ -8,7 +8,7 @@ import '../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
-import '../../../core/privacy/sensitive_privacy_overlay.dart';
+import '../../../core/privacy/sensitive_capture_guard.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -37,7 +37,6 @@ class MobileSecretPassphraseScreen extends ConsumerStatefulWidget {
   const MobileSecretPassphraseScreen({
     this.args,
     this.screenshotStream,
-    this.privacyOverlayController,
     super.key,
   });
 
@@ -46,9 +45,6 @@ class MobileSecretPassphraseScreen extends ConsumerStatefulWidget {
   /// Test seam — production listens to the platform screenshot events.
   @visibleForTesting
   final Stream<void>? screenshotStream;
-
-  @visibleForTesting
-  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @override
   ConsumerState<MobileSecretPassphraseScreen> createState() =>
@@ -64,16 +60,10 @@ class _MobileSecretPassphraseScreenState
   Timer? _copyResetTimer;
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
-  late final bool _ownsPrivacyController;
-  late final SensitivePrivacyOverlayController _privacyController;
 
   @override
   void initState() {
     super.initState();
-    _ownsPrivacyController = widget.privacyOverlayController == null;
-    _privacyController =
-        widget.privacyOverlayController ??
-        SensitivePrivacyEnvironmentController();
     _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
       (_) => _onScreenshot(),
     );
@@ -107,7 +97,6 @@ class _MobileSecretPassphraseScreenState
   @override
   void dispose() {
     _screenshotSub?.cancel();
-    if (_ownsPrivacyController) _privacyController.dispose();
     _copyResetTimer?.cancel();
     _mnemonic = null;
     super.dispose();
@@ -175,12 +164,10 @@ class _MobileSecretPassphraseScreenState
     final colors = context.colors;
     final words = _mnemonic?.split(' ') ?? const <String>[];
 
-    return SensitivePrivacyOverlay(
-      // Protect only while the phrase is actually on screen. Before reveal the
-      // card shows no words, so blanking its screenshot and blurring the app
-      // switcher there is needless friction. Matches the `_onScreenshot` guard.
+    return SensitiveCaptureGuard(
+      // Capture exclusion applies only while the phrase is revealed.
+      // App-switcher privacy is managed globally by the native window.
       sensitiveContentVisible: _revealed && _mnemonic != null,
-      controller: _privacyController,
       child: MobileOnboardingStepScaffold(
         progress: MobileOnboardingProgressScope.of(
           context,

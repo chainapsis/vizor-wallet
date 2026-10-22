@@ -93,6 +93,41 @@ fn txid(tag: u8) -> [u8; 32] {
     bytes
 }
 
+/// Every transaction's rows read alone ([`get_transaction_rows`], as a
+/// receipt reads them) are exactly its rows in the whole `history`, field
+/// for field and in order: a receipt shows what Activity lists.
+fn assert_rows_read_alone_match(path: &str, account: &str, history: &[TransactionInfo]) {
+    let txids: std::collections::BTreeSet<&str> =
+        history.iter().map(|row| row.txid_hex.as_str()).collect();
+    for txid in txids {
+        let alone: Vec<String> = get_transaction_rows(path, NETWORK, account, txid)
+            .unwrap()
+            .iter()
+            .map(full_row)
+            .collect();
+        let listed: Vec<String> = history
+            .iter()
+            .filter(|row| row.txid_hex == txid)
+            .map(full_row)
+            .collect();
+        assert_eq!(alone, listed, "rows of {}", tag(txid));
+    }
+    let unknown = hex::encode([0xee; 32]);
+    assert!(get_transaction_rows(path, NETWORK, account, &unknown)
+        .unwrap()
+        .is_empty());
+}
+
+/// Every field of a row, for exact comparison.
+fn full_row(r: &TransactionInfo) -> String {
+    format!(
+        "{} block_time={} created={}",
+        row_line(r),
+        r.block_time,
+        r.created_time
+    )
+}
+
 fn row_line(r: &TransactionInfo) -> String {
     let parent = match &r.funding_parent_txid {
         Some(parent) => format!(
@@ -564,13 +599,12 @@ impl W {
     }
 
     fn history(&self, account: AccountUuid, limit: Option<u32>) -> Vec<TransactionInfo> {
-        get_transaction_history(
-            &self.path,
-            NETWORK,
-            limit,
-            &account.expose_uuid().to_string(),
-        )
-        .unwrap()
+        let account = account.expose_uuid().to_string();
+        let history = get_transaction_history(&self.path, NETWORK, limit, &account).unwrap();
+        if limit.is_none() {
+            assert_rows_read_alone_match(&self.path, &account, &history);
+        }
+        history
     }
 
     /// The Activity rows of the transactions `tags`, in display order.
@@ -2311,8 +2345,9 @@ impl Recovered {
     fn shown(&self, tag: u8, kinds: &[&str]) -> Vec<String> {
         let (_dir, path) = self.copy();
         let account = self.account.expose_uuid().to_string();
-        let mut lines: Vec<String> = get_transaction_history(&path, NETWORK, None, &account)
-            .unwrap()
+        let history = get_transaction_history(&path, NETWORK, None, &account).unwrap();
+        assert_rows_read_alone_match(&path, &account, &history);
+        let mut lines: Vec<String> = history
             .iter()
             .filter(|row| row.txid_hex == hex::encode(txid(tag)))
             .map(row_line)

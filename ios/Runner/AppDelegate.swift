@@ -650,11 +650,30 @@ import UIKit
           )
           return
         }
+        AppBackgroundPrivacyPolicy.shared.setCaptureSensitive(visible)
         SecureScreenshotShield.shared.setSensitiveContentVisible(visible)
         result(SecureScreenshotShield.shared.status)
       default:
         result(FlutterMethodNotImplemented)
       }
+    }
+
+    let appPrivacyChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/app_privacy", binaryMessenger: messenger
+    )
+    appPrivacyChannel.setMethodCallHandler { call, result in
+      guard call.method == "setSolidBackground" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let args = call.arguments as? [String: Any],
+        let solid = args["solid"] as? Bool
+      else {
+        result(FlutterError(code: "bad_args", message: "Expected solid argument.", details: nil))
+        return
+      }
+      AppBackgroundPrivacyPolicy.shared.setSolidBackground(solid)
+      result(nil)
     }
 
     // EventChannel for screenshot detection — sensitive screens (secret

@@ -14,7 +14,9 @@
 //! panics on a runtime worker.
 //!
 //! Logs name the service, the method and the route template, never a shard
-//! id, digest, body or the origin.
+//! id, digest, body or the origin. A refused or lost exchange logs at `Warn`
+//! with its status or failure kind, so release builds record it; the rest
+//! stays at `Debug`.
 
 use bytes::Bytes;
 use http::{header::RETRY_AFTER, Method};
@@ -168,15 +170,32 @@ impl<F: Fn() -> bool> HttpExchange for RoutedExchange<'_, F> {
         let received = self.handle.block_on(self.exchange(request));
         let (service, method, template) =
             (self.service, request.method.as_str(), &request.template);
+        let level = exchange_log_level(&received);
         match &received {
-            Ok(reply) => log::debug!(
+            Ok(reply) => log::log!(
+                level,
                 "{service} {method} {template}: HTTP {}, {} bytes",
                 reply.status,
                 reply.body.len()
             ),
-            Err(failure) => log::debug!("{service} {method} {template}: {failure}"),
+            Err(failure) => log::log!(level, "{service} {method} {template}: {failure}"),
         }
         received
+    }
+}
+
+/// The level an exchange is logged at. A refusal or a lost exchange (time
+/// out, unreachable, too large) is the service failing the wallet, logged
+/// at `Warn` so release builds keep it; a success and the caller's own
+/// cancellation stay at `Debug`, below the app's `Info` filter.
+fn exchange_log_level(received: &Result<HttpReply, HttpFailure>) -> log::Level {
+    match received {
+        Ok(reply) if (200..300).contains(&reply.status) => log::Level::Debug,
+        Ok(_) => log::Level::Warn,
+        Err(HttpFailure::Cancelled) => log::Level::Debug,
+        Err(HttpFailure::Timeout | HttpFailure::Unreachable | HttpFailure::TooLarge) => {
+            log::Level::Warn
+        }
     }
 }
 
@@ -616,7 +635,35 @@ mod tests {
     use super::super::test_log::log_lines;
 
     #[test]
-    fn debug_log_lines_carry_only_route_templates() {
+    fn failed_exchanges_log_at_warn_and_the_rest_at_debug() {
+        let ok = |status| {
+            Ok(HttpReply {
+                status,
+                retry_after: None,
+                map_sha256: None,
+                body: Vec::new(),
+            })
+        };
+        assert_eq!(exchange_log_level(&ok(200)), log::Level::Debug);
+        assert_eq!(exchange_log_level(&ok(204)), log::Level::Debug);
+        for status in [404, 409, 429, 500, 503] {
+            assert_eq!(exchange_log_level(&ok(status)), log::Level::Warn);
+        }
+        assert_eq!(
+            exchange_log_level(&Err(HttpFailure::Cancelled)),
+            log::Level::Debug
+        );
+        for failure in [
+            HttpFailure::Timeout,
+            HttpFailure::Unreachable,
+            HttpFailure::TooLarge,
+        ] {
+            assert_eq!(exchange_log_level(&Err(failure)), log::Level::Warn);
+        }
+    }
+
+    #[test]
+    fn log_lines_carry_only_route_templates() {
         let runtime = runtime();
         let body = format!("{SHARD}{REVISION}{}", hex::encode(QUERY));
         let lines = log_lines(|| {
@@ -640,7 +687,7 @@ mod tests {
                 "DEBUG transparent PIR POST {template}: HTTP 200, {} bytes",
                 body.len()
             ),
-            format!("DEBUG transparent PIR GET {template}: HTTP 409, 21 bytes"),
+            format!("WARN transparent PIR GET {template}: HTTP 409, 21 bytes"),
             format!("DEBUG transparent PIR GET {template}: cancelled"),
         ];
         // The exchange's own lines are exactly one per request, and nothing

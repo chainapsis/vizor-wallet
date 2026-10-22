@@ -1,8 +1,8 @@
-import 'dart:developer';
-
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+// The app's logger reaches release device logs; `dart:developer`'s does not.
+import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/network_config.dart';
 import '../core/storage/enhance_pir_preference_store.dart';

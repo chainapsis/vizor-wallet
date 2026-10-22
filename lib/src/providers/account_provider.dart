@@ -2368,7 +2368,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ),
       );
       if (firstWalletDbPath != null) await _clearPendingAccountSetup();
-      log('importKeystoneAccount: uuid=$accountUuid, address=$address');
+      log('importKeystoneAccount: uuid=$accountUuid');
     } catch (e, st) {
       if (firstWalletDbPath != null) {
         await _preservePartialFirstWalletSetup(
@@ -2515,7 +2515,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ),
       );
       if (firstWalletDbPath != null) await _clearPendingAccountSetup();
-      log('importLedgerAccount: uuid=$accountUuid, address=$address');
+      log('importLedgerAccount: uuid=$accountUuid');
     } catch (e, st) {
       if (firstWalletDbPath != null) {
         await _preservePartialFirstWalletSetup(

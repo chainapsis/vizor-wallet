@@ -201,7 +201,7 @@ void main() {
               suppliedArgs = state.extra as ActivityTransactionStatusArgs;
               return ActivityTransactionStatusScreen(
                 args: suppliedArgs!,
-                historyLoader: (_) {
+                historyLoader: (_, _) {
                   reads++;
                   return history.future;
                 },

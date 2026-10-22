@@ -5,7 +5,10 @@ pub fn greet(name: String) -> String {
 
 #[flutter_rust_bridge::frb(init)]
 pub fn init_app() {
-    flutter_rust_bridge::setup_default_user_utils();
+    // Instead of `flutter_rust_bridge::setup_default_user_utils()`, which would
+    // install an unredacted logger first: same backend and panic backtraces,
+    // with identifiers masked.
+    crate::log_redaction::install();
 
     // Filter out verbose TLS/gRPC debug logs — only show our sync logs
     log::set_max_level(log::LevelFilter::Info);

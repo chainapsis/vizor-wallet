@@ -331,7 +331,7 @@ void main() {
           txKind: 'sent',
           initialTransaction: transaction,
         ),
-        historyLoader: (_) async {
+        historyLoader: (_, _) async {
           loads++;
           return [transaction];
         },
@@ -1072,7 +1072,7 @@ void main() {
             initialTransaction: shielding.transaction,
             initialDetail: shielding.detail,
           ),
-          historyLoader: (_) async => [shielding.transaction],
+          historyLoader: (_, _) async => [shielding.transaction],
           detailLoader: (_, _) async => shielding.detail,
         );
 
@@ -1699,7 +1699,8 @@ Future<void> _pumpScreen(
   bool pricingEnabled = true,
   bool privacyEnabled = false,
   bool privateQueriesEnabled = false,
-  Future<List<rust_sync.TransactionInfo>> Function(String)? historyLoader,
+  Future<List<rust_sync.TransactionInfo>> Function(String, String)?
+  historyLoader,
   Future<rust_sync.TransactionDetail?> Function(
     String,
     rust_sync.TransactionInfo,

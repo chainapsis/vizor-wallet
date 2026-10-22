@@ -238,6 +238,9 @@ class _MobileAdaptiveFrameState extends ConsumerState<MobileAdaptiveFrame>
           contentRect: wide
               ? layout.body.shift(-layout.viewport.topLeft)
               : null,
+          availableContentRect: wide
+              ? layout.availableContentRect?.shift(-layout.viewport.topLeft)
+              : null,
           navigation: _navigation,
           sidebarExit: _sidebarExit,
           child: ColoredBox(

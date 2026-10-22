@@ -19,7 +19,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
-import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_capture_guard.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -195,7 +195,6 @@ const _fingerprintBiometricState = BiometricUnlockState(
 
 Widget _app({
   Stream<void>? screenshotStream,
-  SensitivePrivacyOverlayController? privacyOverlayController,
   _FakeBiometricController? biometric,
   String? accountUuid,
   AccountNotifier Function()? accountNotifier,
@@ -231,7 +230,6 @@ Widget _app({
       home: MobileSeedPhraseScreen(
         accountUuid: accountUuid,
         screenshotStream: screenshotStream,
-        privacyOverlayController: privacyOverlayController,
         loadBirthday: birthdayHeightLoader != null,
         birthdayHeightLoader: birthdayHeightLoader,
         birthdayBlockTimeLoader: birthdayBlockTimeLoader,
@@ -273,6 +271,7 @@ Widget _routerApp(
 Future<void> _revealSecret(WidgetTester tester) async {
   for (final digit in '111111'.split('')) {
     await tester.ensureVisible(find.bySemanticsLabel('Digit $digit'));
+    await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Digit $digit'));
     await tester.pump();
   }
@@ -301,10 +300,6 @@ void main() {
           )..pendingSave = Completer<void>();
           final incomingUris = _FakeIncomingUriService();
           addTearDown(incomingUris.dispose);
-          final privacy = SensitivePrivacyOverlayController(
-            initiallySafe: true,
-          );
-          addTearDown(privacy.dispose);
           final router = GoRouter(
             initialLocation: '/setup/backup',
             routes: [
@@ -317,7 +312,6 @@ void main() {
                 builder: (_, _) => MobileSeedPhraseScreen(
                   accountUuid: 'account-1',
                   showBackupIntro: true,
-                  privacyOverlayController: privacy,
                   screenshotStream: const Stream.empty(),
                   loadBirthday: false,
                 ),
@@ -403,8 +397,6 @@ void main() {
             ],
           ),
         );
-        final privacy = SensitivePrivacyOverlayController();
-        addTearDown(privacy.dispose);
         final router = GoRouter(
           initialLocation: '/setup/backup',
           routes: [
@@ -417,7 +409,6 @@ void main() {
               builder: (_, _) => MobileSeedPhraseScreen(
                 accountUuid: 'account-1',
                 showBackupIntro: true,
-                privacyOverlayController: privacy,
                 screenshotStream: const Stream.empty(),
                 loadBirthday: false,
               ),
@@ -992,32 +983,25 @@ void main() {
     },
   );
 
-  testWidgets(
-    'covers the revealed phrase when the privacy controller is unsafe',
-    (tester) async {
-      final privacyController = SensitivePrivacyOverlayController(
-        initiallySafe: false,
-      );
-      addTearDown(privacyController.dispose);
-
-      await tester.pumpWidget(
-        _app(privacyOverlayController: privacyController),
-      );
-      await _revealSecret(tester);
-
-      final shield = find.byKey(SensitivePrivacyOverlay.shieldKey);
-      expect(shield, findsOneWidget);
-      expect(
-        tester.getTopLeft(shield).dy,
-        lessThanOrEqualTo(tester.getTopLeft(find.byType(MobileTopNav)).dy),
-      );
-
-      privacyController.markSafe();
-      await tester.pump();
-
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-    },
-  );
+  testWidgets('capture exclusion starts after confirming access', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app());
+    expect(
+      tester
+          .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+          .sensitiveContentVisible,
+      isFalse,
+    );
+    await _revealSecret(tester);
+    expect(
+      tester
+          .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+          .sensitiveContentVisible,
+      isTrue,
+    );
+    expect(find.text('abandon'), findsOneWidget);
+  });
 }
 
 class _FakeIncomingUriService extends IncomingUriService {

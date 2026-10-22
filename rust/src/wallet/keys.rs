@@ -181,8 +181,12 @@ pub fn mnemonic_to_seed_with_passphrase(
         );
     }
 
-    let mnemonic =
-        Mnemonic::<English>::from_phrase(phrase).map_err(|e| format!("Invalid mnemonic: {e}"))?;
+    // bip0039's `UnknownWord` carries the typed word, and this error is logged
+    // by its Dart callers (e.g. `createAccountFromMnemonic: ERROR: $e`).
+    let mnemonic = Mnemonic::<English>::from_phrase(phrase).map_err(|e| match e {
+        bip0039::Error::UnknownWord(_) => "Invalid mnemonic: unknown word".to_string(),
+        other => format!("Invalid mnemonic: {other}"),
+    })?;
     let seed = Zeroizing::new(mnemonic.to_seed(bip39_passphrase));
     drop(mnemonic);
     let secret_seed = SecretVec::new(seed.to_vec());
@@ -1642,6 +1646,19 @@ mod tests {
     fn test_invalid_mnemonic() {
         let result = mnemonic_to_seed("invalid words here");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn invalid_mnemonic_errors_do_not_repeat_the_unknown_word() {
+        let phrase = std::iter::repeat_n("abandon", 11)
+            .chain(["vizorpassword"])
+            .collect::<Vec<_>>()
+            .join(" ");
+        let error = match mnemonic_to_seed(&phrase) {
+            Ok(_) => panic!("an unknown word should be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "Invalid mnemonic: unknown word");
     }
 
     #[test]

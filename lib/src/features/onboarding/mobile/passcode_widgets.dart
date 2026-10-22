@@ -159,6 +159,8 @@ class PasscodeNumpad extends StatelessWidget {
     this.canDelete = false,
     this.onHelp,
     this.enabled = true,
+    this.keySize = kPasscodeKeySize,
+    this.spacing = AppSpacing.sm,
     super.key,
   });
 
@@ -172,6 +174,8 @@ class PasscodeNumpad extends StatelessWidget {
   final VoidCallback? onHelp;
 
   final bool enabled;
+  final double keySize;
+  final double spacing;
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +198,7 @@ class PasscodeNumpad extends StatelessWidget {
                   effectiveTap();
                 },
           child: SizedBox.square(
-            dimension: kPasscodeKeySize,
+            dimension: keySize,
             child: Center(child: child),
           ),
         ),
@@ -213,7 +217,7 @@ class PasscodeNumpad extends StatelessWidget {
             // Figma `_Passcode Button`: Young Serif 40 / 33 inside
             // an 80px circular neutral-alpha key.
             style: AppTypography.headlineLarge.copyWith(
-              fontSize: 40,
+              fontSize: keySize / 2,
               height: 33 / 40,
               color: enabled ? colors.text.accent : colors.text.disabled,
             ),
@@ -263,12 +267,17 @@ class PasscodeNumpad extends StatelessWidget {
               ? constraints.maxWidth
               : kPasscodeKeypadWidth;
           return SizedBox(
-            width: math.min(kPasscodeKeypadWidth, maxWidth),
+            width: math.min(
+              keySize == kPasscodeKeySize && spacing == AppSpacing.sm
+                  ? kPasscodeKeypadWidth
+                  : keySize * 3 + spacing * 2,
+              maxWidth,
+            ),
             child: Wrap(
               alignment: WrapAlignment.center,
               runAlignment: WrapAlignment.center,
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
+              spacing: spacing,
+              runSpacing: spacing,
               children: [
                 digitKey(1),
                 digitKey(2),

@@ -4,7 +4,7 @@ library;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_capture_guard.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -306,7 +306,12 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Review Import'), findsOneWidget);
-    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+    expect(
+      tester
+          .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+          .sensitiveContentVisible,
+      isTrue,
+    );
     expect(find.text('Confirm & continue'), findsOneWidget);
     expect(find.text('Clear secret passphrase'), findsOneWidget);
     final clearButton = tester.widget<AppButton>(

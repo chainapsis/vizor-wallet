@@ -9,7 +9,7 @@ import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_capture_guard.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -161,7 +161,12 @@ void main() {
     );
     expect(tester.takeException(), isNull);
     expect(find.text('abandon'), findsOneWidget);
-    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+    expect(
+      tester
+          .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+          .sensitiveContentVisible,
+      isTrue,
+    );
 
     await _pumpMobileLockUseCase(
       tester,

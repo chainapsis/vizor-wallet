@@ -77,8 +77,10 @@ redb = "4.1.0"
 # Bind explicit public detail loads to the existing physical wallet file.
 same-file = "1.0.6"
 
-# Logging (FRB forwards to Dart console via setup_default_user_utils)
+# Logging. `log_redaction` installs the process logger, which masks
+# identifiers and forwards to the backend FRB's default utils would install.
 log = "0.4"
+regex = "1"
 
 # Hex encoding
 hex = "0.4"
@@ -178,6 +180,13 @@ version = "=0.0.1-rc1"
 default-features = false
 # `sqlite` applies a batch to the wallet and acknowledges it in one call.
 features = ["sqlite"]
+
+# The platform log backends FRB 2.11.1 uses, at the versions it already pulls in.
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+oslog = "0.2.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }

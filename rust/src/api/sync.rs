@@ -3117,37 +3117,54 @@ pub fn get_transaction_history(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let txs = wallet_sync::get_transaction_history(&db_path, network, limit, &account_uuid)?;
-        Ok(txs
-            .into_iter()
-            .map(|t| TransactionInfo {
-                txid_hex: t.txid_hex,
-                mined_height: t.mined_height,
-                expired_unmined: t.expired_unmined,
-                account_balance_delta: t.account_balance_delta,
-                fee: t.fee,
-                fee_state: match t.fee_state {
-                    wallet_sync::TransactionFeeState::Known => TransactionFeeState::Known,
-                    wallet_sync::TransactionFeeState::Unknown => TransactionFeeState::Unknown,
-                    wallet_sync::TransactionFeeState::NotApplicable => {
-                        TransactionFeeState::NotApplicable
-                    }
-                },
-                block_time: t.block_time,
-                is_transparent: t.is_transparent,
-                tx_kind: t.tx_kind,
-                display_amount: t.display_amount,
-                display_pool: t.display_pool,
-                activity_pool: t.activity_pool,
-                funding_parent_txid: t.funding_parent_txid,
-                funding_parent_mined_height: t.funding_parent_mined_height,
-                funding_parent_expired: t.funding_parent_expired,
-                created_time: t.created_time,
-                details_complete: t.details_complete,
-                provisional: t.provisional,
-                amount_includes_fee: t.amount_includes_fee,
-            })
-            .collect())
+        Ok(txs.into_iter().map(api_transaction_info).collect())
     })
+}
+
+/// The Activity rows of one transaction, `txid_hex` as
+/// [`TransactionInfo::txid_hex`], exactly as [`get_transaction_history`]
+/// lists them, without reading the history of the account's other
+/// transactions. Empty when the account has no row for it. A receipt reads
+/// its transaction with this instead of the whole history.
+pub fn get_transaction_rows(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    txid_hex: String,
+) -> Result<Vec<TransactionInfo>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let txs = wallet_sync::get_transaction_rows(&db_path, network, &account_uuid, &txid_hex)?;
+        Ok(txs.into_iter().map(api_transaction_info).collect())
+    })
+}
+
+fn api_transaction_info(t: wallet_sync::TransactionInfo) -> TransactionInfo {
+    TransactionInfo {
+        txid_hex: t.txid_hex,
+        mined_height: t.mined_height,
+        expired_unmined: t.expired_unmined,
+        account_balance_delta: t.account_balance_delta,
+        fee: t.fee,
+        fee_state: match t.fee_state {
+            wallet_sync::TransactionFeeState::Known => TransactionFeeState::Known,
+            wallet_sync::TransactionFeeState::Unknown => TransactionFeeState::Unknown,
+            wallet_sync::TransactionFeeState::NotApplicable => TransactionFeeState::NotApplicable,
+        },
+        block_time: t.block_time,
+        is_transparent: t.is_transparent,
+        tx_kind: t.tx_kind,
+        display_amount: t.display_amount,
+        display_pool: t.display_pool,
+        activity_pool: t.activity_pool,
+        funding_parent_txid: t.funding_parent_txid,
+        funding_parent_mined_height: t.funding_parent_mined_height,
+        funding_parent_expired: t.funding_parent_expired,
+        created_time: t.created_time,
+        details_complete: t.details_complete,
+        provisional: t.provisional,
+        amount_includes_fee: t.amount_includes_fee,
+    }
 }
 
 pub fn get_previous_transaction_count_for_address(

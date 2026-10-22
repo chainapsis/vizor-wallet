@@ -29,6 +29,7 @@ Future<List<String>> _pump(
   Future<void> Function(rust_sync.TransactionInfo)? publicLookup,
   Future<bool> Function(BuildContext)? confirmPublicLookup,
   rust_sync.TransactionInfo? transaction,
+  List<String>? rowReads,
   bool privateQueries = true,
   Map<String, AccountInfo> ownAccounts = const {},
 }) async {
@@ -47,7 +48,10 @@ Future<List<String>> _pump(
             txKind: tx.txKind,
             initialTransaction: tx,
           ),
-          historyLoader: (_) async => [tx],
+          historyLoader: (_, txid) async {
+            rowReads?.add(txid);
+            return [tx];
+          },
           detailLoader: details.load,
           transparentDetailsPrioritizer: (txid) async => prioritized.add(txid),
           transparentDetailsPublicLookup: publicLookup,
@@ -230,7 +234,8 @@ void main() {
         recipients: transparentRecipients,
       ),
     ]);
-    final prioritized = await _pump(tester, details);
+    final rowReads = <String>[];
+    final prioritized = await _pump(tester, details, rowReads: rowReads);
     expect(details.calls, 1);
     expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
     await tester.pump(kTransparentDetailsPollInterval);
@@ -246,6 +251,8 @@ void main() {
     expect(details.calls, 3, reason: 'polling stopped');
     expect(prioritized, [transparentDetailsTxid]);
     await _close(tester);
+    // Polls re-read the detail only, never the transaction's rows.
+    expect(rowReads, [transparentDetailsTxid]);
   });
 
   testWidgets('desktop receipt has no private lookup diagnostic button', (

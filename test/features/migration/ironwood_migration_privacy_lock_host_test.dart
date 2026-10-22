@@ -463,6 +463,48 @@ void main() {
     await tester.pump();
     expect(protectedTaps, 1);
   });
+
+  testWidgets('locked overlay hides protected content from screen readers', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final clock = _TestClock();
+    var protectedTaps = 0;
+    await tester.pumpWidget(
+      _app(clock: clock, protectedTap: () => protectedTaps += 1),
+    );
+    await tester.pump();
+    final protected = find.semantics.byLabel(RegExp('Protected content'));
+    expect(protected, findsOneWidget);
+
+    await _elapseIdleInterval(tester, clock);
+
+    // A screen reader can neither read nor activate the covered app; its
+    // keyboard focus is in the lock's password field.
+    expect(protected, findsNothing);
+    expect(find.semantics.byLabel(RegExp('Unlock Vizor')), findsOneWidget);
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<
+            IronwoodMigrationVirtualUnlockScreen
+          >(),
+      isNotNull,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('unlock_password_field')),
+      'password1',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('unlock_submit_button')));
+    await tester.pump();
+
+    expect(protected, findsOneWidget);
+    tester.semantics.tap(protected);
+    await tester.pump();
+    expect(protectedTaps, 1);
+    semantics.dispose();
+  });
 }
 
 Widget _app({

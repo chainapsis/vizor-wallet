@@ -165,6 +165,7 @@ void main() {
     );
     expect(layout.mode, MobileNavigationMode.sidebar);
     expect(layout.body.bottom, size.height);
+    expect(layout.availableContentRect, const Rect.fromLTWH(288, 0, 563, 669));
     expect(layout.viewport, const Rect.fromLTWH(288, 0, 663, 669));
     expect(layout.viewport.width, greaterThan(layout.body.width));
     expect(layout.sidebar!.top, 16);
@@ -241,6 +242,7 @@ void main() {
     expect(layout.body.overlaps(hinge), isFalse);
     expect(layout.sidebar!.overlaps(hinge), isFalse);
     expect(layout.viewport.overlaps(hinge), isFalse);
+    expect(layout.availableContentRect!.overlaps(hinge), isFalse);
   });
   test('horizontal hinge gives the content one contiguous usable pane', () {
     const hinge = Rect.fromLTWH(0, 340, 900, 20);

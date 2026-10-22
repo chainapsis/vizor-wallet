@@ -1074,12 +1074,56 @@ pub(crate) fn get_transaction_history(
     read_transaction_history(&conn, db_path, network, limit, account)
 }
 
+/// The Activity rows of one transaction, `txid_hex` as
+/// [`TransactionInfo::txid_hex`], exactly as [`get_transaction_history`]
+/// lists them, without reading the library's history view of the account's
+/// other transactions. Empty when the account has no such row.
+pub(crate) fn get_transaction_rows(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    txid_hex: &str,
+) -> Result<Vec<TransactionInfo>, String> {
+    let account = parse_account_uuid(account_uuid)?;
+    let txid = hex::decode(txid_hex).map_err(|e| format!("Invalid txid: {e}"))?;
+    let conn = open_readonly_conn(db_path)?;
+    read_history(
+        &conn,
+        db_path,
+        network,
+        None,
+        account,
+        HistoryScope::Transaction(&txid),
+    )
+}
+
 fn read_transaction_history(
     conn: &rusqlite::Connection,
     db_path: &str,
     network: WalletNetwork,
     limit: Option<u32>,
     account: AccountUuid,
+) -> Result<Vec<TransactionInfo>, String> {
+    read_history(conn, db_path, network, limit, account, HistoryScope::All)
+}
+
+/// Which transactions a history read assembles.
+#[derive(Clone, Copy)]
+enum HistoryScope<'a> {
+    /// Every transaction of the account.
+    All,
+    /// The rows of the transaction with these txid bytes, in
+    /// [`TransactionInfo::txid_hex`] order.
+    Transaction(&'a [u8]),
+}
+
+fn read_history(
+    conn: &rusqlite::Connection,
+    db_path: &str,
+    network: WalletNetwork,
+    limit: Option<u32>,
+    account: AccountUuid,
+    scope: HistoryScope<'_>,
 ) -> Result<Vec<TransactionInfo>, String> {
     let uuid = account.expose_uuid();
     let uuid_bytes = uuid.as_bytes();
@@ -1109,6 +1153,9 @@ fn read_transaction_history(
             }
         }
     }
+    if let HistoryScope::Transaction(txid) = scope {
+        retain_transaction_scope(&mut bases, txid);
+    }
     if bases.is_empty() {
         return Ok(Vec::new());
     }
@@ -1125,12 +1172,31 @@ fn read_transaction_history(
     )?;
     drop(read_tx);
 
-    Ok(assemble_history(
-        &bases,
-        &outputs_by_txid,
-        uuid_bytes,
-        limit,
-    ))
+    let mut rows = assemble_history(&bases, &outputs_by_txid, uuid_bytes, limit);
+    if let HistoryScope::Transaction(txid) = scope {
+        let txid_hex = hex::encode(txid);
+        rows.retain(|row| row.txid_hex == txid_hex);
+    }
+    Ok(rows)
+}
+
+/// Keeps the bases one transaction's rows depend on: its own, and when the
+/// wallet created it, every other base the wallet created. Funding-step
+/// matching ([`build_suppressed_funding_step_fees`]) pairs only created
+/// transactions, so those are the only other bases that can suppress the
+/// transaction, add a funding step's fee to it, or name its funding parent.
+/// Every other row is a function of its own base, outputs and history view.
+fn retain_transaction_scope(bases: &mut Vec<TxBase>, txid: &[u8]) {
+    let created = bases
+        .iter()
+        .find(|base| base.txid == txid)
+        .map(|base| base.created.is_some());
+    match created {
+        None => bases.clear(),
+        Some(created) => {
+            bases.retain(|base| base.txid == txid || (created && base.created.is_some()))
+        }
+    }
 }
 
 /// How many transactions one library history read covers.
@@ -3407,6 +3473,40 @@ mod tests {
         assert!(!mapped.details_complete);
         assert!(!mapped.provisional);
         assert_eq!(mapped.fee, Fee::Unknown);
+    }
+
+    #[test]
+    fn a_created_transaction_keeps_every_created_base_in_scope() {
+        let created = |id: u8| {
+            let mut base = tx_base_for_history();
+            base.txid = fake_txid(id).to_vec();
+            base.transaction_id = i64::from(id);
+            base.created = Some(format!("created {id}"));
+            base
+        };
+        let received = |id: u8| {
+            let mut base = tx_base_for_history();
+            base.txid = fake_txid(id).to_vec();
+            base.transaction_id = i64::from(id);
+            base.created = None;
+            base
+        };
+        let all = vec![created(1), received(2), created(3), received(4)];
+        let txids = |bases: &[TxBase]| -> Vec<i64> {
+            bases.iter().map(|base| base.transaction_id).collect()
+        };
+
+        let mut scoped = all.clone();
+        retain_transaction_scope(&mut scoped, &fake_txid(3));
+        assert_eq!(txids(&scoped), [1, 3]);
+
+        let mut scoped = all.clone();
+        retain_transaction_scope(&mut scoped, &fake_txid(2));
+        assert_eq!(txids(&scoped), [2]);
+
+        let mut scoped = all;
+        retain_transaction_scope(&mut scoped, &fake_txid(9));
+        assert!(scoped.is_empty());
     }
 
     #[test]

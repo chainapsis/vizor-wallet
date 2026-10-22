@@ -8,7 +8,7 @@ import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/platform/screenshot_observer.dart';
 import '../../../core/privacy/route_coverage_aware.dart';
-import '../../../core/privacy/sensitive_privacy_overlay.dart';
+import '../../../core/privacy/sensitive_capture_guard.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -42,7 +42,6 @@ class MobileImportReviewScreen extends StatefulWidget {
   const MobileImportReviewScreen({
     required this.args,
     this.screenshotStream,
-    this.privacyOverlayController,
     super.key,
   });
 
@@ -52,9 +51,6 @@ class MobileImportReviewScreen extends StatefulWidget {
   @visibleForTesting
   final Stream<void>? screenshotStream;
 
-  @visibleForTesting
-  final SensitivePrivacyOverlayController? privacyOverlayController;
-
   @override
   State<MobileImportReviewScreen> createState() =>
       _MobileImportReviewScreenState();
@@ -63,8 +59,6 @@ class MobileImportReviewScreen extends StatefulWidget {
 class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
     with RouteCoverageAware<MobileImportReviewScreen> {
   StreamSubscription<void>? _screenshotSub;
-  late final bool _ownsPrivacyController;
-  late final SensitivePrivacyOverlayController _privacyController;
   bool _screenshotSheetShowing = false;
 
   List<String> get _words => widget.args.mnemonic
@@ -76,10 +70,6 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
   @override
   void initState() {
     super.initState();
-    _ownsPrivacyController = widget.privacyOverlayController == null;
-    _privacyController =
-        widget.privacyOverlayController ??
-        SensitivePrivacyEnvironmentController();
     _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
       (_) => _onScreenshot(),
     );
@@ -88,7 +78,6 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
   @override
   void dispose() {
     _screenshotSub?.cancel();
-    if (_ownsPrivacyController) _privacyController.dispose();
     super.dispose();
   }
 
@@ -129,9 +118,8 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen>
   @override
   Widget build(BuildContext context) {
     final words = _words;
-    return SensitivePrivacyOverlay(
+    return SensitiveCaptureGuard(
       sensitiveContentVisible: words.isNotEmpty && !isCoveredByNextRoute,
-      controller: _privacyController,
       child: MobileOnboardingStepScaffold(
         progress: MobileOnboardingProgressScope.of(
           context,

@@ -3342,7 +3342,7 @@ void main() {
           suppliedArgs = state.extra as MobileTransactionStatusArgs;
           return MobileTransactionStatusScreen(
             args: suppliedArgs!,
-            historyLoader: (_) => history.future,
+            historyLoader: (_, _) => history.future,
             detailLoader: (_, _) async => null,
           );
         },

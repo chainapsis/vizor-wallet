@@ -15,7 +15,7 @@ import '../../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/platform/screenshot_observer.dart';
-import '../../../../core/privacy/sensitive_privacy_overlay.dart';
+import '../../../../core/privacy/sensitive_capture_guard.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -34,6 +34,7 @@ import '../../../../services/biometric_unlock.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../../onboarding/mobile/adaptive_passcode_layout.dart';
 import '../../../onboarding/mobile/mobile_secret_passphrase_screen.dart'
     show SecretPassphraseRevealWarningCard;
 
@@ -49,7 +50,6 @@ class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
     this.accountUuid,
     this.showBackupIntro = false,
     this.screenshotStream,
-    this.privacyOverlayController,
     this.loadBirthday = true,
     this.birthdayHeightLoader,
     this.birthdayBlockTimeLoader,
@@ -64,9 +64,6 @@ class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
   /// Test seam — production listens to the platform screenshot events.
   @visibleForTesting
   final Stream<void>? screenshotStream;
-
-  @visibleForTesting
-  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @visibleForTesting
   final bool loadBirthday;
@@ -103,21 +100,12 @@ class _MobileSeedPhraseScreenState
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
 
-  // Owned in production (the test seam injects its own) so the biometric gate
-  // can suppress the privacy shield for the duration of the prompt.
-  late final bool _ownsPrivacyController;
-  late final SensitivePrivacyOverlayController _privacyController;
-
   @override
   void initState() {
     super.initState();
     _stage = widget.showBackupIntro
         ? _SeedStage.intro
         : _SeedStage.confirmAccess;
-    _ownsPrivacyController = widget.privacyOverlayController == null;
-    _privacyController =
-        widget.privacyOverlayController ??
-        SensitivePrivacyEnvironmentController();
     _screenshotSub = (widget.screenshotStream ?? screenshotEvents()).listen(
       (_) => _onScreenshot(),
     );
@@ -131,7 +119,6 @@ class _MobileSeedPhraseScreenState
   @override
   void dispose() {
     _screenshotSub?.cancel();
-    if (_ownsPrivacyController) _privacyController.dispose();
     _mnemonic = null;
     _bip39Passphrase = null;
     super.dispose();
@@ -154,20 +141,10 @@ class _MobileSeedPhraseScreenState
     }
     if (!biometric.usable) return;
     final wasEnabled = biometric.enabled;
-    // The biometric sheet pushes the app to `inactive`; suppress the privacy
-    // shield for its duration so the phrase revealed on success doesn't flash
-    // the blur cover during the inactive→resumed transition. The environment
-    // controller releases the suppression on resume.
     setState(() => _checking = true);
-    _privacyController.beginAuthPrompt();
-    String? readResult;
-    try {
-      readResult = await ref
-          .read(biometricUnlockProvider.notifier)
-          .readPasscode(reason: 'Confirm access to your secret passphrase');
-    } finally {
-      _privacyController.endAuthPrompt();
-    }
+    final readResult = await ref
+        .read(biometricUnlockProvider.notifier)
+        .readPasscode(reason: 'Confirm access to your secret passphrase');
     if (!mounted) return;
     if (accessCheckGeneration != _accessCheckGeneration ||
         _targetAccountChanged(expectedAccountUuid)) {
@@ -484,13 +461,11 @@ class _MobileSeedPhraseScreenState
     final scaffold = Scaffold(
       backgroundColor: colors.background.window,
       body: AppToastHost(
-        child: SensitivePrivacyOverlay(
-          // Protect only in the reveal stage. The passcode gate shows no words,
-          // so blanking its screenshot and app-switcher snapshot is needless
-          // friction. Matches the `_onScreenshot` guard.
+        child: SensitiveCaptureGuard(
+          // Capture exclusion starts at reveal; background privacy applies
+          // to the whole app, including this access gate.
           sensitiveContentVisible:
               _stage == _SeedStage.reveal && _mnemonic != null,
-          controller: _privacyController,
           child: SafeArea(
             child: Column(
               children: [
@@ -664,58 +639,95 @@ class _MobileSeedPhraseScreenState
           ),
         ),
     ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        double textHeight(Text text) {
-          final painter = TextPainter(
-            text: TextSpan(text: text.data, style: text.style),
-            textDirection: Directionality.of(context),
-            textScaler: MediaQuery.textScalerOf(context),
-          )..layout(maxWidth: constraints.maxWidth);
-          final height = painter.height;
-          painter.dispose();
-          return height;
-        }
+    return AdaptivePasscodeLayout(
+      title: 'Enter Passcode',
+      subtitle: 'Confirm your access',
+      prompt: PasscodePromptField(
+        length: kMobilePasscodeLength,
+        filled: _entry.length,
+        error: _gateError,
+        minGap: 0,
+      ),
+      keypad: PasscodeNumpad(
+        onDigit: _onDigit,
+        onBackspace: _onBackspace,
+        canDelete: _entry.isNotEmpty,
+        enabled: !_checking,
+      ),
+      footer: showBiometric
+          ? SizedBox(
+              key: const ValueKey('mobile_seed_phrase_biometric_footer'),
+              height: 36,
+              child: Center(
+                child: PasscodeBiometricButton(
+                  label: biometric.availability.kind.signInLabel,
+                  icon: Center(
+                    child: BiometricIcon(
+                      kind: biometric.availability.kind,
+                      size: 13.5,
+                      fingerprintSize: 16,
+                    ),
+                  ),
+                  onPressed: () => unawaited(_tryBiometricGate()),
+                ),
+              ),
+            )
+          : null,
+      footerHeight: showBiometric ? 36 : 0,
+      legacy: LayoutBuilder(
+        builder: (context, constraints) {
+          double textHeight(Text text) {
+            final painter = TextPainter(
+              text: TextSpan(text: text.data, style: text.style),
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+            )..layout(maxWidth: constraints.maxWidth);
+            final height = painter.height;
+            painter.dispose();
+            return height;
+          }
 
-        // Match the shared keypad's wrap geometry, including narrow viewports.
-        final keypadWidth = math.min(
-          kPasscodeKeypadWidth,
-          constraints.maxWidth,
-        );
-        final columns =
-            ((keypadWidth + AppSpacing.sm) / (kPasscodeKeySize + AppSpacing.sm))
-                .floor()
-                .clamp(1, 3);
-        final rows = (12 / columns).ceil();
-        final keypadHeight =
-            rows * kPasscodeKeySize + (rows - 1) * AppSpacing.sm;
-        final requiredHeight =
-            textHeight(title) +
-            textHeight(subtitle) +
-            AppSpacing.s +
-            AppSpacing.md +
-            kPasscodePromptDigitsHeight +
-            keypadHeight +
-            AppSpacing.md +
-            (showBiometric ? biometricHeight : 0);
-        if (requiredHeight > constraints.maxHeight) {
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                prompt,
-                const SizedBox(height: AppSpacing.md),
-                ...controls,
-              ],
-            ),
+          // Match the shared keypad's wrap geometry, including narrow viewports.
+          final keypadWidth = math.min(
+            kPasscodeKeypadWidth,
+            constraints.maxWidth,
           );
-        }
-        return Column(
-          children: [
-            Expanded(child: Center(child: prompt)),
-            ...controls,
-          ],
-        );
-      },
+          final columns =
+              ((keypadWidth + AppSpacing.sm) /
+                      (kPasscodeKeySize + AppSpacing.sm))
+                  .floor()
+                  .clamp(1, 3);
+          final rows = (12 / columns).ceil();
+          final keypadHeight =
+              rows * kPasscodeKeySize + (rows - 1) * AppSpacing.sm;
+          final requiredHeight =
+              textHeight(title) +
+              textHeight(subtitle) +
+              AppSpacing.s +
+              AppSpacing.md +
+              kPasscodePromptDigitsHeight +
+              keypadHeight +
+              AppSpacing.md +
+              (showBiometric ? biometricHeight : 0);
+          if (requiredHeight > constraints.maxHeight) {
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+                  prompt,
+                  const SizedBox(height: AppSpacing.md),
+                  ...controls,
+                ],
+              ),
+            );
+          }
+          return Column(
+            children: [
+              Expanded(child: Center(child: prompt)),
+              ...controls,
+            ],
+          );
+        },
+      ),
     );
   }
 

@@ -12,7 +12,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
-import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_capture_guard.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
@@ -123,10 +123,7 @@ Widget _stackedPasteApp() {
   );
 }
 
-Widget _reviewApp({
-  Stream<void>? screenshotStream,
-  SensitivePrivacyOverlayController? privacyOverlayController,
-}) {
+Widget _reviewApp({Stream<void>? screenshotStream}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -138,7 +135,6 @@ Widget _reviewApp({
           child: MobileImportReviewScreen(
             args: const ImportSecretPassphraseArgs(mnemonic: _validMnemonic),
             screenshotStream: screenshotStream,
-            privacyOverlayController: privacyOverlayController,
           ),
         ),
       ),
@@ -146,10 +142,7 @@ Widget _reviewApp({
   );
 }
 
-Widget _manualScreenshotApp({
-  required Stream<void> screenshotStream,
-  required SensitivePrivacyOverlayController privacyOverlayController,
-}) {
+Widget _manualScreenshotApp({required Stream<void> screenshotStream}) {
   final router = GoRouter(
     initialLocation: '/import/manual',
     routes: [
@@ -158,7 +151,6 @@ Widget _manualScreenshotApp({
         builder: (_, _) => MobileImportManualScreen(
           wordListOverride: _validMnemonic.split(' '),
           screenshotStream: screenshotStream,
-          privacyOverlayController: privacyOverlayController,
         ),
       ),
     ],
@@ -459,12 +451,12 @@ void main() {
     await tester.pumpAndSettle();
 
     final overlayFinder = find.byType(
-      SensitivePrivacyOverlay,
+      SensitiveCaptureGuard,
       skipOffstage: false,
     );
     expect(
       tester
-          .widget<SensitivePrivacyOverlay>(overlayFinder)
+          .widget<SensitiveCaptureGuard>(overlayFinder)
           .sensitiveContentVisible,
       isTrue,
     );
@@ -480,7 +472,7 @@ void main() {
     );
     expect(
       tester
-          .widget<SensitivePrivacyOverlay>(overlayFinder)
+          .widget<SensitiveCaptureGuard>(overlayFinder)
           .sensitiveContentVisible,
       isFalse,
     );
@@ -509,25 +501,16 @@ void main() {
     expect(find.text('Method selection'), findsOneWidget);
   });
 
-  testWidgets('review phrase is covered when privacy controller is unsafe', (
-    tester,
-  ) async {
-    final privacyController = SensitivePrivacyOverlayController(
-      initiallySafe: false,
-    );
-    addTearDown(privacyController.dispose);
-
-    await tester.pumpWidget(
-      _reviewApp(privacyOverlayController: privacyController),
-    );
+  testWidgets('review excludes captures while words are shown', (tester) async {
+    await tester.pumpWidget(_reviewApp());
     await tester.pump();
-
-    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
-
-    privacyController.markSafe();
-    await tester.pump();
-
-    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+    expect(
+      tester
+          .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+          .sensitiveContentVisible,
+      isTrue,
+    );
+    expect(find.text('abandon'), findsWidgets);
   });
 
   testWidgets('review phrase shows screenshot warning', (tester) async {
@@ -575,15 +558,11 @@ void main() {
   });
 
   testWidgets(
-    'manual entry keeps the shield while its warning sheet is open under '
+    'manual entry keeps capture exclusion while its warning sheet is open under '
     'real go_router routing',
     (tester) async {
       final screenshots = StreamController<void>();
       addTearDown(screenshots.close);
-      final privacyController = SensitivePrivacyOverlayController(
-        initiallySafe: false,
-      );
-      addTearDown(privacyController.dispose);
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
         (call) async => null,
@@ -596,10 +575,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        _manualScreenshotApp(
-          screenshotStream: screenshots.stream,
-          privacyOverlayController: privacyController,
-        ),
+        _manualScreenshotApp(screenshotStream: screenshots.stream),
       );
       await tester.pumpAndSettle();
 
@@ -608,13 +584,23 @@ void main() {
         'abandon',
       );
       await tester.pump();
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+      expect(
+        tester
+            .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+            .sensitiveContentVisible,
+        isTrue,
+      );
 
       screenshots.add(null);
       await tester.pumpAndSettle();
 
       expect(find.byType(MobileSeedScreenshotWarningSheet), findsOneWidget);
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+      expect(
+        tester
+            .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+            .sensitiveContentVisible,
+        isTrue,
+      );
       final route = ModalRoute.of(
         tester.element(find.byType(MobileImportManualScreen)),
       );

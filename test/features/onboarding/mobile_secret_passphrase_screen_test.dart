@@ -12,7 +12,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/clipboard/sensitive_clipboard.dart';
-import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_capture_guard.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_secret_passphrase_screen.dart';
@@ -374,36 +374,20 @@ void main() {
     expect(GoRouter.of(customiseContext).canPop(), isFalse);
   });
 
-  testWidgets(
-    'covers the phrase once revealed when the privacy controller is unsafe',
-    (tester) async {
-      final privacyController = SensitivePrivacyOverlayController(
-        initiallySafe: false,
-      );
-      addTearDown(privacyController.dispose);
-
-      await tester.pumpWidget(
-        _app(
-          MobileSecretPassphraseScreen(
-            privacyOverlayController: privacyController,
-          ),
-          seedCreateMnemonic: true,
-        ),
-      );
-      await tester.pump();
-      // Before reveal the card shows no words, so nothing is blanked even when
-      // the controller is unsafe.
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-
-      // Revealing the phrase turns on protection; the shield covers the words.
-      await tester.tap(find.text('Reveal phrase'));
-      await tester.pump();
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
-
-      privacyController.markSafe();
-      await tester.pump();
-
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-    },
-  );
+  testWidgets('capture exclusion starts when the phrase is revealed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(const MobileSecretPassphraseScreen(), seedCreateMnemonic: true),
+    );
+    await tester.pump();
+    bool captureExcluded() => tester
+        .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+        .sensitiveContentVisible;
+    expect(captureExcluded(), isFalse);
+    await tester.tap(find.text('Reveal phrase'));
+    await tester.pump();
+    expect(captureExcluded(), isTrue);
+    expect(find.text('abandon'), findsOneWidget);
+  });
 }

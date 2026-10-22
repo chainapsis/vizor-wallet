@@ -9,7 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
-import '../../../../core/privacy/sensitive_privacy_overlay.dart';
+import '../../../../core/privacy/sensitive_capture_guard.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -26,6 +26,7 @@ import '../../../../services/biometric_unlock.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../../onboarding/mobile/adaptive_passcode_layout.dart';
 import '../../widgets/viewing_key_content.dart';
 
 enum _ViewingKeyStage { confirmAccess, reveal }
@@ -38,15 +39,11 @@ enum _ViewingKeyStage { confirmAccess, reveal }
 class MobileViewingKeyScreen extends ConsumerStatefulWidget {
   const MobileViewingKeyScreen({
     this.accountUuid,
-    this.privacyOverlayController,
     this.viewingKeysLoader,
     super.key,
   });
 
   final String? accountUuid;
-
-  @visibleForTesting
-  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   /// Test seam — production calls `rust_wallet.getAccountViewingKeys` directly.
   @visibleForTesting
@@ -129,16 +126,9 @@ class _MobileViewingKeyScreenState
   String? _revealError;
   ViewingKeyType? _selectedType;
 
-  late final bool _ownsPrivacyController;
-  late final SensitivePrivacyOverlayController _privacyController;
-
   @override
   void initState() {
     super.initState();
-    _ownsPrivacyController = widget.privacyOverlayController == null;
-    _privacyController =
-        widget.privacyOverlayController ??
-        SensitivePrivacyEnvironmentController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_tryBiometricGate());
     });
@@ -146,7 +136,6 @@ class _MobileViewingKeyScreenState
 
   @override
   void dispose() {
-    if (_ownsPrivacyController) _privacyController.dispose();
     _viewingKeys = null;
     super.dispose();
   }
@@ -169,15 +158,9 @@ class _MobileViewingKeyScreenState
     if (!biometric.usable) return;
     final wasEnabled = biometric.enabled;
     setState(() => _checking = true);
-    _privacyController.beginAuthPrompt();
-    String? readResult;
-    try {
-      readResult = await ref
-          .read(biometricUnlockProvider.notifier)
-          .readPasscode(reason: 'Confirm access to your viewing key');
-    } finally {
-      _privacyController.endAuthPrompt();
-    }
+    final readResult = await ref
+        .read(biometricUnlockProvider.notifier)
+        .readPasscode(reason: 'Confirm access to your viewing key');
     if (!mounted) return;
     if (accessCheckGeneration != _accessCheckGeneration ||
         _targetAccountChanged(expectedAccountUuid)) {
@@ -383,10 +366,9 @@ class _MobileViewingKeyScreenState
         child: Scaffold(
           backgroundColor: colors.background.window,
           body: AppToastHost(
-            child: SensitivePrivacyOverlay(
+            child: SensitiveCaptureGuard(
               sensitiveContentVisible:
                   _stage == _ViewingKeyStage.reveal && _viewingKeys != null,
-              controller: _privacyController,
               child: SafeArea(
                 child: Column(
                   children: [
@@ -437,70 +419,106 @@ class _MobileViewingKeyScreenState
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
     final showBiometric = !_checking && biometric.usable;
-    return Column(
-      children: [
-        Expanded(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Enter Passcode',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displayLarge.copyWith(
-                    color: colors.text.accent,
+    return AdaptivePasscodeLayout(
+      title: 'Enter Passcode',
+      subtitle: 'Confirm your access',
+      prompt: PasscodePromptField(
+        length: kMobilePasscodeLength,
+        filled: _entry.length,
+        error: _gateError,
+        minGap: 0,
+      ),
+      keypad: PasscodeNumpad(
+        onDigit: _onDigit,
+        onBackspace: _onBackspace,
+        canDelete: _entry.isNotEmpty,
+        enabled: !_checking,
+      ),
+      footer: showBiometric
+          ? SizedBox(
+              key: const ValueKey('mobile_viewing_key_biometric_footer'),
+              height: 36,
+              child: Center(
+                child: PasscodeBiometricButton(
+                  label: biometric.availability.kind.signInLabel,
+                  icon: Center(
+                    child: BiometricIcon(
+                      kind: biometric.availability.kind,
+                      size: 13.5,
+                      fingerprintSize: 16,
+                    ),
                   ),
+                  onPressed: () => unawaited(_tryBiometricGate()),
                 ),
-                const SizedBox(height: AppSpacing.s),
-                Text(
-                  'Confirm your access',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                SizedBox(
-                  height: kPasscodePromptDigitsHeight,
-                  child: PasscodePromptField(
-                    length: kMobilePasscodeLength,
-                    filled: _entry.length,
-                    error: _gateError,
-                    minGap: 0,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        PasscodeNumpad(
-          onDigit: _onDigit,
-          onBackspace: _onBackspace,
-          canDelete: _entry.isNotEmpty,
-          enabled: !_checking,
-        ),
-        if (showBiometric) ...[
-          const SizedBox(height: AppSpacing.md),
-          SizedBox(
-            key: const ValueKey('mobile_viewing_key_biometric_footer'),
-            height: 36,
+              ),
+            )
+          : null,
+      footerHeight: showBiometric ? 36 : 0,
+      legacy: Column(
+        children: [
+          Expanded(
             child: Center(
-              child: PasscodeBiometricButton(
-                label: biometric.availability.kind.signInLabel,
-                icon: Center(
-                  child: BiometricIcon(
-                    kind: biometric.availability.kind,
-                    size: 13.5,
-                    fingerprintSize: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Enter Passcode',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.displayLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
                   ),
-                ),
-                onPressed: () => unawaited(_tryBiometricGate()),
+                  const SizedBox(height: AppSpacing.s),
+                  Text(
+                    'Confirm your access',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.primary,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  SizedBox(
+                    height: kPasscodePromptDigitsHeight,
+                    child: PasscodePromptField(
+                      length: kMobilePasscodeLength,
+                      filled: _entry.length,
+                      error: _gateError,
+                      minGap: 0,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+          PasscodeNumpad(
+            onDigit: _onDigit,
+            onBackspace: _onBackspace,
+            canDelete: _entry.isNotEmpty,
+            enabled: !_checking,
+          ),
+          if (showBiometric) ...[
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              key: const ValueKey('mobile_viewing_key_biometric_footer'),
+              height: 36,
+              child: Center(
+                child: PasscodeBiometricButton(
+                  label: biometric.availability.kind.signInLabel,
+                  icon: Center(
+                    child: BiometricIcon(
+                      kind: biometric.availability.kind,
+                      size: 13.5,
+                      fingerprintSize: 16,
+                    ),
+                  ),
+                  onPressed: () => unawaited(_tryBiometricGate()),
+                ),
+              ),
+            ),
+          ],
+          if (!showBiometric) const SizedBox(height: AppSpacing.md),
         ],
-        if (!showBiometric) const SizedBox(height: AppSpacing.md),
-      ],
+      ),
     );
   }
 }

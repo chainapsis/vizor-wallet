@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
@@ -10,6 +12,7 @@ class MobilePageViewport extends StatelessWidget {
   const MobilePageViewport({
     required this.child,
     this.constrainContent = true,
+    this.maxContentWidth,
     super.key,
   });
 
@@ -19,13 +22,31 @@ class MobilePageViewport extends StatelessWidget {
   /// content individually so branch transitions also include the margins.
   final bool constrainContent;
 
+  /// Opt into a wider safe pane on this route only. Null retains the shell's
+  /// ordinary width; portrait and non-sidebar windows keep their geometry.
+  final double? maxContentWidth;
+
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final full = Offset.zero & media.size;
-    final content = constrainContent
-        ? MobileNavigationScope.maybeOf(context)?.contentRect ?? full
-        : full;
+    final navigation = MobileNavigationScope.maybeOf(context);
+    final available = navigation?.availableContentRect;
+    final ordinaryContent = navigation?.contentRect ?? full;
+    final expandedWidth = math.min(
+      maxContentWidth ?? ordinaryContent.width,
+      available?.width ?? ordinaryContent.width,
+    );
+    final content = !constrainContent
+        ? full
+        : maxContentWidth != null && available != null
+        ? Rect.fromLTWH(
+            available.center.dx - expandedWidth / 2,
+            available.top,
+            expandedWidth,
+            available.height,
+          )
+        : ordinaryContent;
     // Keep this tree stable across window modes to preserve screen state.
     return LayoutBuilder(
       builder: (context, constraints) => ColoredBox(

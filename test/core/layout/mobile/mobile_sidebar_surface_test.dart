@@ -89,6 +89,167 @@ void main() {
     return (shape as RoundedSuperellipseBorder).borderRadius as BorderRadius;
   }
 
+  Widget sidebar({double bottomInset = 18}) => MediaQuery(
+    data: MediaQueryData(padding: EdgeInsets.only(bottom: bottomInset)),
+    child: MobileWalletSidebar(
+      accountName: 'Test account',
+      avatar: const SizedBox(width: 40, height: 40),
+      status: const SyncStatusLabel(
+        kind: SyncStatusKind.synced,
+        label: 'Vizor is synced',
+        semanticsLabel: 'Vizor is synced',
+      ),
+      currentPath: '/home',
+      swapEnabled: true,
+      onSelect: (_) {},
+      onAccountTap: () {},
+    ),
+  );
+
+  testWidgets(
+    'keyboard animation keeps the panel corners and sync position on every frame',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      tester.view.viewPadding = const FakeViewPadding(bottom: 34);
+      await pump(tester, panel: sidebar());
+      final panelRect = tester.getRect(find.byType(MobileSidebarSurface));
+      final syncRect = tester.getRect(find.byType(MobileSyncStatus));
+      final delayed = Completer<Object?>();
+      reply = (_) => delayed.future;
+      for (final inset in [100.0, 200.0, 300.0, 200.0, 100.0, 0.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+        // The post-frame resolver runs first; inspect its pending frame too.
+        await tester.pump();
+        await tester.pump();
+        expect(outline(tester).bottomLeft.y, 56, reason: 'inset=$inset');
+        expect(tester.getRect(find.byType(MobileSidebarSurface)), panelRect);
+        expect(tester.getRect(find.byType(MobileSyncStatus)), syncRect);
+        expect(calls.length, 1);
+      }
+      delayed.complete(radius);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'duplicate keyboard metrics revalidate without flashing resolved corners',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      await pump(tester, panel: sidebar());
+      final syncRect = tester.getRect(find.byType(MobileSyncStatus));
+      for (final inset in [300.0, 0.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+        await tester.pump();
+        final delayed = Completer<Object?>();
+        reply = (_) => delayed.future;
+        // Native iOS sends repeated metrics with an identical final inset.
+        tester.binding.handleMetricsChanged();
+        await tester.pump();
+        await tester.pump();
+        expect(outline(tester).bottomLeft.y, 56);
+        expect(tester.getRect(find.byType(MobileSyncStatus)), syncRect);
+        delayed.complete(radius);
+        await tester.pumpAndSettle();
+        expect(outline(tester).bottomLeft.y, 56);
+        expect(tester.getRect(find.byType(MobileSyncStatus)), syncRect);
+      }
+      expect(calls.length, 3);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'panel movement during a keyboard-only update still requests new corners',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      final offset = ValueNotifier(Offset.zero);
+      addTearDown(offset.dispose);
+      await pump(
+        tester,
+        panel: ValueListenableBuilder(
+          valueListenable: offset,
+          builder: (_, value, child) =>
+              Transform.translate(offset: value, child: child),
+          child: const MobileSidebarSurface(child: SizedBox.expand()),
+        ),
+      );
+      reply = (_) async => {...radius, 'bottomLeft': 40.0};
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      offset.value = const Offset(16, 0);
+      await tester.pumpAndSettle();
+      expect(calls.length, 2);
+      expect(calls.last.arguments, containsPair('x', 32.0));
+      expect(outline(tester).bottomLeft.y, 40);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'keyboard metrics preserve an in-flight request for unchanged geometry',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      final first = Completer<Object?>();
+      reply = (_) => first.future;
+      await pump(tester);
+      for (final inset in [300.0, 0.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+        await tester.pump();
+        expect(calls.length, 1);
+      }
+      first.complete(radius);
+      await tester.pumpAndSettle();
+      expect(outline(tester).bottomLeft.y, 56);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'window resize with keyboard metrics invalidates the old native geometry',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      await pump(tester);
+      final resized = Completer<Object?>();
+      reply = (_) => resized.future;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      tester.view.physicalSize = const Size(1000, 654);
+      await tester.pump();
+      await tester.pump();
+      expect(calls.length, 2);
+      expect(calls.last.arguments, containsPair('viewWidth', 1000.0));
+      expect(outline(tester), BorderRadius.circular(24));
+      resized.complete({...radius, 'bottomLeft': 40.0});
+      await tester.pumpAndSettle();
+      expect(outline(tester).bottomLeft.y, 40);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'non-keyboard metrics and app resume still revalidate identical geometry',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      await pump(tester);
+      final stale = Completer<Object?>();
+      reply = (_) => stale.future;
+      // Native orientation can change without changing logical dimensions.
+      tester.binding.handleMetricsChanged();
+      await tester.pump();
+      expect(calls.length, 2);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      reply = (_) async => {...radius, 'bottomLeft': 40.0};
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(calls.length, 3);
+      expect(outline(tester).bottomLeft.y, 40);
+      stale.complete(radius);
+      await tester.pumpAndSettle();
+      expect(outline(tester).bottomLeft.y, 40);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
   testWidgets(
     'uses actual panel frame for both fill and continuous clipping; updates on movement',
     (tester) async {
@@ -114,22 +275,6 @@ void main() {
     'sync hugs the left edge and follows the exact native corner used by the panel',
     (tester) async {
       addTearDown(tester.view.reset);
-      Widget sidebar({double bottomInset = 18}) => MediaQuery(
-        data: MediaQueryData(padding: EdgeInsets.only(bottom: bottomInset)),
-        child: MobileWalletSidebar(
-          accountName: 'Test account',
-          avatar: const SizedBox(width: 40, height: 40),
-          status: const SyncStatusLabel(
-            kind: SyncStatusKind.synced,
-            label: 'Vizor is synced',
-            semanticsLabel: 'Vizor is synced',
-          ),
-          currentPath: '/home',
-          swapEnabled: true,
-          onSelect: (_) {},
-          onAccountTap: () {},
-        ),
-      );
       void verify(double corner, double gap) {
         final panel = tester.getRect(find.byType(MobileSidebarSurface));
         final sync = tester.getRect(find.byType(MobileSyncStatus));

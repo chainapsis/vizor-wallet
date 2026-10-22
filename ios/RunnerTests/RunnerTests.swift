@@ -12,6 +12,120 @@ private final class TextFieldWithoutSecureCanvas: UITextField {
 }
 
 class RunnerTests: XCTestCase {
+  func testAppPrivacyCoverIsOpaqueAndRemovedWithoutReplacingContent() {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+    let content = UIView(frame: window.bounds)
+    window.addSubview(content)
+    let privacy = AppPrivacyOverlay(windows: { [window] }, isSolid: { true })
+    privacy.show()
+    let cover = window.subviews.last!
+    XCTAssertTrue(cover !== content)
+    XCTAssertEqual(cover.accessibilityLabel, "Sensitive content hidden")
+    XCTAssertEqual(cover.backgroundColor?.cgColor.alpha, 1)
+    XCTAssertEqual(cover.frame, window.bounds)
+    privacy.show()
+    XCTAssertEqual(window.subviews.count, 2)
+    privacy.hide()
+    XCTAssertEqual(window.subviews, [content])
+    privacy.hide()
+    XCTAssertEqual(window.subviews, [content])
+  }
+
+  func testAppPrivacyCoversNewWindowsAndReassertsAboveLaterSheets() {
+    let first = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+    let second = UIWindow(frame: CGRect(x: 0, y: 0, width: 852, height: 393))
+    var windows = [first]
+    let privacy = AppPrivacyOverlay(windows: { windows })
+    privacy.show()
+    let firstCover = first.subviews.last!
+    first.addSubview(UIView())
+    windows.append(second)
+    first.bounds.size = CGSize(width: 852, height: 393)
+    privacy.show()
+    XCTAssertTrue(first.subviews.last === firstCover)
+    XCTAssertEqual(firstCover.frame, first.bounds)
+    XCTAssertEqual(second.subviews.last?.frame, second.bounds)
+    privacy.hide()
+    XCTAssertNil(firstCover.superview)
+    XCTAssertTrue(second.subviews.isEmpty)
+  }
+
+  func testAppPrivacyOrdinaryScreenUsesBlurAndSolidWinsUntilResume() {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+    var solid = false
+    let privacy = AppPrivacyOverlay(windows: { [window] }, isSolid: { solid })
+    privacy.show()
+    XCTAssertTrue(window.subviews.last!.subviews.contains { $0 is UIVisualEffectView })
+    solid = true
+    privacy.show()
+    XCTAssertFalse(window.subviews.last!.subviews.contains { $0 is UIVisualEffectView })
+    XCTAssertEqual(window.subviews.last!.backgroundColor?.cgColor.alpha, 1)
+    solid = false
+    privacy.show()
+    XCTAssertFalse(window.subviews.last!.subviews.contains { $0 is UIVisualEffectView })
+    privacy.hide()
+    privacy.show()
+    XCTAssertTrue(window.subviews.last!.subviews.contains { $0 is UIVisualEffectView })
+  }
+
+  func testAppPrivacyAccessibilityModalRestoresOriginalContentForBlurAndSolid() {
+    for solid in [false, true] {
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+      let content = UILabel(frame: window.bounds)
+      content.isAccessibilityElement = true
+      content.accessibilityLabel = "Test wallet balance"
+      window.addSubview(content)
+      let privacy = AppPrivacyOverlay(windows: { [window] }, isSolid: { solid })
+      privacy.show()
+      let cover = window.subviews.last!
+      XCTAssertTrue(cover.isAccessibilityElement)
+      XCTAssertTrue(cover.accessibilityViewIsModal)
+      XCTAssertEqual(cover.accessibilityLabel, "Sensitive content hidden")
+      XCTAssertTrue(window.subviews.first === content)
+      privacy.hide()
+      XCTAssertEqual(window.subviews, [content])
+      XCTAssertEqual(content.accessibilityLabel, "Test wallet balance")
+      XCTAssertTrue(content.isAccessibilityElement)
+      privacy.show()
+      privacy.hide()
+      XCTAssertEqual(window.subviews, [content])
+    }
+  }
+
+  func testAppPrivacyPolicyUpgradesExistingBlurWithoutAnotherLifecycleEvent() {
+    let policy = AppBackgroundPrivacyPolicy.shared
+    defer { policy.setSolidBackground(true); policy.setCaptureSensitive(false) }
+    policy.setSolidBackground(false)
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+    let privacy = AppPrivacyOverlay(windows: { [window] })
+    privacy.show()
+    XCTAssertTrue(window.subviews.last!.subviews.contains { $0 is UIVisualEffectView })
+    policy.setCaptureSensitive(true)
+    XCTAssertFalse(window.subviews.last!.subviews.contains { $0 is UIVisualEffectView })
+    policy.setCaptureSensitive(false)
+    XCTAssertFalse(window.subviews.last!.subviews.contains { $0 is UIVisualEffectView })
+    privacy.hide()
+  }
+
+  func testAppPrivacyDoesNotDisableSensitiveCaptureProtection() {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+    let host = CALayer()
+    host.addSublayer(window.layer)
+    let canvas = CALayer()
+    let shield = SecureScreenshotShield(
+      windowProvider: { window },
+      canvasProvider: { field in field.layer.addSublayer(canvas); return canvas }
+    )
+    shield.setSensitiveContentVisible(true)
+    let privacy = AppPrivacyOverlay(windows: { [window] })
+    privacy.show()
+    privacy.hide()
+    XCTAssertEqual(shield.status["state"] as? String, "applied")
+    XCTAssertTrue(window.layer.superlayer === canvas)
+    shield.setSensitiveContentVisible(false)
+    XCTAssertEqual(shield.status["state"] as? String, "disabled")
+  }
+
   func testScreenshotShieldRetriesOnActivationAndCanDisableBeforeRetry() {
     let done = expectation(description: "lifecycle")
     DispatchQueue.main.async {

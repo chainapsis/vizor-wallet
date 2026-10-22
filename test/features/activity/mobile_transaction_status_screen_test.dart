@@ -214,7 +214,7 @@ Widget _app(
             initialDetail: resolvedDetail,
             giftCard: giftCard,
           ),
-          historyLoader: (_) async => history ?? [tx],
+          historyLoader: (_, _) async => history ?? [tx],
           detailLoader: (_, _) async => resolvedDetail,
         ),
       ),

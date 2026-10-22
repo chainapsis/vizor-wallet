@@ -11,7 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 
 import 'package:go_router/go_router.dart';
-import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_capture_guard.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_manual_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_review_screen.dart';
@@ -123,10 +123,7 @@ Widget _stackedManualApp() {
   );
 }
 
-Widget _screenshotApp({
-  Stream<void>? screenshotStream,
-  SensitivePrivacyOverlayController? privacyOverlayController,
-}) {
+Widget _screenshotApp({Stream<void>? screenshotStream}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -139,7 +136,6 @@ Widget _screenshotApp({
       home: MobileImportManualScreen(
         wordListOverride: _wordList,
         screenshotStream: screenshotStream,
-        privacyOverlayController: privacyOverlayController,
       ),
     ),
   );
@@ -460,35 +456,21 @@ void main() {
     expect(find.textContaining('Don’t take screenshots'), findsOneWidget);
   });
 
-  testWidgets(
-    'covers the field once a word is on screen when the controller is unsafe',
-    (tester) async {
-      final privacyController = SensitivePrivacyOverlayController(
-        initiallySafe: false,
-      );
-      addTearDown(privacyController.dispose);
-
-      await tester.pumpWidget(
-        _screenshotApp(privacyOverlayController: privacyController),
-      );
-      await tester.pump();
-
-      // An empty field has nothing to blank, even when unsafe.
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-
-      await tester.enterText(
-        find.byKey(const ValueKey('mobile_import_manual_field')),
-        'ab',
-      );
-      await tester.pump();
-      // A typed word turns on protection; the shield covers the field.
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
-
-      privacyController.markSafe();
-      await tester.pump();
-      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
-    },
-  );
+  testWidgets('capture exclusion follows typed words', (tester) async {
+    await tester.pumpWidget(_screenshotApp());
+    await tester.pump();
+    bool captureExcluded() => tester
+        .widget<SensitiveCaptureGuard>(find.byType(SensitiveCaptureGuard))
+        .sensitiveContentVisible;
+    expect(captureExcluded(), isFalse);
+    final field = find.byKey(const ValueKey('mobile_import_manual_field'));
+    await tester.enterText(field, 'ab');
+    await tester.pump();
+    expect(captureExcluded(), isTrue);
+    await tester.enterText(field, '');
+    await tester.pump();
+    expect(captureExcluded(), isFalse);
+  });
 }
 
 class _RustApiFake implements RustLibApi {

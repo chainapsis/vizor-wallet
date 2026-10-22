@@ -549,11 +549,14 @@ void main() {
       expect(tester.getRect(page).size, viewport.size);
       expect(tester.getRect(page).left, greaterThan(viewport.left));
       expect(tester.getRect(page).left, lessThan(viewport.right));
-      expect(tester.getRect(receive).width, homeRect.width);
+      // Receive alone expands into the contiguous native-safe pane. The
+      // branch beneath it retains its ordinary 440px content geometry.
+      const receiveRect = Rect.fromLTWH(288, 0, 563, 669);
+      expect(tester.getRect(receive).width, receiveRect.width);
       expect(tester.getRect(find.byType(MobileWalletSidebar)), sidebar);
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump();
-      expect(tester.getRect(receive), homeRect);
+      expect(tester.getRect(receive), receiveRect);
       final start = Offset(viewport.left + 2, viewport.center.dy);
       var drag = await tester.startGesture(start);
       await drag.moveBy(Offset(viewport.width * .25, 0));
@@ -566,7 +569,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump();
       expect(receive, findsOneWidget);
-      expect(tester.getRect(receive), homeRect);
+      expect(tester.getRect(receive), receiveRect);
       drag = await tester.startGesture(start);
       await drag.moveBy(Offset(viewport.width * .75, 0));
       await tester.pump(const Duration(milliseconds: 400));

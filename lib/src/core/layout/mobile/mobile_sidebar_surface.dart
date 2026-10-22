@@ -33,6 +33,8 @@ class _MobileSidebarSurfaceState extends State<MobileSidebarSurface>
   final _key = GlobalKey();
   BorderRadius _radius = _fallback;
   _PanelGeometry? _request;
+  _PanelGeometry? _resolvedGeometry;
+  MediaQueryData? _viewMetrics;
   int _epoch = 0;
   bool _scheduled = false;
   bool _active = true;
@@ -41,6 +43,12 @@ class _MobileSidebarSurfaceState extends State<MobileSidebarSurface>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _viewMetrics = MediaQueryData.fromView(View.of(context));
   }
 
   void _schedule() {
@@ -56,8 +64,22 @@ class _MobileSidebarSurfaceState extends State<MobileSidebarSurface>
 
   @override
   void didChangeMetrics() {
-    _epoch++;
-    _request = null;
+    final previous = _viewMetrics;
+    final next = MediaQueryData.fromView(View.of(context));
+    _viewMetrics = next;
+    // Padding is derived from viewPadding and viewInsets. Neither the keyboard
+    // nor its derived padding changes the display's container-concentric shape.
+    final keyboardOnly =
+        previous != null &&
+        previous.viewInsets != next.viewInsets &&
+        previous.copyWith(viewInsets: next.viewInsets, padding: next.padding) ==
+            next;
+    if (!keyboardOnly) {
+      _epoch++;
+      _request = null;
+    }
+    // Still measure the panel: a parent may move it during a keyboard change.
+    // Keep both settled corners and in-flight responses if geometry is equal.
     _schedule();
   }
 
@@ -66,6 +88,7 @@ class _MobileSidebarSurfaceState extends State<MobileSidebarSurface>
     _active = state == AppLifecycleState.resumed;
     _epoch++;
     _request = null;
+    _resolvedGeometry = null;
     if (_active) {
       _schedule();
       WidgetsBinding.instance.ensureVisualUpdate();
@@ -85,13 +108,19 @@ class _MobileSidebarSurfaceState extends State<MobileSidebarSurface>
     _request = geometry;
     final epoch = ++_epoch;
     // Do not keep the old posture's radius while awaiting a new geometry.
-    if (_radius != _fallback) setState(() => _radius = _fallback);
+    // iOS can also repeat identical metrics while finishing a keyboard
+    // animation. Revalidate those notifications without flashing the fallback
+    // for geometry whose corners we have already resolved in this lifecycle.
+    if (_resolvedGeometry != geometry && _radius != _fallback) {
+      setState(() => _radius = _fallback);
+    }
     final radius = await NativeModalCorners.resolveSidebar(
       rect: geometry.rect,
       viewSize: geometry.viewSize,
       scale: geometry.scale,
     );
     if (!mounted || !_active || epoch != _epoch) return;
+    _resolvedGeometry = geometry;
     final target = radius ?? _fallback;
     if (_radius != target) setState(() => _radius = target);
   }

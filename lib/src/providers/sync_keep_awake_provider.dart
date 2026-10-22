@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_bootstrap.dart';
@@ -243,6 +244,40 @@ final syncKeepAwakePrivacyLockVisibleProvider = Provider<bool>((ref) {
   return ref.watch(syncKeepAwakePrivacyLockModeProvider) !=
       SyncKeepAwakePrivacyLockMode.hidden;
 });
+
+/// Gives the above-router lock first refusal of system Back, even before its
+/// screen has mounted. A route-level PopScope cannot protect this app layer.
+class SyncKeepAwakePrivacyLockBackController {
+  SyncKeepAwakePrivacyLockBackController(this._isVisible);
+
+  final bool Function() _isVisible;
+  Object? _owner;
+  VoidCallback? _onBack;
+
+  VoidCallback attach(VoidCallback onBack) {
+    final owner = Object();
+    _owner = owner;
+    _onBack = onBack;
+    return () {
+      if (!identical(_owner, owner)) return;
+      _owner = null;
+      _onBack = null;
+    };
+  }
+
+  bool handleBack() {
+    if (!_isVisible()) return false;
+    _onBack?.call();
+    return true;
+  }
+}
+
+final syncKeepAwakePrivacyLockBackProvider =
+    Provider<SyncKeepAwakePrivacyLockBackController>((ref) {
+      return SyncKeepAwakePrivacyLockBackController(
+        () => ref.read(syncKeepAwakePrivacyLockVisibleProvider),
+      );
+    });
 
 class SyncKeepAwakeEtaSample {
   const SyncKeepAwakeEtaSample({

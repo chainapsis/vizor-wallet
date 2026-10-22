@@ -244,6 +244,60 @@ void main() {
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
   });
 
+  testWidgets('hides shielded content from screen readers until safe again', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final controller = SensitivePrivacyOverlayController(initiallySafe: true);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: SensitivePrivacyOverlay(
+            sensitiveContentVisible: true,
+            controller: controller,
+            child: const SizedBox(width: 320, height: 240, child: _SeedPane()),
+          ),
+        ),
+      ),
+    );
+
+    final seed = find.semantics.byLabel(RegExp(_seedWords));
+    final copy = find.semantics.byLabel(RegExp('Copy'));
+    final shieldLabel = find.semantics.byLabel('Sensitive content hidden');
+    expect(seed, findsOne);
+    expect(shieldLabel, findsNothing);
+    tester.semantics.tap(copy);
+    await tester.pump();
+    expect(find.text('Copied 1'), findsOneWidget);
+
+    controller.markUnsafe();
+    await tester.pump();
+
+    // The shield hides the seed from screen readers as well as from the
+    // screen, and nothing beneath it can be activated through them; the
+    // shield's icon is what they find instead.
+    expect(seed, findsNothing);
+    expect(copy, findsNothing);
+    expect(find.semantics.byLabel(RegExp('Copied')), findsNothing);
+    expect(shieldLabel, findsOne);
+
+    controller.markSafe();
+    await tester.pump();
+
+    // The pane comes back still mounted, with its state.
+    expect(seed, findsOne);
+    expect(shieldLabel, findsNothing);
+    expect(find.text('Copied 1'), findsOneWidget);
+    tester.semantics.tap(copy);
+    await tester.pump();
+    expect(find.text('Copied 2'), findsOneWidget);
+    semantics.dispose();
+  });
+
   testWidgets('does not show privacy shield when no sensitive content exists', (
     tester,
   ) async {
@@ -519,4 +573,37 @@ void main() {
     },
     skip: !Platform.isMacOS,
   );
+}
+
+const _seedWords = 'abandon ability able';
+
+/// A stand-in for a seed screen: the words, and a copy button that counts
+/// its taps, so a test can tell whether the pane kept its state.
+class _SeedPane extends StatefulWidget {
+  const _SeedPane();
+
+  @override
+  State<_SeedPane> createState() => _SeedPaneState();
+}
+
+class _SeedPaneState extends State<_SeedPane> {
+  var _copies = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Semantics(container: true, child: const Text(_seedWords)),
+        Semantics(
+          container: true,
+          button: true,
+          child: GestureDetector(
+            onTap: () => setState(() => _copies += 1),
+            child: const Text('Copy'),
+          ),
+        ),
+        Text('Copied $_copies'),
+      ],
+    );
+  }
 }

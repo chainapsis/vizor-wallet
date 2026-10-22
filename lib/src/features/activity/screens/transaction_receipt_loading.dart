@@ -16,10 +16,14 @@ import '../public_details_load.dart';
 import '../transaction_completeness.dart';
 import '../widgets/public_details_lookup_dialog.dart';
 
-/// Loads the transaction history; injectable so previews and widget tests can
-/// avoid the Rust FFI.
+/// Loads the Activity rows of one transaction, `txidHex` as
+/// [rust_sync.TransactionInfo.txidHex], not the account's whole history;
+/// injectable so previews and widget tests can avoid the Rust FFI.
 typedef ActivityTxHistoryLoader =
-    Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
+    Future<List<rust_sync.TransactionInfo>> Function(
+      String accountUuid,
+      String txidHex,
+    );
 
 /// Loads one transaction's detail; injectable for previews and widget tests.
 typedef ActivityTxDetailLoader =
@@ -92,7 +96,8 @@ abstract class TransactionReceiptScreen extends ConsumerStatefulWidget {
 }
 
 /// Loads and refreshes what a receipt screen shows, for desktop and mobile
-/// alike: the transaction's Activity row, then its detail; the follow-up
+/// alike: the transaction's Activity row and its detail, read for that one
+/// transaction only; the follow-up
 /// that re-reads the detail while its transparent details are on the way;
 /// and the public lookup the receipt offers.
 ///
@@ -117,6 +122,14 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
   bool _transparentDetailsPrioritized = false;
   String? _publicLookupText;
   bool _publicLookupRunning = false;
+  // The detail read a load started for the shown row before its row read
+  // returned, while it runs: a load that supersedes it shares it.
+  ({
+    String accountUuid,
+    rust_sync.TransactionInfo row,
+    Future<rust_sync.TransactionDetail?> read,
+  })?
+  _earlyDetailRead;
 
   /// The Activity row shown, or `null` until one loads.
   rust_sync.TransactionInfo? get receiptTransaction => _transaction;
@@ -213,8 +226,12 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       generation == _loadGeneration &&
       accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
 
-  /// Loads the shown row from the active account's history, publishes it,
-  /// then loads and publishes its detail.
+  /// Loads the shown row's Activity rows and detail, and publishes each as it
+  /// arrives. A receipt opened from a row already shows that row; while it
+  /// has no detail for it, the detail is read at once, alongside the row read
+  /// rather than after it, so the skeleton waits on that one read. A
+  /// provisional row's detail is shown only once the row read confirms its
+  /// role.
   Future<void> loadReceipt() async {
     final generation = ++_loadGeneration;
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
@@ -242,6 +259,19 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
       return;
     }
 
+    // The row already shown, from the tapped row or the last load.
+    final shown = _transaction;
+    Future<rust_sync.TransactionDetail?>? shownDetail;
+    if (shown != null && matchingReceiptDetailFor(shown) == null) {
+      final read = _readShownDetail(accountUuid, shown);
+      shownDetail = read;
+      // A provisional row's role can still change with the row read
+      // ([_findTransaction]); its detail would then show for a moment and
+      // give way to the new role's skeleton. It waits for the row read.
+      if (!shown.provisional) {
+        unawaited(_publishShownDetail(read, shown, generation, accountUuid));
+      }
+    }
     try {
       final txs = await _loadHistory(accountUuid);
       if (!_loadIsCurrent(generation, accountUuid)) return;
@@ -256,14 +286,23 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
         });
         return;
       }
+      // The detail already asked for answers for this row unless the
+      // transaction's role changed meanwhile.
+      final sameRow = shown != null && _isSameRow(shown, tx);
       // Publish the status without waiting for addresses, outputs, or memo.
+      // A detail that still fits the row (a receive that became mined) stays
+      // shown while its new read runs: [receiptDetailsLoading] shows the
+      // skeleton only when no shown detail fits.
       setState(() {
         _transaction = tx;
         _detail = matchingReceiptDetailFor(tx);
+        if (!sameRow) _detailsPending = true;
         _isLoading = false;
         _error = null;
       });
-      final detail = await _loadDetail(accountUuid, tx);
+      final detail = sameRow && shownDetail != null
+          ? await shownDetail
+          : await _loadDetail(accountUuid, tx);
       if (!_loadIsCurrent(generation, accountUuid)) return;
       setState(() {
         _detail = detail ?? _detail;
@@ -283,17 +322,86 @@ mixin TransactionReceiptLoading<W extends TransactionReceiptScreen>
     }
   }
 
+  /// The detail of [shown], sharing a read an earlier load started for the
+  /// same row that is still running.
+  Future<rust_sync.TransactionDetail?> _readShownDetail(
+    String accountUuid,
+    rust_sync.TransactionInfo shown,
+  ) {
+    final running = _earlyDetailRead;
+    if (running != null &&
+        running.accountUuid == accountUuid &&
+        _isSameRow(running.row, shown)) {
+      return running.read;
+    }
+    final read = _loadDetail(accountUuid, shown);
+    _earlyDetailRead = (accountUuid: accountUuid, row: shown, read: read);
+    unawaited(
+      read.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
+        if (identical(_earlyDetailRead?.read, read)) _earlyDetailRead = null;
+      }),
+    );
+    return read;
+  }
+
+  /// Publishes the detail read for the [shown] row as soon as it arrives,
+  /// while the row read is still running: it ends the skeleton. The full load
+  /// publishes it again, and reports a failure.
+  Future<void> _publishShownDetail(
+    Future<rust_sync.TransactionDetail?> pending,
+    rust_sync.TransactionInfo shown,
+    int generation,
+    String accountUuid,
+  ) async {
+    final rust_sync.TransactionDetail? detail;
+    try {
+      detail = await pending;
+    } catch (_) {
+      return;
+    }
+    final current = _transaction;
+    if (!_loadIsCurrent(generation, accountUuid) ||
+        !_detailsPending ||
+        current == null ||
+        !_isSameRow(shown, current)) {
+      return;
+    }
+    setState(() {
+      _detail = detail ?? _detail;
+      _detailsPending = false;
+    });
+  }
+
+  /// Whether a detail read for [a] answers for [b]: the same transaction in
+  /// the same Activity role.
+  bool _isSameRow(rust_sync.TransactionInfo a, rust_sync.TransactionInfo b) =>
+      receiptTxidsMatch(a.txidHex, b.txidHex) && a.txKind == b.txKind;
+
+  /// The receipt transaction's Activity rows. A Gift Card's txid may be in
+  /// either byte order, so its rows are looked up in the other order too.
   Future<List<rust_sync.TransactionInfo>> _loadHistory(
     String accountUuid,
   ) async {
+    final txidHex = widget.receiptArgs.txidHex;
+    final rows = await _loadRows(accountUuid, txidHex);
+    if (rows.isNotEmpty || widget.receiptArgs.giftCard == null) return rows;
+    final otherOrder = paymentLinkTxidInOtherByteOrder(txidHex);
+    return otherOrder == null ? rows : _loadRows(accountUuid, otherOrder);
+  }
+
+  Future<List<rust_sync.TransactionInfo>> _loadRows(
+    String accountUuid,
+    String txidHex,
+  ) async {
     final loader = widget.historyLoader;
-    if (loader != null) return loader(accountUuid);
+    if (loader != null) return loader(accountUuid, txidHex);
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointProvider);
-    return rust_sync.getTransactionHistory(
+    return rust_sync.getTransactionRows(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
+      txidHex: txidHex,
     );
   }
 

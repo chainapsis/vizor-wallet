@@ -28,6 +28,7 @@ import '../../../services/device_owner_auth.dart';
 import 'forgot_passcode_sheet.dart';
 import 'mobile_passcode_screen.dart' show kMobilePasscodeLength;
 import 'passcode_widgets.dart';
+import 'adaptive_passcode_layout.dart';
 
 const mobileBiometricSignInBackgroundAsset =
     'assets/illustrations/mobile_onboarding_auth_background.webp';
@@ -460,98 +461,128 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       body: showBiometricSignIn
           ? const MobileBiometricSignInView()
           : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
+              child: AdaptivePasscodeLayout(
+                title: 'Welcome Back',
+                subtitle: _submitting
+                    ? 'Opening your wallet...'
+                    : 'Enter your passcode to open Vizor',
+                prompt: PasscodePromptField(
+                  length: kMobilePasscodeLength,
+                  filled: _entry.length,
+                  error: _error,
+                  minGap: 0,
+                ),
+                keypad: PasscodeNumpad(
+                  onDigit: _onDigit,
+                  onBackspace: _onBackspace,
+                  canDelete: _entry.isNotEmpty,
+                  enabled: !_submitting,
+                  onHelp: _submitting ? null : _showForgotPasscodeSheet,
+                ),
+                legacyPadding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.sm,
                   vertical: AppSpacing.md,
                 ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final keypadScale = math.min(
-                      1.0,
-                      constraints.maxWidth / kPasscodeKeypadWidth,
-                    );
-                    return CustomScrollView(
-                      slivers: [
-                        SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        'Welcome Back',
-                                        textAlign: TextAlign.center,
-                                        style: AppTypography.displayLarge
-                                            .copyWith(
-                                              color: colors.text.accent,
-                                            ),
-                                      ),
-                                      const SizedBox(height: AppSpacing.s),
-                                      Text(
-                                        _submitting
-                                            ? 'Opening your wallet...'
-                                            : 'Enter your passcode to open Vizor',
-                                        textAlign: TextAlign.center,
-                                        style: AppTypography.bodyMediumStrong
-                                            .copyWith(
-                                              color: colors.text.primary,
-                                            ),
-                                      ),
-                                      const SizedBox(height: AppSpacing.md),
-                                      SizedBox(
-                                        height: kPasscodePromptDigitsHeight,
-                                        child: PasscodePromptField(
-                                          length: kMobilePasscodeLength,
-                                          filled: _entry.length,
-                                          error: _error,
-                                          minGap: 0,
+                scaleLegacyKeypadToWidth: true,
+                footerHeight: 44,
+                footer: ConstrainedBox(
+                  key: const ValueKey('mobile_unlock_biometric_footer'),
+                  constraints: const BoxConstraints(minHeight: 44),
+                  child: Center(child: _buildBiometricFooter(biometric)),
+                ),
+                legacy: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final keypadScale = math.min(
+                        1.0,
+                        constraints.maxWidth / kPasscodeKeypadWidth,
+                      );
+                      return CustomScrollView(
+                        slivers: [
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Welcome Back',
+                                          textAlign: TextAlign.center,
+                                          style: AppTypography.displayLarge
+                                              .copyWith(
+                                                color: colors.text.accent,
+                                              ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                height: kPasscodeKeypadHeight * keypadScale,
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: SizedBox(
-                                    width: kPasscodeKeypadWidth,
-                                    height: kPasscodeKeypadHeight,
-                                    child: PasscodeNumpad(
-                                      onDigit: _onDigit,
-                                      onBackspace: _onBackspace,
-                                      canDelete: _entry.isNotEmpty,
-                                      onHelp: _submitting
-                                          ? null
-                                          : _showForgotPasscodeSheet,
-                                      enabled: !_submitting,
+                                        const SizedBox(height: AppSpacing.s),
+                                        Text(
+                                          _submitting
+                                              ? 'Opening your wallet...'
+                                              : 'Enter your passcode to open Vizor',
+                                          textAlign: TextAlign.center,
+                                          style: AppTypography.bodyMediumStrong
+                                              .copyWith(
+                                                color: colors.text.primary,
+                                              ),
+                                        ),
+                                        const SizedBox(height: AppSpacing.md),
+                                        SizedBox(
+                                          height: kPasscodePromptDigitsHeight,
+                                          child: PasscodePromptField(
+                                            length: kMobilePasscodeLength,
+                                            filled: _entry.length,
+                                            error: _error,
+                                            minGap: 0,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: AppSpacing.md),
-                              ConstrainedBox(
-                                key: const ValueKey(
-                                  'mobile_unlock_biometric_footer',
+                                SizedBox(
+                                  height: kPasscodeKeypadHeight * keypadScale,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: SizedBox(
+                                      width: kPasscodeKeypadWidth,
+                                      height: kPasscodeKeypadHeight,
+                                      child: PasscodeNumpad(
+                                        onDigit: _onDigit,
+                                        onBackspace: _onBackspace,
+                                        canDelete: _entry.isNotEmpty,
+                                        onHelp: _submitting
+                                            ? null
+                                            : _showForgotPasscodeSheet,
+                                        enabled: !_submitting,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                                constraints: const BoxConstraints(
-                                  minHeight: 44,
+                                const SizedBox(height: AppSpacing.md),
+                                ConstrainedBox(
+                                  key: const ValueKey(
+                                    'mobile_unlock_biometric_footer',
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minHeight: 44,
+                                  ),
+                                  child: Center(
+                                    child: _buildBiometricFooter(biometric),
+                                  ),
                                 ),
-                                child: Center(
-                                  child: _buildBiometricFooter(biometric),
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    );
-                  },
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
