@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../models/gift_card_usage.dart';
+import '../models/vizor_payment_link.dart';
 import 'payment_link_recovery_store.dart';
 
 /// A narrow observer-only boundary, independently replaceable in tests.
@@ -89,16 +90,21 @@ class GiftCardTrackingService {
 
   /// Registers [cards] and records their observer accounts in one store
   /// write, as a newly funded group does.
-  Future<void> registerAll(List<PaymentLinkRecoveryRecord> cards) => _enqueue((
+  Future<void> registerAll(List<PaymentLinkRecoveryRecord> cards) =>
+      registerLinks([for (final card in cards) card.link]);
+
+  /// Enqueues before reading storage so pause/reset drains own the work even
+  /// when the caller does not wait for observation. Missing drafts stay gone.
+  Future<void> registerLinks(List<VizorPaymentLink> links) => _enqueue((
     epoch,
   ) async {
     final records = await store.load();
     if (!_valid(epoch)) return;
     final accounts =
         <({PaymentLinkRecoveryRecord expected, GiftCardUsage usage})>[];
-    for (final card in cards) {
+    for (final link in links) {
       final current = records
-          .where((c) => c.link.hasSameCanonicalPayload(card.link))
+          .where((c) => c.link.hasSameCanonicalPayload(link))
           .firstOrNull;
       if (current == null ||
           current.link.network != network() ||

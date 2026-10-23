@@ -45,6 +45,20 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
   );
 });
 
+/// Public height only. Leaving Review disposes the cached result; a network
+/// change invalidates it. An unavailable result falls back to the Create lookup.
+final paymentLinkFundingBirthdayProvider = FutureProvider.autoDispose<int>((
+  ref,
+) async {
+  ref.watch(
+    rpcEndpointFailoverProvider.select((state) => state.current.networkName),
+  );
+  return (await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .getLatestBlockHeight())
+      .toInt();
+});
+
 const kPaymentLinkShareConfirmationTarget = 1;
 const _paymentLinkClaimMetadataWriteAttempts = 2;
 
@@ -1020,34 +1034,33 @@ class PaymentLinkService
   }
 
   /// Creates the bearer-secret account and persists its recovery record before
-  /// any funding proposal can be signed or broadcast.
+  /// any funding proposal can be signed or broadcast. [birthdayHeight] may be
+  /// prefetched on the same network; omitting it fetches the current height.
   Future<VizorPaymentLink> createFundingDraft({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    int? birthdayHeight,
   }) async {
     final link = await _createFundingLink(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
+      birthdayHeight: birthdayHeight,
     );
     await _recoveryStore.saveDraft(
       claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
       link: link,
       sourceAccountUuid: sourceAccountUuid,
     );
-    await _registerObserver(link);
+    unawaited(_registerObserver(link));
     return link;
   }
 
   Future<void> _registerObserver(VizorPaymentLink link) async {
     try {
       final tracker = _ref.read(giftCardTrackingServiceProvider);
-      final cards = await _recoveryStore.load();
-      final card = cards
-          .where((c) => c.link.address == link.address)
-          .firstOrNull;
-      if (card != null) await tracker.register(card);
+      await tracker.registerLinks([link]);
     } catch (_) {
       // The durable draft is also a retryable registration intent. Observation
       // failure must never turn an accepted funding into another send attempt.

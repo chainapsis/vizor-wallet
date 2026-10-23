@@ -74,6 +74,7 @@ Future<void> pumpPaymentLinksScreen(
   BigInt? spendableBalance,
   FakeSyncNotifier? syncNotifier,
   ZecMarketDataSource? marketDataSource,
+  Future<int> Function()? birthdayPrefetch,
   ZecHomeMarketDataNotifier? marketDataNotifier,
   bool? pricingEnabled,
   PrivacyModeNotifier? privacyNotifier,
@@ -96,6 +97,10 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (birthdayPrefetch != null)
+          paymentLinkFundingBirthdayProvider.overrideWith(
+            (ref) => birthdayPrefetch(),
+          ),
         if (privacyNotifier != null)
           privacyModeProvider.overrideWith(() => privacyNotifier),
         // These tests exercise funding and navigation with fake operations.
@@ -1032,6 +1037,7 @@ class FakePaymentLinkHardwareSigningService
 
   final Completer<PaymentLinkHardwarePcztDraft>? createCompleter;
   final createdAmounts = <BigInt>[];
+  final createdBirthdayHeights = <int?>[];
   final createdFromAccounts = <String>[];
   final createdArtworkIds = <String?>[];
   final createdMessages = <String?>[];
@@ -1051,8 +1057,10 @@ class FakePaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    int? birthdayHeight,
   }) async {
     createdAmounts.add(amountZatoshi);
+    createdBirthdayHeights.add(birthdayHeight);
     createdFromAccounts.add(sourceAccountUuid);
     createdArtworkIds.add(presentation?.artworkId);
     createdMessages.add(presentation?.message);
