@@ -227,6 +227,12 @@ class _MobileMigrationOptionsState
     final privateSelected = _selectedOption == _MobileMigrationOption.private;
     final immediateSelected =
         _selectedOption == _MobileMigrationOption.immediate;
+    final tipHeight = ref.watch(
+      syncProvider.select((sync) => sync.asData?.value.chainTipHeight),
+    );
+    final immediateEstimate = ironwoodImmediateMigrationCompletionEstimate(
+      ref.watch(blockSpacingProvider).fromTip(tipHeight ?? 0),
+    );
     return _MobileIronwoodMigrationBackScope(
       // The in-flight step saves a migration draft and then routes on. Leaving
       // in the middle would strand that work on a screen the user has left.
@@ -294,7 +300,7 @@ class _MobileMigrationOptionsState
               title: 'Immediate',
               body:
                   'Migrates your entire balance in one batch. '
-                  'Fast (~10 mins) but less private.',
+                  'Fast ($immediateEstimate) but less private.',
               selected: immediateSelected,
               icon: _MigrationChoiceIcon.immediate,
               onTap: _isContinuing

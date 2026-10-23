@@ -116,6 +116,10 @@ class _IronwoodMigrationImmediateReviewContentState
             widget.previewPlan,
           );
     final plan = planAsync.asData?.value;
+    final tipHeight = ref.watch(
+      syncProvider.select((sync) => sync.asData?.value.chainTipHeight),
+    );
+    final blockTimes = ref.watch(blockSpacingProvider).fromTip(tipHeight ?? 0);
     final planFailed = planAsync.hasError;
     final planUnavailable = planAsync.asData != null && plan == null;
     final planLoading = planAsync.isLoading;
@@ -178,9 +182,11 @@ class _IronwoodMigrationImmediateReviewContentState
                           value: fee,
                         ),
                         const SizedBox(height: 8),
-                        const _ImmediateReviewRow(
+                        _ImmediateReviewRow(
                           label: 'Migration complete in',
-                          value: '~5 mins',
+                          value: ironwoodImmediateMigrationCompletionEstimate(
+                            blockTimes,
+                          ),
                         ),
                       ],
                     ),
