@@ -5,6 +5,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/sync_short_catch_up_provider.dart';
 import '../../formatting/sync_status_label.dart';
 import '../../profile_pictures.dart';
 import '../../theme/app_theme.dart';
@@ -35,6 +36,7 @@ class MobileTopNavAccount extends ConsumerWidget {
       sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
       networkPrivacy: ref.watch(networkPrivacyProvider),
+      shortCatchUp: ref.watch(syncShortCatchUpProvider),
     );
 
     final isSyncing = status.kind == SyncStatusKind.syncing;
@@ -49,6 +51,7 @@ class MobileTopNavAccount extends ConsumerWidget {
         badgeRingColor: context.colors.background.window,
       ),
       syncLabel: showSyncStatus ? status.label : null,
+      syncSemanticsLabel: status.semanticsLabel,
       syncLabelColor: syncColors.label,
       syncIndicatorColor: syncColors.indicator,
       syncAnimated: showSyncStatus && isSyncing,

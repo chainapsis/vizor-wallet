@@ -10,6 +10,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/sync_display_progress_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/sync_short_catch_up_provider.dart';
 import '../../../services/native_mobile_navigation_geometry.dart';
 import '../../config/swap_feature_config.dart';
 import '../../formatting/sync_status_label.dart';
@@ -290,6 +291,7 @@ class _MobileAdaptiveFrameState extends ConsumerState<MobileAdaptiveFrame>
                             syncDisplayWholePercentageProvider,
                           ),
                           networkPrivacy: ref.watch(networkPrivacyProvider),
+                          shortCatchUp: ref.watch(syncShortCatchUpProvider),
                         ),
                         currentPath: path,
                         swapEnabled: swapEnabled,

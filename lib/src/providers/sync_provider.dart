@@ -11,6 +11,7 @@ import '../features/migration/services/ironwood_migration_background_credential_
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/lifecycle/app_shutdown_signal.dart';
+import '../core/platform/device_power.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'account_provider.dart';
@@ -23,6 +24,7 @@ import 'network_privacy_provider.dart'
     show excludeTransparentRecoveryCompanionsFromBackup;
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
+import 'sync_scan_slowdown_provider.dart';
 
 const kSyncPhasePreflight = 'preflight';
 const kSyncPhaseSetup = 'setup';
@@ -79,6 +81,9 @@ class SyncProgressEvent {
   /// Current sync phase from Rust, including preparation phases.
   final String phase;
 
+  /// Rust sync job that [percentage] belongs to; empty until known.
+  final String syncJobId;
+
   const SyncProgressEvent({
     required this.scannedHeight,
     required this.chainTipHeight,
@@ -94,10 +99,37 @@ class SyncProgressEvent {
     this.phaseCompletedUnits = 0,
     this.phaseTotalUnits = 0,
     this.phase = '',
+    this.syncJobId = '',
   });
 }
 
 enum SpendableBalanceFreshness { authoritative, lastCompletedSync }
+
+/// The Rust sync job a new session continues, if any.
+///
+/// An unfinished job keeps its percentage across retries, endpoint fallbacks
+/// and relaunches. Only a percentage that came from the engine's job (events,
+/// or the stored job at bootstrap) carries an id, so a block-share estimate
+/// never seeds a session; a completed job starts the next sync from zero.
+({String jobId, double percentage}) resumableSyncJob(SyncState? previous) {
+  if (previous == null ||
+      previous.isSyncComplete ||
+      previous.syncJobId.isEmpty) {
+    return (jobId: '', percentage: 0.0);
+  }
+  return (jobId: previous.syncJobId, percentage: previous.percentage);
+}
+
+/// Starts the foreground sync after an unlock without holding up the unlock
+/// screen, which has moved on to Home by the time a start that waited out a
+/// cancelled sync fails; the failure is logged.
+Future<void> startSyncAfterUnlock(SyncNotifier sync) async {
+  try {
+    await sync.startSyncAnyway();
+  } catch (e, st) {
+    log('Sync: start after unlock failed: $e\n$st');
+  }
+}
 
 class SyncState {
   /// Account UUID that owns the balance, shield status, and recent transaction
@@ -233,6 +265,21 @@ class SyncState {
   /// Current preparation, download, or scan phase. The Sidebar keeps its
   /// existing percentage copy and uses this only to estimate display progress.
   final String phase;
+
+  /// Rust sync job that [percentage] belongs to. A job outlives retries,
+  /// endpoint fallbacks and relaunches, so a new session with the same id
+  /// continues its percentage instead of restarting from zero.
+  final String syncJobId;
+
+  /// [percentage] when the current session started. A resumed job starts
+  /// above zero, so rates over the session measure from here.
+  final double sessionStartPercentage;
+
+  /// Whether the sync started from a completed one: a synced wallet catching
+  /// up to new blocks. A stop, a failure or a lock between attempts keeps it,
+  /// so the next attempt continues the catch-up. False for a wallet that
+  /// never completed, a restore, and a sync after an account was added.
+  final bool startedFromCompletedSync;
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
   BigInt get pendingBalance =>
@@ -471,6 +518,9 @@ class SyncState {
     this.lastSyncCompletedAt,
     this.lastSyncFailedAt,
     this.phase = '',
+    this.syncJobId = '',
+    this.sessionStartPercentage = 0,
+    this.startedFromCompletedSync = false,
   }) : hasBalanceData = hasBalanceData ?? hasAccountScopedData,
        hasRecentTransactionsData =
            hasRecentTransactionsData ?? hasAccountScopedData,
@@ -574,6 +624,9 @@ class SyncState {
     DateTime? lastSyncCompletedAt,
     DateTime? lastSyncFailedAt,
     String? phase,
+    String? syncJobId,
+    double? sessionStartPercentage,
+    bool? startedFromCompletedSync,
   }) {
     return SyncState(
       accountUuid: accountUuid ?? this.accountUuid,
@@ -657,6 +710,11 @@ class SyncState {
       lastSyncCompletedAt: lastSyncCompletedAt ?? this.lastSyncCompletedAt,
       lastSyncFailedAt: lastSyncFailedAt ?? this.lastSyncFailedAt,
       phase: phase ?? this.phase,
+      syncJobId: syncJobId ?? this.syncJobId,
+      sessionStartPercentage:
+          sessionStartPercentage ?? this.sessionStartPercentage,
+      startedFromCompletedSync:
+          startedFromCompletedSync ?? this.startedFromCompletedSync,
     );
   }
 
@@ -773,6 +831,9 @@ class SyncState {
       lastSyncCompletedAt: current.lastSyncCompletedAt,
       lastSyncFailedAt: current.lastSyncFailedAt,
       phase: current.phase,
+      syncJobId: current.syncJobId,
+      sessionStartPercentage: current.sessionStartPercentage,
+      startedFromCompletedSync: current.startedFromCompletedSync,
     );
   }
 
@@ -800,6 +861,9 @@ class SyncState {
       lastSyncCompletedAt: lastSyncCompletedAt,
       lastSyncFailedAt: lastSyncFailedAt,
       phase: phase,
+      syncJobId: syncJobId,
+      sessionStartPercentage: sessionStartPercentage,
+      startedFromCompletedSync: startedFromCompletedSync,
     );
   }
 }
@@ -1112,6 +1176,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _activeSyncStartedInForeground = true;
   int _lastLoggedHeight = 0;
   SyncProgressEvent? _lastForegroundSyncProgress;
+
+  /// When the last foreground stream delivered its completion, kept until the
+  /// next start so that start can tell the job finished.
+  DateTime? _lastForegroundCompletionAt;
   Future<void>? _lastForegroundProgressHandling;
   Future<void>? _foregroundSyncRecovery;
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
@@ -1121,9 +1189,28 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
   bool _resumeTipCheckPending = false;
+
+  /// A new block from the mempool observer awaits a tip check. Cleared only
+  /// when a check starts, so a block that lands during a check is checked
+  /// again once that check ends. [_resumeTipCheckPending] cannot carry it: a
+  /// check that stayed in the foreground clears that flag after reading the
+  /// tip, which may predate the block.
+  bool _newBlockCheckPending = false;
+  DateTime? _lastNewBlockCheckAt;
   int _sensitiveStateEpoch = 0;
   int _progressEventVersion = 0;
+
+  /// Bumped when an account-data read in flight can no longer be committed:
+  /// an account switch, a lock, a wallet mutation, a stop, a transport
+  /// change, disposal. A sync start is not one: the wallet data a read
+  /// returns does not change when a sync starts, and a read that spans the
+  /// start is carried like the start's own state (see [_refreshBalance]).
   int _balanceReadVersion = 0;
+
+  /// Order of account-data reads. A read whose data a later-started read
+  /// has already committed is older than the state and is dropped.
+  int _balanceReadSequence = 0;
+  int _committedBalanceReadSequence = 0;
   int _authoritativeBalanceVersion = 0;
   Future<void>? _authoritativeBalanceRecovery;
   int _authoritativeSpendableOperationCount = 0;
@@ -1222,6 +1309,24 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _balanceRefreshQueuedRequireAuthoritativeBalance = false;
   Future<void>? _balanceRefreshChain;
 
+  /// Callers of [_requestAccountDataRefresh] still waiting.
+  List<Completer<void>> _accountDataWaiters = [];
+
+  /// Whether the state was cleared by a lock, or a locked launch skipped
+  /// the bootstrap snapshot, and the stored sync status has not been read
+  /// back since. A tip check reads it before starting a sync, so a sync the
+  /// unlock's resume starts still starts from a completed one.
+  bool _storedStatusRestoreNeeded = false;
+  Future<void>? _storedStatusRestore;
+
+  /// A lock interrupted a catch-up; its unfinished job, restored at unlock,
+  /// continues as a catch-up.
+  bool _lockedDuringCatchUp = false;
+
+  /// An account was added since the last sync start; the next sync scans
+  /// its history, so it is not a catch-up.
+  bool _accountAddedSinceSyncStart = false;
+
   @override
   Future<SyncState> build() async {
     final bootstrap = ref.watch(appBootstrapProvider);
@@ -1243,6 +1348,24 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       onResume: _handleAppResume,
       onHide: _handleAppHide,
     );
+    // Scan with less of the CPU once a sync job has run a few minutes on a
+    // device that is hot or saving power; the keep-awake screen says why.
+    final slowdown = ref.read(syncScanSlowdownProvider.notifier);
+    final devicePower = devicePowerEvents().listen(
+      (power) => slowdown.updateDevicePower(syncScanSlowdownFor(power)),
+    );
+    ref.onDispose(devicePower.cancel);
+    listenSelf((_, next) {
+      final sync = next.value;
+      if (sync == null) return;
+      scheduleMicrotask(() {
+        if (!ref.mounted) return;
+        slowdown.updateSyncJob(sync.syncJobId, complete: sync.isSyncComplete);
+      });
+    });
+    ref.listen(syncScanSlowdownProvider, (_, next) {
+      rust_sync.setSyncScanPower(level: syncScanPowerFor(next));
+    });
 
     ref.onDispose(() {
       ++_syncGen;
@@ -1286,10 +1409,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         rust_sync.setActiveSyncAccount(accountUuid: nextAccountUuid);
         _clearAccountScopedStateFor(nextAccountUuid);
       }
-      if (nextCount > prevCount) {
-        startSync();
-        _startPolling();
-      }
+      if (nextCount == 0 && prevCount > 0) _forgetSyncJob();
+      if (nextCount > prevCount) _onAccountAdded();
     });
 
     // Initial check: if accounts already exist at build time
@@ -1301,6 +1422,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     final initial = bootstrap.initialSyncSnapshot;
+    // A locked launch loads no snapshot; see [_storedStatusRestoreNeeded].
+    _storedStatusRestoreNeeded = initial.chainTipHeight == 0;
     final initialAccountUuid = accountState?.activeAccountUuid;
     final initialBelongsToActiveAccount =
         initial.accountUuid != null &&
@@ -1313,6 +1436,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       isBackgroundMode: false,
       isSyncComplete: initialBelongsToActiveAccount && initial.isSyncComplete,
       percentage: initial.percentage,
+      syncJobId: initial.syncJobId,
+      startedFromCompletedSync: initial.startedFromCompletedSync,
       scannedHeight: initial.scannedHeight,
       chainTipHeight: initial.chainTipHeight,
       transparentBalance: initialBelongsToActiveAccount
@@ -1499,12 +1624,39 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     }
 
+    // A launch whose bootstrap snapshot is empty starts from the stored
+    // status, as an unlock does, rather than from zero.
+    if (_storedStatusRestoreNeeded && !_requiresUnlock) {
+      await _restoreStoredStatus();
+    }
     if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
       log('Sync: skipping initial sync after lock transition');
       return;
     }
     startSync();
     _startPolling();
+  }
+
+  void _onAccountAdded() {
+    _accountAddedSinceSyncStart = true;
+    startSync();
+    _startPolling();
+  }
+
+  /// The last account is gone (a wallet reset): its sync job went with the
+  /// wallet DB, so the next wallet's first sync starts from zero instead of
+  /// resuming the old job's percentage until Rust names a new one.
+  void _forgetSyncJob() {
+    final current = state.value;
+    if (current == null || current.syncJobId.isEmpty) return;
+    state = AsyncData(
+      current.copyWith(
+        syncJobId: '',
+        percentage: 0,
+        displayTargetPercentage: 0,
+        sessionStartPercentage: 0,
+      ),
+    );
   }
 
   bool get _isShuttingDown =>
@@ -1514,6 +1666,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// sends. Generation changes also reject preflight completions already queued.
   void _stopForAppExit() {
     _resumeTipCheckPending = false;
+    _newBlockCheckPending = false;
     _queuedSyncStart = null;
     ++_syncGen;
     ++_sensitiveStateEpoch;
@@ -1581,13 +1734,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     _queuedSyncStart = null;
     ++_progressEventVersion;
-    ++_balanceReadVersion;
     _authoritativeBalanceRecovery = null;
     _isSyncing = true;
     _activeSyncForegroundEpoch = _foregroundEpoch;
     _activeSyncStartedInForeground = _isInForeground;
     _lastLoggedHeight = 0;
+    // A completion the last stream delivered ends its job even when a stop, a
+    // lock or a newer event overtook its handler before the state recorded it,
+    // so this sync starts a new job instead of resuming the finished one.
+    final overtakenCompletionAt =
+        (_lastForegroundSyncProgress?.isComplete ?? false) &&
+            !(state.value?.isSyncComplete ?? false)
+        ? _lastForegroundCompletionAt
+        : null;
     _lastForegroundSyncProgress = null;
+    _lastForegroundCompletionAt = null;
     _lastForegroundProgressHandling = null;
     final gen = ++_syncGen;
     final prev = state.value;
@@ -1608,6 +1769,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       privatePolicyMayApply: _privatePolicyMayApply,
       crossesTip: nextChainTipHeight != previousChainTipHeight,
     );
+    final resumed = overtakenCompletionAt == null
+        ? resumableSyncJob(prev)
+        : (jobId: '', percentage: 0.0);
+    // A catch-up that a stop, a failure or a lock interrupted continues as
+    // one. An account added since brings history to scan: not a catch-up.
+    final startsFromCompletedSync =
+        !_accountAddedSinceSyncStart &&
+        ((prev?.isSyncComplete ?? false) ||
+            overtakenCompletionAt != null ||
+            (prev?.startedFromCompletedSync ?? false));
+    _accountAddedSinceSyncStart = false;
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
@@ -1617,7 +1789,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isSyncing: true,
         isBackgroundMode: false,
         isSyncComplete: false,
-        percentage: 0.0,
+        percentage: resumed.percentage,
+        syncJobId: resumed.jobId,
+        sessionStartPercentage: resumed.percentage,
         scannedHeight: previousScannedHeight,
         chainTipHeight: nextChainTipHeight,
         transparentBalance: carried?.transparentBalance,
@@ -1676,9 +1850,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   scopedPrev.ironwoodPendingBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: startedAt,
-        lastSyncCompletedAt: prev?.lastSyncCompletedAt,
+        lastSyncCompletedAt: overtakenCompletionAt ?? prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
         phase: kSyncPhasePreflight,
+        startedFromCompletedSync: startsFromCompletedSync,
       ),
     );
 
@@ -1765,8 +1940,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 phaseCompletedUnits: event.phaseCompletedUnits.toInt(),
                 phaseTotalUnits: event.phaseTotalUnits.toInt(),
                 phase: event.phase,
+                syncJobId: event.syncJobId,
               );
               _lastForegroundSyncProgress = progress;
+              if (progress.isComplete) {
+                _lastForegroundCompletionAt = DateTime.now();
+              }
               final handling = _onSyncProgress(progress);
               _lastForegroundProgressHandling = handling;
               unawaited(
@@ -2016,6 +2195,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         failure: failure,
         error: failure.rawMessage,
         isSyncComplete: false,
+        // Keep the job's progress so a retry continues from it.
+        percentage: prev?.percentage ?? 0,
+        displayTargetPercentage: prev?.percentage ?? 0,
+        scannedHeight: prev?.scannedHeight ?? 0,
+        chainTipHeight: prev?.chainTipHeight ?? 0,
+        syncJobId: prev?.syncJobId ?? '',
+        sessionStartPercentage: prev?.sessionStartPercentage ?? 0,
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
@@ -2050,6 +2236,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
         lastSyncFailedAt: DateTime.now(),
+        // The retry continues the catch-up this attempt began.
+        startedFromCompletedSync: prev?.startedFromCompletedSync ?? false,
       ),
     );
     _startPolling();
@@ -2111,6 +2299,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void stopSync() {
     _resumeTipCheckPending = false;
+    _newBlockCheckPending = false;
     _queuedSyncStart = null;
     _syncStartDeferred = false;
     _deferredSyncLatestTipHeight = null;
@@ -2145,6 +2334,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         checking: prev?.checking,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
+        syncJobId: prev?.syncJobId ?? '',
+        sessionStartPercentage: prev?.sessionStartPercentage ?? 0,
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
@@ -2179,6 +2370,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
+        startedFromCompletedSync: prev?.startedFromCompletedSync ?? false,
       ),
     );
   }
@@ -2408,6 +2600,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // A public details load the user started stores nothing after a lock.
     ref.read(publicDetailsLoadsProvider).cancel();
     _resumeTipCheckPending = false;
+    _newBlockCheckPending = false;
     _queuedSyncStart = null;
     ref.read(pendingActivityEvidenceProvider.notifier).clear();
     _recoveryRestartGate.reset();
@@ -2423,6 +2616,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopPolling();
     _syncSub?.cancel();
     _syncSub = null;
+    // Another wallet may sync next; its start must not take this wallet's
+    // completion for its own.
+    _lastForegroundSyncProgress = null;
+    _lastForegroundCompletionAt = null;
     _stopMempoolObserver();
     _mempoolRefreshInFlight = false;
     _mempoolRefreshQueued = false;
@@ -2433,6 +2630,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
     _balanceRefreshQueuedRequireAuthoritativeBalance = false;
     _lastKnownByAccount.clear();
+    _storedStatusRestoreNeeded = true;
+    _storedStatusRestore = null;
+    // Not wallet data: whether the unfinished job the unlock restores began
+    // as a catch-up.
+    final locked = state.value;
+    _lockedDuringCatchUp =
+        (locked?.startedFromCompletedSync ?? false) &&
+        !(locked?.isSyncComplete ?? false);
     state = AsyncData(SyncState());
 
     // Sign-out should cancel the current Rust run immediately so unlock
@@ -2588,7 +2793,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) return;
-    if (_resumeTipCheckPending &&
+    if ((_resumeTipCheckPending || _newBlockCheckPending) &&
         !_pollCheckInFlight &&
         !_isSyncing &&
         !_requiresUnlock &&
@@ -2630,8 +2835,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     _pollCheckInFlight = true;
     _resumeTipCheckPending = false;
+    _newBlockCheckPending = false;
     _stopPolling();
     try {
+      // After an unlock this can run before the unlock screen's refresh;
+      // start from the stored status, not the state the lock cleared.
+      if (_storedStatusRestoreNeeded) await _restoreStoredStatus();
       final tip = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .getLatestBlockHeight();
@@ -2747,6 +2956,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   ///   3. Skip refresh for inactive-account events. The wallet-wide
   ///      observer has already stored the tx, so switching accounts can
   ///      surface it through the normal account-scoped history read.
+  ///   4. On a `newBlock` event, check the tip at once
+  ///      ([_handleMempoolNewBlock]).
   ///
   /// Reuses [_mempoolSub] as the single subscription handle. The
   /// `startMempoolObserver` FRB call is guarded on the Rust side
@@ -2774,6 +2985,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             _requiresUnlock ||
             _isShuttingDown ||
             !ref.mounted) {
+          return;
+        }
+        if (event.newBlock) {
+          _handleMempoolNewBlock();
           return;
         }
         if (!event.matched) return;
@@ -2822,6 +3037,25 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         _mempoolSub = null;
       },
     );
+  }
+
+  /// The server ended the mempool stream, which lightwalletd does when a
+  /// block is mined: check the tip now instead of at the next poll. The
+  /// check is marked pending ([_newBlockCheckPending]), so one already
+  /// running (or a sync) is followed by another as soon as it ends, even if
+  /// it read the tip before the block. The poll keeps its
+  /// other duties. At most one such check per 5 s, so a server that ends
+  /// every stream at once (the observer reconnects after 1 s) cannot
+  /// multiply tip checks; the poll still covers a skipped block.
+  void _handleMempoolNewBlock() {
+    final now = DateTime.now();
+    final last = _lastNewBlockCheckAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastNewBlockCheckAt = now;
+    _newBlockCheckPending = true;
+    unawaited(_checkAndSync());
   }
 
   void _scheduleMempoolRefresh() {
@@ -2937,10 +3171,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     var hasAuthoritativeBalance = false;
     var didFetchRecentTxs = false;
     int? balanceReadVersion;
+    int? balanceReadSequence;
     var recentTxs =
         scopedPrev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     if (event.hasNewTx || event.isComplete) {
-      balanceReadVersion = ++_balanceReadVersion;
+      balanceReadVersion = _balanceReadVersion;
+      balanceReadSequence = ++_balanceReadSequence;
       try {
         final balance = await rust_sync.getBalance(
           dbPath: dbPath,
@@ -3010,7 +3246,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final stateAccountUuid = _getActiveAccountUuid();
     final useFetchedAccountData = accountUuid == stateAccountUuid;
     final balanceReadIsCurrent =
-        balanceReadVersion == null || balanceReadVersion == _balanceReadVersion;
+        balanceReadSequence == null ||
+        (balanceReadVersion == _balanceReadVersion &&
+            balanceReadSequence > _committedBalanceReadSequence);
     final useFetchedBalance =
         useFetchedAccountData &&
         hasAuthoritativeBalance &&
@@ -3024,6 +3262,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         currentState?.failure != null &&
         (!identical(currentState?.failure, prev?.failure) ||
             currentState?.lastSyncFailedAt != prev?.lastSyncFailedAt);
+    if (useFetchedBalance || useFetchedRecentTxs) {
+      _markBalanceReadCommitted(balanceReadSequence);
+    }
     if (progressEventVersion != _progressEventVersion ||
         failureRecordedWhileAwaiting) {
       _mergeFetchedAccountDataIntoLatestState(
@@ -3073,9 +3314,23 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         : prev?.lastSyncCompletedAt;
     final isPreparationEvent = isSyncPreparationPhase(event.phase);
     final eventPercentage = _clampProgress(event.percentage);
-    final actualPercentage = isPreparationEvent
+    final currentJobId = currentState?.syncJobId ?? '';
+    // Rust names the job from the first event of every attempt. A different
+    // id means the job was replaced (for example after an account with an
+    // older birthday was added) or the seeded one no longer exists (wallet
+    // reset); its percentage starts over.
+    final isSameJob =
+        event.syncJobId.isEmpty || event.syncJobId == currentJobId;
+    final actualPercentage = isPreparationEvent && isSameJob
         ? math.max(currentState?.percentage ?? 0, eventPercentage)
         : eventPercentage;
+    final nextSyncJobId = event.syncJobId.isEmpty
+        ? currentJobId
+        : event.syncJobId;
+    final learnedJob = currentJobId.isEmpty && event.syncJobId.isNotEmpty;
+    final nextSessionStartPercentage = learnedJob || !isSameJob
+        ? actualPercentage
+        : currentState?.sessionStartPercentage ?? 0;
     final nextScannedHeight = isPreparationEvent
         ? currentState?.scannedHeight ?? event.scannedHeight
         : event.scannedHeight;
@@ -3115,8 +3370,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isBackgroundMode: false,
         isSyncComplete: event.isComplete,
         percentage: actualPercentage,
-        displayTargetPercentage: isPreparationEvent
+        syncJobId: nextSyncJobId,
+        sessionStartPercentage: nextSessionStartPercentage,
+        displayTargetPercentage: isPreparationEvent && isSameJob
             ? currentState?.displayTargetPercentage ?? actualPercentage
+            : isPreparationEvent
+            ? actualPercentage
             : event.displayTargetPercentage,
         checking: event.isComplete ? null : event.checking,
         displayTargetBlocks: isPreparationEvent && event.checking == null
@@ -3233,16 +3492,28 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncCompletedAt: syncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
         phase: event.phase,
+        startedFromCompletedSync:
+            event.isSyncing &&
+            !event.isComplete &&
+            (currentState?.startedFromCompletedSync ?? false),
       ),
     );
 
     // Handle sync completion here (not in onDone) to avoid race with async state update.
     if (event.isComplete) {
       _isSyncing = false;
+      // A sync running when an account was added scanned its history too.
+      _accountAddedSinceSyncStart = false;
       _startPolling();
       if (!useFetchedBalance) {
         unawaited(_ensureAuthoritativeBalanceRecovery());
       }
+    }
+  }
+
+  void _markBalanceReadCommitted(int? sequence) {
+    if (sequence != null && sequence > _committedBalanceReadSequence) {
+      _committedBalanceReadSequence = sequence;
     }
   }
 
@@ -3306,7 +3577,89 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     clearRestoredSnapshotIfUnavailable: true,
   );
 
-  Future<void> refreshAfterUnlock() => _requestBalanceRefresh();
+  /// Unlock recovery, run before the foreground sync starts.
+  ///
+  /// A locked launch skips the bootstrap sync snapshot, and locking clears
+  /// the in-memory one, so the stored sync job is read here too: the sync
+  /// then resumes from the fraction the last session showed instead of zero
+  /// until its first event. A wallet whose last sync completed is complete
+  /// again, as after a launch, so the sync that follows is its catch-up.
+  /// That cheap read comes first: a tip check the unlock's resume starts
+  /// waits for it too ([_storedStatusRestoreNeeded]), so its sync also
+  /// starts from the restored state.
+  ///
+  /// It waits for the account's balance and history, which Home needs, and
+  /// not for the refreshes a running sync keeps queueing behind them.
+  Future<void> refreshAfterUnlock() async {
+    await _restoreStoredStatus();
+    await _requestAccountDataRefresh();
+  }
+
+  /// [_restoreStoredSyncJob], once per lock: callers share the read in
+  /// flight, and a lock clears it for the next unlock.
+  Future<void> _restoreStoredStatus() {
+    if (_requiresUnlock) return Future<void>.value();
+    return _storedStatusRestore ??= _restoreStoredSyncJob();
+  }
+
+  Future<void> _restoreStoredSyncJob() async {
+    if (_requiresUnlock) return;
+    final epoch = _sensitiveStateEpoch;
+    final rust_sync.SyncProgress status;
+    try {
+      status = await readSyncStatus(
+        dbPath: await _getDbPath(),
+        network: _endpointConfig.networkName,
+      );
+    } catch (e) {
+      log('SyncNotifier: stored sync job unavailable after unlock: $e');
+      if (epoch == _sensitiveStateEpoch) _storedStatusRestore = null;
+      return;
+    }
+    if (epoch != _sensitiveStateEpoch || _requiresUnlock) return;
+    _storedStatusRestoreNeeded = false;
+    final lockedDuringCatchUp = _lockedDuringCatchUp;
+    _lockedDuringCatchUp = false;
+    final current = state.value ?? SyncState();
+    // Completion is wallet-wide. Balance surfaces and checks also require
+    // the account data, which the refresh after this read loads.
+    if (status.isComplete &&
+        current.failure == null &&
+        current.syncJobId.isEmpty &&
+        !current.isSyncing) {
+      state = AsyncData(
+        current.copyWith(
+          isSyncComplete: true,
+          percentage: 1,
+          displayTargetPercentage: 1,
+          scannedHeight: status.scannedHeight.toInt(),
+          chainTipHeight: status.chainTipHeight.toInt(),
+        ),
+      );
+      return;
+    }
+    // A sync that already reported owns the job and its percentage.
+    if (status.syncJobId.isEmpty ||
+        current.syncJobId.isNotEmpty ||
+        current.isSyncing) {
+      return;
+    }
+    final percentage = status.syncJobFraction.clamp(0.0, 1.0);
+    // A catch-up the lock interrupted, or one an earlier session left (a
+    // locked launch), continues as one, from the heights it had reached.
+    final catchUp = lockedDuringCatchUp || status.syncJobFromCompletedSync;
+    state = AsyncData(
+      current.copyWith(
+        syncJobId: status.syncJobId,
+        percentage: percentage,
+        displayTargetPercentage: percentage,
+        sessionStartPercentage: percentage,
+        startedFromCompletedSync: catchUp,
+        scannedHeight: catchUp ? status.scannedHeight.toInt() : null,
+        chainTipHeight: catchUp ? status.chainTipHeight.toInt() : null,
+      ),
+    );
+  }
 
   Future<void> _refreshBalanceAfterResume() async {
     if (_isShuttingDown) return;
@@ -3349,6 +3702,43 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return chain;
   }
 
+  /// A balance refresh that settles once the active account's balance and
+  /// history are loaded, after whichever pass loads them. A chain keeps
+  /// running while refreshes are queued, which a sync does through a whole
+  /// catch-up, so waiting for the chain can take as long as the sync. When
+  /// the chain ends without loading them, this settles with its outcome.
+  Future<void> _requestAccountDataRefresh() {
+    final waiter = Completer<void>();
+    _accountDataWaiters.add(waiter);
+    // The waiter carries the outcome.
+    _requestBalanceRefresh().ignore();
+    return waiter.future;
+  }
+
+  void _settleAccountDataWaiters({
+    required bool chainEnded,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    if (_accountDataWaiters.isEmpty) return;
+    if (!chainEnded) {
+      final accountUuid = _getActiveAccountUuid();
+      if (accountUuid != null &&
+          !(state.value?.hasDataForAccount(accountUuid) ?? false)) {
+        return;
+      }
+    }
+    final waiters = _accountDataWaiters;
+    _accountDataWaiters = [];
+    for (final waiter in waiters) {
+      if (chainEnded && error != null) {
+        waiter.completeError(error, stackTrace);
+      } else {
+        waiter.complete();
+      }
+    }
+  }
+
   Future<void> _runCoalescedBalanceRefresh() async {
     Object? terminalError;
     StackTrace? terminalStackTrace;
@@ -3384,6 +3774,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           terminalError = e;
           terminalStackTrace = st;
         }
+        _settleAccountDataWaiters(chainEnded: false);
       } while (_balanceRefreshQueued && !_requiresUnlock);
 
       final error = terminalError;
@@ -3398,6 +3789,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
       _balanceRefreshQueuedRequireAuthoritativeBalance = false;
       _balanceRefreshChain = null;
+      _settleAccountDataWaiters(
+        chainEnded: true,
+        error: terminalError,
+        stackTrace: terminalStackTrace,
+      );
     }
   }
 
@@ -3547,9 +3943,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       state = AsyncData(SyncState());
       return;
     }
-    final balanceReadVersion = ++_balanceReadVersion;
+    final balanceReadVersion = _balanceReadVersion;
+    final balanceReadSequence = ++_balanceReadSequence;
     final epoch = _sensitiveStateEpoch;
     final prev = state.value;
+    final readSyncStartedAt = prev?.lastSyncStartedAt;
+    final readTipHeight = prev?.chainTipHeight ?? 0;
     final dbPath = await _getDbPath();
     final network = _endpointConfig.networkName;
     final accountUuid = _getActiveAccountUuid();
@@ -3671,11 +4070,23 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
       return;
     }
-    if (balanceReadVersion != _balanceReadVersion) {
-      log('SyncNotifier: discarding superseded balance refresh');
+    final invalidated = balanceReadVersion != _balanceReadVersion;
+    if (invalidated || _committedBalanceReadSequence > balanceReadSequence) {
+      log(
+        invalidated
+            ? 'SyncNotifier: discarding balance refresh after a wallet '
+                  'transition'
+            : 'SyncNotifier: discarding balance refresh older than a '
+                  'committed read',
+      );
       if (requireAuthoritativeBalance) {
         _balanceRefreshQueued = true;
         _balanceRefreshQueuedReleaseSnapshot = true;
+      } else if (_accountDataWaiters.isNotEmpty &&
+          !(state.value?.hasDataForAccount(accountUuid) ?? false)) {
+        // An unlock still waits for the account data this pass would have
+        // loaded.
+        _balanceRefreshQueued = true;
       }
       return;
     }
@@ -3713,6 +4124,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               : accountFallback?.recentTransactions ?? const [],
         ),
       );
+      _markBalanceReadCommitted(balanceReadSequence);
       return;
     }
     if (hasAuthoritativeBalance) {
@@ -3733,106 +4145,121 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         spendableDisplay.freshness ==
         SpendableBalanceFreshness.lastCompletedSync;
 
-    state = AsyncData(
-      SyncState(
-        accountUuid: accountUuid,
-        hasBalanceData:
-            hasAuthoritativeBalance ||
-            (accountFallback?.hasBalanceData ?? false),
-        hasRecentTransactionsData:
-            didFetchRecentTxs ||
-            (accountFallback?.hasRecentTransactionsData ?? false),
-        isSyncing: current?.isSyncing ?? false,
-        isBackgroundMode: current?.isBackgroundMode ?? false,
-        isSyncComplete: current?.isSyncComplete ?? false,
-        percentage: current?.percentage ?? 0.0,
-        displayTargetPercentage:
-            current?.displayTargetPercentage ?? current?.percentage ?? 0.0,
-        displayTargetBlocks: current?.displayTargetBlocks ?? 0,
-        checking: current?.checking,
-        remainingScanBlocks: current?.remainingScanBlocks,
-        pendingScanStartHeight: current?.pendingScanStartHeight,
-        phaseCompletedUnits: current?.phaseCompletedUnits ?? 0,
-        phaseTotalUnits: current?.phaseTotalUnits ?? 0,
-        scannedHeight: current?.scannedHeight ?? 0,
-        chainTipHeight: current?.chainTipHeight ?? 0,
-        transparentBalance: transparent ?? accountFallback?.transparentBalance,
-        saplingBalance: sapling ?? accountFallback?.saplingBalance,
-        orchardBalance: orchard ?? accountFallback?.orchardBalance,
-        ironwoodBalance: ironwood ?? accountFallback?.ironwoodBalance,
-        orchardLockedBalance:
-            orchardLocked ?? accountFallback?.orchardLockedBalance,
-        transparentPendingBalance:
-            transparentPending ?? accountFallback?.transparentPendingBalance,
-        transparentLockedBalance:
-            transparentLocked ?? accountFallback?.transparentLockedBalance,
-        transparentAuthority:
-            transparentAuthority ?? accountFallback?.transparentAuthority,
-        transparentLastKnownBalance: transparentAuthority != null
-            ? transparentLastKnown
-            : accountFallback?.transparentLastKnownBalance,
-        transparentStop: transparentAuthority != null
-            ? transparentStop
-            : accountFallback?.transparentStop,
-        transparentPrivate:
-            transparentPrivate ?? accountFallback?.transparentPrivate,
-        saplingPendingBalance:
-            saplingPending ?? accountFallback?.saplingPendingBalance,
-        orchardPendingBalance:
-            orchardPending ?? accountFallback?.orchardPendingBalance,
-        ironwoodPendingBalance:
-            ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
-        canShieldTransparentBalance:
-            canShieldTransparentBalance ??
-            accountFallback?.canShieldTransparentBalance ??
-            false,
-        shieldTransparentFee:
-            shieldTransparentFee ?? accountFallback?.shieldTransparentFee,
-        shieldTransparentAmount:
-            shieldTransparentAmount ?? accountFallback?.shieldTransparentAmount,
-        spendableBalance: nextSpendableBalance,
-        displaySpendableBalance: spendableDisplay.balance,
-        displayIronwoodBalance: preservePoolDisplay
-            ? accountFallback?.displayIronwoodBalance
-            : ironwood ?? accountFallback?.ironwoodBalance,
-        displayIronwoodPendingBalance: preservePoolDisplay
-            ? accountFallback?.displayIronwoodPendingBalance
-            : ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
-        displayOrchardBalance: preservePoolDisplay
-            ? accountFallback?.displayOrchardBalance
-            : orchard ?? accountFallback?.orchardBalance,
-        displayOrchardPendingBalance: preservePoolDisplay
-            ? accountFallback?.displayOrchardPendingBalance
-            : orchardPending ?? accountFallback?.orchardPendingBalance,
-        displayOrchardLockedBalance: preservePoolDisplay
-            ? accountFallback?.displayOrchardLockedBalance
-            : orchardLocked ?? accountFallback?.orchardLockedBalance,
-        displaySpendableFreshness: spendableDisplay.freshness,
-        totalBalance: total ?? accountFallback?.totalBalance,
-        displayTotalBalance: preservePoolDisplay
-            ? accountFallback?.displayTotalBalance
-            : total ?? accountFallback?.totalBalance,
-        displayShieldedBalance: preservePoolDisplay
-            ? accountFallback?.displayShieldedBalance
-            : hasAuthoritativeBalance
-            ? (sapling ?? BigInt.zero) +
-                  (orchard ?? BigInt.zero) +
-                  (ironwood ?? BigInt.zero) +
-                  (saplingPending ?? BigInt.zero) +
-                  (orchardPending ?? BigInt.zero) +
-                  (ironwoodPending ?? BigInt.zero)
-            : accountFallback?.displayShieldedBalance,
-        failure: current?.failure,
-        error: current?.error,
-        recentTransactions: didFetchRecentTxs
-            ? recentTxs
-            : accountFallback?.recentTransactions ?? const [],
-        lastSyncStartedAt: current?.lastSyncStartedAt,
-        lastSyncCompletedAt: current?.lastSyncCompletedAt,
-        lastSyncFailedAt: current?.lastSyncFailedAt,
-        phase: current?.phase ?? '',
-      ),
+    final next = SyncState(
+      accountUuid: accountUuid,
+      hasBalanceData:
+          hasAuthoritativeBalance || (accountFallback?.hasBalanceData ?? false),
+      hasRecentTransactionsData:
+          didFetchRecentTxs ||
+          (accountFallback?.hasRecentTransactionsData ?? false),
+      isSyncing: current?.isSyncing ?? false,
+      isBackgroundMode: current?.isBackgroundMode ?? false,
+      isSyncComplete: current?.isSyncComplete ?? false,
+      percentage: current?.percentage ?? 0.0,
+      displayTargetPercentage:
+          current?.displayTargetPercentage ?? current?.percentage ?? 0.0,
+      displayTargetBlocks: current?.displayTargetBlocks ?? 0,
+      checking: current?.checking,
+      remainingScanBlocks: current?.remainingScanBlocks,
+      pendingScanStartHeight: current?.pendingScanStartHeight,
+      phaseCompletedUnits: current?.phaseCompletedUnits ?? 0,
+      phaseTotalUnits: current?.phaseTotalUnits ?? 0,
+      scannedHeight: current?.scannedHeight ?? 0,
+      chainTipHeight: current?.chainTipHeight ?? 0,
+      transparentBalance: transparent ?? accountFallback?.transparentBalance,
+      saplingBalance: sapling ?? accountFallback?.saplingBalance,
+      orchardBalance: orchard ?? accountFallback?.orchardBalance,
+      ironwoodBalance: ironwood ?? accountFallback?.ironwoodBalance,
+      orchardLockedBalance:
+          orchardLocked ?? accountFallback?.orchardLockedBalance,
+      transparentPendingBalance:
+          transparentPending ?? accountFallback?.transparentPendingBalance,
+      transparentLockedBalance:
+          transparentLocked ?? accountFallback?.transparentLockedBalance,
+      transparentAuthority:
+          transparentAuthority ?? accountFallback?.transparentAuthority,
+      transparentLastKnownBalance: transparentAuthority != null
+          ? transparentLastKnown
+          : accountFallback?.transparentLastKnownBalance,
+      transparentStop: transparentAuthority != null
+          ? transparentStop
+          : accountFallback?.transparentStop,
+      transparentPrivate:
+          transparentPrivate ?? accountFallback?.transparentPrivate,
+      saplingPendingBalance:
+          saplingPending ?? accountFallback?.saplingPendingBalance,
+      orchardPendingBalance:
+          orchardPending ?? accountFallback?.orchardPendingBalance,
+      ironwoodPendingBalance:
+          ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
+      canShieldTransparentBalance:
+          canShieldTransparentBalance ??
+          accountFallback?.canShieldTransparentBalance ??
+          false,
+      shieldTransparentFee:
+          shieldTransparentFee ?? accountFallback?.shieldTransparentFee,
+      shieldTransparentAmount:
+          shieldTransparentAmount ?? accountFallback?.shieldTransparentAmount,
+      spendableBalance: nextSpendableBalance,
+      displaySpendableBalance: spendableDisplay.balance,
+      displayIronwoodBalance: preservePoolDisplay
+          ? accountFallback?.displayIronwoodBalance
+          : ironwood ?? accountFallback?.ironwoodBalance,
+      displayIronwoodPendingBalance: preservePoolDisplay
+          ? accountFallback?.displayIronwoodPendingBalance
+          : ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
+      displayOrchardBalance: preservePoolDisplay
+          ? accountFallback?.displayOrchardBalance
+          : orchard ?? accountFallback?.orchardBalance,
+      displayOrchardPendingBalance: preservePoolDisplay
+          ? accountFallback?.displayOrchardPendingBalance
+          : orchardPending ?? accountFallback?.orchardPendingBalance,
+      displayOrchardLockedBalance: preservePoolDisplay
+          ? accountFallback?.displayOrchardLockedBalance
+          : orchardLocked ?? accountFallback?.orchardLockedBalance,
+      displaySpendableFreshness: spendableDisplay.freshness,
+      totalBalance: total ?? accountFallback?.totalBalance,
+      displayTotalBalance: preservePoolDisplay
+          ? accountFallback?.displayTotalBalance
+          : total ?? accountFallback?.totalBalance,
+      displayShieldedBalance: preservePoolDisplay
+          ? accountFallback?.displayShieldedBalance
+          : hasAuthoritativeBalance
+          ? (sapling ?? BigInt.zero) +
+                (orchard ?? BigInt.zero) +
+                (ironwood ?? BigInt.zero) +
+                (saplingPending ?? BigInt.zero) +
+                (orchardPending ?? BigInt.zero) +
+                (ironwoodPending ?? BigInt.zero)
+          : accountFallback?.displayShieldedBalance,
+      failure: current?.failure,
+      error: current?.error,
+      recentTransactions: didFetchRecentTxs
+          ? recentTxs
+          : accountFallback?.recentTransactions ?? const [],
+      lastSyncStartedAt: current?.lastSyncStartedAt,
+      lastSyncCompletedAt: current?.lastSyncCompletedAt,
+      lastSyncFailedAt: current?.lastSyncFailedAt,
+      phase: current?.phase ?? '',
+      syncJobId: current?.syncJobId ?? '',
+      sessionStartPercentage: current?.sessionStartPercentage ?? 0,
+      startedFromCompletedSync: current?.startedFromCompletedSync ?? false,
     );
+    // A sync that started, or a tip that moved, during the read carried the
+    // state it replaces; the read follows the same rule, as one not read past
+    // that tip. See [SyncState.carryingTransparentAuthority].
+    final crossedDuringRead =
+        current?.lastSyncStartedAt != readSyncStartedAt ||
+        (readTipHeight != 0 && current?.chainTipHeight != readTipHeight);
+    state = AsyncData(
+      hasAuthoritativeBalance && crossedDuringRead
+          ? next.carryingTransparentAuthority(
+              privatePolicyMayApply: _privatePolicyMayApply,
+              crossesTip: true,
+            )
+          : next,
+    );
+    _markBalanceReadCommitted(balanceReadSequence);
   }
 
   String? _getActiveAccountUuid() {
@@ -3849,6 +4276,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     network: network,
     accountUuid: accountUuid,
   );
+
+  @protected
+  Future<rust_sync.SyncProgress> readSyncStatus({
+    required String dbPath,
+    required String network,
+  }) => rust_sync.getSyncStatus(dbPath: dbPath, network: network);
 
   @protected
   Future<List<rust_sync.TransactionInfo>> readTransactionHistory({
@@ -3973,6 +4406,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void stopTipChecksForTesting() => _stopPolling();
 
   @visibleForTesting
+  void recordSyncFailureForTesting(Object error) => _recordSyncFailure(error);
+
+  @visibleForTesting
   Future<void> checkTipForTesting() => _checkAndSync();
 
   @visibleForTesting
@@ -3982,6 +4418,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   @visibleForTesting
   void handleAccountSwitchForTesting(String? accountUuid) =>
       _clearAccountScopedStateFor(accountUuid);
+
+  @visibleForTesting
+  void handleAccountAddedForTesting() => _onAccountAdded();
+
+  @visibleForTesting
+  void handleWalletResetForTesting() => _forgetSyncJob();
+
+  @visibleForTesting
+  Future<void> startInitialSyncForTesting() => _startInitialSync();
 
   bool get _requiresUnlock {
     return ref.read(appSecurityProvider).requiresUnlock;

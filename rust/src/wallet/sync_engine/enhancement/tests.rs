@@ -406,11 +406,22 @@ mod tests {
         )
         .await
         .expect("enhancement checkpoint timed out");
-        server.abort();
 
-        assert!(
-            matches!(result, Err(SyncError::Network(message)) if message.contains("temporary failure"))
-        );
+        // The failed payload stays queued without failing the sync.
+        assert!(matches!(result, Ok(false)), "{result:?}");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(has_public_payload_work(&db, tx.txid()));
+
+        // A later drain in the same session holds it back instead of asking
+        // again before its retry time.
+        let again = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            enhancement.run_payload_recovery(&mut db, &mut client, None, &should_exit),
+        )
+        .await
+        .expect("payload recovery timed out");
+        server.abort();
+        assert!(matches!(again, Ok(false)), "{again:?}");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         assert!(has_public_payload_work(&db, tx.txid()));
         let observed: Option<i64> = conn
@@ -521,6 +532,35 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn failed_public_payloads_are_held_with_growing_waits() {
+        use std::collections::HashSet;
+        use std::time::{Duration, Instant};
+
+        let first = TxId::from_bytes([1; 32]);
+        let second = TxId::from_bytes([2; 32]);
+        let start = Instant::now();
+        let at = |seconds: u64| start + Duration::from_secs(seconds);
+        let mut retries = PublicPayloadRetries::default();
+        assert!(retries.held(start).is_empty());
+
+        retries.record_failures(vec![first], start);
+        assert!(retries.held(at(29)).contains(&first));
+        assert!(retries.held(at(30)).is_empty());
+
+        // Each further failure waits longer, up to the last wait.
+        retries.record_failures(vec![first, second], at(30));
+        assert_eq!(retries.held(at(59)), HashSet::from([first, second]));
+        assert_eq!(retries.held(at(60)), HashSet::from([first]));
+        assert_eq!(retries.held(at(89)), HashSet::from([first]));
+        assert!(retries.held(at(90)).is_empty());
+        for _ in 0..4 {
+            retries.record_failures(vec![first], at(1_000));
+        }
+        assert!(retries.held(at(1_299)).contains(&first));
+        assert!(!retries.held(at(1_300)).contains(&first));
     }
 
     #[test]

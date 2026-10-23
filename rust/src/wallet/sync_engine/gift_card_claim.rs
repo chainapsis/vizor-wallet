@@ -498,7 +498,7 @@ async fn run_inner(
                 state = read_snapshot(&c).map_err(|e| e.to_string())?.unwrap();
                 progress("checking", 0, (tip - height + 1) as u64, &state);
                 if let Some(block) = source.block_at(BlockHeight::from_u32(height)) {
-                    save_canary(&c, block)?;
+                    save_canary(&c, &block)?;
                 }
                 break;
             }
@@ -533,8 +533,7 @@ async fn run_inner(
         .map_err(|e| e.to_string())?;
         let block = full
             .block_at(BlockHeight::from_u32(state.funding_height))
-            .ok_or("Gift Card canary missing")?
-            .clone();
+            .ok_or("Gift Card canary missing")?;
         save_canary(&c, &block)?;
         block
     };

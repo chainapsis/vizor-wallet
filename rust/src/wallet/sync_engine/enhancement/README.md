@@ -1095,7 +1095,10 @@ private payload failure       keep private work; retry in a later full sync
 private outside coverage      keep work; wait for a newer snapshot
 private authenticated reroute reread DB; public dispatch is now permitted
 public explicit NotFound      complete payload work only
-public other failure          keep payload work retryable
+public other failure          keep payload work; hold the transaction from 30 s
+                              doubling to 5 min for the rest of the session;
+                              never fails the sync
+public local DB failure       fail the sync attempt (retried by the sync loop)
 private status failure        keep status inconclusive; skip private status for
                               the rest of the session; no public fallback
 public status failure         fail the sync attempt (retried by the sync loop)

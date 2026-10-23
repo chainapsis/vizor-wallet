@@ -157,6 +157,13 @@ Future<void> _enterPasscode(WidgetTester tester, String passcode) async {
 }
 
 class _UnlockSyncNotifier extends SyncNotifier {
+  _UnlockSyncNotifier([this.syncStart]);
+
+  /// Holds the sync start open when set, as one waiting out a cancelled
+  /// sync does.
+  final Completer<void>? syncStart;
+  int syncStarts = 0;
+
   @override
   Future<SyncState> build() async => SyncState();
 
@@ -164,7 +171,10 @@ class _UnlockSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterUnlock() async {}
 
   @override
-  Future<void> startSyncAnyway({int? latestTipHeight}) async {}
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {
+    syncStarts++;
+    await syncStart?.future;
+  }
 }
 
 AppBootstrapState _bootstrap({required bool biometricEnabled}) =>
@@ -210,6 +220,7 @@ Widget _app({
   bool autoPromptBiometric = false,
   bool useRealSecurity = false,
   AccountNotifier Function()? accountNotifier,
+  _UnlockSyncNotifier Function()? syncNotifier,
 }) {
   final router = GoRouter(
     initialLocation: '/unlock',
@@ -251,7 +262,7 @@ Widget _app({
       accountProvider.overrideWith(
         accountNotifier ?? _RestoringAccountNotifier.new,
       ),
-      syncProvider.overrideWith(_UnlockSyncNotifier.new),
+      syncProvider.overrideWith(syncNotifier ?? _UnlockSyncNotifier.new),
       if (biometric != null)
         biometricUnlockServiceProvider.overrideWithValue(biometric),
     ],
@@ -557,6 +568,27 @@ void main() {
       expect(routed.router.state.uri.path, '/home');
       expect(find.text('Home destination'), findsOneWidget);
       expect(find.text('Payment link destination'), findsNothing);
+    });
+
+    testWidgets('a slow sync start does not hold the unlock off Home', (
+      tester,
+    ) async {
+      final syncStart = Completer<void>();
+      final sync = _UnlockSyncNotifier(syncStart);
+      final routed = _routedUnlockApp(syncNotifier: () => sync);
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+
+      for (final digit in '123456'.split('')) {
+        await tester.tap(find.bySemanticsLabel('Digit $digit'));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+
+      expect(sync.syncStarts, 1);
+      expect(routed.router.state.uri.path, '/home');
+      expect(find.text('Home destination'), findsOneWidget);
+      syncStart.complete();
     });
 
     testWidgets('passcode unlock opens the pending Gift Card once', (

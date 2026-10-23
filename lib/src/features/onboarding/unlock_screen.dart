@@ -81,7 +81,9 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
         unawaited(inputSourceService.remember(inputSource));
         await accountNotifier.restoreAfterUnlock();
         await syncNotifier.refreshAfterUnlock();
-        await syncNotifier.startSyncAnyway();
+        // Home does not wait for the sync, whose start can wait out a
+        // cancelled one.
+        unawaited(startSyncAfterUnlock(syncNotifier));
         if (!mounted) return;
         // Claim the payment-URI prefill (parked while locked) only now, after
         // the post-unlock work has succeeded. Claiming earlier would drop the

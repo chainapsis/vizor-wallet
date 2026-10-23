@@ -41,8 +41,8 @@ class MobileTorControl extends ConsumerWidget {
     final description =
         useGeneralDescription &&
             state.status != NetworkPrivacyConnectionStatus.failed
-        ? 'Use Tor to hide your IP address from servers. Other apps use their '
-              'own network settings.'
+        ? 'Use Tor to protect your IP address. Other apps use their own '
+              'network settings.'
               '${defaultTargetPlatform == TargetPlatform.iOS ? ' Ironwood private migration connects directly while Vizor is closed.' : ''}'
         : presentation.description;
     final toggleAction = networkPrivacyToggleAction(state);
@@ -211,15 +211,15 @@ _MobileTorPresentation _presentationFor(
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _MobileTorPresentation(
       statusLabel: 'Connected',
-      // iOS can continue Ironwood private migration through its native
-      // background task after Vizor closes. That task is pinned direct, so
-      // name the exception instead of weakening the foreground guarantee with
-      // "most". Android has no corresponding background migration lane.
+      // Large block downloads fetch public blocks directly, so this does not
+      // promise every request. iOS can continue Ironwood private migration
+      // through its native background task after Vizor closes; that task is
+      // pinned direct and named. Android has no background migration lane.
       description: platform == TargetPlatform.iOS
-          ? 'Vizor’s network requests go through Tor. Ironwood private '
+          ? 'Vizor uses Tor to protect your IP address. Ironwood private '
                 'migration uses a direct connection while Vizor is closed. '
                 'Links opened in other apps use those apps’ network settings.'
-          : 'Vizor’s network requests go through Tor. Links opened in other '
+          : 'Vizor uses Tor to protect your IP address. Links opened in other '
                 'apps use those apps’ network settings.',
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
@@ -282,7 +282,7 @@ _MobileTorPresentation _presentationFor(
       statusLabel: 'Off',
       description:
           'Wallet sync and in-app requests connect directly. Turn Tor '
-          'on to hide your IP address from the servers Vizor talks to.',
+          'on to protect your IP address.',
       statusColor: (colors) => colors.text.secondary,
       iconColor: (colors) => colors.icon.muted,
     ),

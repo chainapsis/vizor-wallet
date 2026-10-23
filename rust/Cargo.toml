@@ -50,6 +50,10 @@ rand = "0.8"
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 futures = "0.3"
+# Scan thread pools at reduced power (`sync_engine::scan_power`); both are
+# already in the graph through the wallet libraries.
+rayon = "1.12"
+libc = "0.2"
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 bytes = "1"
 http = "1"
@@ -227,6 +231,16 @@ version = "=0.1.0-rc.7"
 version = "=0.8.0"
 default-features = false
 features = ["zakura"]
+
+# The SQLite store from a fork of zakura-core/wallet-libraries: the source of
+# the 0.1.0-rc9.2 release above (e43fe2d) plus zakura-core/wallet-libraries
+# #286, with which `get_wallet_summary` computes scan progress without looking
+# up every scanned block in the scan queue. That took about a second on a
+# desktop for a wallet restored from Sapling activation. The fork's manifest
+# takes the other wallet crates from crates.io, so only this crate changes.
+# Drop the patch once a release includes #286.
+[patch.crates-io]
+zakura-client-sqlite = { git = "https://github.com/piatoss3612/wallet-libraries", rev = "92a3f2d6aca53d453f0ba9cb8e426aa33a3b5614" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }

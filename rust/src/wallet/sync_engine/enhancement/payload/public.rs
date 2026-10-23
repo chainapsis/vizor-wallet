@@ -3,7 +3,8 @@
 //! This module never chooses a route. It receives only
 //! `PublicTransactionEnhancementRequest` values from the unified wallet snapshot.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use tonic::{transport::Channel, Code, Status};
 use zcash_client_backend::{
@@ -29,15 +30,26 @@ use crate::wallet::sync_engine::{
 /// Callers pass only [`PublicTransactionEnhancementRequest`]s taken from the
 /// wallet's routed enhancement snapshot; this type never selects work itself.
 /// An explicit "txid not recognized" response retires only enhancement work.
-/// Other failures leave the request durable, skip that transaction for the
-/// rest of the pass, and are reported by [`Self::finish`] as a retryable error.
+/// A failed request or an unusable reply leaves the request durable, skips
+/// that transaction for the rest of the pass, and is reported by
+/// [`Self::finish`] for [`PublicPayloadRetries`] to hold back. Only a local
+/// database failure fails the pass.
 #[derive(Default)]
 pub(in crate::wallet::sync_engine) struct PublicPayloadExecutor {
     failed: HashSet<TxId>,
-    deferred_error: Option<SyncError>,
+    retry: Vec<TxId>,
+    local_error: Option<SyncError>,
 }
 
 impl PublicPayloadExecutor {
+    /// An executor that does not ask `held` in this pass.
+    pub(in crate::wallet::sync_engine) fn holding(held: HashSet<TxId>) -> Self {
+        Self {
+            failed: held,
+            ..Self::default()
+        }
+    }
+
     /// Dispatches each request not already failed in this pass, stopping
     /// before the next dispatch once `should_exit` is set or `gate` withholds
     /// a request. Withheld requests stay queued for a later pass.
@@ -88,7 +100,7 @@ impl PublicPayloadExecutor {
                         ) {
                             log::error!("sync: decrypt_and_store_transaction failed: {e}");
                             self.failed.insert(txid);
-                            self.deferred_error.get_or_insert_with(|| {
+                            self.local_error.get_or_insert_with(|| {
                                 SyncError::db(format!(
                                     "decrypt_and_store_transaction failed for {txid_str}: {e}"
                                 ))
@@ -99,9 +111,11 @@ impl PublicPayloadExecutor {
                         }
                     }
                     Err(e) => {
-                        log::warn!("sync: invalid enhancement payload for {txid_str}: {e}");
+                        log::warn!(
+                            "sync: invalid enhancement payload for {txid_str}; it stays queued: {e}"
+                        );
                         self.failed.insert(txid);
-                        self.deferred_error.get_or_insert(e);
+                        self.retry.push(txid);
                     }
                 },
                 Err(e) => match classify_get_transaction_error(&e) {
@@ -131,7 +145,7 @@ impl PublicPayloadExecutor {
                             log::error!(
                                 "sync: notify_transaction_enhancement_not_found failed: {e}"
                             );
-                            self.deferred_error.get_or_insert_with(|| {
+                            self.local_error.get_or_insert_with(|| {
                                 SyncError::db(format!(
                                     "notify_transaction_enhancement_not_found failed for {txid}: {e}"
                                 ))
@@ -139,19 +153,83 @@ impl PublicPayloadExecutor {
                         }
                     }
                     GetTransactionErrorAction::RetryAsNetwork => {
+                        log::warn!(
+                            "sync: get_transaction failed for {txid_str}; it stays queued: {e}"
+                        );
                         self.failed.insert(txid);
-                        self.deferred_error.get_or_insert_with(|| {
-                            SyncError::net(format!("get_transaction failed for {txid_str}: {e}"))
-                        });
+                        self.retry.push(txid);
                     }
                 },
             }
         }
     }
 
-    /// Reports the first retryable payload failure of this pass, if any.
-    pub(in crate::wallet::sync_engine) fn finish(self) -> Result<(), SyncError> {
-        self.deferred_error.map_or(Ok(()), Err)
+    /// Returns the transactions to ask again later, or the first local
+    /// database failure of this pass.
+    pub(in crate::wallet::sync_engine) fn finish(self) -> Result<Vec<TxId>, SyncError> {
+        match self.local_error {
+            Some(error) => Err(error),
+            None => Ok(self.retry),
+        }
+    }
+}
+
+/// Waits before asking a failed public payload again, by its failures in this
+/// sync so far; the last wait repeats.
+const PUBLIC_PAYLOAD_RETRY_DELAYS: [Duration; 4] = [
+    Duration::from_secs(30),
+    Duration::from_secs(60),
+    Duration::from_secs(120),
+    Duration::from_secs(300),
+];
+
+/// Public payload requests that failed in this sync, each held back from the
+/// checkpoints that follow until its retry time.
+///
+/// A failed `GetTransaction` used to fail the attempt, and the retry began the
+/// sync again from the chain tip; a request that timed out cost its 20-second
+/// deadline and the restart, about 30 seconds of scanning. The request stays
+/// durable either way, so the scan goes on and a later checkpoint asks again.
+/// Holding it back keeps a transaction that keeps failing from costing every
+/// batch its deadline. A sync that ends with requests held leaves them queued
+/// for the next sync, as private payload work is.
+#[derive(Default)]
+pub(in crate::wallet::sync_engine) struct PublicPayloadRetries {
+    held: HashMap<TxId, HeldRequest>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct HeldRequest {
+    failures: usize,
+    until: Instant,
+}
+
+impl PublicPayloadRetries {
+    /// The transactions not to ask at `now`.
+    pub(in crate::wallet::sync_engine) fn held(&self, now: Instant) -> HashSet<TxId> {
+        self.held
+            .iter()
+            .filter(|(_, held)| held.until > now)
+            .map(|(txid, _)| *txid)
+            .collect()
+    }
+
+    /// Holds back each of `failed` until its next retry time.
+    pub(in crate::wallet::sync_engine) fn record_failures(
+        &mut self,
+        failed: Vec<TxId>,
+        now: Instant,
+    ) {
+        for txid in failed {
+            let held = self.held.entry(txid).or_insert(HeldRequest {
+                failures: 0,
+                until: now,
+            });
+            let delay = PUBLIC_PAYLOAD_RETRY_DELAYS
+                [held.failures.min(PUBLIC_PAYLOAD_RETRY_DELAYS.len() - 1)];
+            held.failures += 1;
+            held.until = now + delay;
+        }
     }
 }
 
