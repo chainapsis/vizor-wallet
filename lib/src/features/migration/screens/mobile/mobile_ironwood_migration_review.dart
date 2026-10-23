@@ -349,7 +349,7 @@ class _MobileMigrationFastReviewState
                     const SizedBox(height: AppSpacing.xs),
                     _ReviewRow(
                       label: 'Migration complete in',
-                      value: _mobileImmediateMigrationCompletionEstimate(
+                      value: ironwoodImmediateMigrationCompletionEstimate(
                         blockTimes,
                       ),
                       height: 32,
@@ -483,16 +483,4 @@ class _MobileMigrationFastReviewState
       ],
     );
   }
-}
-
-const _mobileImmediateConfirmationBlocks = 3;
-
-String _mobileImmediateMigrationCompletionEstimate(
-  BlockTimeEstimate blockTimes,
-) {
-  final estimatedMinutes =
-      blockTimes.secondsForBlocks(_mobileImmediateConfirmationBlocks) /
-      Duration.secondsPerMinute;
-  final roundedFiveMinuteUnits = (estimatedMinutes / 5).ceil();
-  return '~${roundedFiveMinuteUnits * 5} mins';
 }

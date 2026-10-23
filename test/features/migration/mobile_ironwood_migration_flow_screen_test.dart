@@ -2196,7 +2196,7 @@ void main() {
     expect(
       find.text(
         'Migrates your entire balance in one batch. '
-        'Fast (~10 mins) but less private.',
+        'Fast (~4 mins) but less private.',
       ),
       findsOneWidget,
     );
@@ -2219,7 +2219,7 @@ void main() {
           .widget<Text>(
             find.text(
               'Migrates your entire balance in one batch. '
-              'Fast (~10 mins) but less private.',
+              'Fast (~4 mins) but less private.',
             ),
           )
           .style
@@ -3429,7 +3429,7 @@ void main() {
     );
     expect(find.text('142.22 ZEC'), findsOneWidget);
     expect(find.text('Migration complete in'), findsOneWidget);
-    expect(find.text('~5 mins'), findsOneWidget);
+    expect(find.text('~4 mins'), findsOneWidget);
     final continueButton = find.byKey(
       const ValueKey('mobile_ironwood_immediate_broadcast_button'),
     );
@@ -3535,7 +3535,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Migration complete in'), findsOneWidget);
-      expect(find.text('~5 mins'), findsOneWidget);
+      expect(find.text('~4 mins'), findsOneWidget);
       expect(find.text('A few minutes'), findsNothing);
     },
   );
