@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/transaction_completeness.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/public_details_lookup_dialog.dart';
@@ -199,7 +200,26 @@ void main() {
       transparentDetail(rust_sync.TransparentDetailsState.gaveUp),
     ]);
     final prioritized = await _pump(tester, details);
-    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    // No sync asks for it again, so the row neither spins nor promises an
+    // update.
+    final row = find.byKey(const ValueKey('transparent_details_unavailable'));
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.text(kTransparentDetailsGaveUpText),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(kTransparentDetailsUnavailableText), findsNothing);
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+      findsNothing,
+    );
     expect(prioritized, isEmpty, reason: 'no sync asks for it again');
     final before = details.calls;
     await tester.pump(kTransparentDetailsPollInterval * 3);

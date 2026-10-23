@@ -125,6 +125,10 @@ rust_sync.TransactionInfo? provisionalRoleSuccessor(
 const kTransparentDetailsUnavailableText =
     'Details unavailable — will update when the service is reachable';
 
+/// Shown for a transparent or mixed transaction whose lookup the wallet gave
+/// up on: no sync asks for it again, so nothing is promised.
+const kTransparentDetailsGaveUpText = 'Details unavailable';
+
 /// Shown when private mode cannot look the transaction's outputs up.
 const kTransparentDetailsNotCoveredText = 'Not available in private mode';
 

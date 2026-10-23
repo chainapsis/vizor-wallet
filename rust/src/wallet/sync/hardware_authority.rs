@@ -257,7 +257,8 @@ fn authorize(
     drop(waiting);
     let reserved = Instant::now();
     let db = WalletDb::from_connection(conn, network, SystemClock, OsRng)
-        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network));
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network))
+        .with_transparent_pir_session(crate::wallet::db::transparent_pir_session(db_path));
     // Read under the reservation, so the durable policy the library resolves
     // the handle under is the one authorized. Reading the mode also rejects
     // an unreadable or incompatible policy.

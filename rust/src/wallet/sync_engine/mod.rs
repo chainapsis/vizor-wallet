@@ -4431,8 +4431,10 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
-        // Status and transparent history run before the routed payload snapshot,
-        // so transactions discovered by history are enhanced in this checkpoint.
+        // Status and transparent history run before the routed payload drain.
+        // Work their replies create (a transaction history names, a status
+        // that makes one mined) is not asked in this checkpoint: it waits for
+        // the next block.
         if enhancement
             .run_checkpoint(&mut db, &mut client, Some(&block_source), &should_exit)
             .await?
@@ -5054,7 +5056,30 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
             );
         }
     }
-    match transparent_ledger::run(
+    // Recovery replies can add Enhance queries and status lookups, as when a
+    // recovered transaction turns out to need its payload or status. That
+    // work waits for the next block like work any other reply creates (see
+    // [`enhancement::content_failures`]): a sync resumed at this tip neither
+    // asks it nor counts it towards a recovery-only restart. Without a
+    // readable record of the work before the run, recovery waits for a
+    // later sync. A `Public` capture returns before any request.
+    let before = if private {
+        policy.configure_db(db);
+        match enhancement::private_work(db) {
+            Ok(before) => Some(before),
+            Err(error) => {
+                log::warn!(
+                    "[{}] sync: private work unreadable; transparent recovery waits for a later sync: {}",
+                    elapsed(),
+                    error
+                );
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    let outcome = transparent_ledger::run(
         db,
         db_data_path,
         network,
@@ -5065,8 +5090,18 @@ async fn transparent_followup<S: transparent_ledger::RecoverySource>(
         std::time::Instant::now,
         should_exit,
     )
-    .await
-    {
+    .await;
+    if let Some(before) = before {
+        match enhancement::private_work(db) {
+            Ok(after) => enhancement::content_failures::unlocked(db_data_path, &before, &after),
+            Err(error) => log::warn!(
+                "[{}] sync: private work unreadable after transparent recovery: {}",
+                elapsed(),
+                error
+            ),
+        }
+    }
+    match outcome {
         // Nothing was recorded; a durable `Public` policy found after marking
         // the cache dirty still restores it below.
         Ok(transparent_ledger::RunOutcome::NotEnabled) => {

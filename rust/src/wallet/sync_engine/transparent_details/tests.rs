@@ -1473,6 +1473,73 @@ async fn a_prioritized_receipt_behind_64_newer_due_rows_is_looked_up_first() {
     );
 }
 
+/// A receive private recovery stores queues its receipt lookup, which waits
+/// for the next block: the display service never sees a recovery reply turn
+/// into a lookup in the sync that received it, even when the receipt is open.
+/// Recovery and the lookups run on separate handles of the wallet, as in a
+/// sync.
+#[tokio::test]
+async fn a_recovered_receive_is_looked_up_from_the_next_block() {
+    use crate::wallet::sync_engine::transparent_ledger::{
+        self, fixture::FixtureSource, RecoverySchedule,
+    };
+    use zcash_client_backend::data_api::{transparent_ledger::ReceiveEvent, WalletWrite};
+
+    let fixture = wallet();
+    let _mode = require_private(&fixture.path);
+    let recovery = FixtureSource::new(|height| {
+        let mut hash = [0; 32];
+        hash[..4].copy_from_slice(&height.to_le_bytes());
+        hash[31] = 1;
+        zcash_primitives::block::BlockHash(hash)
+    });
+    let txid = TxId::from_bytes([0x51; 32]);
+    recovery
+        .receive(ReceiveEvent {
+            metadata: None,
+            outpoint: OutPoint::new(*txid.as_ref(), 0),
+            address: fixture.address,
+            value: Zatoshis::const_from_u64(VALUE),
+            coinbase: false,
+            mined_height: BlockHeight::from_u32(TOP - 1),
+        })
+        .trust();
+    // The syncs at this block that recover the account and activate it.
+    let mut db = open(&fixture.path);
+    for _ in 0..4 {
+        transparent_ledger::run(
+            &mut db,
+            &fixture.path,
+            MAIN,
+            required(),
+            &recovery,
+            Some(fixture.account),
+            RecoverySchedule::Block,
+            Instant::now,
+            &|| false,
+        )
+        .await
+        .unwrap();
+    }
+    assert!(
+        work_row(&fixture.path, &txid).is_some(),
+        "the stored receive queued its receipt lookup"
+    );
+
+    prioritize(&fixture.path, *txid.as_ref());
+    let mut lookups = Scripted::new(|_| unavailable(None));
+    run_scripted(&fixture, &mut lookups).await;
+    assert_eq!(
+        lookups.looked_up(),
+        [],
+        "not in the sync that recovered the receive"
+    );
+
+    db.update_chain_tip(BlockHeight::from_u32(TOP + 1)).unwrap();
+    run_scripted(&fixture, &mut lookups).await;
+    assert_eq!(lookups.looked_up(), [txid], "the next block looks it up");
+}
+
 #[tokio::test]
 async fn store_reports_a_followup_update() {
     let fixture = wallet();

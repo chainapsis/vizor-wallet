@@ -322,9 +322,13 @@ impl RecoveryWallet for Wallet {
         _: &EnhanceRecord,
     ) -> Result<EnhancePirStoreResult, EnhancePirRunError> {
         assert!(
-            self.pending.contains(&request),
+            !self.applied.contains(&u64::from(request.position())),
             "replayed an already committed request"
         );
+        // Like the wallet, a request another record resolved changes nothing.
+        if !self.pending.contains(&request) {
+            return Ok(EnhancePirStoreResult::AlreadyResolved);
+        }
         if let Some(cancel) = &self.cancel_on_apply {
             cancel.set(true);
         }
@@ -817,6 +821,36 @@ async fn a_stale_routing_retry_skips_rows_that_failed_on_content() {
     assert_eq!(forged.unreadable, [vec![request(0)]], "counted once");
 }
 
+/// A retry after stale routing asks the batch's rows that were not asked
+/// before the refusal, whatever the replies before it said. A record that
+/// moves its whole transaction to public enhancement clears the requests of
+/// the rows not yet asked; a retry read afresh from the wallet would then ask
+/// fewer rows than after an honest reply, showing the service what its reply
+/// said.
+#[tokio::test]
+async fn a_stale_routing_retry_asks_the_same_rows_whatever_a_reply_cleared() {
+    let run = |clears: bool| async move {
+        // The second row's query meets stale routing; the retry succeeds.
+        let service = Service::new([None, Some(409)]);
+        let mut wallet = Wallet::new(&THREE_ROWS);
+        if clears {
+            wallet.transparent_at = Some(0);
+        }
+        sync()
+            .run_queries(&mut wallet, &service, &|| false)
+            .await
+            .unwrap();
+        let transcript = service.transcript.borrow().clone();
+        (transcript, wallet)
+    };
+    let (honest, honest_wallet) = run(false).await;
+    assert_eq!(honest_wallet.applied, THREE_ROWS);
+    let (forged, forged_wallet) = run(true).await;
+    assert_eq!(forged_wallet.applied, [0]);
+    assert_eq!(forged_wallet.public, [PROTECTED]);
+    assert_eq!(forged, honest, "the retry asks the same rows");
+}
+
 #[tokio::test]
 async fn stale_routing_refreshes_equal_coverage_and_retries_only_unfinished_work() {
     for status in [409, 410] {
@@ -843,7 +877,9 @@ async fn stale_routing_refreshes_equal_coverage_and_retries_only_unfinished_work
                 .generation,
             2
         );
-        assert!(wallet.reads.get() >= 3);
+        // The retry asks the unasked rows of the batch it read, without
+        // reading the wallet afresh.
+        assert!(wallet.reads.get() >= 2);
         let posts = service.posts.borrow();
         assert_ne!(
             posts[1].request_id, posts[2].request_id,
@@ -1089,7 +1125,10 @@ async fn a_truncated_row_reply_leaves_the_request_transcript_unchanged() {
     let (wallet, deferred, transcript) = drain_once(&service, &THREE_ROWS).await;
     assert_eq!(transcript, honest_transcript, "the same requests, in order");
     assert_eq!(wallet.applied, [40, 70], "the later rows are still applied");
-    assert!(wallet.unreadable.is_empty(), "a request outcome counts nothing");
+    assert!(
+        wallet.unreadable.is_empty(),
+        "a request outcome counts nothing"
+    );
     assert!(deferred, "a request outcome defers private Enhance");
 }
 
@@ -1155,7 +1194,11 @@ impl RecoveryWallet for RealWallet {
     fn work(&self) -> Result<RoutedWork, EnhancePirRunError> {
         self.0.work()
     }
-    fn accept(&self, network: WalletNetwork, m: &Manifest) -> Result<Acceptance, EnhancePirRunError> {
+    fn accept(
+        &self,
+        network: WalletNetwork,
+        m: &Manifest,
+    ) -> Result<Acceptance, EnhancePirRunError> {
         // The scripted anchor is not in this wallet's chain.
         Wallet::new(&[]).accept(network, m)
     }
@@ -1200,7 +1243,9 @@ impl EnhancementEffects<RealWallet> for NoEffects {
 /// does not ask for it.
 #[tokio::test]
 async fn three_unreadable_rows_suspend_the_position_in_the_wallet() {
-    use zcash_client_backend::data_api::enhance_pir::{EnhancementMode, TransactionEnhancementWork};
+    use zcash_client_backend::data_api::enhance_pir::{
+        EnhancementMode, TransactionEnhancementWork,
+    };
     let (_dir, path, pending) =
         crate::wallet::sync::private_shielding_tests::wallet_with_a_private_memo_query();
     let mut db = crate::wallet::db::open_wallet_db_with_timeout(

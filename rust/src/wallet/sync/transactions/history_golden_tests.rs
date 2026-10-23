@@ -2370,9 +2370,16 @@ impl Recovered {
     /// looked there. Activity at the last address grows the window by one gap
     /// at a time, so it is repeated, each run covering what the last one
     /// added, until the window reaches addresses the restore never checked.
+    /// Growth is watched from the next recovery target; each run starts from
+    /// a fresh transparent session, as after a restart, which watches it at
+    /// once without moving the chain the cases' heights depend on.
     fn unsettle(&mut self) {
         const RESTORE_EXTERNAL_END: u32 = 50;
         for output in 0.. {
+            self.st
+                .wallet_mut()
+                .db_mut()
+                .set_transparent_pir_session(Default::default());
             let ws = watch(&self.st, self.account);
             let target = ws.target.unwrap().height;
             let mut grow = commit(&ws);

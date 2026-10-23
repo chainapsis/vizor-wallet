@@ -581,10 +581,16 @@ fn unsettle(st: &mut State, account: AccountUuid) {
 /// window into those addresses withdraws nothing: the wallet has already
 /// looked there. Activity at the last address grows the window by one gap at
 /// a time, so it is repeated, each run covering what the last one added,
-/// until the window reaches addresses the restore never checked.
+/// until the window reaches addresses the restore never checked. Growth is
+/// watched from the next recovery target; each run starts from a fresh
+/// transparent session, as after a restart, which watches it at once without
+/// moving the chain the fixture's heights depend on.
 fn unsettle_with(st: &mut State, account: AccountUuid, tag: u8) {
     const RESTORE_EXTERNAL_END: u32 = 50;
     for index in 0.. {
+        st.wallet_mut()
+            .db_mut()
+            .set_transparent_pir_session(Default::default());
         let ws = watch(st, account);
         let target = ws.target.unwrap().height;
         let mut grow = commit(&ws);

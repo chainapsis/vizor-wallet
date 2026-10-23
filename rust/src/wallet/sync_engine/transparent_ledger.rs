@@ -42,7 +42,9 @@
 //! that follows a new block. A lagging publication or an overloaded service
 //! names a delay; the account is skipped without traffic until it passes,
 //! then may retry at the same block. Such a retry visits only accounts whose
-//! service waits expired, so private content cannot unlock another pass.
+//! service waits expired, so private content cannot unlock another pass, and
+//! it watches the addresses the first pass at that block watched: the library
+//! watches window growth a reply caused from the next recovery target.
 //! An account that cannot progress is held in memory
 //! for [`HOLD`] and skipped without traffic, as is a quarantined account.
 //! Software and hardware accounts recover from their stored birthday.
@@ -62,12 +64,14 @@ pub(crate) use zakura_pir_transparent::{
     Applied, ApplyAction, ApplyFailure, BatchState, PassReport, Retry, Trust, WithdrawnCause,
 };
 use zakura_pir_transparent::{HoldCause as PlanHold, PassLimits, PassPlan, Step, StopCause};
+#[cfg(test)]
+use zcash_client_backend::data_api::Account as _;
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AccountLifecycle, RecoveryBlocker, TransparentAddressWatchSet, TransparentLedgerMode,
         TransparentLedgerRead, TransparentLedgerWrite,
     },
-    Account as _, WalletRead,
+    WalletRead,
 };
 use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
 
@@ -334,6 +338,19 @@ pub(crate) fn service_retry_due(db_path: &str) -> bool {
     })
 }
 
+/// Drops the expired service deadlines of the wallet at `db_path`. A run that
+/// recovery's policy ends before it reaches an account never consumes that
+/// account's deadline, which [`service_retry_due`] would otherwise report,
+/// starting a sync at every tip poll. Deadlines still to come stay: they
+/// expire into a run that consumes them, or are dropped here by the next one.
+fn drop_expired_waits(db_path: &str, now: Instant) {
+    for ((path, _), hold) in holds().iter_mut() {
+        if path == db_path && hold.not_before.is_some_and(|until| now >= until) {
+            hold.not_before = None;
+        }
+    }
+}
+
 /// Takes an account's expired service deadline exactly once. Accounts with
 /// no deadline must not gain a pass from another account's service retry.
 fn take_service_retry(db_path: &str, account: AccountUuid, now: Instant) -> bool {
@@ -418,6 +435,7 @@ pub(crate) async fn run<S: RecoverySource>(
     should_exit: &(dyn Fn() -> bool + Sync),
 ) -> Result<RunOutcome, SyncError> {
     if policy.transparent_mode() == TransparentLedgerMode::Public {
+        drop_expired_waits(db_path, clock());
         return Ok(RunOutcome::NotEnabled);
     }
     policy.configure_db(db);
@@ -428,6 +446,7 @@ pub(crate) async fn run<S: RecoverySource>(
     }
     let durable = db.applied_transparent_policy().map_err(db_error)?.mode;
     if durable == TransparentLedgerMode::Public {
+        drop_expired_waits(db_path, clock());
         return Ok(RunOutcome::NotEnabled);
     }
     let deadline = clock() + RUN_BUDGET;
@@ -481,6 +500,11 @@ pub(crate) async fn run<S: RecoverySource>(
                         .or_default()
                         .not_before
                         .get_or_insert_with(clock);
+                }
+                // The accounts this run did not reach keep no deadline a
+                // stopped recovery would never consume.
+                if outcome == RunOutcome::NotEnabled {
+                    drop_expired_waits(db_path, clock());
                 }
                 return Ok(outcome);
             }

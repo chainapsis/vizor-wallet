@@ -209,12 +209,16 @@ length or binding does not match the session) count nothing; the batch is
 still asked to its end, and then private Enhance waits for a later sync.
 HTTP 429/503 stop dispatch inside the client; consuming the remaining results
 does not send those requests. HTTP 409/410 instead refresh routing once and
-retry unfinished work. None of these request failures consumes the content
-failure allowance.
+retry the batch's requests whose rows were not asked before the refusal. The
+retry is not read afresh from the wallet: a record that resolved or rerouted
+another request of the batch must not change which rows are asked again. None
+of these request failures consumes the content failure allowance.
 
 Newly queued payload positions have no artificial first-query delay. Work a
 reply creates still waits for the next block and cannot trigger a same-block
-recovery restart. First-query timing protection is deferred for separate analysis.
+recovery restart. That includes Enhance queries and status lookups a private
+transparent recovery reply creates: the recovery follow-up records what its
+run added, as each drain point does. First-query timing protection is deferred for separate analysis.
 
 Accepted routing, pending routing, rediscovery attempts, and
 `private_failed_for_sync` are session-scoped. Successfully persisted records
