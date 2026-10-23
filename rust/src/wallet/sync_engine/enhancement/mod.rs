@@ -125,13 +125,13 @@ impl EnhancementSession {
 
     /// [`Self::run_checkpoint`] with the private status source and the
     /// Enhance transport given.
-    pub(super) async fn checkpoint_with<S: zakura_transaction_status::StatusSource>(
+    pub(super) async fn checkpoint_with<S: zakura_pir_client::status::policy::StatusSource>(
         &mut self,
         db: &mut WalletDatabase,
         client: &mut CompactTxStreamerClient<Channel>,
         cached: Option<&MemoryBlockSource>,
         private_status: S,
-        route: &impl zakura_pir_enhance::transport::Transport,
+        route: &impl zakura_pir_client::enhance::transport::Transport,
         should_exit: &(impl Fn() -> bool + Sync),
     ) -> Result<bool, SyncError> {
         self.policy.configure_db(db);
@@ -161,13 +161,13 @@ impl EnhancementSession {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn checkpoint_from<S: zakura_transaction_status::StatusSource>(
+    async fn checkpoint_from<S: zakura_pir_client::status::policy::StatusSource>(
         &mut self,
         db: &mut WalletDatabase,
         client: &mut CompactTxStreamerClient<Channel>,
         cached: Option<&MemoryBlockSource>,
         private_status: S,
-        route: &impl zakura_pir_enhance::transport::Transport,
+        route: &impl zakura_pir_client::enhance::transport::Transport,
         before: &content_failures::PrivateWork,
         should_exit: &(impl Fn() -> bool + Sync),
     ) -> Result<bool, SyncError> {
@@ -262,7 +262,7 @@ impl EnhancementSession {
         db: &mut WalletDatabase,
         client: &mut CompactTxStreamerClient<Channel>,
         cached: Option<&MemoryBlockSource>,
-        route: &impl zakura_pir_enhance::transport::Transport,
+        route: &impl zakura_pir_client::enhance::transport::Transport,
         snapshot: &content_failures::PrivateWork,
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {

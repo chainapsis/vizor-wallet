@@ -8,7 +8,7 @@ use zcash_client_backend::{
     data_api::{TransactionDataRequest, TransactionsInvolvingAddress},
     proto::service::RawTransaction,
 };
-use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
+use zcash_primitives::transaction::builder::PRE_NU7_DEFAULT_TX_EXPIRY_DELTA;
 
 use super::SyncError;
 
@@ -77,7 +77,7 @@ pub(super) fn plan(
                 let end = req.block_range_end().unwrap();
                 while start < end {
                     let remaining = u32::from(end) - u32::from(start);
-                    let next = start + remaining.min(DEFAULT_TX_EXPIRY_DELTA + 1);
+                    let next = start + remaining.min(PRE_NU7_DEFAULT_TX_EXPIRY_DELTA + 1);
                     chunks.push(with_range(&req, start, next));
                     start = next;
                 }
@@ -246,7 +246,7 @@ mod tests {
         }
         let plans = plan(&[request(1, 100, 110), filtered]);
         assert_eq!(plans[0].len(), 2);
-        let max = DEFAULT_TX_EXPIRY_DELTA + 1;
+        let max = PRE_NU7_DEFAULT_TX_EXPIRY_DELTA + 1;
         let plans = plan(&[request(1, 1, 1 + 3 * max)]);
         assert_eq!(
             ranges(&plans[0]),

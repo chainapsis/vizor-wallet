@@ -22,7 +22,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use zakura_pir_transparent::{FilterSource, TransparentPirHttp};
+use zakura_pir_client::transparent::{FilterSource, TransparentPirHttp};
 
 use super::super::pir::{test_transport, TransparentPirSource, DEFAULT_MAINNET_ORIGIN};
 use super::super::policy::POLICY_DRAIN;

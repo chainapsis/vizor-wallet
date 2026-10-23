@@ -8,7 +8,7 @@ use std::{
 };
 
 use voting_crypto_deps::rand::rngs::OsRng;
-use zcash_client_sqlite::{util::SystemClock, EnhancePirSession, WalletDb};
+use zcash_client_sqlite::{util::SystemClock, EnhancePirSession, TransparentPirSession, WalletDb};
 
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for;
@@ -174,6 +174,7 @@ fn wallet_db(conn: rusqlite::Connection, db_path: &str, network: WalletNetwork) 
     WalletDb::from_connection(conn, network, SystemClock, OsRng)
         .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network))
         .with_enhance_pir_session(enhance_pir_session(db_path))
+        .with_transparent_pir_session(transparent_pir_session(db_path))
 }
 
 /// The Enhance PIR session of the wallet at `db_path`, shared by every handle
@@ -197,6 +198,27 @@ pub(crate) fn enhance_pir_session(db_path: &str) -> EnhancePirSession {
         .clone()
 }
 
+/// The transparent PIR session of the wallet at `db_path`, shared by every
+/// handle this process opens on it.
+///
+/// The session remembers, in memory, the chain tip at which each transparent
+/// txid lookup was newly queued, and the library withholds that lookup until
+/// the tip changes, so a private reply never turns into a query within the
+/// same sync. It must outlive syncs and handles: a fresh session releases the
+/// work the previous one held. Like the Enhance session it lives for the
+/// app's lifetime, is keyed by path and is never shared between wallets; an
+/// app restart starts a fresh one.
+pub(crate) fn transparent_pir_session(db_path: &str) -> TransparentPirSession {
+    static SESSIONS: OnceLock<Mutex<HashMap<String, TransparentPirSession>>> = OnceLock::new();
+    SESSIONS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(db_path.to_owned())
+        .or_default()
+        .clone()
+}
+
 /// A configured wallet handle over a connection the caller already holds, so
 /// its reads share any transaction that connection has open.
 pub(crate) fn wallet_db_on<'c>(
@@ -206,6 +228,7 @@ pub(crate) fn wallet_db_on<'c>(
 ) -> WalletDb<&'c rusqlite::Connection, WalletNetwork, SystemClock, OsRng> {
     WalletDb::from_connection(conn, network, SystemClock, OsRng)
         .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network))
+        .with_transparent_pir_session(transparent_pir_session(db_path))
 }
 
 pub(crate) fn open_wallet_raw_conn_with_timeout(

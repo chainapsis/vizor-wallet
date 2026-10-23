@@ -2361,10 +2361,10 @@ async fn verify_unbroadcast_migration_txids_absent<P, R>(
     chain_tip_height: u32,
 ) -> Result<(), String>
 where
-    P: zakura_transaction_status::StatusSource,
-    R: zakura_transaction_status::StatusSource,
+    P: zakura_pir_client::status::policy::StatusSource,
+    R: zakura_pir_client::status::policy::StatusSource,
 {
-    use zakura_transaction_status::StatusObservation;
+    use zakura_pir_client::status::policy::StatusObservation;
     use zcash_client_backend::data_api::status::{TransactionStatusRead, TransactionStatusWork};
     const WITHHELD: &str = "Migration recovery is unavailable under the private transparent policy; the run is unchanged";
     for (candidate, txid) in candidates.iter().zip(txids) {
@@ -2386,10 +2386,10 @@ where
                 ));
             }
             // Recovery never exits early, so only the gate cancels.
-            Err(zakura_transaction_status::StatusError::Cancelled) => {
+            Err(zakura_pir_client::status::policy::StatusError::Cancelled) => {
                 return Err(WITHHELD.into());
             }
-            Err(zakura_transaction_status::StatusError::CoverageIncomplete) => {
+            Err(zakura_pir_client::status::policy::StatusError::CoverageIncomplete) => {
                 return Err("Migration recovery is pending sufficient private status coverage; the run is unchanged".into());
             }
             Err(status) => {

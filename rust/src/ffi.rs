@@ -18,7 +18,7 @@ use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::enhancement::{status, EnhancementPolicy};
 use crate::wallet::sync_engine::{SyncError, TransparentLookupGate};
 use crate::wallet::transaction_data::TransactionObservation;
-use zakura_transaction_status::{
+use zakura_pir_client::status::policy::{
     DisabledSource, StatusError, StatusMode, StatusReader, StatusRequest,
 };
 use zcash_client_backend::data_api::status::{
@@ -359,7 +359,7 @@ pub(crate) fn observe_public_transaction(
             reader
                 .observe(StatusRequest {
                     txid: request.txid(),
-                    coverage: zakura_pir_status::LocalCoverageContext::default(),
+                    coverage: zakura_pir_client::status::LocalCoverageContext::default(),
                 })
                 .await
                 .map(TransactionObservation::from)

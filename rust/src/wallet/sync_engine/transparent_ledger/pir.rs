@@ -1,7 +1,7 @@
 //! Transparent PIR as the private recovery source .
 //!
 //! [`TransparentPirSource`] recovers one account per pass from the transparent
-//! PIR service through the reference adapter `zakura_pir_transparent`, over the
+//! PIR service through the reference adapter `zakura_pir_client::transparent`, over the
 //! wallet's routed HTTPS transport. It answers for mainnet only, from
 //! [`DEFAULT_MAINNET_ORIGIN`]; debug builds honor `VIZOR_TRANSPARENT_PIR_URL`.
 //! Every commit it returns comes from that origin, which is what lets the
@@ -49,7 +49,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Handle;
-use zakura_pir_transparent::{
+use zakura_pir_client::transparent::{
     Applied, ApplyFailure, Companion, CompanionDir, Interrupted, OpenError, PassError, PassReport,
     RecoveryError, TransparentHistoryRecoveryConfig, Trust, WalletChain, WriteGate,
 };

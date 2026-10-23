@@ -15,7 +15,7 @@ use std::{
     rc::Rc,
     time::Duration,
 };
-use zakura_pir_enhance::{
+use zakura_pir_client::enhance::{
     transport::{self, BoundedBody, PendingClient},
     types::*,
     wallet::Acceptance,
@@ -1089,7 +1089,10 @@ async fn a_truncated_row_reply_leaves_the_request_transcript_unchanged() {
     let (wallet, deferred, transcript) = drain_once(&service, &THREE_ROWS).await;
     assert_eq!(transcript, honest_transcript, "the same requests, in order");
     assert_eq!(wallet.applied, [40, 70], "the later rows are still applied");
-    assert!(wallet.unreadable.is_empty(), "a request outcome counts nothing");
+    assert!(
+        wallet.unreadable.is_empty(),
+        "a request outcome counts nothing"
+    );
     assert!(deferred, "a request outcome defers private Enhance");
 }
 
@@ -1155,7 +1158,11 @@ impl RecoveryWallet for RealWallet {
     fn work(&self) -> Result<RoutedWork, EnhancePirRunError> {
         self.0.work()
     }
-    fn accept(&self, network: WalletNetwork, m: &Manifest) -> Result<Acceptance, EnhancePirRunError> {
+    fn accept(
+        &self,
+        network: WalletNetwork,
+        m: &Manifest,
+    ) -> Result<Acceptance, EnhancePirRunError> {
         // The scripted anchor is not in this wallet's chain.
         Wallet::new(&[]).accept(network, m)
     }
@@ -1200,7 +1207,9 @@ impl EnhancementEffects<RealWallet> for NoEffects {
 /// does not ask for it.
 #[tokio::test]
 async fn three_unreadable_rows_suspend_the_position_in_the_wallet() {
-    use zcash_client_backend::data_api::enhance_pir::{EnhancementMode, TransactionEnhancementWork};
+    use zcash_client_backend::data_api::enhance_pir::{
+        EnhancementMode, TransactionEnhancementWork,
+    };
     let (_dir, path, pending) =
         crate::wallet::sync::private_shielding_tests::wallet_with_a_private_memo_query();
     let mut db = crate::wallet::db::open_wallet_db_with_timeout(

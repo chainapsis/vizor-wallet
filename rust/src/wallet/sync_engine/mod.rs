@@ -6961,7 +6961,7 @@ fn recovery_status_for(
         .filter(|work| matches!(work, TransactionStatusWork::Private(_)))
         .filter(|work| content_failures::may_ask_status(db_path, &work.txid()))
         .count();
-    let work = zakura_pir_enhance::wallet::PreparedWork::new(
+    let work = zakura_pir_client::enhance::wallet::PreparedWork::new(
         db.transaction_enhancement_work()
             .map_err(|e| e.to_string())?
             .into_iter()

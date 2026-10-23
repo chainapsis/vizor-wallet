@@ -26,6 +26,7 @@ use super::private_shielding_tests::{
 };
 use super::*;
 use crate::wallet::network::configure_regtest_nu6_3_activation_height;
+use zcash_client_backend::data_api::Account as _;
 
 /// A scanned wallet whose account private recovery may cover.
 fn private_wallet() -> (State, AccountUuid) {
@@ -967,4 +968,74 @@ fn inputs_of_two_accounts_keep_each_receipt_shared() {
             "{name}: the whole fee, separately"
         );
     }
+}
+
+/// The txids Vizor's own handle on `path` lists for transparent detail work.
+fn listed_detail_work(path: &str) -> Vec<TxId> {
+    open_wallet_db(path, NETWORK)
+        .unwrap()
+        .transparent_detail_work(std::time::SystemTime::now(), 100, &[], None)
+        .unwrap()
+        .requests
+        .into_iter()
+        .map(|request| request.txid)
+        .collect()
+}
+
+/// A lookup a private reply queues at one tip is not asked at that tip, even
+/// from a handle opened after the replying one closed: every Vizor handle on
+/// the wallet shares one transparent PIR session. A lower tip releases it.
+#[test]
+fn a_lookup_a_reply_queued_stays_held_on_new_handles_until_the_tip_changes() {
+    use crate::wallet::sync_engine::enhancement::test_mode;
+
+    let (mut st, account) = private_wallet();
+    cover(&mut st, account, vec![]);
+    promote(&mut st, account);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+    let other = dir.path().join("other.db").to_str().unwrap().to_owned();
+    let _path_mode = test_mode::set(&path, TransparentLedgerMode::PrivateRequired);
+    let _other_mode = test_mode::set(&other, TransparentLedgerMode::PrivateRequired);
+    for copy in [&path, &other] {
+        st.wallet()
+            .conn()
+            .execute("VACUUM INTO ?1", [copy])
+            .unwrap();
+    }
+    let tip = st.wallet().chain_height().unwrap().unwrap();
+    let ws = watch(&st, account);
+    let txid = TxId::from_bytes([0xb1; 32]);
+    let fresh = output(
+        0xb1,
+        0,
+        external(&ws),
+        60_000,
+        tip - 2,
+        transparent_only(1_000, 1),
+    );
+    let reply = |copy: &str| {
+        let mut batch = commit(&ws);
+        batch.receives = vec![fresh.clone()];
+        open_wallet_db(copy, NETWORK)
+            .unwrap()
+            .apply_transparent_ledger_commit(batch)
+            .unwrap();
+    };
+
+    reply(&path);
+    assert!(!listed_detail_work(&path).contains(&txid));
+    // The other wallet's session never saw this reply's tip, so the same
+    // reply there is held only by its own session.
+    assert!(!listed_detail_work(&other).contains(&txid));
+    reply(&other);
+    assert!(!listed_detail_work(&other).contains(&txid));
+
+    open_wallet_db(&path, NETWORK)
+        .unwrap()
+        .truncate_to_height(tip - 1)
+        .unwrap();
+    assert!(listed_detail_work(&path).contains(&txid));
+    // Only the reorged wallet released its work.
+    assert!(!listed_detail_work(&other).contains(&txid));
 }

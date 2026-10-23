@@ -15,8 +15,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use bytes::Bytes;
 use http_body_util::Full;
 use transparent::{address::TransparentAddress, bundle::OutPoint};
-use zakura_pir_transparent::testing::{unsupported_txid_init, TxidPublication};
-use zakura_pir_transparent::{
+use zakura_pir_client::transparent::testing::{unsupported_txid_init, TxidPublication};
+use zakura_pir_client::transparent::{
     AddressKind, DetailAnswer, DisplayEntry, DisplayLookup, EntryAddress, EntryOutput,
     HttpExchange, HttpFailure, HttpReply, HttpRequest, MapCheck, MapChecked, Placement,
     ProtocolKind, Provenance, Tier, TxidDisplayService, TxidError, TxidLookup,
@@ -377,8 +377,8 @@ fn found(facts: &TransparentDisplayFacts) -> TxidLookup {
     }
     TxidLookup::Found {
         entry: DisplayEntry {
-            tag: zakura_pir_transparent::testing::transparent_shard::txid::Tag::of(
-                &zakura_pir_transparent::testing::transparent_events::Txid(*facts.txid.as_ref()),
+            tag: zakura_pir_client::transparent::testing::shard::txid::Tag::of(
+                &zakura_pir_client::transparent::testing::events::Txid(*facts.txid.as_ref()),
             ),
             coinbase: facts.coinbase,
             shielded_components: facts.shielded_components,
@@ -652,7 +652,7 @@ impl HttpExchange for Unreachable {
 
 /// Returns once no lookup holds `service`'s client: a map refresh waits for
 /// it, then fails at once.
-fn wait_for_client(service: &zakura_pir_transparent::TxidDisplayService) {
+fn wait_for_client(service: &zakura_pir_client::transparent::TxidDisplayService) {
     let _ = service.refresh_map(&Unreachable, &|| false);
 }
 

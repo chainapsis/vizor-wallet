@@ -18,7 +18,7 @@ use crate::wallet::{
     network::WalletNetwork,
     sync_engine::{SyncError, TransparentLookupGate, WalletDatabase},
 };
-use zakura_transaction_status::{
+use zakura_pir_client::status::policy::{
     DisabledSource, StatusError, StatusMode, StatusObservation, StatusReader, StatusRequest,
     StatusSource,
 };
@@ -63,7 +63,7 @@ impl<P: StatusSource, R: StatusSource> RoutedStatusReader<P, R> {
                 self.private
                     .observe(StatusRequest {
                         txid: request.txid(),
-                        coverage: zakura_pir_status::LocalCoverageContext {
+                        coverage: zakura_pir_client::status::LocalCoverageContext {
                             earliest_possible_inclusion: request
                                 .earliest_possible_inclusion()
                                 .map(u32::from),

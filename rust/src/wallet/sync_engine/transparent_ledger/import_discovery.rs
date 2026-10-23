@@ -3,7 +3,7 @@
 //! Import checks the first transparent address of accounts 1 to 20 for
 //! history from the birthday. Asking lightwalletd discloses those addresses,
 //! so under private queries [`PrivateAccountDiscovery`] asks the transparent
-//! PIR service instead, through `zakura_pir_transparent`'s
+//! PIR service instead, through `zakura_pir_client::transparent`'s
 //! `discover_active_addresses`: it downloads every filter from the birthday's
 //! shard to the publication's end and confirms each filter match by private
 //! retrieval, so a false positive never offers an empty account. Nothing is
@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use transparent::address::TransparentAddress;
-use zakura_pir_transparent::{
+use zakura_pir_client::transparent::{
     discover_active_addresses, Discovery, DiscoveryLimits, Outcome, RecoveryError,
     TransparentPirHttp,
 };
@@ -226,7 +226,7 @@ pub(crate) fn interpret(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zakura_pir_transparent::Progress;
+    use zakura_pir_client::transparent::Progress;
 
     fn discovery(active: Vec<usize>, outcome: Outcome) -> Result<Discovery, RecoveryError> {
         Ok(Discovery {

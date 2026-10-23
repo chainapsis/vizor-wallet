@@ -41,6 +41,7 @@ use zip32::Scope;
 
 use super::*;
 use crate::wallet::network::configure_regtest_nu6_3_activation_height;
+use zcash_client_backend::data_api::Account as _;
 
 pub(super) type State = TestState<BlockCache, TestDb, LocalNetwork>;
 

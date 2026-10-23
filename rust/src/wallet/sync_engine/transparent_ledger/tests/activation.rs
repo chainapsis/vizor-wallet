@@ -10,13 +10,13 @@ use super::*;
 use crate::wallet::sync::get_shield_transparent_status;
 use crate::wallet::sync_engine::lwd::transparent_lookup::TransparentLookupGate;
 
-/// Checkpoints every note commitment tree at `height`, as scanning would, so
-/// that proposals can find an anchor.
+/// Supplies a scanned checkpoint in every tree one block behind the tip,
+/// so that proposals can find a usable anchor.
 pub(super) fn checkpoint_trees(wallet: &mut Wallet, height: u32) {
     use shardtree::error::ShardTreeError;
     use zcash_client_backend::data_api::WalletCommitmentTrees;
     use zcash_client_sqlite::wallet::commitment_tree::Error;
-    let height = BlockHeight::from_u32(height);
+    let height = BlockHeight::from_u32(height - 1);
     wallet
         .db
         .with_sapling_tree_mut::<_, _, ShardTreeError<Error>>(|tree| tree.checkpoint(height))
@@ -707,7 +707,7 @@ async fn hardware_authority_waits_out_a_busy_wallet() {
 async fn hardware_authority_reserves_between_settlement_commits() {
     use super::super::pir::SettlementGate;
     use crate::wallet::sync::hardware_authority::await_authority_within;
-    use zakura_pir_transparent::WriteGate as _;
+    use zakura_pir_client::transparent::WriteGate as _;
 
     let mut wallet = wallet();
     let _mode = activate(&mut wallet).await;

@@ -47,8 +47,14 @@ impl<'a, F> StatusPirTransport<'a, F> {
     }
 }
 
-impl<F: Fn() -> bool + Sync> zakura_pir_status::transport::Transport for StatusPirTransport<'_, F> {
-    async fn get(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>, zakura_pir_status::Error> {
+impl<F: Fn() -> bool + Sync> zakura_pir_client::status::transport::Transport
+    for StatusPirTransport<'_, F>
+{
+    async fn get(
+        &self,
+        url: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, zakura_pir_client::status::Error> {
         self.status_request(Method::GET, url, Vec::new(), max_bytes)
             .await
     }
@@ -58,7 +64,7 @@ impl<F: Fn() -> bool + Sync> zakura_pir_status::transport::Transport for StatusP
         url: &str,
         body: Vec<u8>,
         max_bytes: usize,
-    ) -> Result<Vec<u8>, zakura_pir_status::Error> {
+    ) -> Result<Vec<u8>, zakura_pir_client::status::Error> {
         self.status_request(Method::POST, url, body, max_bytes)
             .await
     }
@@ -71,14 +77,14 @@ impl<F: Fn() -> bool> StatusPirTransport<'_, F> {
         url: &str,
         body: Vec<u8>,
         max_bytes: usize,
-    ) -> Result<Vec<u8>, zakura_pir_status::Error> {
-        use zakura_pir_status::Error;
+    ) -> Result<Vec<u8>, zakura_pir_client::status::Error> {
+        use zakura_pir_client::status::Error;
 
         self.session_error.store(0, Ordering::SeqCst);
         self.query_reply.store(false, Ordering::SeqCst);
         let query_header = if method == Method::POST {
             Some(
-                body.get(..zakura_pir_status::HEADER_BYTES)
+                body.get(..zakura_pir_client::status::HEADER_BYTES)
                     .ok_or(Error::Unavailable)?
                     .to_vec(),
             )
@@ -131,11 +137,11 @@ impl<F: Fn() -> bool> StatusPirTransport<'_, F> {
 async fn read_status_body<B>(
     mut incoming: B,
     max_bytes: usize,
-) -> Result<Vec<u8>, zakura_pir_status::Error>
+) -> Result<Vec<u8>, zakura_pir_client::status::Error>
 where
     B: hyper::body::Body<Data = bytes::Bytes> + Unpin,
 {
-    use zakura_pir_status::Error;
+    use zakura_pir_client::status::Error;
     let mut bytes = Vec::new();
     while let Some(frame) = incoming.frame().await {
         let frame = frame.map_err(|_| Error::Unavailable)?;
@@ -158,7 +164,7 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use http_body_util::Full;
-    use zakura_pir_status::{Error, HEADER_BYTES};
+    use zakura_pir_client::status::{Error, HEADER_BYTES};
 
     #[tokio::test]
     async fn status_session_failures_in_oversized_response_bodies_are_retryable() {

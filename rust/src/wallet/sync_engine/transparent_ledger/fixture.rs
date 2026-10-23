@@ -2,7 +2,7 @@
 //!
 //! It answers from a configurable set of mined receives and spends, by default
 //! with one `Ready` commit per pass, in real adapter batches built with
-//! `zakura_pir_transparent::testing`, reported as the adapter's pass reports
+//! `zakura_pir_client::transparent::testing`, reported as the adapter's pass reports
 //! them. Its revisions use [`FIXTURE_SOURCE`] as their source id. It is
 //! untrusted unless [`FixtureSource::trust`] makes it trusted, as the
 //! transparent PIR source is, so the coordinator qualifies its revisions only
@@ -15,7 +15,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use transparent::address::TransparentAddress;
-use zakura_pir_transparent::{
+use zakura_pir_client::transparent::{
     testing, FailedEntries, Outcome, Progress, RecoveryBatch, WithdrawnCause,
 };
 use zcash_client_backend::data_api::transparent_ledger::{

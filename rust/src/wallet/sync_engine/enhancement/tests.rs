@@ -662,36 +662,37 @@ mod tests {
     }
     struct FakeStatusSource {
         opens: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-        requests: std::sync::Arc<std::sync::Mutex<Vec<zakura_transaction_status::StatusRequest>>>,
+        requests:
+            std::sync::Arc<std::sync::Mutex<Vec<zakura_pir_client::status::policy::StatusRequest>>>,
         response: Result<
-            zakura_transaction_status::StatusObservation,
-            zakura_transaction_status::StatusError,
+            zakura_pir_client::status::policy::StatusObservation,
+            zakura_pir_client::status::policy::StatusError,
         >,
         /// Answers given first, in order, before `response`.
         script: std::collections::VecDeque<
             Result<
-                zakura_transaction_status::StatusObservation,
-                zakura_transaction_status::StatusError,
+                zakura_pir_client::status::policy::StatusObservation,
+                zakura_pir_client::status::policy::StatusError,
             >,
         >,
         /// Runs as each reply is given, standing in for what the reply
         /// changes in the wallet.
         on_reply: Option<Box<dyn Fn()>>,
     }
-    impl zakura_transaction_status::StatusSource for FakeStatusSource {
+    impl zakura_pir_client::status::policy::StatusSource for FakeStatusSource {
         type Session = Self;
-        async fn open(self) -> Result<Self, zakura_transaction_status::StatusError> {
+        async fn open(self) -> Result<Self, zakura_pir_client::status::policy::StatusError> {
             self.opens.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(self)
         }
     }
-    impl zakura_transaction_status::StatusSession for FakeStatusSource {
+    impl zakura_pir_client::status::policy::StatusSession for FakeStatusSource {
         async fn observe(
             &mut self,
-            request: zakura_transaction_status::StatusRequest,
+            request: zakura_pir_client::status::policy::StatusRequest,
         ) -> Result<
-            zakura_transaction_status::StatusObservation,
-            zakura_transaction_status::StatusError,
+            zakura_pir_client::status::policy::StatusObservation,
+            zakura_pir_client::status::policy::StatusError,
         > {
             self.requests.lock().unwrap().push(request);
             if let Some(on_reply) = &self.on_reply {
@@ -702,8 +703,8 @@ mod tests {
     }
     fn status_source(
         response: Result<
-            zakura_transaction_status::StatusObservation,
-            zakura_transaction_status::StatusError,
+            zakura_pir_client::status::policy::StatusObservation,
+            zakura_pir_client::status::policy::StatusError,
         >,
     ) -> FakeStatusSource {
         FakeStatusSource {
@@ -720,7 +721,7 @@ mod tests {
         use crate::wallet::sync_engine::{
             complete_verified_recovery_statuses, RefreshedTipRelation,
         };
-        use zakura_transaction_status::StatusObservation;
+        use zakura_pir_client::status::policy::StatusObservation;
         use zcash_client_backend::data_api::status::{
             PublicTransactionStatusRequest, TransactionStatusWork,
         };
@@ -826,7 +827,7 @@ mod tests {
 
     #[tokio::test]
     async fn incomplete_private_status_trips_feedback_gate_without_public_fallback() {
-        use zakura_transaction_status::{StatusError, StatusObservation};
+        use zakura_pir_client::status::policy::{StatusError, StatusObservation};
         let (file, mut db, tx) =
             scanned_transaction_missing_fee_test_db(BlockHeight::from_u32(100), false);
         rusqlite::Connection::open(file.path())
@@ -960,7 +961,7 @@ mod tests {
 
     #[tokio::test]
     async fn private_status_errors_are_deferred_for_the_session_without_failing_sync() {
-        use zakura_transaction_status::{StatusError, StatusObservation};
+        use zakura_pir_client::status::policy::{StatusError, StatusObservation};
         for error in [
             StatusError::Unsupported,
             StatusError::Unavailable,
@@ -1031,7 +1032,7 @@ mod tests {
     /// is still asked.
     #[tokio::test]
     async fn a_malformed_private_status_reply_defers_only_its_transaction() {
-        use zakura_transaction_status::{StatusError, StatusObservation};
+        use zakura_pir_client::status::policy::{StatusError, StatusObservation};
         let (_file, mut db, txid) = private_status_work_db();
         let item = db.transaction_status_work_for(txid).unwrap();
         // The same obligation twice stands in for the next transaction.
@@ -1066,7 +1067,7 @@ mod tests {
     /// work and leaves the refused work in the queue for a later sync.
     #[tokio::test]
     async fn a_refused_status_request_still_defers_the_checkpoint() {
-        use zakura_transaction_status::{StatusError, StatusObservation};
+        use zakura_pir_client::status::policy::{StatusError, StatusObservation};
         use zcash_client_backend::data_api::status::{
             PrivateTransactionStatusRequest, TransactionStatusWork,
         };
@@ -1142,7 +1143,7 @@ mod tests {
     #[tokio::test]
     async fn private_status_is_asked_once_per_block_whatever_the_reply() {
         use super::super::content_failures;
-        use zakura_transaction_status::{StatusError, StatusObservation};
+        use zakura_pir_client::status::policy::{StatusError, StatusObservation};
 
         for (reply, counted) in [
             (Ok(StatusObservation::NotFound), false),
@@ -1261,7 +1262,7 @@ mod tests {
     #[tokio::test]
     async fn a_missing_status_record_waits_for_the_next_block() {
         use super::super::content_failures;
-        use zakura_transaction_status::{StatusError, StatusObservation};
+        use zakura_pir_client::status::policy::{StatusError, StatusObservation};
 
         let (file, mut db, _) = unmined_private_status_db();
         let path = file.path().to_str().unwrap().to_owned();
@@ -1310,14 +1311,18 @@ mod tests {
     #[derive(Default)]
     struct RefusingEnhance(std::sync::atomic::AtomicUsize);
 
-    impl zakura_pir_enhance::transport::Transport for RefusingEnhance {
+    impl zakura_pir_client::enhance::transport::Transport for RefusingEnhance {
         async fn execute(
             &self,
-            _: zakura_pir_enhance::transport::Request,
-        ) -> Result<zakura_pir_enhance::transport::ResponseBody, zakura_pir_enhance::ClientError>
-        {
+            _: zakura_pir_client::enhance::transport::Request,
+        ) -> Result<
+            zakura_pir_client::enhance::transport::ResponseBody,
+            zakura_pir_client::enhance::ClientError,
+        > {
             self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Err(zakura_pir_enhance::ClientError::Transport("offline".into()))
+            Err(zakura_pir_client::enhance::ClientError::Transport(
+                "offline".into(),
+            ))
         }
     }
 
@@ -1331,7 +1336,7 @@ mod tests {
     async fn work_a_status_reply_unlocks_waits_for_the_next_block() {
         use super::super::content_failures;
         use crate::wallet::sync_engine::test_lwd::CapturingLwd;
-        use zakura_transaction_status::StatusObservation;
+        use zakura_pir_client::status::policy::StatusObservation;
         use zcash_client_backend::data_api::transparent_ledger::TransparentLedgerMode;
 
         let (_dir, path, _) =
@@ -1467,7 +1472,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_storage_status_errors_fail_sync_without_deferring() {
-        use zakura_transaction_status::{StatusError, StatusObservation};
+        use zakura_pir_client::status::policy::{StatusError, StatusObservation};
         let (_file, mut db, txid) = private_status_work_db();
         let work = vec![db.transaction_status_work_for(txid).unwrap()];
         let public = status_source(Ok(StatusObservation::NotFound));
@@ -1506,7 +1511,7 @@ mod tests {
 
     #[tokio::test]
     async fn public_status_errors_still_fail_sync() {
-        use zakura_transaction_status::{StatusError, StatusObservation};
+        use zakura_pir_client::status::policy::{StatusError, StatusObservation};
         use zcash_client_backend::data_api::status::{
             PublicTransactionStatusRequest, TransactionStatusWork,
         };
@@ -1539,10 +1544,9 @@ mod tests {
 
     #[tokio::test]
     async fn policy_transition_withholds_remaining_public_status_work() {
-        use zakura_transaction_status::StatusObservation;
-        use zcash_client_backend::data_api::{
-            status::{PublicTransactionStatusRequest, TransactionStatusWork},
-            transparent_ledger::TransparentLedgerMode,
+        use zakura_pir_client::status::policy::StatusObservation;
+        use zcash_client_backend::data_api::status::{
+            PublicTransactionStatusRequest, TransactionStatusWork,
         };
         let (file, mut db, private_txid) = private_status_work_db();
         let path = file.path().to_str().unwrap().to_owned();
@@ -1652,7 +1656,7 @@ mod tests {
 
     #[tokio::test]
     async fn status_work_variant_selects_source_and_preserves_coverage_context() {
-        use zakura_transaction_status::StatusObservation;
+        use zakura_pir_client::status::policy::StatusObservation;
         use zcash_client_backend::data_api::status::{
             PrivateTransactionStatusRequest, PublicTransactionStatusRequest, TransactionStatusWork,
         };

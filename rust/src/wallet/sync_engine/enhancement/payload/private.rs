@@ -17,9 +17,9 @@ use super::{
 use crate::wallet::network::WalletNetwork;
 use futures::StreamExt;
 use std::collections::BTreeSet;
-use zakura_pir_enhance::transport::{self, PendingClient};
-use zakura_pir_enhance::wallet::{Acceptance, PreparedWork};
-use zakura_pir_enhance::{ClientError, Manifest, RECORDS_PER_ROW};
+use zakura_pir_client::enhance::transport::{self, PendingClient};
+use zakura_pir_client::enhance::wallet::{Acceptance, PreparedWork};
+use zakura_pir_client::enhance::{ClientError, Manifest, RECORDS_PER_ROW};
 use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirStoreResult, IronwoodEnhanceDiscoveryRequest,
 };

@@ -18,7 +18,7 @@ use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
 use tokio::runtime::Handle;
 use tonic::transport::Channel;
-use zakura_pir_transparent::{
+use zakura_pir_client::transparent::{
     DetailAnswer, DisplayLookup, HttpExchange, MapCheck, MapChecked, TransportError,
     TxidDisplayService, TxidError,
 };
@@ -405,7 +405,7 @@ pub(crate) mod test_seam {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
-    use zakura_pir_transparent::TxidDisplayService;
+    use zakura_pir_client::transparent::TxidDisplayService;
 
     use crate::wallet::sync_engine::enhancement::RequestObserver;
 

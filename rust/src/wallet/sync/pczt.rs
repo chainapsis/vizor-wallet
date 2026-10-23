@@ -2020,6 +2020,7 @@ async fn store_and_broadcast_pczts_inner(
                             zcash_client_sqlite::ReceivedNoteId,
                         >(
                             transactional_db,
+                            &network,
                             item.combined.clone(),
                             sapling_vks.as_ref().map(|(spend, output)| (spend, output)),
                             Some(&orchard_vk),
@@ -2448,6 +2449,7 @@ pub async fn extract_and_broadcast_pczt(
             let orchard_vk = orchard_verifying_key_for_consensus_branch(consensus_branch_id);
             match extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
                 &mut db,
+                &network,
                 combined_pczt,
                 sapling_vk_pair,
                 Some(&orchard_vk),

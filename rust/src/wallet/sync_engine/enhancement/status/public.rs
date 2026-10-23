@@ -1,7 +1,7 @@
 //! Public transaction-status source construction.
 
 use tonic::transport::Channel;
-use zakura_transaction_status::{
+use zakura_pir_client::status::policy::{
     StatusError, StatusObservation, StatusRequest, StatusSession, StatusSource,
 };
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;

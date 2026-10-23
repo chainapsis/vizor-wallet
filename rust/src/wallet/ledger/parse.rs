@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use ff::PrimeField;
 use orchard::{
     bundle::BundleVersion,
     note::{NoteVersion, Rho},
@@ -524,7 +523,7 @@ fn convert_shielded_action(
             .ok_or("Shielded spend is missing rseed")?,
         alpha: spend
             .alpha()
-            .map(|alpha| alpha.to_repr())
+            .map(|alpha| alpha.to_bytes())
             .ok_or("Shielded spend is missing alpha")?,
         signing_path: derivation.signing_path,
         seed_fingerprint: derivation.seed_fingerprint,
@@ -570,7 +569,10 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
         output
             .value()
             .ok_or("Shielded output is missing its value")?,
-        Rho::from_nf_old(*action.spend().nullifier()),
+        // An output note's rho is the nullifier its action reveals.
+        Rho::from_bytes(&action.spend().nullifier().to_bytes())
+            .into_option()
+            .ok_or("Shielded spend nullifier is not a valid rho")?,
         output.rseed().ok_or("Shielded output is missing rseed")?,
         *output.note_version(),
     )

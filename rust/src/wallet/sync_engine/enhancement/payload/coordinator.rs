@@ -4,9 +4,9 @@
 //! snapshot, and dispatches only explicitly public requests to lightwalletd.
 
 use tonic::transport::Channel;
-use zakura_pir_enhance::transport;
-use zakura_pir_enhance::wallet::{Acceptance, PreparedWork};
-use zakura_pir_enhance::{ClientResourceLimits, Manifest};
+use zakura_pir_client::enhance::transport;
+use zakura_pir_client::enhance::wallet::{Acceptance, PreparedWork};
+use zakura_pir_client::enhance::{ClientResourceLimits, Manifest};
 use zcash_client_backend::{
     data_api::{
         enhance_pir::{
@@ -95,7 +95,7 @@ pub(in crate::wallet::sync_engine) trait RecoveryWallet {
     fn apply(
         &mut self,
         request: EnhancePirRequest,
-        record: &zakura_pir_enhance::EnhanceRecord,
+        record: &zakura_pir_client::enhance::EnhanceRecord,
     ) -> Result<EnhancePirStoreResult, EnhancePirRunError>;
     /// Counts one content failure for `requests`, every request of one
     /// transaction in one row whose reply arrived but did not decode. The
@@ -120,7 +120,7 @@ impl RecoveryWallet for WalletDatabase {
         network: WalletNetwork,
         manifest: &Manifest,
     ) -> Result<Acceptance, EnhancePirRunError> {
-        Ok(zakura_pir_enhance::wallet::acceptance(
+        Ok(zakura_pir_client::enhance::wallet::acceptance(
             self,
             manifest,
             &network,
@@ -131,7 +131,7 @@ impl RecoveryWallet for WalletDatabase {
     fn apply(
         &mut self,
         request: EnhancePirRequest,
-        record: &zakura_pir_enhance::EnhanceRecord,
+        record: &zakura_pir_client::enhance::EnhanceRecord,
     ) -> Result<EnhancePirStoreResult, EnhancePirRunError> {
         Ok(with_wallet_db_write_lock("enhance_pir.apply", || {
             self.apply_ironwood_enhance_record(request, record)

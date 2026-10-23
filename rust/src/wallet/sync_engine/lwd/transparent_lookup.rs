@@ -441,13 +441,13 @@ impl TransparentLookupGate {
     pub(crate) async fn observe_status(
         &self,
         client: &mut CompactTxStreamerClient<Channel>,
-        request: zakura_transaction_status::StatusRequest,
+        request: zakura_pir_client::status::policy::StatusRequest,
         cancelled: &(impl Fn() -> bool + Sync),
     ) -> Result<
         Option<
             Result<
-                zakura_transaction_status::StatusObservation,
-                zakura_transaction_status::StatusError,
+                zakura_pir_client::status::policy::StatusObservation,
+                zakura_pir_client::status::policy::StatusError,
             >,
         >,
         SyncError,
@@ -456,14 +456,14 @@ impl TransparentLookupGate {
         self.dispatch_signalled(
             client,
             |client| {
-                zakura_transaction_status::lightwalletd::observe_response(
+                zakura_pir_client::status::policy::lightwalletd::observe_response(
                     txid,
                     super::get_transaction_payload(client, txid),
                     cancelled,
                 )
             },
             |mut client| async move {
-                zakura_transaction_status::lightwalletd::observe_response(
+                zakura_pir_client::status::policy::lightwalletd::observe_response(
                     txid,
                     super::get_transaction_payload(&mut client, txid),
                     cancelled,

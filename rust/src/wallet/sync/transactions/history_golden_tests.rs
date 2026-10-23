@@ -41,6 +41,7 @@ use super::private_shielding_tests::{
 use super::*;
 use crate::wallet::keys;
 use crate::wallet::network::configure_regtest_nu6_3_activation_height;
+use zcash_client_backend::data_api::Account as _;
 
 const NETWORK: WalletNetwork = WalletNetwork::Regtest;
 /// The scanned chain tip of every wallet built by [`wallet`].

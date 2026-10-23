@@ -103,7 +103,7 @@ const LOCAL_ORIGIN: i64 = 1;
 /// Matched as a prefix of `table:<name>`, `view:<name>`, `index:<name>`,
 /// `column:<table or view>.<column>`, or `unique:<table>(<sorted columns>)`.
 /// A removed table's indexes and unique keys go with it.
-const REMOVED_FOR_ALL_BUILDS: [&str; 2] = [
+const REMOVED_FOR_ALL_BUILDS: [&str; 5] = [
     // The ZIP 318 pool-migration engine. Published builds reference these
     // tables only through `ON DELETE CASCADE` from `accounts`, which is inert
     // once the tables are gone.
@@ -113,6 +113,11 @@ const REMOVED_FOR_ALL_BUILDS: [&str; 2] = [
     // would prevent those two obligations from coexisting. Older writers that
     // target txid alone are not compatible with the upgraded queue.
     "unique:tx_retrieval_queue(txid)",
+    // One-time IVK discovery replaced restore sweeps and nullifier retention.
+    // The wallet's own reads never named these tables.
+    "table:ironwood_nullifier_scan_blocks",
+    "table:ironwood_one_time_spend_retention",
+    "table:ironwood_one_time_sweeps",
 ];
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {

@@ -4,7 +4,7 @@
 //! [`DelegationSigningRequest`] (account index, network, seed fingerprint,
 //! sighash, randomizer) and takes back only the detached SpendAuth signature.
 
-use ff::PrimeField;
+use orchard::primitives::redpallas::SpendAuthRandomizer;
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_voting::delegate::DelegationSigningRequest;
@@ -57,10 +57,8 @@ pub fn sign_delegation_request(
     let sk = *usk.orchard();
     let ask = orchard::keys::SpendAuthorizingKey::from(&sk);
     // The alpha randomizer must decode as a canonical Pallas scalar.
-    let alpha = Option::<pasta_curves::pallas::Scalar>::from(
-        pasta_curves::pallas::Scalar::from_repr(request.alpha),
-    )
-    .ok_or_else(|| "delegation alpha is not a valid Pallas scalar".to_string())?;
+    let alpha = Option::<SpendAuthRandomizer>::from(SpendAuthRandomizer::from_bytes(request.alpha))
+        .ok_or_else(|| "delegation alpha is not a valid Pallas scalar".to_string())?;
     // Sign the request-specific sighash with the randomized spend auth key.
     let rsk = ask.randomize(&alpha);
     let rng = voting_crypto_deps::rand::rngs::OsRng;
@@ -71,41 +69,94 @@ pub fn sign_delegation_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ff::PrimeField;
     use orchard::{
         keys::SpendAuthorizingKey,
         primitives::redpallas::{Signature, SpendAuth, VerificationKey},
     };
 
-    #[test]
-    fn sign_delegation_request_happy_path_signs_and_verifies() {
-        let seed = SecretVec::new(vec![0x42; 32]);
-        let account_index = 0u32;
-        let account = AccountId::try_from(account_index).unwrap();
-        let usk = UnifiedSpendingKey::from_seed(
-            &zcash_voting::Network::Testnet,
-            seed.expose_secret(),
-            account,
-        )
-        .unwrap();
-        let ask = SpendAuthorizingKey::from(usk.orchard());
-        let alpha = pasta_curves::pallas::Scalar::from(7);
-        let sighash = [0xAB; 32];
-        let request = DelegationSigningRequest {
-            account_index,
+    const ACCOUNT_INDEX: u32 = 0;
+    const SIGHASH: [u8; 32] = [0xAB; 32];
+
+    fn seed() -> SecretVec<u8> {
+        SecretVec::new(vec![0x42; 32])
+    }
+
+    fn alpha_bytes() -> [u8; 32] {
+        pasta_curves::pallas::Scalar::from(7).to_repr()
+    }
+
+    fn request(seed: &SecretVec<u8>, alpha: [u8; 32]) -> DelegationSigningRequest {
+        DelegationSigningRequest {
+            account_index: ACCOUNT_INDEX,
             network: zcash_voting::Network::Testnet,
             seed_fingerprint: SeedFingerprint::from_seed(seed.expose_secret())
                 .unwrap()
                 .to_bytes(),
-            sighash,
-            alpha: alpha.to_repr(),
-        };
+            sighash: SIGHASH,
+            alpha,
+        }
+    }
 
-        let (sig_bytes, returned_sighash) = sign_delegation_request(&seed, request).unwrap();
+    fn spend_authorizing_key(seed: &SecretVec<u8>) -> SpendAuthorizingKey {
+        let usk = UnifiedSpendingKey::from_seed(
+            &zcash_voting::Network::Testnet,
+            seed.expose_secret(),
+            AccountId::try_from(ACCOUNT_INDEX).unwrap(),
+        )
+        .unwrap();
+        SpendAuthorizingKey::from(usk.orchard())
+    }
 
-        let verification_key = VerificationKey::from(&ask.randomize(&alpha));
-        verification_key
-            .verify(&sighash, &Signature::<SpendAuth>::from(sig_bytes))
+    fn randomized_key(seed: &SecretVec<u8>, alpha: [u8; 32]) -> VerificationKey<SpendAuth> {
+        let alpha = SpendAuthRandomizer::from_bytes(alpha).unwrap();
+        VerificationKey::from(&spend_authorizing_key(seed).randomize(&alpha))
+    }
+
+    #[test]
+    fn sign_delegation_request_happy_path_signs_and_verifies() {
+        let seed = seed();
+        let (sig_bytes, returned_sighash) =
+            sign_delegation_request(&seed, request(&seed, alpha_bytes())).unwrap();
+
+        randomized_key(&seed, alpha_bytes())
+            .verify(&SIGHASH, &Signature::<SpendAuth>::from(sig_bytes))
             .unwrap();
-        assert_eq!(returned_sighash, sighash);
+        assert_eq!(returned_sighash, SIGHASH);
+    }
+
+    #[test]
+    fn the_signature_binds_the_sighash_and_the_randomizer() {
+        let seed = seed();
+        let (sig_bytes, _) = sign_delegation_request(&seed, request(&seed, alpha_bytes())).unwrap();
+        let signature = Signature::<SpendAuth>::from(sig_bytes);
+
+        assert!(randomized_key(&seed, alpha_bytes())
+            .verify(&[0xAC; 32], &signature)
+            .is_err());
+        let other_alpha = pasta_curves::pallas::Scalar::from(8).to_repr();
+        assert!(randomized_key(&seed, other_alpha)
+            .verify(&SIGHASH, &signature)
+            .is_err());
+    }
+
+    #[test]
+    fn a_noncanonical_alpha_is_refused() {
+        let seed = seed();
+        // The Pallas scalar modulus is below 2^255, so all-ones bytes are out of range.
+        let error = sign_delegation_request(&seed, request(&seed, [0xFF; 32])).unwrap_err();
+        assert_eq!(error, "delegation alpha is not a valid Pallas scalar");
+    }
+
+    #[test]
+    fn another_wallets_request_is_refused() {
+        let seed = seed();
+        let mut other = request(&seed, alpha_bytes());
+        other.seed_fingerprint = SeedFingerprint::from_seed(&[0x43; 32]).unwrap().to_bytes();
+        let error = sign_delegation_request(&seed, other).unwrap_err();
+        assert_eq!(
+            error,
+            "wallet seed fingerprint does not match delegation signing request"
+        );
     }
 }

@@ -5,12 +5,12 @@ use super::super::{
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::transaction_data::{LookupError, TransactionObservation};
 use std::time::{SystemTime, UNIX_EPOCH};
-use zakura_pir_status::{
+use zakura_pir_client::status::policy::{
+    StatusError, StatusObservation, StatusRequest, StatusSession, StatusSource,
+};
+use zakura_pir_client::status::{
     transport::{PendingClient, StatusPirClient},
     AcceptedAnchor, Error, LocalCoverageContext, Observation,
-};
-use zakura_transaction_status::{
-    StatusError, StatusObservation, StatusRequest, StatusSession, StatusSource,
 };
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::TxId;
@@ -191,7 +191,7 @@ fn require_bound_for_absence(
 
 fn accepted_anchor(
     db: &WalletDatabase,
-    manifest: &zakura_pir_status::Manifest,
+    manifest: &zakura_pir_client::status::Manifest,
 ) -> Result<AcceptedAnchor, LookupError> {
     if manifest.network != mainnet_genesis() {
         return Err(LookupError::Unavailable);
@@ -352,8 +352,8 @@ mod tests {
         let scanned = db.block_fully_scanned().unwrap().unwrap();
         let height = scanned.block_height();
         let hash = db.get_block_hash(height).unwrap().unwrap().0;
-        let mut manifest = zakura_pir_status::Manifest {
-            protocol: zakura_pir_status::PROTOCOL.into(),
+        let mut manifest = zakura_pir_client::status::Manifest {
+            protocol: zakura_pir_client::status::PROTOCOL.into(),
             network: mainnet_genesis(),
             salt: [1; 32],
             generation: 1,

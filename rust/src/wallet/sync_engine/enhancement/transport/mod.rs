@@ -66,7 +66,7 @@ use hyper::body::{Body, Incoming};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::{future::Future, time::Duration};
-use zakura_pir_enhance::transport::{self, BoundedBody};
+use zakura_pir_client::enhance::transport::{self, BoundedBody};
 
 use super::super::{lwd::DirectRouteConnector, SyncError};
 

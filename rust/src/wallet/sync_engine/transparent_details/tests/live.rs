@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use zakura_pir_transparent::{Placement, TxidDisplayService, TxidLookup};
+use zakura_pir_client::transparent::{Placement, TxidDisplayService, TxidLookup};
 
 use super::super::source::{BlockingLookup, DEFAULT_MAINNET_ORIGIN};
 use super::*;

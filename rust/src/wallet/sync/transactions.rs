@@ -35,7 +35,7 @@ use zcash_client_backend::data_api::{
         TransparentLedgerBalance, TransparentLedgerMode, TransparentLedgerRead,
         TransparentLedgerSnapshot,
     },
-    Account as _, Balance, WalletRead, WalletWrite,
+    Balance, WalletRead, WalletWrite,
 };
 use zcash_client_sqlite::{wallet::history::TransactionSummary, AccountUuid};
 use zcash_primitives::transaction::TxId;

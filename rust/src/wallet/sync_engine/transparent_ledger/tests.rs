@@ -16,7 +16,7 @@ use zcash_keys::encoding::AddressCodec as _;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
 
-use zakura_pir_transparent::Outcome;
+use zakura_pir_client::transparent::Outcome;
 
 use super::fixture::{FixtureSource, Observed, FIXTURE_SOURCE};
 use super::*;
@@ -29,6 +29,7 @@ use crate::wallet::{
     keys::{self, HardwareSignerKind},
     network::WalletNetwork,
 };
+use zcash_client_backend::data_api::Account as _;
 
 const NETWORK: WalletNetwork = WalletNetwork::Regtest;
 /// The highest scanned block in every fixture wallet.
@@ -1676,7 +1677,7 @@ async fn content_failure_preserves_service_wait_across_new_blocks_and_reorgs() {
             let _mode = activate(&mut wallet).await;
             let source = funded_source(&wallet);
             source.next(Some(outcome));
-            source.failed_entries(zakura_pir_transparent::FailedEntries {
+            source.failed_entries(zakura_pir_client::transparent::FailedEntries {
                 entries: failed,
                 held: 0,
             });
@@ -1789,9 +1790,9 @@ async fn cancelling_a_service_retry_preserves_its_new_wait() {
         ) -> impl Future<Output = Result<Option<Applied>, ApplyFailure>> + Send {
             self.exit.store(true, Ordering::SeqCst);
             std::future::ready(Err(ApplyFailure {
-                error: zakura_pir_transparent::ApplyError::Interrupted,
-                stats: zakura_pir_transparent::ApplyStats::default(),
-                progress: zakura_pir_transparent::Progress {
+                error: zakura_pir_client::transparent::ApplyError::Interrupted,
+                stats: zakura_pir_client::transparent::ApplyStats::default(),
+                progress: zakura_pir_client::transparent::Progress {
                     covered_through: 0,
                     outcome: self.outcome,
                 },
@@ -2086,7 +2087,7 @@ async fn a_legacy_discrepancy_holds_the_account() {
 #[tokio::test]
 async fn a_directory_entry_failed_three_times_holds_the_account() {
     use crate::wallet::sync::TransparentStopReason;
-    use zakura_pir_transparent::FailedEntries;
+    use zakura_pir_client::transparent::FailedEntries;
 
     let mut wallet = wallet();
     let _mode = activate(&mut wallet).await;

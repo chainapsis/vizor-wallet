@@ -58,16 +58,18 @@ use std::future::Future;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-pub(crate) use zakura_pir_transparent::{
+pub(crate) use zakura_pir_client::transparent::{
     Applied, ApplyAction, ApplyFailure, BatchState, PassReport, Retry, Trust, WithdrawnCause,
 };
-use zakura_pir_transparent::{HoldCause as PlanHold, PassLimits, PassPlan, Step, StopCause};
+use zakura_pir_client::transparent::{
+    HoldCause as PlanHold, PassLimits, PassPlan, Step, StopCause,
+};
 use zcash_client_backend::data_api::{
     transparent_ledger::{
         AccountLifecycle, RecoveryBlocker, TransparentAddressWatchSet, TransparentLedgerMode,
         TransparentLedgerRead, TransparentLedgerWrite,
     },
-    Account as _, WalletRead,
+    WalletRead,
 };
 use zcash_client_sqlite::{error::SqliteClientError, AccountUuid};
 
@@ -545,9 +547,15 @@ impl<S: RecoverySource> Run<'_, S> {
             if should_exit() {
                 return Ok(AccountOutcome::Stop(RunOutcome::Exited));
             }
+            // The plan keys its watch set by the PIR protocol's block hash;
+            // sources take the wallet's, which has the same bytes.
+            let watch = plan
+                .watch()
+                .clone()
+                .map_block_hash(|hash| zcash_primitives::block::BlockHash(hash.0));
             let request = SourceRequest {
                 account,
-                watch: plan.watch(),
+                watch: &watch,
                 should_exit: &pass_exit,
             };
             let answer = tokio::time::timeout(PASS_BACKSTOP, self.source.recover(request)).await;

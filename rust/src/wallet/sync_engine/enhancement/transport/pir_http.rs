@@ -1,7 +1,7 @@
 //! Transparent PIR and txid display PIR over the wallet's routed HTTPS
 //! transport.
 //!
-//! [`RoutedExchange`] is the raw [`HttpExchange`] `zakura_pir_transparent`
+//! [`RoutedExchange`] is the raw [`HttpExchange`] `zakura_pir_client::transparent`
 //! sends both services through. It shares [`RoutedTransport`] with the other
 //! private services: HTTPS only, Tor when the wallet wants it and the
 //! direct-route lease otherwise, no User-Agent, and the caller's
@@ -24,7 +24,9 @@ use http_body_util::BodyExt;
 use hyper::body::Body;
 use std::{fmt, time::Duration};
 use tokio::runtime::Handle;
-use zakura_pir_transparent::{HttpExchange, HttpFailure, HttpMethod, HttpReply, HttpRequest};
+use zakura_pir_client::transparent::{
+    HttpExchange, HttpFailure, HttpMethod, HttpReply, HttpRequest,
+};
 
 use super::{routed_response, secure_endpoint_uri, RoutedHttpError, RoutedTransport};
 use crate::wallet::sync_engine::{watch_for_exit, SyncError};
