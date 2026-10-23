@@ -76,8 +76,13 @@ Completer<void>? _discardGate;
 bool _discardFails = false;
 int _discardCalls = 0;
 int _proposeCalls = 0;
+bool _nativeSyncRunning = false;
+int _nativeBalanceReads = 0;
 
 class _RustApiFake implements RustLibApi {
+  @override
+  bool crateApiSyncIsSyncRunning() => _nativeSyncRunning;
+
   @override
   Future<void> crateApiSyncDiscardProposal({
     required BigInt proposalId,
@@ -384,6 +389,71 @@ class _ControllableSnapshotSyncNotifier extends SyncNotifier {
       ),
     );
     if (!_authoritative.isCompleted) _authoritative.complete();
+  }
+}
+
+/// Keeps the UI at its carried balance while the real spend gate reads native
+/// readiness and balance. History publication is independent of that gate.
+class _PendingHistorySyncNotifier extends SyncNotifier {
+  _PendingHistorySyncNotifier({this.initiallyCarried = true})
+    : super(walletDbPathResolver: () async => '/tmp/zcash-test');
+
+  final bool initiallyCarried;
+
+  SyncState _snapshot(bool carried) => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    isSyncing: carried,
+    isSyncComplete: !carried,
+    percentage: carried ? 0.99 : 1,
+    scannedHeight: 101,
+    chainTipHeight: 101,
+    spendableBalance: BigInt.from(500000000),
+    displaySpendableBalance: BigInt.from(500000000),
+    displaySpendableFreshness: carried
+        ? SpendableBalanceFreshness.lastCompletedSync
+        : SpendableBalanceFreshness.authoritative,
+    totalBalance: BigInt.from(500000000),
+  );
+
+  @override
+  Future<SyncState> build() async => _snapshot(initiallyCarried);
+
+  SyncState get snapshot => state.requireValue;
+
+  void beginRefresh() => state = AsyncData(_snapshot(true));
+
+  @override
+  Future<WalletBalance> readWalletBalance({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    _nativeBalanceReads++;
+    final amount = BigInt.from(550000000);
+    return WalletBalance(
+      availability: WalletBalanceAvailability.available,
+      transparentAuthority: TransparentBalanceAuthority.current,
+      transparentPrivate: false,
+      transparent: BigInt.zero,
+      sapling: BigInt.zero,
+      orchard: amount,
+      ironwood: BigInt.zero,
+      transparentLocked: BigInt.zero,
+      saplingLocked: BigInt.zero,
+      orchardLocked: BigInt.zero,
+      ironwoodLocked: BigInt.zero,
+      transparentPending: BigInt.zero,
+      saplingPending: BigInt.zero,
+      orchardPending: BigInt.zero,
+      ironwoodPending: BigInt.zero,
+      changePendingConfirmation: BigInt.zero,
+      valuePendingSpendability: BigInt.zero,
+      uneconomicValue: BigInt.zero,
+      spendable: amount,
+      locked: BigInt.zero,
+      total: amount,
+    );
   }
 }
 
@@ -833,6 +903,8 @@ void main() {
     _discardFails = false;
     _discardCalls = 0;
     _proposeCalls = 0;
+    _nativeSyncRunning = false;
+    _nativeBalanceReads = 0;
     _proposeSendSucceeds = false;
     _proposeSendCompleter = null;
     _proposalFeeZatoshi = BigInt.from(10000);
@@ -1752,6 +1824,166 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  for (final maxMode in [false, true]) {
+    testWidgets(
+      'pending history allows ${maxMode ? "Max" : "typed"} confirmation after native sync',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier();
+        _nativeSyncRunning = true;
+        _sendMaxEstimateBuilder = ({required toAddress, memo}) =>
+            SendMaxEstimateResult(
+              amountZatoshi: BigInt.from(549990000),
+              feeZatoshi: BigInt.from(10000),
+              needsSaplingParams: false,
+            );
+        var feeCalls = 0;
+        await tester.pumpWidget(
+          _reviewApp(
+            syncNotifier: sync,
+            initialMaxMode: maxMode,
+            initialAmount: '4.99995',
+            estimateFee:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                  required toAddress,
+                  required amountZatoshi,
+                  memo,
+                }) async {
+                  feeCalls++;
+                  return BigInt.from(10000);
+                },
+          ),
+        );
+        await tester.pumpAndSettle();
+        final before = sync.snapshot;
+        expect(_confirmButton(tester).onPressed, isNull);
+        expect(feeCalls, 0);
+        expect(_estimateSendMaxCalls, 0);
+        expect(_nativeBalanceReads, 0);
+
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(_nativeBalanceReads, greaterThan(0));
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        expect(find.text('Confirm & Send'), findsOneWidget);
+        expect(sync.snapshot, same(before));
+        expect(before.isUsingCompletedSpendableSnapshot, isTrue);
+        expect(before.percentage, 0.99);
+        expect(feeCalls, maxMode ? 0 : 1);
+        expect(_estimateSendMaxCalls, maxMode ? 1 : 0);
+        if (maxMode) expect(find.text('5.4999 ZEC'), findsOneWidget);
+
+        // The native proposal is still reached; its failure is not bypassed.
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_proposeCalls, 1);
+        expect(sync.snapshot, same(before));
+        expect(find.text('Confirm & Send'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'pending history reaches signing for ${maxMode ? "Max" : "typed"} sends',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier();
+        _nativeSyncRunning = true;
+        _proposeSendSucceeds = true;
+        await tester.pumpWidget(
+          _cancelRecoveryApp(
+            sync,
+            isMaxMode: maxMode,
+            signerKind: HardwareSignerKind.ledger,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNull);
+        final before = sync.snapshot;
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(find.text('Confirm with Ledger'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_proposeCalls, 1);
+        expect(find.text('ledger sign'), findsOneWidget);
+        expect(sync.snapshot, same(before));
+      },
+    );
+
+    testWidgets(
+      'pending history requotes ${maxMode ? "Max" : "typed"} review after a new sync',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier(initiallyCarried: false);
+        var feeCalls = 0;
+        await tester.pumpWidget(
+          _reviewApp(
+            syncNotifier: sync,
+            initialMaxMode: maxMode,
+            estimateFee:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                  required toAddress,
+                  required amountZatoshi,
+                  memo,
+                }) async {
+                  feeCalls++;
+                  return BigInt.from(10000);
+                },
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        final callsBefore = maxMode ? _estimateSendMaxCalls : feeCalls;
+        _nativeSyncRunning = true;
+        sync.beginRefresh();
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNull);
+        expect(maxMode ? _estimateSendMaxCalls : feeCalls, callsBefore);
+
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(maxMode ? _estimateSendMaxCalls : feeCalls, callsBefore + 1);
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        expect(find.text('Confirm & Send'), findsOneWidget);
+        expect(sync.snapshot.isUsingCompletedSpendableSnapshot, isTrue);
+      },
+    );
+  }
+
+  testWidgets('pending history keeps a native fee shortfall blocked', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _reviewApp(
+        syncNotifier: _PendingHistorySyncNotifier(),
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async {
+              throw StateError(
+                'Insufficient balance (have 100, need 200 including fee)',
+              );
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(_nativeBalanceReads, greaterThan(0));
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(find.text('Try again'), findsNothing);
+    expect(_proposeCalls, 0);
   });
 
   testWidgets('failed review fee estimate exposes a working retry action', (
@@ -4415,7 +4647,7 @@ AppButton _confirmButton(WidgetTester tester) =>
     tester.widget<AppButton>(find.byKey(const ValueKey('mobile_send_confirm')));
 
 Widget _cancelRecoveryApp(
-  _CancelRecoverySyncNotifier sync, {
+  SyncNotifier sync, {
   bool isMaxMode = false,
   HardwareSignerKind signerKind = HardwareSignerKind.keystone,
 }) => _sendFlowRouterApp(

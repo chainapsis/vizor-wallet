@@ -981,9 +981,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      // Check balance before proposing
+      // A current native Max quote can exceed the carried display balance.
+      // Proposal creation still checks that its inputs remain spendable.
       final available = _availableBalanceForCurrentAddress;
-      if (amountZatoshi > available) {
+      if (amountZatoshi > available && !_hasCurrentMaxQuote) {
         setState(() {
           _error = '$_insufficientBalanceText.';
           _isSending = false;

@@ -880,6 +880,77 @@ void main() {
     expect(find.text('Max amount unavailable'), findsNothing);
   });
 
+  Future<void> quoteAboveCarriedBalance(WidgetTester tester) async {
+    await _setDesktopViewport(tester);
+    rustApi.maxAmountZatoshi = BigInt.from(149980000);
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(100000000),
+        displaySpendableBalance: BigInt.from(100000000),
+        displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(_editableIn('send_address_field'), _shieldedAddress);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use Max'));
+    await tester.pumpAndSettle();
+    expect(rustApi.estimateSendMaxCalls, 1);
+    expect(_fieldText(tester, 'send_amount_field'), '1.4998');
+  }
+
+  testWidgets('current Max reaches Review above a carried balance', (
+    tester,
+  ) async {
+    await quoteAboveCarriedBalance(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendScreen)),
+    );
+    final before = container.read(syncProvider).requireValue;
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(rustApi.lastProposeAmountZatoshi, BigInt.from(149980000));
+    expect(find.text('Insufficient shielded balance.'), findsNothing);
+    expect(container.read(syncProvider).requireValue, same(before));
+    expect(before.isUsingCompletedSpendableSnapshot, isTrue);
+    expect(before.displaySpendableBalance, BigInt.from(100000000));
+  });
+
+  testWidgets('current Max still reports a native proposal shortfall', (
+    tester,
+  ) async {
+    await quoteAboveCarriedBalance(tester);
+    rustApi.proposalError = StateError('Insufficient funds');
+    await tester.tap(find.byKey(const ValueKey('send_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(rustApi.proposeSendCalls, 1);
+    expect(find.byType(SendScreen), findsOneWidget);
+    expect(
+      find.text('Insufficient shielded balance to cover amount and fee.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('edited Max cannot authorize an amount above the display', (
+    tester,
+  ) async {
+    await quoteAboveCarriedBalance(tester);
+    await tester.enterText(_editableIn('send_amount_field'), '1.4');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('send_review_button')))
+          .onPressed,
+      isNull,
+    );
+    expect(rustApi.proposeSendCalls, 0);
+  });
+
   testWidgets('amount field keeps the native ticker suffix while editing', (
     tester,
   ) async {
@@ -1948,6 +2019,8 @@ class _RustApiFake implements RustLibApi {
   int proposeSendCalls = 0;
   String? lastValidateNetwork;
   int estimateSendMaxCalls = 0;
+  BigInt maxAmountZatoshi = BigInt.from(499990000);
+  Object? proposalError;
   String? lastProposeToAddress;
   String? lastProposeMemo;
   BigInt? lastProposeAmountZatoshi;
@@ -1959,6 +2032,8 @@ class _RustApiFake implements RustLibApi {
     lastValidateNetwork = null;
     proposeSendCalls = 0;
     estimateSendMaxCalls = 0;
+    maxAmountZatoshi = BigInt.from(499990000);
+    proposalError = null;
     lastProposeToAddress = null;
     lastProposeMemo = null;
     lastProposeAmountZatoshi = null;
@@ -2031,7 +2106,7 @@ class _RustApiFake implements RustLibApi {
     lastEstimateSendMaxToAddress = toAddress;
     lastEstimateSendMaxMemo = memo;
     return SendMaxEstimateResult(
-      amountZatoshi: BigInt.from(499990000),
+      amountZatoshi: maxAmountZatoshi,
       feeZatoshi: BigInt.from(10000),
       needsSaplingParams: false,
     );
@@ -2051,6 +2126,7 @@ class _RustApiFake implements RustLibApi {
     lastProposeToAddress = toAddress;
     lastProposeMemo = memo;
     lastProposeAmountZatoshi = amountZatoshi;
+    if (proposalError case final error?) throw error;
     return ProposalResult(
       proposalId: BigInt.one,
       needsSaplingParams: false,

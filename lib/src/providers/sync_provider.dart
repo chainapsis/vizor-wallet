@@ -3458,10 +3458,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
   }
 
-  /// Waits until a UI-only completed-sync snapshot has been reconciled with
-  /// the latest Rust balance. Editing can continue while the snapshot is
-  /// visible, but proposal and Max operations call this before treating the
-  /// displayed amount as spendable.
+  /// Validates spend readiness without waiting for display history. A carried
+  /// snapshot is never authority: after native scanning finishes, read a fresh
+  /// account balance. This does not publish balance or sync completion state.
   Future<void> waitForAuthoritativeSpendable({
     required String accountUuid,
     Duration timeout = const Duration(seconds: 30),
@@ -3469,42 +3468,61 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     const pollInterval = Duration(milliseconds: 100);
     final deadline = DateTime.now().add(timeout);
     final initial = _previousScopedState(state.value, accountUuid);
-    if (!(initial?.isUsingCompletedSpendableSnapshot ?? false)) {
-      return;
-    }
-    var requestedRecovery = false;
+    if (!(initial?.isUsingCompletedSpendableSnapshot ?? false)) return;
+    final epoch = _sensitiveStateEpoch;
 
-    while (true) {
-      if (_requiresUnlock) {
-        throw StateError('Wallet locked while finishing sync.');
+    void checkScope() {
+      if (!ref.mounted || _requiresUnlock || epoch != _sensitiveStateEpoch) {
+        throw StateError('Wallet changed while finishing sync.');
       }
       if (_getActiveAccountUuid() != accountUuid) {
         throw StateError('Active account changed while finishing sync.');
       }
-
       final scoped = _previousScopedState(state.value, accountUuid);
       if (scoped?.failure != null || scoped?.error != null) {
         throw StateError('Wallet sync failed before balance refresh.');
       }
-      if (!(scoped?.isUsingCompletedSpendableSnapshot ?? false)) {
-        return;
+    }
+
+    bool nativeScanFinished() =>
+        !rust_sync.isSyncRunning() &&
+        (!_isSyncing || (_lastForegroundSyncProgress?.isComplete ?? false));
+
+    while (true) {
+      checkScope();
+      final scoped = _previousScopedState(state.value, accountUuid);
+      if (!(scoped?.isUsingCompletedSpendableSnapshot ?? false)) return;
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) {
+        throw StateError('Wallet sync is still finishing. Try again.');
       }
 
-      final syncInProgress =
-          (scoped?.isSyncing ?? false) ||
-          (scoped?.isBackgroundMode ?? false) ||
-          rust_sync.isSyncRunning();
-      if (!syncInProgress && !requestedRecovery) {
-        requestedRecovery = true;
-        await _ensureAuthoritativeBalanceRecovery();
-        final refreshed = _previousScopedState(state.value, accountUuid);
-        if (!(refreshed?.isUsingCompletedSpendableSnapshot ?? false)) {
+      if (nativeScanFinished()) {
+        final gen = _syncGen;
+        final balance =
+            await (() async {
+              final dbPath = await _getDbPath();
+              checkScope();
+              return readWalletBalance(
+                dbPath: dbPath,
+                network: _endpointConfig.networkName,
+                accountUuid: accountUuid,
+              );
+            })().timeout(
+              remaining,
+              onTimeout: () {
+                throw StateError('Wallet sync is still finishing. Try again.');
+              },
+            );
+        checkScope();
+        // A foreground start may have raced the read. The operation's lease
+        // prevents another start during the second check and native operation.
+        if (gen == _syncGen &&
+            nativeScanFinished() &&
+            balance.availability ==
+                rust_sync.WalletBalanceAvailability.available) {
           return;
         }
-      }
-
-      if (DateTime.now().isAfter(deadline)) {
-        throw StateError('Wallet sync is still finishing. Try again.');
       }
       await Future<void>.delayed(pollInterval);
     }

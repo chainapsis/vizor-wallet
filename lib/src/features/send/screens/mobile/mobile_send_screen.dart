@@ -1105,7 +1105,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _seedInitialMaxQuote() {
-    if (!_isMaxMode) return;
+    if (!_isMaxMode || _isUsingCompletedSpendableSnapshot) return;
     final accountUuid = _activeAccountUuid;
     final amountZatoshi = parseZecAmount(_amountText.trim());
     final feeZatoshi = _feeZatoshi;
@@ -1122,7 +1122,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   void _seedInitialReviewFeeQuote() {
-    if (_isMaxMode) return;
+    if (_isMaxMode || _isUsingCompletedSpendableSnapshot) return;
     final accountUuid = _activeAccountUuid;
     final amountZatoshi = parseZecAmount(_amountText.trim());
     final feeZatoshi = _feeZatoshi;
@@ -1148,7 +1148,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   bool get _hasCurrentReviewFeeQuote {
-    if (_isUsingCompletedSpendableSnapshot) return false;
     if (_isMaxMode) return _hasCurrentMaxQuote;
     final quote = _reviewFeeQuote;
     if (quote == null || _isRefreshingReviewFee) return false;
@@ -1166,19 +1165,6 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _isMaxMode = false;
     _isResolvingMax = false;
     _maxQuote = null;
-  }
-
-  void _invalidateMaxQuoteForSync() {
-    _validateSeq++;
-    _maxSeq++;
-    setState(() {
-      _isResolvingMax = false;
-      _maxQuote = null;
-      _reviewFeeQuote = null;
-      _feeZatoshi = null;
-      _reviewFeeRetryAvailable = false;
-      _reviewFeeNotice = null;
-    });
   }
 
   void _handleAmountChanged(String value) {
@@ -1663,7 +1649,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       )) {
         return;
       }
-      if (zatoshi + fee > _spendable) {
+      // The native estimate validates funding. A carried display balance can
+      // still be lower while transaction history finishes loading.
+      if (!_isUsingCompletedSpendableSnapshot && zatoshi + fee > _spendable) {
         setState(() {
           _amountError = _notEnoughZecText;
           _isRefreshingReviewFee = false;
@@ -2153,21 +2141,26 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           _pendingCancellation != null) {
         return;
       }
+      final releasedSnapshot =
+          previous?.freshness == SpendableBalanceFreshness.lastCompletedSync &&
+          next.freshness != SpendableBalanceFreshness.lastCompletedSync;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _isConfirmingSend || _pendingCancellation != null) {
           return;
         }
         if (_isMaxMode) {
-          if (next.freshness == SpendableBalanceFreshness.lastCompletedSync) {
-            _invalidateMaxQuoteForSync();
-          } else {
-            unawaited(_resolveMaxEstimate());
+          // The native quote already waits for scanning; publishing history
+          // need not restart an in-flight or completed quote.
+          if (releasedSnapshot && (_isResolvingMax || _hasCurrentMaxQuote)) {
+            return;
           }
+          unawaited(_resolveMaxEstimate());
         } else if (_step == _SendStep.amount && _amountText.trim().isNotEmpty) {
           unawaited(_validateAmount());
         } else if (_step == _SendStep.review &&
             !_isRefreshingReviewFee &&
-            !_hasCurrentReviewFeeQuote) {
+            (next.freshness == SpendableBalanceFreshness.lastCompletedSync ||
+                !_hasCurrentReviewFeeQuote)) {
           unawaited(_refreshReviewQuote());
         }
       });
@@ -3294,7 +3287,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         : _pendingCancellation != null ||
                               _reviewFeeRetryAvailable
                         ? 'Try again'
-                        : _isUsingCompletedSpendableSnapshot
+                        : _isUsingCompletedSpendableSnapshot &&
+                              !_hasCurrentReviewFeeQuote
                         ? 'Finishing wallet sync...'
                         : _isRefreshingReviewFee
                         ? 'Calculating fee...'
