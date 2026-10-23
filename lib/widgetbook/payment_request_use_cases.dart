@@ -63,6 +63,17 @@ const _fullRequest = PaymentRequestView(
   spendableText: '0.21 ZEC',
 );
 
+/// The same request pasted into the send recipient field.
+const _pastedRequest = PaymentRequestView(
+  source: PaymentRequestSource.pastedLink,
+  requesterLabel: 'Blue Door Coffee',
+  amountZecText: '0.5 ZEC',
+  fiatText: r'$35.00',
+  address: _sampleAddress,
+  memo: _sampleMemo,
+  note: _sampleNote,
+);
+
 const _scannedRequest = PaymentRequestView(
   source: PaymentRequestSource.qrCode,
   requesterLabel: 'Blue Door Coffee',
@@ -71,7 +82,30 @@ const _scannedRequest = PaymentRequestView(
   address: _sampleAddress,
   memo: _sampleMemo,
   note: _sampleNote,
-  replacedNotice: true,
+);
+
+/// "Scan original QR" over a link that asked for the same payment.
+const _scannedMatchingRequest = PaymentRequestView(
+  source: PaymentRequestSource.qrCode,
+  requesterLabel: 'Blue Door Coffee',
+  amountZecText: '0.5 ZEC',
+  fiatText: r'$35.00',
+  address: _sampleAddress,
+  memo: _sampleMemo,
+  note: _sampleNote,
+  linkDifferences: <PaymentRequestLinkDifference>{},
+);
+
+/// "Scan original QR" over a link whose address had been swapped.
+const _scannedDifferingRequest = PaymentRequestView(
+  source: PaymentRequestSource.qrCode,
+  requesterLabel: 'Blue Door Coffee',
+  amountZecText: '0.5 ZEC',
+  fiatText: r'$35.00',
+  address: _sampleAddress,
+  memo: _sampleMemo,
+  note: _sampleNote,
+  linkDifferences: {PaymentRequestLinkDifference.address},
 );
 
 const _minimalRequest = PaymentRequestView(
@@ -187,6 +221,15 @@ const _noteOnlyRequest = PaymentRequestView(
 Widget buildPaymentRequestFullUseCase(BuildContext context) =>
     _desktop(_fullRequest);
 
+Widget buildPaymentRequestPastedUseCase(BuildContext context) =>
+    _desktop(_pastedRequest);
+
+Widget buildPaymentRequestScannedMatchesLinkUseCase(BuildContext context) =>
+    _desktop(_scannedMatchingRequest);
+
+Widget buildPaymentRequestScannedDiffersFromLinkUseCase(BuildContext context) =>
+    _desktop(_scannedDifferingRequest);
+
 Widget buildPaymentRequestAddressExpandedUseCase(BuildContext context) =>
     _desktop(_fullRequest, addressExpanded: true, linkDetails: true);
 
@@ -275,6 +318,17 @@ Widget buildMobilePaymentRequestAddressExpandedUseCase(BuildContext context) =>
 
 Widget buildMobilePaymentRequestScannedUseCase(BuildContext context) =>
     _mobile(_scannedRequest);
+
+Widget buildMobilePaymentRequestPastedUseCase(BuildContext context) =>
+    _mobile(_pastedRequest);
+
+Widget buildMobilePaymentRequestScannedMatchesLinkUseCase(
+  BuildContext context,
+) => _mobile(_scannedMatchingRequest);
+
+Widget buildMobilePaymentRequestScannedDiffersFromLinkUseCase(
+  BuildContext context,
+) => _mobile(_scannedDifferingRequest);
 
 Widget buildMobilePaymentRequestLinkDetailsUseCase(BuildContext context) =>
     _mobile(_fullRequest, linkDetails: true);

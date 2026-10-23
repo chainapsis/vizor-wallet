@@ -39,6 +39,7 @@ import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../models/send_prefill_args.dart';
 import '../../models/send_scan_result.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
@@ -797,6 +798,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
   }
 
+  /// A `zcash:` link in the field is answered at once, however it got there:
+  /// nobody types one by hand, so it arrived by paste.
+  void _handleAddressEdited(String text) {
+    if (_takePaymentLink(text)) return;
+    _handleAddressChanged();
+  }
+
   void _handleAddressChanged({bool clearContact = true}) {
     setState(() {
       if (widget.isPaymentRequest &&
@@ -849,32 +857,78 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             .read(paymentRequestFlowProvider.notifier)
             .present(prefill, source: PaymentRequestSource.qrCode);
       case SendScanAddress(:final address, :final downgrade):
-        final recipient = address.trim();
-        if (recipient.isEmpty) return;
-        _addressController.value = TextEditingValue(
-          text: recipient,
-          selection: TextSelection.collapsed(offset: recipient.length),
-        );
-        _handleAddressChanged();
-        // A request the scan refused still surrendered its address, and the
-        // composer just took it. Say what was left behind — otherwise the
-        // payer answers a request they never saw the terms of.
-        final downgradeMessage = sendScanDowngradeMessage(downgrade);
-        if (downgradeMessage != null) {
-          showAppToast(
-            context,
-            downgradeMessage,
-            iconName: AppIcons.warning,
-            tone: AppToastTone.destructive,
-          );
-        }
+        _takeLinkAddress(address, downgrade);
     }
+  }
+
+  /// Puts the address a scan or pasted link surrendered in the field.
+  ///
+  /// A request the wallet refused still surrendered its address, and the
+  /// composer just took it. Say what was left behind — otherwise the payer
+  /// answers a request they never saw the terms of.
+  bool _takeLinkAddress(
+    String address,
+    SendScanDowngrade? downgrade, {
+    bool pasted = false,
+  }) {
+    final recipient = address.trim();
+    if (recipient.isEmpty) return false;
+    _addressController.value = TextEditingValue(
+      text: recipient,
+      selection: TextSelection.collapsed(offset: recipient.length),
+    );
+    _handleAddressChanged();
+    final downgradeMessage = sendScanDowngradeMessage(
+      downgrade,
+      pasted: pasted,
+    );
+    if (downgradeMessage != null) {
+      showAppToast(
+        context,
+        downgradeMessage,
+        iconName: AppIcons.warning,
+        tone: AppToastTone.destructive,
+      );
+    }
+    return true;
+  }
+
+  /// Answers a `zcash:` link pasted into the address field the way a scan is
+  /// answered: a request with terms opens the payment request card, and a link
+  /// that names only an address leaves that address in the field.
+  ///
+  /// Returns false when [raw] is not a link this can answer, so the field
+  /// keeps it and says why.
+  bool _takePaymentLink(String raw) {
+    return switch (resolvePastedPaymentLink(raw)) {
+      SendScanPaymentRequest(:final prefill) => _openPaymentRequest(prefill),
+      SendScanAddress(:final address, :final downgrade) => _takeLinkAddress(
+        address,
+        downgrade,
+        pasted: true,
+      ),
+      null => false,
+    };
+  }
+
+  /// Hands a pasted link's request to the payment request card, which treats
+  /// it as untrusted like any link — the clipboard is another app's word for
+  /// it — but without an original QR at hand to scan.
+  bool _openPaymentRequest(SendPrefillArgs prefill) {
+    _addressController.clear();
+    _handleAddressChanged();
+    _addressFocus.unfocus();
+    ref
+        .read(paymentRequestFlowProvider.notifier)
+        .present(prefill, source: PaymentRequestSource.pastedLink);
+    return true;
   }
 
   Future<void> _pasteAddress() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final pasted = data?.text?.trim() ?? '';
     if (pasted.isEmpty || !mounted) return;
+    if (_takePaymentLink(pasted)) return;
     _addressController.value = TextEditingValue(
       text: pasted,
       selection: TextSelection.collapsed(offset: pasted.length),
@@ -2345,7 +2399,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                 ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 _RecipientLineText(
-                                  'Scan an address using camera',
+                                  'Scan an address or payment request',
                                   color: colors.text.secondary,
                                   fontWeight: FontWeight.w400,
                                 ),
@@ -2479,7 +2533,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       fieldKey: const ValueKey('mobile_send_address_input'),
       controller: _addressController,
       focusNode: _addressFocus,
-      hintText: 'Zcash Address',
+      hintText: 'Address or request link',
       leading: SizedBox(
         width: AppInputSizing.iconWrapWidth,
         height: AppInputSizing.height,
@@ -2527,7 +2581,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               ),
             )
           : null,
-      onChanged: (_) => _handleAddressChanged(),
+      onChanged: _handleAddressEdited,
       keyboardType: TextInputType.text,
     );
   }
@@ -2546,6 +2600,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             // would send the user hunting for a typo that is not there.
             ? (_addressWrongNetwork
                   ? kWrongNetworkAddressMessage
+                  : isZcashPaymentLink(_addressController.text)
+                  ? kUnreadablePaymentLinkMessage
                   : 'Invalid address')
             : 'Address validation failed',
         style: AppTypography.labelLarge.copyWith(

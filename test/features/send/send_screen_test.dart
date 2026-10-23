@@ -19,12 +19,15 @@ import 'package:zcash_wallet/src/features/address_book/models/address_book_conta
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
+import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
+import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
@@ -59,6 +62,117 @@ void main() {
 
     expect(calls, 1);
     expect(find.byType(SendScreen), findsOneWidget);
+  });
+
+  group('a payment link in the address field', () {
+    const link = 'zcash:$_shieldedAddress?amount=0.25&label=Coffee%20shop';
+
+    PaymentRequestFlowState? flow(WidgetTester tester) =>
+        ProviderScope.containerOf(
+          tester.element(find.byType(SendScreen)),
+        ).read(paymentRequestFlowProvider);
+
+    Future<void> pumpScreen(WidgetTester tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_sendHarness(precheck: _readyPrecheck()));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('pasting it opens the payment request card', (tester) async {
+      await pumpScreen(tester);
+
+      await tester.enterText(_editableIn('send_address_field'), link);
+      await tester.pumpAndSettle();
+
+      expect(flow(tester)?.prefill.address, _shieldedAddress);
+      expect(
+        flow(tester)?.prefill.requestSource,
+        PaymentRequestSource.pastedLink,
+      );
+      expect(_fieldText(tester, 'send_address_field'), isEmpty);
+    });
+
+    testWidgets('Cmd+V opens it', (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => switch (call.method) {
+          'Clipboard.getData' => {'text': link},
+          'Clipboard.hasStrings' => {'value': true},
+          _ => null,
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await pumpScreen(tester);
+
+      await tester.tap(_editableIn('send_address_field'));
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+
+      expect(flow(tester)?.prefill.address, _shieldedAddress);
+      expect(_fieldText(tester, 'send_address_field'), isEmpty);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('a link that names only an address leaves the address', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        'zcash:$_shieldedAddress',
+      );
+      await tester.pumpAndSettle();
+
+      expect(flow(tester), isNull);
+      expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
+    });
+
+    testWidgets('a request the wallet cannot answer keeps its first address', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        'zcash:$_shieldedAddress?amount=0.1'
+        '&address.1=$_shieldedAddress&amount.1=0.2',
+      );
+      await tester.pumpAndSettle();
+
+      expect(flow(tester), isNull);
+      expect(_fieldText(tester, 'send_address_field'), _shieldedAddress);
+      expect(
+        find.text(
+          sendScanDowngradeMessage(
+            SendScanDowngrade.multipleRecipients,
+            pasted: true,
+          )!,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an edit that completes a link opens it', (tester) async {
+      await pumpScreen(tester);
+
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        link.substring(1),
+      );
+      await tester.enterText(_editableIn('send_address_field'), link);
+      await tester.pumpAndSettle();
+
+      expect(flow(tester)?.prefill.address, _shieldedAddress);
+      expect(_fieldText(tester, 'send_address_field'), isEmpty);
+    });
   });
 
   testWidgets(
@@ -1652,6 +1766,7 @@ Widget _sendHarness({
   void Function()? warmProvingKey,
   void Function(SendReviewArgs?)? onReviewArgs,
   bool realReview = false,
+  PaymentRequestPrecheck? precheck,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1704,6 +1819,8 @@ Widget _sendHarness({
       ),
       if (addressBookRepository != null)
         addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
+      if (precheck != null)
+        paymentRequestPrecheckProvider.overrideWithValue(precheck),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -2077,3 +2194,43 @@ const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _otherNetworkAddress =
     'utest1testnetshieldedaddress0000000000000000000000000000000000000000000';
 const _malformedAddress = 'not-an-address';
+
+PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
+  readNetworkName: () => kZcashDefaultNetworkName,
+  spendableIsAuthoritativeNow: () => true,
+  validateAddress: ({required String address, required String network}) async =>
+      const AddressValidationResult(
+        isValid: true,
+        addressType: 'unified',
+        wrongNetwork: false,
+      ),
+  proposeTransfer:
+      ({
+        required String accountUuid,
+        required String sendFlowId,
+        required String address,
+        required String addressType,
+        required BigInt amountZatoshi,
+        String? memo,
+        bool isPaymentRequest = false,
+        String? requestedBy,
+        BigInt? requestedAmountZatoshi,
+      }) async => SendReviewArgs(
+        proposalId: BigInt.from(77),
+        sendFlowId: sendFlowId,
+        proposalAccountUuid: accountUuid,
+        address: address,
+        addressType: addressType,
+        amountZatoshi: amountZatoshi,
+        feeZatoshi: BigInt.from(10000),
+        needsSaplingParams: false,
+        isPaymentRequest: isPaymentRequest,
+      ),
+  discardProposal:
+      ({
+        required BigInt proposalId,
+        required String sendFlowId,
+        required String logContext,
+        required String accountUuid,
+      }) async => true,
+);

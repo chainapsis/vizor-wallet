@@ -258,6 +258,10 @@ class PaymentRequestRecipientIdentity {
   int get hashCode => Object.hash(kind, name, profilePictureId);
 }
 
+/// A part of a payment that the link asked for differently from the QR
+/// scanned to check it.
+enum PaymentRequestLinkDifference { address, amount, memo }
+
 /// Everything [PaymentRequestCard] renders.
 ///
 /// Immutable and free of providers, routing and parsing. The caller
@@ -279,6 +283,7 @@ class PaymentRequestView {
     this.status = PaymentRequestStatus.ready,
     this.statusMessage,
     this.replacedNotice = false,
+    this.linkDifferences,
   });
 
   /// Link or QR code. Kept for callers and logging; nothing renders it.
@@ -335,6 +340,11 @@ class PaymentRequestView {
   /// Indicates that this request replaced one already being reviewed.
   final bool replacedNotice;
 
+  /// How this scanned QR compared with the link it was scanned to check
+  /// ("Scan original QR"): empty when they ask for the same payment, the
+  /// fields that differ otherwise. Null when the card was not opened that way.
+  final Set<PaymentRequestLinkDifference>? linkDifferences;
+
   /// Same request, different verdict. The pre-check fills the amount and the
   /// requester in once, up front; only the status (and the two fields the
   /// status line reads) change as the checks land.
@@ -355,6 +365,7 @@ class PaymentRequestView {
     status: status,
     statusMessage: statusMessage,
     replacedNotice: replacedNotice,
+    linkDifferences: linkDifferences,
   );
 
   /// Same request, with the "replaced an earlier link" notice shown.
@@ -379,6 +390,7 @@ class PaymentRequestView {
       status: status,
       statusMessage: statusMessage,
       replacedNotice: true,
+      linkDifferences: linkDifferences,
     );
   }
 
@@ -404,6 +416,7 @@ class PaymentRequestView {
       status: status,
       statusMessage: statusMessage,
       replacedNotice: replacedNotice,
+      linkDifferences: linkDifferences,
     );
   }
 
@@ -428,6 +441,7 @@ class PaymentRequestView {
       status: status,
       statusMessage: statusMessage,
       replacedNotice: replacedNotice,
+      linkDifferences: linkDifferences,
     );
   }
 
@@ -607,10 +621,12 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
   Widget build(BuildContext context) {
     final request = widget.request;
     final gap = widget.isMobileLayout ? AppSpacing.sm : AppSpacing.md;
-    final external = request.source == PaymentRequestSource.link;
+    final external = request.source != PaymentRequestSource.qrCode;
     final introduction = external && !_linkDetails;
     if (introduction) {
       return _ExternalRequestIntroduction(
+        // A pasted link rarely comes with its QR, so it is reviewed instead.
+        canScanOriginal: request.source == PaymentRequestSource.link,
         onScan: widget.onScan,
         onReview: () => setState(() => _linkDetails = true),
         onClose: widget.onCancel,
@@ -627,12 +643,17 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (request.linkDifferences case final differences?) ...[
+                if (differences.isEmpty)
+                  const _LinkMatchNotice()
+                else
+                  _LinkMismatchNotice(differences: differences),
+                SizedBox(height: gap),
+              ],
               if (request.replacedNotice) ...[
-                _QuietNotice(
-                  key: const ValueKey('payment_request_replaced_notice'),
-                  message: request.source == PaymentRequestSource.qrCode
-                      ? 'Updated from the scanned QR'
-                      : 'Replaced an earlier link',
+                const _QuietNotice(
+                  key: ValueKey('payment_request_replaced_notice'),
+                  message: 'Replaced an earlier link',
                 ),
                 SizedBox(height: gap),
               ],
@@ -1144,6 +1165,7 @@ class _PaymentDetailsDisclosure extends StatelessWidget {
 /// app's neutral modal surface or controls.
 class _ExternalRequestIntroduction extends StatelessWidget {
   const _ExternalRequestIntroduction({
+    required this.canScanOriginal,
     required this.onScan,
     required this.onReview,
     required this.onClose,
@@ -1151,6 +1173,7 @@ class _ExternalRequestIntroduction extends StatelessWidget {
     required this.replacedNotice,
   });
 
+  final bool canScanOriginal;
   final VoidCallback? onScan;
   final VoidCallback onReview;
   final VoidCallback onClose;
@@ -1280,14 +1303,16 @@ class _ExternalRequestIntroduction extends StatelessWidget {
                             ),
                             const SizedBox(height: AppSpacing.base),
                             Text(
-                              'Other apps can change the address or amount in a payment link.',
+                              'Other apps can change the address or amount in a request link.',
                               style: AppTypography.bodyMedium.copyWith(
                                 color: colors.text.primary,
                               ),
                             ),
                             const SizedBox(height: AppSpacing.sm),
                             Text(
-                              'Scan the original QR code directly in Vizor.',
+                              canScanOriginal
+                                  ? 'Scan the original QR code directly in Vizor.'
+                                  : 'Confirm the details with the person who sent it.',
                               style: AppTypography.bodyMedium.copyWith(
                                 color: colors.text.secondary,
                               ),
@@ -1306,7 +1331,11 @@ class _ExternalRequestIntroduction extends StatelessWidget {
                   AppSpacing.md,
                   isMobileLayout ? AppSpacing.base : AppSpacing.md,
                 ),
-                child: _ExternalScanActions(onScan: onScan, onReview: onReview),
+                child: _ExternalScanActions(
+                  canScanOriginal: canScanOriginal,
+                  onScan: onScan,
+                  onReview: onReview,
+                ),
               ),
             ],
           ),
@@ -1330,7 +1359,12 @@ class _ExternalRequestIntroduction extends StatelessWidget {
 }
 
 class _ExternalScanActions extends StatelessWidget {
-  const _ExternalScanActions({required this.onScan, required this.onReview});
+  const _ExternalScanActions({
+    required this.canScanOriginal,
+    required this.onScan,
+    required this.onReview,
+  });
+  final bool canScanOriginal;
   final VoidCallback? onScan;
   final VoidCallback onReview;
 
@@ -1339,21 +1373,25 @@ class _ExternalScanActions extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      AppButton(
-        key: const ValueKey('payment_request_scan'),
-        onPressed: onScan,
-        variant: AppButtonVariant.primary,
-        expand: true,
-        growWithContent: true,
-        constrainContent: true,
-        leading: const AppIcon(AppIcons.qr),
-        child: const Text('Scan original QR'),
-      ),
-      const SizedBox(height: AppSpacing.xs),
+      if (canScanOriginal) ...[
+        AppButton(
+          key: const ValueKey('payment_request_scan'),
+          onPressed: onScan,
+          variant: AppButtonVariant.primary,
+          expand: true,
+          growWithContent: true,
+          constrainContent: true,
+          leading: const AppIcon(AppIcons.qr),
+          child: const Text('Scan original QR'),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+      ],
       AppButton(
         key: const ValueKey('payment_request_link_details'),
         onPressed: onReview,
-        variant: AppButtonVariant.ghost,
+        variant: canScanOriginal
+            ? AppButtonVariant.ghost
+            : AppButtonVariant.primary,
         expand: true,
         growWithContent: true,
         constrainContent: true,
@@ -1545,6 +1583,95 @@ class _StatusMessage extends StatelessWidget {
 }
 
 /// Quiet one-liner above the content (the replaced-link notice).
+/// The scanned QR asks for the same payment as the link it was checking.
+class _LinkMatchNotice extends StatelessWidget {
+  const _LinkMatchNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      key: const ValueKey('payment_request_link_match'),
+      children: [
+        AppIcon(AppIcons.checkCircle, size: 16, color: colors.icon.success),
+        const SizedBox(width: AppSpacing.xxs),
+        Text(
+          'Matches the link',
+          style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
+        ),
+      ],
+    );
+  }
+}
+
+/// The link asked for something the scanned QR does not. The card already
+/// shows the QR, the trusted copy, so this names the link as the odd one out
+/// rather than casting doubt on what the user just scanned.
+class _LinkMismatchNotice extends StatelessWidget {
+  const _LinkMismatchNotice({required this.differences});
+
+  final Set<PaymentRequestLinkDifference> differences;
+
+  String get _title => differences.length > 1
+      ? 'The link had different details'
+      : switch (differences.single) {
+          PaymentRequestLinkDifference.address =>
+            'The link had a different address',
+          PaymentRequestLinkDifference.amount =>
+            'The link had a different amount',
+          PaymentRequestLinkDifference.memo => 'The link had a different memo',
+        };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      key: const ValueKey('payment_request_link_mismatch'),
+      decoration: BoxDecoration(
+        color: colors.background.utilityDestructiveAlphaSubtle,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.s),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ExcludeSemantics(
+              child: AppIcon(
+                AppIcons.warning,
+                size: AppIconSize.medium,
+                color: colors.icon.destructive,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _title,
+                    style: AppTypography.bodySmall.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: colors.text.destructive,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    'Using the QR instead — the link may have been changed.',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _QuietNotice extends StatelessWidget {
   const _QuietNotice({required this.message, super.key});
 

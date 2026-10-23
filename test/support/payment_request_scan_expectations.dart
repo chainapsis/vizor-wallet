@@ -135,7 +135,10 @@ void registerPaymentRequestScannerTests(
             find.byKey(const ValueKey('external_request_warning')),
             findsNothing,
           );
-          expect(find.text('Updated from the scanned QR'), findsNothing);
+          expect(
+            find.byKey(const ValueKey('payment_request_replaced_notice')),
+            findsNothing,
+          );
           expect(find.text('Payment request'), findsNothing);
         case 'clear':
           expect(current, isNull);

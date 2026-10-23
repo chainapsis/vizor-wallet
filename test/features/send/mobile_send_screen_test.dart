@@ -7,6 +7,7 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
@@ -2738,6 +2739,139 @@ void main() {
       expect(editable.controller.text, isEmpty);
     },
   );
+
+  group('a payment link in the address field', () {
+    const link = 'zcash:$_shieldedAddress?amount=0.25&label=Coffee%20shop';
+
+    Finder addressInput() => find.descendant(
+      of: find.byKey(const ValueKey('mobile_send_address_field')),
+      matching: find.byType(EditableText),
+    );
+
+    String fieldText(WidgetTester tester) =>
+        tester.widget<EditableText>(addressInput()).controller.text;
+
+    Future<void> pumpScreen(WidgetTester tester) async {
+      await tester.pumpWidget(_app(precheck: _readyPaymentRequestPrecheck()));
+      await tester.pumpAndSettle();
+    }
+
+    void mockClipboard(WidgetTester tester) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => switch (call.method) {
+          'Clipboard.getData' => {'text': link},
+          'Clipboard.hasStrings' => {'value': true},
+          _ => null,
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+    }
+
+    /// The card leads with the same check an incoming link gets, but a pasted
+    /// link has no original QR to scan, so reviewing it is the way on.
+    void expectPastedLinkWarning() {
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('payment_request_scan')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('payment_request_link_details')),
+        findsOneWidget,
+      );
+    }
+
+    testWidgets('Paste opens it as a pasted link', (tester) async {
+      mockClipboard(tester);
+      await pumpScreen(tester);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste'));
+      await tester.pumpAndSettle();
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('pasting from the long-press menu opens it too', (
+      tester,
+    ) async {
+      mockClipboard(tester);
+      await pumpScreen(tester);
+
+      await tester.longPress(addressInput());
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(TextSelectionToolbarTextButton, 'Paste'),
+      );
+      await tester.pumpAndSettle();
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('pasting it into the field opens the card', (tester) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, link);
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('a link that names only an address leaves the address', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, 'zcash:$_shieldedAddress');
+
+      expect(fieldText(tester), _shieldedAddress);
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsNothing,
+      );
+      expect(find.text('Invalid address'), findsNothing);
+    });
+
+    testWidgets('an edit that completes a link opens it', (tester) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, link.substring(1));
+      await _enterAddress(tester, link);
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('a link that is not a request or an address says so', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          // Rust refuses a `zcash:` link as an address.
+          validateAddress: ({required address, required network}) async =>
+              const AddressValidationResult(
+                isValid: false,
+                addressType: '',
+                wrongNetwork: false,
+              ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, 'zcash:?amount=0.25');
+
+      expect(find.text(kUnreadablePaymentLinkMessage), findsOneWidget);
+    });
+  });
 
   testWidgets(
     'recipient focus keeps the address field mounted and stationary',

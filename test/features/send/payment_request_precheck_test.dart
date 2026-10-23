@@ -264,6 +264,7 @@ void main() {
       (result as PaymentRequestPrecheckInsufficientFunds).spendableText,
       '0.21 ZEC',
     );
+    expect(result.spendable, BigInt.from(21000000));
     expect(api.proposeCalls, 0);
   });
 

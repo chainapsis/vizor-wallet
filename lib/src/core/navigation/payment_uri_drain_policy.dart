@@ -45,7 +45,7 @@ const kPaymentUriParkTtl = Duration(minutes: 10);
 /// the one thing that is always true: the link is gone, and re-opening it once
 /// the wallet is up recovers it.
 const kPaymentUriUnavailableMessage =
-    "Vizor couldn't open this payment link. "
+    "Vizor couldn't open this request link. "
     'Open it again once your wallet has loaded.';
 
 /// Shown when a second `zcash:` link arrives before the first one has been
@@ -53,7 +53,7 @@ const kPaymentUriUnavailableMessage =
 /// no queue), so the earlier one is gone and the user is told rather than
 /// left to wonder which link opened.
 const kPaymentUriReplacedMessage =
-    'Only the newest payment link was kept. Open the earlier one again to '
+    'Only the newest request link was kept. Open the earlier one again to '
     'pay it.';
 
 /// Shown when a parked link outlived [kPaymentUriParkTtl] before it could be
@@ -62,31 +62,31 @@ const kPaymentUriReplacedMessage =
 /// The user acted on that link deliberately, so the drop is stated rather than
 /// silent, and the link itself is still good: opening it again pays it.
 const kPaymentUriExpiredMessage =
-    'That payment link timed out. Open it again to pay.';
+    'That request link timed out. Open it again to pay.';
 
 /// Shown when there is no wallet yet and the user is not already inside a
 /// setup flow.
 const kPaymentUriNoWalletMessage =
-    'Set up or import a wallet before opening payment links.';
+    'Set up or import a wallet before opening request links.';
 
 /// Shown when the link arrives while the user is part-way through onboarding,
 /// import, or adding an account. Navigating away from those screens throws
 /// away a typed seed phrase or a generated mnemonic, so the link is dropped
 /// and the user is left exactly where they were.
 const kPaymentUriOnboardingMessage =
-    'Finish setting up your wallet before opening payment links.';
+    'Finish setting up your wallet before opening request links.';
 
 /// Shown when a Private (Ironwood) migration has the account's whole
 /// spendable balance in flight, so the product disables sending entirely.
 /// Delivering the link would open a send form that cannot be submitted.
 const kPaymentUriMigrationSendGateMessage =
-    'Finish your Ironwood migration before opening payment links.';
+    'Finish your Ironwood migration before opening request links.';
 
 /// Shown when a `zcash:` link parses but asks for a ZIP-321 feature Vizor does
 /// not implement yet: more than one recipient, a binary memo, a custom asset.
 /// Nothing about the link is wrong, so it does not tell the sender off.
 const kPaymentUriUnsupportedMessage =
-    "This payment link uses a feature Vizor doesn't support yet.";
+    "This request link uses a feature Vizor doesn't support yet.";
 
 /// Shown when a `zcash:` link cannot be parsed at all — bad encoding, a
 /// malformed amount, a missing address, a link too long to read.
@@ -94,7 +94,7 @@ const kPaymentUriUnsupportedMessage =
 /// The parser's own message is spec wording written for us, not for the payer,
 /// and it echoes back fragments of the link's own text; it belongs in the log.
 const kPaymentUriMalformedMessage =
-    "This payment link isn't valid. Ask the sender for a new one.";
+    "This request link isn't valid. Ask the sender for a new one.";
 
 /// The one sentence the payer sees when a `zcash:` link is refused.
 ///

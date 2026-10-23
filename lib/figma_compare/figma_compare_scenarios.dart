@@ -3264,6 +3264,30 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'payment-request-scanned-matches-link',
+    description: 'Desktop original QR that matches the link',
+    builder: buildPaymentRequestScannedMatchesLinkUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-scanned-link-differs',
+    description: 'Desktop original QR whose link had a different address',
+    builder: buildPaymentRequestScannedDiffersFromLinkUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-scanned-matches-link',
+    description: 'Mobile original QR that matches the link',
+    builder: buildMobilePaymentRequestScannedMatchesLinkUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-scanned-link-differs',
+    description: 'Mobile original QR whose link had a different address',
+    builder: buildMobilePaymentRequestScannedDiffersFromLinkUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'payment-request-link-details',
     description:
         'Parsed external payment request before the final payment review',
@@ -3295,6 +3319,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'payment-request-full',
     description: 'Desktop external-request introduction with a compact summary',
     builder: buildPaymentRequestFullUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-request-pasted',
+    description: 'Desktop introduction for a link pasted into Send',
+    builder: buildPaymentRequestPastedUseCase,
   ),
   FigmaCompareScenario(
     id: 'payment-request-minimal',
@@ -3394,6 +3423,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-payment-request-full',
     description: 'Mobile external-request introduction with a compact summary',
     builder: buildMobilePaymentRequestFullUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-payment-request-pasted',
+    description: 'Mobile introduction for a link pasted into Send',
+    builder: buildMobilePaymentRequestPastedUseCase,
     desktop: false,
     mobile: true,
   ),

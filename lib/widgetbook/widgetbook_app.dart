@@ -2010,6 +2010,18 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentRequestFullUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Pasted link',
+                      builder: buildPaymentRequestPastedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scanned QR - matches link',
+                      builder: buildPaymentRequestScannedMatchesLinkUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scanned QR - link differs',
+                      builder: buildPaymentRequestScannedDiffersFromLinkUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Minimal',
                       builder: buildPaymentRequestMinimalUseCase,
                     ),
@@ -2093,6 +2105,20 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Full',
                       builder: buildMobilePaymentRequestFullUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Pasted link',
+                      builder: buildMobilePaymentRequestPastedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scanned QR - matches link',
+                      builder:
+                          buildMobilePaymentRequestScannedMatchesLinkUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scanned QR - link differs',
+                      builder:
+                          buildMobilePaymentRequestScannedDiffersFromLinkUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Minimal',
