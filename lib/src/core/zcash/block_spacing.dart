@@ -30,6 +30,15 @@ class BlockSpacing {
         (blocks - preNu7Blocks) * nu7BlockSeconds;
   }
 
+  /// Blocks that one ZIP 318 reference block, a 75-second block, spans at
+  /// [height]: 1 before NU7 activation and 3 from it.
+  int blocksPerReferenceBlock(int height) {
+    final activation = nu7ActivationHeight;
+    return activation != null && height >= activation
+        ? preNu7BlockSeconds ~/ nu7BlockSeconds
+        : 1;
+  }
+
   /// Estimates measured from the chain tip at [tipHeight] (0 when unknown).
   BlockTimeEstimate fromTip(int tipHeight) =>
       BlockTimeEstimate(spacing: this, tipHeight: tipHeight);
