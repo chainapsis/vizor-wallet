@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/wallet_paths.dart';
 import '../../providers/account_provider.dart';
+import '../../providers/block_spacing_provider.dart';
 import '../../providers/pending_activity_evidence_provider.dart';
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../providers/sync_provider.dart';
@@ -141,16 +142,25 @@ final activityEtaLabelsProvider = Provider<Map<String, String>>((ref) {
     return const {};
   }
   final excluded = ref.watch(activityEtaExcludedTxidsProvider);
+  final blocksPerReferenceBlock = ref
+      .watch(blockSpacingProvider)
+      .blocksPerReferenceBlock(sync.scannedHeight + 1);
   final labels = <String, String>{};
   for (final entry in evidence.observedAt.entries) {
     final id = entry.key.$2;
     if (entry.key.$1 != account || excluded.contains(id)) continue;
-    final ordinary = evidence.labelFor(account, id, sync.scannedHeight);
+    final ordinary = evidence.labelFor(
+      account,
+      id,
+      sync.scannedHeight,
+      blocksPerReferenceBlock: blocksPerReferenceBlock,
+    );
     final funding = evidence.labelFor(
       account,
       id,
       sync.scannedHeight,
       waitingForFunding: true,
+      blocksPerReferenceBlock: blocksPerReferenceBlock,
     );
     if (ordinary != null) labels[id] = ordinary;
     if (funding != null) labels[_fundingKey(id)] = funding;
@@ -229,5 +239,7 @@ String? giftCardClaimEtaLabel({
     remaining.add(label);
   }
   if (remaining.isEmpty) return null;
-  return remaining.contains('Taking longer') ? 'Taking longer' : 'Est. 1–3 min';
+  return remaining.contains(kActivityTakingLongerLabel)
+      ? kActivityTakingLongerLabel
+      : remaining.first;
 }
