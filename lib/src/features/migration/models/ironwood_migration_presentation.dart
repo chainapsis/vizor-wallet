@@ -683,6 +683,16 @@ int migrationPlanPartDelayBlocks({
   required int scheduleOffsetBlocks,
 }) => preparationDelayBlocks + scheduleOffsetBlocks;
 
+/// An Immediate migration completes once its transaction and two more blocks
+/// are mined.
+const kIronwoodImmediateMigrationConfirmationBlocks = 3;
+
+String ironwoodImmediateMigrationCompletionEstimate(
+  BlockTimeEstimate blockTimes,
+) => _formatMigrationDuration(
+  blockTimes.secondsForBlocks(kIronwoodImmediateMigrationConfirmationBlocks),
+);
+
 String _formatMigrationDuration(int seconds) {
   final minutes = (seconds / Duration.secondsPerMinute).ceil();
   if (minutes < 60) return minutes == 1 ? '~1 min' : '~$minutes mins';
