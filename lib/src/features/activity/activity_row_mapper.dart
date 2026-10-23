@@ -5,6 +5,8 @@ import '../../core/layout/app_form_factor.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
+import '../../providers/pending_activity_evidence_provider.dart'
+    show kActivityEtaLabels;
 import '../../rust/api/sync.dart' as rust_sync;
 import 'activity_amount_text.dart';
 import 'gift_card_activity_index.dart';
@@ -116,11 +118,7 @@ ActivityRowData buildTransactionActivityRow({
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
     subtitleIconName: replacesPool
-        ? (subtitle == 'Est. 1–3 min' ||
-                  subtitle == 'Est. 2–6 min' ||
-                  subtitle == 'Taking longer'
-              ? AppIcons.time
-              : null)
+        ? (kActivityEtaLabels.contains(subtitle) ? AppIcons.time : null)
         : isNetChange
         ? null
         : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),

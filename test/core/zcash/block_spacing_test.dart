@@ -26,4 +26,10 @@ void main() {
     expect(spacing.fromTip(1_009).secondsPerBlock, 25);
     expect(BlockTimeEstimate.preNu7.secondsForBlocks(4), 4 * 75);
   });
+
+  test('scales 75-second reference blocks from NU7 activation', () {
+    expect(spacing.blocksPerReferenceBlock(1_009), 1);
+    expect(spacing.blocksPerReferenceBlock(1_010), 3);
+    expect(BlockSpacing.preNu7.blocksPerReferenceBlock(1_010), 1);
+  });
 }
