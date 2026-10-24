@@ -2144,8 +2144,10 @@ class PaymentLinkService
       // Keep the claim database for rebroadcast/reorg recovery. Reconciliation
       // deletes it only after every claim transaction reaches six confirmations.
       return result;
-    } catch (_) {
-      if (!submissionStarted) {
+    } catch (error) {
+      // Rust raises the upgrade hold before it builds the claim, so the card
+      // is still ready even after the submission marker.
+      if (!submissionStarted || networkUpgradeHoldMessage(error) != null) {
         await _receivedStore.markReadyToClaim(
           address: session.link.address,
           expected: startedRecord,
