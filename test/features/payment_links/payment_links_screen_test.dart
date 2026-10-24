@@ -4103,6 +4103,38 @@ void main() {
     expect(batch.fundCalls, 1);
   });
 
+  testWidgets('an upgrade hold leaves the group unsent and quotes again', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations)
+      ..fundError = const PaymentLinkBatchPreSubmissionFailure(
+        kNetworkUpgradeHoldMessage,
+      );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+    );
+    await _reviewTwoCards(tester);
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pumpAndSettle();
+
+    expect(batch.fundCalls, 1);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.textContaining('couldn’t confirm the payment'), findsNothing);
+    expect(
+      find.text('No cards were funded. Review the amount and try again.'),
+      findsNothing,
+    );
+    // Not locked: the group is quoted again and can be created.
+    expect(batch.preparedCounts, [2, 2, 2]);
+    batch.fundError = null;
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pumpAndSettle();
+    expect(batch.fundCalls, 2);
+  });
+
   testWidgets('funding does not report the group cost as missing ZEC', (
     tester,
   ) async {
@@ -4259,6 +4291,7 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   int fundCalls = 0;
   int metadataRetries = 0;
   Completer<void>? fundGate;
+  Object? fundError;
   bool fundingMetadataSaved = true;
   final links = batchTestLinks;
 
@@ -4295,6 +4328,7 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   ) async {
     fundCalls++;
     await fundGate?.future;
+    if (fundError case final error?) throw error;
     operations.records.addAll([
       for (var index = 0; index < links.length; index++)
         PaymentLinkRecoveryRecord(
