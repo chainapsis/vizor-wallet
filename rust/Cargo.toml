@@ -7,7 +7,9 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-zakura-pir-client = { version = "=0.0.1-rc1", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
+zakura-pir-client = { version = "=0.0.1-rc3", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd", "receiver-wallet"] }
+zakura-one-time-ivk = "=0.0.1-rc4"
+zakura-near-intents = "=0.0.1-rc4"
 zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
 flutter_rust_bridge = "=2.11.1"
 
@@ -114,7 +116,7 @@ version = "=4.0.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc9.2"
+version = "=0.1.0-rc9.4"
 features = [
     "orchard",
     "transparent-inputs",
@@ -127,7 +129,7 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc9.2"
+version = "=0.1.0-rc9.4"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
@@ -146,7 +148,7 @@ features = ["local-prover"]
 
 [dependencies.pczt]
 package = "zakura-pczt"
-version = "=0.1.0-rc8"
+version = "=0.1.0-rc9"
 features = [
     "orchard",
     "io-finalizer",
@@ -200,12 +202,12 @@ regex = "1"
 # Builds wallets through real private recovery for the history mapping tests.
 [dev-dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc9.2"
+version = "=0.1.0-rc9.4"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc9.2"
+version = "=0.1.0-rc9.4"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_voting]
@@ -216,9 +218,19 @@ features = ["test-fixtures"]
 # display publication the loop-4 tests serve, and a real shard service in
 # process. Keep the version aligned with the runtime dependency above.
 [dev-dependencies.zakura-pir-client]
-version = "=0.0.1-rc1"
+version = "=0.0.1-rc3"
 default-features = false
 features = ["testing"]
+
+# Real receiver inventories, witness tables and encrypted PIR evaluation for the swap
+# recovery worker tests.
+[dev-dependencies.zakura-pir-query-server]
+version = "=0.0.1-rc3"
+features = ["receiver"]
+
+[dev-dependencies.zakura-pir-publisher]
+version = "=0.0.1-rc3"
+features = ["receiver-crypto"]
 
 [dev-dependencies.ipir-sp]
 version = "=0.1.0-rc.7"
