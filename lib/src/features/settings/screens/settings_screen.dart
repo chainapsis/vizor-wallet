@@ -32,10 +32,13 @@ import '../../accounts/widgets/account_profile_picture_modal.dart';
 import '../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
+import '../widgets/near_swap_privacy_info.dart';
 import '../widgets/network_privacy_control.dart';
 import '../widgets/enhance_pir_privacy_control.dart';
 import '../widgets/private_queries_turn_off.dart';
 import '../widgets/settings_new_badge.dart';
+import '../widgets/settings_sub_option.dart';
+import '../widgets/swap_history_check_control.dart';
 import '../widgets/windows_update_download_flow.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
@@ -516,6 +519,7 @@ class _SettingsList extends ConsumerWidget {
     final enhancePirEnabled = ref.watch(privateQueriesControlEnabledProvider);
     final enhancePirAvailable =
         ref.watch(enhancePirAvailableProvider) || enhancePirEnabled;
+    final nearSwapPrivacy = ref.watch(nearSwapPrivacySettingProvider);
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
     final changingRecovery = recoveryTransition == kEnhancePirChangingMessage;
     return Column(
@@ -623,11 +627,42 @@ class _SettingsList extends ConsumerWidget {
               const SizedBox(height: AppSpacing.sm),
               EnhancePirPrivacyControl(
                 enabled: enhancePirEnabled,
-                transition: recoveryTransition,
+                transition: ref.watch(privateQueriesTransitionProvider),
                 onToggle: changingRecovery
                     ? null
                     : () => unawaited(togglePrivateQueries(context, ref)),
               ),
+            ],
+            if (nearSwapPrivacy != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              // An option of Private queries: its icon sits under the label
+              // above, and the hook starts under that row's icon.
+              SettingsSubOption(
+                key: const ValueKey('settings_near_swap_privacy_sub_option'),
+                indent: AppSpacing.xs + 20,
+                lineX: AppSpacing.xxs + 10,
+                rowCenter: 22,
+                child: EnhancePirPrivacyControl(
+                  label: 'NEAR swap privacy',
+                  keyPrefix: 'settings_near_swap_privacy',
+                  description: nearSwapPrivacy.description,
+                  onInfo: () => unawaited(showNearSwapPrivacyInfo(context)),
+                  enabled: nearSwapPrivacy.enabled,
+                  transition: nearSwapPrivacy.transition,
+                  onToggle: nearSwapPrivacy.canToggle
+                      ? () => unawaited(
+                          ref.read(nearSwapPrivacyProvider.notifier).toggle(),
+                        )
+                      : null,
+                ),
+              ),
+              if (nearSwapPrivacy.showHistoryCheck) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Padding(
+                  padding: const EdgeInsets.only(left: AppSpacing.xs + 20),
+                  child: const SwapHistoryCheckControl(),
+                ),
+              ],
             ],
           ],
         ),

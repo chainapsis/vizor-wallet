@@ -30,9 +30,10 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
     if (!ref.watch(enhancePirAvailableProvider) && !enhancePirEnabled) {
       return const SizedBox.shrink();
     }
-    final recoveryTransition = ref.watch(enhancePirTransitionProvider);
     final interactive =
-        enabled && recoveryTransition != kEnhancePirChangingMessage;
+        enabled &&
+        ref.watch(enhancePirTransitionProvider) != kEnhancePirChangingMessage;
+    final recoveryTransition = ref.watch(privateQueriesTransitionProvider);
     void onToggle() =>
         unawaited(onRequest?.call() ?? togglePrivateQueries(context, ref));
     return Column(

@@ -46,6 +46,7 @@ void main() {
     bootstrap,
     setRustEnabled: (enabled) => applied.add('rust:$enabled'),
     setPreferenceConfirmed: (confirmed) => applied.add('confirmed:$confirmed'),
+    setRustSwapPrivacyEnabled: (_) {},
     reconcileTransparentPolicy: (privateQueries) async {
       applied.add('reconcile:$privateQueries');
       if (privateQueries ? failRaise : failLower) {

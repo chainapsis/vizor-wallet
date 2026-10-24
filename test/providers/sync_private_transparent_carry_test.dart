@@ -27,6 +27,17 @@ class _Api extends RustLibApi {
   @override
   void crateApiSyncStopMempoolObserver() {}
 
+  /// Accepts the receiver-round cancellation the sync notifier sends.
+  @override
+  void crateApiOneTimeIvkCancelSwapRecovery() {}
+
+  /// Finishes a receiver round at once without wallet work.
+  @override
+  Future<bool> crateApiOneTimeIvkRunSwapRecovery({
+    required String dbPath,
+    required String networkName,
+  }) async => false;
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -16,9 +16,13 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/account_edit_modal.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/enhance_pir_privacy_control.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/near_swap_privacy_info.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/swap_history_check_control.dart';
+import 'package:zcash_wallet/src/providers/swap_history_check_provider.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_cards_provider.dart';
@@ -26,6 +30,8 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart'
+    show SwapRecoveryStatus;
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -314,7 +320,8 @@ void main() {
 
     await tester.tap(find.text('Account name'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Savings');
+    // The rename modal covers the swap history bound field.
+    await tester.enterText(find.byType(TextField).hitTestable(), 'Savings');
     await tester.pump();
     await tester.tap(find.text('Update'));
     await tester.pumpAndSettle();
@@ -612,6 +619,335 @@ void main() {
     expect(calls, isEmpty);
   });
 
+  testWidgets('NEAR swap privacy explains itself', (tester) async {
+    await tester.pumpWidget(_settingsHarness());
+    await tester.pump();
+    expect(find.text(kNearSwapPrivacyNeedsPrivateQueriesCopy), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('settings_near_swap_privacy_sub_option')),
+        matching: find.byKey(
+          const ValueKey('settings_near_swap_privacy_toggle'),
+        ),
+      ),
+      findsOneWidget,
+      reason: 'shown as an option of Private queries',
+    );
+
+    final info = find.byKey(const ValueKey('settings_near_swap_privacy_info'));
+    await tester.ensureVisible(info);
+    await tester.pumpAndSettle();
+    await tester.tap(info);
+    await tester.pumpAndSettle();
+    final dialog = find.byKey(const ValueKey('near_swap_privacy_info_dialog'));
+    expect(dialog, findsOneWidget);
+    expect(find.text(kNearSwapPrivacyInfoTitle), findsOneWidget);
+    for (final paragraph in kNearSwapPrivacyInfoParagraphs) {
+      expect(find.text(paragraph), findsOneWidget);
+    }
+    // It names what one-time Zcash addresses leave linkable, including the
+    // reuse the design allows.
+    expect(find.textContaining('still shared with NEAR'), findsOneWidget);
+    expect(
+      find.textContaining('expired unpaid can be used again'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('two devices'), findsOneWidget);
+    expect(find.textContaining('new Zcash addresses'), findsNothing);
+    expect(
+      find.textContaining("Hardware wallet accounts don't use"),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('near_swap_privacy_info_close')),
+    );
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
+  });
+
+  testWidgets('NEAR swap privacy describes one-time addresses', (tester) async {
+    await tester.pumpWidget(
+      _settingsHarness(enhancePirEnabled: true, nearSwapPrivacyEnabled: true),
+    );
+    await tester.pump();
+    expect(find.text(kNearSwapPrivacyOnCopy), findsOneWidget);
+    expect(find.text(kNearSwapPrivacyOffCopy), findsNothing);
+  });
+
+  testWidgets('NEAR swap privacy off describes regular addresses', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_settingsHarness(enhancePirEnabled: true));
+    await tester.pump();
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(
+              const ValueKey('settings_near_swap_privacy_description'),
+            ),
+          )
+          .data,
+      kNearSwapPrivacyOffCopy,
+    );
+    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+  });
+
+  for (final (name, shared, own) in [
+    (
+      'while it changes',
+      kEnhancePirChangingMessage,
+      kEnhancePirChangingMessage,
+    ),
+    ('once saved', null, kSwapRecoveryPendingMessage),
+  ]) {
+    testWidgets('NEAR swap privacy feedback shows under its own row $name', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _settingsHarness(
+          nearSwapPrivacyEnabled: true,
+          extraOverrides: [
+            enhancePirTransitionProvider.overrideWith(() => _Feedback(shared)),
+            nearSwapPrivacyTransitionProvider.overrideWith(
+              () => _Feedback(own),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('settings_near_swap_privacy_sub_option'),
+          ),
+          matching: find.text(own),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('settings_enhance_pir_transition')),
+        findsNothing,
+      );
+    });
+  }
+
+  testWidgets('Check swap history needs NEAR swap privacy', (tester) async {
+    await tester.pumpWidget(_settingsHarness(enhancePirEnabled: true));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('settings_near_swap_privacy_sub_option')),
+      findsOneWidget,
+    );
+    expect(find.byType(SwapHistoryCheckControl), findsNothing);
+  });
+
+  testWidgets('NEAR swap privacy is hidden while swaps are disabled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        nearSwapPrivacyEnabled: true,
+        extraOverrides: [swapFeatureEnabledProvider.overrideWithValue(false)],
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('settings_near_swap_privacy_sub_option')),
+      findsNothing,
+    );
+    expect(find.byType(SwapHistoryCheckControl), findsNothing);
+  });
+
+  testWidgets('Check swap history asks for an update the service needs', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        nearSwapPrivacyEnabled: true,
+        extraOverrides: [
+          swapHistoryApiProvider.overrideWithValue(
+            SwapHistoryApi(
+              begin: () async {},
+              cancel: () async {},
+              status: () async => _idleRecovery,
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapHistoryCheckControl)),
+    );
+    container.read(swapRecoveryUpdateRequiredProvider.notifier).set(true);
+    await tester.pump();
+    final button = find.byKey(const ValueKey('settings_check_swap_history'));
+    await tester.ensureVisible(button);
+    expect(find.text(kSwapRecoveryUpdateMessage), findsOneWidget);
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
+  testWidgets('an interrupted history check still offers pause', (
+    tester,
+  ) async {
+    var paused = false;
+    // The wallet saves the job, then the round fails.
+    var saved = false;
+    SwapRecoveryStatus wallet() => SwapRecoveryStatus(
+      checkingHistory: saved && !paused,
+      manualCheckActive: saved && !paused,
+      upgradeRequired: false,
+    );
+    await tester.pumpWidget(
+      _settingsHarness(
+        nearSwapPrivacyEnabled: true,
+        extraOverrides: [
+          swapRecoveryStatusReaderProvider.overrideWithValue(
+            () async => wallet(),
+          ),
+          swapHistoryApiProvider.overrideWithValue(
+            SwapHistoryApi(
+              begin: () async {
+                saved = true;
+                throw StateError('lookup failed after job was saved');
+              },
+              cancel: () async {
+                paused = true;
+              },
+              status: () async => wallet(),
+            ),
+          ),
+        ],
+      ),
+    );
+    final start = find.byKey(const ValueKey('settings_check_swap_history'));
+    await tester.ensureVisible(start);
+    await tester.tap(start);
+    await tester.pumpAndSettle();
+    final pause = find.byKey(const ValueKey('settings_cancel_swap_history'));
+    expect(pause, findsOneWidget);
+    await tester.ensureVisible(pause);
+    await tester.tap(pause);
+    await tester.pumpAndSettle();
+    expect(paused, isTrue);
+    expect(
+      find.text(swapHistoryCheckStatus(SwapHistoryCheck.paused)),
+      findsOneWidget,
+    );
+    // Let the stopped watch's last poll interval run out.
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('Check swap history checks everything, pauses and resumes', (
+    tester,
+  ) async {
+    var begun = 0;
+    final polls = <Completer<SwapRecoveryStatus>>[];
+    var paused = 0;
+    await tester.pumpWidget(
+      _settingsHarness(
+        nearSwapPrivacyEnabled: true,
+        extraOverrides: [
+          swapHistoryApiProvider.overrideWithValue(
+            SwapHistoryApi(
+              begin: () async => begun++,
+              cancel: () async => paused++,
+              status: () {
+                final poll = Completer<SwapRecoveryStatus>();
+                polls.add(poll);
+                return poll.future;
+              },
+              pollInterval: Duration.zero,
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    // No address count to choose: one explanation line and the button.
+    expect(
+      find.descendant(
+        of: find.byType(SwapHistoryCheckControl),
+        matching: find.byType(EditableText),
+      ),
+      findsNothing,
+    );
+    expect(find.text(kSwapHistoryCheckExplanation), findsOneWidget);
+    final start = find.byKey(const ValueKey('settings_check_swap_history'));
+    final status = find.byKey(
+      const ValueKey('settings_check_swap_history_status'),
+    );
+    expect(
+      tester.widget<Text>(status).data,
+      swapHistoryCheckStatus(SwapHistoryCheck.idle),
+    );
+    await tester.ensureVisible(start);
+    await tester.tap(start);
+    await tester.pump();
+    expect(begun, 1);
+    expect(
+      tester.widget<Text>(status).data,
+      swapHistoryCheckStatus(SwapHistoryCheck.checking),
+    );
+
+    final pause = find.byKey(const ValueKey('settings_cancel_swap_history'));
+    await tester.ensureVisible(pause);
+    await tester.tap(pause);
+    await tester.pumpAndSettle();
+    expect(paused, 1);
+    expect(
+      tester.widget<Text>(status).data,
+      swapHistoryCheckStatus(SwapHistoryCheck.paused),
+    );
+
+    final earlierPolls = polls.length;
+    await tester.ensureVisible(start);
+    await tester.tap(start);
+    await tester.pump();
+    expect(begun, 2);
+    // The resumed check polls once its zero-length interval elapses.
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(polls.length, earlierPolls + 1);
+    for (final poll in polls) {
+      poll.complete(_idleRecovery);
+    }
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Text>(status).data,
+      swapHistoryCheckStatus(SwapHistoryCheck.done),
+    );
+  });
+
+  testWidgets('NEAR swap privacy names the hardware account exception', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        enhancePirEnabled: true,
+        accountState: const AccountState(
+          accounts: [
+            AccountInfo(
+              uuid: 'keystone-account',
+              name: 'Keystone account',
+              order: 0,
+              isHardware: true,
+            ),
+          ],
+          activeAccountUuid: 'keystone-account',
+          activeAddress: 'u1keystoneaddress',
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text(kNearSwapPrivacyHardwareCopy), findsOneWidget);
+    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+    // Hardware accounts have no one-time keys to check.
+    expect(
+      find.byKey(const ValueKey('settings_check_swap_history')),
+      findsNothing,
+    );
+  });
+
   testWidgets('connected Tor state describes Vizor and external app routes', (
     tester,
   ) async {
@@ -652,6 +988,12 @@ void main() {
     );
     expect(find.text('Advanced'), findsNothing);
     expect(find.text('Private queries'), findsOneWidget);
+    expect(find.text('NEAR swap privacy'), findsOneWidget);
+    final swapToggle = tester.widget<PrivacyToggle>(
+      find.byKey(const ValueKey('settings_near_swap_privacy_toggle')),
+    );
+    expect(swapToggle.enabled, isFalse);
+    expect(swapToggle.onToggle, isNull);
     expect(
       tester.getSize(
         find.byKey(const ValueKey('settings_enhance_pir_toggle_track')),
@@ -1070,6 +1412,7 @@ Widget _settingsHarness({
   AccountState? accountState,
   String network = 'main',
   bool enhancePirEnabled = false,
+  bool nearSwapPrivacyEnabled = false,
 }) {
   final router = GoRouter(
     initialLocation: '/settings',
@@ -1103,7 +1446,8 @@ Widget _settingsHarness({
         _settingsBootstrap(
           accountState ?? _bootstrap.initialAccountState,
           network: network,
-          enhancePirEnabled: enhancePirEnabled,
+          enhancePirEnabled: enhancePirEnabled || nearSwapPrivacyEnabled,
+          nearSwapPrivacyEnabled: nearSwapPrivacyEnabled,
         ),
       ),
       syncProvider.overrideWith(FakeSyncNotifier.new),
@@ -1120,6 +1464,16 @@ Widget _settingsHarness({
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+/// Setting feedback fixed at `message`.
+class _Feedback extends EnhancePirTransitionNotifier {
+  _Feedback(this.message);
+
+  final String? message;
+
+  @override
+  String? build() => message;
 }
 
 class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
@@ -1206,6 +1560,7 @@ AppBootstrapState _settingsBootstrap(
   AccountState accountState, {
   String network = 'main',
   bool enhancePirEnabled = false,
+  bool nearSwapPrivacyEnabled = false,
 }) => AppBootstrapState(
   initialLocation: '/settings',
   initialAccountState: accountState,
@@ -1218,6 +1573,7 @@ AppBootstrapState _settingsBootstrap(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
   enhancePirEnabled: enhancePirEnabled,
+  nearSwapPrivacyEnabled: nearSwapPrivacyEnabled,
 );
 
 double _toggleTrackOpacity(WidgetTester tester) {
@@ -1288,3 +1644,10 @@ class _PrivateWallet extends WalletTransparentPrivateNotifier {
   @override
   bool build() => true;
 }
+
+/// A wallet with no unfinished history check and no update needed.
+const _idleRecovery = SwapRecoveryStatus(
+  checkingHistory: false,
+  manualCheckActive: false,
+  upgradeRequired: false,
+);

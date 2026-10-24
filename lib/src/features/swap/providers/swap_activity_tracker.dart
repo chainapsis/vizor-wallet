@@ -2,17 +2,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../providers/network_privacy_provider.dart';
+import '../../ledger/services/ledger_operation_lifecycle.dart';
+import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart'
+    show OneClickStatusOnlyException;
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import 'swap_activity_store.dart';
 import 'swap_failure_policy.dart';
 import 'swap_provider_config.dart';
+import 'swap_receive_reservation_service.dart';
 
 const swapActivityStatusRefreshInterval = Duration(seconds: 30);
 
 final swapActivityTrackerProvider = Provider<SwapActivityTracker>((ref) {
   return SwapActivityTracker(
     activityStore: ref.read(swapActivityStoreProvider),
+    // Statuses reach the wallet as they are fetched, for swaps that quoted a
+    // private address.
+    onProviderSnapshot: (intent, snapshot, checkedAt) async {
+      final account = intent.accountUuid;
+      final direction = intent.direction;
+      if (account == null || direction == null) return null;
+      return ref
+          .read(swapReceiveReservationServiceProvider)
+          .observeStatus(
+            account,
+            direction: direction,
+            depositAddress: intent.depositAddress ?? intent.id,
+            memo: intent.depositMemo,
+            snapshot: snapshot,
+            checkedAt: checkedAt,
+          );
+    },
+    lifecycle: ref.read(ledgerOperationLifecycleProvider),
     swapProvider: ref.read(swapIntentProvider),
     isTorEnabled: () => ref.read(networkPrivacyProvider).torEnabled,
     onRecordsChanged: () {
@@ -147,17 +169,34 @@ class SwapActivityStatusRefresher {
 }
 
 class SwapActivityTracker {
-  const SwapActivityTracker({
+  SwapActivityTracker({
     required SwapActivityStore activityStore,
     required SwapProvider swapProvider,
     bool Function()? isTorEnabled,
     void Function()? onRecordsChanged,
-  }) : _activityStore = activityStore,
+    LedgerOperationLifecycle? lifecycle,
+    Future<bool?> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
+    onProviderSnapshot,
+  }) : _activityStore = activityStore is DeletionSafeSwapActivityStore
+           ? activityStore
+           : DeletionSafeSwapActivityStore(activityStore),
        _swapProvider = swapProvider,
        _isTorEnabled = isTorEnabled,
-       _onRecordsChanged = onRecordsChanged;
+       _onRecordsChanged = onRecordsChanged,
+       _lifecycle = lifecycle,
+       _onProviderSnapshot = onProviderSnapshot;
 
-  final SwapActivityStore _activityStore;
+  /// Records a status in the wallet and returns whether the wallet still tracked
+  /// the swap's private address, or null when that is unknown.
+  final Future<bool?> Function(SwapIntent, SwapIntentSnapshot, DateTime)?
+  _onProviderSnapshot;
+
+  /// The wallet deletion drain, which a private swap's status refresh joins
+  /// from its request through its saved activity (see [refreshIntents]).
+  final LedgerOperationLifecycle? _lifecycle;
+
+  /// The deletion-safe store every read and write goes through.
+  final DeletionSafeSwapActivityStore _activityStore;
   final SwapProvider _swapProvider;
 
   /// Read per refresh, not captured once: Tor can be toggled while an intent is
@@ -171,15 +210,118 @@ class SwapActivityTracker {
     return scopedAccountUuid;
   }
 
+  /// When this tracker, which lives as long as the app, was created. A swap
+  /// still starting that was created earlier lost its start to an app exit, or
+  /// its flip to a failed save.
+  final DateTime _launchedAt = DateTime.now().toUtc();
+
+  /// `accountUuid`'s saved swaps, with starts finished in this launch cleared
+  /// even if saving them failed (see [_finishedStarts]). A private swap left
+  /// starting by an earlier launch is marked failed first, keeping it starting
+  /// so its instructions stay hidden: its reservation may never have been
+  /// locked, and without the request it was quoted with the start cannot be
+  /// retried. The wallet still releases or recovers the address on its own.
   Future<List<SwapIntent>> loadIntents({required String? accountUuid}) async {
     final scopedAccountUuid = normalizeAccountUuid(accountUuid);
     if (scopedAccountUuid == null) return const [];
     final records = await _activityStore.loadRecords(
       accountUuid: scopedAccountUuid,
     );
-    return _intentsFromRecords(records);
+    final intents = withFinishedStarts(
+      scopedAccountUuid,
+      _intentsFromRecords(records),
+    );
+    if (!intents.any(_leftStarting)) return intents;
+    await updateIntents(
+      accountUuid: scopedAccountUuid,
+      transform: (saved) => [
+        for (final intent in saved)
+          _leftStarting(intent) ? _startFailed(intent) : intent,
+      ],
+    );
+    return [
+      for (final intent in intents)
+        _leftStarting(intent) ? _startFailed(intent) : intent,
+    ];
   }
 
+  /// Whether `intent` is still starting from an earlier launch.
+  bool _leftStarting(SwapIntent intent) =>
+      intent.startPending &&
+      !intent.status.isTerminal &&
+      !(intent.createdAt?.isAfter(_launchedAt) ?? false);
+
+  /// `intent`, a swap that never finished starting, marked failed.
+  static SwapIntent _startFailed(SwapIntent intent) => intent.copyWith(
+    status: SwapIntentStatus.failed,
+    statusError: swapStartFailedText,
+  );
+
+  /// Swaps whose start finished in this launch, by account and id. A start
+  /// never goes back to pending, so every load and save clears the flag on
+  /// any copy of these, including one read while the swap was still starting.
+  final _finishedStarts = <(String, String)>{};
+
+  /// Records that `intentId` on `accountUuid` started once the wallet locked
+  /// its reservation, then saves its account's swaps with nothing else
+  /// changed, which clears its pending start (see [_finishedStarts]). If that
+  /// save fails, loads still read it started, so polling picks it up, and the
+  /// account's next save stores it.
+  Future<void> finishStart({
+    required String accountUuid,
+    required String intentId,
+  }) {
+    final scopedAccountUuid = normalizeAccountUuid(accountUuid);
+    if (scopedAccountUuid != null) {
+      _finishedStarts.add((scopedAccountUuid, intentId));
+    }
+    return updateIntents(
+      accountUuid: scopedAccountUuid,
+      transform: (saved) => saved,
+    );
+  }
+
+  /// `intents` of `accountUuid` with the pending start cleared on each whose
+  /// start finished in this launch (see [_finishedStarts]). Returns `intents`
+  /// itself when none needs it.
+  List<SwapIntent> withFinishedStarts(
+    String accountUuid,
+    List<SwapIntent> intents,
+  ) {
+    bool finished(SwapIntent intent) =>
+        intent.startPending &&
+        _finishedStarts.contains((accountUuid, intent.id));
+    if (!intents.any(finished)) return intents;
+    return [
+      for (final intent in intents)
+        finished(intent) ? intent.copyWith(startPending: false) : intent,
+    ];
+  }
+
+  /// Hands a provider status, fetched at `checkedAt`, to the wallet when the
+  /// swap uses a private address. Ordinary swaps never touch the wallet. A
+  /// failure is logged, and the next poll records the status again. A terminal
+  /// status ends polling, so its failure fails the refresh instead, which keeps
+  /// the swap open until the wallet has it. Returns whether the wallet still
+  /// tracked the swap's private address, or null when that is unknown.
+  Future<bool?> recordProviderSnapshot(
+    SwapIntent intent,
+    SwapIntentSnapshot snapshot,
+    DateTime checkedAt,
+  ) async {
+    if (!intent.privateAddress) return null;
+    try {
+      return await _onProviderSnapshot?.call(intent, snapshot, checkedAt);
+    } catch (error) {
+      if (snapshot.status.isTerminal) rethrow;
+      log('Swap status not recorded in the wallet: $error');
+      return null;
+    }
+  }
+
+  /// Replaces `accountUuid`'s saved swaps with `intents`, through the
+  /// deletion-safe store queue, without reading what it replaces. Merges use
+  /// [updateIntents] instead.
   Future<void> saveIntents({
     required String? accountUuid,
     required List<SwapIntent> intents,
@@ -188,17 +330,41 @@ class SwapActivityTracker {
     if (scopedAccountUuid == null) return;
     await _activityStore.saveRecords(
       accountUuid: scopedAccountUuid,
-      records: [
-        for (final intent in intents)
-          if (_isPersistableIntent(intent, accountUuid: scopedAccountUuid))
-            swapIntentRecordForPersistence(
-              intent,
-              accountUuid: scopedAccountUuid,
-            ),
-      ],
+      records: _persistableRecords(intents, scopedAccountUuid),
     );
     _onRecordsChanged?.call();
   }
+
+  /// Replaces `accountUuid`'s saved swaps with what `transform` makes of them,
+  /// as one atomic step of the store (see
+  /// [DeletionSafeSwapActivityStore.update]), so a concurrent writer's swaps
+  /// are never overwritten by an older list. Every merge goes through here.
+  Future<void> updateIntents({
+    required String? accountUuid,
+    required List<SwapIntent> Function(List<SwapIntent> saved) transform,
+  }) async {
+    final scopedAccountUuid = normalizeAccountUuid(accountUuid);
+    if (scopedAccountUuid == null) return;
+    await _activityStore.update(
+      accountUuid: scopedAccountUuid,
+      transform: (records) => _persistableRecords(
+        transform(_intentsFromRecords(records)),
+        scopedAccountUuid,
+      ),
+    );
+    _onRecordsChanged?.call();
+  }
+
+  /// The records `accountUuid` saves for `intents`, leaving out any it keeps
+  /// no record of and clearing finished starts.
+  List<SwapIntentRecord> _persistableRecords(
+    List<SwapIntent> intents,
+    String accountUuid,
+  ) => [
+    for (final intent in withFinishedStarts(accountUuid, intents))
+      if (_isPersistableIntent(intent, accountUuid: accountUuid))
+        swapIntentRecordForPersistence(intent, accountUuid: accountUuid),
+  ];
 
   Future<SwapActivityRefreshResult> refreshOpenIntents({
     required String accountUuid,
@@ -248,7 +414,59 @@ class SwapActivityTracker {
         requestedIds: ids,
       );
     }
+    bool isPrivate(String id) =>
+        currentIntents.swapIntentById(id)?.privateAddress ?? false;
+    // Ordinary swaps never write the wallet, so they refresh and save outside
+    // the wallet deletion drain, as they always have.
+    var batch = await _refreshBatch(
+      accountUuid: accountUuid,
+      currentIntents: currentIntents,
+      ids: {
+        for (final id in ids)
+          if (!isPrivate(id)) id,
+      },
+      includeTerminal: includeTerminal,
+    );
+    final privateIds = {
+      for (final id in ids)
+        if (isPrivate(id)) id,
+    };
+    final lifecycle = _lifecycle;
+    if (privateIds.isNotEmpty && !(lifecycle?.isPaused ?? false)) {
+      // Wallet deletion waits for private swaps from their status requests
+      // through their wallet writes and saved activity, and none starts while
+      // deletion runs, so a late save cannot restore a deleted account's swaps.
+      final ordinary = batch;
+      Future<_RefreshBatch> refreshPrivate() => _refreshBatch(
+        accountUuid: accountUuid,
+        currentIntents: ordinary.intents,
+        ids: privateIds,
+        includeTerminal: includeTerminal,
+      );
+      final private =
+          await (lifecycle?.run(refreshPrivate) ?? refreshPrivate());
+      batch = (
+        intents: private.intents,
+        refreshError: ordinary.refreshError ?? private.refreshError,
+        didRefresh: ordinary.didRefresh || private.didRefresh,
+      );
+    }
+    return SwapActivityRefreshResult(
+      intents: batch.intents,
+      requestedIds: ids,
+      refreshError: batch.refreshError,
+      didRefresh: batch.didRefresh,
+    );
+  }
 
+  /// Refreshes the provider statuses of the intents in `ids`, then saves the
+  /// refreshed ones. A failed request is recorded on its intent.
+  Future<_RefreshBatch> _refreshBatch({
+    required String accountUuid,
+    required List<SwapIntent> currentIntents,
+    required Set<String> ids,
+    required bool includeTerminal,
+  }) async {
     var updatedIntents = currentIntents;
     var didRefresh = false;
     final refreshedIds = <String>{};
@@ -299,9 +517,8 @@ class SwapActivityTracker {
         refreshedIds: refreshedIds,
       );
     }
-    return SwapActivityRefreshResult(
+    return (
       intents: updatedIntents,
-      requestedIds: ids,
       refreshError: refreshError,
       didRefresh: didRefresh,
     );
@@ -312,30 +529,50 @@ class SwapActivityTracker {
     required List<SwapIntent> refreshedIntents,
     required Set<String> refreshedIds,
   }) async {
-    final latestIntents = await loadIntents(accountUuid: accountUuid);
-    var mergedIntents = latestIntents;
-    for (final id in refreshedIds) {
-      final refreshed = refreshedIntents.swapIntentById(id);
-      if (refreshed == null) continue;
-      mergedIntents = mergedIntents.replaceSwapIntent(id, refreshed);
-    }
-    await saveIntents(accountUuid: accountUuid, intents: mergedIntents);
+    await updateIntents(
+      accountUuid: accountUuid,
+      transform: (latestIntents) {
+        var mergedIntents = latestIntents;
+        for (final id in refreshedIds) {
+          final refreshed = refreshedIntents.swapIntentById(id);
+          if (refreshed == null) continue;
+          mergedIntents = mergedIntents.replaceSwapIntent(id, refreshed);
+        }
+        return mergedIntents;
+      },
+    );
   }
 
   Future<SwapIntent> _refreshProviderBackedIntent(
     SwapIntent intent, {
     DateTime? checkedAt,
   }) async {
-    final snapshot = await _swapProvider.getStatus(
-      _providerDepositAddress(intent),
-      depositMemo: intent.depositMemo,
+    SwapIntentSnapshot snapshot;
+    try {
+      snapshot = await _swapProvider.getStatus(
+        _providerDepositAddress(intent),
+        depositMemo: intent.depositMemo,
+      );
+    } on OneClickStatusOnlyException catch (error) {
+      // The wallet needs a private swap's status even when its amounts cannot
+      // be read. An ordinary swap fails the refresh as it always has.
+      if (!intent.privateAddress) rethrow;
+      snapshot = error.snapshot;
+    }
+    final tracked = await recordProviderSnapshot(
+      intent,
+      snapshot,
+      checkedAt ?? DateTime.now().toUtc(),
     );
     return updateSwapIntentFromSnapshot(
       intent,
       snapshot,
       updatedAt: checkedAt,
       lastStatusCheckedAt: checkedAt,
-    ).copyWith(clearStatusError: true);
+    ).copyWith(
+      clearStatusError: true,
+      walletReleased: intent.walletReleased || tracked == false,
+    );
   }
 
   static String _providerDepositAddress(SwapIntent intent) {
@@ -352,20 +589,35 @@ class SwapActivityTracker {
     // failed, or after the provider has observed a deposit. An unknown
     // provider status does not establish that funds were never sent.
     return _isPersistableIntent(intent, accountUuid: accountUuid) &&
-        !intent.status.isTerminal &&
-        (intent.direction == SwapDirection.externalToZec ||
-            intent.status == SwapIntentStatus.providerStatusUnknown ||
-            intent.depositClaimedAt != null ||
-            (intent.depositTxHash?.trim().isNotEmpty ?? false) ||
-            intent.hasConfirmedDepositEvidence ||
-            intent.hasProviderObservedDepositEvidence);
+        !intent.startPending &&
+        (_awaitsWalletRelease(intent) ||
+            (!intent.status.isTerminal &&
+                (intent.direction == SwapDirection.externalToZec ||
+                    intent.status == SwapIntentStatus.providerStatusUnknown ||
+                    intent.depositClaimedAt != null ||
+                    (intent.depositTxHash?.trim().isNotEmpty ?? false) ||
+                    intent.hasConfirmedDepositEvidence ||
+                    intent.hasProviderObservedDepositEvidence)));
   }
+
+  /// Whether an incoming private quote shows as expired while the wallet may
+  /// still hold its receive slot. The wallet frees that slot only on a status
+  /// fetched after the deadline, which a failed record or a closed app can
+  /// miss, so such a quote stays polled until the wallet reports the address
+  /// released.
+  static bool _awaitsWalletRelease(SwapIntent intent) =>
+      intent.status == SwapIntentStatus.expired &&
+      intent.direction == SwapDirection.externalToZec &&
+      intent.privateAddress &&
+      !intent.walletReleased;
 
   static bool _canRefreshIntent(
     SwapIntent intent, {
     required String accountUuid,
     required bool includeTerminal,
   }) {
+    // Its wallet start may still be refused, so it has no status to track.
+    if (intent.startPending) return false;
     if (includeTerminal) return intent.status != SwapIntentStatus.complete;
     return _shouldAutoRefreshIntent(intent, accountUuid: accountUuid);
   }
@@ -384,3 +636,10 @@ class SwapActivityTracker {
 List<SwapIntent> _intentsFromRecords(List<SwapIntentRecord> records) {
   return swapIntentsFromRecords(records);
 }
+
+/// What one refresh pass changed (see `SwapActivityTracker._refreshBatch`).
+typedef _RefreshBatch = ({
+  List<SwapIntent> intents,
+  String? refreshError,
+  bool didRefresh,
+});
