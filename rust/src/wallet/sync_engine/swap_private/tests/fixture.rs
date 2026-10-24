@@ -106,11 +106,13 @@ impl Chain {
         chain
     }
 
-    /// Records the tree state of the block just mined.
+    /// Records the tree state of the block just mined. The chain's own wallet scans it so
+    /// [`Self::rewind`] can truncate that wallet with the block cache.
     fn advance(&mut self) -> u32 {
         let block = self.st.latest_cached_block().unwrap();
         let height = u32::from(block.height());
         self.states.insert(height, block.chain_state().clone());
+        self.st.scan_cached_blocks(height.into(), 1);
         height
     }
 
@@ -141,6 +143,16 @@ impl Chain {
     /// note. `indexed` says the receiver directory lists it, as for NEAR's zero-OVK
     /// payouts.
     pub(super) fn pay(&mut self, fvk: &FullViewingKey, value: u64, indexed: bool) -> u32 {
+        self.pay_tx(fvk, value, indexed).0
+    }
+
+    /// [`Self::pay`], also returning the paying transaction's ID in internal byte order.
+    pub(super) fn pay_tx(
+        &mut self,
+        fvk: &FullViewingKey,
+        value: u64,
+        indexed: bool,
+    ) -> (u32, [u8; 32]) {
         let (height, _, _) = self.st.generate_next_block(
             &IronwoodFvk(fvk.clone()),
             AddressType::DefaultExternal,
@@ -148,17 +160,47 @@ impl Chain {
         );
         let height = u32::from(height);
         self.advance();
+        let record = self.record(height, fvk);
+        let txid = record.payment.txid;
         if indexed {
-            let record = self.record(height, fvk);
             self.records.push(record);
         }
-        height
+        (height, txid)
+    }
+
+    /// Drops every block above `height`, as a reorg does before the replacement branch is
+    /// mined. Later blocks get fresh hashes, so wallets see a different chain.
+    pub(super) fn rewind(&mut self, height: u32) {
+        self.st.truncate_to_height(height.into());
+        self.states.split_off(&(height + 1));
+        self.records.retain(|r| r.payment.height <= height);
+    }
+
+    /// The hash of block `height` if the chain has it.
+    pub(super) fn hash_at(&self, height: u32) -> Option<[u8; 32]> {
+        self.states.get(&height).map(|s| s.block_hash().0)
     }
 
     /// Mines a block holding only `tx`, which an app wallet built and broadcast.
     pub(super) fn mine_tx(&mut self, tx: &Transaction) -> u32 {
         self.st.generate_next_block_from_tx(1, tx);
         self.advance()
+    }
+
+    /// Mines a block holding only `tx`, an app-built payment to `fvk`, and lists that
+    /// payment in the receiver directory as NEAR's payouts are. Returns its height and
+    /// the transaction ID in internal byte order. Mining the same `tx` again after a
+    /// rewind moves the same receipt to a new block.
+    pub(super) fn mine_indexed_tx(
+        &mut self,
+        tx: &Transaction,
+        fvk: &FullViewingKey,
+    ) -> (u32, [u8; 32]) {
+        let height = self.mine_tx(tx);
+        let record = self.record(height, fvk);
+        let txid = record.payment.txid;
+        self.records.push(record);
+        (height, txid)
     }
 
     /// The cached compact block at `height`.
@@ -266,6 +308,11 @@ impl Held {
         self.arrived
             .recv_timeout(Duration::from_secs(30))
             .expect("the held request arrived");
+    }
+
+    /// Waits up to `timeout` for the held request, returning whether it arrived.
+    pub(super) fn try_wait(&self, timeout: Duration) -> bool {
+        self.arrived.recv_timeout(timeout).is_ok()
     }
 
     /// Lets the held response go.
@@ -489,6 +536,11 @@ impl Service {
         *self.protocol.lock().unwrap() = Some(protocol.into());
     }
 
+    /// Makes the head name the supported protocol again.
+    pub(super) fn serve_supported(&self) {
+        *self.protocol.lock().unwrap() = None;
+    }
+
     /// The published inventory.
     pub(super) fn inventory(&self) -> &Inventory {
         &self.inventory
@@ -654,27 +706,23 @@ impl Service {
         if class == "query" {
             self.record_query();
         }
-        let gate = {
-            let seen = self
-                .requests
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|(c, ..)| *c == class)
-                .count();
-            // Counted on arrival so a later request of the same class gets the next index.
-            self.requests
-                .lock()
-                .unwrap()
-                .push((class, route.clone(), body.len(), 0));
+        let (index, gate) = {
+            // Counted and recorded under one lock, so concurrent requests of a class get
+            // distinct indexes and never share a hold.
+            let mut requests = self.requests.lock().unwrap();
+            let seen = requests.iter().filter(|(c, ..)| *c == class).count();
+            requests.push((class, route.clone(), body.len(), 0));
+            let index = requests.len() - 1;
+            drop(requests);
             let holds = self.holds.lock().unwrap();
-            holds
+            let gate = holds
                 .iter()
                 .find(|h| h.class == class && h.nth == seen)
                 .map(|h| {
                     let _ = h.arrived.send(());
                     h.release.clone()
-                })
+                });
+            (index, gate)
         };
         if let Some(gate) = gate {
             gate.acquire().await.unwrap().forget();
@@ -687,15 +735,7 @@ impl Service {
         if response.len() > limit {
             return Err(session::Error::Transport("response over its limit".into()));
         }
-        let mut requests = self.requests.lock().unwrap();
-        let entry = requests
-            .iter_mut()
-            .rev()
-            .find(|(c, r, req, resp)| {
-                *c == class && *r == route && *req == body.len() && *resp == 0
-            })
-            .unwrap();
-        entry.3 = response.len();
+        self.requests.lock().unwrap()[index].3 = response.len();
         Ok(response)
     }
 
@@ -830,6 +870,7 @@ pub(super) struct Wallet {
     pub(super) path: String,
     pub(super) accounts: Vec<Account>,
     scanned: u32,
+    birthday: u32,
 }
 
 impl Wallet {
@@ -855,6 +896,7 @@ impl Wallet {
                 seed,
             }],
             scanned: birthday - 1,
+            birthday,
         }
     }
 
@@ -878,6 +920,53 @@ impl Wallet {
         account
     }
 
+    /// Deletes `account` through the app's per-account delete path.
+    pub(super) fn delete_account(&mut self, account: &Account) {
+        crate::wallet::keys::delete_account(&self.path, NETWORK, &account.uuid).unwrap();
+        self.accounts.retain(|a| a.id != account.id);
+    }
+
+    /// Imports a spending account with ZIP 32 metadata but no Orchard key, as an
+    /// unbackfilled hardware import can be.
+    pub(super) fn import_without_orchard(
+        &self,
+        seed: u8,
+        birthday: u32,
+        chain: &Chain,
+    ) -> AccountUuid {
+        use zcash_client_backend::data_api::{
+            Account as _, AccountBirthday, AccountPurpose, Zip32Derivation,
+        };
+        let seed = [seed; 32];
+        let usk = zcash_keys::keys::UnifiedSpendingKey::from_seed(
+            &NETWORK,
+            &seed,
+            zip32::AccountId::ZERO,
+        )
+        .unwrap();
+        let ufvk = zcash_keys::keys::UnifiedFullViewingKey::new(
+            Some(usk.transparent().to_account_pubkey()),
+            Some(usk.sapling().to_diversifiable_full_viewing_key()),
+            None,
+        )
+        .unwrap();
+        self.db()
+            .import_account_ufvk(
+                "No Orchard",
+                &ufvk,
+                &AccountBirthday::from_parts(chain.state(birthday - 1).clone(), None),
+                AccountPurpose::Spending {
+                    derivation: Some(Zip32Derivation::new(
+                        zip32::fingerprint::SeedFingerprint::from_seed(&seed).unwrap(),
+                        zip32::AccountId::ZERO,
+                    )),
+                },
+                None,
+            )
+            .unwrap()
+            .id()
+    }
+
     /// The first account.
     pub(super) fn account(&self) -> &Account {
         &self.accounts[0]
@@ -890,9 +979,14 @@ impl Wallet {
 
     /// Ordinary sync: scans every new block, without the recovery worker, filters or PIR.
     pub(super) fn scan(&mut self, chain: &Chain) {
+        self.try_scan(chain).unwrap();
+    }
+
+    /// [`Self::scan`], returning the wallet's error when it refuses the blocks.
+    fn try_scan(&mut self, chain: &Chain) -> Result<(), String> {
         let tip = chain.tip();
         if tip <= self.scanned {
-            return;
+            return Ok(());
         }
         let mut db = self.db();
         db.update_chain_tip(tip.into()).unwrap();
@@ -904,8 +998,55 @@ impl Wallet {
             chain.state(self.scanned),
             (tip - self.scanned) as usize,
         )
-        .unwrap();
+        .map_err(|e| format!("scan from {}: {e:?}", self.scanned + 1))?;
         self.scanned = tip;
+        Ok(())
+    }
+
+    /// Ordinary sync that follows reorgs: rewinds below the highest scanned block still on
+    /// `chain` through the app's reorg path, scans to the tip, and stamps new blocks with
+    /// the current time so quote deadlines can pass. Returns the height it rewound to, or
+    /// the app's error when the wallet refuses the rewind or the new blocks.
+    pub(super) fn sync(&mut self, chain: &Chain) -> Result<Option<u32>, String> {
+        let tip = chain.tip();
+        let mut db = self.db();
+        // Adding an account rewinds the wallet to that account's birthday.
+        let stored: Option<u32> = rusqlite::Connection::open(&self.path)
+            .unwrap()
+            .query_row("SELECT MAX(height) FROM blocks", [], |r| r.get(0))
+            .unwrap();
+        self.scanned = self.scanned.min(stored.unwrap_or(self.birthday - 1));
+        let mut fork = self.scanned;
+        while fork >= self.birthday {
+            let local = db.block_metadata(fork.into()).unwrap();
+            if local.is_some_and(|b| Some(b.block_hash().0) == chain.hash_at(fork)) {
+                break;
+            }
+            fork -= 1;
+        }
+        let mut rewound = None;
+        if fork < self.scanned {
+            let actual = super::super::super::truncate_wallet_to_height(
+                &self.path,
+                &mut db,
+                fork.into(),
+                tip.into(),
+                "scenario.rewind",
+            )
+            .map_err(|e| format!("{e:?}"))?;
+            self.scanned = u32::from(actual).min(fork).max(self.birthday - 1);
+            rewound = Some(self.scanned);
+        }
+        drop(db);
+        self.try_scan(chain)?;
+        rusqlite::Connection::open(&self.path)
+            .unwrap()
+            .execute(
+                "UPDATE blocks SET time = ?1 WHERE time = 0",
+                [one_time_ivk::now().unwrap()],
+            )
+            .unwrap();
+        Ok(rewound)
     }
 
     /// The last block ordinary sync scanned.
@@ -974,7 +1115,7 @@ impl Wallet {
     ) -> std::thread::JoinHandle<Result<Round, RecoveryError>> {
         let path = self.path.clone();
         let service = service.clone();
-        std::thread::spawn(move || run_worker(&path, &service, manual, budget))
+        std::thread::spawn(move || run_worker(&path, &*service, manual, budget))
     }
 
     /// Mined, unspent value of `account`'s one-time-key notes.
@@ -1066,11 +1207,12 @@ impl Wallet {
     }
 }
 
-/// Runs `recover_with_transport` with the generation the production entry point captures
-/// and the wallet's own descriptor store, ending it at `budget` as `recover` does.
-fn run_worker(
+/// Runs `recover_with_transport` over `transport` with the generation the production entry
+/// point captures and the wallet's own descriptor store, ending it at `budget` as
+/// `recover` does.
+pub(super) fn run_worker<T: Transport>(
     path: &str,
-    service: &Service,
+    transport: &T,
     manual: Option<Option<u64>>,
     budget: Duration,
 ) -> Result<Round, RecoveryError> {
@@ -1088,7 +1230,7 @@ fn run_worker(
                     NETWORK,
                     manual,
                     ORIGIN,
-                    service,
+                    transport,
                     &DescriptorTable::new(path, generation),
                     generation,
                     deadline,

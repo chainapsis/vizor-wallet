@@ -177,6 +177,11 @@ const BLOCK_FILTER_TIMEOUT: Duration = Duration::from_secs(2);
 /// [`FilterBudget`]).
 const FILTER_BUDGET: Duration = Duration::from_secs(10);
 
+/// Lifts the optional filter deadlines (see [`FilterBudget::run`]), for tests that hold a
+/// filter request on purpose and must not let a slow test thread expire it.
+#[cfg(test)]
+pub(super) static UNBOUNDED_FILTER_WAITS: AtomicBool = AtomicBool::new(false);
+
 /// The route the library fetches sealed-shard filters from (see `InventoryClient::filter`).
 const SHARD_FILTER_ROUTE: &str = "/v1/receiver/shard-filters/";
 
@@ -210,6 +215,10 @@ impl FilterBudget {
         cap: Duration,
         request: impl std::future::Future<Output = Result<R, E>>,
     ) -> Result<R, String> {
+        #[cfg(test)]
+        if UNBOUNDED_FILTER_WAITS.load(Ordering::SeqCst) {
+            return request.await.map_err(|e| e.to_string());
+        }
         let left = self
             .deadline
             .saturating_duration_since(tokio::time::Instant::now());
