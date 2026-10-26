@@ -19,6 +19,8 @@ import '../../send/screens/keystone_send_scan_screen.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
+import '../services/payment_link_ledger_funding_service.dart'
+    show LedgerGiftFundingTerminalException;
 import '../services/payment_link_service.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
 
@@ -290,16 +292,24 @@ class _PaymentLinkKeystoneSigningOverlayState
         status: result.status,
         txids: result.txids,
       );
+      if (result.status == 'expired') {
+        // Refused before submission; the service removed the draft.
+        throw _PaymentLinkFundingExpiredException(
+          networkUpgradeHoldMessage(result.message ?? '') ??
+              LedgerGiftFundingTerminalException.message,
+        );
+      }
       if (!fundingAccepted) {
         // The network may already hold this transaction, so the draft stays.
         throw _PaymentLinkFundingUncertainException(
-          networkUpgradeHoldMessage(result.message ?? '') ??
-              result.message ??
+          result.message ??
               'The funding status is uncertain. Check activity before trying again.',
         );
       }
       await widget.onFundingBroadcast(draft.link, result);
     } on _PaymentLinkFundingUncertainException {
+      rethrow;
+    } on _PaymentLinkFundingExpiredException {
       rethrow;
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._broadcast: $error\n$stackTrace');
@@ -569,6 +579,7 @@ class _PaymentLinkKeystoneSigningOverlayState
 
   String _friendlyError(Object error) {
     if (error is _PaymentLinkFundingUncertainException) return error.message;
+    if (error is _PaymentLinkFundingExpiredException) return error.message;
     final upgradeHold = networkUpgradeHoldMessage(error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
@@ -586,6 +597,17 @@ class _PaymentLinkKeystoneSigningOverlayState
     }
     return 'Gift card signing could not be completed.';
   }
+}
+
+/// A funding Rust reported expired before submitting it, so nothing reached
+/// the network.
+class _PaymentLinkFundingExpiredException implements Exception {
+  const _PaymentLinkFundingExpiredException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// A funding broadcast whose acceptance could not be confirmed. The draft is
