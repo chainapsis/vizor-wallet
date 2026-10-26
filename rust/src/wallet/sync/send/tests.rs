@@ -439,6 +439,30 @@ fn send_checks_by_tip_around_the_upgrade() {
 }
 
 #[test]
+fn upgrade_hold_heights_match_the_send_refusal() {
+    let network = WalletNetwork::Test;
+    let activation = network
+        .activation_height(consensus::NetworkUpgrade::Nu7)
+        .map(u32::from)
+        .unwrap();
+    for tip in activation - 30..activation + 5 {
+        let held = network_upgrade::hold_heights(&network, tip).is_some_and(|heights| {
+            tip >= heights.send_hold_from_tip && tip + 1 < heights.next_activation_height
+        });
+        assert_eq!(
+            held,
+            ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(tip + 1)).is_err(),
+            "send hold at tip {tip}"
+        );
+    }
+    assert_eq!(
+        network_upgrade::hold_heights(&network, activation - 1).map(|h| h.next_activation_height),
+        Some(activation)
+    );
+    assert!(network_upgrade::hold_heights(&network, activation).is_none());
+}
+
+#[test]
 fn shielding_is_refused_when_the_live_tip_reaches_the_upgrade_edge() {
     let network = ExpiryTestNetwork { nu7: Some(1_020) };
     // The wallet trails the live tip by a block in each case.
