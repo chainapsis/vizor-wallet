@@ -669,6 +669,11 @@ Swift BackgroundMigrationPreparationManager
   `com.keplr.vizor.sync` is cancelled once at launch as a tombstone for requests
   submitted by older builds; no handler is registered for it.
 
+### Network Upgrades
+
+Read [docs/network-upgrades.md](docs/network-upgrades.md) before changing
+block-time or wait-time estimates. It covers NU7's block spacing.
+
 ### Tor and the network route
 
 Tor covers the app's foreground traffic only. The desired route lives in Rust
