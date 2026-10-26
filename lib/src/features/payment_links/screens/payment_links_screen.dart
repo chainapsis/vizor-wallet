@@ -73,6 +73,7 @@ import '../widgets/payment_link_long_sync_warning.dart';
 import '../widgets/payment_link_wizard_chrome.dart';
 import 'payment_links_local_page.dart';
 import 'payment_links_mobile_body.dart';
+import '../../../providers/network_upgrade_window_provider.dart';
 
 part 'payment_links_batch_creation.dart';
 
@@ -1709,6 +1710,10 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _showError(
         'The active account changed. Review the amount and try again.',
       );
+      return;
+    }
+    if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
+      _showError(kNetworkUpgradeHoldMessage);
       return;
     }
     final sourceAccountUuid = quote.sourceAccountUuid;

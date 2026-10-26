@@ -313,6 +313,10 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     if (quote is! _BatchQuoteReady || quote.problem != null || _batchLocked) {
       return;
     }
+    if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
+      _showError(kNetworkUpgradeHoldMessage);
+      return;
+    }
     final draft = quote.draft;
     final hardware = ref
         .read(accountProvider.notifier)

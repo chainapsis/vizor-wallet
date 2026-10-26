@@ -42,6 +42,8 @@ import '../../support/gift_card_local_group_checks.dart';
 import '../../support/gift_card_claim_checking_checks.dart';
 import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
+import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 
 void main() {
   registerGiftCardEntryChecks(mobile: false);
@@ -1374,6 +1376,40 @@ void main() {
     expect(operations.sharedLinks, hasLength(1));
     expect(clipboard.copiedSecrets, hasLength(1));
     semantics.dispose();
+  });
+
+  testWidgets('holds Gift Card funding for the network upgrade', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      upgradeWindow: const NetworkUpgradeWindowState(
+        nextActivationHeight: 3543405,
+        holdsTransactions: true,
+      ),
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+
+    expect(operations.createdAmounts, isEmpty);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
   });
 
   testWidgets(
