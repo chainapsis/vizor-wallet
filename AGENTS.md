@@ -703,8 +703,10 @@ Swift BackgroundMigrationPreparationManager
 
 ### Network Upgrades
 
-Read [docs/network-upgrades.md](docs/network-upgrades.md) before changing
-block-time or wait-time estimates. It covers NU7's block spacing.
+Read [docs/network-upgrades.md](docs/network-upgrades.md) before changing send
+expiry or block-time and wait-time estimates. It covers what the wallet refuses
+around an upgrade, where those rules live
+(`rust/src/wallet/network_upgrade.rs`), and NU7's block spacing.
 
 ### Tor and the network route
 
