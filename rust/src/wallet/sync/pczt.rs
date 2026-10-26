@@ -1816,18 +1816,10 @@ async fn store_and_broadcast_pczts_inner(
             ));
         }
     };
-    if let Some(error) = prepared.iter().zip(&mined).find_map(|(item, mined)| {
-        if *mined {
-            return None;
-        }
-        pczt_broadcast_expiry_error(
-            &item.extracted.txid,
-            u32::from(item.extracted.tx.expiry_height()),
-            latest.height,
-        )
-    }) {
+    // Ends a batch whose unsent rounds nodes would reject as expiring soon.
+    let refuse_expired = |error: String| {
         let result = StoreAndBroadcastPcztsResult {
-            txids: txids_joined,
+            txids: txids_joined.clone(),
             // Preserve a mined round's result metadata through the Ledger
             // acknowledgment boundary; only wholly unmined batches expire.
             status: if mined.iter().any(|mined| *mined) {
@@ -1840,7 +1832,7 @@ async fn store_and_broadcast_pczts_inner(
             total_count,
             message: Some(error.clone()),
         };
-        return match proposal {
+        match proposal {
             Some((proposal_id, send_flow_id)) => {
                 match finish_stored_proposal(proposal_id, send_flow_id, true) {
                     Ok(()) => Ok(result),
@@ -1851,7 +1843,20 @@ async fn store_and_broadcast_pczts_inner(
                 }
             }
             None => Ok(result),
-        };
+        }
+    };
+    if let Some(error) = prepared.iter().zip(&mined).find_map(|(item, mined)| {
+        if *mined {
+            return None;
+        }
+        pczt_broadcast_expiry_error(
+            &network,
+            &item.extracted.txid,
+            u32::from(item.extracted.tx.expiry_height()),
+            latest.height,
+        )
+    }) {
+        return refuse_expired(error);
     }
     let mut first_transport = Some(expiry_transport);
     let mut newly_broadcasted = 0;
@@ -1934,18 +1939,32 @@ async fn store_and_broadcast_pczts_inner(
                     super::mark_proposal_broadcast_started(proposal_id, send_flow_id)?;
                 }
             }
+            // Once a round is out, a node refusing the next one ends the batch
+            // the same way, so only the first submission is checked again.
+            let first_submission = newly_broadcasted == 0;
             let attempt = match super::hardware_authority::dispatch(
                 db_path,
                 network,
                 &item.extracted.tx,
                 &earlier,
                 latest.height,
-                |dispatched| {
+                |dispatched| async move {
+                    if first_submission {
+                        ensure_pczt_submission_unexpired(
+                            &transport,
+                            lightwalletd_url,
+                            network,
+                            &item.extracted.tx,
+                        )
+                        .await?;
+                    }
                     crate::wallet::sync_engine::send_transaction_signalling(
                         transport,
                         &item.extracted.raw_tx,
                         dispatched,
                     )
+                    .await
+                    .map_err(PcztSubmissionError::Transport)
                 },
             )
             .await
@@ -1956,7 +1975,11 @@ async fn store_and_broadcast_pczts_inner(
                         None => PcztBroadcastAttempt::Accepted,
                     }
                 }
-                Ok(Err(error)) => PcztBroadcastAttempt::TransportUnknown(error.to_string()),
+                Ok(Err(PcztSubmissionError::Transport(error))) => {
+                    PcztBroadcastAttempt::TransportUnknown(error.to_string())
+                }
+                Ok(Err(PcztSubmissionError::Expired(error))) => return refuse_expired(error),
+                Ok(Err(PcztSubmissionError::TipUnavailable(error))) => return rpc_failure(error),
                 // A block landed between the wait and the reservation, or the
                 // wallet stayed too busy to reserve. Nothing was sent, and the
                 // retained batch stays retryable.
@@ -2497,9 +2520,12 @@ pub async fn extract_and_broadcast_pczt(
     )
     .await
     .map_err(|e| e.to_string())?;
-    if let Some(error) =
-        pczt_broadcast_expiry_error(&txid, u32::from(tx.expiry_height()), latest.height)
-    {
+    if let Some(error) = pczt_broadcast_expiry_error(
+        &network,
+        &txid,
+        u32::from(tx.expiry_height()),
+        latest.height,
+    ) {
         return Err(error.into());
     }
     // Nothing is retained before submission here; a refusal while private
@@ -2516,22 +2542,28 @@ pub async fn extract_and_broadcast_pczt(
         &tx,
         &[],
         latest.height,
-        |dispatched| {
+        |dispatched| async {
+            ensure_pczt_submission_unexpired(&transport, lightwalletd_url, network, &tx).await?;
             crate::wallet::sync_engine::send_transaction_signalling(
                 transport, &tx_bytes, dispatched,
             )
+            .await
+            .map_err(PcztSubmissionError::Transport)
         },
     )
     .await
     .map_err(retryable_refusal)?
     {
         Ok(resp) => resp,
+        Err(PcztSubmissionError::Expired(error) | PcztSubmissionError::TipUnavailable(error)) => {
+            return Err(error.into());
+        }
         // Once SendTransaction has started, a gRPC status is not proof that
         // the server rejected the transaction. The server may have accepted
         // and relayed it before the response or connection was lost. Treat
         // every transport status conservatively; explicit SendResponse
         // rejection below remains the only definite rejection path.
-        Err(status) => {
+        Err(PcztSubmissionError::Transport(status)) => {
             return Ok(handle_pczt_transport_failure(
                 &txid.to_string(),
                 &status,
@@ -2547,13 +2579,69 @@ pub async fn extract_and_broadcast_pczt(
     )?)
 }
 
-fn pczt_broadcast_expiry_error(
+/// Why a dispatched PCZT broadcast did not return a send response.
+enum PcztSubmissionError {
+    /// Inside the expiring-soon margin at the fresh tip; nothing was sent.
+    Expired(String),
+    /// The fresh tip could not be read; nothing was sent.
+    TipUnavailable(String),
+    /// `SendTransaction` began, so the outcome is unknown.
+    Transport(tonic::Status),
+}
+
+/// [`pczt_broadcast_expiry_error`] against a fresh tip as the request leaves.
+/// The authority and wallet waits before it, and the cached tip the first
+/// check can use, let a block land after that check.
+async fn ensure_pczt_submission_unexpired(
+    transport: &tonic::transport::Channel,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    tx: &Transaction,
+) -> Result<(), PcztSubmissionError> {
+    let latest = crate::wallet::sync_engine::get_latest_block_recorded(
+        &mut CompactTxStreamerClient::new(transport.clone()),
+        lightwalletd_url,
+        network,
+    )
+    .await
+    .map_err(|error| {
+        PcztSubmissionError::TipUnavailable(format!(
+            "Failed to read the chain tip before broadcast: {error}"
+        ))
+    })?;
+    match pczt_broadcast_expiry_error(
+        &network,
+        &tx.txid(),
+        u32::from(tx.expiry_height()),
+        latest.height,
+    ) {
+        Some(error) => Err(PcztSubmissionError::Expired(error)),
+        None => Ok(()),
+    }
+}
+
+/// Refuses a signed transaction nodes would reject as expiring soon. Device
+/// approval can outlast the margin the PCZT was built with.
+fn pczt_broadcast_expiry_error<P: Parameters>(
+    network: &P,
     txid: &TxId,
     expiry_height: u32,
     current_height: u64,
 ) -> Option<String> {
-    if expiry_height == 0 || current_height < u64::from(expiry_height) {
+    use crate::wallet::network_upgrade;
+
+    let next_height = current_height.saturating_add(1);
+    if expiry_height == 0
+        || next_height + u64::from(network_upgrade::TX_EXPIRING_SOON_BLOCKS)
+            <= u64::from(expiry_height)
+    {
         None
+    } else if current_height < u64::from(expiry_height)
+        && network_upgrade::crosses(network, expiry_height, expiry_height.saturating_add(1))
+    {
+        // Capped at the last block before an upgrade, which has not activated
+        // yet. From then on it is plainly expired and can be rebuilt at once.
+        Some(network_upgrade::SEND_HOLD_MESSAGE.to_string())
     } else {
         Some(format!(
             "Hardware signing request expired before broadcast: txid={txid}, \
@@ -3100,25 +3188,98 @@ mod tests {
     fn pczt_broadcast_expiry_allows_no_expiry() {
         let txid = TxId::from_bytes([0; 32]);
 
-        assert!(pczt_broadcast_expiry_error(&txid, 0, 500).is_none());
+        assert!(pczt_broadcast_expiry_error(&WalletNetwork::Test, &txid, 0, 500).is_none());
     }
 
     #[test]
     fn pczt_broadcast_expiry_allows_unexpired_tx() {
         let txid = TxId::from_bytes([0; 32]);
 
-        assert!(pczt_broadcast_expiry_error(&txid, 501, 500).is_none());
+        // The next block is 501; nodes take a transaction expiring at 504.
+        assert!(pczt_broadcast_expiry_error(&WalletNetwork::Test, &txid, 504, 500).is_none());
     }
 
     #[test]
     fn pczt_broadcast_expiry_rejects_expired_tx() {
         let txid = TxId::from_bytes([0; 32]);
 
-        let err = pczt_broadcast_expiry_error(&txid, 500, 500).unwrap();
+        let err = pczt_broadcast_expiry_error(&WalletNetwork::Test, &txid, 500, 500).unwrap();
 
         assert!(err.contains("expired before broadcast"));
         assert!(err.contains("expiry height 500"));
         assert!(err.contains("current chain height 500"));
+    }
+
+    #[test]
+    fn pczt_broadcast_expiry_rejects_tx_expiring_soon() {
+        let txid = TxId::from_bytes([0; 32]);
+
+        let err = pczt_broadcast_expiry_error(&WalletNetwork::Test, &txid, 503, 500).unwrap();
+
+        assert!(err.contains("expired before broadcast"));
+    }
+
+    /// The pre-broadcast check at each tip for a PCZT built five blocks
+    /// before NU7, whose expiry is capped at the last old-branch block.
+    #[test]
+    fn pczt_broadcast_expiry_by_tip_around_the_upgrade() {
+        use zcash_protocol::consensus::NetworkUpgrade;
+
+        let network = WalletNetwork::Test;
+        let txid = TxId::from_bytes([0; 32]);
+        let a = u32::from(network.activation_height(NetworkUpgrade::Nu7).unwrap());
+        let hold = crate::wallet::network_upgrade::SEND_HOLD_MESSAGE;
+        for (tip, expected) in [
+            (a - 6, None),
+            (a - 5, None),
+            (a - 4, Some(hold)),
+            (a - 3, Some(hold)),
+            (a - 2, Some(hold)),
+            (a - 1, Some("expired before broadcast")),
+            (a, Some("expired before broadcast")),
+        ] {
+            let error = pczt_broadcast_expiry_error(&network, &txid, a - 1, u64::from(tip));
+            match expected {
+                None => assert!(error.is_none(), "tip A-{}: {error:?}", a - tip),
+                Some(text) => assert!(
+                    error.as_deref().is_some_and(|e| e.contains(text)),
+                    "tip {tip}: {error:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn pczt_broadcast_expiry_reports_the_upgrade_for_a_capped_expiry() {
+        use zcash_protocol::consensus::NetworkUpgrade;
+
+        let network = WalletNetwork::Test;
+        let txid = TxId::from_bytes([0; 32]);
+        let activation = u32::from(network.activation_height(NetworkUpgrade::Nu7).unwrap());
+        let capped_expiry = activation - 1;
+
+        // Built at A - 5, the last tip a capped expiry still clears.
+        assert!(pczt_broadcast_expiry_error(
+            &network,
+            &txid,
+            capped_expiry,
+            u64::from(activation - 5),
+        )
+        .is_none());
+        // One block arrived during device approval.
+        assert_eq!(
+            pczt_broadcast_expiry_error(&network, &txid, capped_expiry, u64::from(activation - 4)),
+            Some(crate::wallet::network_upgrade::SEND_HOLD_MESSAGE.to_string())
+        );
+        // Once its last block is the tip, a new transaction can target NU7.
+        assert!(pczt_broadcast_expiry_error(
+            &network,
+            &txid,
+            capped_expiry,
+            u64::from(activation - 1),
+        )
+        .unwrap()
+        .contains("expired before broadcast"));
     }
 
     #[test]
