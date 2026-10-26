@@ -2500,7 +2500,9 @@ class _ImportingView extends StatelessWidget {
       children: [
         Text(
           '${formatSyncStatusPercentage(progress)}%',
-          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
+          style: withTabularFigures(
+            AppTypography.displayLarge,
+          ).copyWith(color: colors.text.accent),
         ),
         const SizedBox(height: AppSpacing.sm),
         SizedBox(

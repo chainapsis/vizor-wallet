@@ -19,6 +19,14 @@ void setSyncMode({required int mode}) =>
 /// Get the current desired sync mode.
 int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
 
+/// Set how much of the device sync scans may use, from the device's thermal
+/// state and power mode: 0 scans on every core at the default priority, 1 (or
+/// any other value) on half the cores at a lower priority (the efficiency
+/// cores on Apple devices). A running sync applies it from its next batch;
+/// later syncs start with it.
+void setSyncScanPower({required int level}) =>
+    RustLib.instance.api.crateApiSyncSetSyncScanPower(level: level);
+
 /// Update the foreground sync account whose pending transparent refreshes
 /// should be scheduled first. Requests already in flight are not interrupted.
 void setActiveSyncAccount({String? accountUuid}) => RustLib.instance.api
@@ -165,6 +173,7 @@ void cancelPaymentLinkClaimSync({required String claimId}) => RustLib
 /// observer returns on an unrecoverable setup error. Only parsed
 /// wallet-relevant mempool txs are pushed to `sink` as
 /// [`ApiMempoolTxEvent`]s; unrelated txs are filtered inside Rust.
+/// Each clean end of the stream is pushed too, with `new_block` set.
 ///
 /// The FRB layer runs this on the Rust isolate thread pool, so
 /// Dart can `await` the call while the observer keeps polling
@@ -1617,15 +1626,25 @@ class ApiMempoolTxEvent {
   /// immediately.
   final bool matched;
 
+  /// `true` when the server ended the mempool stream, which
+  /// lightwalletd does when a block is mined; the fields above are
+  /// then empty. Dart checks the tip on it instead of waiting for
+  /// its next poll.
+  final bool newBlock;
+
   const ApiMempoolTxEvent({
     required this.txidHex,
     required this.accountUuids,
     required this.matched,
+    required this.newBlock,
   });
 
   @override
   int get hashCode =>
-      txidHex.hashCode ^ accountUuids.hashCode ^ matched.hashCode;
+      txidHex.hashCode ^
+      accountUuids.hashCode ^
+      matched.hashCode ^
+      newBlock.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1634,7 +1653,8 @@ class ApiMempoolTxEvent {
           runtimeType == other.runtimeType &&
           txidHex == other.txidHex &&
           accountUuids == other.accountUuids &&
-          matched == other.matched;
+          matched == other.matched &&
+          newBlock == other.newBlock;
 }
 
 /// Progress of one additional scan cycle; absent during ordinary syncing.
@@ -1708,6 +1728,11 @@ class ApiSyncProgressEvent {
   /// `"chain_prepare"` before the existing download/scan phases.
   final String phase;
 
+  /// Sync job `percentage` belongs to, named from the first event of every
+  /// attempt. A new attempt with the same id (retry, endpoint fallback,
+  /// relaunch) continues the same fraction.
+  final String syncJobId;
+
   const ApiSyncProgressEvent({
     required this.kind,
     this.checking,
@@ -1723,6 +1748,7 @@ class ApiSyncProgressEvent {
     required this.phaseCompletedUnits,
     required this.phaseTotalUnits,
     required this.phase,
+    required this.syncJobId,
   });
 
   @override
@@ -1740,7 +1766,8 @@ class ApiSyncProgressEvent {
       hasNewTx.hashCode ^
       phaseCompletedUnits.hashCode ^
       phaseTotalUnits.hashCode ^
-      phase.hashCode;
+      phase.hashCode ^
+      syncJobId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1760,7 +1787,8 @@ class ApiSyncProgressEvent {
           hasNewTx == other.hasNewTx &&
           phaseCompletedUnits == other.phaseCompletedUnits &&
           phaseTotalUnits == other.phaseTotalUnits &&
-          phase == other.phase;
+          phase == other.phase &&
+          syncJobId == other.syncJobId;
 }
 
 /// A wallet's durable transparent ledger mode.
@@ -3158,11 +3186,26 @@ class SyncProgress {
   final bool isSyncing;
   final bool isComplete;
 
+  /// Id of the stored sync job (unfinished, or scanned to the end by an
+  /// attempt that stopped before completing), or empty when none is stored.
+  final String syncJobId;
+
+  /// Last reported fraction of that job, in the units of
+  /// `ApiSyncProgressEvent::percentage`.
+  final double syncJobFraction;
+
+  /// Whether that job started from a completed sync: a catch-up, which a
+  /// relaunch keeps showing as one.
+  final bool syncJobFromCompletedSync;
+
   const SyncProgress({
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.isSyncing,
     required this.isComplete,
+    required this.syncJobId,
+    required this.syncJobFraction,
+    required this.syncJobFromCompletedSync,
   });
 
   @override
@@ -3170,7 +3213,10 @@ class SyncProgress {
       scannedHeight.hashCode ^
       chainTipHeight.hashCode ^
       isSyncing.hashCode ^
-      isComplete.hashCode;
+      isComplete.hashCode ^
+      syncJobId.hashCode ^
+      syncJobFraction.hashCode ^
+      syncJobFromCompletedSync.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -3180,7 +3226,10 @@ class SyncProgress {
           scannedHeight == other.scannedHeight &&
           chainTipHeight == other.chainTipHeight &&
           isSyncing == other.isSyncing &&
-          isComplete == other.isComplete;
+          isComplete == other.isComplete &&
+          syncJobId == other.syncJobId &&
+          syncJobFraction == other.syncJobFraction &&
+          syncJobFromCompletedSync == other.syncJobFromCompletedSync;
 }
 
 class TexPcztPairResult {

@@ -112,7 +112,7 @@ scan_cached_blocks
     v
 +--------------- enhancement checkpoint ---------+
 | 1. backfill missing fees                        |
-| 2. observe transaction status                   |
+| 2. observe transaction status (tip-check batch) |
 | 3. stream transparent-address history           |
 | 4. persist every streamed transaction           |
 | 5. acknowledge a range only after stream EOF    |
@@ -132,6 +132,12 @@ scan_cached_blocks
 `EnhancementSession::run_checkpoint` owns this ordering. Metadata and status
 passes are bounded, as is the payload coordinator. Residual durable work is
 left for a later checkpoint instead of allowing an unbounded loop.
+
+After each scanned batch the loop calls `run_batch_checkpoint`, which runs the
+status step only on a batch that checks the chain tip. History batches far
+below the tip check it at most once a minute, and a status lookup between
+checks would have no check to complete what it recovers, so status work waits
+for the next batch that checks. The other steps run after every batch.
 
 ## Routed payload recovery
 
@@ -1095,7 +1101,10 @@ private payload failure       keep private work; retry in a later full sync
 private outside coverage      keep work; wait for a newer snapshot
 private authenticated reroute reread DB; public dispatch is now permitted
 public explicit NotFound      complete payload work only
-public other failure          keep payload work retryable
+public other failure          keep payload work; hold the transaction from 30 s
+                              doubling to 5 min for the rest of the session;
+                              never fails the sync
+public local DB failure       fail the sync attempt (retried by the sync loop)
 private status failure        keep status inconclusive; skip private status for
                               the rest of the session; no public fallback
 public status failure         fail the sync attempt (retried by the sync loop)
@@ -1116,6 +1125,7 @@ The sync engine should use only the parent facade:
 
 - `EnhancementSession::new`
 - `EnhancementSession::run_checkpoint`
+- `EnhancementSession::run_batch_checkpoint`
 - `EnhancementSession::run_payload_recovery`
 - `queue_stored_transactions`
 - `phase`
@@ -1128,8 +1138,8 @@ never tracks confirmations under private queries.
 Status work is read separately from transparent discovery. The returned variant is
 the dispatch authority. Private work carries the wallet's conservative inclusion
 evidence; the checkpoint supplies its decision height. Incomplete coverage leaves
-the obligation pending and is attempted at most once per checkpoint, without
-public fallback. Foreground, migration recovery, and the versioned native ABI use
+the obligation pending and is attempted at most once per checkpoint that runs
+the status step, without public fallback. Foreground, migration recovery, and the versioned native ABI use
 the same routing contract. Mainnet private preference enables private status;
 there is no separate release gate.
 

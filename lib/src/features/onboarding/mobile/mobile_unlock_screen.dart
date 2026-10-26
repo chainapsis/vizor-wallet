@@ -238,7 +238,9 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         unlocked = true;
         await accountNotifier.restoreAfterUnlock();
         await syncNotifier.refreshAfterUnlock();
-        await syncNotifier.startSyncAnyway();
+        // Home does not wait for the sync, whose start can wait out a
+        // cancelled one.
+        unawaited(startSyncAfterUnlock(syncNotifier));
         if (!mounted) return;
         if (enableBiometric) await _enableBiometricForNextUnlock();
         if (!mounted) return;

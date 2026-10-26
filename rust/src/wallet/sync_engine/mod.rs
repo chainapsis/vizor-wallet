@@ -1,15 +1,18 @@
 use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, RwLock};
 
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{stream, FutureExt, StreamExt, TryStreamExt};
 use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
 use shardtree::error::{InsertionError, QueryError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
-    chain::{self, error::Error as ChainError, scan_cached_blocks},
+    chain::{
+        self, decrypt_cached_blocks, error::Error as ChainError, scan_cached_blocks,
+        scan_decrypted_blocks, BlockDecryption,
+    },
     ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
     wallet::ConfirmationsPolicy,
@@ -59,7 +62,9 @@ mod lwd;
 pub(crate) mod mempool;
 #[cfg(test)]
 mod private_recovery_reorg_tests;
+mod progress_work;
 mod retry_progress;
+pub(crate) mod scan_power;
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
@@ -79,7 +84,11 @@ pub(crate) use lwd::{
     send_transaction, send_transaction_signalling, send_transaction_with_status,
     transparent_lookup::TransparentLookupGate,
 };
-use lwd::{download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block};
+use lwd::{
+    download_blocks, download_subtree_roots, get_tree_state, get_tree_state_for_block,
+    open_block_download_lwd_transport, open_isolated_lwd_transport_until,
+};
+use progress_work::{JobProgress, WorkModel};
 pub(crate) use tip_cache::{
     get_latest_block_recorded, latest_block_for_transaction,
     latest_block_for_transaction_with_client,
@@ -123,12 +132,12 @@ fn checking_progress(
     })
 }
 
-fn begin_checking(cycle: &mut u32, total: u64, tip: u64) -> SyncProgressEvent {
+fn begin_checking(cycle: &mut u32, total: u64, tip: u64, job: &JobProgress) -> SyncProgressEvent {
     *cycle += 1;
     SyncProgressEvent {
         checking: checking_progress(*cycle, total, total, 0),
         remaining_scan_blocks: Some(total),
-        ..preparation_progress_event(tip, "chain_prepare", 0, 0)
+        ..preparation_progress_event(tip, "chain_prepare", 0, 0, job.fraction(), job.id())
     }
 }
 
@@ -141,14 +150,15 @@ fn scan_queue_progress_event(
     total: u64,
     tip: u64,
     pending_start: Option<u64>,
+    job: &JobProgress,
 ) -> SyncProgressEvent {
     let mut event = if total > 0 && (*cycle > 0 || main_scan_complete) {
-        begin_checking(cycle, total, tip)
+        begin_checking(cycle, total, tip, job)
     } else {
         SyncProgressEvent {
             checking: checking_progress(*cycle, total, total, 0),
             remaining_scan_blocks: Some(total),
-            ..preparation_progress_event(tip, "chain_prepare", 0, 0)
+            ..preparation_progress_event(tip, "chain_prepare", 0, 0, job.fraction(), job.id())
         }
     };
     event.pending_scan_start_height = pending_start;
@@ -187,13 +197,64 @@ pub struct SyncProgressEvent {
     /// - `"scan"` — running `scan_cached_blocks` (CPU-intensive)
     /// - `""` — completion event or unspecified
     pub phase: String,
+    /// Id of the sync job `percentage` belongs to. A job lasts until a sync
+    /// completes, across retries, endpoint fallbacks and app relaunches, so a
+    /// new attempt with the same id continues the same fraction. Claimed
+    /// before the first event, so every event carries it.
+    pub sync_job_id: String,
 }
 
+/// Blocks per scan batch at most; the byte budget decides below it. Every
+/// batch pays a fixed serial cost after its scan (range and checkpoint
+/// bookkeeping, tip check), so sparse history wants long batches: on a
+/// 400,000-block stretch before the spam window, 10,000 instead of 2,000
+/// cut the scan from 81 to 32 s (medians of three runs) and its CPU time by
+/// a fifth. On an iPhone 16 Pro, 5,000 instead of 1,000 made a restore from
+/// Sapling activation no faster (68.5 against 67.3 minutes, a day apart):
+/// the byte budget decides the batches of the spam window, which took three
+/// quarters of the time, and the blocks before it are nearly empty. With
+/// 5,000 the spam-window runs held about 20 MB more memory, so mobile keeps
+/// 1,000.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const BATCH_SIZE_FOREGROUND: u32 = 2000;
+const BATCH_SIZE_FOREGROUND: u32 = 10_000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
+/// Scan batches downloading ahead of the one being scanned, each on its own
+/// request. A download is usually the bottleneck, and each request waits
+/// before its first block, so more requests in flight keep the link busy
+/// through those waits. On spam-window slices, four instead of two raised
+/// throughput by about 40% with the mobile byte budget (7.1 to 9.7-10.3 MB/s).
+/// With the desktop budget it depends on the link: on a dense slice four
+/// scanned 17% slower than two over a fast link and as fast or faster over a
+/// slower one. Queued batches stay encoded (`MemoryBlockSource`), so four
+/// ahead holds about two more batches of wire bytes, some 60 MB on desktop.
+const PREFETCH_DEPTH: usize = 4;
+/// Pauses before retrying a queued batch whose download failed quickly with a
+/// network error, while the scan is still busy with earlier batches. Without
+/// a retry the batch is downloaded again inline when the scan reaches it, on
+/// one request while nothing else downloads.
+const PREFETCH_RETRY_PAUSES: [std::time::Duration; 2] = [
+    std::time::Duration::from_secs(1),
+    std::time::Duration::from_secs(4),
+];
+/// Estimated compact-block download at or above which a sync session fetches
+/// its scan batches directly while Tor is on. A direct session shows the
+/// server the device's IP address with the height its scan resumes from, so a
+/// lower value hands over that link after shorter absences.
+///
+/// Desktop keeps syncing in the background: 256 MiB is about 13 minutes on
+/// one Tor circuit at the 0.35 MB/s measured on mainnet, and in the October
+/// 2026 chain about seven months of recent blocks, so only older restores
+/// (17 GB from Sapling activation) go direct.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+const DIRECT_BLOCK_DOWNLOAD_MIN_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
+/// A phone syncs only while Vizor is on screen, so time on Tor is time the
+/// user waits with the app open. 8 MiB is about 25 seconds at the same rate
+/// (not measured on a phone) and about five days of recent blocks: a daily
+/// catch-up stays on Tor, a longer absence or a restore goes direct.
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+const DIRECT_BLOCK_DOWNLOAD_MIN_BYTES: f64 = 8.0 * 1024.0 * 1024.0;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
@@ -212,19 +273,24 @@ fn current_active_sync_account(target: Option<&ActiveSyncAccountTarget>) -> Opti
     })?
 }
 
+/// A preparation event. `job_percentage` is the stored fraction of the job
+/// this attempt resumes, or 0 for a new job, so the display does not fall
+/// back to zero while the attempt prepares.
 fn preparation_progress_event(
     chain_tip_height: u64,
     phase: &str,
     phase_completed_units: u64,
     phase_total_units: u64,
+    job_percentage: f64,
+    sync_job_id: &str,
 ) -> SyncProgressEvent {
     SyncProgressEvent {
         kind: SyncEventKind::Progress,
         checking: None,
         scanned_height: 0,
         chain_tip_height,
-        percentage: 0.0,
-        display_target_percentage: 0.0,
+        percentage: job_percentage,
+        display_target_percentage: job_percentage,
         display_target_blocks: 0,
         remaining_scan_blocks: None,
         pending_scan_start_height: None,
@@ -233,6 +299,7 @@ fn preparation_progress_event(
         phase_completed_units,
         phase_total_units,
         phase: phase.into(),
+        sync_job_id: sync_job_id.into(),
     }
 }
 
@@ -255,23 +322,40 @@ pub(crate) fn followup_updated_event(completed: (u64, u64)) -> SyncProgressEvent
         phase_completed_units: 0,
         phase_total_units: 0,
         phase: String::new(),
+        // The job ended with the completion this follows.
+        sync_job_id: String::new(),
     }
 }
 
-/// Sandblasting attack range (Zcash mainnet). Blocks in this range
-/// contain a very large number of outputs from a sustained spam
-/// attack, making `scan_cached_blocks` significantly more expensive
-/// per block. We reduce the batch size to `BATCH_SIZE_SANDBLASTING`
-/// while the next batch falls inside this window to avoid excessive
-/// memory pressure and potential timeouts. Batches are clamped at both
-/// boundaries so a long historical range does not inherit the reduced
-/// size before reaching the window or keep it after leaving the window.
-///
-/// Matches `zcash-android-wallet-sdk`'s `SANDBLASTING_RANGE` in
-/// `CompactBlockProcessor.kt:1171-1181`.
-const SANDBLASTING_START: u32 = 1_710_000;
-const SANDBLASTING_END: u32 = 2_050_000;
-const BATCH_SIZE_SANDBLASTING: u32 = 100;
+/// Estimated compact-block bytes per scan batch (`WorkModel::batch_blocks`).
+/// Up to `1 + PREFETCH_DEPTH` batches are in memory at once.
+const BATCH_BYTE_BUDGET: f64 = if cfg!(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux"
+)) {
+    DESKTOP_BATCH_BYTE_BUDGET
+} else {
+    MOBILE_BATCH_BYTE_BUDGET
+};
+/// The heaviest batch the block-count planner made on desktop: 2,000 blocks
+/// right after the spam window.
+const DESKTOP_BATCH_BYTE_BUDGET: f64 = 31_000_000.0;
+/// The heaviest 100-block spam-window batch by the compiled tree sizes
+/// (1,780,000..1,790,000 averages 113 KB a block). By the subtree heights
+/// those batches came to about 15 MB, which leaves room for the estimate's
+/// error between subtree heights. On an iPhone 16 Pro a 4 MB budget, with
+/// spam-window batches a third as long, scanned 6,000 of those blocks about
+/// a third slower.
+const MOBILE_BATCH_BYTE_BUDGET: f64 = 11_300_000.0;
+/// Fewest blocks per batch, against a broken estimate; real data never needs
+/// it.
+const MIN_BATCH_BLOCKS: u32 = 10;
+/// Most blocks a batch takes past the compiled mainnet tree sizes, and off
+/// mainnet, where no estimate says how dense they are: the desktop cap before
+/// byte budgets. Blocks as dense as the 2022 spam window there would
+/// otherwise fill the desktop's 10,000-block batches, five of them in memory.
+const UNPLANNED_BATCH_BLOCKS: u32 = 2_000;
 
 const MAX_WITNESS_REPAIR_PASSES_PER_RUN: u32 = 3;
 const WITNESS_CHECK_POLICY_VERSION: u32 = 1;
@@ -299,8 +383,22 @@ pub(crate) fn elapsed() -> String {
         .unwrap_or_default()
 }
 
+/// The wallet backend's count of stored subtree roots found wrong, as last
+/// logged. The backend counts for the whole process, so this is kept for the
+/// process too: a mismatch is logged once, not again by every later sync.
+static STORED_ROOT_MISMATCHES_LOGGED: AtomicU64 = AtomicU64::new(0);
+
+/// Whether `count` includes mismatches not yet logged, recording it in
+/// `logged` if so.
+fn mismatches_not_yet_logged(logged: &AtomicU64, count: u64) -> bool {
+    logged.fetch_max(count, Ordering::Relaxed) < count
+}
+
+/// The batch starting at `start`: its planned block count (as many as fit
+/// `BATCH_BYTE_BUDGET`, at most `max_blocks`) and its end, cut at `range_end`.
 fn planned_batch_end(
-    base_batch_size: u32,
+    model: &WorkModel,
+    max_blocks: u32,
     start: BlockHeight,
     range_end: BlockHeight,
 ) -> Option<(u32, BlockHeight)> {
@@ -308,22 +406,8 @@ fn planned_batch_end(
         return None;
     }
 
-    let start_u32 = u32::from(start);
-    let (batch_size, phase_end) = if start_u32 < SANDBLASTING_START {
-        (
-            base_batch_size,
-            std::cmp::min(range_end, BlockHeight::from_u32(SANDBLASTING_START)),
-        )
-    } else if start_u32 < SANDBLASTING_END {
-        (
-            BATCH_SIZE_SANDBLASTING,
-            std::cmp::min(range_end, BlockHeight::from_u32(SANDBLASTING_END)),
-        )
-    } else {
-        (base_batch_size, range_end)
-    };
-
-    let end = std::cmp::min(start + batch_size, phase_end);
+    let batch_size = model.batch_blocks(u64::from(u32::from(start)), max_blocks);
+    let end = std::cmp::min(start + batch_size, range_end);
     Some((batch_size, end))
 }
 
@@ -333,7 +417,8 @@ fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
 }
 
 fn scannable_batch_end(
-    base_batch_size: u32,
+    model: &WorkModel,
+    max_blocks: u32,
     start: BlockHeight,
     range_end: BlockHeight,
     current_tip_height: u64,
@@ -343,7 +428,31 @@ fn scannable_batch_end(
         return None;
     }
 
-    planned_batch_end(base_batch_size, start, available_end)
+    planned_batch_end(model, max_blocks, start, available_end)
+}
+
+/// The next `count` batch ranges from `start`, contiguous, inside the range
+/// and below the tip.
+fn prefetch_ranges(
+    model: &WorkModel,
+    max_blocks: u32,
+    start: BlockHeight,
+    range_end: BlockHeight,
+    current_tip_height: u64,
+    count: usize,
+) -> Vec<(BlockHeight, BlockHeight)> {
+    let mut ranges = Vec::with_capacity(count);
+    let mut next = start;
+    while ranges.len() < count {
+        let Some((_, end)) =
+            scannable_batch_end(model, max_blocks, next, range_end, current_tip_height)
+        else {
+            break;
+        };
+        ranges.push((next, end));
+        next = end;
+    }
+    ranges
 }
 
 fn effective_base_batch_size(default_batch_size: u32) -> u32 {
@@ -396,141 +505,24 @@ fn reset_promoted_scan_progress(
     *prev_remaining = pending;
 }
 
-fn chain_window_percentage(window_start_height: u64, tip_height: u64, scanned_height: u64) -> f64 {
-    if tip_height <= window_start_height {
-        return 1.0;
-    }
-    let scanned = scanned_height.saturating_sub(window_start_height);
-    let total = tip_height - window_start_height;
-    (scanned as f64 / total as f64).clamp(0.0, 1.0)
-}
-
-fn chain_window_frontier_height(ranges: &[ScanRange], fallback_height: u64) -> u64 {
-    earliest_pending_scan_start(ranges).unwrap_or(fallback_height)
-}
-
-fn chain_window_target_height_after_batch(
-    ranges: &[ScanRange],
-    batch_start: BlockHeight,
-    batch_end: BlockHeight,
-    fallback_height: u64,
-) -> u64 {
-    let frontier = chain_window_frontier_height(ranges, fallback_height);
-    if frontier == u32::from(batch_start) as u64 {
-        u32::from(batch_end) as u64
-    } else {
-        frontier
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ProgressDisplayMode {
-    Work,
-    ChainWindow { window_start_height: u64 },
-}
-
-impl ProgressDisplayMode {
-    fn percentage(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        scanned_height: u64,
-        tip_height: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::Work => {
-                if initial_total == 0 {
-                    1.0
-                } else {
-                    (1.0 - (remaining_blocks as f64 / initial_total as f64)).clamp(0.0, 1.0)
-                }
-            }
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(window_start_height, tip_height, scanned_height),
-        }
-    }
-
-    fn target_percentage_after_blocks(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        scanned_height: u64,
-        tip_height: u64,
-        blocks: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::Work => {
-                target_percentage_after_blocks(initial_total, remaining_blocks, blocks)
-            }
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(
-                window_start_height,
-                tip_height,
-                scanned_height.saturating_add(blocks),
-            ),
-        }
-    }
-
-    fn batch_start_height(self, ranges: &[ScanRange], batch_start: BlockHeight) -> u64 {
-        match self {
-            ProgressDisplayMode::ChainWindow { .. } => {
-                chain_window_frontier_height(ranges, u32::from(batch_start) as u64)
-            }
-            ProgressDisplayMode::Work => u32::from(batch_start) as u64,
-        }
-    }
-
-    fn batch_end_height(
-        self,
-        post_ranges: &[ScanRange],
-        batch_end: BlockHeight,
-        tip_height: u64,
-    ) -> u64 {
-        match self {
-            ProgressDisplayMode::ChainWindow { .. } => {
-                chain_window_frontier_height(post_ranges, tip_height)
-            }
-            ProgressDisplayMode::Work => u32::from(batch_end) as u64,
-        }
-    }
-
-    fn batch_target_percentage(
-        self,
-        initial_total: u64,
-        remaining_blocks: u64,
-        ranges: &[ScanRange],
-        batch_start: BlockHeight,
-        batch_end: BlockHeight,
-        tip_height: u64,
-    ) -> f64 {
-        match self {
-            ProgressDisplayMode::ChainWindow {
-                window_start_height,
-            } => chain_window_percentage(
-                window_start_height,
-                tip_height,
-                chain_window_target_height_after_batch(
-                    ranges,
-                    batch_start,
-                    batch_end,
-                    u32::from(batch_start) as u64,
-                ),
-            ),
-            ProgressDisplayMode::Work => self.target_percentage_after_blocks(
-                initial_total,
-                remaining_blocks,
-                u32::from(batch_start) as u64,
-                tip_height,
-                u32::from(batch_end).saturating_sub(u32::from(batch_start)) as u64,
-            ),
-        }
-    }
-}
-
 fn is_pending_scan_range(range: &ScanRange) -> bool {
     range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
+}
+
+/// The pending range to scan next: the first, in priority order, that starts
+/// at or below the loop's tip. A ChainTip range the mempool observer queued
+/// past that tip waits behind history until a tip fetch reaches it. With no
+/// such range, the first pending range is returned and the loop's
+/// past-the-tip handling decides.
+fn next_pending_scan_range(ranges: &[ScanRange], current_tip_height: u64) -> Option<&ScanRange> {
+    let tip_end = chain_tip_exclusive_end(current_tip_height);
+    let mut pending = ranges.iter().filter(|range| is_pending_scan_range(range));
+    let first = pending.clone().next()?;
+    Some(
+        pending
+            .find(|range| range.block_range().start < tip_end)
+            .unwrap_or(first),
+    )
 }
 
 fn recovery_resubmit_exclusions(
@@ -607,22 +599,29 @@ pub(crate) async fn resubmit_released_transactions(
     if ready.is_empty() || !allow_resubmit || should_exit() {
         return Ok(ReleasedResubmission::Skipped);
     }
-    let fresh_tip = get_latest_block(client).await;
-    let Some(fresh_tip) = tip_rpc_result_unless_exiting(fresh_tip, should_exit()) else {
+    let fresh_tip = unless_exiting(&should_exit, get_latest_block(client)).await;
+    let Some(fresh_tip) =
+        fresh_tip.and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
+    else {
         return Ok(ReleasedResubmission::Skipped);
     };
     let fresh_tip = fresh_tip?;
     let tip = block_height_from_u64(fresh_tip.height, "released resubmission tip")?;
     let stored_hash = stored_hash_for_refreshed_tip(db, tip_height, fresh_tip.height)?;
-    let relation = classify_refreshed_tip_with_fallback(
-        client,
-        tip_height,
-        stored_hash,
-        fresh_tip.height,
-        &fresh_tip.hash,
+    let relation = unless_exiting(
+        &should_exit,
+        classify_refreshed_tip_with_fallback(
+            client,
+            tip_height,
+            stored_hash,
+            fresh_tip.height,
+            &fresh_tip.hash,
+        ),
     )
     .await;
-    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
+    let Some(relation) =
+        relation.and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
+    else {
         return Ok(ReleasedResubmission::Skipped);
     };
     match relation? {
@@ -667,6 +666,255 @@ pub(crate) async fn resubmit_released_transactions(
     Ok(ReleasedResubmission::Resubmitted)
 }
 
+/// Whether a sync session downloads its scan batches over a direct
+/// connection: only while Tor is desired, only when one circuit would hold the
+/// session for long, and only under Private queries. The direct connection
+/// opens alongside the session's Tor one, so the server can tie the two
+/// together by timing; Private queries keep address and txid lookups off that
+/// Tor connection. Decided once per session.
+fn fetches_blocks_directly(
+    tor_desired: bool,
+    private_queries: bool,
+    pending_download_bytes: f64,
+) -> bool {
+    tor_desired && private_queries && pending_download_bytes >= DIRECT_BLOCK_DOWNLOAD_MIN_BYTES
+}
+
+/// Direct batch failures in a row after which a session downloads its blocks
+/// over Tor until it tries a fresh direct connection. Each failed batch is
+/// downloaded again over Tor.
+const DIRECT_BLOCK_FAILURES_BEFORE_TOR: u32 = 3;
+
+/// How long a session downloads over Tor after its direct connection is
+/// demoted before it opens a fresh one. Each later demotion doubles the wait,
+/// up to [`DIRECT_BLOCK_RETRY_MAX`]. A connection that stops answering (three
+/// queued batches timed out together on a phone restore) fails every request
+/// on it, while a fresh connection to the same server works.
+const DIRECT_BLOCK_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+const DIRECT_BLOCK_RETRY_MAX: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// The direct block connection of a session that may download directly: in
+/// use, or demoted to Tor until a fresh connection may be tried.
+#[derive(Debug)]
+struct DirectBlockRoute {
+    /// Direct batch failures in a row.
+    failures: u32,
+    /// Demotions so far, which set the wait before the next fresh connection.
+    demotions: u32,
+    /// When a demoted route may open a fresh connection; `None` while in use.
+    retry_at: Option<std::time::Instant>,
+}
+
+impl DirectBlockRoute {
+    fn new() -> Self {
+        Self {
+            failures: 0,
+            demotions: 0,
+            retry_at: None,
+        }
+    }
+
+    fn in_use(&self) -> bool {
+        self.retry_at.is_none()
+    }
+
+    /// Records one direct batch. Returns the wait before a fresh connection
+    /// when this failure demotes the route.
+    fn record(&mut self, failed: bool, now: std::time::Instant) -> Option<std::time::Duration> {
+        if !failed {
+            self.failures = 0;
+            return None;
+        }
+        self.failures += 1;
+        (self.failures >= DIRECT_BLOCK_FAILURES_BEFORE_TOR).then(|| self.demote(now))
+    }
+
+    /// Moves the route to Tor and returns the wait before a fresh connection.
+    fn demote(&mut self, now: std::time::Instant) -> std::time::Duration {
+        self.demotions += 1;
+        self.failures = 0;
+        let wait = DIRECT_BLOCK_RETRY_AFTER
+            .saturating_mul(1 << (self.demotions - 1).min(4))
+            .min(DIRECT_BLOCK_RETRY_MAX);
+        self.retry_at = Some(now + wait);
+        wait
+    }
+
+    fn retry_due(&self, now: std::time::Instant) -> bool {
+        self.retry_at.is_some_and(|at| now >= at)
+    }
+
+    /// A fresh connection opened. Its first direct batch decides: a failure
+    /// moves the route back to Tor for a longer wait.
+    fn reopened(&mut self) {
+        self.retry_at = None;
+        self.failures = DIRECT_BLOCK_FAILURES_BEFORE_TOR - 1;
+    }
+}
+
+/// How long a batch that ends far below the chain tip goes without the tip
+/// check after each batch. That check is a round trip over the session's
+/// route, Tor when it is on, which the loop waits for after the scan: a
+/// restore runs thousands of history batches, and on an iPhone restore five
+/// of those checks timed out, three after the full 20 seconds. Batches within
+/// [`HISTORY_TIP_CHECK_DISTANCE`] of the tip still check after every batch,
+/// so tip promotion, resubmission and the completion check near the tip are
+/// unchanged. The schedule depends only on time and the batch's height, so
+/// the requests still carry no wallet state.
+const HISTORY_TIP_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+const HISTORY_TIP_CHECK_DISTANCE: u64 = 10_000;
+
+/// Whether the batch ending at `batch_end` checks the chain tip after it scans.
+fn post_batch_tip_check_due(
+    batch_end: u64,
+    tip: u64,
+    since_last_check: std::time::Duration,
+) -> bool {
+    batch_end.saturating_add(HISTORY_TIP_CHECK_DISTANCE) >= tip
+        || since_last_check >= HISTORY_TIP_CHECK_EVERY
+}
+
+/// How often a sync session logs where its time went, in debug builds only.
+const SYNC_TIMING_SUMMARY_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The batches of a session since its last timing summary, so a log shows
+/// whether a slow sync waits on downloads or on the scan: time waiting for a
+/// batch's blocks counts as download, time waiting for the tip check after a
+/// batch as tip checks, and time in the scan and the write as scan.
+#[derive(Debug, Default)]
+struct SyncTimingSummary {
+    batches: u32,
+    direct_batches: u32,
+    blocks: u64,
+    bytes: u64,
+    waited: std::time::Duration,
+    scanned: std::time::Duration,
+    tip_waited: std::time::Duration,
+}
+
+impl SyncTimingSummary {
+    fn record(
+        &mut self,
+        direct: bool,
+        blocks: u64,
+        bytes: u64,
+        waited: std::time::Duration,
+        scanned: std::time::Duration,
+    ) {
+        self.batches += 1;
+        self.direct_batches += u32::from(direct);
+        self.blocks += blocks;
+        self.bytes += bytes;
+        self.waited += waited;
+        self.scanned += scanned;
+    }
+
+    /// The summary of `period`, at the scan power in effect.
+    fn line(&self, period: std::time::Duration, power: scan_power::ScanPower) -> String {
+        let seconds = period.as_secs_f64().max(f64::EPSILON);
+        let megabytes = self.bytes as f64 / 1_000_000.0;
+        format!(
+            "last {:.0}s: {} batches ({} direct), {} blocks, {:.1} MB ({:.2} MB/s), \
+             waited {:.1}s for downloads and {:.1}s for tip checks, scanned {:.1}s at \
+             {power:?} power",
+            period.as_secs_f64(),
+            self.batches,
+            self.direct_batches,
+            self.blocks,
+            megabytes,
+            megabytes / seconds,
+            self.waited.as_secs_f64(),
+            self.tip_waited.as_secs_f64(),
+            self.scanned.as_secs_f64(),
+        )
+    }
+}
+
+/// The connection a fresh scan batch download goes over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BlockRoute {
+    Direct,
+    Tor,
+}
+
+/// Downloads a scan batch fresh: over the direct connection when the batch may
+/// use it, and over Tor when it may not, when its queued direct download
+/// failed, or when the direct download fails with a network error. Also
+/// returns whether the batch counts as a direct failure.
+async fn download_with_direct_fallback<T, Download, DownloadFuture>(
+    batch_is_direct: bool,
+    queued_direct_failed: bool,
+    mut download: Download,
+) -> (Result<T, SyncError>, bool)
+where
+    Download: FnMut(BlockRoute) -> DownloadFuture,
+    DownloadFuture: Future<Output = Result<T, SyncError>>,
+{
+    if !batch_is_direct {
+        return (download(BlockRoute::Tor).await, false);
+    }
+    if queued_direct_failed {
+        return (download(BlockRoute::Tor).await, true);
+    }
+    match download(BlockRoute::Direct).await {
+        Err(SyncError::Network(error)) => {
+            log::warn!(
+                "[{}] sync: direct block download failed ({error}); downloading this batch over Tor",
+                elapsed(),
+            );
+            (download(BlockRoute::Tor).await, true)
+        }
+        result => (result, false),
+    }
+}
+
+/// Estimated download of the pending ranges whose batches may use the direct
+/// connection, so a queue that only Tor would serve never opens it.
+fn direct_download_bytes(
+    work_model: &WorkModel,
+    ranges: &[ScanRange],
+    tip_height: u64,
+    checking_cycle: u32,
+    scanned_before_session: Option<BlockHeight>,
+) -> f64 {
+    let direct_ranges: Vec<ScanRange> = ranges
+        .iter()
+        .filter(|range| {
+            batch_uses_direct_connection(
+                checking_cycle,
+                range.priority(),
+                range.block_range().start,
+                scanned_before_session,
+            )
+        })
+        .cloned()
+        .collect();
+    work_model.pending_download_bytes(&direct_ranges, tip_height)
+}
+
+/// Whether a scan batch may use the session's direct block connection: only a
+/// main-scan batch of a range every wallet with the same birthday and tip
+/// scans alike. A Verify batch above the blocks scanned before this session is
+/// the continuity check at the scan frontier, often merged into a full queued
+/// batch; one at or below them re-scans blocks, as the witness repairs a
+/// stopped session leaves do, so it stays on Tor with FoundNote and
+/// OpenAdjacent ranges, which follow the wallet's notes.
+fn batch_uses_direct_connection(
+    checking_cycle: u32,
+    priority: ScanPriority,
+    start: BlockHeight,
+    scanned_before_session: Option<BlockHeight>,
+) -> bool {
+    checking_cycle == 0
+        && match priority {
+            ScanPriority::ChainTip
+            | ScanPriority::Historic
+            | ScanPriority::LatestPoolActivation => true,
+            ScanPriority::Verify => scanned_before_session.is_none_or(|height| start > height),
+            _ => false,
+        }
+}
+
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
     ranges
         .iter()
@@ -677,11 +925,38 @@ fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
         .sum()
 }
 
-fn first_pending_scan_range(ranges: &[ScanRange]) -> Option<String> {
-    ranges
-        .iter()
-        .find(|r| is_pending_scan_range(r))
-        .map(|r| r.to_string())
+/// The deepest reorg the wallet backend handles (its pruning depth).
+const CATCH_UP_REORG_DEPTH: u64 = 100;
+
+/// Whether pending work starting at `earliest_pending` scans only the blocks
+/// since a sync completed at `completed_height`, give or take a reorg: a
+/// catch-up. History below it, such as an account added since, is not.
+fn scans_only_after_completion(
+    earliest_pending: Option<u64>,
+    completed_height: Option<u64>,
+) -> bool {
+    match (earliest_pending, completed_height) {
+        (None, _) => true,
+        (Some(start), Some(completed)) => start.saturating_add(CATCH_UP_REORG_DEPTH) >= completed,
+        (Some(_), None) => false,
+    }
+}
+
+/// Drops `job`'s catch-up flag when `ranges` reach below the sync that
+/// completed at `completed_height`: an account added since, before or during
+/// the attempt, brings its history to scan. Returns whether it dropped it.
+fn reclassify_catch_up(
+    job: &mut JobProgress,
+    ranges: &[ScanRange],
+    completed_height: Option<u64>,
+) -> bool {
+    if !job.from_completed_sync()
+        || scans_only_after_completion(earliest_pending_scan_start(ranges), completed_height)
+    {
+        return false;
+    }
+    job.clear_from_completed_sync();
+    true
 }
 
 fn earliest_pending_scan_start(ranges: &[ScanRange]) -> Option<u64> {
@@ -690,6 +965,13 @@ fn earliest_pending_scan_start(ranges: &[ScanRange]) -> Option<u64> {
         .filter(|r| is_pending_scan_range(r))
         .map(|r| u32::from(r.block_range().start) as u64)
         .min()
+}
+
+fn first_pending_scan_range(ranges: &[ScanRange]) -> Option<String> {
+    ranges
+        .iter()
+        .find(|r| is_pending_scan_range(r))
+        .map(|r| r.to_string())
 }
 
 fn block_range_len(range: &std::ops::Range<BlockHeight>) -> u64 {
@@ -996,12 +1278,27 @@ pub(crate) fn completed_sync_height_for_status(
     }
 }
 
-fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
+/// Marks a sync in progress and returns its progress job: the stored one, or
+/// a newly claimed one, a catch-up when the last sync stood completed.
+fn mark_sync_started(db_data_path: &str) -> Result<progress_work::StoredProgressJob, String> {
     let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
     ensure_sync_meta_table(&conn)?;
     let tx = conn
         .transaction()
         .map_err(|e| format!("begin sync-start metadata transaction: {e}"))?;
+    let from_completed_sync = parse_sync_meta_u32(
+        SYNC_COMPLETION_POLICY_VERSION_KEY,
+        read_sync_meta_value(&tx, SYNC_COMPLETION_POLICY_VERSION_KEY)?,
+    ) == Some(SYNC_COMPLETION_POLICY_VERSION)
+        && parse_sync_meta_u32(
+            SYNC_IN_PROGRESS_KEY,
+            read_sync_meta_value(&tx, SYNC_IN_PROGRESS_KEY)?,
+        ) == Some(0)
+        && parse_sync_meta_u64(
+            LAST_COMPLETED_SYNC_HEIGHT_KEY,
+            read_sync_meta_value(&tx, LAST_COMPLETED_SYNC_HEIGHT_KEY)?,
+        )
+        .is_some();
     tx.execute(
         "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1017,8 +1314,24 @@ fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("write sync in-progress marker: {e}"))?;
+    let job = progress_work::claim_progress_job(&tx, from_completed_sync)?;
     tx.commit()
-        .map_err(|e| format!("commit sync-start metadata: {e}"))
+        .map_err(|e| format!("commit sync-start metadata: {e}"))?;
+    Ok(job)
+}
+
+/// The stored sync job's id, last fraction and whether it is a catch-up, for
+/// the status a relaunch or an unlock starts from: an unfinished job, or one
+/// whose scan finished before the attempt could complete, which the next
+/// attempt resumes too. A completed sync clears it.
+pub(crate) fn stored_progress_job(db_data_path: &str) -> Option<(String, f64, bool)> {
+    match progress_work::read_progress_job(db_data_path) {
+        Ok(job) => job.map(|job| (job.id, job.fraction, job.from_completed_sync)),
+        Err(e) => {
+            log::warn!("sync: stored progress job unreadable: {e}");
+            None
+        }
+    }
 }
 
 fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<(), String> {
@@ -1051,6 +1364,8 @@ fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("clear sync in-progress marker: {e}"))?;
+    // The job is done; the next sync measures its own work from zero.
+    progress_work::clear_progress_job(&tx)?;
     tx.commit()
         .map_err(|e| format!("commit completed sync transaction: {e}"))
 }
@@ -2198,6 +2513,20 @@ pub(crate) async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
     }
 }
 
+/// `request`'s output, or `None` once cancellation or a mode handoff wins. A
+/// request still waiting on a slow server would otherwise hold the session
+/// until its own deadline.
+async fn unless_exiting<T>(
+    should_exit: &impl Fn() -> bool,
+    request: impl Future<Output = T>,
+) -> Option<T> {
+    tokio::select! {
+        biased;
+        _ = watch_for_exit(should_exit) => None,
+        output = request => Some(output),
+    }
+}
+
 fn needs_completion_enhancement_pass(enhancement_after_scan: bool) -> bool {
     !enhancement_after_scan
 }
@@ -2574,6 +2903,8 @@ fn inconsistent_scan_batch_error(start: BlockHeight) -> SyncError {
 
 struct Prefetch<T> {
     handle: Option<tokio::task::JoinHandle<Result<T, SyncError>>>,
+    /// The task's result, once `finished` has taken it from `handle`.
+    done: Option<Result<Result<T, SyncError>, tokio::task::JoinError>>,
     start: BlockHeight,
     end: BlockHeight,
 }
@@ -2589,9 +2920,24 @@ where
     ) -> Self {
         Self {
             handle: Some(tokio::spawn(future)),
+            done: None,
             start,
             end,
         }
+    }
+
+    /// The downloaded tuple, if its download has finished, without waiting
+    /// for it. The result stays here for the iteration that scans it.
+    fn finished(&mut self) -> Option<&T> {
+        if self.done.is_none() {
+            let handle = self.handle.as_mut()?;
+            if !handle.is_finished() {
+                return None;
+            }
+            self.done = Some(handle.now_or_never()?);
+            self.handle = None;
+        }
+        self.done.as_ref()?.as_ref().ok()?.as_ref().ok()
     }
 }
 
@@ -2601,6 +2947,277 @@ impl<T> Drop for Prefetch<T> {
             handle.abort();
         }
     }
+}
+
+/// Runs `attempt` for queued batch `start..=last`, again after each of
+/// [`PREFETCH_RETRY_PAUSES`] while it fails with a network error sooner than
+/// any lightwalletd timeout, such as a stream reset or a refused connection.
+/// A slower failure is a timeout, which a retry would repeat, so it is
+/// returned at once: a server that stopped answering reaches the inline
+/// download, the sync retry and the endpoint fallback as soon as without this.
+/// The task running this future is aborted with its [`Prefetch`], so a pause
+/// ends with the queue.
+async fn retry_quick_prefetch_failures<T, Attempt, AttemptFuture>(
+    start: BlockHeight,
+    last: BlockHeight,
+    mut attempt: Attempt,
+) -> Result<T, SyncError>
+where
+    Attempt: FnMut() -> AttemptFuture,
+    AttemptFuture: Future<Output = Result<T, SyncError>>,
+{
+    let mut retries = 0;
+    loop {
+        let started = tokio::time::Instant::now();
+        let result = attempt().await;
+        let quick = started.elapsed() < lwd::SHORTEST_LIGHTWALLETD_TIMEOUT;
+        match result {
+            Err(SyncError::Network(message)) if quick && retries < PREFETCH_RETRY_PAUSES.len() => {
+                let pause = PREFETCH_RETRY_PAUSES[retries];
+                retries += 1;
+                log::warn!(
+                    "[{}] sync: prefetch {}-{} failed ({message}); retrying in background",
+                    elapsed(),
+                    u32::from(start),
+                    u32::from(last),
+                );
+                tokio::time::sleep(pause).await;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// Trial decryption of the queued batch `start..end`, started ahead of its scan.
+struct NextDecryption<D = BlockDecryption<<WalletDatabase as WalletRead>::AccountId>> {
+    start: BlockHeight,
+    end: BlockHeight,
+    decryption: D,
+}
+
+/// `next` while the queued batch it decrypts is still first in `queue`. A tip
+/// batch scanned between history batches leaves the queue as it was, and
+/// dropping a decryption already running would not stop its work, only
+/// repeat it when the scan returns. Ranges that changed under the queue
+/// cleared it, and the decryption with it.
+fn decryption_still_next<D, T>(
+    next: Option<NextDecryption<D>>,
+    queue: &VecDeque<Prefetch<T>>,
+) -> Option<NextDecryption<D>> {
+    next.filter(|next| {
+        queue
+            .front()
+            .is_some_and(|queued| queued.start == next.start && queued.end == next.end)
+    })
+}
+
+/// Starts trial decryption of the queued batch that follows `end`, if its
+/// download has finished. Its work queues behind the current batch's on the
+/// rayon pool, so it overlaps the current batch's `put_blocks`. A failure here
+/// is left for that batch's own scan to report.
+fn start_next_decryption(
+    network: &WalletNetwork,
+    db: &WalletDatabase,
+    prefetch: &mut VecDeque<Prefetch<ScanBatch>>,
+    end: BlockHeight,
+) -> Option<NextDecryption> {
+    let next = prefetch.front_mut().filter(|next| next.start == end)?;
+    let (start, end) = (next.start, next.end);
+    let (block_source, _) = next.finished()?;
+    let blocks = u32::from(end).saturating_sub(u32::from(start)) as usize;
+    match decrypt_cached_blocks(network, block_source, db, start, blocks) {
+        Ok(decryption) => Some(NextDecryption {
+            start,
+            end,
+            decryption,
+        }),
+        Err(error) => {
+            log::debug!(
+                "[{}] sync: could not start decrypting {}-{} ahead: {error}",
+                elapsed(),
+                u32::from(start),
+                u32::from(end).saturating_sub(1),
+            );
+            None
+        }
+    }
+}
+
+/// The queued tuple for batch `start..end`, if it is next. A batch that
+/// overlaps the queue any other way means the ranges changed under it, so
+/// the queue is dropped. A batch clear of it, such as a tip batch between
+/// history batches, leaves it for when the scan returns. Rewinds clear the
+/// queue where they happen.
+fn take_queued_batch<T>(
+    queue: &mut VecDeque<Prefetch<T>>,
+    start: BlockHeight,
+    end: BlockHeight,
+) -> Option<Prefetch<T>> {
+    if queue
+        .front()
+        .is_some_and(|queued| queued.start == start && queued.end == end)
+    {
+        return queue.pop_front();
+    }
+    if queue
+        .iter()
+        .any(|queued| queued.start < end && start < queued.end)
+    {
+        queue.clear();
+    }
+    None
+}
+
+/// The end of the queued tuple that starts at `start` and runs past `end`,
+/// when every block it adds is still pending. A chain tip that moves while
+/// the tip ranges scan puts a short Verify range at the scan frontier, inside
+/// the tuple queued next; scanning that tuple whole keeps the queue and the
+/// blocks it already downloaded.
+fn queued_batch_extension<T>(
+    queue: &VecDeque<Prefetch<T>>,
+    start: BlockHeight,
+    end: BlockHeight,
+    ranges: &[ScanRange],
+) -> Option<BlockHeight> {
+    let queued = queue.front()?;
+    if queued.start != start || queued.end <= end {
+        return None;
+    }
+    let mut next = end;
+    while next < queued.end {
+        next = ranges
+            .iter()
+            .find(|range| {
+                is_pending_scan_range(range)
+                    && range.block_range().start <= next
+                    && next < range.block_range().end
+            })?
+            .block_range()
+            .end;
+    }
+    Some(queued.end)
+}
+
+/// Where to queue more tuples after batch `..end` of a range ending at
+/// `range_end`: after the queue when it continues this batch, else right
+/// after this batch. A batch that cut in ahead of the queue keeps it only
+/// while it is the last of its range (one new block's tip range, say), so
+/// a longer range that cuts in still downloads ahead.
+fn prefetch_continues_from<T>(
+    queue: &mut VecDeque<Prefetch<T>>,
+    end: BlockHeight,
+    range_end: BlockHeight,
+) -> Option<BlockHeight> {
+    match (queue.front(), queue.back()) {
+        (None, _) => Some(end),
+        (Some(front), Some(back)) if front.start == end => Some(back.end),
+        _ if end < range_end => {
+            queue.clear();
+            Some(end)
+        }
+        _ => None,
+    }
+}
+
+/// The post-batch chain tip, fetched while the batch scans so the round trip
+/// overlaps CPU work instead of waiting after it. Dropping it aborts the
+/// request.
+struct TipPrefetch {
+    handle: Option<
+        tokio::task::JoinHandle<Result<zcash_client_backend::proto::service::BlockId, SyncError>>,
+    >,
+    /// When the request was sent. The tip it returns is as old as this, not
+    /// as old as the moment it is read after the scan.
+    requested_at: std::time::Instant,
+}
+
+impl TipPrefetch {
+    fn spawn(
+        mut client: CompactTxStreamerClient<Channel>,
+        lightwalletd_url: &str,
+        network: WalletNetwork,
+    ) -> Self {
+        let lightwalletd_url = lightwalletd_url.to_owned();
+        Self {
+            handle: Some(tokio::spawn(async move {
+                get_latest_block_recorded(&mut client, &lightwalletd_url, network).await
+            })),
+            requested_at: std::time::Instant::now(),
+        }
+    }
+
+    /// The tip, or `None` when cancellation or a mode handoff won.
+    async fn resolve(
+        mut self,
+        should_exit: &impl Fn() -> bool,
+    ) -> Option<Result<zcash_client_backend::proto::service::BlockId, SyncError>> {
+        let handle = self.handle.as_mut()?;
+        let result = tokio::select! {
+            biased;
+            _ = watch_for_exit(should_exit) => return None,
+            result = handle => result,
+        };
+        self.handle = None;
+        Some(result.unwrap_or_else(|error| {
+            Err(SyncError::other(format!(
+                "post-batch tip fetch task failed: {error}"
+            )))
+        }))
+    }
+}
+
+impl Drop for TipPrefetch {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
+
+/// The post-batch tip and when it was requested, or `None` when cancellation
+/// or a mode handoff won. A tip proved unchanged counts as validated when it
+/// was requested, so the final tip check before completion stays as strict as
+/// a fetch made here. The prefetch was requested before this batch's status
+/// lookups, so it cannot validate a status they released: that batch fetches
+/// the tip again, as the completion path does for its own releases.
+async fn post_batch_tip(
+    prefetch: Option<TipPrefetch>,
+    validates_released_statuses: bool,
+    client: &mut CompactTxStreamerClient<Channel>,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    should_exit: &impl Fn() -> bool,
+) -> (
+    std::time::Instant,
+    Option<Result<zcash_client_backend::proto::service::BlockId, SyncError>>,
+) {
+    match prefetch.filter(|_| !validates_released_statuses) {
+        Some(prefetch) => {
+            let requested_at = prefetch.requested_at;
+            (requested_at, prefetch.resolve(should_exit).await)
+        }
+        None => (
+            std::time::Instant::now(),
+            unless_exiting(
+                should_exit,
+                get_latest_block_recorded(client, lightwalletd_url, network),
+            )
+            .await,
+        ),
+    }
+}
+
+/// Whether a pending range that starts past the loop's tip should trigger one
+/// tip refresh instead of ending the attempt. The mempool observer writes new
+/// tips to the wallet DB while the loop scans, so the next ChainTip range can
+/// start past the tip this loop last fetched. One refresh per range start: a
+/// server still behind it ends the attempt as before, without spinning.
+fn refresh_tip_for_queued_range(range_start: u32, refreshed_for: &mut Option<u32>) -> bool {
+    if *refreshed_for == Some(range_start) {
+        return false;
+    }
+    *refreshed_for = Some(range_start);
+    true
 }
 
 async fn resolve_prefetched_or_download<T, Download, DownloadFuture>(
@@ -2622,15 +3239,18 @@ where
         if prefetch.start == start && prefetch.end == end {
             // Keep the handle inside `Prefetch` while suspended. If the sync
             // future is dropped here, `Prefetch::drop` still aborts the task.
-            let result = tokio::select! {
-                biased;
-                _ = watch_for_exit(should_exit) => return Ok(None),
-                result = prefetch.handle.as_mut().expect("prefetch handle present") => result,
+            let result = match prefetch.done.take() {
+                Some(result) => result,
+                None => tokio::select! {
+                    biased;
+                    _ = watch_for_exit(should_exit) => return Ok(None),
+                    result = prefetch.handle.as_mut().expect("prefetch handle present") => result,
+                },
             };
             if should_exit() {
                 return Ok(None);
             }
-            let _completed_handle = prefetch.handle.take().expect("prefetch handle present");
+            let _completed_handle = prefetch.handle.take();
             match result {
                 Ok(Ok(batch)) => return Ok(Some(batch)),
                 Ok(Err(error)) => log::warn!(
@@ -2675,7 +3295,8 @@ where
 
 /// Run the full sync loop with automatic retry on failure.
 /// Retries up to 3 times with exponential backoff (2s, 4s, 8s).
-/// Progress includes work completed by earlier attempts in this call.
+/// Progress is the sync job's fraction, which includes work completed by
+/// earlier attempts; the Checking stage carries across attempts in this call.
 /// This is the unified entry point called by both Dart (FRB) and Swift (C FFI).
 pub async fn run_sync_inner(
     db_data_path: &str,
@@ -2743,7 +3364,6 @@ pub async fn run_sync_inner(
             }
         }
 
-        progress.lock().unwrap().start_attempt();
         let (checking_cycle, main_scan_complete) = {
             let progress = progress.lock().unwrap();
             (progress.checking_cycle(), progress.main_scan_complete())
@@ -2765,6 +3385,7 @@ pub async fn run_sync_inner(
             &report_progress,
             checking_cycle,
             main_scan_complete,
+            attempt > 0,
         )
         .await
         {
@@ -2930,6 +3551,9 @@ async fn run_payment_link_claim_sync_once(
 
     claim_roots::prepare_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
 
+    // Claim ranges start at a card's funding height, long after the spam
+    // window, so the compiled tree sizes are enough to size their batches.
+    let batch_model = WorkModel::compiled(network);
     let mut rewind_attempts = 0u32;
     loop {
         if should_exit() {
@@ -3014,9 +3638,13 @@ async fn run_payment_link_claim_sync_once(
 
         let start = range.block_range().start;
         let range_end = range.block_range().end;
-        let Some((_, end)) =
-            scannable_batch_end(BATCH_SIZE_FOREGROUND, start, range_end, current_tip_height)
-        else {
+        let Some((_, end)) = scannable_batch_end(
+            &batch_model,
+            BATCH_SIZE_FOREGROUND,
+            start,
+            range_end,
+            current_tip_height,
+        ) else {
             return Err(SyncError::continuity(
                 current_tip_height,
                 "payment-link pending scan range starts after the observed tip",
@@ -3102,6 +3730,7 @@ async fn run_sync_impl(
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
     mut checking_cycle: u32,
     main_scan_complete: bool,
+    fresh_circuit: bool,
 ) -> Result<(), SyncError> {
     if crate::wallet::sync::proposal_locks::is_shutting_down() {
         return Ok(());
@@ -3127,10 +3756,17 @@ async fn run_sync_impl(
     // Persist the active session before any new sync work begins. A crash or
     // mode handoff cannot leave the previous completed tip looking like the
     // current run completed successfully.
-    with_wallet_db_write_lock("sync_engine.mark_sync_started", || {
+    //
+    // The progress job is the one an earlier attempt or session left, even
+    // one whose scan finished before it could complete, or a new one claimed
+    // now. Preparation reports its stored fraction; the job is measured, and
+    // rarely replaced, once pending work is known below.
+    let stored_progress_job = with_wallet_db_write_lock("sync_engine.mark_sync_started", || {
         mark_sync_started(db_data_path)
     })
     .map_err(SyncError::db)?;
+    let preparation_job_id = stored_progress_job.id.clone();
+    let preparation_job_percentage = stored_progress_job.fraction;
 
     // Declared before the channel open so a stopped session leaves the Tor wait.
     let should_exit = || {
@@ -3142,7 +3778,16 @@ async fn run_sync_impl(
     // 1. Connect gRPC (plain TLS via tonic + webpki roots). The lanes' public
     // transparent lookups go over the same transport with a dispatch signal,
     // so a policy transition waits only for them to be sent.
-    let transport = open_lwd_transport_with_cancel(lightwalletd_url, should_exit).await?;
+    // A session that opens `client` while Tor is off holds a direct route that
+    // a later Tor enable cancels; it must not add a direct block connection.
+    let tor_route = crate::network_privacy::is_tor_desired();
+    // A retry takes a fresh Tor circuit, so a bad exit does not fail every
+    // attempt on the client's shared one.
+    let transport = if fresh_circuit {
+        open_isolated_lwd_transport_until(lightwalletd_url, should_exit).await?
+    } else {
+        open_lwd_transport_with_cancel(lightwalletd_url, should_exit).await?
+    };
     let mut client = CompactTxStreamerClient::new(transport.clone());
     let _lookup_transport =
         lwd::transparent_lookup::register_sync_transport(db_data_path, transport);
@@ -3159,8 +3804,14 @@ async fn run_sync_impl(
     // authoritative: `WalletDb::update_chain_tip` deliberately ignores a
     // height below the maximum scanned block, so assigning the server height
     // first could later report completion above a lagging endpoint.
-    let tip_result = get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
-    let Some(tip_result) = tip_rpc_result_unless_exiting(tip_result, should_exit()) else {
+    let tip_result = unless_exiting(
+        &should_exit,
+        get_latest_block_recorded(&mut client, lightwalletd_url, network),
+    )
+    .await;
+    let Some(tip_result) =
+        tip_result.and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
+    else {
         log::info!("[{}] sync: exiting after initial tip fetch", elapsed());
         return Ok(());
     };
@@ -3173,15 +3824,20 @@ async fn run_sync_impl(
         .map(|(_, db_tip)| db_tip);
     let initial_tip_relation = if let Some(db_tip) = db_tip_height {
         let stored_hash = stored_hash_for_refreshed_tip(&db, db_tip, tip.height)?;
-        let relation = classify_refreshed_tip_with_fallback(
-            &mut client,
-            db_tip,
-            stored_hash,
-            tip.height,
-            &tip.hash,
+        let relation = unless_exiting(
+            &should_exit,
+            classify_refreshed_tip_with_fallback(
+                &mut client,
+                db_tip,
+                stored_hash,
+                tip.height,
+                &tip.hash,
+            ),
         )
         .await;
-        let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
+        let Some(relation) =
+            relation.and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
+        else {
             log::info!("[{}] sync: exiting after initial tip validation", elapsed());
             return Ok(());
         };
@@ -3274,6 +3930,8 @@ async fn run_sync_impl(
             "active_utxo",
             completed,
             total,
+            preparation_job_percentage,
+            &preparation_job_id,
         ));
     };
     let defer_inactive_transparent_refresh = if let Some(active_account_uuid) =
@@ -3356,6 +4014,8 @@ async fn run_sync_impl(
             "chain_prepare",
             0,
             0,
+            preparation_job_percentage,
+            &preparation_job_id,
         ));
     }
 
@@ -3401,7 +4061,16 @@ async fn run_sync_impl(
     }
 
     // 3. Download subtree roots (incremental)
-    download_subtree_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
+    let Some(subtree_roots) = unless_exiting(
+        &should_exit,
+        download_subtree_roots(&mut client, &mut db, network, tip_height),
+    )
+    .await
+    else {
+        log::info!("[{}] sync: exiting during subtree root download", elapsed());
+        return Ok(());
+    };
+    subtree_roots?;
 
     if migration_anchor_retention_required {
         with_wallet_db_write_lock(
@@ -3433,7 +4102,7 @@ async fn run_sync_impl(
     // If a deleted, only-partially-synced old-birthday account left scanned
     // blocks BELOW the surviving birthday, `max_scanned` sits below it and
     // `update_chain_tip` re-creates sub-birthday pending work. Pruning here —
-    // after the tip update, before `initial_total` is measured — demotes both
+    // after the tip update, before pending work is measured — demotes both
     // the original orphan and any such re-created range, so the orphaned history
     // is never scanned. No-op for healthy wallets; best-effort (a failure must
     // not block sync).
@@ -3454,20 +4123,118 @@ async fn run_sync_impl(
         .suggest_scan_ranges()
         .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
     let mut initial_total = pending_scan_blocks(&initial_ranges);
+    // Batches are counted at the platform's foreground cap even in
+    // background mode, so a mode switch does not move the fraction. The model
+    // also sizes the batches, and without the subtree heights its 10,000-block
+    // averages miss where dense spam starts and stops, so a failed read ends
+    // the attempt like any other DB read.
+    let work_model = WorkModel::load(db_data_path, network, BATCH_SIZE_FOREGROUND)
+        .map_err(|e| SyncError::db(format!("subtree heights: {e}")))?;
+    // Main-scan batches only (`batch_uses_direct_connection`). Checking-stage
+    // batches, ranges that follow the wallet's notes, and every request that
+    // carries an address, txid or transaction stay on `client`.
+    let scanned_before_session = db
+        .block_max_scanned()
+        .map_err(|e| SyncError::db(format!("block_max_scanned: {e}")))?
+        .map(|block| block.block_height());
+    let pending_download_bytes = direct_download_bytes(
+        &work_model,
+        &initial_ranges,
+        current_tip_height,
+        checking_cycle,
+        scanned_before_session,
+    );
+    let opens_direct = checking_cycle == 0
+        && !main_scan_complete
+        && lwd::block_download_can_go_direct(lightwalletd_url)
+        && fetches_blocks_directly(
+            tor_route && crate::network_privacy::is_tor_desired(),
+            enhancement.policy().is_private(),
+            pending_download_bytes,
+        );
+    let mut direct_route = opens_direct.then(DirectBlockRoute::new);
+    let mut block_client = if opens_direct {
+        let opened = tokio::select! {
+            biased;
+            _ = watch_for_exit(&should_exit) => {
+                log::info!("[{}] sync: exiting while opening the direct block connection", elapsed());
+                return Ok(());
+            }
+            opened = open_block_download_lwd_transport(lightwalletd_url) => opened,
+        };
+        match opened {
+            Ok(transport) => {
+                log::info!(
+                    "[{}] sync: downloading about {} MB of compact blocks directly; other requests stay on Tor",
+                    elapsed(),
+                    (pending_download_bytes / 1_000_000.0).round(),
+                );
+                CompactTxStreamerClient::new(transport)
+            }
+            // A network that blocks the server but not Tor keeps the
+            // download on Tor rather than failing every attempt.
+            Err(error) => {
+                let wait = direct_route
+                    .as_mut()
+                    .map(|route| route.demote(std::time::Instant::now()))
+                    .unwrap_or_default();
+                log::warn!(
+                    "[{}] sync: direct block download unavailable ({error}); downloading over Tor, retrying in {}s",
+                    elapsed(),
+                    wait.as_secs(),
+                );
+                client.clone()
+            }
+        }
+    } else {
+        client.clone()
+    };
+    let (mut job, job_start) = JobProgress::start(
+        stored_progress_job,
+        work_model.pending_work(&initial_ranges, current_tip_height),
+        work_model.reference_batch_work(),
+    );
+    // A job claimed after a completed sync is a catch-up only while it scans
+    // the blocks since; checked again whenever the loop reads new ranges.
+    let catch_up_completed_height = if job.from_completed_sync() {
+        read_sync_completion_meta(db_data_path)
+            .ok()
+            .and_then(|(_, height, _)| height)
+    } else {
+        None
+    };
+    reclassify_catch_up(&mut job, &initial_ranges, catch_up_completed_height);
+    job.persist_if_due(db_data_path, true);
     progress_fn(scan_queue_progress_event(
         &mut checking_cycle,
         main_scan_complete,
         initial_total,
         current_tip_height,
         earliest_pending_scan_start(&initial_ranges),
+        &job,
     ));
-    let initial_window_start_height =
-        earliest_pending_scan_start(&initial_ranges).unwrap_or(current_tip_height);
     let mut queued_ranges = Some(initial_ranges);
     let mut voting_scan_end = None;
     let mut prev_remaining = initial_total;
-    let mut progress_display_mode = ProgressDisplayMode::Work;
-    log::info!("[{}] sync: {} blocks to scan", elapsed(), initial_total);
+    // Set when a queued range starts past the loop's tip (see
+    // `refresh_tip_for_queued_range`).
+    let mut force_tip_refresh = false;
+    let mut queued_tip_refreshed_for: Option<u32> = None;
+    // Logged when a batch scans at a different power level than the last.
+    let mut last_scan_power = None;
+    let mut timing = SyncTimingSummary::default();
+    let mut timing_since = std::time::Instant::now();
+    let mut last_post_batch_tip_check = std::time::Instant::now();
+    log::info!(
+        "[{}] sync: {} blocks to scan; progress job {} {:?} at {:.1}% ({:.0} of {:.0} work units left)",
+        elapsed(),
+        initial_total,
+        job.id(),
+        job_start,
+        job.fraction() * 100.0,
+        job.remaining(),
+        job.total(),
+    );
 
     // Reorg-triggered rewinds are split between the verify and main scan
     // phases. The main budget was initialized before tip reconciliation;
@@ -3503,22 +4270,32 @@ async fn run_sync_impl(
     let mut completion_tip_validation_required = !initial_tip_identity_verified;
     let mut last_periodic_tip_refresh_attempt = initial_tip_observed_at;
 
-    // Prefetched scan batch from the previous iteration.
+    // Scan batches downloading ahead of the current one, in order.
     // When the scan loop processes a range that spans multiple batches,
-    // we start the next block-and-frontier tuple before scanning the current
-    // batch. This overlaps network I/O with CPU work on multithread runtimes
-    // and with later async stages on the iOS current-thread runtime, matching
-    // the SDK's `.buffer(1)` pipelining pattern in
-    // `CompactBlockProcessor.kt:1666`.
+    // we keep up to `PREFETCH_DEPTH` block-and-frontier tuples in flight
+    // before scanning the current batch. App syncs run on a multi-thread
+    // runtime on every platform (`bounded_runtime`), so the downloads overlap
+    // the scan; migration preparation's current-thread runtime overlaps only
+    // later async stages. The Android SDK pipelines one batch (`.buffer(1)`,
+    // `CompactBlockProcessor.kt:1666`) and the Swift SDK two
+    // (`DownloadAction`); this downloads four.
     //
-    // `None` on the first iteration and whenever the previous batch
-    // was the last in its range (so there's nothing to prefetch until
-    // `suggest_scan_ranges` runs again).
-    let mut prefetch: Option<Prefetch<ScanBatch>> = None;
+    // Empty on the first iteration, after a rewind, and once the last
+    // batch of a range is consumed (there's nothing to prefetch until
+    // `suggest_scan_ranges` runs again). A one-batch tip range that cuts
+    // in leaves it for the history batches it holds
+    // (`take_queued_batch`).
+    let mut prefetch: VecDeque<Prefetch<ScanBatch>> = VecDeque::new();
+    // Trial decryption of the next queued batch, started before this batch is
+    // written so that it runs while `put_blocks` does. Keyed by the batch's
+    // range; `scan_decrypted_blocks` decrypts again unless it covers exactly
+    // the blocks scanned, with the current viewing keys.
+    let mut next_decryption: Option<NextDecryption> = None;
 
     // Retry enhancement work left by an interrupted/older sync before scanning.
-    // Best-effort: a retryable public failure must not block compact sync; the
-    // work stays durable and later passes retry it.
+    // Best-effort: a failed public payload stays durable and the session holds
+    // it back until its retry time; a local failure here is logged, and the
+    // checkpoints after scanning report it.
     match enhancement
         .run_payload_recovery(&mut db, &mut client, None, &should_exit)
         .await
@@ -3555,12 +4332,17 @@ async fn run_sync_impl(
         // against the last validated tip. A lower, non-divergent response is
         // returned as a transient error to avoid repeatedly requesting an
         // empty range from a lagging replica.
-        if last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL {
+        if force_tip_refresh || last_periodic_tip_refresh_attempt.elapsed() >= TIP_REFRESH_INTERVAL
+        {
+            force_tip_refresh = false;
             last_periodic_tip_refresh_attempt = std::time::Instant::now();
-            let fresh_tip_result =
-                get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
-            let Some(fresh_tip_result) =
-                tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+            let fresh_tip_result = unless_exiting(
+                &should_exit,
+                get_latest_block_recorded(&mut client, lightwalletd_url, network),
+            )
+            .await;
+            let Some(fresh_tip_result) = fresh_tip_result
+                .and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
             else {
                 log::info!("[{}] sync: exiting after periodic tip fetch", elapsed());
                 return Ok(());
@@ -3572,15 +4354,19 @@ async fn run_sync_impl(
 
                     let stored_hash =
                         stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
-                    let relation = classify_refreshed_tip_with_fallback(
-                        &mut client,
-                        current_tip_height,
-                        stored_hash,
-                        fresh_tip.height,
-                        &fresh_tip.hash,
+                    let relation = unless_exiting(
+                        &should_exit,
+                        classify_refreshed_tip_with_fallback(
+                            &mut client,
+                            current_tip_height,
+                            stored_hash,
+                            fresh_tip.height,
+                            &fresh_tip.hash,
+                        ),
                     )
                     .await;
-                    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit())
+                    let Some(relation) = relation
+                        .and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
                     else {
                         log::info!(
                             "[{}] sync: exiting after periodic tip validation",
@@ -3637,7 +4423,7 @@ async fn run_sync_impl(
                                 ));
                             }
                             main_rewinds_this_run += 1;
-                            prefetch = None;
+                            prefetch.clear();
                             let (actual_height, repair_ranges, pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
@@ -3661,6 +4447,7 @@ async fn run_sync_impl(
                                     &mut checking_cycle,
                                     pending_blocks,
                                     current_tip_height,
+                                    &job,
                                 ));
                             }
                             queued_ranges = Some(repair_ranges);
@@ -3686,7 +4473,7 @@ async fn run_sync_impl(
                 .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
         };
 
-        let range = match ranges.iter().find(|r| is_pending_scan_range(r)) {
+        let range = match next_pending_scan_range(&ranges, current_tip_height) {
             Some(r) => r.clone(),
             None => {
                 // A long catch-up can outlive the tip captured at startup.
@@ -3699,10 +4486,13 @@ async fn run_sync_impl(
                     completion_tip_validation_required,
                     last_completion_tip_validation.elapsed(),
                 ) {
-                    let fresh_tip_result =
-                        get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
-                    let Some(fresh_tip_result) =
-                        tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
+                    let fresh_tip_result = unless_exiting(
+                        &should_exit,
+                        get_latest_block_recorded(&mut client, lightwalletd_url, network),
+                    )
+                    .await;
+                    let Some(fresh_tip_result) = fresh_tip_result
+                        .and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
                     else {
                         log::info!("[{}] sync: exiting after final tip fetch", elapsed());
                         return Ok(());
@@ -3714,15 +4504,19 @@ async fn run_sync_impl(
 
                     let stored_hash =
                         stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
-                    let relation = classify_refreshed_tip_with_fallback(
-                        &mut client,
-                        current_tip_height,
-                        stored_hash,
-                        fresh_tip.height,
-                        &fresh_tip.hash,
+                    let relation = unless_exiting(
+                        &should_exit,
+                        classify_refreshed_tip_with_fallback(
+                            &mut client,
+                            current_tip_height,
+                            stored_hash,
+                            fresh_tip.height,
+                            &fresh_tip.hash,
+                        ),
                     )
                     .await;
-                    let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit())
+                    let Some(relation) = relation
+                        .and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
                     else {
                         log::info!("[{}] sync: exiting after final tip validation", elapsed());
                         return Ok(());
@@ -3764,9 +4558,9 @@ async fn run_sync_impl(
                                     &mut checking_cycle,
                                     initial_total,
                                     current_tip_height,
+                                    &job,
                                 ));
                             }
-                            progress_display_mode = ProgressDisplayMode::Work;
                             queued_ranges = Some(promoted_ranges);
 
                             completion_tip_validation_required = true;
@@ -3786,7 +4580,7 @@ async fn run_sync_impl(
                                 ));
                             }
                             main_rewinds_this_run += 1;
-                            prefetch = None;
+                            prefetch.clear();
                             let (actual_height, repair_ranges, repair_pending_blocks) =
                                 rewind_for_confirmed_tip_reorg(
                                     db_data_path,
@@ -3809,6 +4603,7 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 repair_pending_blocks,
                                 current_tip_height,
+                                &job,
                             ));
                             queued_ranges = Some(repair_ranges);
                             completion_tip_validation_required = true;
@@ -3832,10 +4627,10 @@ async fn run_sync_impl(
                             &mut checking_cycle,
                             repair_pending_blocks,
                             current_tip_height,
+                            &job,
                         ));
                     }
-                    progress_display_mode = ProgressDisplayMode::Work;
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     db_data_path,
@@ -3855,17 +4650,10 @@ async fn run_sync_impl(
                             &mut checking_cycle,
                             repair_pending_blocks,
                             current_tip_height,
+                            &job,
                         ));
                     }
-                    let repair_ranges = db.suggest_scan_ranges().map_err(|e| {
-                        SyncError::db(format!("suggest_scan_ranges after anchor repair: {e}"))
-                    })?;
-                    let first_pending = earliest_pending_scan_start(&repair_ranges)
-                        .unwrap_or(initial_window_start_height);
-                    progress_display_mode = ProgressDisplayMode::ChainWindow {
-                        window_start_height: initial_window_start_height.min(first_pending),
-                    };
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 } else {
                     // A previous attempt may have scanned its final batch before
@@ -3920,9 +4708,9 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 initial_total,
                                 current_tip_height,
+                                &job,
                             ));
                         }
-                        progress_display_mode = ProgressDisplayMode::Work;
                         queued_ranges = Some(promoted_ranges);
                         completion_tip_validation_required = true;
                         continue;
@@ -3966,16 +4754,27 @@ async fn run_sync_impl(
         let frontier_height = u32::from(start)
             .checked_sub(1)
             .ok_or_else(|| SyncError::other("scan range starts before a usable frontier"))?;
-        // Adaptive batch size: shrink to BATCH_SIZE_SANDBLASTING
-        // while the next batch is inside the known Zcash mainnet
-        // sandblasting attack window. These blocks contain an
-        // order of magnitude more outputs than normal blocks,
-        // making scan_cached_blocks much slower per block and
-        // using more memory. Matches the SDK's
-        // `SANDBLASTING_RANGE` check.
-        let Some((batch_size, end)) =
-            scannable_batch_end(base_batch_size, start, range_end, current_tip_height)
-        else {
+        // Batch size: as many blocks as fit `BATCH_BYTE_BUDGET` of
+        // estimated compact-block bytes (compiled tree sizes and subtree
+        // completion heights), up to `base_batch_size`, so dense
+        // spam-window blocks get short batches without naming their heights.
+        let Some((batch_size, end)) = scannable_batch_end(
+            &work_model,
+            base_batch_size,
+            start,
+            range_end,
+            current_tip_height,
+        ) else {
+            if refresh_tip_for_queued_range(u32::from(start), &mut queued_tip_refreshed_for) {
+                log::info!(
+                    "[{}] sync: pending range {} starts after current tip {}; refreshing the tip",
+                    elapsed(),
+                    describe_block_range(range.block_range()),
+                    current_tip_height,
+                );
+                force_tip_refresh = true;
+                continue;
+            }
             log::info!(
                 "[{}] sync: pending range {} starts after current tip {}, waiting for tip advance",
                 elapsed(),
@@ -3984,26 +4783,25 @@ async fn run_sync_impl(
             );
             break;
         };
+        let (batch_size, end) = match queued_batch_extension(&prefetch, start, end, &ranges) {
+            Some(queued_end) => (u32::from(queued_end) - u32::from(start), queued_end),
+            None => (batch_size, end),
+        };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
-        let display_scanned_height = progress_display_mode.batch_start_height(&ranges, start);
-        let current_pct = progress_display_mode.percentage(
-            initial_total,
-            prev_remaining,
-            display_scanned_height,
-            current_tip_height,
-        );
-        let display_target_percentage = progress_display_mode.batch_target_percentage(
-            initial_total,
-            prev_remaining,
-            &ranges,
-            start,
-            end,
-            current_tip_height,
-        );
+        // Ranges can change between batches (a rewind, a repair, a new
+        // account); any added work raises the job total here.
+        job.observe(work_model.pending_work(&ranges, current_tip_height));
+        if reclassify_catch_up(&mut job, &ranges, catch_up_completed_height) {
+            job.persist_if_due(db_data_path, true);
+        }
+        let batch_work =
+            work_model.range_work(u64::from(u32::from(start)), u64::from(u32::from(end)));
+        let (current_pct, display_target_percentage) =
+            (job.fraction(), job.fraction_after(batch_work));
         progress_fn(SyncProgressEvent {
             scanned_height: u32::from(start) as u64,
             chain_tip_height: current_tip_height,
-            percentage: current_pct.clamp(0.0, 1.0),
+            percentage: current_pct,
             display_target_percentage,
             display_target_blocks: batch_blocks,
             remaining_scan_blocks: Some(pending_scan_blocks(&ranges)),
@@ -4020,6 +4818,7 @@ async fn run_sync_impl(
             phase_completed_units: 0,
             phase_total_units: 0,
             phase: "download".into(),
+            sync_job_id: job.id().to_string(),
         });
         log::info!(
             "[{}] sync: scanning {}-{} (priority {:?}{}, batch={})",
@@ -4035,13 +4834,93 @@ async fn run_sync_impl(
             batch_size,
         );
 
+        // A demoted direct route opens a fresh connection once its wait is
+        // over and a batch that downloads directly comes up. The queue then
+        // holds batches fetched over Tor, so it starts again from this batch.
+        if let Some(route) = direct_route.as_mut().filter(|route| {
+            route.retry_due(std::time::Instant::now())
+                && batch_uses_direct_connection(
+                    checking_cycle,
+                    range.priority(),
+                    start,
+                    scanned_before_session,
+                )
+        }) {
+            let opened = tokio::select! {
+                biased;
+                _ = watch_for_exit(&should_exit) => {
+                    log::info!("[{}] sync: exiting while reopening the direct block connection", elapsed());
+                    return Ok(());
+                }
+                opened = open_block_download_lwd_transport(lightwalletd_url) => opened,
+            };
+            match opened {
+                Ok(transport) => {
+                    log::info!("[{}] sync: reopened the direct block connection", elapsed());
+                    block_client = CompactTxStreamerClient::new(transport);
+                    route.reopened();
+                    prefetch.clear();
+                }
+                Err(error) => {
+                    let wait = route.demote(std::time::Instant::now());
+                    log::warn!(
+                        "[{}] sync: direct block download still unavailable ({error}); retrying in {}s",
+                        elapsed(),
+                        wait.as_secs(),
+                    );
+                }
+            }
+        }
+
         // Download blocks and their preceding frontier together, or consume a
-        // matching tuple that the previous iteration prefetched.
-        let batch =
-            resolve_prefetched_or_download(prefetch.take(), start, end, &should_exit, || {
-                download_scan_batch(&mut client, start, end - 1, network)
-            })
-            .await?;
+        // matching tuple that an earlier iteration prefetched.
+        let queued = take_queued_batch(&mut prefetch, start, end);
+        let batch_is_direct = direct_route.as_ref().is_some_and(DirectBlockRoute::in_use)
+            && batch_uses_direct_connection(
+                checking_cycle,
+                range.priority(),
+                start,
+                scanned_before_session,
+            );
+        // A queued batch reaches the fresh download only when it failed.
+        let queued_direct_failed = batch_is_direct && queued.is_some();
+        let mut direct_failed = false;
+        let download_started = std::time::Instant::now();
+        let batch = resolve_prefetched_or_download(queued, start, end, &should_exit, || {
+            let (block_client, client, direct_failed) =
+                (&block_client, &client, &mut direct_failed);
+            async move {
+                let (result, failed) =
+                    download_with_direct_fallback(batch_is_direct, queued_direct_failed, |route| {
+                        let mut route_client = match route {
+                            BlockRoute::Direct => block_client.clone(),
+                            BlockRoute::Tor => client.clone(),
+                        };
+                        async move {
+                            download_scan_batch(&mut route_client, start, end - 1, network).await
+                        }
+                    })
+                    .await;
+                *direct_failed = failed;
+                result
+            }
+        })
+        .await?;
+        // A network that lets the connection open but breaks its streams
+        // fails every batch; a passing blip should not move a restore to Tor.
+        if let Some(wait) = direct_route
+            .as_mut()
+            .filter(|_| batch_is_direct)
+            .and_then(|route| route.record(direct_failed, std::time::Instant::now()))
+        {
+            log::warn!(
+                "[{}] sync: direct block downloads failed {DIRECT_BLOCK_FAILURES_BEFORE_TOR} times in a row; downloading over Tor, retrying a fresh connection in {}s",
+                elapsed(),
+                wait.as_secs(),
+            );
+            block_client = client.clone();
+            prefetch.clear();
+        }
         let Some((block_source, from_state)) = batch else {
             log::info!("[{}] sync: exiting after download", elapsed());
             return Ok(());
@@ -4055,38 +4934,73 @@ async fn run_sync_impl(
         // derived from it. Neither half is useful without the other.
         validate_scan_batch(&block_source, &from_state, start, end)?;
 
+        let batch_waited = download_started.elapsed();
+        let batch_bytes = block_source.encoded_bytes() as u64;
         let incoming_orchard_checkpoint_heights =
             migration_anchor_retention_required.then(|| block_source.orchard_checkpoint_heights());
 
-        // Start the next tuple before scanning this batch. Dropping `prefetch`
-        // on any early return, error, or reorg aborts its network task.
-        if end < range_end && !should_exit() {
-            let prefetch_start = end;
-            if let Some((_, prefetch_end)) = scannable_batch_end(
+        // Start the next tuples before scanning this batch. Dropping `prefetch`
+        // on any early return, error, or reorg aborts their network tasks.
+        if let Some(next_start) = (!should_exit())
+            .then(|| prefetch_continues_from(&mut prefetch, end, range_end))
+            .flatten()
+        {
+            let planned = prefetch_ranges(
+                &work_model,
                 base_batch_size,
-                prefetch_start,
+                next_start,
                 range_end,
                 current_tip_height,
-            ) {
-                let mut prefetch_client = client.clone();
-                prefetch = Some(Prefetch::spawn(prefetch_start, prefetch_end, async move {
-                    download_scan_batch(
-                        &mut prefetch_client,
-                        prefetch_start,
-                        prefetch_end - 1,
-                        network,
-                    )
-                    .await
-                }));
-            } else {
+                PREFETCH_DEPTH.saturating_sub(prefetch.len()),
+            );
+            for &(prefetch_start, prefetch_end) in &planned {
+                let prefetch_client = if batch_uses_direct_connection(
+                    checking_cycle,
+                    range.priority(),
+                    prefetch_start,
+                    scanned_before_session,
+                ) {
+                    block_client.clone()
+                } else {
+                    client.clone()
+                };
+                prefetch.push_back(Prefetch::spawn(
+                    prefetch_start,
+                    prefetch_end,
+                    retry_quick_prefetch_failures(prefetch_start, prefetch_end - 1, move || {
+                        let mut client = prefetch_client.clone();
+                        async move {
+                            download_scan_batch(
+                                &mut client,
+                                prefetch_start,
+                                prefetch_end - 1,
+                                network,
+                            )
+                            .await
+                        }
+                    }),
+                ));
+            }
+            let next_start = planned.last().map_or(next_start, |r| r.1);
+            if prefetch.len() < PREFETCH_DEPTH && next_start < range_end {
                 log::debug!(
                     "[{}] sync: skipping prefetch from {} past current tip {}",
                     elapsed(),
-                    u32::from(prefetch_start),
+                    u32::from(next_start),
                     current_tip_height,
                 );
             }
         }
+        let tip_check_due = post_batch_tip_check_due(
+            u64::from(u32::from(end)),
+            current_tip_height,
+            last_post_batch_tip_check.elapsed(),
+        );
+        if tip_check_due {
+            last_post_batch_tip_check = std::time::Instant::now();
+        }
+        let tip_prefetch = (tip_check_due && !should_exit())
+            .then(|| TipPrefetch::spawn(client.clone(), lightwalletd_url, network));
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -4108,6 +5022,7 @@ async fn run_sync_impl(
         // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
+        let scan_started = std::time::Instant::now();
         let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
             // Persist before scanning advances scan_queue: cancellation or a crash
             // after the scan must not lose this account's recovery work.
@@ -4142,14 +5057,43 @@ async fn run_sync_impl(
                 );
             }
             voting_scan_end = Some(end);
-            scan_cached_blocks(
-                &network,
-                &block_source,
-                &mut db,
-                start,
-                &from_state,
-                batch_blocks as usize,
-            )
+            let power = scan_power::current();
+            if last_scan_power != Some(power) {
+                log::info!("[{}] sync: scanning at {power:?} power", elapsed());
+                last_scan_power = Some(power);
+            }
+            // The next batch's decryption starts inside the same call, so it
+            // runs at this batch's scan power too.
+            scan_power::install(power, || {
+                // The decryption started while the previous batch was written, if
+                // it is this batch's.
+                match next_decryption.take_if(|next| next.start == start && next.end == end) {
+                    Some(next) => Ok(next.decryption),
+                    None => decrypt_cached_blocks(
+                        &network,
+                        &block_source,
+                        &db,
+                        start,
+                        batch_blocks as usize,
+                    ),
+                }
+                .and_then(|decryption| {
+                    // This batch's decryption was queued first, so the next
+                    // batch's runs after it, while this batch is written. One
+                    // already running for the queued batch is kept.
+                    next_decryption = decryption_still_next(next_decryption.take(), &prefetch)
+                        .or_else(|| start_next_decryption(&network, &db, &mut prefetch, end));
+                    scan_decrypted_blocks(
+                        &network,
+                        &block_source,
+                        &mut db,
+                        start,
+                        &from_state,
+                        batch_blocks as usize,
+                        decryption,
+                    )
+                })
+            })
             .map_err(|e| match e {
                 ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
                     let at_height = u32::from(scan_err.at_height()) as u64;
@@ -4201,6 +5145,19 @@ async fn run_sync_impl(
             })
         });
 
+        // A stored subtree root that disagrees with the scanned note commitments
+        // fails nothing: the backend counts it and builds every shard from then
+        // on, for the rest of the process.
+        let stored_root_mismatches =
+            zcash_client_backend::data_api::ll::wallet::stored_root_mismatches();
+        if mismatches_not_yet_logged(&STORED_ROOT_MISMATCHES_LOGGED, stored_root_mismatches) {
+            log::warn!(
+                "[{}] sync: {stored_root_mismatches} downloaded subtree root(s) in this process \
+                 disagreed with the scanned note commitments; shards are built in full from now on",
+                elapsed(),
+            );
+        }
+
         // Handle the scan result. On a reorg we rewind the wallet to
         // `at_height - REWIND_DISTANCE` (bounded by `truncate_to_height`'s
         // nearest checkpoint) and restart the scan loop. librustzcash's
@@ -4212,6 +5169,24 @@ async fn run_sync_impl(
         // `MAX_REWINDS_PER_RUN`. A verify range that keeps flapping won't
         // exhaust the budget the main scan needs to handle an unrelated
         // later reorg.
+        timing.record(
+            batch_is_direct,
+            u64::from(u32::from(end) - u32::from(start)),
+            batch_bytes,
+            batch_waited,
+            scan_started.elapsed(),
+        );
+        if timing_since.elapsed() >= SYNC_TIMING_SUMMARY_EVERY {
+            if cfg!(debug_assertions) {
+                log::info!(
+                    "[{}] sync: {}",
+                    elapsed(),
+                    timing.line(timing_since.elapsed(), scan_power::current())
+                );
+            }
+            timing = SyncTimingSummary::default();
+            timing_since = std::time::Instant::now();
+        }
         let scan_summary = match scan_result {
             Ok(s) => s,
             Err(sync_err) => match sync_err.recovery_strategy() {
@@ -4354,6 +5329,8 @@ async fn run_sync_impl(
                         ));
                     }
                     if post_rewind_pending > 0 {
+                        // Rewound blocks count as added job work, measured at
+                        // the next batch.
                         initial_total = post_rewind_pending;
                         prev_remaining = post_rewind_pending;
                         if checking_cycle > 0 && post_rewind_pending > 0 {
@@ -4361,15 +5338,11 @@ async fn run_sync_impl(
                                 &mut checking_cycle,
                                 post_rewind_pending,
                                 current_tip_height,
+                                &job,
                             ));
                         }
-                        let rewind_start = earliest_pending_scan_start(&post_rewind_ranges)
-                            .unwrap_or(actual_rewind_height_u64);
-                        progress_display_mode = ProgressDisplayMode::ChainWindow {
-                            window_start_height: initial_window_start_height.min(rewind_start),
-                        };
                     }
-                    prefetch = None;
+                    prefetch.clear();
                     continue;
                 }
                 RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Fatal => {
@@ -4425,23 +5398,39 @@ async fn run_sync_impl(
         // Truncation can temporarily clear a transaction's mined height while
         // retaining note positions that prove compact scanning found it mined.
         // Exclude those transactions from recovery resubmission while scanning
-        // can still restore their mined heights.
-        let post_scan_ranges = db
-            .suggest_scan_ranges()
-            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
-        let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
+        // can still restore their mined heights. Only a batch that checks the
+        // tip resubmits, so the others skip the lookup.
+        let resubmit_exclusions = if tip_check_due {
+            let post_scan_ranges = db
+                .suggest_scan_ranges()
+                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+            recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?
+        } else {
+            HashSet::new()
+        };
 
         // Status and transparent history run before the routed payload snapshot,
         // so transactions discovered by history are enhanced in this checkpoint.
+        // Status lookups run only on a batch that checks the tip, so a status
+        // recovered here is completed by this batch's check, made after them.
         if enhancement
-            .run_checkpoint(&mut db, &mut client, Some(&block_source), &should_exit)
+            .run_batch_checkpoint(
+                &mut db,
+                &mut client,
+                &block_source,
+                tip_check_due,
+                &should_exit,
+            )
             .await?
         {
             log::info!("[{}] sync: exiting during enhancement", elapsed());
             return Ok(());
         }
-        let ready = enhancement.take_ready_resubmission();
         enhancement_after_scan = true;
+        // A history batch between tip checks skips its own; the schedule never
+        // depends on what the wallet holds.
+        let check_tip = tip_check_due;
+        let ready = enhancement.take_ready_resubmission();
 
         // Post-batch tip reconciliation and auto-resubmit. The resubmit calls
         // match zcash-android-wallet-sdk's lines 593/701 call sites (end of a
@@ -4481,145 +5470,167 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        let fresh_tip_result =
-            get_latest_block_recorded(&mut client, lightwalletd_url, network).await;
-        let Some(fresh_tip_result) = tip_rpc_result_unless_exiting(fresh_tip_result, should_exit())
-        else {
-            log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
-            return Ok(());
-        };
-        match fresh_tip_result {
-            Ok(fresh_tip) => {
-                let fresh_tip_height =
-                    block_height_from_u64(fresh_tip.height, "post-batch lightwalletd chain tip")?;
+        if check_tip {
+            // The prefetch started before the scan and is usually complete by
+            // now; a released status is completed only below, with resubmission.
+            let tip_check_started = std::time::Instant::now();
+            let (tip_requested_at, fresh_tip_result) = post_batch_tip(
+                tip_prefetch,
+                allow_resubmit && !ready.is_empty(),
+                &mut client,
+                lightwalletd_url,
+                network,
+                &should_exit,
+            )
+            .await;
+            timing.tip_waited += tip_check_started.elapsed();
+            let Some(fresh_tip_result) = fresh_tip_result
+                .and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
+            else {
+                log::info!("[{}] sync: exiting after post-batch tip fetch", elapsed());
+                return Ok(());
+            };
+            match fresh_tip_result {
+                Ok(fresh_tip) => {
+                    let fresh_tip_height = block_height_from_u64(
+                        fresh_tip.height,
+                        "post-batch lightwalletd chain tip",
+                    )?;
 
-                let stored_hash =
-                    stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
-                let relation = classify_refreshed_tip_with_fallback(
-                    &mut client,
-                    current_tip_height,
-                    stored_hash,
-                    fresh_tip.height,
-                    &fresh_tip.hash,
-                )
-                .await;
-                let Some(relation) = tip_rpc_result_unless_exiting(relation, should_exit()) else {
-                    log::info!(
-                        "[{}] sync: exiting after post-batch tip validation",
-                        elapsed()
-                    );
-                    return Ok(());
-                };
-                let relation = relation?;
-                match relation {
-                    RefreshedTipRelation::Unchanged => {
-                        last_completion_tip_validation = std::time::Instant::now();
-                        completion_tip_validation_required = false;
-                        last_periodic_tip_refresh_attempt = std::time::Instant::now();
-                    }
-                    RefreshedTipRelation::UnchangedUnverified => {
-                        completion_tip_validation_required = true;
-                        last_periodic_tip_refresh_attempt = std::time::Instant::now();
-                    }
-                    RefreshedTipRelation::Advanced => {
-                        match with_wallet_db_write_lock(
-                            "sync_engine.update_chain_tip.post_batch",
-                            || db.update_chain_tip(fresh_tip_height),
-                        ) {
-                            Ok(_) => {
-                                current_tip_height = fresh_tip.height;
-                                enhancement::content_failures::at_tip(
-                                    db_data_path,
-                                    current_tip_height,
-                                );
-                                completion_tip_validation_required = true;
-                                last_periodic_tip_refresh_attempt = std::time::Instant::now();
-                            }
-                            Err(e) => {
-                                completion_tip_validation_required = true;
-                                log::warn!(
-                                    "[{}] sync: post-batch update_chain_tip({}) \
-                                         failed, keeping tip at {current_tip_height}: {e}",
-                                    elapsed(),
-                                    fresh_tip.height,
-                                );
-                            }
-                        }
-                    }
-                    RefreshedTipRelation::ServerBehind => {
-                        return Err(lagging_lightwalletd_tip(
+                    let stored_hash =
+                        stored_hash_for_refreshed_tip(&db, current_tip_height, fresh_tip.height)?;
+                    let relation = unless_exiting(
+                        &should_exit,
+                        classify_refreshed_tip_with_fallback(
+                            &mut client,
                             current_tip_height,
+                            stored_hash,
                             fresh_tip.height,
-                        ));
-                    }
-                    RefreshedTipRelation::Reorg => {
-                        if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
-                            return Err(SyncError::continuity(
-                                fresh_tip.height,
-                                "post-batch tip reorg rewind budget exhausted",
-                            ));
-                        }
-                        main_rewinds_this_run += 1;
-                        prefetch = None;
-                        let (actual_height, repair_ranges, pending_blocks) =
-                            rewind_for_confirmed_tip_reorg(
-                                db_data_path,
-                                &mut db,
-                                fresh_tip.height,
-                            )?;
-                        log::warn!(
-                            "[{}] sync: post-batch tip proved a reorg; rewound to {} \
-                                 and queued {} block(s) toward tip {}",
-                            elapsed(),
-                            actual_height,
-                            pending_blocks,
-                            fresh_tip.height,
-                        );
-                        current_tip_height = fresh_tip.height;
-                        enhancement::content_failures::at_tip(db_data_path, current_tip_height);
-                        initial_total = pending_blocks;
-                        prev_remaining = pending_blocks;
-                        if checking_cycle > 0 && pending_blocks > 0 {
-                            progress_fn(begin_checking(
-                                &mut checking_cycle,
-                                pending_blocks,
-                                current_tip_height,
-                            ));
-                        }
-                        queued_ranges = Some(repair_ranges);
-                        completion_tip_validation_required = true;
-                        last_periodic_tip_refresh_attempt = std::time::Instant::now();
-                        continue;
-                    }
-                }
-
-                // Use the just-observed network height for the expiry
-                // filter. The authoritative progress tip was promoted
-                // above only when its DB update succeeded; lower or
-                // divergent responses cannot reach this broadcast path.
-                if allow_resubmit {
-                    complete_verified_recovery_statuses(db_data_path, &ready, relation)?;
-                    let _ = crate::wallet::sync::resubmit_pending_transactions(
-                        db_data_path,
-                        lightwalletd_url,
-                        &mut client,
-                        u32::from(fresh_tip_height),
-                        &resubmit_exclusions,
-                        || {
-                            cancel.load(Ordering::Relaxed)
-                                || desired_mode.load(Ordering::SeqCst) != running_mode
-                        },
+                            &fresh_tip.hash,
+                        ),
                     )
                     .await;
+                    let Some(relation) = relation
+                        .and_then(|result| tip_rpc_result_unless_exiting(result, should_exit()))
+                    else {
+                        log::info!(
+                            "[{}] sync: exiting after post-batch tip validation",
+                            elapsed()
+                        );
+                        return Ok(());
+                    };
+                    let relation = relation?;
+                    match relation {
+                        RefreshedTipRelation::Unchanged => {
+                            last_completion_tip_validation = tip_requested_at;
+                            completion_tip_validation_required = false;
+                            last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                        }
+                        RefreshedTipRelation::UnchangedUnverified => {
+                            completion_tip_validation_required = true;
+                            last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                        }
+                        RefreshedTipRelation::Advanced => {
+                            match with_wallet_db_write_lock(
+                                "sync_engine.update_chain_tip.post_batch",
+                                || db.update_chain_tip(fresh_tip_height),
+                            ) {
+                                Ok(_) => {
+                                    current_tip_height = fresh_tip.height;
+                                    enhancement::content_failures::at_tip(
+                                        db_data_path,
+                                        current_tip_height,
+                                    );
+                                    completion_tip_validation_required = true;
+                                    last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                                }
+                                Err(e) => {
+                                    completion_tip_validation_required = true;
+                                    log::warn!(
+                                        "[{}] sync: post-batch update_chain_tip({}) \
+                                             failed, keeping tip at {current_tip_height}: {e}",
+                                        elapsed(),
+                                        fresh_tip.height,
+                                    );
+                                }
+                            }
+                        }
+                        RefreshedTipRelation::ServerBehind => {
+                            return Err(lagging_lightwalletd_tip(
+                                current_tip_height,
+                                fresh_tip.height,
+                            ));
+                        }
+                        RefreshedTipRelation::Reorg => {
+                            if main_rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                                return Err(SyncError::continuity(
+                                    fresh_tip.height,
+                                    "post-batch tip reorg rewind budget exhausted",
+                                ));
+                            }
+                            main_rewinds_this_run += 1;
+                            prefetch.clear();
+                            let (actual_height, repair_ranges, pending_blocks) =
+                                rewind_for_confirmed_tip_reorg(
+                                    db_data_path,
+                                    &mut db,
+                                    fresh_tip.height,
+                                )?;
+                            log::warn!(
+                                "[{}] sync: post-batch tip proved a reorg; rewound to {} \
+                                     and queued {} block(s) toward tip {}",
+                                elapsed(),
+                                actual_height,
+                                pending_blocks,
+                                fresh_tip.height,
+                            );
+                            current_tip_height = fresh_tip.height;
+                            enhancement::content_failures::at_tip(db_data_path, current_tip_height);
+                            initial_total = pending_blocks;
+                            prev_remaining = pending_blocks;
+                            if checking_cycle > 0 && pending_blocks > 0 {
+                                progress_fn(begin_checking(
+                                    &mut checking_cycle,
+                                    pending_blocks,
+                                    current_tip_height,
+                                    &job,
+                                ));
+                            }
+                            queued_ranges = Some(repair_ranges);
+                            completion_tip_validation_required = true;
+                            last_periodic_tip_refresh_attempt = std::time::Instant::now();
+                            continue;
+                        }
+                    }
+
+                    // Use the just-observed network height for the expiry
+                    // filter. The authoritative progress tip was promoted
+                    // above only when its DB update succeeded; lower or
+                    // divergent responses cannot reach this broadcast path.
+                    if allow_resubmit {
+                        complete_verified_recovery_statuses(db_data_path, &ready, relation)?;
+                        let _ = crate::wallet::sync::resubmit_pending_transactions(
+                            db_data_path,
+                            lightwalletd_url,
+                            &mut client,
+                            u32::from(fresh_tip_height),
+                            &resubmit_exclusions,
+                            || {
+                                cancel.load(Ordering::Relaxed)
+                                    || desired_mode.load(Ordering::SeqCst) != running_mode
+                            },
+                        )
+                        .await;
+                    }
                 }
-            }
-            Err(e) => {
-                completion_tip_validation_required = true;
-                log::warn!(
-                    "[{}] sync: post-batch tip refresh failed; skipping \
-                     tip promotion and resubmit pass: {e}",
-                    elapsed(),
-                );
+                Err(e) => {
+                    completion_tip_validation_required = true;
+                    log::warn!(
+                        "[{}] sync: post-batch tip refresh failed; skipping \
+                         tip promotion and resubmit pass: {e}",
+                        elapsed(),
+                    );
+                }
             }
         }
         if should_exit() {
@@ -4654,49 +5665,38 @@ async fn run_sync_impl(
                 checking_cycle += 1;
             }
         }
-        prev_remaining = remaining;
-        let display_scanned_height =
-            progress_display_mode.batch_end_height(&post_ranges, end, current_tip_height);
-        let pct = progress_display_mode.percentage(
-            initial_total,
-            remaining,
-            display_scanned_height,
-            current_tip_height,
+        job.observe_after_batch(
+            batch_work,
+            work_model.pending_work(&post_ranges, current_tip_height),
         );
-        let next_display_range = post_ranges
-            .iter()
-            .find(|r| is_pending_scan_range(r))
+        prev_remaining = remaining;
+        let next_display_range = next_pending_scan_range(&post_ranges, current_tip_height)
             .and_then(|r| {
                 let next_start = r.block_range().start;
-                planned_batch_end(base_batch_size, next_start, r.block_range().end)
-                    .map(|(_, next_end)| (next_start, next_end))
+                planned_batch_end(
+                    &work_model,
+                    base_batch_size,
+                    next_start,
+                    r.block_range().end,
+                )
+                .map(|(_, next_end)| (next_start, next_end))
             });
-        let next_display_target_blocks = next_display_range
+        let (next_display_target_blocks, next_work) = next_display_range
             .map(|(next_start, next_end)| {
-                u32::from(next_end).saturating_sub(u32::from(next_start)) as u64
+                (
+                    u32::from(next_end).saturating_sub(u32::from(next_start)) as u64,
+                    work_model.range_work(
+                        u64::from(u32::from(next_start)),
+                        u64::from(u32::from(next_end)),
+                    ),
+                )
             })
-            .unwrap_or(0);
-        let display_target_percentage = if let Some((next_start, next_end)) = next_display_range {
-            progress_display_mode.batch_target_percentage(
-                initial_total,
-                remaining,
-                &post_ranges,
-                next_start,
-                next_end,
-                current_tip_height,
-            )
-        } else {
-            progress_display_mode.percentage(
-                initial_total,
-                remaining,
-                current_tip_height,
-                current_tip_height,
-            )
-        };
+            .unwrap_or((0, 0.0));
+        let (pct, display_target_percentage) = (job.fraction(), job.fraction_after(next_work));
         let progress = SyncProgressEvent {
             scanned_height: u32::from(end) as u64,
             chain_tip_height: current_tip_height,
-            percentage: pct.clamp(0.0, 1.0),
+            percentage: pct,
             display_target_percentage,
             display_target_blocks: next_display_target_blocks,
             remaining_scan_blocks: Some(remaining),
@@ -4713,14 +5713,21 @@ async fn run_sync_impl(
             phase_completed_units: 0,
             phase_total_units: 0,
             phase: "scan".into(),
+            sync_job_id: job.id().to_string(),
         };
+        // Save the batch that finishes the scan at once, so a process killed
+        // before the sync completes leaves a finished job for the next
+        // attempt. Work the Checking stage finds afterwards raises the total
+        // and is saved like other new work: a process killed in that stage
+        // resumes at the lower fraction, as a main scan.
+        job.persist_if_due(db_data_path, job.remaining() <= 0.0);
         log::info!(
-            "[{}] sync: {:.1}% (remaining={}/{}, scanned={})",
+            "[{}] sync: {:.1}% (work remaining={:.0}/{:.0}, blocks remaining={})",
             elapsed(),
             progress.percentage * 100.0,
+            job.remaining(),
+            job.total(),
             remaining,
-            initial_total,
-            initial_total - remaining
         );
         progress_fn(progress);
         #[cfg(debug_assertions)]
@@ -4792,6 +5799,7 @@ async fn run_sync_impl(
         mark_sync_completed(db_data_path, final_tip_height)
     })
     .map_err(SyncError::db)?;
+    job.complete();
     // Final progress
     let final_progress = SyncProgressEvent {
         scanned_height: final_scanned_height,
@@ -4808,6 +5816,7 @@ async fn run_sync_impl(
         phase_completed_units: 0,
         phase_total_units: 0,
         phase: String::new(),
+        sync_job_id: job.id().to_string(),
     };
     progress_fn(final_progress);
 
@@ -4954,6 +5963,7 @@ async fn run_sync_impl(
                 phase_completed_units: 0,
                 phase_total_units: 0,
                 phase: String::new(),
+                sync_job_id: job.id().to_string(),
             });
         }
     }
@@ -4997,6 +6007,7 @@ async fn run_sync_impl(
                 phase_completed_units: 0,
                 phase_total_units: 0,
                 phase: String::new(),
+                sync_job_id: job.id().to_string(),
             });
         }
     }
@@ -5276,11 +6287,370 @@ mod tests {
     use tokio::sync::{Barrier, Notify, Semaphore};
     use zcash_client_backend::proto::compact_formats::CompactBlock;
 
+    /// The 2022-23 spam window (`zcash-android-wallet-sdk`'s
+    /// `SANDBLASTING_RANGE`), where the mobile byte budget comes from.
+    const SANDBLASTING_START: u32 = 1_710_000;
+    const SANDBLASTING_END: u32 = 2_050_000;
+
+    #[test]
+    fn only_a_large_download_over_tor_fetches_blocks_directly() {
+        assert!(!fetches_blocks_directly(false, true, f64::MAX));
+        assert!(!fetches_blocks_directly(
+            true,
+            true,
+            DIRECT_BLOCK_DOWNLOAD_MIN_BYTES - 1.0
+        ));
+        assert!(fetches_blocks_directly(
+            true,
+            true,
+            DIRECT_BLOCK_DOWNLOAD_MIN_BYTES
+        ));
+    }
+
+    #[test]
+    fn only_main_scan_ranges_every_wallet_scans_alike_use_the_direct_connection() {
+        let h = BlockHeight::from_u32;
+        let scanned = Some(h(3_438_142));
+        for priority in [
+            ScanPriority::ChainTip,
+            ScanPriority::Historic,
+            ScanPriority::LatestPoolActivation,
+        ] {
+            assert!(
+                batch_uses_direct_connection(0, priority, h(3_000_000), scanned),
+                "{priority:?}"
+            );
+            assert!(
+                !batch_uses_direct_connection(1, priority, h(3_000_000), scanned),
+                "{priority:?}"
+            );
+        }
+        // The continuity check at the scan frontier, and any Verify range of a
+        // wallet that has scanned nothing yet.
+        assert!(batch_uses_direct_connection(
+            0,
+            ScanPriority::Verify,
+            h(3_438_143),
+            scanned
+        ));
+        assert!(batch_uses_direct_connection(
+            0,
+            ScanPriority::Verify,
+            h(3_000_000),
+            None
+        ));
+        // Witness repairs a stopped session left behind come back as Verify
+        // ranges over blocks already scanned, before the Checking stage starts.
+        assert!(!batch_uses_direct_connection(
+            0,
+            ScanPriority::Verify,
+            h(3_438_142),
+            scanned
+        ));
+        assert!(!batch_uses_direct_connection(
+            0,
+            ScanPriority::Verify,
+            h(3_100_000),
+            scanned
+        ));
+        for priority in [ScanPriority::FoundNote, ScanPriority::OpenAdjacent] {
+            assert!(
+                !batch_uses_direct_connection(0, priority, h(3_438_143), None),
+                "{priority:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_failures_in_a_row_move_a_session_to_tor() {
+        let now = std::time::Instant::now();
+        let runs = |outcomes: &[bool]| {
+            let mut route = DirectBlockRoute::new();
+            outcomes
+                .iter()
+                .map(|&failed| route.record(failed, now).is_some())
+                .collect::<Vec<_>>()
+        };
+        // A success between failures keeps the direct connection.
+        assert_eq!(
+            runs(&[true, true, false, true, true]),
+            [false, false, false, false, false]
+        );
+        assert_eq!(runs(&[true, true, true]), [false, false, true]);
+    }
+
+    #[test]
+    fn the_timing_summary_splits_download_waits_from_scan_time() {
+        let mut timing = SyncTimingSummary::default();
+        let second = std::time::Duration::from_secs(1);
+        timing.record(true, 100, 11_000_000, 3 * second, second);
+        timing.record(false, 1000, 4_000_000, second, 2 * second);
+        timing.tip_waited += 5 * second;
+        assert_eq!(
+            timing.line(
+                std::time::Duration::from_secs(60),
+                scan_power::ScanPower::Efficient
+            ),
+            "last 60s: 2 batches (1 direct), 1100 blocks, 15.0 MB (0.25 MB/s), \
+             waited 4.0s for downloads and 5.0s for tip checks, scanned 3.0s at \
+             Efficient power"
+        );
+    }
+
+    #[test]
+    fn history_batches_far_below_the_tip_check_it_once_a_minute() {
+        let tip = 3_500_000;
+        let second = std::time::Duration::from_secs(1);
+        // Far below the tip: only once the interval has passed.
+        assert!(!post_batch_tip_check_due(2_000_000, tip, second));
+        assert!(post_batch_tip_check_due(
+            2_000_000,
+            tip,
+            HISTORY_TIP_CHECK_EVERY
+        ));
+        // Near the tip: after every batch.
+        assert!(post_batch_tip_check_due(
+            tip - HISTORY_TIP_CHECK_DISTANCE,
+            tip,
+            second
+        ));
+        assert!(post_batch_tip_check_due(tip, tip, second));
+        assert!(!post_batch_tip_check_due(
+            tip - HISTORY_TIP_CHECK_DISTANCE - 1,
+            tip,
+            second
+        ));
+    }
+
+    #[test]
+    fn a_demoted_direct_route_retries_a_fresh_connection_after_a_wait() {
+        let start = std::time::Instant::now();
+        let mut route = DirectBlockRoute::new();
+        let wait = (0..DIRECT_BLOCK_FAILURES_BEFORE_TOR)
+            .find_map(|_| route.record(true, start))
+            .expect("three failures demote the route");
+        assert_eq!(wait, DIRECT_BLOCK_RETRY_AFTER);
+        assert!(!route.in_use());
+        assert!(!route.retry_due(start + wait - std::time::Duration::from_secs(1)));
+        assert!(route.retry_due(start + wait));
+
+        route.reopened();
+        assert!(route.in_use());
+        assert!(route.record(false, start + wait).is_none());
+        assert!(route.in_use());
+    }
+
+    #[test]
+    fn a_reopened_direct_route_that_fails_at_once_waits_longer() {
+        let start = std::time::Instant::now();
+        let mut route = DirectBlockRoute::new();
+        let first = (0..DIRECT_BLOCK_FAILURES_BEFORE_TOR)
+            .find_map(|_| route.record(true, start))
+            .expect("three failures demote the route");
+        route.reopened();
+        let second = route
+            .record(true, start + first)
+            .expect("the reopened connection's first failure demotes it");
+        assert_eq!(second, DIRECT_BLOCK_RETRY_AFTER * 2);
+
+        // A connection that will not open keeps doubling the wait, up to the cap.
+        let waits: Vec<_> = (0..5).map(|_| route.demote(start).as_secs()).collect();
+        assert_eq!(waits, [240, 480, 600, 600, 600]);
+    }
+
+    async fn download_routes(
+        batch_is_direct: bool,
+        queued_direct_failed: bool,
+        direct: Result<&'static str, SyncError>,
+    ) -> (Result<&'static str, SyncError>, bool, Vec<BlockRoute>) {
+        let mut routes = Vec::new();
+        let mut direct = Some(direct);
+        let (result, failed) =
+            download_with_direct_fallback(batch_is_direct, queued_direct_failed, |route| {
+                routes.push(route);
+                let result = match route {
+                    BlockRoute::Direct => direct.take().expect("one direct download"),
+                    BlockRoute::Tor => Ok("tor"),
+                };
+                async move { result }
+            })
+            .await;
+        (result, failed, routes)
+    }
+
+    #[tokio::test]
+    async fn a_batch_off_the_direct_connection_downloads_over_tor() {
+        let (result, failed, routes) = download_routes(false, false, Ok("direct")).await;
+        assert_eq!(result.ok(), Some("tor"));
+        assert!(!failed);
+        assert_eq!(routes, [BlockRoute::Tor]);
+    }
+
+    #[tokio::test]
+    async fn a_direct_batch_that_downloads_is_not_a_failure() {
+        let (result, failed, routes) = download_routes(true, false, Ok("direct")).await;
+        assert_eq!(result.ok(), Some("direct"));
+        assert!(!failed);
+        assert_eq!(routes, [BlockRoute::Direct]);
+    }
+
+    #[tokio::test]
+    async fn a_direct_network_failure_downloads_the_batch_over_tor() {
+        let (result, failed, routes) =
+            download_routes(true, false, Err(SyncError::net("stream reset"))).await;
+        assert_eq!(result.ok(), Some("tor"));
+        assert!(failed);
+        assert_eq!(routes, [BlockRoute::Direct, BlockRoute::Tor]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_queued_direct_batch_downloads_over_tor_only() {
+        let (result, failed, routes) = download_routes(true, true, Ok("direct")).await;
+        assert_eq!(result.ok(), Some("tor"));
+        assert!(failed);
+        assert_eq!(routes, [BlockRoute::Tor]);
+    }
+
+    #[tokio::test]
+    async fn a_direct_error_other_than_the_network_ends_the_batch() {
+        let (result, failed, routes) =
+            download_routes(true, false, Err(SyncError::other("unexpected reply"))).await;
+        assert!(result.is_err_and(|error| !matches!(error, SyncError::Network(_))));
+        assert!(!failed);
+        assert_eq!(routes, [BlockRoute::Direct]);
+    }
+
+    #[test]
+    fn only_ranges_the_direct_connection_serves_count_toward_opening_it() {
+        let model = WorkModel::compiled(WalletNetwork::Main);
+        let range = |priority| {
+            ScanRange::from_parts(
+                BlockHeight::from_u32(SANDBLASTING_START)..BlockHeight::from_u32(SANDBLASTING_END),
+                priority,
+            )
+        };
+        let tip = u64::from(SANDBLASTING_END);
+        let scanned = Some(BlockHeight::from_u32(SANDBLASTING_END));
+
+        // Notes found in the spam window, and repairs of it, stay on Tor.
+        for priority in [ScanPriority::FoundNote, ScanPriority::Verify] {
+            assert_eq!(
+                direct_download_bytes(&model, &[range(priority)], tip, 0, scanned),
+                0.0,
+                "{priority:?}"
+            );
+        }
+        let historic =
+            direct_download_bytes(&model, &[range(ScanPriority::Historic)], tip, 0, scanned);
+        assert!(fetches_blocks_directly(true, true, historic));
+        assert_eq!(
+            direct_download_bytes(&model, &[range(ScanPriority::Historic)], tip, 1, scanned),
+            0.0
+        );
+    }
+
+    #[test]
+    fn public_queries_keep_every_block_download_on_tor() {
+        // Without Private queries the session's Tor connection carries address
+        // and txid lookups, which a concurrent direct session would tie to the
+        // device's IP address.
+        assert!(!fetches_blocks_directly(true, false, f64::MAX));
+    }
+
+    #[test]
+    fn a_full_restore_over_tor_fetches_blocks_directly() {
+        let model = WorkModel::compiled(WalletNetwork::Main);
+        let restore = [ScanRange::from_parts(
+            BlockHeight::from_u32(SANDBLASTING_START)..BlockHeight::from_u32(SANDBLASTING_END),
+            ScanPriority::Historic,
+        )];
+        let bytes = model.pending_download_bytes(&restore, u64::from(SANDBLASTING_END));
+        assert!(fetches_blocks_directly(true, true, bytes));
+    }
+
+    #[test]
+    fn a_stored_root_mismatch_is_logged_once_per_process() {
+        let logged = AtomicU64::new(0);
+        assert!(!mismatches_not_yet_logged(&logged, 0));
+        assert!(mismatches_not_yet_logged(&logged, 1));
+        // A later sync in the same process reads the same count.
+        assert!(!mismatches_not_yet_logged(&logged, 1));
+        assert!(mismatches_not_yet_logged(&logged, 3));
+        assert!(!mismatches_not_yet_logged(&logged, 2));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_quick_prefetch_failure_is_retried_in_the_background() {
+        let attempts = AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let result = retry_quick_prefetch_failures(block_height(10), block_height(19), || {
+            let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if attempt == 0 {
+                    Err(SyncError::Network("stream reset".into()))
+                } else {
+                    Ok(7u8)
+                }
+            }
+        })
+        .await;
+        assert!(matches!(result, Ok(7)));
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(started.elapsed(), PREFETCH_RETRY_PAUSES[0]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_prefetch_keeps_failing_after_its_retries() {
+        let attempts = AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let result = retry_quick_prefetch_failures(block_height(10), block_height(19), || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async { Err::<u8, _>(SyncError::Network("stream reset".into())) }
+        })
+        .await;
+        assert!(matches!(result, Err(SyncError::Network(_))));
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            started.elapsed(),
+            PREFETCH_RETRY_PAUSES[0] + PREFETCH_RETRY_PAUSES[1]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_prefetch_that_timed_out_is_not_retried() {
+        let attempts = AtomicUsize::new(0);
+        let result = retry_quick_prefetch_failures(block_height(10), block_height(19), || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async {
+                tokio::time::sleep(lwd::SHORTEST_LIGHTWALLETD_TIMEOUT).await;
+                Err::<u8, _>(SyncError::Network("timed out".into()))
+            }
+        })
+        .await;
+        assert!(matches!(result, Err(SyncError::Network(_))));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_prefetch_that_failed_for_another_reason_is_not_retried() {
+        let attempts = AtomicUsize::new(0);
+        let result = retry_quick_prefetch_failures(block_height(10), block_height(19), || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async { Err::<u8, _>(SyncError::Parse("bad compact block".into())) }
+        })
+        .await;
+        assert!(matches!(result, Err(SyncError::Parse(_))));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn checking_reports_only_additional_work_and_its_next_batch() {
         assert!(checking_progress(0, 1000, 750, 100).is_none());
         let mut cycle = 0;
-        let start = begin_checking(&mut cycle, 1000, 2000);
+        let (job, _) = JobProgress::start(progress_work::StoredProgressJob::unmeasured(), 0.0, 0.0);
+        let start = begin_checking(&mut cycle, 1000, 2000, &job);
+        // Checking events keep the job, so the display does not restart.
+        assert_eq!(start.sync_job_id, job.id());
         assert_eq!(start.kind, SyncEventKind::Progress);
         assert_eq!(start.phase, "chain_prepare");
         assert!(start.is_syncing);
@@ -5293,9 +6663,164 @@ mod tests {
             checking_progress(cycle, 1000, 0, 0).unwrap().percentage,
             1.0
         );
-        let new_work = begin_checking(&mut cycle, 200, 2000).checking.unwrap();
+        let new_work = begin_checking(&mut cycle, 200, 2000, &job)
+            .checking
+            .unwrap();
         assert_eq!(new_work.cycle, 2);
         assert_eq!(new_work.percentage, 0.0);
+    }
+
+    #[test]
+    fn a_range_past_the_tip_refreshes_the_tip_once_per_start() {
+        let mut refreshed_for = None;
+        // The observer queued blocks past the loop's tip: refresh once.
+        assert!(refresh_tip_for_queued_range(3_513_789, &mut refreshed_for));
+        // Still past it after the refresh (a lagging server): end as before.
+        assert!(!refresh_tip_for_queued_range(3_513_789, &mut refreshed_for));
+        // A later block queues a new range: refresh again.
+        assert!(refresh_tip_for_queued_range(3_513_790, &mut refreshed_for));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_tip_prefetch_returns_the_tip_requested_before_it_is_read() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let before = std::time::Instant::now();
+        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+        let requested_at = prefetch.requested_at;
+        let tip = prefetch.resolve(&|| false).await.unwrap().unwrap();
+
+        assert_eq!(tip.height, 3_516_998);
+        assert_eq!(lwd.count("/GetLatestBlock"), 1);
+        assert!(before <= requested_at && requested_at <= std::time::Instant::now());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_tip_prefetch_yields_to_an_exit_while_the_server_holds_it() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let _held = lwd.hold_responses("/GetLatestBlock");
+        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+
+        let resolved =
+            tokio::time::timeout(Duration::from_secs(5), prefetch.resolve(&|| true)).await;
+
+        assert!(matches!(resolved, Ok(None)));
+    }
+
+    /// A prefetched tip whose request the server has received, then the
+    /// moment this batch's status lookups finished.
+    async fn prefetch_then_status_lookups(
+        lwd: &test_lwd::CapturingLwd,
+    ) -> (TipPrefetch, std::time::Instant) {
+        let prefetch = TipPrefetch::spawn(lwd.client.clone(), &lwd.url, WalletNetwork::Main);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while lwd.count("/GetLatestBlock") == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        (prefetch, std::time::Instant::now())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_batch_without_released_statuses_uses_its_tip_prefetch() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let (prefetch, _) = prefetch_then_status_lookups(&lwd).await;
+        let prefetch_requested_at = prefetch.requested_at;
+        let mut client = lwd.client.clone();
+
+        let (requested_at, tip) = post_batch_tip(
+            Some(prefetch),
+            false,
+            &mut client,
+            &lwd.url,
+            WalletNetwork::Main,
+            &|| false,
+        )
+        .await;
+
+        assert_eq!(tip.unwrap().unwrap().height, 3_516_998);
+        assert_eq!(requested_at, prefetch_requested_at);
+        assert_eq!(lwd.count("/GetLatestBlock"), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_released_status_is_checked_against_a_tip_requested_after_its_lookup() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let (prefetch, lookups_done) = prefetch_then_status_lookups(&lwd).await;
+        let mut client = lwd.client.clone();
+
+        let (requested_at, tip) = post_batch_tip(
+            Some(prefetch),
+            true,
+            &mut client,
+            &lwd.url,
+            WalletNetwork::Main,
+            &|| false,
+        )
+        .await;
+
+        assert_eq!(tip.unwrap().unwrap().height, 3_516_998);
+        assert!(requested_at >= lookups_done);
+        assert_eq!(lwd.count("/GetLatestBlock"), 2);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_tip_request_yields_to_an_exit_that_arrives_while_the_server_holds_it() {
+        let lwd = test_lwd::CapturingLwd::start_with(Vec::new(), 3_516_998, |_| {}).await;
+        let _held = lwd.hold_responses("/GetLatestBlock");
+        let mut client = lwd.client.clone();
+        let exit = Arc::new(AtomicBool::new(false));
+        let flip = exit.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            flip.store(true, Ordering::SeqCst);
+        });
+
+        let started = std::time::Instant::now();
+        let resolved = tokio::time::timeout(
+            Duration::from_secs(5),
+            unless_exiting(
+                &|| exit.load(Ordering::SeqCst),
+                get_latest_block(&mut client),
+            ),
+        )
+        .await;
+
+        assert!(matches!(resolved, Ok(None)));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(lwd.count("/GetLatestBlock"), 1);
+    }
+
+    #[test]
+    fn a_chain_tip_range_past_the_tip_waits_behind_history() {
+        // The observer wrote 3,516,998 while the loop's tip is 3,516,997.
+        let ranges = vec![
+            ScanRange::from_parts(
+                block_height(3_516_998)..block_height(3_516_999),
+                ScanPriority::ChainTip,
+            ),
+            ScanRange::from_parts(
+                block_height(1_800_000)..block_height(1_900_000),
+                ScanPriority::Scanned,
+            ),
+            ScanRange::from_parts(
+                block_height(1_900_000)..block_height(2_000_000),
+                ScanPriority::Historic,
+            ),
+        ];
+        let next = next_pending_scan_range(&ranges, 3_516_997).unwrap();
+        assert_eq!(next.priority(), ScanPriority::Historic);
+        assert_eq!(u32::from(next.block_range().start), 1_900_000);
+
+        // Once a tip fetch reaches it, the ChainTip range goes first again.
+        let next = next_pending_scan_range(&ranges, 3_516_998).unwrap();
+        assert_eq!(next.priority(), ScanPriority::ChainTip);
+
+        // With only that range left, it is returned for the tip refresh.
+        let next = next_pending_scan_range(&ranges[..2], 3_516_997).unwrap();
+        assert_eq!(next.priority(), ScanPriority::ChainTip);
+        assert!(next_pending_scan_range(&ranges[1..2], 3_516_997).is_none());
     }
 
     #[test]
@@ -5707,13 +7232,6 @@ mod tests {
         assert_eq!(marked.get(), 0);
     }
 
-    fn assert_pct(actual: f64, expected: f64) {
-        assert!(
-            (actual - expected).abs() < 0.000_001,
-            "expected {expected}, got {actual}"
-        );
-    }
-
     #[tokio::test]
     async fn scan_batch_inputs_start_concurrently() {
         let barrier = Arc::new(Barrier::new(3));
@@ -5767,6 +7285,134 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_tip_batch_between_history_batches_keeps_the_prefetch_queue() {
+        let queued = |start, end| {
+            Prefetch::spawn(block_height(start), block_height(end), async {
+                Ok::<_, SyncError>(0u8)
+            })
+        };
+        let ranges = |queue: &VecDeque<Prefetch<u8>>| {
+            queue
+                .iter()
+                .map(|p| (u32::from(p.start), u32::from(p.end)))
+                .collect::<Vec<_>>()
+        };
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+
+        // A new block's tip batch cuts in: the history tuples wait for it.
+        let h = block_height;
+        assert!(take_queued_batch(&mut queue, h(5_000), h(5_001)).is_none());
+        assert_eq!(ranges(&queue), [(100, 200), (200, 300)]);
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(5_001), h(5_001)),
+            None
+        );
+        assert_eq!(ranges(&queue), [(100, 200), (200, 300)]);
+
+        // The scan returns to history and tops the queue up after its end.
+        let next = take_queued_batch(&mut queue, h(100), h(200)).expect("queued batch");
+        assert_eq!((u32::from(next.start), u32::from(next.end)), (100, 200));
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(200), h(1_000)),
+            Some(h(300))
+        );
+
+        // A longer range that cuts in downloads ahead instead.
+        assert!(take_queued_batch(&mut queue, h(5_000), h(5_100)).is_none());
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(5_100), h(6_000)),
+            Some(h(5_100))
+        );
+        assert!(queue.is_empty());
+
+        // A batch that overlaps the queue but is not next means the ranges
+        // changed under it.
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+        assert!(take_queued_batch(&mut queue, h(100), h(150)).is_none());
+        assert!(queue.is_empty());
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+        assert!(take_queued_batch(&mut queue, h(250), h(260)).is_none());
+        assert!(queue.is_empty());
+        assert_eq!(
+            prefetch_continues_from(&mut queue, h(260), h(1_000)),
+            Some(h(260))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tip_batch_keeps_the_decryption_started_for_the_queued_batch() {
+        let h = block_height;
+        let queued =
+            |start, end| Prefetch::spawn(h(start), h(end), async { Ok::<_, SyncError>(0u8) });
+        let started = |start, end| {
+            Some(NextDecryption {
+                start: h(start),
+                end: h(end),
+                decryption: (),
+            })
+        };
+        let mut queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+
+        // Scanning 0..100 started decrypting 100..200. A new block's tip
+        // batch cuts in and leaves the queue: the decryption waits with it.
+        assert!(take_queued_batch(&mut queue, h(5_000), h(5_001)).is_none());
+        let kept = decryption_still_next(started(100, 200), &queue);
+        assert_eq!(kept.map(|next| u32::from(next.start)), Some(100));
+
+        // Not the queued batch's range: not kept.
+        assert!(decryption_still_next(started(100, 150), &queue).is_none());
+
+        // The scan returns and takes the queued batch; the next decryption
+        // is for whatever is first now.
+        assert!(take_queued_batch(&mut queue, h(100), h(200)).is_some());
+        assert!(decryption_still_next(started(100, 200), &queue).is_none());
+
+        // Ranges that changed under the queue clear it, and the decryption.
+        assert!(take_queued_batch(&mut queue, h(250), h(260)).is_none());
+        assert!(queue.is_empty());
+        assert!(decryption_still_next(started(200, 300), &queue).is_none());
+    }
+
+    #[tokio::test]
+    async fn a_verify_range_inside_the_next_queued_batch_scans_it_whole() {
+        let h = block_height;
+        let queued =
+            |start, end| Prefetch::spawn(h(start), h(end), async { Ok::<_, SyncError>(0u8) });
+        let range = |start, end, priority| ScanRange::from_parts(h(start)..h(end), priority);
+        let queue = VecDeque::from([queued(100, 200), queued(200, 300)]);
+
+        // A new block put a Verify range at the frontier, inside the queued
+        // batch: scan the queued batch whole.
+        let split = [
+            range(100, 110, ScanPriority::Verify),
+            range(110, 500, ScanPriority::ChainTip),
+        ];
+        assert_eq!(
+            queued_batch_extension(&queue, h(100), h(110), &split),
+            Some(h(200))
+        );
+
+        // Blocks no longer pending are not scanned again.
+        let scanned = [
+            range(100, 110, ScanPriority::Verify),
+            range(110, 150, ScanPriority::Scanned),
+            range(150, 500, ScanPriority::ChainTip),
+        ];
+        assert_eq!(
+            queued_batch_extension(&queue, h(100), h(110), &scanned),
+            None
+        );
+
+        // Only a longer queued batch starting at the batch extends it.
+        assert_eq!(queued_batch_extension(&queue, h(100), h(200), &split), None);
+        assert_eq!(queued_batch_extension(&queue, h(110), h(150), &split), None);
+        assert_eq!(
+            queued_batch_extension(&VecDeque::<Prefetch<u8>>::new(), h(100), h(110), &split),
+            None
+        );
+    }
+
+    #[tokio::test]
     async fn scan_batch_prefetch_success_and_failure_choose_the_right_source() {
         let start = block_height(10);
         let end = block_height(13);
@@ -5788,6 +7434,50 @@ mod tests {
         let failed = Prefetch::spawn(start, end, async {
             Err::<u8, _>(SyncError::net("prefetch failed"))
         });
+        let value = resolve_prefetched_or_download(Some(failed), start, end, &keep_running, || {
+            fresh_calls.fetch_add(1, Ordering::SeqCst);
+            async { Ok(9) }
+        })
+        .await
+        .expect("fresh fallback")
+        .expect("sync remains active");
+        assert_eq!(value, 9);
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// A tuple read early to start its decryption is the one its batch then
+    /// scans; a failed one still falls back to a fresh download.
+    #[tokio::test]
+    async fn a_finished_prefetch_read_early_is_still_used_for_its_batch() {
+        let start = block_height(10);
+        let end = block_height(13);
+        let keep_running = || false;
+        let fresh_calls = AtomicUsize::new(0);
+
+        let mut prefetched = Prefetch::spawn(start, end, async { Ok::<_, SyncError>(7) });
+        while !prefetched.handle.as_ref().is_some_and(|h| h.is_finished()) {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(prefetched.finished(), Some(&7));
+        assert_eq!(prefetched.finished(), Some(&7));
+        let value =
+            resolve_prefetched_or_download(Some(prefetched), start, end, &keep_running, || {
+                fresh_calls.fetch_add(1, Ordering::SeqCst);
+                async { Ok(9) }
+            })
+            .await
+            .expect("finished prefetch")
+            .expect("sync remains active");
+        assert_eq!(value, 7);
+        assert_eq!(fresh_calls.load(Ordering::SeqCst), 0);
+
+        let mut failed = Prefetch::spawn(start, end, async {
+            Err::<u8, _>(SyncError::net("prefetch failed"))
+        });
+        while !failed.handle.as_ref().is_some_and(|h| h.is_finished()) {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(failed.finished(), None);
         let value = resolve_prefetched_or_download(Some(failed), start, end, &keep_running, || {
             fresh_calls.fetch_add(1, Ordering::SeqCst);
             async { Ok(9) }
@@ -6054,46 +7744,21 @@ mod tests {
         )];
         let (mut total, mut remaining) = (0, 0);
         reset_promoted_scan_progress(&ranges, &mut total, &mut remaining);
-        let mode = ProgressDisplayMode::Work;
-        assert_eq!(mode.percentage(total, remaining, 999, 1_299), 0.0);
+        assert_eq!(target_percentage_after_blocks(total, remaining, 0), 0.0);
         for batch in 1..=3 {
-            let target = mode.target_percentage_after_blocks(total, remaining, 0, 0, 100);
+            let target = target_percentage_after_blocks(total, remaining, 100);
             remaining -= 100;
-            let actual = mode.percentage(total, remaining, 0, 0);
+            let actual = target_percentage_after_blocks(total, remaining, 0);
             assert_eq!(target, actual);
             assert!((actual - batch as f64 / 3.0).abs() < 1e-9);
         }
         reset_promoted_scan_progress(&[], &mut total, &mut remaining);
-        assert_eq!(mode.percentage(total, remaining, 0, 0), 1.0);
-    }
-
-    #[test]
-    fn work_progress_matches_remaining_block_ratio() {
-        let mode = ProgressDisplayMode::Work;
-
-        assert_pct(mode.percentage(1_000, 300, 0, 0), 0.7);
-        assert_pct(
-            mode.target_percentage_after_blocks(1_000, 300, 0, 0, 100),
-            0.8,
-        );
-    }
-
-    #[test]
-    fn chain_window_progress_uses_session_window_not_absolute_height() {
-        let mode = ProgressDisplayMode::ChainWindow {
-            window_start_height: 1_000,
-        };
-
-        assert_pct(mode.percentage(0, 0, 1_700, 2_000), 0.7);
-        assert_pct(
-            mode.target_percentage_after_blocks(0, 0, 1_700, 2_000, 100),
-            0.8,
-        );
+        assert_eq!(target_percentage_after_blocks(total, remaining, 0), 1.0);
     }
 
     #[test]
     fn preparation_progress_does_not_claim_an_empty_scan_queue() {
-        let event = preparation_progress_event(2_000, "chain_prepare", 0, 0);
+        let event = preparation_progress_event(2_000, "chain_prepare", 0, 0, 0.0, "");
         assert_eq!(event.remaining_scan_blocks, None);
         assert_eq!(event.pending_scan_start_height, None);
     }
@@ -6118,42 +7783,6 @@ mod tests {
         assert_eq!(earliest_pending_scan_start(&ranges), Some(1_700));
         assert_eq!(pending_scan_blocks(&[]), 0);
         assert_eq!(earliest_pending_scan_start(&[]), None);
-    }
-
-    #[test]
-    fn chain_window_progress_waits_for_earliest_pending_range() {
-        let mode = ProgressDisplayMode::ChainWindow {
-            window_start_height: 1_000,
-        };
-        let high_range_start = BlockHeight::from_u32(1_900);
-        let high_range_end = BlockHeight::from_u32(2_000);
-        let ranges = vec![
-            ScanRange::from_parts(high_range_start..high_range_end, ScanPriority::Verify),
-            ScanRange::from_parts(
-                BlockHeight::from_u32(1_700)..BlockHeight::from_u32(1_800),
-                ScanPriority::Verify,
-            ),
-        ];
-
-        assert_eq!(pending_scan_blocks(&ranges), 200);
-        assert_eq!(earliest_pending_scan_start(&ranges), Some(1_700));
-        let display_height = mode.batch_start_height(&ranges, high_range_start);
-        assert_eq!(display_height, 1_700);
-        assert_pct(mode.percentage(0, 0, display_height, 2_000), 0.7);
-        assert_pct(
-            mode.batch_target_percentage(0, 0, &ranges, high_range_start, high_range_end, 2_000),
-            0.7,
-        );
-
-        let post_ranges = vec![ScanRange::from_parts(
-            BlockHeight::from_u32(1_700)..BlockHeight::from_u32(1_800),
-            ScanPriority::Verify,
-        )];
-        assert_eq!(pending_scan_blocks(&post_ranges), 100);
-        assert_eq!(earliest_pending_scan_start(&post_ranges), Some(1_700));
-        let display_height_after = mode.batch_end_height(&post_ranges, high_range_end, 2_000);
-        assert_eq!(display_height_after, 1_700);
-        assert_pct(mode.percentage(0, 0, display_height_after, 2_000), 0.7);
     }
 
     #[test]
@@ -6228,6 +7857,7 @@ mod tests {
     fn scannable_batch_end_clamps_to_current_tip() {
         assert_eq!(
             scannable_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 2_000,
                 BlockHeight::from_u32(121),
                 BlockHeight::from_u32(131),
@@ -6241,6 +7871,7 @@ mod tests {
     fn scannable_batch_end_skips_ranges_past_current_tip() {
         assert_eq!(
             scannable_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 2_000,
                 BlockHeight::from_u32(122),
                 BlockHeight::from_u32(131),
@@ -6251,56 +7882,201 @@ mod tests {
     }
 
     #[test]
-    fn planned_batch_end_uses_base_size_before_sandblasting() {
+    fn prefetch_ranges_stop_at_the_range_end_and_the_tip() {
+        let h = BlockHeight::from_u32;
+        let test = WorkModel::compiled(WalletNetwork::Test);
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(419_200),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((1_000, BlockHeight::from_u32(420_200))),
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 20_000, 2),
+            vec![(h(1_000), h(2_000)), (h(2_000), h(3_000))],
+        );
+        // The last batch of a range is short and nothing follows it.
+        assert_eq!(
+            prefetch_ranges(&test, 1_000, h(8_500), h(10_000), 20_000, 2),
+            vec![(h(8_500), h(9_500)), (h(9_500), h(10_000))],
+        );
+        assert_eq!(
+            prefetch_ranges(&test, 1_000, h(10_000), h(10_000), 20_000, 2),
+            vec![]
+        );
+        // Blocks past the tip are not requested.
+        assert_eq!(
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 1_499, 2),
+            vec![(h(1_000), h(1_500))],
+        );
+        assert_eq!(
+            prefetch_ranges(&test, 1_000, h(1_000), h(10_000), 20_000, 0),
+            vec![]
+        );
+    }
+
+    /// Queued batches must match the batches the loop then plans, or every
+    /// prefetch is thrown away.
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn prefetch_ranges_match_the_planned_batches() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let (_, first_end) = planned_batch_end(&main, 1_000, h(1_780_001), h(1_800_000)).unwrap();
+        let (_, second_end) = planned_batch_end(&main, 1_000, first_end, h(1_800_000)).unwrap();
+        assert!(first_end < h(1_781_001), "spam-window batches are short");
+        assert_eq!(
+            prefetch_ranges(&main, 1_000, h(1_780_001), h(1_800_000), 3_000_000, 2),
+            vec![(h(1_780_001), first_end), (first_end, second_end)],
         );
     }
 
     #[test]
-    fn planned_batch_end_stops_at_sandblasting_boundaries() {
+    fn planned_batch_end_uses_the_block_cap_where_blocks_are_sparse() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        assert_eq!(
+            planned_batch_end(&main, 1_000, h(419_200), h(3_500_000)),
+            Some((1_000, h(420_200))),
+        );
+        // Past the compiled table.
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let past = u32::try_from(sizes.last().unwrap().0).unwrap() + 100_000;
+        assert_eq!(
+            planned_batch_end(&main, 1_000, h(past), h(past + 5_000)),
+            Some((1_000, h(past + 1_000))),
+        );
+        // No compiled data off mainnet, even at spam-window heights.
         assert_eq!(
             planned_batch_end(
+                &WorkModel::compiled(WalletNetwork::Test),
                 1_000,
-                BlockHeight::from_u32(SANDBLASTING_START - 500),
-                BlockHeight::from_u32(3_500_000),
+                h(1_780_001),
+                h(3_500_000),
             ),
-            Some((1_000, BlockHeight::from_u32(SANDBLASTING_START))),
+            Some((1_000, h(1_781_001))),
+        );
+    }
+
+    #[test]
+    fn unplanned_blocks_take_at_most_the_unplanned_cap() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let plan_end = u32::try_from(sizes.last().unwrap().0).unwrap() + 1;
+        let unplanned = UNPLANNED_BATCH_BLOCKS;
+
+        // Sparse blocks the compiled sizes cover take the desktop cap.
+        assert_eq!(
+            planned_batch_end(&main, 10_000, h(419_200), h(3_500_000)),
+            Some((10_000, h(429_200))),
+        );
+        // Past the compiled table, at most the unplanned cap.
+        let past = plan_end + 100_000;
+        assert_eq!(
+            planned_batch_end(&main, 10_000, h(past), h(past + 50_000)),
+            Some((unplanned, h(past + unplanned))),
+        );
+        // A batch that starts before the end of the table takes the rest of
+        // it and at most the unplanned cap past it.
+        let start = plan_end - 500;
+        assert_eq!(
+            planned_batch_end(&main, 10_000, h(start), h(start + 50_000)),
+            Some((500 + unplanned, h(plan_end + unplanned))),
+        );
+        // Off mainnet, at most the unplanned cap; smaller caps stay.
+        let test = WorkModel::compiled(WalletNetwork::Test);
+        assert_eq!(
+            planned_batch_end(&test, 10_000, h(1_000), h(50_000)),
+            Some((unplanned, h(1_000 + unplanned))),
         );
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_START),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((
-                BATCH_SIZE_SANDBLASTING,
-                BlockHeight::from_u32(SANDBLASTING_START + BATCH_SIZE_SANDBLASTING),
-            )),
+            planned_batch_end(&test, 300, h(1_000), h(50_000)),
+            Some((300, h(1_300))),
         );
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn planned_batch_end_fits_the_byte_budget() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let start = 1_780_001;
+        let (blocks, end) = planned_batch_end(&main, 1_000, h(start), h(3_500_000)).unwrap();
+        assert!(blocks < 1_000);
+        assert_eq!(end, h(start + blocks));
+        let bytes = |n: u32| main.plan_bytes(u64::from(start), u64::from(start + n));
+        assert!(bytes(blocks) <= BATCH_BYTE_BUDGET);
+        assert!(bytes(blocks + 1) > BATCH_BYTE_BUDGET);
+
+        // A batch is not cut where the spam window starts.
+        let (_, end) =
+            planned_batch_end(&main, 1_000, h(SANDBLASTING_START - 500), h(3_500_000)).unwrap();
+        assert!(end > h(SANDBLASTING_START));
+    }
+
+    /// The budgets follow from the compiled tree sizes at fixed heights, so a
+    /// longer table does not move them.
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn batch_byte_budget_matches_its_derivation() {
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        // The 2,000-block batch right after the window.
+        let desktop = main.download_bytes(2_050_001, 2_052_001);
+        // 100 blocks of the densest compiled step in the window.
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let mobile = sizes
+            .windows(2)
+            .filter(|pair| {
+                pair[0].0 >= u64::from(SANDBLASTING_START)
+                    && pair[1].0 <= u64::from(SANDBLASTING_END)
+            })
+            .map(|pair| {
+                let (from, to) = (pair[0].0 + 1, pair[1].0 + 1);
+                main.download_bytes(from, to) / (to - from) as f64
+            })
+            .fold(0.0, f64::max)
+            * 100.0;
+        for (budget, derived) in [
+            (DESKTOP_BATCH_BYTE_BUDGET, desktop),
+            (MOBILE_BATCH_BYTE_BUDGET, mobile),
+        ] {
+            assert!(
+                (budget / derived - 1.0).abs() < 0.01,
+                "budget {budget} vs derived {derived}",
+            );
+        }
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn plan_end_bounds_the_estimate() {
+        let h = BlockHeight::from_u32;
+        for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
+            let model = WorkModel::compiled(network);
+            assert_eq!(model.plan_bytes(1_780_001, 1_790_001), 0.0);
+            assert_eq!(
+                planned_batch_end(&model, 1_000, h(1_780_001), h(3_500_000)),
+                Some((1_000, h(1_781_001))),
+            );
+        }
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        let sizes = crate::wallet::tree_states::mainnet_tree_sizes(WalletNetwork::Main);
+        let plan_end = sizes.last().unwrap().0 + 1;
+        // Bytes stop at the last checkpoint instead of extrapolating.
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_END - 50),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((
-                BATCH_SIZE_SANDBLASTING,
-                BlockHeight::from_u32(SANDBLASTING_END),
-            )),
+            main.plan_bytes(plan_end - 1, plan_end + 100_000),
+            main.plan_bytes(plan_end - 1, plan_end),
         );
+        // A batch starting just before it is not cut there.
+        let start = u32::try_from(plan_end - 10).unwrap();
         assert_eq!(
-            planned_batch_end(
-                1_000,
-                BlockHeight::from_u32(SANDBLASTING_END),
-                BlockHeight::from_u32(3_500_000),
-            ),
-            Some((1_000, BlockHeight::from_u32(SANDBLASTING_END + 1_000))),
+            planned_batch_end(&main, 1_000, h(start), h(start + 5_000)),
+            Some((1_000, h(start + 1_000))),
+        );
+    }
+
+    #[test]
+    fn debug_cap_limits_every_batch() {
+        let h = BlockHeight::from_u32;
+        let main = WorkModel::compiled(WalletNetwork::Main);
+        assert_eq!(
+            planned_batch_end(&main, 5, h(1_780_001), h(2_000_000)),
+            Some((5, h(1_780_006))),
         );
     }
 
@@ -6425,6 +8201,91 @@ mod tests {
                 Some(false)
             ),
         );
+    }
+
+    #[test]
+    fn only_work_since_the_completed_sync_is_a_catch_up() {
+        let completed = Some(3_000_000);
+        // The blocks since, or a reorg the backend handles below them.
+        assert!(scans_only_after_completion(Some(3_000_001), completed));
+        assert!(scans_only_after_completion(Some(2_999_990), completed));
+        assert!(scans_only_after_completion(Some(2_999_900), completed));
+        assert!(scans_only_after_completion(None, completed));
+        // History below them: an account added since, from its birthday.
+        assert!(!scans_only_after_completion(Some(2_999_899), completed));
+        assert!(!scans_only_after_completion(Some(2_500_000), completed));
+        assert!(!scans_only_after_completion(Some(3_000_001), None));
+    }
+
+    #[test]
+    fn a_catch_up_that_meets_account_history_is_one_no_longer() {
+        let h = BlockHeight::from_u32;
+        let claimed = progress_work::StoredProgressJob {
+            from_completed_sync: true,
+            ..progress_work::StoredProgressJob::unmeasured()
+        };
+        let (mut job, _) = JobProgress::start(claimed, 10.0, 1.0);
+        let completed = Some(3_000_000);
+        let tip = ScanRange::from_parts(h(3_000_001)..h(3_000_005), ScanPriority::ChainTip);
+        assert!(!reclassify_catch_up(&mut job, &[tip.clone()], completed));
+        assert!(job.from_completed_sync());
+
+        // An account added during the attempt queues its history.
+        let history = ScanRange::from_parts(h(2_500_000)..h(3_000_001), ScanPriority::Historic);
+        assert!(reclassify_catch_up(
+            &mut job,
+            &[history, tip.clone()],
+            completed
+        ));
+        assert!(!job.from_completed_sync());
+        assert!(!reclassify_catch_up(&mut job, &[tip], completed));
+    }
+
+    #[test]
+    fn sync_starts_share_one_progress_job_until_completion() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+        let first = mark_sync_started(path).unwrap();
+        assert!(
+            !first.from_completed_sync,
+            "the first sync is not a catch-up"
+        );
+        assert_eq!(mark_sync_started(path).unwrap().id, first.id);
+        assert_eq!(
+            stored_progress_job(path),
+            Some((first.id.clone(), 0.0, false))
+        );
+
+        // The scan finished, but the attempt stopped before completing: the
+        // status still names the job the next attempt resumes.
+        let finished = progress_work::StoredProgressJob {
+            total_work: 500.0,
+            fraction: 1.0,
+            ..first.clone()
+        };
+        progress_work::write_progress_job(path, &finished).unwrap();
+        assert_eq!(
+            stored_progress_job(path),
+            Some((first.id.clone(), 1.0, false))
+        );
+        assert_eq!(mark_sync_started(path).unwrap(), finished);
+
+        mark_sync_completed(path, 100).unwrap();
+        assert_eq!(stored_progress_job(path), None);
+
+        // The next sync starts from a completed one: a catch-up, which the
+        // status reports until it completes.
+        let catch_up = mark_sync_started(path).unwrap();
+        assert_ne!(catch_up.id, first.id);
+        assert!(catch_up.from_completed_sync);
+        assert_eq!(
+            stored_progress_job(path),
+            Some((catch_up.id.clone(), 0.0, true))
+        );
+        assert_eq!(mark_sync_started(path).unwrap(), catch_up);
+        mark_sync_completed(path, 101).unwrap();
+        assert_eq!(stored_progress_job(path), None);
+        assert_ne!(mark_sync_started(path).unwrap().id, first.id);
     }
 
     #[test]

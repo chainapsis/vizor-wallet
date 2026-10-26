@@ -54,7 +54,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text('75% checking'), findsOneWidget);
-    expect(find.text('99% Syncing...'), findsNothing);
+    expect(find.text('99% Syncing…'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -69,12 +69,16 @@ void main() {
   };
 
   testWidgets('sidebar shows in-progress sync percentage', (tester) async {
+    final semantics = tester.ensureSemantics();
     await tester.pumpWidget(
       _sidebarHarness(SyncState(isSyncing: true, percentage: 1)),
     );
     await tester.pump();
 
-    expect(find.text('99% Syncing...'), findsOneWidget);
+    expect(find.text('99% Syncing\u2026'), findsOneWidget);
+    // Announced once, as the words shown.
+    expect(find.bySemanticsLabel('99% Syncing'), findsOneWidget);
+    semantics.dispose();
     expect(find.text('Synced'), findsNothing);
     expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
@@ -1187,6 +1191,81 @@ void main() {
     _expectSyncIndicatorGlow(tester, blurRadius: 12);
   });
 
+  testWidgets(
+    'sidebar shows a short catch-up as syncing without a percentage',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _sidebarHarness(
+          SyncState(
+            isSyncComplete: true,
+            percentage: 1,
+            scannedHeight: 3_428_143,
+            chainTipHeight: 3_428_143,
+          ),
+        ),
+      );
+      await tester.pump();
+      final sync =
+          ProviderScope.containerOf(
+                tester.element(find.byType(AppMainSidebar)),
+              ).read(syncProvider.notifier)
+              as _FakeSyncNotifier;
+      final startedAt = DateTime.now();
+      SyncState catchUp({required int remainingScanBlocks}) => SyncState(
+        isSyncing: true,
+        phase: 'scan',
+        scannedHeight: 3_428_144,
+        chainTipHeight: 3_428_143 + remainingScanBlocks,
+        remainingScanBlocks: remainingScanBlocks,
+        lastSyncStartedAt: startedAt,
+        startedFromCompletedSync: true,
+      );
+
+      sync.emit(catchUp(remainingScanBlocks: 3));
+      await tester.pump();
+
+      expect(find.text('Syncing\u2026'), findsOneWidget);
+      expect(find.text('Synced'), findsNothing);
+      expect(find.textContaining('% Syncing'), findsNothing);
+      // The synced look stays: color, bar, no shimmer, and the block height,
+      // which follows the scan.
+      final colors = AppThemeData.light.colors;
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('sidebar_sync_text')))
+            .style
+            ?.color,
+        colors.sync.text,
+      );
+      expect(_syncIndicatorColor(tester), colors.sync.lightSuccess);
+      expect(
+        find.descendant(
+          of: find.byType(AppMainSidebar),
+          matching: find.byType(ShaderMask),
+        ),
+        findsNothing,
+      );
+      expect(find.text('3,428,144'), findsOneWidget);
+      expect(
+        tester
+            .getSemantics(find.byKey(const ValueKey('sidebar_sync_text')))
+            .label,
+        'Syncing at block 3,428,144',
+      );
+
+      // The catch-up turns out large: its progress shows, as syncing.
+      sync.emit(catchUp(remainingScanBlocks: 5000));
+      await tester.pump();
+
+      expect(find.text('Syncing\u2026'), findsNothing);
+      expect(find.textContaining('% Syncing\u2026'), findsOneWidget);
+      expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
+      expect(_syncIndicatorColor(tester), colors.text.muted);
+      semantics.dispose();
+    },
+  );
+
   testWidgets('sidebar omits block height until sync completion is confirmed', (
     tester,
   ) async {
@@ -1222,7 +1301,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Synced'), findsOneWidget);
-    expect(find.text('99% Syncing...'), findsNothing);
+    expect(find.text('99% Syncing…'), findsNothing);
     expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
 
@@ -1853,6 +1932,8 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+
+  void emit(SyncState next) => state = AsyncData(next);
 
   @override
   Future<void> refreshAfterAccountSwitch() async {}

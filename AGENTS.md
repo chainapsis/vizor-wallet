@@ -470,6 +470,7 @@ SyncProvider (sync_provider.dart)
   │   deleted wallet's cached path
   ├── startSyncAnyway() — unlock recovery path for cancelled-but-still-unwinding Rust sync
   ├── Polls getLatestBlockHeight every 10s after sync completes
+  ├── Checks at once when the mempool observer reports a new block
   ├── Re-syncs automatically when new blocks detected or previous sync incomplete
   ├── Duplicate sync guard: _isSyncing (Dart) + isSyncRunning() (Rust)
   ├── A start requested while its own stream still holds the Rust guard (its
@@ -480,7 +481,8 @@ SyncProvider (sync_provider.dart)
   ├── Sync itself is account-agnostic (covers all accounts)
   ├── Polling pauses on app background (onHide), resumes on foreground (onResume)
   ├── refreshAfterSend() called after account switch for immediate update
-  ├── refreshAfterUnlock() restores only the selected account's persisted display balance
+  ├── refreshAfterUnlock() restores the stored sync status, then the selected account's
+  │   persisted display balance; it reads no wallet summary or history
   └── refreshHomeInBackground() refreshes live balance/history after sync starts; each publishes independently
 
 SyncDisplayPercentageProvider (sync_display_progress_provider.dart)
@@ -516,45 +518,11 @@ until sync callback arrives" flash.
   initial address/cache hydration fails, in which case sync state falls back
   to empty and the live sync repopulates it.
 
-### Sync Engine (Rust-only)
+### Sync
 
-The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single call from Dart (`startFullSync()`) triggers the full pipeline:
-
-1. tonic gRPC → lightwalletd (TLS via `tls-ring`)
-2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
-3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O)
-4. `scan_cached_blocks` from memory (100 blocks per batch)
-5. Enhancement: process each work queue separately. Status observations come
-   from `transaction_status_work()`, which routes each obligation to public
-   `GetTransaction` or private Status PIR. Payload recovery comes from
-   `transaction_enhancement_work()`. `transaction_data_requests()` feeds only
-   transparent-address history (`TransactionsInvolvingAddress`). librustzcash
-   persistently requests `GetStatus` only when compact-block scanning cannot
-   observe the transaction's mined state. During recovery, Vizor separately
-   excludes previously mined transactions from resubmission while a pending
-   scan range can still restore their mined heights.
-6. Progress streamed to Dart via FRB `StreamSink` per batch. Each event has a
-   `kind` (`SyncEventKind` in `sync_engine/mod.rs`, which replaced the old
-   `is_complete` flag): `Progress`, `Completed`, or `FollowupUpdated`.
-7. After `Completed`, two follow-up loops run under the same cancellation and
-   never fail the sync: private transparent recovery over the transparent PIR
-   service (`transparent_followup`,
-   `sync_engine/transparent_ledger.rs`, a no-op unless Private queries selects
-   it) and transparent txid details (`sync_engine/transparent_details.rs`, over
-   txid display PIR under private policy or gated `GetTransaction` otherwise).
-   Background preparation syncs (mode 2) skip both. When one changes wallet
-   data it reports `FollowupUpdated`, and Dart re-reads balances, history and
-   open receipts without counting a second completion. The stream and the
-   `SYNC_RUNNING` guard end only after the follow-ups (and the deferred
-   inactive-account UTXO refresh) finish.
-
-Single DB connection reused across entire sync (opened once, passed to all operations).
-
-Progress percentage: `initial_total` (total blocks to scan) is captured once before the scan loop from `suggest_scan_ranges()`. After each batch, `remaining` unscanned blocks are recalculated, then `pct = 1.0 - remaining / initial_total`. Note: `suggest_scan_ranges()` does not return `Scanned` ranges, so per-batch `total` cannot be used as the denominator. Each progress event includes `has_new_tx` (from `ScanSummary` received/spent note counts) to trigger transaction history refresh only when needed.
-
-Automatic retry: `run_sync_inner` wraps `run_sync_impl` with exponential backoff (3 retries, 2s/4s/8s). Cancel and mode-change are checked during retry wait. Both FRB and C FFI paths benefit.
-
-All sync log messages include `[Xs]` elapsed time from sync start (set once in `run_sync_inner`, consistent across retries). Errors are logged via `log` crate (forwarded to os_log subsystem `frb_user` by FRB `setup_default_user_utils()`). Log level set to `Info` to filter verbose rustls TLS logs. Rust logs are NOT visible in `flutter run` terminal — use `log stream --predicate 'subsystem == "frb_user"' --level info` in a separate terminal.
+The sync engine (`rust/src/wallet/sync_engine/`) and the Dart sync provider
+(`lib/src/providers/sync_provider.dart`) are described in `docs/sync.md`.
+Read it before changing either, and update it when their behaviour changes.
 
 ### Rust Module Structure
 
@@ -624,7 +592,7 @@ rust/src/
 │   │                    # MemoryBlockSource (BlockSource trait impl)
 │   │                    # Single DB connection reused across entire sync
 │   │                    # Checks cancel + mode mismatch after each download/scan/batch
-│   │                    # Progress: initial_total based (remaining / initial_total)
+│   │                    # Progress: work-unit fraction of a persisted sync job
 │   │                    # has_new_tx from ScanSummary note counts
 │   └── keystone.rs     # Keystone hardware wallet integration:
 │                        # - UR (Uniform Resources) encode/decode for animated QR:
@@ -705,8 +673,24 @@ Swift BackgroundMigrationPreparationManager
 Tor covers the app's foreground traffic only. The desired route lives in Rust
 process memory, applied by the Dart layer at startup and by the settings
 toggle; every foreground lightwalletd and HTTP path goes through the
-policy-aware openers and fails closed while Tor is starting or broken.
+policy-aware openers and fails closed while Tor is starting or broken, except
+a sync's large block download (below).
 
+- **Large block downloads may leave Tor; nothing identifying does.** With Tor
+  and Private queries on, a sync session whose estimated direct download
+  reaches `DIRECT_BLOCK_DOWNLOAD_MIN_BYTES` downloads its main-scan batches
+  over `open_block_download_lwd_transport`. Keep these rules:
+  - Only the batches `batch_uses_direct_connection` allows use it. Every
+    request that carries an address, txid or transaction stays on Tor.
+  - Never dial an onion server directly (`block_download_can_go_direct`).
+  - The session opens its Tor route first and fails closed with it; a direct
+    failure sends the batch over Tor.
+  - HTTP/2 pings only on a multi-threaded runtime (`keep_alive_fits_runtime`).
+  - Settings copy says Vizor uses Tor to protect the IP address; it does not
+    promise that every request goes through Tor.
+
+  How it opens, falls back and reconnects, and what the server learns from it:
+  "Direct block connection" in `docs/sync.md`.
 - **Voting SDK network clients are constructed only in**
   `rust/src/wallet/voting/network_clients.rs`. Chain, helper, PIR, and
   vote-tree are separate transport roles; injecting a chain transport does
@@ -1021,60 +1005,6 @@ Seed-relevance rule:
 - **Subsequent opens**: `ensure_db_initialized` calls `init_wallet_db(None)`. Calling `init_wallet_db(Some(other_seed))` after the first account would fail the relevance check when any `Imported` account exists.
 - **Hardware-first bootstrap is allowed**: `import_hardware_account` initializes without a local seed and imports the Keystone UFVK. This can produce an `Imported`-only DB, so seed-requiring migration recovery must be handled at the product layer if such a migration appears.
 
-### Dart Sync Provider
-
-`lib/src/providers/sync_provider.dart` — Riverpod `AsyncNotifier`.
-
-**Auto-sync lifecycle:**
-- `build()` watches `accountProvider` via `ref.listen` (not `ref.watch` — avoids rebuild on switch/rename)
-- Account count increase triggers `startSync()` + `_startPolling()` (both first account and additional accounts)
-- `_checkAndSync()`: polls `getLatestBlockHeight` every 10s, re-syncs if tip > last synced height or previous sync incomplete (`percentage < 1.0`)
-- `_checkAndSync()`, `_refreshBalance()`, and `_onSyncProgress()` all bail out while
-  locked and discard late async completions via `_sensitiveStateEpoch`
-- Polling stops during `_checkAndSync` execution to prevent concurrent overlap, restarts after
-- Duplicate sync guard: `_isSyncing` (Dart-side bool) + `isSyncRunning()` (Rust AtomicBool)
-- `startSync()` / `startSyncAnyway()` called while this notifier's own stream is
-  still open (the Rust guard is held through post-sync follow-ups) queue one
-  start (`_queueSyncStart`) instead of being dropped. Repeats coalesce: a
-  forced request upgrades a plain one and the highest tip carries over. The
-  queued start runs when the stream ends, unless the app is now in the
-  background.
-
-**startSync() is fire-and-forget:**
-- Sets up FRB stream listener and returns immediately (no Completer, no await)
-- `_syncGen` generation counter: incremented by `stopSync()`, checked in `.then()` callbacks to invalidate pending operations after user-initiated stop
-- Stream `onDone` → `_onSyncDone()` (balance refresh + start polling), then any queued start
-- `FollowupUpdated` event → `_onSyncFollowupUpdated()` (re-read balances and open receipts; not a new completion)
-- Stream `onError` → sets error state + starts polling for auto-retry
-
-**Sync control:**
-- `stopSync()`: increments `_syncGen` + `cancelFullSync()` + `_stopPolling()`. Polling does not restart until next `onResume`
-- `clearSensitiveStateForLock()`: increments `_syncGen`/`_sensitiveStateEpoch`,
-  clears in-memory sync state, sends `setSyncMode(0)` + `cancelFullSync()`,
-  and waits briefly for stale Rust sync / mempool work to stop
-- `startSyncAnyway()`: unlock recovery path. If Rust is still running but already
-  cancelling, waits for teardown before starting foreground sync; if teardown
-  times out, it at least restores polling so a later retry can recover
-
-**Lifecycle:**
-- `onResume`: refreshes balance → `_checkAndSync()` (which starts polling)
-- `onHide`: stops polling (no wasted network in background)
-- `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
-- `hasCachedBalance` permits Home to display the persisted snapshot without setting
-  `hasBalanceData`, current pool balances, sync completion, or spendability. An
-  accepted live read updates current balances independently of history. Persisted
-  display snapshots follow the same release conditions as in-memory completed-sync
-  snapshots: a valid balance at sync completion, or an explicit send, proposal-release,
-  or account-switch refresh. Intermediate reads preserve spendable, pending, and
-  holdings displays. `hasRecentTransactionsData` and `hasRecentTransactionsError`
-  own the activity loading state.
-- Only completed-sync or explicit-release balance reads enqueue display-only
-  snapshots through `walletBalanceCacheProvider`; intermediate reads leave the
-  saved snapshot intact. Deletion/reset suspend and drain its writes.
-  `ext_vizor_balance_cache` is in the wallet DB and removed with its account;
-  writes open existing DB files only and do not invalidate the wallet-summary cache.
-- All balance/history queries pass `activeAccountUuid` from `AccountProvider`
-
 ### Desktop Window Bootstrap
 
 Desktop window appearance is managed by the external [`desktop_window_bootstrap`](https://github.com/chainapsis/desktop_window_bootstrap) package plus `window_manager`, with a strict responsibility split:
@@ -1215,6 +1145,8 @@ edge in `MobileBottomSafeArea`
 ## Crate Versions
 
 Constrained in `rust/Cargo.toml` and resolved in `rust/Cargo.lock`. Key crates: `zcash_client_backend` 0.22.0, `zcash_client_sqlite` 0.20.2, `orchard` 0.13.1, `sapling-crypto` 0.7.0. These must stay compatible — check librustzcash releases before bumping.
+
+The zakura wallet crates come from their crates.io releases, with no `[patch]`. A release that adds a wallet migration makes the database unreadable to builds with an older release.
 
 `tonic` 0.14 with `tls-ring` + `tls-webpki-roots` features for gRPC TLS. `rustls` 0.23+ requires explicit crypto provider — `tls-ring` provides this.
 

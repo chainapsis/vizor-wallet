@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-zakura-pir-client = { version = "=0.0.1-rc1", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
+zakura-pir-client = { version = "=0.0.1-rc3", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
 zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
 flutter_rust_bridge = "=2.11.1"
 
@@ -50,6 +50,10 @@ rand = "0.8"
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 futures = "0.3"
+# Scan thread pools at reduced power (`sync_engine::scan_power`); both are
+# already in the graph through the wallet libraries.
+rayon = "1.12"
+libc = "0.2"
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
 bytes = "1"
 http = "1"
@@ -114,7 +118,7 @@ version = "=4.0.0"
 
 [dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc9.2"
+version = "=0.1.0-rc9.4"
 features = [
     "orchard",
     "transparent-inputs",
@@ -127,7 +131,7 @@ features = [
 
 [dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc9.2"
+version = "=0.1.0-rc9.4"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
@@ -146,7 +150,7 @@ features = ["local-prover"]
 
 [dependencies.pczt]
 package = "zakura-pczt"
-version = "=0.1.0-rc8"
+version = "=0.1.0-rc9"
 features = [
     "orchard",
     "io-finalizer",
@@ -200,12 +204,12 @@ regex = "1"
 # Builds wallets through real private recovery for the history mapping tests.
 [dev-dependencies.zcash_client_sqlite]
 package = "zakura-client-sqlite"
-version = "=0.1.0-rc9.2"
+version = "=0.1.0-rc9.4"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_client_backend]
 package = "zakura-client-backend"
-version = "=0.1.0-rc9.2"
+version = "=0.1.0-rc9.4"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_voting]
@@ -216,7 +220,7 @@ features = ["test-fixtures"]
 # display publication the loop-4 tests serve, and a real shard service in
 # process. Keep the version aligned with the runtime dependency above.
 [dev-dependencies.zakura-pir-client]
-version = "=0.0.1-rc1"
+version = "=0.0.1-rc3"
 default-features = false
 features = ["testing"]
 

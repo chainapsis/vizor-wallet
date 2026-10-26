@@ -423,8 +423,10 @@ _NetworkPrivacyPresentation _presentationFor(
       state.status == NetworkPrivacyConnectionStatus.connected) {
     return _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
+      // Large block downloads fetch public blocks directly, so the connected
+      // copy does not promise every request.
       description:
-          'Vizor’s network requests go through Tor, but software updates are unavailable.',
+          'Vizor uses Tor to protect your IP address, but software updates are unavailable.',
       statusColor: (colors) => colors.text.destructive,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.destructive,
@@ -488,7 +490,7 @@ _NetworkPrivacyPresentation _presentationFor(
     (NetworkPrivacyConnectionStatus.connected, _) => _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
       description:
-          'Vizor’s network requests go through Tor. Links opened in other apps use those apps’ network settings.',
+          'Vizor uses Tor to protect your IP address. Links opened in other apps use those apps’ network settings.',
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.accent,

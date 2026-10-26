@@ -56,12 +56,14 @@ pub(super) use transport::RoutedExchange;
 pub(super) use transport::{response, ObservedRequest, RequestObserver};
 
 use std::collections::HashSet;
+use std::time::Instant;
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{status::TransactionStatusRead, WalletRead};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
 use super::{block_source::MemoryBlockSource, SyncError, TransparentLookupGate, WalletDatabase};
 use auxiliary::{fees::backfill_stored_fees, transparent_history::HistoryPass};
+use payload::public::PublicPayloadRetries;
 use payload::{EnhancePirRunError, ProductionEnhancementEffects, RoutedPayloadEnhancement};
 use transport::RoutedTransport;
 
@@ -74,7 +76,13 @@ pub(super) struct EnhancementSession {
     /// Set by the first failed private status lookup; later checkpoints in this
     /// session leave private status work pending instead of retrying the service.
     private_status_failed: bool,
+    /// Public payloads that failed in this session, held back until their
+    /// retry time instead of failing the sync.
+    public_payload_retries: PublicPayloadRetries,
     ready_resubmission: HashSet<Vec<u8>>,
+    /// Whether this checkpoint runs status lookups. A scanned batch that does
+    /// not check the chain tip leaves them to the next one that does.
+    status_due: bool,
 }
 
 impl EnhancementSession {
@@ -94,7 +102,9 @@ impl EnhancementSession {
             network,
             db_path: db_path.into(),
             private_status_failed: false,
+            public_payload_retries: PublicPayloadRetries::default(),
             ready_resubmission: HashSet::new(),
+            status_due: true,
         }
     }
 
@@ -121,6 +131,26 @@ impl EnhancementSession {
         let route = RoutedTransport::new(should_exit);
         self.checkpoint_with(db, client, cached, private_status, &route, should_exit)
             .await
+    }
+
+    /// [`Self::run_checkpoint`] after a scanned batch. A batch that does not
+    /// check the chain tip runs no status lookups: a recovered status completes
+    /// only against a tip checked after the lookup, and a lookup between checks
+    /// would be asked again, or its answer dropped, before any check used it.
+    pub(super) async fn run_batch_checkpoint(
+        &mut self,
+        db: &mut WalletDatabase,
+        client: &mut CompactTxStreamerClient<Channel>,
+        cached: &MemoryBlockSource,
+        checks_tip: bool,
+        should_exit: &(impl Fn() -> bool + Sync),
+    ) -> Result<bool, SyncError> {
+        self.status_due = checks_tip;
+        let result = self
+            .run_checkpoint(db, client, Some(cached), should_exit)
+            .await;
+        self.status_due = true;
+        result
     }
 
     /// [`Self::run_checkpoint`] with the private status source and the
@@ -171,7 +201,6 @@ impl EnhancementSession {
         before: &content_failures::PrivateWork,
         should_exit: &(impl Fn() -> bool + Sync),
     ) -> Result<bool, SyncError> {
-        self.ready_resubmission.clear();
         // Captured once per checkpoint; the gate re-checks the durable
         // generation before every public request and completing commit.
         let gate = TransparentLookupGate::for_sync(
@@ -195,23 +224,26 @@ impl EnhancementSession {
         let requests = db
             .transaction_data_requests()
             .map_err(|error| SyncError::db(format!("transaction_data_requests: {error}")))?;
-        let status_work = db
-            .transaction_status_work()
-            .map_err(|error| SyncError::db(format!("transaction_status_work: {error}")))?;
-        status::run_requests(
-            &mut status_reader,
-            db,
-            &status_work,
-            &gate,
-            &mut attempted_statuses,
-            &mut self.private_status_failed,
-            &self.db_path,
-            &mut self.ready_resubmission,
-            should_exit,
-        )
-        .await?;
-        if should_exit() {
-            return Ok(true);
+        if self.status_due {
+            self.ready_resubmission.clear();
+            let status_work = db
+                .transaction_status_work()
+                .map_err(|error| SyncError::db(format!("transaction_status_work: {error}")))?;
+            status::run_requests(
+                &mut status_reader,
+                db,
+                &status_work,
+                &gate,
+                &mut attempted_statuses,
+                &mut self.private_status_failed,
+                &self.db_path,
+                &mut self.ready_resubmission,
+                should_exit,
+            )
+            .await?;
+            if should_exit() {
+                return Ok(true);
+            }
         }
         history
             .run_requests(
@@ -272,13 +304,25 @@ impl EnhancementSession {
             &self.db_path,
             self.network,
         )?;
-        let mut effects =
-            ProductionEnhancementEffects::new(self.network, &self.db_path, client, cached, gate);
+        let held = self.public_payload_retries.held(Instant::now());
+        let mut effects = ProductionEnhancementEffects::new(
+            self.network,
+            &self.db_path,
+            client,
+            cached,
+            gate,
+            held,
+        );
         self.payload.snapshot = Some(snapshot.clone());
         let result = Box::pin(self.payload.run(db, route, &mut effects, should_exit)).await;
         self.payload.snapshot = None;
         match result {
-            Ok(()) => effects.finish().map(|()| false),
+            Ok(()) => {
+                let failed = effects.finish()?;
+                self.public_payload_retries
+                    .record_failures(failed, Instant::now());
+                Ok(false)
+            }
             Err(EnhancePirRunError::ExitRequested) => Ok(true),
             Err(EnhancePirRunError::HttpStatus(status)) => Err(SyncError::net(format!(
                 "transaction enhancement returned HTTP {status}"

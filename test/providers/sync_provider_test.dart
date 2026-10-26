@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
+
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -890,6 +891,128 @@ void main() {
     );
   });
 
+  group('refreshAfterUnlock restores the stored sync job', () {
+    Future<_BalanceRefreshTestSyncNotifier> unlockedNotifier({
+      SyncState? initialState,
+      rust_sync.SyncProgress? status,
+      Object? statusError,
+    }) async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier =
+                _BalanceRefreshTestSyncNotifier(
+                    () async => 'wallet.db',
+                    initialState: initialState,
+                  )
+                  ..syncStatus = status ?? _noStoredJob
+                  ..syncStatusError = statusError,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      return notifier;
+    }
+
+    test('so the sync resumes from the last shown fraction', () async {
+      final notifier = await unlockedNotifier(
+        status: _storedJob('job-1', 0.37),
+      );
+
+      await notifier.refreshAfterUnlock();
+
+      final state = notifier.state.requireValue;
+      expect(state.syncJobId, 'job-1');
+      expect(state.percentage, closeTo(0.37, 1e-12));
+      expect(state.displayTargetPercentage, closeTo(0.37, 1e-12));
+      final resumed = resumableSyncJob(state);
+      expect(resumed.jobId, 'job-1');
+      expect(resumed.percentage, closeTo(0.37, 1e-12));
+    });
+
+    test('unless a sync already reported its job', () async {
+      final notifier = await unlockedNotifier(
+        initialState: SyncState(
+          accountUuid: _accountUuid,
+          isSyncing: true,
+          percentage: 0.5,
+          syncJobId: 'live',
+        ),
+        status: _storedJob('job-1', 0.37),
+      );
+
+      await notifier.refreshAfterUnlock();
+
+      final state = notifier.state.requireValue;
+      expect(state.syncJobId, 'live');
+      expect(state.percentage, 0.5);
+    });
+
+    test('and a completed wallet is complete again, as after a launch, so '
+        'its next sync is a catch-up', () async {
+      final notifier = await unlockedNotifier(status: _completedSync);
+
+      await notifier.refreshAfterUnlock();
+
+      final state = notifier.state.requireValue;
+      expect(state.isSyncComplete, isTrue);
+      expect(state.percentage, 1);
+      expect(state.scannedHeight, 2000);
+      expect(state.chainTipHeight, 2000);
+      expect(state.syncJobId, isEmpty);
+      expect(resumableSyncJob(state).jobId, isEmpty);
+    });
+
+    test('without reading the account balance, which Home reads in the '
+        'background', () async {
+      final notifier = await unlockedNotifier(status: _completedSync);
+
+      await notifier.refreshAfterUnlock();
+
+      final state = notifier.state.requireValue;
+      expect(state.hasBalanceData, isFalse);
+      expect(state.isSyncComplete, isTrue);
+      expect(state.chainTipHeight, 2000);
+      expect(notifier.balanceReadCount, 0);
+    });
+
+    test('but an unfinished one stays unfinished', () async {
+      final notifier = await unlockedNotifier(
+        status: rust_sync.SyncProgress(
+          scannedHeight: BigInt.from(1000),
+          chainTipHeight: BigInt.from(2000),
+          isSyncing: false,
+          isComplete: false,
+          syncJobId: '',
+          syncJobFraction: 0,
+          syncJobFromCompletedSync: false,
+        ),
+      );
+      notifier.balance = _availableBalance(BigInt.from(100));
+
+      await notifier.refreshAfterUnlock();
+
+      expect(notifier.state.requireValue.isSyncComplete, isFalse);
+    });
+
+    test('and a failed read leaves the state for the sync to fill', () async {
+      final notifier = await unlockedNotifier(
+        statusError: StateError('status unavailable'),
+      );
+
+      await expectLater(notifier.refreshAfterUnlock(), completes);
+
+      final state = notifier.state.requireValue;
+      expect(state.syncJobId, isEmpty);
+      expect(state.percentage, 0.0);
+    });
+  });
+
   test('successful queued refresh recovers an earlier pass failure', () async {
     final firstPathResolution = Completer<String>();
     var pathResolutionCount = 0;
@@ -911,6 +1034,8 @@ void main() {
     container.listen(syncProvider, (_, _) {});
     await container.read(syncProvider.future);
 
+    // Plain refreshes: an unlock reads the stored status first, which takes
+    // the first path resolution and keeps its failure to itself.
     final firstRefresh = notifier.refreshAfterSend();
     final queuedRefresh = notifier.refreshAfterSend();
     firstPathResolution.completeError(StateError('temporary path failure'));
@@ -1394,6 +1519,166 @@ void main() {
     },
   );
 
+  group('sync jobs', () {
+    Future<(ProviderContainer, _LifecycleTestSyncNotifier)> start() async {
+      late _LifecycleTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () =>
+                notifier = _LifecycleTestSyncNotifier(() async => 'wallet.db'),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      return (container, notifier);
+    }
+
+    SyncProgressEvent preparation({
+      required double percentage,
+      required String jobId,
+    }) => SyncProgressEvent(
+      scannedHeight: 0,
+      chainTipHeight: 120,
+      percentage: percentage,
+      displayTargetPercentage: percentage,
+      displayTargetBlocks: 0,
+      isSyncing: true,
+      isComplete: false,
+      hasNewTx: false,
+      phase: kSyncPhaseActiveUtxo,
+      syncJobId: jobId,
+    );
+
+    test('a new session continues only an unfinished engine job', () {
+      expect(resumableSyncJob(null), (jobId: '', percentage: 0.0));
+      expect(resumableSyncJob(SyncState(percentage: 0.4, syncJobId: 'job-a')), (
+        jobId: 'job-a',
+        percentage: 0.4,
+      ));
+      // A block-share estimate has no job id.
+      expect(resumableSyncJob(SyncState(percentage: 0.97)), (
+        jobId: '',
+        percentage: 0.0,
+      ));
+      expect(
+        resumableSyncJob(
+          SyncState(isSyncComplete: true, percentage: 1, syncJobId: 'job-a'),
+        ),
+        (jobId: '', percentage: 0.0),
+      );
+    });
+
+    test('preparation names the job and starts the session there', () async {
+      final (container, notifier) = await start();
+      notifier.replaceState(
+        SyncState(accountUuid: _accountUuid, isSyncing: true),
+      );
+
+      await notifier.handleSyncProgressForTesting(
+        preparation(percentage: 0.48, jobId: 'job-a'),
+      );
+
+      final current = container.read(syncProvider).requireValue;
+      expect(current.percentage, 0.48);
+      expect(current.syncJobId, 'job-a');
+      expect(current.sessionStartPercentage, 0.48);
+    });
+
+    test(
+      'preparation of a replaced job does not keep the old percentage',
+      () async {
+        final (container, notifier) = await start();
+        notifier.replaceState(
+          SyncState(
+            accountUuid: _accountUuid,
+            isSyncing: true,
+            percentage: 0.5,
+            displayTargetPercentage: 0.6,
+            syncJobId: 'job-a',
+            sessionStartPercentage: 0.3,
+          ),
+        );
+
+        await notifier.handleSyncProgressForTesting(
+          preparation(percentage: 0, jobId: 'job-b'),
+        );
+
+        final current = container.read(syncProvider).requireValue;
+        expect(current.percentage, 0);
+        expect(current.displayTargetPercentage, 0);
+        expect(current.syncJobId, 'job-b');
+        expect(current.sessionStartPercentage, 0);
+      },
+    );
+
+    test('a balance refresh during a sync keeps the job', () async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier = _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+              initialState: SyncState(
+                accountUuid: _accountUuid,
+                isSyncing: true,
+                phase: 'scan',
+                percentage: 0.5,
+                syncJobId: 'job-a',
+                sessionStartPercentage: 0.3,
+              ),
+            )..balance = _availableBalance(BigInt.from(100)),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(accountProvider.future);
+      await container.read(syncProvider.future);
+
+      await notifier.refreshAfterSend();
+
+      final current = container.read(syncProvider).requireValue;
+      expect(notifier.balanceReadCount, 1);
+      expect(current.percentage, 0.5);
+      expect(current.syncJobId, 'job-a');
+      expect(current.sessionStartPercentage, 0.3);
+    });
+
+    test('a sync failure keeps the job progress for the retry', () async {
+      final (container, notifier) = await start();
+      notifier.replaceState(
+        SyncState(
+          accountUuid: _accountUuid,
+          isSyncing: true,
+          phase: 'scan',
+          percentage: 0.5,
+          scannedHeight: 50,
+          chainTipHeight: 100,
+          syncJobId: 'job-a',
+          sessionStartPercentage: 0.2,
+        ),
+      );
+
+      notifier.recordSyncFailureForTesting(Exception('connection reset'));
+      notifier.stopTipChecksForTesting();
+
+      final current = container.read(syncProvider).requireValue;
+      expect(current.failure, isNotNull);
+      expect(current.isSyncing, isFalse);
+      expect(current.percentage, 0.5);
+      expect(current.scannedHeight, 50);
+      expect(current.chainTipHeight, 100);
+      expect(resumableSyncJob(current), (jobId: 'job-a', percentage: 0.5));
+    });
+  });
+
   test('in-flight progress cannot replace a newer sync failure', () async {
     final resolverStarted = Completer<void>();
     final dbPath = Completer<String>();
@@ -1672,6 +1957,8 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
   bool failHistory = false;
   var balanceReadCount = 0;
   rust_sync.WalletBalance? balance;
+  rust_sync.SyncProgress syncStatus = _noStoredJob;
+  Object? syncStatusError;
 
   void replaceState(SyncState next) => state = AsyncData(next);
 
@@ -1687,6 +1974,10 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
 
   void releaseFirstBalanceRead() => _firstBalanceReadReleased.complete();
 
+  /// When set, every balance read after the first waits for it, then
+  /// returns [balance] as it is by then.
+  Completer<void>? holdLaterBalanceReads;
+
   @override
   Future<SyncState> build() async => initialState ?? SyncState();
 
@@ -1701,8 +1992,20 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     if (_gateFirstBalanceRead && !_firstBalanceReadStarted.isCompleted) {
       _firstBalanceReadStarted.complete();
       await _firstBalanceReadReleased.future;
+    } else if (balanceReadCount > 1 && holdLaterBalanceReads != null) {
+      await holdLaterBalanceReads!.future;
+      return balance ?? _unavailableBalance;
     }
     return result;
+  }
+
+  @override
+  Future<rust_sync.SyncProgress> readSyncStatus({
+    required String dbPath,
+    required String network,
+  }) async {
+    if (syncStatusError case final error?) throw error;
+    return syncStatus;
   }
 
   @override
@@ -1716,6 +2019,29 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     return historyGate?.future ?? Future.value(history);
   }
 }
+
+rust_sync.SyncProgress _storedJob(String id, double fraction) =>
+    rust_sync.SyncProgress(
+      scannedHeight: BigInt.from(1000),
+      chainTipHeight: BigInt.from(2000),
+      isSyncing: false,
+      isComplete: false,
+      syncJobId: id,
+      syncJobFraction: fraction,
+      syncJobFromCompletedSync: false,
+    );
+
+final _noStoredJob = _storedJob('', 0);
+
+final _completedSync = rust_sync.SyncProgress(
+  scannedHeight: BigInt.from(2000),
+  chainTipHeight: BigInt.from(2000),
+  isSyncing: false,
+  isComplete: true,
+  syncJobId: '',
+  syncJobFraction: 0,
+  syncJobFromCompletedSync: false,
+);
 
 class _UnavailableSwitchBalanceNotifier extends SyncNotifier {
   _UnavailableSwitchBalanceNotifier(this.fetchedTx)

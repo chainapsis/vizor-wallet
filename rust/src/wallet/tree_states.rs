@@ -42,9 +42,13 @@ fn checkpoint_height(index: usize) -> u64 {
     START_HEIGHT + index as u64 * STEP
 }
 
-#[cfg(test)]
-fn last_checkpoint_height() -> u64 {
-    checkpoint_height(CHECKPOINTS.len() - 1)
+/// Height of the newest compiled checkpoint. The weekly table update only
+/// appends, so it also names the table's version.
+pub(crate) fn last_checkpoint_height() -> u64 {
+    CHECKPOINTS
+        .len()
+        .checked_sub(1)
+        .map_or(0, checkpoint_height)
 }
 
 fn checkpoint_index(height: u64) -> Option<usize> {
@@ -87,6 +91,40 @@ pub(crate) fn mainnet_chain_state(network: WalletNetwork, height: u64) -> Option
             None
         }
     }
+}
+
+/// Note commitment tree sizes (Sapling, Orchard, Ironwood) at the end of each
+/// compiled checkpoint block, in height order.
+///
+/// Empty unless `network` is real mainnet. The sync engine uses these to
+/// estimate how many outputs a pending range holds without asking
+/// lightwalletd. A checkpoint that fails to parse is left out.
+pub(crate) fn mainnet_tree_sizes(network: WalletNetwork) -> &'static [(u64, [u64; 3])] {
+    static SIZES: std::sync::OnceLock<Vec<(u64, [u64; 3])>> = std::sync::OnceLock::new();
+    if !table_covers(network) {
+        return &[];
+    }
+    SIZES.get_or_init(|| {
+        (0..CHECKPOINTS.len())
+            .filter_map(|index| match parse_checkpoint(index) {
+                Ok(state) => Some((
+                    checkpoint_height(index),
+                    [
+                        state.final_sapling_tree().tree_size(),
+                        state.final_orchard_tree().tree_size(),
+                        state.final_ironwood_tree().tree_size(),
+                    ],
+                )),
+                Err(error) => {
+                    log::error!(
+                        "tree_states: compiled checkpoint {} does not parse: {error}",
+                        checkpoint_height(index)
+                    );
+                    None
+                }
+            })
+            .collect()
+    })
 }
 
 /// The birthday to store for a restored account whose requested birthday is
@@ -153,6 +191,18 @@ mod tests {
             previous = sizes;
         }
         assert!(last_checkpoint_height() >= 3_490_000);
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn mainnet_tree_sizes_cover_every_checkpoint() {
+        let sizes = mainnet_tree_sizes(WalletNetwork::Main);
+        assert_eq!(sizes.len(), CHECKPOINTS.len());
+        assert_eq!(sizes[0].0, START_HEIGHT);
+        let state = parse_checkpoint(100).unwrap();
+        assert_eq!(sizes[100].0, checkpoint_height(100));
+        assert_eq!(sizes[100].1[0], state.final_sapling_tree().tree_size());
+        assert!(mainnet_tree_sizes(WalletNetwork::Regtest).is_empty());
     }
 
     #[cfg(not(ironwood_masquerade))]

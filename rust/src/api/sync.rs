@@ -35,6 +35,17 @@ pub fn get_sync_mode() -> u8 {
     DESIRED_SYNC_MODE.load(Ordering::SeqCst)
 }
 
+/// Set how much of the device sync scans may use, from the device's thermal
+/// state and power mode: 0 scans on every core at the default priority, 1 (or
+/// any other value) on half the cores at a lower priority (the efficiency
+/// cores on Apple devices). A running sync applies it from its next batch;
+/// later syncs start with it.
+#[frb(sync)]
+pub fn set_sync_scan_power(level: u8) {
+    use crate::wallet::sync_engine::scan_power;
+    scan_power::set(scan_power::ScanPower::from_level(level));
+}
+
 /// Update the foreground sync account whose pending transparent refreshes
 /// should be scheduled first. Requests already in flight are not interrupted.
 #[frb(sync)]
@@ -259,6 +270,10 @@ pub struct ApiSyncProgressEvent {
     /// Current sync phase. Preparation adds `"active_utxo"` and
     /// `"chain_prepare"` before the existing download/scan phases.
     pub phase: String,
+    /// Sync job `percentage` belongs to, named from the first event of every
+    /// attempt. A new attempt with the same id (retry, endpoint fallback,
+    /// relaunch) continues the same fraction.
+    pub sync_job_id: String,
 }
 
 fn run_full_sync_internal<F>(
@@ -342,6 +357,7 @@ pub fn start_full_sync(
                     phase_completed_units: progress.phase_completed_units,
                     phase_total_units: progress.phase_total_units,
                     phase: progress.phase.clone(),
+                    sync_job_id: progress.sync_job_id.clone(),
                 })
                 .is_err()
             {
@@ -580,6 +596,11 @@ pub struct ApiMempoolTxEvent {
     /// uses this flag to decide whether to refresh balance + history
     /// immediately.
     pub matched: bool,
+    /// `true` when the server ended the mempool stream, which
+    /// lightwalletd does when a block is mined; the fields above are
+    /// then empty. Dart checks the tip on it instead of waiting for
+    /// its next poll.
+    pub new_block: bool,
 }
 
 /// Shared lifecycle state for the background mempool observer.
@@ -628,6 +649,7 @@ pub(crate) static MEMPOOL_OBSERVER_STATE: std::sync::LazyLock<
 /// observer returns on an unrecoverable setup error. Only parsed
 /// wallet-relevant mempool txs are pushed to `sink` as
 /// [`ApiMempoolTxEvent`]s; unrelated txs are filtered inside Rust.
+/// Each clean end of the stream is pushed too, with `new_block` set.
 ///
 /// The FRB layer runs this on the Rust isolate thread pool, so
 /// Dart can `await` the call while the observer keeps polling
@@ -664,6 +686,9 @@ pub fn start_mempool_observer(
     let result = catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let rt = crate::wallet::bounded_runtime::BoundedRuntime::new()?;
+        // One sink for both callbacks.
+        let sink = Arc::new(sink);
+        let block_sink = sink.clone();
         rt.block_on(async {
             crate::wallet::sync_engine::mempool::run_mempool_observer(
                 db_path,
@@ -676,10 +701,24 @@ pub fn start_mempool_observer(
                             txid_hex: event.txid_hex,
                             account_uuids: event.account_uuids,
                             matched: event.matched,
+                            new_block: false,
                         })
                         .is_err()
                     {
                         log::warn!("mempool: StreamSink closed, event not delivered");
+                    }
+                },
+                move || {
+                    if block_sink
+                        .add(ApiMempoolTxEvent {
+                            txid_hex: String::new(),
+                            account_uuids: Vec::new(),
+                            matched: false,
+                            new_block: true,
+                        })
+                        .is_err()
+                    {
+                        log::warn!("mempool: StreamSink closed, new-block event not delivered");
                     }
                 },
             )
@@ -740,6 +779,15 @@ pub struct SyncProgress {
     pub chain_tip_height: u64,
     pub is_syncing: bool,
     pub is_complete: bool,
+    /// Id of the stored sync job (unfinished, or scanned to the end by an
+    /// attempt that stopped before completing), or empty when none is stored.
+    pub sync_job_id: String,
+    /// Last reported fraction of that job, in the units of
+    /// `ApiSyncProgressEvent::percentage`.
+    pub sync_job_fraction: f64,
+    /// Whether that job started from a completed sync: a catch-up, which a
+    /// relaunch keeps showing as one.
+    pub sync_job_from_completed_sync: bool,
 }
 
 pub enum WalletBalanceAvailability {
@@ -1020,11 +1068,16 @@ pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress,
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let p = wallet_sync::get_sync_progress(&db_path, network)?;
+        let (sync_job_id, sync_job_fraction, sync_job_from_completed_sync) =
+            crate::wallet::sync_engine::stored_progress_job(&db_path).unwrap_or_default();
         Ok(SyncProgress {
             scanned_height: p.scanned_height,
             chain_tip_height: p.chain_tip_height,
             is_syncing: p.is_syncing,
             is_complete: p.is_complete,
+            sync_job_id,
+            sync_job_fraction,
+            sync_job_from_completed_sync,
         })
     })
 }

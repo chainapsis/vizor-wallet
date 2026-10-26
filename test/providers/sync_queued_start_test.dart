@@ -20,6 +20,9 @@ const _accountUuid = 'account-1';
 class _Api extends RustLibApi {
   bool running = false;
   int historyReads = 0;
+
+  /// While set, balance reads wait for it, holding a progress event's handler.
+  Completer<void>? balanceGate;
   final syncs = <StreamController<rust_sync.ApiSyncProgressEvent>>[];
 
   @override
@@ -69,7 +72,12 @@ class _Api extends RustLibApi {
     required String dbPath,
     required String network,
     required String accountUuid,
-  }) async => rust_sync.WalletBalance(
+  }) async {
+    await balanceGate?.future;
+    return _balance;
+  }
+
+  static final _balance = rust_sync.WalletBalance(
     availability: rust_sync.WalletBalanceAvailability.available,
     transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
     transparentPrivate: false,
@@ -180,7 +188,24 @@ rust_sync.ApiSyncProgressEvent _complete({
   phaseCompletedUnits: BigInt.zero,
   phaseTotalUnits: BigInt.zero,
   phase: '',
+  syncJobId: '',
 );
+
+rust_sync.ApiSyncProgressEvent _scanned({required String jobId}) =>
+    rust_sync.ApiSyncProgressEvent(
+      kind: rust_sync.ApiSyncEventKind.progress,
+      scannedHeight: BigInt.from(100),
+      chainTipHeight: BigInt.from(100),
+      percentage: 1,
+      displayTargetPercentage: 1,
+      displayTargetBlocks: BigInt.from(1000),
+      isSyncing: true,
+      hasNewTx: false,
+      phaseCompletedUnits: BigInt.zero,
+      phaseTotalUnits: BigInt.zero,
+      phase: 'scan',
+      syncJobId: jobId,
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -190,6 +215,7 @@ void main() {
   setUp(() {
     api.running = false;
     api.historyReads = 0;
+    api.balanceGate = null;
     api.syncs.clear();
   });
   late ProviderContainer container;
@@ -351,6 +377,100 @@ void main() {
     await pumpEventQueue();
     sync.stopTipChecksForTesting();
     expect(api.syncs, hasLength(2), reason: 'the start was queued and ran');
+  });
+
+  test(
+    'a completion overtaken before the state recorded it ends its job',
+    () async {
+      final sync = _Sync();
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_Account.new),
+          rpcEndpointFailoverProvider.overrideWith(_Tip.new),
+          chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
+          enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+          syncProvider.overrideWith(() => sync),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      sync.stopTipChecksForTesting();
+      sync.startSync();
+      await pumpEventQueue();
+      api.syncs[0].add(_scanned(jobId: 'job-a'));
+      await pumpEventQueue();
+      expect(container.read(syncProvider).requireValue.syncJobId, 'job-a');
+
+      // The completion's handler waits on its balance read while a stop
+      // overtakes it, so its state is discarded.
+      api.balanceGate = Completer<void>();
+      api.syncs[0].add(_complete());
+      await pumpEventQueue();
+      sync.stopSync();
+      api.running = false;
+      api.balanceGate!.complete();
+      await pumpEventQueue();
+      final stopped = container.read(syncProvider).requireValue;
+      expect(stopped.isSyncComplete, isFalse);
+      expect(stopped.syncJobId, 'job-a');
+
+      sync.startSync();
+      await pumpEventQueue();
+      sync.stopTipChecksForTesting();
+      final next = container.read(syncProvider).requireValue;
+      expect(
+        next.syncJobId,
+        isEmpty,
+        reason: 'the finished job is not resumed',
+      );
+      expect(next.percentage, 0);
+      expect(next.lastSyncCompletedAt, isNotNull);
+    },
+  );
+
+  test('clearing wallet state drops a pending completion', () async {
+    final sync = _Sync();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_Account.new),
+        rpcEndpointFailoverProvider.overrideWith(_Tip.new),
+        chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
+        enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+        syncProvider.overrideWith(() => sync),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    sync.stopTipChecksForTesting();
+    sync.startSync();
+    await pumpEventQueue();
+    api.syncs[0].add(_scanned(jobId: 'job-a'));
+    await pumpEventQueue();
+
+    // A sign-out or reset clears the wallet while the completion's handler
+    // still waits on its balance read.
+    api.balanceGate = Completer<void>();
+    api.syncs[0].add(_complete());
+    await pumpEventQueue();
+    await sync.clearSensitiveStateForLock();
+    api.running = false;
+    api.balanceGate!.complete();
+    await pumpEventQueue();
+
+    sync.startSync();
+    await pumpEventQueue();
+    sync.stopTipChecksForTesting();
+    final next = container.read(syncProvider).requireValue;
+    expect(next.syncJobId, isEmpty);
+    expect(
+      next.lastSyncCompletedAt,
+      isNull,
+      reason: "the next wallet's sync does not inherit the completion",
+    );
   });
 
   test('stopping sync discards the queued start', () async {

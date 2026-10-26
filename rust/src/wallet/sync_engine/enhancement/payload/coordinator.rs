@@ -3,6 +3,8 @@
 //! A bounded pass handles private work first, rereads the atomic routing
 //! snapshot, and dispatches only explicitly public requests to lightwalletd.
 
+use std::collections::HashSet;
+
 use tonic::transport::Channel;
 use zakura_pir_client::enhance::transport;
 use zakura_pir_client::enhance::wallet::{Acceptance, PreparedWork};
@@ -18,6 +20,7 @@ use zcash_client_backend::{
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
+use zcash_primitives::transaction::TxId;
 
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
@@ -187,6 +190,7 @@ impl<'a> ProductionEnhancementEffects<'a> {
         lwd: &'a mut CompactTxStreamerClient<Channel>,
         cached: Option<&'a MemoryBlockSource>,
         gate: TransparentLookupGate,
+        held_public: HashSet<TxId>,
     ) -> Self {
         Self {
             network,
@@ -194,12 +198,13 @@ impl<'a> ProductionEnhancementEffects<'a> {
             lwd,
             cached,
             gate,
-            public: PublicPayloadExecutor::default(),
+            public: PublicPayloadExecutor::holding(held_public),
         }
     }
 
-    /// Reports the first retryable public payload failure from this run.
-    pub(in crate::wallet::sync_engine) fn finish(self) -> Result<(), SyncError> {
+    /// Returns the public payloads to ask again later, or the first local
+    /// database failure from this run.
+    pub(in crate::wallet::sync_engine) fn finish(self) -> Result<Vec<TxId>, SyncError> {
         self.public.finish()
     }
 }
@@ -211,7 +216,6 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
         request: IronwoodEnhanceDiscoveryRequest,
         should_exit: &impl Fn() -> bool,
     ) -> Result<(), EnhancePirRunError> {
-        let downloaded;
         let block = if let Some(block) = self
             .cached
             .and_then(|source| source.block_at(request.height))
@@ -225,7 +229,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
                 .map_err(|e| SyncError::db(format!("chain_height: {e}")))?;
             let (start, end) =
                 rediscovery_cover_range(request.height, tip, random_rediscovery_offset());
-            downloaded = await_request_with_cancel(
+            let downloaded = await_request_with_cancel(
                 crate::wallet::sync_engine::lwd::download_blocks(
                     self.lwd,
                     start,
@@ -244,7 +248,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
             return Err(EnhancePirRunError::ExitRequested);
         }
         let result = with_wallet_db_write_lock("enhance_pir.rediscover", || {
-            db.rebuild_ironwood_enhancement(request, block)
+            db.rebuild_ironwood_enhancement(request, &block)
         })
         .map_err(|e| SyncError::db(e.to_string()))?;
         if matches!(result, IronwoodEnhanceDiscoveryResult::Rejected) {

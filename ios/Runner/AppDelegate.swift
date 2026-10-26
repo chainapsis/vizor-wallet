@@ -665,6 +665,14 @@ import UIKit
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
 
+    // EventChannel for the thermal state and Low Power Mode: sync scans with
+    // less of the CPU as the device warms.
+    let devicePowerChannel = FlutterEventChannel(
+      name: "com.zcash.wallet/device_power",
+      binaryMessenger: messenger
+    )
+    devicePowerChannel.setStreamHandler(DevicePowerStreamHandler())
+
     let incomingUriChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/payment_uri",
       binaryMessenger: messenger
@@ -1341,6 +1349,44 @@ private enum WindowAppearanceHandler {
       window.overrideUserInterfaceStyle = style
       window.rootViewController?.overrideUserInterfaceStyle = style
     }
+  }
+}
+
+/// Emits `{thermal, lowPower}` on listen and whenever either changes.
+/// `thermal` is the `ProcessInfo.ThermalState` raw value (0 nominal through
+/// 3 critical).
+class DevicePowerStreamHandler: NSObject, FlutterStreamHandler {
+  private var observers: [NSObjectProtocol] = []
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    let send = {
+      let info = ProcessInfo.processInfo
+      events([
+        "thermal": info.thermalState.rawValue,
+        "lowPower": info.isLowPowerModeEnabled,
+      ])
+    }
+    send()
+    for name in [
+      ProcessInfo.thermalStateDidChangeNotification,
+      Notification.Name.NSProcessInfoPowerStateDidChange,
+    ] {
+      observers.append(
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+          send()
+        }
+      )
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    observers.forEach { NotificationCenter.default.removeObserver($0) }
+    observers = []
+    return nil
   }
 }
 

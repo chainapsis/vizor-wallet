@@ -18,6 +18,7 @@ import '../../../../main.dart' show log;
 import '../../../app_bootstrap.dart';
 import '../../../core/config/network_config.dart';
 import '../../../core/config/swap_feature_config.dart';
+import '../../../core/formatting/sync_status_label.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
@@ -1447,16 +1448,25 @@ class _HomeImportingContent extends StatelessWidget {
             height: 414,
             child: Stack(
               children: [
+                // The number's slot. Under a larger text scale the number
+                // scales down to fit it rather than clip.
                 Positioned(
+                  key: const ValueKey('home_desktop_importing_progress_slot'),
                   left: 0,
                   top: 0,
                   width: 340,
                   height: 48,
-                  child: Text(
-                    '$pct%',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.displayMedium.copyWith(
-                      color: colors.text.accent,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '$pct%',
+                        maxLines: 1,
+                        softWrap: false,
+                        style: withTabularFigures(
+                          AppTypography.displayMedium,
+                        ).copyWith(color: colors.text.accent),
+                      ),
                     ),
                   ),
                 ),
