@@ -14,10 +14,19 @@ wallet:
 - `TX_EXPIRING_SOON_BLOCKS` (3).
 - `next_activation_after`, `crosses` and `cap_expiry_at_branch_end`, all
   derived from `BranchId::height_bounds`.
+- `hold_heights`, the tip from which sends are refused before the next
+  upgrade.
 - `SEND_HOLD_MESSAGE`.
 
-`networkUpgradeHoldMessage` in `lib/src/core/zcash/network_upgrade_hold.dart`
-turns the Rust message into user copy.
+Dart reads these rules rather than restating them:
+
+- `get_network_upgrade_window` exposes `hold_heights`.
+  `networkUpgradeWindowProvider` applies it to the wallet's tip so swaps and
+  Gift Cards stop before side effects Rust cannot undo.
+- `networkUpgradeHoldMessage` in `lib/src/core/zcash/network_upgrade_hold.dart`
+  turns the Rust message into user copy.
+- `upgrade_hold_heights_match_the_send_refusal` checks `hold_heights` against
+  the send refusal tip by tip.
 
 ## What happens at each tip
 
@@ -26,7 +35,7 @@ turns the Rust message into user copy.
 | Tip | Effect |
 | --- | --- |
 | up to `A − 5` | Normal. |
-| `A − 4` to `A − 2` | Sends, send-max, shielding and swap deposits are refused: their expiry, capped at `A − 1`, is too close for nodes to accept. |
+| `A − 4` to `A − 2` | Sends, send-max, shielding, swap deposits and Gift Cards are refused: their expiry, capped at `A − 1`, is too close for nodes to accept. Swaps that send ZEC and Gift Card creation stop before they start. |
 | `A − 1` | New transactions target the new branch and are accepted again. |
 
 ## Sends
@@ -54,6 +63,21 @@ plainly expired and the payment can be rebuilt on the new branch.
 `networkUpgradeHoldMessage` maps the refusal to one copy on the send,
 shielding, swap, Pay and Gift Card screens, including signing screens that
 receive it as an `expired` result.
+
+## Swaps and Gift Cards
+
+Both have side effects before Rust builds the transaction, so they check
+`networkUpgradeWindowProvider` first:
+
+- A swap that sends ZEC stops before the swap provider starts it. Its fee
+  preflight does not apply the refusal, so the swap would otherwise wait for a
+  deposit Rust then refuses.
+- Gift Card creation, single and batch, stops before funding starts.
+
+A refusal that still comes from Rust, because the tip moved after the check,
+shows the same copy. Rust raises it before building the funding transaction,
+so a Gift Card whose submission marker was already written is not locked as
+possibly sent, and a held claim stays ready to claim.
 
 ## NU7 block spacing
 
