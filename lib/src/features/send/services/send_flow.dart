@@ -32,6 +32,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import 'sapling_params.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 /// Longest requester label the review screens will render.
 ///
@@ -549,6 +550,8 @@ const kWrongNetworkAddressMessage =
 ///
 /// Follows the card's status-line convention: one line, no trailing period.
 String friendlyPaymentRequestCheckError(String raw) {
+  final upgradeHold = networkUpgradeHoldMessage(raw);
+  if (upgradeHold != null) return upgradeHold;
   final lower = raw.toLowerCase();
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
@@ -560,6 +563,8 @@ String friendlyPaymentRequestCheckError(String raw) {
 }
 
 String friendlyProposeSendError(String raw) {
+  final upgradeHold = networkUpgradeHoldMessage(raw);
+  if (upgradeHold != null) return upgradeHold;
   if (isTransparentLedgerNeedsNewerBuildError(raw)) {
     return transparentLedgerNeedsNewerBuildMessage;
   }
@@ -598,6 +603,8 @@ String friendlyProposeSendError(String raw) {
 }
 
 String friendlyBroadcastError(String raw) {
+  final upgradeHold = networkUpgradeHoldMessage(raw);
+  if (upgradeHold != null) return upgradeHold;
   final lower = raw.toLowerCase();
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
     return 'Insufficient shielded balance to cover amount and fee.';
@@ -1151,7 +1158,8 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       txid: receiptTxid,
       statusMessage: pendingStatusMessage,
       error: broadcastExpired
-          ? 'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
+          ? networkUpgradeHoldMessage(broadcastMessageForFallback ?? '') ??
+                'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
           : null,
     );
   } catch (e) {

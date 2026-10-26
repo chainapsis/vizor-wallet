@@ -1,5 +1,6 @@
 import 'package:characters/characters.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/core/zcash/transparent_ledger_errors.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 
@@ -23,6 +24,15 @@ void main() {
         ),
         transparentLedgerNeedsNewerBuildMessage,
       );
+    });
+
+    test('explains the hold right before a network upgrade', () {
+      const raw =
+          "Propose failed: Transactions can't be sent this close to the "
+          'network upgrade. Try again after it activates.';
+      expect(friendlyProposeSendError(raw), kNetworkUpgradeHoldMessage);
+      expect(friendlyBroadcastError(raw), kNetworkUpgradeHoldMessage);
+      expect(friendlyPaymentRequestCheckError(raw), kNetworkUpgradeHoldMessage);
     });
 
     test('reports incomplete private recovery, not insufficient funds', () {

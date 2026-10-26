@@ -8,6 +8,7 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_device_selection.dart';
@@ -208,13 +209,15 @@ class _PaymentLinkLedgerSigningOverlayState
               !_terminal &&
               !_checkpointed &&
               _deviceGuidance?.retryable == false;
-          _error = _terminal
-              ? LedgerGiftFundingTerminalException.message
+          _error = error is LedgerGiftFundingTerminalException
+              ? error.userMessage
               : isLedgerLegacyOrchardRecoveryUnsupported(error)
               ? kLedgerLegacyOrchardRecoveryUnavailableMessage
               : _checkpointed
               ? 'Gift card funding is saved for recovery. Try again to check its status and finish saving.'
-              : _deviceGuidance?.message ?? _ledgerFailureMessage(error);
+              : networkUpgradeHoldMessage(error) ??
+                    _deviceGuidance?.message ??
+                    _ledgerFailureMessage(error);
         });
       }
     }
@@ -310,6 +313,7 @@ class _PaymentLinkLedgerSigningOverlayState
   Widget build(BuildContext context) {
     final unavailable =
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
+    final upgradeHold = _error == kNetworkUpgradeHoldMessage;
     final canRetry = !unavailable && !_terminal && !_requestNeedsRebuilding;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
@@ -331,6 +335,8 @@ class _PaymentLinkLedgerSigningOverlayState
                   (_deviceGuidance?.bluetoothRecovery ?? false),
               title: unavailable
                   ? 'Ledger app update required'
+                  : upgradeHold
+                  ? kNetworkUpgradeHoldActionLabel
                   : 'Gift card funding needs attention',
               statusLabel: _requestNeedsRebuilding
                   ? 'New gift card required'
@@ -340,6 +346,7 @@ class _PaymentLinkLedgerSigningOverlayState
                   !_checkpointed &&
                   !unavailable &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
+              showConnectionPicker: !upgradeHold,
               actionLabel: canRetry ? 'Try again' : null,
             )
           : null,

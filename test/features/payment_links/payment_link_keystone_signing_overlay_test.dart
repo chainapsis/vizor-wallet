@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
@@ -228,6 +229,70 @@ void main() {
     expect(completed, isTrue);
     expect(find.text('Broadcast timed out before confirmation.'), findsNothing);
     expect(find.text('Back to gift card'), findsNothing);
+  });
+
+  testWidgets('shows the hold copy for funding the upgrade expired', (
+    tester,
+  ) async {
+    final service = _FakeHardwareSigningService(
+      broadcastStatus: 'expired',
+      broadcastMessage:
+          "Transactions can't be sent this close to the network upgrade. "
+          'Try again after it activates.',
+    );
+    var completed = false;
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => PaymentLinkKeystoneSigningOverlay(
+            amountZatoshi: BigInt.from(10000000),
+            sourceAccountUuid: 'hardware-account',
+            onCancel: () {},
+            onFundingBroadcast: (_, _) async => completed = true,
+          ),
+        ),
+        GoRoute(
+          path: '/send/keystone/scan',
+          builder: (context, _) => Center(
+            child: TextButton(
+              key: const ValueKey('fake_keystone_signature_done'),
+              onPressed: () => context.pop<List<int>>(const [4, 5, 6]),
+              child: const Text('Return signature'),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          paymentLinkHardwareSigningServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.dark, child: child!),
+        ),
+      ),
+    );
+    addTearDown(router.dispose);
+
+    for (var i = 0; i < 20 && service.proofDrafts.isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('Get signature'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('fake_keystone_signature_done')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(completed, isFalse);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
   });
 
   testWidgets('discards the prepared draft when broadcast fails', (

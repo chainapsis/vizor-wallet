@@ -8,6 +8,7 @@ import '../../../../providers/sync_provider.dart';
 
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/zcash/network_upgrade_hold.dart';
 import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart';
 import '../../services/send_flow.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
@@ -265,6 +266,8 @@ class _MobileSendStatusScreenState
         _canRetryBroadcast
             ? (_error ??
                   'Wait for wallet sync, then retry this signed transaction.')
+            : _error == kNetworkUpgradeHoldMessage
+            ? kNetworkUpgradeHoldMessage
             : "Nothing was sent, your funds haven't moved. Try again.",
     };
   }

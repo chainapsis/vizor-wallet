@@ -21,6 +21,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/zcash/block_spacing.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -1732,8 +1733,13 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _page = PaymentLinksLocalPage.ready;
       });
       _confirmCardCreated(broadcastAccepted: funding.broadcastAccepted);
-    } catch (_) {
-      if (mounted) _showError('Gift card creation failed. Try again.');
+    } catch (error) {
+      if (mounted) {
+        _showError(
+          networkUpgradeHoldMessage(error) ??
+              'Gift card creation failed. Try again.',
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -2644,7 +2650,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
               : 'Receiving account changed. Open the gift card again to continue.',
         );
       }
-    } catch (_) {
+    } catch (error) {
       if (!mounted || !_isCurrentNavigation(epoch)) {
         if (mounted) {
           setState(() => _operationInProgress = false);
@@ -2656,10 +2662,11 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         if (mobile) setState(() => _operationInProgress = false);
         unawaited(_refreshReceivedClaims());
         _showError(
-          mobile
-              ? "Couldn't finish receiving this gift. Try again to check its status."
-              : 'Gift card claim failed. It may still be waiting for confirmation '
-                    'or may already be spent.',
+          networkUpgradeHoldMessage(error) ??
+              (mobile
+                  ? "Couldn't finish receiving this gift. Try again to check its status."
+                  : 'Gift card claim failed. It may still be waiting for confirmation '
+                        'or may already be spent.'),
         );
       }
     } finally {

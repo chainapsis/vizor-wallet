@@ -11,6 +11,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -33,6 +34,18 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
+  test('a batch refused for the upgrade reads as a rejection', () {
+    expect(
+      PaymentLinkBatchRejected.from(
+        StateError(
+          "Transactions can't be sent this close to the network upgrade. "
+          'Try again after it activates.',
+        ),
+      )?.message,
+      kNetworkUpgradeHoldMessage,
+    );
+  });
+
   for (final exactPool in ['orchard', 'sapling', 'ironwood']) {
     test(
       'claim details persist the exact $exactPool pool instead of the legacy label',

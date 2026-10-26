@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 const _statusAutoRefreshMessage =
     "We couldn't refresh the latest status.\n"
@@ -41,6 +42,10 @@ String swapFailureMessage(
   SwapFailureSurface surface = SwapFailureSurface.swap,
   bool torEnabled = false,
 }) {
+  if (operation == SwapFailureOperation.sendZecDeposit) {
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
+  }
   final category = swapFailureCategory(
     operation,
     error,

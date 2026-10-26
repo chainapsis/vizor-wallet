@@ -17,6 +17,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_hardware_signing_service.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 class SwapKeystoneSigningOverlay extends ConsumerStatefulWidget {
   const SwapKeystoneSigningOverlay({
@@ -260,6 +261,7 @@ class _SwapKeystoneSigningOverlayState
         setState(() {
           _phase = _SwapKeystonePhase.failed;
           _error =
+              networkUpgradeHoldMessage(result.message ?? '') ??
               result.message ??
               'The transaction status is uncertain. Refresh activity before trying again.';
         });
@@ -397,6 +399,8 @@ class _SwapKeystoneSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';

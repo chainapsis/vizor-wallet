@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
@@ -2280,6 +2281,48 @@ void main() {
     expect(find.text('send-route'), findsOneWidget);
     expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
   });
+
+  testWidgets(
+    'Ledger upgrade hold shows the hold copy, not the device',
+    (tester) async {
+      final operationService = _FakeLedgerSignedOperationService();
+      var signerCalls = 0;
+      rustApi.createPcztError = StateError(
+        "Transactions can't be sent this close to the network upgrade. "
+        'Try again after it activates.',
+      );
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerOperationService: operationService,
+          ledgerSigner: (_) async {
+            signerCalls++;
+            return _fakeSignatureBytes;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Paused for network upgrade'), findsOneWidget);
+      expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+      expect(find.textContaining('Check your device'), findsNothing);
+      expect(find.text('Ledger signing failed'), findsNothing);
+      expect(find.text('Create new transaction'), findsNothing);
+      expect(find.text('New transaction required'), findsNothing);
+      expect(find.text('Try again'), findsNothing);
+      expect(signerCalls, 0);
+      expect(operationService.checkpoints, isEmpty);
+    },
+  );
 
   testWidgets('Ledger checkpoint retry preserves bytes without re-signing', (
     tester,

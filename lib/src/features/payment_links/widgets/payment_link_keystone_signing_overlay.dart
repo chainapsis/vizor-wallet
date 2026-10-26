@@ -20,6 +20,7 @@ import '../../send/widgets/sapling_params_prompt.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_service.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   const PaymentLinkKeystoneSigningOverlay({
@@ -292,7 +293,8 @@ class _PaymentLinkKeystoneSigningOverlayState
       if (!fundingAccepted) {
         // The network may already hold this transaction, so the draft stays.
         throw _PaymentLinkFundingUncertainException(
-          result.message ??
+          networkUpgradeHoldMessage(result.message ?? '') ??
+              result.message ??
               'The funding status is uncertain. Check activity before trying again.',
         );
       }
@@ -567,6 +569,8 @@ class _PaymentLinkKeystoneSigningOverlayState
 
   String _friendlyError(Object error) {
     if (error is _PaymentLinkFundingUncertainException) return error.message;
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('sapling') || lower.contains('download')) {
       return 'Required proving parameters could not be prepared.';
