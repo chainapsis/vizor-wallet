@@ -1092,6 +1092,7 @@ class _MobileMigrationRedesignedStatusState
     final timing = nextHeight != null && currentHeight > 0
         ? migrationHeightRemainingDurationLabel(
             nextHeight,
+            blockTimes: _blockTimes(),
             currentHeight: currentHeight,
           ).replaceFirst('~in ', '~')
         : 'Timing is updating';
@@ -1249,6 +1250,9 @@ class _MobileMigrationRedesignedStatusState
     );
   }
 
+  BlockTimeEstimate _blockTimes() =>
+      ref.read(blockSpacingProvider).fromTip(_currentHeight());
+
   MigrationNextActionPresentation _nextMigrationPresentation(
     rust_sync.MigrationStatus status, {
     required bool requiresInput,
@@ -1273,6 +1277,7 @@ class _MobileMigrationRedesignedStatusState
   String _completionEstimateText(rust_sync.MigrationStatus status) {
     return migrationApproximateCompletionTimingLabel(
       status,
+      blockTimes: _blockTimes(),
       currentHeight: _currentHeight(),
     );
   }

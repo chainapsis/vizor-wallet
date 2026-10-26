@@ -20,7 +20,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_toast.dart';
+import '../../../core/zcash/block_spacing.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -93,7 +95,6 @@ class PaymentLinksScreen extends ConsumerStatefulWidget {
 
 class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     with _PaymentLinksBatchCreation {
-  static const _estimatedBlockTimeSeconds = 75;
   static const _linkAvailableSoonRemainingConfirmations = 3;
   static const _syncingFeeEstimateMessage =
       'Card fee will be estimated when wallet sync completes.';
@@ -113,20 +114,24 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     'December',
   ];
 
-  static String _estimatedLinkWaitLabel(PaymentLinkFundingProgress progress) {
+  BlockTimeEstimate _blockTimes() => ref
+      .read(blockSpacingProvider)
+      .fromTip(ref.read(syncProvider).asData?.value.chainTipHeight ?? 0);
+
+  String _estimatedLinkWaitLabel(PaymentLinkFundingProgress progress) {
     final unconfirmed =
         progress.confirmationTarget - progress.confirmationCount;
     final remaining = unconfirmed > 0 ? unconfirmed : 0;
-    final totalSeconds = remaining * _estimatedBlockTimeSeconds;
+    final totalSeconds = _blockTimes().secondsForBlocks(remaining);
     final minutes = totalSeconds ~/ 60;
     final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
     return 'Wait $minutes:$seconds to get the link';
   }
 
-  static String _estimatedClaimWaitLabel(PaymentLinkClaimSession session) {
+  String _estimatedClaimWaitLabel(PaymentLinkClaimSession session) {
     final remaining =
         kPaymentLinkClaimConfirmationTarget - session.fundingConfirmationCount;
-    final totalSeconds = max(remaining, 0) * _estimatedBlockTimeSeconds;
+    final totalSeconds = _blockTimes().secondsForBlocks(max(remaining, 0));
     final minutes = totalSeconds ~/ 60;
     final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
     return 'Wait $minutes:$seconds to claim';

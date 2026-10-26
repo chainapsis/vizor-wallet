@@ -226,6 +226,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
 
   @protected
+  BlockSpacingSchedule dco_decode_block_spacing_schedule(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
@@ -1636,6 +1639,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BlockMetaInfo sse_decode_block_meta_info(SseDeserializer deserializer);
+
+  @protected
+  BlockSpacingSchedule sse_decode_block_spacing_schedule(
+    SseDeserializer deserializer,
+  );
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
@@ -3433,6 +3441,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_block_meta_info(BlockMetaInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_block_spacing_schedule(
+    BlockSpacingSchedule self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
