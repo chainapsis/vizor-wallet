@@ -82,7 +82,7 @@ use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::TxVersion;
 use zcash_primitives::transaction::{
-    builder::{BuildConfig, Builder, BundlePadding},
+    builder::{default_tx_expiry_delta, BuildConfig, Builder, BundlePadding},
     fees::{
         transparent::InputSize as TransparentInputSize,
         zip317::{P2PKH_STANDARD_INPUT_SIZE, P2PKH_STANDARD_OUTPUT_SIZE},
@@ -105,6 +105,7 @@ use crate::wallet::db::{
 use crate::wallet::failure::{FailureCode, WalletFailure};
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::network_upgrade;
 use crate::wallet::sync_engine;
 use crate::wallet::sync_engine::enhancement::private_queries_active;
 use crate::wallet::{confirmations_policy, payment_link_claim_confirmations_policy};
@@ -145,17 +146,57 @@ impl SendPurpose {
 }
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
-const SEND_PROPOSAL_LOCK_BLOCKS: u32 = 40;
 
-fn send_proposal_lock_expiry(min_target_height: BlockHeight) -> BlockHeight {
-    min_target_height + SEND_PROPOSAL_LOCK_BLOCKS
+/// Default expiry and input-lock window for a transaction targeting
+/// `target_height`, capped at the end of its consensus branch.
+fn send_expiry_height_for_target<P: Parameters>(
+    network: &P,
+    target_height: BlockHeight,
+) -> BlockHeight {
+    let delta = default_tx_expiry_delta(network, target_height);
+    let expiry = BlockHeight::from_u32(u32::from(target_height).saturating_add(delta));
+    network_upgrade::cap_expiry_at_branch_end(network, target_height, expiry)
 }
 
-fn send_proposal_is_expired(
+/// Refuses a transaction whose expiry the next upgrade cuts so short that
+/// nodes would reject it as expiring soon.
+fn ensure_send_outside_upgrade_edge<P: Parameters>(
+    network: &P,
+    target_height: BlockHeight,
+) -> Result<(), String> {
+    if send_expiry_height_for_target(network, target_height)
+        < target_height + network_upgrade::TX_EXPIRING_SOON_BLOCKS
+    {
+        return Err(network_upgrade::SEND_HOLD_MESSAGE.to_string());
+    }
+    Ok(())
+}
+
+/// `error` for a proposal that expired by `current_target`, or the upgrade
+/// hold when a new proposal would be refused there too.
+fn expired_send_proposal_error<P: Parameters>(
+    network: &P,
+    current_target: BlockHeight,
+    error: &str,
+) -> String {
+    ensure_send_outside_upgrade_edge(network, current_target)
+        .err()
+        .unwrap_or_else(|| error.to_string())
+}
+
+fn send_proposal_lock_expiry<P: Parameters>(
+    network: &P,
+    min_target_height: BlockHeight,
+) -> BlockHeight {
+    send_expiry_height_for_target(network, min_target_height)
+}
+
+fn send_proposal_is_expired<P: Parameters>(
+    network: &P,
     min_target_height: BlockHeight,
     current_target_height: BlockHeight,
 ) -> bool {
-    current_target_height >= send_proposal_lock_expiry(min_target_height)
+    current_target_height >= send_proposal_lock_expiry(network, min_target_height)
 }
 
 pub(super) async fn live_send_expiry_height(
@@ -167,28 +208,55 @@ pub(super) async fn live_send_expiry_height(
         .await
         .map_err(|e| format!("Read live chain tip before transaction construction: {e}"))?;
     let tip = u32::try_from(tip.height).map_err(|_| "Live chain tip exceeds u32")?;
-    send_expiry_height_for_live_tip(min_target_height, tip)
+    send_expiry_height_for_live_tip(&network, min_target_height, tip)
 }
 
-fn send_expiry_height_for_live_tip(
+fn send_expiry_height_for_live_tip<P: Parameters>(
+    network: &P,
     min_target_height: BlockHeight,
     live_tip: u32,
 ) -> Result<BlockHeight, String> {
     let live_target = live_tip
         .checked_add(1)
         .ok_or("Live transaction target height overflow")?;
-    let original_expiry = u32::from(send_proposal_lock_expiry(min_target_height));
+    let original_expiry = u32::from(send_proposal_lock_expiry(network, min_target_height));
     if live_target >= original_expiry {
-        return Err(
-            "Send proposal expired against the live chain tip; review the payment and create a new proposal"
-                .to_string(),
-        );
+        return Err(expired_send_proposal_error(
+            network,
+            BlockHeight::from_u32(live_target),
+            "Send proposal expired against the live chain tip; review the payment and create a new proposal",
+        ));
     }
-    live_target
-        .max(u32::from(min_target_height))
-        .checked_add(SEND_PROPOSAL_LOCK_BLOCKS)
-        .map(BlockHeight::from_u32)
-        .ok_or_else(|| "Live transaction expiry height overflow".to_string())
+    let target_height = BlockHeight::from_u32(live_target).max(min_target_height);
+    ensure_send_outside_upgrade_edge(network, target_height)?;
+    Ok(send_expiry_height_for_target(network, target_height))
+}
+
+/// Expiry for a shielding proposal targeting `min_target_height`, built
+/// against the live tip, which the wallet's target can trail. Refused when the
+/// live tip has passed the proposal's branch or nodes would reject it as
+/// expiring soon.
+fn shielding_expiry_for_proposal<P: Parameters>(
+    network: &P,
+    min_target_height: BlockHeight,
+    live_tip: u32,
+) -> Result<BlockHeight, String> {
+    let live_target = BlockHeight::from_u32(
+        live_tip
+            .checked_add(1)
+            .ok_or("Shielding target height overflow")?,
+    )
+    .max(min_target_height);
+    if network_upgrade::crosses(
+        network,
+        u32::from(min_target_height),
+        u32::from(live_target),
+    ) {
+        return Err(network_upgrade::SEND_HOLD_MESSAGE.to_string());
+    }
+    ensure_send_outside_upgrade_edge(network, live_target)?;
+    Ok(send_expiry_height_for_target(network, live_target)
+        .max(send_proposal_lock_expiry(network, min_target_height)))
 }
 
 fn immediate_migration_lock_expiry(target_height: BlockHeight) -> Result<BlockHeight, String> {
@@ -891,9 +959,13 @@ fn propose_send_with_request(
             .map(|step| u64::from(step.balance().fee_required()))
             .sum();
 
+        ensure_send_outside_upgrade_edge(
+            &network,
+            BlockHeight::from(proposal.min_target_height()),
+        )?;
         let input_refs = proposal_input_refs(&proposal);
         let lock_expiry_height =
-            send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()));
+            send_proposal_lock_expiry(&network, BlockHeight::from(proposal.min_target_height()));
         let (id, _) = super::reserve_proposal_inputs(
             &mut db,
             db_path,
@@ -1240,30 +1312,27 @@ pub(crate) async fn create_shield_transparent_pczt(
     account_uuid: &str,
     send_flow_id: &str,
 ) -> Result<ShieldTransparentPcztResult, WalletFailure> {
-    let live_expiry_height = {
+    let live_tip = {
         let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
             .await
             .map_err(|e| format!("Read live chain tip before shielding PCZT: {e}"))?;
-        let tip = u32::try_from(tip.height).map_err(|_| "Shielding PCZT chain tip exceeds u32")?;
-        tip.checked_add(1 + SEND_PROPOSAL_LOCK_BLOCKS)
-            .map(BlockHeight::from_u32)
-            .ok_or("Shielding PCZT expiry height overflow")?
+        u32::try_from(tip.height).map_err(|_| "Shielding PCZT chain tip exceeds u32")?
     };
-    create_shield_transparent_pczt_with_expiry(
+    create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         account_uuid,
         send_flow_id,
-        Some(live_expiry_height),
+        Some(live_tip),
     )
 }
 
-fn create_shield_transparent_pczt_with_expiry(
+fn create_shield_transparent_pczt_for_live_tip(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     send_flow_id: &str,
-    expiry_height: Option<BlockHeight>,
+    live_tip: Option<u32>,
 ) -> Result<ShieldTransparentPcztResult, WalletFailure> {
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
@@ -1295,13 +1364,17 @@ fn create_shield_transparent_pczt_with_expiry(
         // The transaction version rides on the proposal. Expiry is raised to
         // at least the live-tip policy computed before entering the DB lock.
         let proposal = proposal.with_proposed_version(proposed_tx_version);
-        let expiry_height = expiry_height.map(|height| {
-            height.max(send_proposal_lock_expiry(BlockHeight::from(
-                proposal.min_target_height(),
-            )))
-        });
+        let expiry_height = live_tip
+            .map(|tip| {
+                shielding_expiry_for_proposal(
+                    &network,
+                    BlockHeight::from(proposal.min_target_height()),
+                    tip,
+                )
+            })
+            .transpose()?;
         let lock_expiry = expiry_height.unwrap_or_else(|| {
-            send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()))
+            send_proposal_lock_expiry(&network, BlockHeight::from(proposal.min_target_height()))
         });
         let inputs = proposal
             .steps()
@@ -1371,14 +1444,11 @@ pub(crate) async fn shield_transparent_balance(
     seed: SecretVec<u8>,
 ) -> Result<ShieldTransparentResult, WalletFailure> {
     let shielding_threshold = shielding_threshold()?;
-    let live_expiry_height = {
+    let live_tip = {
         let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
             .await
             .map_err(|e| format!("Read live chain tip before shielding: {e}"))?;
-        let tip = u32::try_from(tip.height).map_err(|_| "Shielding chain tip exceeds u32")?;
-        tip.checked_add(1 + SEND_PROPOSAL_LOCK_BLOCKS)
-            .map(BlockHeight::from_u32)
-            .ok_or("Shielding expiry height overflow")?
+        u32::try_from(tip.height).map_err(|_| "Shielding chain tip exceeds u32")?
     };
 
     let (txids, fee_zatoshi, shielded_zatoshi) = with_wallet_db_write_lock(
@@ -1412,9 +1482,11 @@ pub(crate) async fn shield_transparent_balance(
 
             let spend_prover = NoOpSpendProver;
             let output_prover = NoOpOutputProver;
-            let expiry_height = live_expiry_height.max(send_proposal_lock_expiry(
+            let expiry_height = shielding_expiry_for_proposal(
+                &network,
                 BlockHeight::from(proposal.min_target_height()),
-            ));
+                live_tip,
+            )?;
             let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
                 &mut db,
                 &network,
@@ -1577,11 +1649,12 @@ async fn execute_stored_proposal(
                 .map_err(|e| format!("Read wallet target height before send: {e}"))?
                 .ok_or("Wallet must sync before executing a send proposal")?;
             let current_target_height = BlockHeight::from(target_height);
-            if send_proposal_is_expired(min_target_height, current_target_height) {
-                return Err(
-                    "Send proposal expired; review the payment and create a new proposal"
-                        .to_string(),
-                );
+            if send_proposal_is_expired(&network, min_target_height, current_target_height) {
+                return Err(expired_send_proposal_error(
+                    &network,
+                    current_target_height,
+                    "Send proposal expired; review the payment and create a new proposal",
+                ));
             }
             // Reassert ownership while holding the process-wide write lock.
             // If another flow acquired these inputs after this proposal's lock
