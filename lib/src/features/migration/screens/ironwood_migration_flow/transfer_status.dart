@@ -29,7 +29,9 @@ const _migrationPreparationCarouselItems = [
   ),
 ];
 
-final _migrationInProgressCarouselItems = [
+List<AppCarouselItem> _migrationInProgressCarouselItems(
+  int secondsPerBlock,
+) => [
   const AppCarouselItem.icon(
     message:
         'You can close Vizor anytime. Migration will pause, and you can '
@@ -39,8 +41,8 @@ final _migrationInProgressCarouselItems = [
   ),
   AppCarouselItem.icon(
     message:
-        'Each Zcash block takes about $_migrationEstimatedSecondsPerBlock '
-        'seconds to create, but timing can vary with network conditions.',
+        'Each Zcash block takes about $secondsPerBlock seconds to create, '
+        'but timing can vary with network conditions.',
     tileColor: _migrationCarouselGreen,
     icon: AppIcons.migrationTimer,
     iconSize: 24,
@@ -315,7 +317,7 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
   }
 }
 
-class _MigrationLiveStatusContent extends StatelessWidget {
+class _MigrationLiveStatusContent extends ConsumerWidget {
   const _MigrationLiveStatusContent({
     super.key,
     required this.isPreparing,
@@ -346,8 +348,9 @@ class _MigrationLiveStatusContent extends StatelessWidget {
   final bool waitingForAnchor;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final blockTimes = ref.watch(blockSpacingProvider).fromTip(currentHeight);
     final isSigning = action == _StatusAction.needsInput;
     final isComplete = action == _StatusAction.backHome;
     final completedAmount = _migrationCompletedAmount(values, statuses);
@@ -573,6 +576,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                             value: _preparationCompletionEstimateDisplay(
                               status,
                               currentHeight,
+                              blockTimes,
                             ),
                             secondary: true,
                           ),
@@ -606,6 +610,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                             label: 'Est. completion',
                             value: _migrationCompletionEstimateDisplay(
                               status,
+                              blockTimes: blockTimes,
                               currentHeight: currentHeight,
                               needsInput: isSigning,
                               parts: parts,
@@ -680,7 +685,9 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                 ),
                 items: isPreparing
                     ? _migrationPreparationCarouselItems
-                    : _migrationInProgressCarouselItems,
+                    : _migrationInProgressCarouselItems(
+                        blockTimes.secondsPerBlock,
+                      ),
                 semanticLabel: isPreparing
                     ? 'Migration preparation information'
                     : 'Migration information',
@@ -851,6 +858,7 @@ String _overallPreparationProgressDisplay(rust_sync.MigrationStatus status) {
 String _preparationCompletionEstimateDisplay(
   rust_sync.MigrationStatus status,
   int currentHeight,
+  BlockTimeEstimate blockTimes,
 ) {
   final remaining = _preparationRemainingCount(status);
   if (remaining == 0) return 'Complete';
@@ -863,7 +871,7 @@ String _preparationCompletionEstimateDisplay(
       1,
       remaining * meanDelay + confirmationTarget,
     );
-    return _formatMigrationBlockDurationEstimate(remainingBlocks);
+    return _formatMigrationBlockDurationEstimate(remainingBlocks, blockTimes);
   }
 
   final projectedHeight = transactions.fold<int>(
@@ -872,7 +880,7 @@ String _preparationCompletionEstimateDisplay(
         math.max(height, transaction.projectedCompletionHeight),
   );
   final remainingBlocks = math.max(1, projectedHeight - currentHeight);
-  return _formatMigrationBlockDurationEstimate(remainingBlocks);
+  return _formatMigrationBlockDurationEstimate(remainingBlocks, blockTimes);
 }
 
 class _PreparationRingDetail extends StatelessWidget {

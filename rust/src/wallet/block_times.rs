@@ -12,16 +12,54 @@
 //! runs it. Past the last entry, callers pass a chain point that carries no
 //! wallet-specific information (the lightwalletd tip, or the wallet's own
 //! highest scanned block), and without one the functions extrapolate at the
-//! post-Blossom target spacing.
+//! target spacing.
+//!
+//! NU7 (ZIP 218) cuts the target spacing from 75 to 25 seconds. A span that
+//! contains the activation keeps its measured end times but splits its time
+//! 3:1 per block on either side of it.
 
 mod mainnet_data;
 
 use mainnet_data::{START_HEIGHT, STEP, TIMES};
+use zcash_protocol::consensus::{
+    Network, NetworkUpgrade, Parameters, NU7_POW_TARGET_SPACING_RATIO,
+};
 
 use crate::wallet::network::WalletNetwork;
 
-/// Mainnet target block spacing since Blossom.
-const TARGET_SPACING_SECONDS: u64 = 75;
+/// Target block spacing since Blossom, in seconds.
+pub(crate) const PRE_NU7_BLOCK_SECONDS: u32 = 75;
+/// Target block spacing from NU7 activation (ZIP 218), in seconds.
+pub(crate) const NU7_BLOCK_SECONDS: u32 = PRE_NU7_BLOCK_SECONDS / NU7_POW_TARGET_SPACING_RATIO;
+
+const TARGET_SPACING_SECONDS: u64 = PRE_NU7_BLOCK_SECONDS as u64;
+const NU7_TARGET_SPACING_SECONDS: u64 = NU7_BLOCK_SECONDS as u64;
+
+/// Mainnet NU7 activation height, once the protocol crate schedules it.
+fn mainnet_nu7_activation() -> Option<u64> {
+    Network::MainNetwork
+        .activation_height(NetworkUpgrade::Nu7)
+        .map(|height| u64::from(u32::from(height)))
+}
+
+/// The last pre-NU7 block when it lies strictly inside `lower..upper`, where
+/// the target spacing changes.
+fn nu7_kink_inside(lower: u64, upper: u64, nu7: Option<u64>) -> Option<u64> {
+    let last_pre_nu7 = nu7?.checked_sub(1)?;
+    (lower < last_pre_nu7 && last_pre_nu7 < upper).then_some(last_pre_nu7)
+}
+
+/// Target-spacing seconds from block `from` to block `to`.
+fn target_seconds(from: u64, to: u64, nu7: Option<u64>) -> u64 {
+    let blocks = to.saturating_sub(from);
+    let pre_nu7 = match nu7 {
+        Some(activation) => activation.saturating_sub(1).min(to).saturating_sub(from),
+        None => blocks,
+    };
+    pre_nu7
+        .saturating_mul(TARGET_SPACING_SECONDS)
+        .saturating_add((blocks - pre_nu7).saturating_mul(NU7_TARGET_SPACING_SECONDS))
+}
 
 /// A block height and its header time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +120,14 @@ pub(crate) fn mainnet_height_for_time(
     target_epoch_seconds: i64,
     tip: Option<BlockTimePoint>,
 ) -> u64 {
+    height_for_time(target_epoch_seconds, tip, mainnet_nu7_activation())
+}
+
+fn height_for_time(
+    target_epoch_seconds: i64,
+    tip: Option<BlockTimePoint>,
+    nu7: Option<u64>,
+) -> u64 {
     let first = table_point(0);
     if target_epoch_seconds <= i64::from(first.time) {
         return first.height;
@@ -99,15 +145,16 @@ pub(crate) fn mainnet_height_for_time(
             table_point(index - 1),
             table_point(index),
             target_epoch_seconds,
+            nu7,
         )
     } else {
         let last = last_table_point();
         match usable_upper(tip) {
-            Some(upper) => interpolate_height(last, upper, target_epoch_seconds),
+            Some(upper) => interpolate_height(last, upper, target_epoch_seconds, nu7),
             None => {
                 let elapsed =
                     u64::try_from(target_epoch_seconds - i64::from(last.time)).unwrap_or_default();
-                last.height + elapsed / TARGET_SPACING_SECONDS
+                extrapolate_height(last, elapsed, nu7)
             }
         }
     };
@@ -123,6 +170,10 @@ pub(crate) fn mainnet_height_for_time(
 /// the table, `upper` (a known later block) anchors the estimate; without one
 /// the estimate extrapolates at the target spacing.
 pub(crate) fn mainnet_time_for_height(height: u64, upper: Option<BlockTimePoint>) -> u32 {
+    time_for_height(height, upper, mainnet_nu7_activation())
+}
+
+fn time_for_height(height: u64, upper: Option<BlockTimePoint>, nu7: Option<u64>) -> u32 {
     let first = table_point(0);
     if height <= first.height {
         return first.time;
@@ -130,48 +181,90 @@ pub(crate) fn mainnet_time_for_height(height: u64, upper: Option<BlockTimePoint>
 
     let index = usize::try_from((height - first.height) / STEP).unwrap_or(usize::MAX);
     if index < TIMES.len() - 1 {
-        return interpolate_time(table_point(index), table_point(index + 1), height);
+        return interpolate_time(table_point(index), table_point(index + 1), height, nu7);
     }
 
     let last = last_table_point();
     match usable_upper(upper) {
-        Some(upper) if height <= upper.height => interpolate_time(last, upper, height),
-        Some(upper) => extrapolate_time(upper, height),
-        None => extrapolate_time(last, height),
+        Some(upper) if height <= upper.height => interpolate_time(last, upper, height, nu7),
+        Some(upper) => extrapolate_time(upper, height, nu7),
+        None => extrapolate_time(last, height, nu7),
     }
 }
 
-fn interpolate_height(lower: BlockTimePoint, upper: BlockTimePoint, target: i64) -> u64 {
+fn interpolate_height(
+    lower: BlockTimePoint,
+    upper: BlockTimePoint,
+    target: i64,
+    nu7: Option<u64>,
+) -> u64 {
     let time_span = i128::from(upper.time) - i128::from(lower.time);
     let height_span = i128::from(upper.height) - i128::from(lower.height);
     if time_span <= 0 {
         return lower.height;
     }
-    let delta = divide_round_nearest(
-        (i128::from(target) - i128::from(lower.time)) * height_span,
-        time_span,
-    );
+    let elapsed = i128::from(target) - i128::from(lower.time);
+    let delta = match nu7_kink_inside(lower.height, upper.height, nu7) {
+        // Measure `elapsed` in target-spacing seconds, then invert the
+        // per-side spacing.
+        Some(kink) => {
+            let scaled = elapsed * i128::from(target_seconds(lower.height, upper.height, nu7));
+            let pre_nu7 = i128::from(target_seconds(lower.height, kink, nu7)) * time_span;
+            if scaled <= pre_nu7 {
+                divide_round_nearest(scaled, i128::from(TARGET_SPACING_SECONDS) * time_span)
+            } else {
+                i128::from(kink - lower.height)
+                    + divide_round_nearest(
+                        scaled - pre_nu7,
+                        i128::from(NU7_TARGET_SPACING_SECONDS) * time_span,
+                    )
+            }
+        }
+        None => divide_round_nearest(elapsed * height_span, time_span),
+    };
     (i128::from(lower.height) + delta).clamp(i128::from(lower.height), i128::from(upper.height))
         as u64
 }
 
-fn interpolate_time(lower: BlockTimePoint, upper: BlockTimePoint, height: u64) -> u32 {
+fn interpolate_time(
+    lower: BlockTimePoint,
+    upper: BlockTimePoint,
+    height: u64,
+    nu7: Option<u64>,
+) -> u32 {
     let time_span = i128::from(upper.time) - i128::from(lower.time);
     let height_span = i128::from(upper.height) - i128::from(lower.height);
     if height_span <= 0 {
         return lower.time;
     }
-    let delta = divide_round_nearest(
-        (i128::from(height) - i128::from(lower.height)) * time_span,
-        height_span,
-    );
+    let delta = match nu7_kink_inside(lower.height, upper.height, nu7) {
+        Some(_) => divide_round_nearest(
+            i128::from(target_seconds(lower.height, height.min(upper.height), nu7)) * time_span,
+            i128::from(target_seconds(lower.height, upper.height, nu7)),
+        ),
+        None => divide_round_nearest(
+            (i128::from(height) - i128::from(lower.height)) * time_span,
+            height_span,
+        ),
+    };
     (i128::from(lower.time) + delta).clamp(i128::from(lower.time), i128::from(upper.time)) as u32
 }
 
-fn extrapolate_time(from: BlockTimePoint, height: u64) -> u32 {
-    let elapsed = height
-        .saturating_sub(from.height)
-        .saturating_mul(TARGET_SPACING_SECONDS);
+fn extrapolate_height(from: BlockTimePoint, elapsed: u64, nu7: Option<u64>) -> u64 {
+    let pre_nu7_blocks = match nu7 {
+        Some(activation) => activation.saturating_sub(1).saturating_sub(from.height),
+        None => u64::MAX,
+    };
+    let pre_nu7_seconds = pre_nu7_blocks.saturating_mul(TARGET_SPACING_SECONDS);
+    if elapsed <= pre_nu7_seconds {
+        from.height + elapsed / TARGET_SPACING_SECONDS
+    } else {
+        from.height + pre_nu7_blocks + (elapsed - pre_nu7_seconds) / NU7_TARGET_SPACING_SECONDS
+    }
+}
+
+fn extrapolate_time(from: BlockTimePoint, height: u64, nu7: Option<u64>) -> u32 {
+    let elapsed = target_seconds(from.height, height, nu7);
     u32::try_from(u64::from(from.time).saturating_add(elapsed)).unwrap_or(u32::MAX)
 }
 
@@ -187,6 +280,16 @@ fn divide_round_nearest(numerator: i128, denominator: i128) -> i128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The table-only expectations below hold while NU7 is unscheduled; the
+    // NU7 tests pass an activation explicitly.
+    fn pre_nu7_time(height: u64, upper: Option<BlockTimePoint>) -> u32 {
+        time_for_height(height, upper, None)
+    }
+
+    fn pre_nu7_height(target_epoch_seconds: i64, tip: Option<BlockTimePoint>) -> u64 {
+        height_for_time(target_epoch_seconds, tip, None)
+    }
 
     const SAPLING_ACTIVATION: BlockTimePoint = BlockTimePoint {
         height: 419_200,
@@ -268,7 +371,7 @@ mod tests {
     #[test]
     fn known_blocks_round_trip_within_tolerance() {
         for block in KNOWN_BLOCKS {
-            let time = i64::from(mainnet_time_for_height(block.height, None));
+            let time = i64::from(pre_nu7_time(block.height, None));
             assert!(
                 (time - i64::from(block.time)).abs() <= TOLERANCE_SECONDS,
                 "time for {}: {time} vs {}",
@@ -276,8 +379,8 @@ mod tests {
                 block.time
             );
 
-            let height = mainnet_height_for_time(i64::from(block.time), None);
-            let estimated_time = i64::from(mainnet_time_for_height(height, None));
+            let height = pre_nu7_height(i64::from(block.time), None);
+            let estimated_time = i64::from(pre_nu7_time(height, None));
             assert!(
                 (estimated_time - i64::from(block.time)).abs() <= TOLERANCE_SECONDS,
                 "height for {}: {height}",
@@ -305,32 +408,29 @@ mod tests {
     fn table_points_are_exact() {
         for index in [0, 1, TIMES.len() / 2, TIMES.len() - 1] {
             let point = table_point(index);
-            assert_eq!(mainnet_time_for_height(point.height, None), point.time);
+            assert_eq!(pre_nu7_time(point.height, None), point.time);
         }
     }
 
     #[test]
     fn dates_before_sapling_clamp_to_activation() {
-        assert_eq!(mainnet_height_for_time(0, None), SAPLING_ACTIVATION.height);
+        assert_eq!(pre_nu7_height(0, None), SAPLING_ACTIVATION.height);
         assert_eq!(
-            mainnet_height_for_time(i64::from(SAPLING_ACTIVATION.time), None),
+            pre_nu7_height(i64::from(SAPLING_ACTIVATION.time), None),
             SAPLING_ACTIVATION.height
         );
-        assert_eq!(mainnet_time_for_height(1, None), SAPLING_ACTIVATION.time);
+        assert_eq!(pre_nu7_time(1, None), SAPLING_ACTIVATION.time);
     }
 
     #[test]
     fn heights_never_exceed_the_tip() {
         let tip = tip_after_table();
-        assert_eq!(
-            mainnet_height_for_time(i64::from(tip.time), Some(tip)),
-            tip.height
-        );
-        assert_eq!(mainnet_height_for_time(i64::MAX, Some(tip)), tip.height);
+        assert_eq!(pre_nu7_height(i64::from(tip.time), Some(tip)), tip.height);
+        assert_eq!(pre_nu7_height(i64::MAX, Some(tip)), tip.height);
 
         let stale_tip = table_point(TIMES.len() / 2);
         assert_eq!(
-            mainnet_height_for_time(i64::from(last_table_point().time), Some(stale_tip)),
+            pre_nu7_height(i64::from(last_table_point().time), Some(stale_tip)),
             stale_tip.height
         );
     }
@@ -345,12 +445,9 @@ mod tests {
         };
         let midpoint = i64::from(last.time) + 5_000 * 100;
 
+        assert_eq!(pre_nu7_height(midpoint, Some(tip)), last.height + 5_000);
         assert_eq!(
-            mainnet_height_for_time(midpoint, Some(tip)),
-            last.height + 5_000
-        );
-        assert_eq!(
-            mainnet_height_for_time(midpoint, None),
+            pre_nu7_height(midpoint, None),
             last.height + 5_000 * 100 / 75
         );
     }
@@ -364,26 +461,23 @@ mod tests {
         };
 
         assert_eq!(
-            mainnet_time_for_height(last.height + 5_000, Some(upper)),
+            pre_nu7_time(last.height + 5_000, Some(upper)),
             last.time + 5_000 * 100
         );
         assert_eq!(
-            mainnet_time_for_height(upper.height + 10, Some(upper)),
+            pre_nu7_time(upper.height + 10, Some(upper)),
             upper.time + 10 * 75
         );
         assert_eq!(
-            mainnet_time_for_height(last.height + 5_000, None),
+            pre_nu7_time(last.height + 5_000, None),
             last.time + 5_000 * 75
         );
     }
 
     #[test]
     fn extreme_heights_saturate_instead_of_overflowing() {
-        assert_eq!(mainnet_time_for_height(u64::MAX, None), u32::MAX);
-        assert_eq!(
-            mainnet_time_for_height(u64::MAX, Some(tip_after_table())),
-            u32::MAX
-        );
+        assert_eq!(pre_nu7_time(u64::MAX, None), u32::MAX);
+        assert_eq!(pre_nu7_time(u64::MAX, Some(tip_after_table())), u32::MAX);
     }
 
     #[test]
@@ -391,8 +485,135 @@ mod tests {
         let last = last_table_point();
         let inside = table_point(1);
         assert_eq!(
-            mainnet_time_for_height(last.height + 100, Some(inside)),
+            pre_nu7_time(last.height + 100, Some(inside)),
             last.time + 100 * 75
         );
+    }
+
+    #[test]
+    fn public_estimates_use_the_scheduled_mainnet_activation() {
+        let nu7 = mainnet_nu7_activation();
+        let tip = tip_after_table();
+        let height = last_table_point().height + 5_000;
+        assert_eq!(
+            mainnet_time_for_height(height, Some(tip)),
+            time_for_height(height, Some(tip), nu7)
+        );
+        assert_eq!(
+            mainnet_height_for_time(i64::from(tip.time) - 1, Some(tip)),
+            height_for_time(i64::from(tip.time) - 1, Some(tip), nu7)
+        );
+    }
+
+    #[test]
+    fn nu7_extrapolation_switches_to_25_second_spacing() {
+        let last = last_table_point();
+        let nu7 = Some(last.height + 1_000);
+        let last_pre_nu7_time = last.time + 999 * 75;
+
+        assert_eq!(
+            time_for_height(last.height + 999, None, nu7),
+            last_pre_nu7_time
+        );
+        assert_eq!(
+            time_for_height(last.height + 1_099, None, nu7),
+            last_pre_nu7_time + 100 * 25
+        );
+        assert_eq!(
+            height_for_time(i64::from(last_pre_nu7_time + 100 * 25), None, nu7),
+            last.height + 1_099
+        );
+        // Past an upper point after activation, spacing is 25 seconds.
+        let upper = BlockTimePoint {
+            height: last.height + 2_000,
+            time: last_pre_nu7_time + 1_001 * 25,
+        };
+        assert_eq!(
+            time_for_height(upper.height + 10, Some(upper), nu7),
+            upper.time + 10 * 25
+        );
+    }
+
+    #[test]
+    fn nu7_inside_the_tip_span_splits_spacing_and_keeps_endpoints() {
+        let last = last_table_point();
+        let last_pre_nu7 = last.height + 6_000;
+        let nu7 = Some(last_pre_nu7 + 1);
+        let tip = BlockTimePoint {
+            height: last.height + 10_000,
+            time: last.time + 6_000 * 75 + 4_000 * 25,
+        };
+        let activation_time = last.time + 6_000 * 75;
+
+        assert_eq!(
+            time_for_height(last_pre_nu7, Some(tip), nu7),
+            activation_time
+        );
+        assert_eq!(time_for_height(tip.height, Some(tip), nu7), tip.time);
+        assert_eq!(
+            height_for_time(i64::from(last.time) + 3_000 * 75, Some(tip), nu7),
+            last.height + 3_000
+        );
+        assert_eq!(
+            height_for_time(i64::from(activation_time) + 2_000 * 25, Some(tip), nu7),
+            last_pre_nu7 + 2_000
+        );
+        // One straight line across the span puts activation day ~2,200 blocks late.
+        assert!(
+            height_for_time(i64::from(activation_time), Some(tip), None) > last_pre_nu7 + 2_000
+        );
+        assert_eq!(
+            height_for_time(i64::from(activation_time), Some(tip), nu7),
+            last_pre_nu7
+        );
+    }
+
+    #[test]
+    fn nu7_split_scales_both_sides_when_blocks_ran_slow() {
+        let last = last_table_point();
+        let last_pre_nu7 = last.height + 6_000;
+        let nu7 = Some(last_pre_nu7 + 1);
+        // 10% slower than target on both sides.
+        let tip = BlockTimePoint {
+            height: last.height + 10_000,
+            time: last.time + (6_000 * 75 + 4_000 * 25) * 11 / 10,
+        };
+        let activation_time = last.time + 6_000 * 75 * 11 / 10;
+
+        assert_eq!(
+            time_for_height(last_pre_nu7, Some(tip), nu7),
+            activation_time
+        );
+        for height in [
+            last.height + 1,
+            last.height + 2_999,
+            last_pre_nu7,
+            last_pre_nu7 + 1,
+            last_pre_nu7 + 1_500,
+            tip.height - 1,
+        ] {
+            let time = time_for_height(height, Some(tip), nu7);
+            let round_trip = height_for_time(i64::from(time), Some(tip), nu7);
+            assert!(
+                round_trip.abs_diff(height) <= 1,
+                "{height} -> {time} -> {round_trip}"
+            );
+        }
+    }
+
+    #[test]
+    fn nu7_inside_a_table_span_is_ignored_unless_strictly_inside() {
+        let lower = table_point(TIMES.len() - 2);
+        let upper = last_table_point();
+        // Activation at a span edge leaves the span on one spacing.
+        for nu7 in [Some(lower.height + 1), Some(upper.height + 1)] {
+            assert_eq!(
+                time_for_height(lower.height + 500, None, nu7),
+                time_for_height(lower.height + 500, None, None)
+            );
+        }
+        let middle = time_for_height(lower.height + 500, None, Some(lower.height + 501));
+        assert!(middle > time_for_height(lower.height + 500, None, None));
+        assert!(middle < upper.time);
     }
 }
