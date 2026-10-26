@@ -466,6 +466,22 @@ class RustPaymentLinkHardwareSigningService
         _surfaces.close(link.address);
       }
     }
+    if (stored.status == 'expired') {
+      // Rust refused it before submission, so nothing reached the network.
+      try {
+        if (draft.batch case final batch?) {
+          await _recoveryStore.removeTerminalBatch(batch.id);
+        } else {
+          await _recoveryStore.removeUnbroadcastDraft(
+            address: draft.link.address,
+          );
+        }
+      } catch (error) {
+        log(
+          'PaymentLinkHardwareSigning: expired funding cleanup failed: $error',
+        );
+      }
+    }
     if (isPaymentLinkFundingBroadcastAccepted(stored.status) &&
         draft.sourceAccountUuid != null) {
       _paymentLinkService.observeActivityBroadcast(

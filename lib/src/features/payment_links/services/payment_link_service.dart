@@ -11,6 +11,7 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -263,8 +264,8 @@ class PaymentLinkBatchPreSubmissionFailure implements Exception {
 }
 
 /// A batch the wallet cannot fund as asked (a signer limit or the
-/// one-transaction rule). [message] is written for the user; retrying the same
-/// batch will not help.
+/// one-transaction rule), or not until the network upgrade activates.
+/// [message] is written for the user; retrying the same batch will not help.
 class PaymentLinkBatchRejected implements Exception {
   const PaymentLinkBatchRejected(this.message);
 
@@ -274,6 +275,8 @@ class PaymentLinkBatchRejected implements Exception {
   static const _prefix = 'This group ';
 
   static PaymentLinkBatchRejected? from(Object error) {
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return PaymentLinkBatchRejected(upgradeHold);
     final text = error.toString();
     final start = text.indexOf(_prefix);
     if (start < 0) return null;

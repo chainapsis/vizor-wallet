@@ -23,6 +23,7 @@ import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
+import '../../../../core/zcash/network_upgrade_hold.dart';
 
 enum _LedgerSendRecoveryAction {
   retrySigning,
@@ -420,7 +421,17 @@ class _MobileLedgerSendSignScreenState
     late final LedgerSigningFailurePresentation presentation;
     late final _LedgerSendRecoveryAction? action;
 
-    if (lower.contains('proposal not found') ||
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) {
+      // Nothing to do here until the upgrade; the sheet only closes.
+      presentation = LedgerSigningFailurePresentation(
+        title: kNetworkUpgradeHoldActionLabel,
+        statusLabel: 'Action needed',
+        message: upgradeHold,
+        showDeviceAppPrompt: false,
+      );
+      action = null;
+    } else if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       presentation = const LedgerSigningFailurePresentation(
         title: 'Transaction expired',

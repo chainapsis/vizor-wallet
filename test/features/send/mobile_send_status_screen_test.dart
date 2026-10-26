@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -437,6 +438,29 @@ void main() {
     );
     expect(subtitleFinder, findsOneWidget);
     expect(tester.getSize(subtitleFinder).width, greaterThan(300));
+  });
+
+  testWidgets('a failure from the upgrade hold shows the hold copy', (
+    tester,
+  ) async {
+    final broadcast = Completer<SendBroadcastOutcome>();
+    await tester.pumpWidget(_app(broadcastRunner: _runner(broadcast.future)));
+    await tester.pump();
+
+    broadcast.complete(
+      const SendBroadcastOutcome(
+        phase: SendBroadcastPhase.failed,
+        proposalConsumed: true,
+        error: kNetworkUpgradeHoldMessage,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text('Return home'), findsOneWidget);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('broadcast failure shows the failed state with custom haptic', (
