@@ -267,18 +267,45 @@ fn stored_migration_transaction_holds_inputs_only_while_unexpired() {
     assert!(!holds(false, false, 200, Some(100)));
 }
 
+/// Every upgrade through NU6.3 active from height 1; NU7 at `nu7`, if any.
+#[derive(Clone, Copy, Debug)]
+struct ExpiryTestNetwork {
+    nu7: Option<u32>,
+}
+
+impl Parameters for ExpiryTestNetwork {
+    fn network_type(&self) -> zcash_protocol::consensus::NetworkType {
+        zcash_protocol::consensus::NetworkType::Test
+    }
+
+    fn activation_height(
+        &self,
+        nu: zcash_protocol::consensus::NetworkUpgrade,
+    ) -> Option<BlockHeight> {
+        match nu {
+            zcash_protocol::consensus::NetworkUpgrade::Nu7 => self.nu7.map(BlockHeight::from_u32),
+            _ => Some(BlockHeight::from_u32(1)),
+        }
+    }
+}
+
+const PRE_NU7: ExpiryTestNetwork = ExpiryTestNetwork { nu7: None };
+
 #[test]
 fn send_proposal_expires_at_its_lock_boundary() {
     let min_target = BlockHeight::from_u32(1_000);
     assert!(!send_proposal_is_expired(
+        &PRE_NU7,
         min_target,
         BlockHeight::from_u32(1_039)
     ));
     assert!(send_proposal_is_expired(
+        &PRE_NU7,
         min_target,
         BlockHeight::from_u32(1_040)
     ));
     assert!(send_proposal_is_expired(
+        &PRE_NU7,
         min_target,
         BlockHeight::from_u32(1_041)
     ));
@@ -288,12 +315,148 @@ fn send_proposal_expires_at_its_lock_boundary() {
 fn live_tip_extends_expiry_without_reviving_expired_proposal() {
     let min_target = BlockHeight::from_u32(100);
     assert_eq!(
-        send_expiry_height_for_live_tip(min_target, 110).unwrap(),
+        send_expiry_height_for_live_tip(&PRE_NU7, min_target, 110).unwrap(),
         BlockHeight::from_u32(151),
     );
-    assert!(send_expiry_height_for_live_tip(min_target, 139)
+    assert!(send_expiry_height_for_live_tip(&PRE_NU7, min_target, 139)
         .unwrap_err()
         .contains("expired against the live chain tip"));
+}
+
+#[test]
+fn nu7_triples_the_default_expiry_delta() {
+    let network = ExpiryTestNetwork { nu7: Some(1_000) };
+    assert_eq!(
+        send_expiry_height_for_target(&network, BlockHeight::from_u32(1_000)),
+        BlockHeight::from_u32(1_120),
+    );
+    assert!(!send_proposal_is_expired(
+        &network,
+        BlockHeight::from_u32(1_000),
+        BlockHeight::from_u32(1_119)
+    ));
+    assert_eq!(
+        send_expiry_height_for_live_tip(&network, BlockHeight::from_u32(1_000), 1_100).unwrap(),
+        BlockHeight::from_u32(1_221),
+    );
+    assert_eq!(
+        shielding_expiry_for_proposal(&network, BlockHeight::from_u32(1_000), 1_100).unwrap(),
+        BlockHeight::from_u32(1_221),
+    );
+}
+
+#[test]
+fn pre_activation_expiry_stops_before_the_next_upgrade() {
+    let network = ExpiryTestNetwork { nu7: Some(1_020) };
+    // A transaction signed for the pre-NU7 branch cannot be mined from 1,020.
+    assert_eq!(
+        send_expiry_height_for_target(&network, BlockHeight::from_u32(1_000)),
+        BlockHeight::from_u32(1_019),
+    );
+    assert_eq!(
+        send_expiry_height_for_target(&network, BlockHeight::from_u32(1_019)),
+        BlockHeight::from_u32(1_019),
+    );
+    // Far enough before activation the default delta applies unchanged.
+    assert_eq!(
+        send_expiry_height_for_target(&network, BlockHeight::from_u32(900)),
+        BlockHeight::from_u32(940),
+    );
+    // A proposal made before activation cannot be revived after it.
+    assert!(send_proposal_is_expired(
+        &network,
+        BlockHeight::from_u32(1_000),
+        BlockHeight::from_u32(1_020)
+    ));
+    assert!(
+        send_expiry_height_for_live_tip(&network, BlockHeight::from_u32(1_000), 1_019)
+            .unwrap_err()
+            .contains("expired against the live chain tip")
+    );
+    // Cut short by the upgrade: a new proposal would be held as well.
+    assert_eq!(
+        send_expiry_height_for_live_tip(&network, BlockHeight::from_u32(1_000), 1_018).unwrap_err(),
+        network_upgrade::SEND_HOLD_MESSAGE
+    );
+}
+
+#[test]
+fn sends_nodes_would_reject_as_expiring_soon_are_refused_before_the_upgrade() {
+    let network = ExpiryTestNetwork { nu7: Some(1_020) };
+    // Expiry 1,019 leaves the three blocks nodes require from 1,016.
+    assert!(ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(1_016)).is_ok());
+    for target in [1_017, 1_019] {
+        assert_eq!(
+            ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(target)).unwrap_err(),
+            network_upgrade::SEND_HOLD_MESSAGE
+        );
+    }
+    assert!(ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(1_020)).is_ok());
+    assert_eq!(
+        send_expiry_height_for_live_tip(&network, BlockHeight::from_u32(1_000), 1_016).unwrap_err(),
+        network_upgrade::SEND_HOLD_MESSAGE
+    );
+}
+
+/// Every send check at each tip around an upgrade at 1,020.
+#[test]
+fn send_checks_by_tip_around_the_upgrade() {
+    let network = ExpiryTestNetwork { nu7: Some(1_020) };
+    let hold = network_upgrade::SEND_HOLD_MESSAGE;
+    // A proposal reviewed at tip 1,014 and executed at each later tip.
+    let reviewed_target = BlockHeight::from_u32(1_015);
+    for (tip, new_send, execute, shield) in [
+        (1_014, Ok(()), Ok(1_019), Ok(1_019)),
+        (1_015, Ok(()), Ok(1_019), Ok(1_019)),
+        (1_016, Err(hold), Err(hold), Err(hold)),
+        (1_017, Err(hold), Err(hold), Err(hold)),
+        (1_018, Err(hold), Err(hold), Err(hold)),
+        // The next block is NU7: new sends target it, old proposals expired.
+        (1_019, Ok(()), Err("expired"), Err(hold)),
+        (1_020, Ok(()), Err("expired"), Ok(1_141)),
+    ] {
+        let target = BlockHeight::from_u32(tip + 1);
+        assert_eq!(
+            ensure_send_outside_upgrade_edge(&network, target).map_err(|e| e.contains(hold)),
+            new_send.map_err(|_| true),
+            "new send at tip {tip}"
+        );
+        let executed = send_expiry_height_for_live_tip(&network, reviewed_target, tip);
+        match execute {
+            Ok(expiry) => assert_eq!(executed, Ok(BlockHeight::from_u32(expiry)), "tip {tip}"),
+            Err(expected) => assert!(
+                executed.as_ref().unwrap_err().contains(expected),
+                "execute at tip {tip}: {executed:?}"
+            ),
+        }
+        // The wallet trails the live tip by a block.
+        let shielded = shielding_expiry_for_proposal(&network, BlockHeight::from_u32(tip), tip);
+        match shield {
+            Ok(expiry) => assert_eq!(shielded, Ok(BlockHeight::from_u32(expiry)), "tip {tip}"),
+            Err(expected) => assert_eq!(shielded.unwrap_err(), expected, "shield at tip {tip}"),
+        }
+    }
+}
+
+#[test]
+fn shielding_is_refused_when_the_live_tip_reaches_the_upgrade_edge() {
+    let network = ExpiryTestNetwork { nu7: Some(1_020) };
+    // The wallet trails the live tip by a block in each case.
+    assert_eq!(
+        shielding_expiry_for_proposal(&network, BlockHeight::from_u32(1_015), 1_015).unwrap(),
+        BlockHeight::from_u32(1_019)
+    );
+    for (wallet_target, live_tip) in [(1_016, 1_016), (1_019, 1_019)] {
+        assert_eq!(
+            shielding_expiry_for_proposal(&network, BlockHeight::from_u32(wallet_target), live_tip)
+                .unwrap_err(),
+            network_upgrade::SEND_HOLD_MESSAGE
+        );
+    }
+    assert_eq!(
+        shielding_expiry_for_proposal(&network, BlockHeight::from_u32(1_100), 1_100).unwrap(),
+        BlockHeight::from_u32(1_221)
+    );
 }
 
 #[test]
@@ -309,7 +472,8 @@ fn immediate_migration_lock_matches_zip318_transaction_expiry() {
         );
         assert!(
             immediate_migration_lock_expiry(target_height).unwrap()
-                > target_height + SEND_PROPOSAL_LOCK_BLOCKS
+                > target_height
+                    + zcash_primitives::transaction::builder::PRE_NU7_DEFAULT_TX_EXPIRY_DELTA
         );
     }
 }
@@ -2567,7 +2731,7 @@ fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result = create_shield_transparent_pczt_with_expiry(
+    let result = create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         &account_uuid,
@@ -2647,7 +2811,7 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result = create_shield_transparent_pczt_with_expiry(
+    let result = create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         &account_uuid,
@@ -2674,7 +2838,7 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     assert_eq!(reserved.inputs.len(), 1);
     assert_eq!(*reserved.inputs[0].txid().as_ref(), [42; 32]);
     assert!(
-        create_shield_transparent_pczt_with_expiry(
+        create_shield_transparent_pczt_for_live_tip(
             db_path,
             network,
             &account_uuid,
@@ -2691,7 +2855,7 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     assert!(super::super::discard_proposal(result.proposal_id, "wrong-flow").is_err());
     super::super::discard_proposal(result.proposal_id, "shield-test").unwrap();
     super::super::discard_proposal(result.proposal_id, "shield-test").unwrap();
-    let retry = create_shield_transparent_pczt_with_expiry(
+    let retry = create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         &account_uuid,
@@ -3959,7 +4123,7 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
             .can_shield
     );
     assert!(
-        create_shield_transparent_pczt_with_expiry(path, network, &uuid, "shield-test", None)
+        create_shield_transparent_pczt_for_live_tip(path, network, &uuid, "shield-test", None)
             .err()
             .unwrap()
             .message

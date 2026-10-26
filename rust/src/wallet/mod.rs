@@ -12,6 +12,7 @@ pub mod keys;
 pub mod keystone;
 pub mod ledger;
 pub mod network;
+pub(crate) mod network_upgrade;
 pub mod secret_payload;
 pub mod secret_store;
 pub mod sync;
