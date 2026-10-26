@@ -18,6 +18,7 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 const shieldBalancePendingBroadcastMessage =
     'Shielding queued for retry. Check Activity.';
@@ -38,6 +39,8 @@ String friendlyShieldBalanceError(Object error) {
     default:
       break;
   }
+  final upgradeHold = networkUpgradeHoldMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   if (isTransparentLedgerNeedsNewerBuildError(message)) {
     return transparentLedgerNeedsNewerBuildMessage;
@@ -236,6 +239,8 @@ void observeShieldingBroadcast({
 String shieldPcztBroadcastStatusMessage(
   rust_sync.ExtractAndBroadcastPcztResult result,
 ) {
+  final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
+  if (upgradeHold != null) return upgradeHold;
   if (result.status == 'broadcast_unknown') {
     return result.message ??
         'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';

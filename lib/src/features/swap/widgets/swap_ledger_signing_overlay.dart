@@ -7,6 +7,7 @@ import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../ledger/ledger_capability.dart';
@@ -458,6 +459,15 @@ class _SwapLedgerSigningOverlayState
     _pendingBroadcastResult = null;
     _releaseOperationClaim();
     if (!mounted) return;
+    // Explain an upgrade hold instead of closing without a word.
+    final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
+    if (upgradeHold != null) {
+      setState(() {
+        _phase = LedgerSigningModalPhase.failed;
+        _error = upgradeHold;
+      });
+      return;
+    }
     _cancelled = true;
     widget.onCancel();
   });
@@ -661,6 +671,8 @@ class _SwapLedgerSigningOverlayState
           ? LedgerRequestKind.payment
           : LedgerRequestKind.swap,
     );
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     final appInstruction = ledgerZcashAppOpenErrorInstruction(
       ref.read(rpcEndpointProvider).networkName,
@@ -689,6 +701,7 @@ class _SwapLedgerSigningOverlayState
     final canLeave = !_isBroadcasting;
     final legacyOrchardRecoveryUnavailable =
         _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
+    final upgradeHold = _error == kNetworkUpgradeHoldMessage;
     final pendingBroadcastResult = _pendingBroadcastResult;
     final postBroadcastRecovery = pendingBroadcastResult != null;
     // Retrying the same request fails the same way on the device.
@@ -732,6 +745,8 @@ class _SwapLedgerSigningOverlayState
                   ? 'Transaction recovery in progress'
                   : legacyOrchardRecoveryUnavailable
                   ? 'Ledger app update required'
+                  : upgradeHold
+                  ? kNetworkUpgradeHoldActionLabel
                   : 'Ledger signing failed',
               statusLabel: postBroadcastRecovery
                   ? expiredRecovery
@@ -757,7 +772,9 @@ class _SwapLedgerSigningOverlayState
                   !legacyOrchardRecoveryUnavailable &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker:
-                  !postBroadcastRecovery && !_operationClaimUnavailable,
+                  !postBroadcastRecovery &&
+                  !_operationClaimUnavailable &&
+                  !upgradeHold,
               actionLabel:
                   legacyOrchardRecoveryUnavailable ||
                       _operationClaimUnavailable ||

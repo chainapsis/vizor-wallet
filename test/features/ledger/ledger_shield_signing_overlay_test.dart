@@ -18,7 +18,9 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/home/widgets/ledger_shield_signing_overlay.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -123,6 +125,75 @@ void main() {
       expect(operations.broadcasts, isEmpty);
     });
   }
+
+  testWidgets('an upgrade hold shows the upgrade copy, not device recovery', (
+    tester,
+  ) async {
+    rustApi.createShieldError = StateError(
+      "Transactions can't be sent this close to the network upgrade. "
+      'Try again after it activates.',
+    );
+    final operations = _FakeLedgerSignedOperationService();
+    var signatures = 0;
+    await tester.pumpWidget(
+      _harness(
+        operationService: operations,
+        sync: _FakeSyncNotifier(),
+        ledgerSigner: (_) async {
+          signatures++;
+          return [9];
+        },
+        onComplete: () => fail('must not complete'),
+        // The desktop modal offers a connection change only on macOS.
+        platform: TargetPlatform.macOS,
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text(kNetworkUpgradeHoldMessage).evaluate().isNotEmpty,
+    );
+
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text('Paused for network upgrade'), findsOneWidget);
+    expect(find.text('Ledger signing failed'), findsNothing);
+    expect(find.text('Change connection'), findsNothing);
+    expect(find.text('Open the Zcash app'), findsNothing);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(signatures, 0);
+    expect(operations.checkpoints, isEmpty);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('a signed shield the upgrade expired shows the upgrade copy', (
+    tester,
+  ) async {
+    final operations = _FakeLedgerSignedOperationService()
+      ..broadcastStatus = 'expired'
+      ..broadcastMessage =
+          "Transactions can't be sent this close to the network upgrade. "
+          'Try again after it activates.';
+    await tester.pumpWidget(
+      _harness(
+        operationService: operations,
+        sync: _FakeSyncNotifier(),
+        ledgerSigner: (_) async => [7, 8, 9],
+        onComplete: () => fail('must not complete'),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text(kNetworkUpgradeHoldMessage).evaluate().isNotEmpty,
+    );
+
+    expect(operations.broadcasts, hasLength(1));
+    expect(find.text('Paused for network upgrade'), findsOneWidget);
+    expect(find.text('Ledger signing failed'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
 
   testWidgets('checkpoints Ledger shield signatures before broadcasting', (
     tester,
@@ -558,11 +629,14 @@ Widget _harness({
   required VoidCallback onComplete,
   LedgerShieldingProgressReader? progressReader,
   VoidCallback? onCancel,
+  TargetPlatform? platform,
 }) {
   return ProviderScope(
     overrides: [
       if (progressReader != null)
         ledgerShieldingProgressReaderProvider.overrideWithValue(progressReader),
+      if (platform != null)
+        ledgerTargetPlatformProvider.overrideWithValue(platform),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       walletProvider.overrideWith(_FakeWalletNotifier.new),
       syncProvider.overrideWith(() => sync),
@@ -664,6 +738,8 @@ class _FakeLedgerSignedOperationService
     implements LedgerSignedOperationService {
   bool failCheckpointOnce = false;
   bool failBroadcastOnce = false;
+  String broadcastStatus = 'broadcasted';
+  String? broadcastMessage;
   final checkpoints = <_Checkpoint>[];
   final broadcasts = <String>[];
   final acknowledged = <String>[];
@@ -709,7 +785,8 @@ class _FakeLedgerSignedOperationService
     return LedgerSignedOperationBroadcastResult(
       operationId: operationId,
       txid: 'txid-${broadcasts.length}',
-      status: 'broadcasted',
+      status: broadcastStatus,
+      message: broadcastMessage,
       requiresAck: false,
     );
   }
@@ -740,10 +817,12 @@ class _RustApiFake implements RustLibApi {
 
   int createShieldCalls = 0;
   int addProofsCalls = 0;
+  Object? createShieldError;
 
   void reset() {
     createShieldCalls = 0;
     addProofsCalls = 0;
+    createShieldError = null;
   }
 
   @override
@@ -766,6 +845,8 @@ class _RustApiFake implements RustLibApi {
     required String sendFlowId,
   }) async {
     createShieldCalls++;
+    final error = createShieldError;
+    if (error != null) throw error;
     return ShieldTransparentPcztResult(
       proposalId: BigInt.from(77),
       pcztBytes: Uint8List.fromList([1, 2, 3]),
