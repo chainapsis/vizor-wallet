@@ -39,6 +39,29 @@ pub(crate) fn cap_expiry_at_branch_end<P: Parameters>(
         .map_or(expiry, |next| expiry.min((next - 1).max(target_height)))
 }
 
+/// The next upgrade after a chain tip and the tip from which the wallet
+/// refuses transactions before it. The refusal holds while the next block is
+/// still on the old branch, through tip `next_activation_height - 2`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct HoldHeights {
+    pub next_activation_height: u32,
+    /// Transactions: their capped expiry would read as expiring soon.
+    pub send_hold_from_tip: u32,
+}
+
+/// [`HoldHeights`] for the first upgrade that activates after `tip`, or none
+/// when no upgrade is scheduled.
+pub(crate) fn hold_heights<P: Parameters>(network: &P, tip: u32) -> Option<HoldHeights> {
+    let next_activation_height =
+        u32::from(next_activation_after(network, BlockHeight::from_u32(tip))?);
+    Some(HoldHeights {
+        next_activation_height,
+        send_hold_from_tip: next_activation_height
+            .saturating_sub(1)
+            .saturating_sub(TX_EXPIRING_SOON_BLOCKS),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

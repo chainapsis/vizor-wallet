@@ -34,18 +34,6 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
-  test('a batch refused for the upgrade reads as a rejection', () {
-    expect(
-      PaymentLinkBatchRejected.from(
-        StateError(
-          "Transactions can't be sent this close to the network upgrade. "
-          'Try again after it activates.',
-        ),
-      )?.message,
-      kNetworkUpgradeHoldMessage,
-    );
-  });
-
   for (final exactPool in ['orchard', 'sapling', 'ironwood']) {
     test(
       'claim details persist the exact $exactPool pool instead of the legacy label',
@@ -623,6 +611,55 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(pathChannel, null);
       await supportDirectory.delete(recursive: true);
+    });
+
+    test('an upgrade hold while proposing a group drops its drafts', () async {
+      accounts.select('account-1', 'u1account-1address');
+      api.proposeBatchError = StateError(_sendHoldRefusal);
+      final store = container.read(paymentLinkRecoveryStoreProvider);
+      final links = [
+        for (final address in ['u1batchcardone', 'u1batchcardtwo'])
+          VizorPaymentLink(
+            network: 'main',
+            address: address,
+            amountZatoshi: BigInt.from(100000),
+            mnemonic: _link().mnemonic,
+            birthdayHeight: 3_456_789,
+            label: 'Payment link',
+            createdAt: DateTime.utc(2026, 8, 5, 12),
+          ),
+      ];
+      await store.saveBatchDrafts(
+        batchId: 'batch-1',
+        links: links,
+        sourceAccountUuid: 'account-1',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+
+      await expectLater(
+        container
+            .read(paymentLinkBatchOperationsProvider)
+            .fundBatch(
+              PaymentLinkBatchDraft(
+                id: 'batch-1',
+                links: links,
+                quote: PaymentLinkBatchQuote(
+                  sourceAccountUuid: 'account-1',
+                  count: 2,
+                  recipientAmountZatoshi: BigInt.from(100000),
+                  fundingFeeZatoshi: BigInt.from(15000),
+                ),
+              ),
+            ),
+        throwsA(
+          isA<PaymentLinkBatchPreSubmissionFailure>().having(
+            (failure) => failure.message,
+            'message',
+            kNetworkUpgradeHoldMessage,
+          ),
+        ),
+      );
+      expect(await store.load(), isEmpty);
     });
 
     test(
@@ -1937,6 +1974,29 @@ void main() {
     },
   );
 
+  test(
+    'an upgrade hold after the submission marker was not submitted',
+    () async {
+      final failure = StateError(_sendHoldRefusal);
+
+      await expectLater(
+        runPaymentLinkFundingSubmission<String>((markSubmissionStarted) {
+          markSubmissionStarted();
+          throw failure;
+        }),
+        throwsA(
+          isA<PaymentLinkFundingNotSubmittedException>()
+              .having((error) => error.error, 'error', same(failure))
+              .having(
+                (error) => error.afterSubmissionMarker,
+                'afterSubmissionMarker',
+                isTrue,
+              ),
+        ),
+      );
+    },
+  );
+
   test('a funding whose broadcast result is lost stays recoverable', () async {
     final storage = _FakePaymentLinkRecoveryStorage();
     final store = PaymentLinkRecoveryStore(storage);
@@ -1985,6 +2045,36 @@ void main() {
           currentChainHeight: () async => 3456800,
           createTransaction: (markSubmissionStarted) =>
               runPaymentLinkFundingSubmission((_) async => throw failure),
+          fundingTxids: (txid) => txid,
+        ),
+        throwsA(same(failure)),
+      );
+
+      expect(await PaymentLinkRecoveryStore(storage).load(), isEmpty);
+    },
+  );
+
+  test(
+    'a funding Rust refused for the upgrade after its marker leaves nothing',
+    () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final failure = StateError(_sendHoldRefusal);
+
+      // The composition `createFundedLink` uses, with the refusal Rust raises
+      // before building the transaction.
+      await expectLater(
+        PaymentLinkFundingRecovery(store).fund<String>(
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          link: _link(),
+          sourceAccountUuid: 'source-account',
+          currentChainHeight: () async => 3456800,
+          createTransaction: (markSubmissionStarted) =>
+              runPaymentLinkFundingSubmission((markLocalSubmission) async {
+                await markSubmissionStarted();
+                markLocalSubmission();
+                throw failure;
+              }),
           fundingTxids: (txid) => txid,
         ),
         throwsA(same(failure)),
@@ -3103,6 +3193,10 @@ const _legacyClaimDirectory =
     'payment_link_claim_main_'
     'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
 
+const _sendHoldRefusal =
+    "Transactions can't be sent this close to the network upgrade. "
+    'Try again after it activates.';
+
 VizorPaymentLink _link() {
   return VizorPaymentLink(
     network: 'main',
@@ -3152,6 +3246,7 @@ class _DestinationValidated implements Exception {}
 
 class _ClaimDestinationRustApi implements RustLibApi {
   final requestedAccounts = <String>[];
+  Object? proposeBatchError;
   final validatedAddresses = <String>[];
   var lookupStarted = Completer<void>();
   Completer<String>? lookupGate;
@@ -3178,6 +3273,16 @@ class _ClaimDestinationRustApi implements RustLibApi {
   final claimSyncDbPaths = <String>[];
   final validGiftAddresses = <String>{};
   int giftVariantLookups = 0;
+
+  @override
+  Future<rust_sync.ProposalResult> crateApiSyncProposePaymentLinkBatch({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required List<String> addresses,
+    required BigInt amountZatoshi,
+  }) async => throw proposeBatchError ?? UnimplementedError();
 
   @override
   Future<rust_sync.SendMaxEstimateResult>
@@ -3395,6 +3500,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
   void reset() {
     claimWalletAddress = _link().address;
     requestedAccounts.clear();
+    proposeBatchError = null;
     cancelledClaimSyncs.clear();
     validatedAddresses.clear();
     lookupStarted = Completer<void>();

@@ -260,12 +260,16 @@ class PaymentLinkBatchQuoteChanged implements Exception {
 }
 
 class PaymentLinkBatchPreSubmissionFailure implements Exception {
-  const PaymentLinkBatchPreSubmissionFailure();
+  const PaymentLinkBatchPreSubmissionFailure([this.message]);
+
+  /// User copy when a later attempt can pass, such as the network upgrade
+  /// hold; null for the generic retry copy.
+  final String? message;
 }
 
 /// A batch the wallet cannot fund as asked (a signer limit or the
-/// one-transaction rule), or not until the network upgrade activates.
-/// [message] is written for the user; retrying the same batch will not help.
+/// one-transaction rule). [message] is written for the user; retrying the same
+/// batch will not help.
 class PaymentLinkBatchRejected implements Exception {
   const PaymentLinkBatchRejected(this.message);
 
@@ -275,8 +279,6 @@ class PaymentLinkBatchRejected implements Exception {
   static const _prefix = 'This group ';
 
   static PaymentLinkBatchRejected? from(Object error) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
-    if (upgradeHold != null) return PaymentLinkBatchRejected(upgradeHold);
     final text = error.toString();
     final start = text.indexOf(_prefix);
     if (start < 0) return null;
@@ -859,14 +861,19 @@ class PaymentLinkService
       // Nothing reached the network, so the drafts hold no funds. If removing
       // them fails, stale-draft recovery does it later; this still was not sent.
       try {
-        await _recoveryStore.removeUnsubmittedBatch(draft.id);
+        await _recoveryStore.removeUnsubmittedBatch(
+          draft.id,
+          refusedAfterMarker: failure.afterSubmissionMarker,
+        );
       } catch (cleanupError) {
         log('PaymentLinkService: unsent batch cleanup failed: $cleanupError');
       }
       final error = failure.error;
       if (error is PaymentLinkBatchQuoteChanged) throw error;
       throw PaymentLinkBatchRejected.from(error) ??
-          const PaymentLinkBatchPreSubmissionFailure();
+          PaymentLinkBatchPreSubmissionFailure(
+            networkUpgradeHoldMessage(error),
+          );
     }
     if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
       observeActivityBroadcast(accountUuid: accountUuid, txids: result.txids);
@@ -2137,8 +2144,10 @@ class PaymentLinkService
       // Keep the claim database for rebroadcast/reorg recovery. Reconciliation
       // deletes it only after every claim transaction reaches six confirmations.
       return result;
-    } catch (_) {
-      if (!submissionStarted) {
+    } catch (error) {
+      // Rust raises the upgrade hold before it builds the claim, so the card
+      // is still ready even after the submission marker.
+      if (!submissionStarted || networkUpgradeHoldMessage(error) != null) {
         await _receivedStore.markReadyToClaim(
           address: session.link.address,
           expected: startedRecord,

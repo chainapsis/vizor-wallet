@@ -354,6 +354,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MigrationStatus dco_decode_box_autoadd_migration_status(dynamic raw);
 
   @protected
+  NetworkUpgradeWindow dco_decode_box_autoadd_network_upgrade_window(
+    dynamic raw,
+  );
+
+  @protected
   NextStepView dco_decode_box_autoadd_next_step_view(dynamic raw);
 
   @protected
@@ -958,6 +963,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NetworkPrivacyStatus dco_decode_network_privacy_status(dynamic raw);
 
   @protected
+  NetworkUpgradeWindow dco_decode_network_upgrade_window(dynamic raw);
+
+  @protected
   NextStepKind dco_decode_next_step_kind(dynamic raw);
 
   @protected
@@ -1043,6 +1051,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationStatus? dco_decode_opt_box_autoadd_migration_status(dynamic raw);
+
+  @protected
+  NetworkUpgradeWindow? dco_decode_opt_box_autoadd_network_upgrade_window(
+    dynamic raw,
+  );
 
   @protected
   NextStepView? dco_decode_opt_box_autoadd_next_step_view(dynamic raw);
@@ -1845,6 +1858,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  NetworkUpgradeWindow sse_decode_box_autoadd_network_upgrade_window(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   NextStepView sse_decode_box_autoadd_next_step_view(
     SseDeserializer deserializer,
   );
@@ -2619,6 +2637,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  NetworkUpgradeWindow sse_decode_network_upgrade_window(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   NextStepKind sse_decode_next_step_kind(SseDeserializer deserializer);
 
   @protected
@@ -2722,6 +2745,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationStatus? sse_decode_opt_box_autoadd_migration_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NetworkUpgradeWindow? sse_decode_opt_box_autoadd_network_upgrade_window(
     SseDeserializer deserializer,
   );
 
@@ -3729,6 +3757,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_network_upgrade_window(
+    NetworkUpgradeWindow self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_next_step_view(
     NextStepView self,
     SseSerializer serializer,
@@ -4677,6 +4711,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_network_upgrade_window(
+    NetworkUpgradeWindow self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_next_step_kind(NextStepKind self, SseSerializer serializer);
 
   @protected
@@ -4787,6 +4827,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_migration_status(
     MigrationStatus? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_network_upgrade_window(
+    NetworkUpgradeWindow? self,
     SseSerializer serializer,
   );
 

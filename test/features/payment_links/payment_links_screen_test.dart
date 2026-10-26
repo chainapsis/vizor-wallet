@@ -42,6 +42,8 @@ import '../../support/gift_card_local_group_checks.dart';
 import '../../support/gift_card_claim_checking_checks.dart';
 import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
+import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 
 void main() {
   registerGiftCardEntryChecks(mobile: false);
@@ -1374,6 +1376,40 @@ void main() {
     expect(operations.sharedLinks, hasLength(1));
     expect(clipboard.copiedSecrets, hasLength(1));
     semantics.dispose();
+  });
+
+  testWidgets('holds Gift Card funding for the network upgrade', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      upgradeWindow: const NetworkUpgradeWindowState(
+        nextActivationHeight: 3543405,
+        holdsTransactions: true,
+      ),
+    );
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+
+    expect(operations.createdAmounts, isEmpty);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
   });
 
   testWidgets(
@@ -4067,6 +4103,38 @@ void main() {
     expect(batch.fundCalls, 1);
   });
 
+  testWidgets('an upgrade hold leaves the group unsent and quotes again', (
+    tester,
+  ) async {
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations)
+      ..fundError = const PaymentLinkBatchPreSubmissionFailure(
+        kNetworkUpgradeHoldMessage,
+      );
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+    );
+    await _reviewTwoCards(tester);
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pumpAndSettle();
+
+    expect(batch.fundCalls, 1);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.textContaining('couldn’t confirm the payment'), findsNothing);
+    expect(
+      find.text('No cards were funded. Review the amount and try again.'),
+      findsNothing,
+    );
+    // Not locked: the group is quoted again and can be created.
+    expect(batch.preparedCounts, [2, 2, 2]);
+    batch.fundError = null;
+    await tester.tap(find.text('Create 2 cards'));
+    await tester.pumpAndSettle();
+    expect(batch.fundCalls, 2);
+  });
+
   testWidgets('funding does not report the group cost as missing ZEC', (
     tester,
   ) async {
@@ -4223,6 +4291,7 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   int fundCalls = 0;
   int metadataRetries = 0;
   Completer<void>? fundGate;
+  Object? fundError;
   bool fundingMetadataSaved = true;
   final links = batchTestLinks;
 
@@ -4259,6 +4328,7 @@ class _FakeDesktopBatchOperations implements PaymentLinkBatchOperations {
   ) async {
     fundCalls++;
     await fundGate?.future;
+    if (fundError case final error?) throw error;
     operations.records.addAll([
       for (var index = 0; index < links.length; index++)
         PaymentLinkRecoveryRecord(

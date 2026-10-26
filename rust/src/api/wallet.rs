@@ -146,6 +146,14 @@ pub struct BlockSpacingSchedule {
     pub nu7_block_seconds: u32,
 }
 
+/// The next network upgrade after a chain tip and the tip from which the
+/// wallet refuses transactions before it. The refusal holds while the next
+/// block is still before the upgrade.
+pub struct NetworkUpgradeWindow {
+    pub next_activation_height: u64,
+    pub send_hold_from_tip: u64,
+}
+
 /// Catches panics and converts them to Result<T, String>.
 pub(super) fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
     match panic::catch_unwind(f) {
@@ -339,6 +347,25 @@ pub fn get_block_spacing_schedule(network: String) -> Result<BlockSpacingSchedul
         pre_nu7_block_seconds: crate::wallet::block_times::PRE_NU7_BLOCK_SECONDS,
         nu7_block_seconds: crate::wallet::block_times::NU7_BLOCK_SECONDS,
     })
+}
+
+/// The upgrade window after `tip_height` on `network`, or none when no
+/// upgrade is scheduled after it.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_network_upgrade_window(
+    network: String,
+    tip_height: u64,
+) -> Result<Option<NetworkUpgradeWindow>, String> {
+    let network = keys::parse_network(&network)?;
+    let tip = u32::try_from(tip_height).map_err(|_| "Chain tip exceeds u32".to_string())?;
+    Ok(
+        crate::wallet::network_upgrade::hold_heights(&network, tip).map(|heights| {
+            NetworkUpgradeWindow {
+                next_activation_height: heights.next_activation_height.into(),
+                send_hold_from_tip: heights.send_hold_from_tip.into(),
+            }
+        }),
+    )
 }
 
 /// Create a new Zcash wallet with a fresh mnemonic.

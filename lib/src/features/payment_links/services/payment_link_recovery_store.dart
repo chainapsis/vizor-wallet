@@ -401,9 +401,18 @@ class PaymentLinkRecoveryStore {
     );
   }
 
-  Future<void> removeUnsubmittedBatch(String batchId) => _removeBatch(
+  /// [refusedAfterMarker] also removes drafts whose submission marker was
+  /// written before Rust refused the funding without building it.
+  Future<void> removeUnsubmittedBatch(
+    String batchId, {
+    bool refusedAfterMarker = false,
+  }) => _removeBatch(
     batchId,
-    retained: (record) => !record.isInertDraft,
+    retained: (record) =>
+        !record.isInertDraft &&
+        !(refusedAfterMarker &&
+            record.isAmbiguousSubmission &&
+            record.preparedExpiryHeight == null),
     error: 'A submitted Gift Card batch cannot be removed.',
   );
 
@@ -707,7 +716,12 @@ class PaymentLinkRecoveryStore {
     });
   }
 
-  Future<void> removeUnsubmittedDraft({required String address}) {
+  /// [refusedAfterMarker] also removes a draft whose submission marker was
+  /// written before Rust refused the funding without building it.
+  Future<void> removeUnsubmittedDraft({
+    required String address,
+    bool refusedAfterMarker = false,
+  }) {
     return _runExclusive(() async {
       final records = await _loadUnlocked();
       final existing = _findByAddress(records, address);
@@ -717,7 +731,7 @@ class PaymentLinkRecoveryStore {
           existing.preparedExpiryHeight != null ||
           // A broadcast started for this draft and its result was never seen,
           // so it may hold funds even without a transaction id.
-          existing.submittedAtHeight != null) {
+          (!refusedAfterMarker && existing.submittedAtHeight != null)) {
         throw StateError(
           'Only an unsubmitted payment link draft can be removed.',
         );
@@ -938,7 +952,10 @@ class PaymentLinkFundingRecovery {
         );
       });
     } on PaymentLinkFundingNotSubmittedException catch (failure) {
-      await _store.removeUnsubmittedDraft(address: link.address);
+      await _store.removeUnsubmittedDraft(
+        address: link.address,
+        refusedAfterMarker: failure.afterSubmissionMarker,
+      );
       Error.throwWithStackTrace(failure.error, failure.stackTrace);
     }
     return complete(
@@ -1011,10 +1028,18 @@ class PaymentLinkFundingRecovery {
 }
 
 class PaymentLinkFundingNotSubmittedException implements Exception {
-  const PaymentLinkFundingNotSubmittedException(this.error, this.stackTrace);
+  const PaymentLinkFundingNotSubmittedException(
+    this.error,
+    this.stackTrace, {
+    this.afterSubmissionMarker = false,
+  });
 
   final Object error;
   final StackTrace stackTrace;
+
+  /// Whether the submission marker was already written: Rust refused the
+  /// funding before building it, so the marked draft holds nothing.
+  final bool afterSubmissionMarker;
 }
 
 PaymentLinkRecoveryRecord? _findByAddress(

@@ -31,8 +31,14 @@ Future<T> runPaymentLinkFundingSubmission<T>(
   try {
     return await operation(() => submissionStarted = true);
   } catch (error, stackTrace) {
-    if (!submissionStarted) {
-      throw PaymentLinkFundingNotSubmittedException(error, stackTrace);
+    // Rust raises the upgrade hold before it builds the transaction, so it is
+    // definite even after the submission marker.
+    if (!submissionStarted || networkUpgradeHoldMessage(error) != null) {
+      throw PaymentLinkFundingNotSubmittedException(
+        error,
+        stackTrace,
+        afterSubmissionMarker: submissionStarted,
+      );
     }
     rethrow;
   }
