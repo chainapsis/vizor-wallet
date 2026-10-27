@@ -11093,6 +11093,76 @@ fn a_draft_resumed_after_the_upgrade_without_a_review_draws_its_schedule_again()
 }
 
 #[test]
+fn an_unsigned_run_draws_its_schedule_again_after_the_upgrade() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().into_owned();
+    let set_tip = |tip: u32| {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE IF NOT EXISTS scan_queue (block_range_end INTEGER NOT NULL);
+             DELETE FROM scan_queue;
+             INSERT INTO scan_queue (block_range_end) VALUES ({});",
+            tip + 1
+        ))
+        .unwrap();
+    };
+    let stale = vec![MigrationScheduleEntry {
+        part_index: None,
+        value_zatoshi: 100_000,
+        block_offset: 1,
+    }];
+    ensure_schema(&rusqlite::Connection::open(&db_path).unwrap()).unwrap();
+    set_tip(TEST_NU7_ACTIVATION_HEIGHT - 30);
+    let run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &[100_000],
+        &stale,
+        PreparationTimingPolicy::Immediate,
+    )
+    .unwrap();
+    // Preparation confirmed before NU7; the first Keystone batch is signed
+    // after it.
+    rusqlite::Connection::open(&db_path)
+        .unwrap()
+        .execute(
+            &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+            params![PHASE_READY_TO_MIGRATE, run_id],
+        )
+        .unwrap();
+    set_tip(TEST_NU7_ACTIVATION_HEIGHT + 5);
+
+    refresh_unsigned_schedule_for_upgrade(&db_path, &run_id, WalletNetwork::Test).unwrap();
+    let redrawn = approved_schedule_for_run(&db_path, &run_id).unwrap();
+    assert!(ensure_schedule_drawn_for_height(
+        &redrawn,
+        WalletNetwork::Test,
+        TEST_NU7_ACTIVATION_HEIGHT + 6
+    )
+    .is_ok());
+
+    // Once a batch is signed, its schedule is kept; the stop handles it.
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET schedule_json = ?1, signed_schedule_origin_height = ?2
+             WHERE run_id = ?3"
+        ),
+        params![
+            serde_json::to_string(&stale).unwrap(),
+            TEST_NU7_ACTIVATION_HEIGHT - 20,
+            run_id
+        ],
+    )
+    .unwrap();
+    refresh_unsigned_schedule_for_upgrade(&db_path, &run_id, WalletNetwork::Test).unwrap();
+    assert_eq!(approved_schedule_for_run(&db_path, &run_id).unwrap(), stale);
+}
+
+#[test]
 fn a_wallet_without_a_tip_is_not_held_for_an_upgrade() {
     // Regtest activates most upgrades at height 1, so a missing tip read as
     // height 0 looked like the block before one.

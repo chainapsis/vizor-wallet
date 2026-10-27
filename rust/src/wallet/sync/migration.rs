@@ -1478,6 +1478,36 @@ pub(crate) fn refresh_draft_schedule_for_upgrade(
     replace_draft_schedule_drawn_before_upgrade(&conn, run_id, network, approved_schedule)
 }
 
+/// Redraws the schedule of a run that has signed no transfer yet when it was
+/// drawn before an upgrade changed the block spacing: a Keystone run whose
+/// first batch is signed after activation would otherwise pass its delays in
+/// a third of the time. A run that signed parts for the old branch is stopped
+/// by the upgrade instead.
+pub(crate) fn refresh_unsigned_schedule_for_upgrade(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let signed_anything: bool = conn
+        .query_row(
+            &format!(
+                "SELECT signed_schedule_origin_height IS NOT NULL
+                     OR EXISTS (SELECT 1 FROM {PENDING_TXS_TABLE} WHERE run_id = ?1)
+                     OR EXISTS (SELECT 1 FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1)
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Read migration signing state: {e}"))?;
+    if signed_anything {
+        return Ok(());
+    }
+    redraw_schedule_drawn_before_upgrade(&conn, run_id, network, &[])
+}
+
 /// A saved draft keeps the schedule it was drawn with. Once an upgrade has
 /// changed the block spacing, the schedule approved now replaces it, or a
 /// fresh draw when the draft is resumed without a new review. A draft that
@@ -1488,25 +1518,37 @@ fn replace_draft_schedule_drawn_before_upgrade(
     network: WalletNetwork,
     approved_schedule: &[MigrationScheduleEntry],
 ) -> Result<(), String> {
-    let (phase, schedule_json, target_values_json) = conn
+    let phase = conn
         .query_row(
-            &format!(
-                "SELECT phase, schedule_json, target_values_json
-                 FROM {RUNS_TABLE} WHERE run_id = ?1"
-            ),
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
             params![run_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            },
+            |row| row.get::<_, String>(0),
         )
-        .map_err(|e| format!("Read private migration draft schedule: {e}"))?;
+        .map_err(|e| format!("Read private migration draft phase: {e}"))?;
     if !is_private_migration_draft_phase(&phase) {
         return Ok(());
     }
+    redraw_schedule_drawn_before_upgrade(conn, run_id, network, approved_schedule)
+}
+
+/// Replaces a run's schedule drawn at another block spacing with
+/// `approved_schedule`, or a fresh draw when it is empty.
+fn redraw_schedule_drawn_before_upgrade(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    network: WalletNetwork,
+    approved_schedule: &[MigrationScheduleEntry],
+) -> Result<(), String> {
+    let (schedule_json, target_values_json) = conn
+        .query_row(
+            &format!(
+                "SELECT schedule_json, target_values_json
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .map_err(|e| format!("Read migration schedule: {e}"))?;
     let stored: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
         .map_err(|e| format!("Decode approved migration schedule: {e}"))?;
     let next_height = wallet_next_height(conn)?;
@@ -1542,7 +1584,7 @@ fn replace_draft_schedule_drawn_before_upgrade(
         ),
         params![schedule_json, now_ms()?, run_id],
     )
-    .map_err(|e| format!("Save private migration draft schedule: {e}"))?;
+    .map_err(|e| format!("Save migration schedule: {e}"))?;
     Ok(())
 }
 

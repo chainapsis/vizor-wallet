@@ -1043,6 +1043,9 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
 
     let mut created = Vec::with_capacity(prepared_notes.len());
     let timing_policy = super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
+    if initial_signing {
+        super::migration::refresh_unsigned_schedule_for_upgrade(db_path, &run.run_id, network)?;
+    }
     let approved_schedule =
         super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
     let signed_schedule_origin =
