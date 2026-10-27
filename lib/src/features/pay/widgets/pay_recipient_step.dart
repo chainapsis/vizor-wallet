@@ -7,6 +7,7 @@ import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/recipient_suggestions.dart';
 import '../../swap/models/swap_address_formatting.dart';
 import '../models/pay_recent_recipients.dart';
 import 'pay_wizard_page.dart';
@@ -18,6 +19,7 @@ class PayRecipientStep extends StatelessWidget {
     required this.controller,
     required this.typedAddress,
     required this.addressError,
+    required this.network,
     required this.contacts,
     required this.recents,
     required this.busy,
@@ -34,6 +36,10 @@ class PayRecipientStep extends StatelessWidget {
 
   /// Address-format issue for the pay chain, null when the address parses.
   final String? addressError;
+
+  /// The pay chain's address network; null when it has no address book
+  /// support, which leaves nothing to suggest for typed text.
+  final AddressBookNetwork? network;
 
   /// Saved contacts already filtered to networks compatible with the pay
   /// chain (see [payCompatibleContacts]).
@@ -58,23 +64,24 @@ class PayRecipientStep extends StatelessWidget {
     final typed = typedAddress.trim();
     final hasInput = typed.isNotEmpty;
     final validDestination = hasInput && addressError == null;
-    final matchedContacts = !hasInput
-        ? contacts
-        : [
-            for (final contact in contacts)
-              if (_payContactMatchesQuery(contact, typed)) contact,
-          ];
-    final matchedRecents = !hasInput
-        ? recents
-        : matchedContacts.isEmpty
-        ? [
-            for (final recent in recents)
-              if (_payRecentMatchesQuery(recent, typed)) recent,
-          ]
-        : const <PayRecentRecipient>[];
-    final hasMatches = matchedRecents.isNotEmpty || matchedContacts.isNotEmpty;
-    final unknownAddress = validDestination && !hasMatches;
-    final showAddressError = hasInput && addressError != null && !hasMatches;
+    final payNetwork = network;
+    final suggestions = payNetwork == null
+        ? RecipientSuggestions<PayRecentRecipient>(
+            recents: hasInput ? const [] : recents,
+            contacts: hasInput ? const [] : contacts,
+          )
+        : matchRecipientSuggestions(
+            query: typed,
+            network: payNetwork,
+            recents: recents,
+            recentAddress: (recent) => recent.address,
+            contacts: contacts,
+          );
+    final matchedContacts = suggestions.contacts;
+    final matchedRecents = suggestions.recents;
+    final unknownAddress = validDestination && !suggestions.isNotEmpty;
+    final showAddressError =
+        hasInput && addressError != null && !suggestions.isSearch;
 
     Widget buildRecentRow(PayRecentRecipient recent) {
       final selection = payRecipientSelectionForRecent(contacts, recent);
@@ -204,19 +211,6 @@ class PayRecipientStep extends StatelessWidget {
       ],
     );
   }
-}
-
-bool _payContactMatchesQuery(AddressBookContact contact, String query) {
-  final needle = query.trim().toLowerCase();
-  if (needle.isEmpty) return true;
-  return contact.address.trim().toLowerCase().contains(needle) ||
-      contact.label.trim().toLowerCase().contains(needle);
-}
-
-bool _payRecentMatchesQuery(PayRecentRecipient recent, String query) {
-  final needle = query.trim().toLowerCase();
-  if (needle.isEmpty) return true;
-  return recent.address.trim().toLowerCase().contains(needle);
 }
 
 /// Bottom-pinned actions for a valid Recipient selection.

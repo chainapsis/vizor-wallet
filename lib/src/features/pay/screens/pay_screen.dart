@@ -424,6 +424,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                   controller: _recipientController,
                   typedAddress: swapState.destinationText,
                   addressError: swapState.destinationAddressFormatError,
+                  network: network,
                   contacts: contacts,
                   recents: recents,
                   busy: swapState.quoteLoading,
