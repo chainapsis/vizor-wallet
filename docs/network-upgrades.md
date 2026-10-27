@@ -138,11 +138,12 @@ held and stopped after paying for its preparation.
 
 A new run refuses a schedule drawn before the upgrade
 (`validate_new_run_schedule`): a plan reviewed before NU7 and started after it
-would pass its delays in a third of the time. A schedule drawn in the running
-app is judged by the spacing it was drawn at, one from before a restart by its
-offsets. A saved draft resumed after the upgrade takes the schedule approved
-then, or a fresh draw when it is resumed without a new review. A wallet without
-a scanned tip is not held: it has no target yet.
+would pass its delays in a third of the time. Each schedule entry records the
+blocks per reference block it was drawn at; one saved by an earlier build
+counts as drawn at one. A saved draft resumed after the upgrade takes the
+schedule approved then, or a fresh draw when it is resumed without a new
+review, and a Keystone run that has signed nothing redraws before its first
+batch. A wallet without a scanned tip is not held: it has no target yet.
 
 **ZIP 318 durations.** ZIP 318 states delays, the anchor bucket interval and
 the expiry modulus in 75-second reference blocks. From NU7 each one spans three

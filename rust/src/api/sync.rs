@@ -1230,6 +1230,9 @@ pub struct MigrationScheduledTransfer {
     pub part_index: u32,
     pub value_zatoshi: u64,
     pub block_offset: u32,
+    /// Blocks per ZIP 318 reference block the schedule was drawn at; an
+    /// approved schedule drawn at another spacing is refused.
+    pub blocks_per_reference_block: u32,
 }
 
 pub struct MigrationOutboxItem {
@@ -1422,6 +1425,7 @@ fn to_wallet_migration_schedule(
             part_index: Some(entry.part_index),
             value_zatoshi: entry.value_zatoshi,
             block_offset: entry.block_offset,
+            blocks_per_reference_block: entry.blocks_per_reference_block,
         })
         .collect()
 }
@@ -2202,6 +2206,7 @@ pub fn get_orchard_migration_private_plan(
                         part_index: entry.part_index.unwrap_or(0),
                         value_zatoshi: entry.value_zatoshi,
                         block_offset: entry.block_offset,
+                        blocks_per_reference_block: entry.blocks_per_reference_block,
                     })
                     .collect(),
             })

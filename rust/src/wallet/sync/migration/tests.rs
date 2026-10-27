@@ -155,6 +155,7 @@ fn create_outbox_test_run(
             part_index: Some(index as u32),
             value_zatoshi: *value_zatoshi,
             block_offset: index as u32 + 1,
+            blocks_per_reference_block: 1,
         })
         .collect::<Vec<_>>();
     set_run_approved_schedule(db_path, run_id, WalletNetwork::Regtest, &schedule, values).unwrap();
@@ -479,6 +480,7 @@ fn schema_backfills_only_recoverable_original_schedule_heights() {
         part_index: Some(0),
         value_zatoshi: 100,
         block_offset: 5,
+        blocks_per_reference_block: 1,
     }];
     conn.execute(
         &format!(
@@ -588,6 +590,7 @@ fn legacy_signed_schedule_backfill_uses_approved_offsets_and_discards_wrong_buck
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: offset,
+            blocks_per_reference_block: 1,
         }])
         .unwrap();
         conn.execute(
@@ -666,6 +669,7 @@ fn legacy_signed_schedule_backfill_preserves_identity_for_pending_recovery() {
         part_index: Some(0),
         value_zatoshi: 100,
         block_offset: 2,
+        blocks_per_reference_block: 1,
     }])
     .unwrap();
     let selected_note = PreparedOrchardNoteRef {
@@ -1461,6 +1465,7 @@ fn pending_insert_rejects_expiry_from_a_different_schedule_bucket() {
         part_index: Some(0),
         value_zatoshi: 100,
         block_offset: 1,
+        blocks_per_reference_block: 1,
     }];
     set_run_approved_schedule(&db_path, "run-1", WalletNetwork::Regtest, &schedule, &[100])
         .unwrap();
@@ -2456,16 +2461,19 @@ fn timing_projection_clamps_pre_rebase_origin_to_current_scanned_height() {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 0,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 48,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(2),
             value_zatoshi: 300,
             block_offset: 96,
+            blocks_per_reference_block: 1,
         },
     ];
     let signed_children = vec![
@@ -2607,6 +2615,7 @@ fn create_signed_children_rebase_fixture(
                 part_index: Some(*part_index),
                 value_zatoshi: *value_zatoshi,
                 block_offset: *block_offset,
+                blocks_per_reference_block: 1,
             },
         )
         .collect::<Vec<_>>();
@@ -2784,16 +2793,19 @@ fn initial_schedule_rebase_starts_at_finalization_and_preserves_approved_offsets
                 part_index: Some(0),
                 value_zatoshi: 100,
                 block_offset: 0,
+                blocks_per_reference_block: 1,
             },
             MigrationScheduleEntry {
                 part_index: Some(1),
                 value_zatoshi: 200,
                 block_offset: 48,
+                blocks_per_reference_block: 1,
             },
             MigrationScheduleEntry {
                 part_index: Some(2),
                 value_zatoshi: 300,
                 block_offset: 96,
+                blocks_per_reference_block: 1,
             },
         ],
         &[],
@@ -2854,11 +2866,13 @@ fn timing_projection_keeps_due_proof_retry_after_rebase_before_promotion() {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 48,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 96,
+            blocks_per_reference_block: 1,
         },
     ];
     let signed_children = vec![
@@ -3528,6 +3542,7 @@ fn persisting_presigned_children_keeps_ready_phase_and_proof_height() {
         part_index: Some(0),
         value_zatoshi: 100_000,
         block_offset: 10,
+        blocks_per_reference_block: 1,
     }])
     .unwrap();
     conn.execute(
@@ -3603,11 +3618,13 @@ fn timing_projection_keeps_later_proof_wave_after_initial_rebase() {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 144,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 288,
+            blocks_per_reference_block: 1,
         },
     ];
     let pending = vec![MigrationTimingPendingPart {
@@ -3660,11 +3677,13 @@ fn timing_projection_ignores_retained_signed_children_after_promotion() {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 144,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 288,
+            blocks_per_reference_block: 1,
         },
     ])
     .unwrap();
@@ -3737,6 +3756,7 @@ fn timing_projection_counts_the_mined_block_as_confirmation_one() {
         part_index: Some(0),
         value_zatoshi: 100,
         block_offset: 144,
+        blocks_per_reference_block: 1,
     }];
     let pending = vec![MigrationTimingPendingPart {
         part_index: Some(0),
@@ -3761,11 +3781,13 @@ fn timing_projection_waits_for_multi_part_catch_up_reschedule() {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 50,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 80,
+            blocks_per_reference_block: 1,
         },
     ];
     let signed_children = vec![MigrationTimingSignedChild {
@@ -3816,11 +3838,13 @@ fn timing_projection_clamps_persisted_child_to_proof_readiness() {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 50,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 80,
+            blocks_per_reference_block: 1,
         },
     ];
     let pending = vec![MigrationTimingPendingPart {
@@ -4029,16 +4053,19 @@ fn approved_schedule_restores_randomized_targets_in_part_order() {
             part_index: Some(2),
             value_zatoshi: 2_000,
             block_offset: 4,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(0),
             value_zatoshi: 5_000,
             block_offset: 8,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 1_000,
             block_offset: 12,
+            blocks_per_reference_block: 1,
         },
     ];
 
@@ -4055,11 +4082,13 @@ fn unindexed_schedule_cannot_invent_randomized_target_order() {
             part_index: None,
             value_zatoshi: 2_000,
             block_offset: 4,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 5_000,
             block_offset: 8,
+            blocks_per_reference_block: 1,
         },
     ];
 
@@ -4585,11 +4614,13 @@ fn schedule_validation_accepts_zero_delay_gaps() {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 0,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 0,
+            blocks_per_reference_block: 1,
         },
     ];
 
@@ -4603,11 +4634,13 @@ fn schedule_validation_keeps_legacy_positive_first_offsets_compatible() {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 144,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 288,
+            blocks_per_reference_block: 1,
         },
     ];
 
@@ -4704,6 +4737,7 @@ fn new_mainnet_draft_persists_ninety_minute_policy() {
         part_index: Some(0),
         value_zatoshi: 100,
         block_offset: NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+        blocks_per_reference_block: 1,
     }];
 
     let run_id = create_or_resume_private_migration_draft(
@@ -5026,16 +5060,19 @@ fn approved_schedule_controls_storage_and_overdue_catch_up() {
             part_index: Some(1),
             value_zatoshi: 200,
             block_offset: 1,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 2,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(2),
             value_zatoshi: 300,
             block_offset: 3,
+            blocks_per_reference_block: 1,
         },
     ];
     set_run_approved_schedule(
@@ -5143,6 +5180,7 @@ fn regtest_fast_policy_survives_pending_transaction_materialization() {
         part_index: Some(0),
         value_zatoshi: 100,
         block_offset: 12,
+        blocks_per_reference_block: 1,
     }];
     set_run_approved_schedule(
         &db_path,
@@ -5210,11 +5248,13 @@ fn approved_schedule_part_index_disambiguates_equal_values() {
             part_index: Some(1),
             value_zatoshi: 100,
             block_offset: 1,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(0),
             value_zatoshi: 100,
             block_offset: 2,
+            blocks_per_reference_block: 1,
         },
     ];
     set_run_approved_schedule(
@@ -5449,11 +5489,13 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
                 part_index: Some(1),
                 value_zatoshi: 200,
                 block_offset: 1,
+                blocks_per_reference_block: 1,
             },
             MigrationScheduleEntry {
                 part_index: Some(0),
                 value_zatoshi: 100,
                 block_offset: 2,
+                blocks_per_reference_block: 1,
             },
         ],
         &[100, 200],
@@ -5711,11 +5753,13 @@ fn legacy_equal_value_schedule_maps_incremental_parts_by_rank() {
             part_index: None,
             value_zatoshi: 100,
             block_offset: 1,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 100,
             block_offset: 2,
+            blocks_per_reference_block: 1,
         },
     ];
     let pending = |part_index| PendingMigrationTxInsert {
@@ -7320,6 +7364,7 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         part_index: Some(0),
         value_zatoshi: target_values[0],
         block_offset: 1,
+        blocks_per_reference_block: 1,
     }];
 
     let run_id = create_or_resume_private_migration_draft(
@@ -7429,6 +7474,7 @@ fn private_migration_draft_with_direct_notes_skips_denomination_waiting() {
         part_index: Some(0),
         value_zatoshi: target_values[0],
         block_offset: 1,
+        blocks_per_reference_block: 1,
     }];
     let run_id = create_or_resume_private_migration_draft(
         &db_path,
@@ -7511,6 +7557,7 @@ fn create_staged_run_persists_pending_split_atomically() {
         part_index: Some(0),
         value_zatoshi: 100_000_000,
         block_offset: 1,
+        blocks_per_reference_block: 1,
     }];
 
     let run_id = create_run_with_staged_denominations_and_signed_children(
@@ -7588,6 +7635,7 @@ fn create_run_with_direct_funding_notes_starts_ready_without_split_stages() {
         part_index: Some(0),
         value_zatoshi: 100_000_000,
         block_offset: 1,
+        blocks_per_reference_block: 1,
     }];
 
     let run_id = create_run_with_staged_denominations_and_signed_children(
@@ -7650,6 +7698,7 @@ fn create_staged_run_rolls_back_on_encrypt_failure() {
         part_index: Some(0),
         value_zatoshi: 100_000_000,
         block_offset: 1,
+        blocks_per_reference_block: 1,
     }];
 
     let err = create_run_with_staged_denominations_and_signed_children(
@@ -8529,6 +8578,7 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
         part_index: Some(0),
         value_zatoshi: 100_000_000,
         block_offset: 0,
+        blocks_per_reference_block: 1,
     }])
     .unwrap();
     conn.execute(
@@ -10909,65 +10959,48 @@ fn private_migration_cannot_start_inside_the_upgrade_hold_window() {
 
 #[test]
 fn schedules_drawn_before_the_upgrade_are_refused_after_it() {
-    let entries = |offsets: &[u32]| {
+    let entries = |offsets: &[u32], blocks_per_reference_block: u32| {
         offsets
             .iter()
             .map(|&block_offset| MigrationScheduleEntry {
                 part_index: None,
                 value_zatoshi: 100_000,
                 block_offset,
+                blocks_per_reference_block,
             })
             .collect::<Vec<_>>()
     };
     let before = TEST_NU7_ACTIVATION_HEIGHT - 1;
     let after = TEST_NU7_ACTIVATION_HEIGHT;
+    let drawn = |schedule: &[MigrationScheduleEntry], height: u32| {
+        ensure_schedule_drawn_for_height(schedule, WalletNetwork::Test, height)
+    };
 
-    assert!(
-        ensure_schedule_drawn_for_height(&entries(&[1, 5]), WalletNetwork::Test, before).is_ok()
-    );
+    assert!(drawn(&entries(&[1, 5], 1), before).is_ok());
     assert_eq!(
-        ensure_schedule_drawn_for_height(&entries(&[1, 5]), WalletNetwork::Test, after)
-            .unwrap_err(),
+        drawn(&entries(&[1, 5], 1), after).unwrap_err(),
         network_upgrade::STALE_SCHEDULE_MESSAGE
     );
-    // NU7 draws every offset in whole three-block reference blocks.
-    assert!(
-        ensure_schedule_drawn_for_height(&entries(&[0, 3, 12]), WalletNetwork::Test, after).is_ok()
+    // Offsets in multiples of three do not make a pre-NU7 draw current.
+    assert_eq!(
+        drawn(&entries(&[3, 12], 1), after).unwrap_err(),
+        network_upgrade::STALE_SCHEDULE_MESSAGE
+    );
+    assert!(drawn(&entries(&[0, 3, 12], 3), after).is_ok());
+    assert_eq!(
+        drawn(&entries(&[3], 3), before).unwrap_err(),
+        network_upgrade::STALE_SCHEDULE_MESSAGE
     );
 }
 
 #[test]
-fn a_schedule_drawn_before_the_upgrade_is_stale_even_in_multiples_of_three() {
-    let single_part = |value_zatoshi: u64| {
-        vec![MigrationScheduleEntry {
-            part_index: Some(0),
-            value_zatoshi,
-            block_offset: 3,
-        }]
-    };
-    let after = TEST_NU7_ACTIVATION_HEIGHT;
-    // Drawn at one block per reference block, before NU7.
-    remember_schedule_spacing(&single_part(7_100_001), 1);
-    remember_schedule_spacing(&single_part(7_100_002), 3);
-
+fn a_saved_schedule_without_a_spacing_was_drawn_at_one_block() {
+    let saved: Vec<MigrationScheduleEntry> =
+        serde_json::from_str(r#"[{"part_index":0,"value_zatoshi":100000,"block_offset":3}]"#)
+            .unwrap();
+    assert_eq!(saved[0].blocks_per_reference_block, 1);
     assert_eq!(
-        ensure_schedule_drawn_for_height(&single_part(7_100_001), WalletNetwork::Test, after)
-            .unwrap_err(),
-        network_upgrade::STALE_SCHEDULE_MESSAGE
-    );
-    assert!(
-        ensure_schedule_drawn_for_height(&single_part(7_100_002), WalletNetwork::Test, after)
-            .is_ok()
-    );
-    // Not drawn in this process: judged by its offsets alone.
-    assert!(
-        ensure_schedule_drawn_for_height(&single_part(7_100_003), WalletNetwork::Test, after)
-            .is_ok()
-    );
-    // Drawn again after NU7 with the same offsets: neither plan passes.
-    remember_schedule_spacing(&single_part(7_100_001), 3);
-    assert_eq!(
-        ensure_schedule_drawn_for_height(&single_part(7_100_001), WalletNetwork::Test, after)
+        ensure_schedule_drawn_for_height(&saved, WalletNetwork::Test, TEST_NU7_ACTIVATION_HEIGHT)
             .unwrap_err(),
         network_upgrade::STALE_SCHEDULE_MESSAGE
     );
@@ -11017,20 +11050,21 @@ fn a_draft_saved_before_the_upgrade_takes_the_schedule_approved_after_it() {
         ))
         .unwrap();
     };
-    let schedule = |block_offset: u32| {
+    let schedule = |block_offset: u32, blocks_per_reference_block: u32| {
         vec![MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 100_000,
             block_offset,
+            blocks_per_reference_block,
         }]
     };
-    let resume = |block_offset: u32| {
+    let resume = |block_offset: u32, blocks_per_reference_block: u32| {
         create_or_resume_private_migration_draft(
             &db_path,
             "account-1",
             WalletNetwork::Test,
             &[100_000],
-            &schedule(block_offset),
+            &schedule(block_offset, blocks_per_reference_block),
             PreparationTimingPolicy::Immediate,
         )
         .unwrap()
@@ -11038,18 +11072,18 @@ fn a_draft_saved_before_the_upgrade_takes_the_schedule_approved_after_it() {
     ensure_schema(&rusqlite::Connection::open(&db_path).unwrap()).unwrap();
 
     set_tip(TEST_NU7_ACTIVATION_HEIGHT - 30);
-    let run_id = resume(1);
+    let run_id = resume(1, 1);
     set_tip(TEST_NU7_ACTIVATION_HEIGHT + 5);
-    assert_eq!(resume(3), run_id);
+    assert_eq!(resume(3, 3), run_id);
     assert_eq!(
         approved_schedule_for_run(&db_path, &run_id).unwrap(),
-        schedule(3)
+        schedule(3, 3)
     );
     // A schedule drawn for the new spacing stays.
-    assert_eq!(resume(6), run_id);
+    assert_eq!(resume(6, 3), run_id);
     assert_eq!(
         approved_schedule_for_run(&db_path, &run_id).unwrap(),
-        schedule(3)
+        schedule(3, 3)
     );
 }
 
@@ -11079,6 +11113,7 @@ fn a_draft_resumed_after_the_upgrade_without_a_review_draws_its_schedule_again()
             part_index: None,
             value_zatoshi: 100_000,
             block_offset: 1,
+            blocks_per_reference_block: 1,
         }],
         PreparationTimingPolicy::Immediate,
     )
@@ -11118,6 +11153,7 @@ fn an_unsigned_run_draws_its_schedule_again_after_the_upgrade() {
         part_index: None,
         value_zatoshi: 100_000,
         block_offset: 1,
+        blocks_per_reference_block: 1,
     }];
     ensure_schema(&rusqlite::Connection::open(&db_path).unwrap()).unwrap();
     set_tip(TEST_NU7_ACTIVATION_HEIGHT - 30);
@@ -11360,11 +11396,13 @@ fn schedule_validation_allows_spacing_drawn_after_nu7_activation() {
             part_index: Some(0),
             value_zatoshi: 1,
             block_offset: max * 3,
+            blocks_per_reference_block: 1,
         },
         MigrationScheduleEntry {
             part_index: Some(1),
             value_zatoshi: 2,
             block_offset: max * 6,
+            blocks_per_reference_block: 1,
         },
     ];
     validate_schedule(

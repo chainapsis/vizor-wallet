@@ -116,7 +116,8 @@ where
             rng,
         ),
     );
-    let schedule: Vec<MigrationScheduleEntry> = parts
+    let blocks_per_reference_block = zip318_blocks_at(network, from_height, 1);
+    parts
         .into_iter()
         .zip(offsets)
         .map(
@@ -124,42 +125,10 @@ where
                 part_index: Some(part_index),
                 value_zatoshi,
                 block_offset,
+                blocks_per_reference_block,
             },
         )
-        .collect();
-    remember_schedule_spacing(&schedule, zip318_blocks_at(network, from_height, 1));
-    schedule
-}
-
-/// Schedules drawn in this process, with the blocks per reference block they
-/// were drawn at. Offsets alone cannot show it: a short schedule drawn before
-/// NU7 can be all multiples of three. One schedule drawn at two spacings keeps
-/// both, so neither plan passes as the other.
-static DRAWN_SCHEDULE_SPACING: std::sync::Mutex<
-    std::collections::VecDeque<(Vec<MigrationScheduleEntry>, u32)>,
-> = std::sync::Mutex::new(std::collections::VecDeque::new());
-
-const DRAWN_SCHEDULE_SPACING_LIMIT: usize = 32;
-
-fn remember_schedule_spacing(schedule: &[MigrationScheduleEntry], blocks_per_reference_block: u32) {
-    let Ok(mut drawn) = DRAWN_SCHEDULE_SPACING.lock() else {
-        return;
-    };
-    drawn.retain(|(entries, spacing)| {
-        *spacing != blocks_per_reference_block || entries.as_slice() != schedule
-    });
-    drawn.push_back((schedule.to_vec(), blocks_per_reference_block));
-    if drawn.len() > DRAWN_SCHEDULE_SPACING_LIMIT {
-        drawn.pop_front();
-    }
-}
-
-fn drawn_at_other_spacing(schedule: &[MigrationScheduleEntry], blocks_per_reference_block: u32) -> bool {
-    DRAWN_SCHEDULE_SPACING.lock().is_ok_and(|drawn| {
-        drawn.iter().any(|(entries, spacing)| {
-            *spacing != blocks_per_reference_block && entries.as_slice() == schedule
-        })
-    })
+        .collect()
 }
 
 /// Fresh cumulative offsets for rebuilt migration parts, aligned with
@@ -300,19 +269,17 @@ fn validate_schedule_with_policy(
 
 /// Refuses a new run whose schedule was drawn before an upgrade changed the
 /// block spacing: its offsets count one block per reference block, so its
-/// delays would pass in a third of the time. A schedule drawn in this process
-/// is judged by its recorded spacing; one from before a restart only by its
-/// offsets.
+/// delays would pass in a third of the time. Each entry records the spacing
+/// it was drawn at.
 pub(crate) fn ensure_schedule_drawn_for_height(
     schedule: &[MigrationScheduleEntry],
     network: WalletNetwork,
     height: u32,
 ) -> Result<(), String> {
     let blocks_per_reference_block = zip318_blocks_at(network, height, 1);
-    if drawn_at_other_spacing(schedule, blocks_per_reference_block)
-        || schedule
-            .iter()
-            .any(|entry| entry.block_offset % blocks_per_reference_block != 0)
+    if schedule
+        .iter()
+        .any(|entry| entry.blocks_per_reference_block != blocks_per_reference_block)
     {
         return Err(network_upgrade::STALE_SCHEDULE_MESSAGE.to_string());
     }

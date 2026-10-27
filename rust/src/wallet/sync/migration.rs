@@ -170,6 +170,14 @@ pub(crate) struct MigrationScheduleEntry {
     pub part_index: Option<u32>,
     pub value_zatoshi: u64,
     pub block_offset: u32,
+    /// Blocks per ZIP 318 reference block the schedule was drawn at. Builds
+    /// that saved none drew one.
+    #[serde(default = "one_block_per_reference_block")]
+    pub blocks_per_reference_block: u32,
+}
+
+fn one_block_per_reference_block() -> u32 {
+    1
 }
 
 pub(crate) struct PendingMigrationTxInsert {

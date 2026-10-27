@@ -3185,6 +3185,7 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(10_000_000),
           blockOffset: 144,
+          blocksPerReferenceBlock: 1,
         ),
       ];
       final service = IronwoodMigrationService(
@@ -3307,6 +3308,7 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(5_000_000),
           blockOffset: 144,
+          blocksPerReferenceBlock: 1,
         ),
       ];
       final service = IronwoodMigrationService(
@@ -3536,6 +3538,7 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(10_000_000),
           blockOffset: 144,
+          blocksPerReferenceBlock: 1,
         ),
       ];
 

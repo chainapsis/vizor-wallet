@@ -173,11 +173,13 @@ fn draftless_denomination_request_replays_approved_targets() {
             part_index: Some(1),
             value_zatoshi: 5_000,
             block_offset: 4,
+            blocks_per_reference_block: 1,
         },
         migration::MigrationScheduleEntry {
             part_index: Some(0),
             value_zatoshi: 5_000,
             block_offset: 8,
+            blocks_per_reference_block: 1,
         },
     ];
 
@@ -200,21 +202,25 @@ fn draft_replay_uses_persisted_targets_instead_of_legacy_schedule_order() {
             part_index: None,
             value_zatoshi: 2_000,
             block_offset: 4,
+            blocks_per_reference_block: 1,
         },
         migration::MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 5_000,
             block_offset: 8,
+            blocks_per_reference_block: 1,
         },
         migration::MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 2_000,
             block_offset: 12,
+            blocks_per_reference_block: 1,
         },
         migration::MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 1_000,
             block_offset: 16,
+            blocks_per_reference_block: 1,
         },
     ];
 
@@ -1119,6 +1125,7 @@ fn a_private_plan_whose_first_part_would_meet_the_upgrade_hold_is_refused() {
         part_index: Some(0),
         value_zatoshi: 100_000,
         block_offset: 5,
+        blocks_per_reference_block: 1,
     }];
     let refused = |plan: OrchardMigrationPrivatePlan| {
         plan.ensure_first_part_precedes_upgrade_hold(network, &schedule)

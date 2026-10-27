@@ -2523,15 +2523,23 @@ class MigrationScheduledTransfer {
   final BigInt valueZatoshi;
   final int blockOffset;
 
+  /// Blocks per ZIP 318 reference block the schedule was drawn at; an
+  /// approved schedule drawn at another spacing is refused.
+  final int blocksPerReferenceBlock;
+
   const MigrationScheduledTransfer({
     required this.partIndex,
     required this.valueZatoshi,
     required this.blockOffset,
+    required this.blocksPerReferenceBlock,
   });
 
   @override
   int get hashCode =>
-      partIndex.hashCode ^ valueZatoshi.hashCode ^ blockOffset.hashCode;
+      partIndex.hashCode ^
+      valueZatoshi.hashCode ^
+      blockOffset.hashCode ^
+      blocksPerReferenceBlock.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2540,7 +2548,8 @@ class MigrationScheduledTransfer {
           runtimeType == other.runtimeType &&
           partIndex == other.partIndex &&
           valueZatoshi == other.valueZatoshi &&
-          blockOffset == other.blockOffset;
+          blockOffset == other.blockOffset &&
+          blocksPerReferenceBlock == other.blocksPerReferenceBlock;
 }
 
 class MigrationStatus {
