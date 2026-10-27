@@ -23,6 +23,7 @@ import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../../swap/providers/swap_payout_discovery_provider.dart';
 import '../activity_eta_provider.dart';
 import '../activity_row_mapper.dart';
 import '../gift_card_activity_index.dart';
@@ -422,6 +423,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               null => null,
               final tx => () => _openTransactionStatus(tx),
             },
+            findingPayout:
+                swapReceiveTxByIntent[item.intentId] == null &&
+                watchSwapFindingPayout(
+                  ref,
+                  accountUuid: accountUuid,
+                  awaitingTxid: item.payoutAwaitingDiscovery(DateTime.now()),
+                ),
           ),
         ),
       );

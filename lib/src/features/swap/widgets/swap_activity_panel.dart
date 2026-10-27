@@ -25,6 +25,7 @@ import '../models/swap_address_book_helpers.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/pay_deposit_transaction_provider.dart';
+import '../providers/swap_payout_discovery_provider.dart';
 import '../providers/swap_state_provider.dart';
 import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../screens/mobile/mobile_swap_ledger_sign_screen.dart';
@@ -887,9 +888,11 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           )
           .value;
     }
+    final findingPayout = watchIntentFindingPayout(ref, intent);
     final presentation = swapActivityStatusPresentationForIntent(
       state,
       intent,
+      findingPayout: findingPayout,
       accountDetail: accountInfo == null
           ? null
           : SwapActivityAccountDetail(

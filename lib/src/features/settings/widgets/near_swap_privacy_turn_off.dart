@@ -15,6 +15,7 @@ import '../../accounts/widgets/mobile/account_edit_sheets.dart'
 import '../../swap/models/swap_models.dart';
 import '../../swap/providers/pay_deposit_transaction_provider.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../../swap/models/swap_payout_discovery.dart';
 
 /// Title of the confirmation before NEAR swap privacy turns off.
 const kNearSwapPrivacyTurnOffTitle = 'Turn off NEAR swap privacy?';
@@ -36,9 +37,6 @@ const kNearSwapPrivacyTurnOffKeptCopy =
 /// Which one-time swap ZEC the wallet would stop looking for: a payout still
 /// owed, or a refund still possible.
 typedef NearSwapPrivacyPendingSwaps = ({bool payout, bool refund});
-
-/// How long after a payout completes the wallet may still be finding it.
-const _payoutDiscoveryWindow = Duration(days: 7);
 
 /// Reads the software accounts' swaps whose ZEC goes to a one-time address and
 /// may still arrive (see [nearSwapPrivacyPendingSwapsIn]). Overridable in
@@ -64,14 +62,14 @@ final nearSwapPrivacyPendingSwapsProvider =
     });
 
 /// Which of `swaps`, each with its account, may still send ZEC to a one-time
-/// address: any unfinished one, and a payout completed in the last week that
-/// [loadTransaction] doesn't find in the wallet yet.
+/// address: any unfinished one, and a payout NEAR recently sent (see
+/// [swapPayoutAwaitingDiscovery]) that [loadTransaction] doesn't find in the
+/// wallet yet.
 Future<NearSwapPrivacyPendingSwaps> nearSwapPrivacyPendingSwapsIn(
   Iterable<(String, SwapIntent)> swaps, {
   required PayDepositTransactionLoader loadTransaction,
   required DateTime now,
 }) async {
-  final recent = now.subtract(_payoutDiscoveryWindow);
   var payout = false;
   var refund = false;
   for (final (accountUuid, intent) in swaps) {
@@ -83,10 +81,15 @@ Future<NearSwapPrivacyPendingSwaps> nearSwapPrivacyPendingSwapsIn(
       refund |= !intent.status.isTerminal;
     } else if (!intent.status.isTerminal) {
       payout = true;
-    } else if (!payout &&
-        intent.status == SwapIntentStatus.complete &&
-        (intent.completedAt?.isAfter(recent) ?? false)) {
-      final txid = swapChainTxidToWalletTxidHex(intent.destinationChainTxHash);
+    } else if (!payout) {
+      final txid = swapPayoutAwaitingDiscovery(
+        privateAddress: intent.privateAddress,
+        direction: direction,
+        status: intent.status,
+        completedAt: intent.completedAt,
+        walletTxid: swapChainTxidToWalletTxidHex(intent.destinationChainTxHash),
+        now: now,
+      );
       payout =
           txid != null &&
           await loadTransaction(accountUuid: accountUuid, walletTxid: txid) ==

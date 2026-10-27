@@ -24,6 +24,7 @@ import '../../activity_eta_provider.dart';
 import '../../activity_row_mapper.dart';
 import '../../gift_card_activity_index.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
+import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../swap_activity_row_items_provider.dart';
 import '../../swap_activity_row_mapper.dart';
@@ -396,6 +397,13 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
               null => null,
               final tx => () => _openLoadedTransactionStatus(context, tx),
             },
+            findingPayout:
+                swapReceiveTxByIntent[item.intentId] == null &&
+                watchSwapFindingPayout(
+                  ref,
+                  accountUuid: accountUuid,
+                  awaitingTxid: item.payoutAwaitingDiscovery(DateTime.now()),
+                ),
           ),
         ),
     ];
