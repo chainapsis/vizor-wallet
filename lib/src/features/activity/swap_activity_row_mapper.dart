@@ -200,7 +200,7 @@ ActivityRowData buildSwapActivityRow({
         ? kSwapFindingPayoutLabel
         : _swapActivityStatusText(item.status, progress),
     statusIconName: findingPayout
-        ? AppIcons.loader
+        ? null
         : failed
         ? AppIcons.skull
         : item.status == SwapIntentStatus.refunded

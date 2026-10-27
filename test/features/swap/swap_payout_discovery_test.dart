@@ -3,7 +3,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
@@ -172,7 +171,8 @@ void main() {
       ),
     );
     expect(row!.statusText, kSwapFindingPayoutLabel);
-    expect(row!.statusIconName, AppIcons.loader);
+    // The label alone, as in-progress rows carry no status icon.
+    expect(row!.statusIconName, isNull);
     // Not settled yet: an in-progress title and no "Received ZEC" leg.
     expect(row!.title, 'Swapping...');
     expect(row!.childRows, isEmpty);
