@@ -130,7 +130,8 @@ class ReviewInfoRow extends StatelessWidget {
   final VoidCallback? onTrailingAction;
 
   /// A bottom-right widget in place of the trailing ghost button, for a
-  /// label that is not an action.
+  /// label that is not an action. It gets the width [bottomLeftText] leaves,
+  /// so it can shorten itself to fit.
   final Widget? trailing;
 
   /// When set, the headline value shrinks to fit instead of truncating
@@ -280,19 +281,33 @@ class ReviewInfoRow extends StatelessWidget {
           if (bottomLeftPlaceholder != null)
             Expanded(child: bottomLeftPlaceholder!)
           else if (bottomLeftText != null)
-            Expanded(
-              child: Text(
-                bottomLeftText!,
-                key: bottomLeftTextKey,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: textStyle,
-              ),
-            )
-          else
+            // Beside [trailing] the text keeps its width and [trailing]
+            // takes the rest.
+            trailing != null
+                ? Text(
+                    bottomLeftText!,
+                    key: bottomLeftTextKey,
+                    maxLines: 1,
+                    style: textStyle,
+                  )
+                : Expanded(
+                    child: Text(
+                      bottomLeftText!,
+                      key: bottomLeftTextKey,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textStyle,
+                    ),
+                  )
+          else if (trailing == null)
             const Spacer(),
           if (trailing case final trailing?)
-            trailing
+            Expanded(
+              child: Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: trailing,
+              ),
+            )
           else if (trailingActionLabel != null)
             // Keeps its natural width but never pushes past the strip, so a
             // long or scaled label ellipsizes instead of overflowing.

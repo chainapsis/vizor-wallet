@@ -13,21 +13,57 @@ const kOneTimeAddressPreparingExplanation =
     'few minutes.';
 
 /// The one-time address on a review or status row, where an ordinary row has
-/// its Copy action. Explains itself on tap.
+/// its Copy action. Explains itself on tap. Names a refund address in full
+/// where the width allows, and falls back to the composer's short label.
 class OneTimeAddressLabel extends StatelessWidget {
   const OneTimeAddressLabel({required this.role, super.key});
 
   final OneTimeAddressRole role;
 
+  // The padding's horizontal sides, the icon and the gap after it.
+  static const _chromeWidth =
+      AppSpacing.xxs + AppSpacing.xs + 16 + AppSpacing.xxs;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => _build(
+        context,
+        _fits(context, role.detailLabel, constraints.maxWidth)
+            ? role.detailLabel
+            : role.label,
+        bounded: constraints.hasBoundedWidth,
+      ),
+    );
+  }
+
+  bool _fits(BuildContext context, String text, double maxWidth) {
+    if (maxWidth.isInfinite) return true;
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: AppTypography.labelLarge),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width + _chromeWidth <= maxWidth;
+  }
+
+  Widget _build(BuildContext context, String text, {required bool bounded}) {
     final colors = context.colors;
+    final label = Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+    );
     return AppTooltip(
       message: role.explanation,
       tapToShow: true,
       child: Semantics(
         button: true,
-        label: role.label,
+        label: role.detailLabel,
         excludeSemantics: true,
         child: Padding(
           // The row's ghost button geometry (outer 4, label 4), so the text
@@ -47,12 +83,8 @@ class OneTimeAddressLabel extends StatelessWidget {
                 color: colors.icon.brandCrimson,
               ),
               const SizedBox(width: AppSpacing.xxs),
-              Text(
-                role.label,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
+              // Ellipsized only if even the short label can't fit.
+              if (bounded) Flexible(child: label) else label,
             ],
           ),
         ),

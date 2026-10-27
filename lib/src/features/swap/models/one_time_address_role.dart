@@ -6,8 +6,15 @@ enum OneTimeAddressRole {
   /// The refund of a swap that sends ZEC.
   refund;
 
-  /// The same for both ends; [explanation] says what the address is for.
+  /// The composer's short label, the same for both ends; [explanation] says
+  /// what the address is for.
   String get label => 'One-time address';
+
+  /// The review and status label, which names the refund end.
+  String get detailLabel => switch (this) {
+    payout => 'One-time address',
+    refund => 'One-time refund address',
+  };
 
   String get explanation => switch (this) {
     payout =>
