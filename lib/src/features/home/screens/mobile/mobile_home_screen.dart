@@ -64,6 +64,8 @@ import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_balance_display.dart';
 import '../../widgets/mobile/shield/mobile_shield_backdrop.dart';
 import '../../providers/backup_reminder_provider.dart';
+import '../../providers/nu7_announcement_provider.dart';
+import '../../widgets/nu7_announcement.dart';
 import '../../widgets/mobile_home_carousel.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
@@ -130,6 +132,7 @@ class MobileHomeScreen extends ConsumerWidget {
           ),
           const _SyncKeepAwakePromptHost(),
           const _IronwoodMigrationAnnouncementHost(),
+          const _Nu7AnnouncementHost(),
           _IronwoodMigrationAttentionMountGate(
             isHomeCurrent: isCurrentHomeRoute,
           ),
@@ -522,6 +525,69 @@ class _IronwoodMigrationAnnouncementHostState
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       // The announcement remains open so the user can retry.
+    }
+  }
+}
+
+/// Shows the NU7 announcement once per network, after any Ironwood
+/// announcement: the Ironwood host's dismissal re-runs this evaluation.
+class _Nu7AnnouncementHost extends ConsumerStatefulWidget {
+  const _Nu7AnnouncementHost();
+
+  @override
+  ConsumerState<_Nu7AnnouncementHost> createState() =>
+      _Nu7AnnouncementHostState();
+}
+
+class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
+  bool _showing = false;
+  String? _shownFor;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _evaluate();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(nu7AnnouncementProvider, (_, _) => _evaluate());
+    ref.listen(ironwoodMigrationAnnouncementProvider, (_, _) => _evaluate());
+    return const SizedBox.shrink();
+  }
+
+  void _evaluate() {
+    final network = ref.read(nu7AnnouncementProvider).value?.network;
+    if (network == null || _showing || _shownFor == network) return;
+    final ironwood = ref.read(ironwoodMigrationAnnouncementProvider);
+    if (ironwood.isLoading && !ironwood.hasValue) return;
+    if (ironwood.value?.visible ?? false) return;
+    _shownFor = network;
+    unawaited(_show(network));
+  }
+
+  Future<void> _show(String network) async {
+    _showing = true;
+    try {
+      await showAppMobileSheet<void>(
+        context: context,
+        builder: (sheetContext) => SingleChildScrollView(
+          child: Nu7AnnouncementContent(
+            onClose: () => Navigator.of(sheetContext).pop(),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      try {
+        await ref.read(nu7AnnouncementStoreProvider).markSeen(network);
+      } catch (_) {
+        return;
+      }
+      if (mounted) ref.invalidate(nu7AnnouncementProvider);
+    } finally {
+      _showing = false;
     }
   }
 }

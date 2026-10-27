@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/features/home/providers/nu7_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
@@ -85,6 +86,16 @@ class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
     required String accountUuid,
     required SwapAsset asset,
   }) async {}
+}
+
+class _MemoryNu7AnnouncementStore implements Nu7AnnouncementStore {
+  final seen = <String>{};
+
+  @override
+  Future<bool> isSeen(String network) async => seen.contains(network);
+
+  @override
+  Future<void> markSeen(String network) async => seen.add(network);
 }
 
 class _FakeIronwoodAnnouncementStore
@@ -246,8 +257,12 @@ Widget _app(
   AppThemeData theme = AppThemeData.dark,
   AccountState accountState = _accountState,
   Widget Function(GoRouterState)? receiptBuilder,
+  Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
+  _MemoryNu7AnnouncementStore? nu7AnnouncementStore,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
+  final ironwoodAnnouncementStore = _FakeIronwoodAnnouncementStore();
+  final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -404,11 +419,20 @@ Widget _app(
         migrationPresentationCta ?? migrationCta,
       ),
       ironwoodMigrationAnnouncementProvider.overrideWith(
-        (ref) async => announcement,
+        (ref) async => ironwoodAnnouncementStore.seen
+            ? const IronwoodMigrationAnnouncementState.hidden()
+            : announcement,
       ),
       ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
-        _FakeIronwoodAnnouncementStore(),
+        ironwoodAnnouncementStore,
       ),
+      nu7AnnouncementProvider.overrideWith(
+        (ref) async => nu7Store.seen.contains(nu7Announcement.network)
+            ? const Nu7AnnouncementState.hidden()
+            : nu7Announcement,
+      ),
+      nu7AnnouncementStoreProvider.overrideWithValue(nu7Store),
+      nu7AnnouncementMotionEnabledProvider.overrideWithValue(false),
       if (migrationCoordinator != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(migrationCoordinator),
       mobileIronwoodMigrationAttentionSessionProvider.overrideWith(
@@ -2574,6 +2598,75 @@ void main() {
       expect(find.text('Migration needs attention'), findsOneWidget);
     },
   );
+
+  testWidgets('shows the NU7 announcement once and remembers it', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _MemoryNu7AnnouncementStore();
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.text('NU7 update is live.\nWhat does this mean for you?'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('nu7_announcement_got_it_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+    expect(store.seen, {'main'});
+  });
+
+  testWidgets('shows the NU7 announcement after the Ironwood one', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        announcement: IronwoodMigrationAnnouncementState.visible(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(kIronwoodMigrationReadyPhase),
+        ),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_close_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
 
   testWidgets('shows the mobile Ironwood announcement sheet', (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));

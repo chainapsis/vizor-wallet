@@ -58,6 +58,8 @@ import '../services/transparent_balance_display.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 import '../widgets/ledger_shield_signing_overlay.dart';
+import '../providers/nu7_announcement_provider.dart';
+import '../widgets/nu7_announcement.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -86,6 +88,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _shieldBalanceErrorDetail;
   IronwoodMigrationAnnouncementState? _visibleIronwoodAnnouncement;
   String? _suppressedIronwoodAnnouncementScope;
+  String? _dismissedNu7Network;
 
   @override
   void initState() {
@@ -229,6 +232,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.invalidate(ironwoodMigrationAnnouncementProvider);
   }
 
+  Future<void> _dismissNu7Announcement(String network) async {
+    setState(() => _dismissedNu7Network = network);
+    try {
+      await ref.read(nu7AnnouncementStoreProvider).markSeen(network);
+    } catch (e) {
+      log('HomeScreen: failed to store NU7 announcement state: $e');
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(nu7AnnouncementProvider);
+  }
+
   void _dismissIronwoodAnnouncement(
     IronwoodMigrationAnnouncementState announcement,
   ) {
@@ -358,6 +373,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _visibleIronwoodAnnouncement = null;
     }
     final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
+    // The Ironwood announcement goes first.
+    final nu7Network = ref.watch(nu7AnnouncementProvider).value?.network;
+    final visibleNu7Network =
+        visibleIronwoodAnnouncement == null &&
+            (!ironwoodAnnouncementAsync.isLoading ||
+                ironwoodAnnouncementAsync.hasValue) &&
+            nu7Network != _dismissedNu7Network
+        ? nu7Network
+        : null;
     return AppDesktopBackdropShell(
       background: _HomeFullPageBackground(assetName: backgroundAsset),
       sidebar: const AppMainSidebar(),
@@ -432,6 +456,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 onOpenReleaseNotes: () =>
                     unawaited(_openIronwoodReleaseNotes()),
+              ),
+            ),
+          if (visibleNu7Network != null)
+            AppPaneModalOverlay(
+              key: const ValueKey('nu7_announcement_overlay'),
+              alignment: const Alignment(0, -0.08),
+              onDismiss: () =>
+                  unawaited(_dismissNu7Announcement(visibleNu7Network)),
+              child: Nu7AnnouncementModal(
+                onClose: () =>
+                    unawaited(_dismissNu7Announcement(visibleNu7Network)),
               ),
             ),
         ],
