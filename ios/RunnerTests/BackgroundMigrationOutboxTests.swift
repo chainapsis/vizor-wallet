@@ -741,7 +741,8 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     let activation = try testnetNu7ActivationHeight()
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }
-    try stageAndArm(try makeBatchBeforeNu7(targetHeight: activation - 100), in: harness.store)
+    let batch = try makeBatchBeforeNu7(targetHeight: activation - 100)
+    try stageAndArm(batch, in: harness.store)
 
     let outcome = BackgroundMigrationOutboxRunner.runOnce(
       store: harness.store,
@@ -756,7 +757,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       )
     )
 
-    XCTAssertTrue(outcome.heldForUpgrade)
+    XCTAssertEqual(outcome.heldForUpgradeTxids, [batch.items[0].txidHex])
     XCTAssertTrue(try harness.store.read().receipts.isEmpty)
   }
 

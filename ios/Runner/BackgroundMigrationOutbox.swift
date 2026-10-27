@@ -180,8 +180,8 @@ struct BackgroundMigrationOutboxRunResult: Equatable {
   let proofReady: BackgroundMigrationProofReadyMetadata?
   let broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata?
   let transportAccountUuid: String?
-  /// A due part waits for the network upgrade rather than a retry.
-  var heldForUpgrade = false
+  /// Due parts that wait for the network upgrade rather than a retry.
+  var heldForUpgradeTxids: [String] = []
 
   init(
     transport: BackgroundMigrationTransportOutcome,
@@ -1203,15 +1203,14 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     )
   }
 
-  /// Whether a due part on `endpoint` waits for the network upgrade.
-  func holdsDueItemForUpgrade(remoteHeight: UInt64, endpoint: String) -> Bool {
-    batches.contains { batch in
-      batch.lightwalletdUrl == endpoint
-        && batch.items.contains {
-          $0.status == .armed && $0.scheduledHeight <= remoteHeight
-            && Self.upgradeHolds($0, in: batch, remoteHeight: remoteHeight)
-        }
-    }
+  /// Txids of due parts on `endpoint` that wait for the network upgrade.
+  func dueTxidsHeldForUpgrade(remoteHeight: UInt64, endpoint: String) -> [String] {
+    batches.filter { $0.lightwalletdUrl == endpoint }.flatMap { batch in
+      batch.items.filter {
+        $0.status == .armed && $0.scheduledHeight <= remoteHeight
+          && Self.upgradeHolds($0, in: batch, remoteHeight: remoteHeight)
+      }.map(\.txidHex)
+    }.sorted()
   }
 }
 

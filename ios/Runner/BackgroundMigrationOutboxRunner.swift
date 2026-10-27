@@ -195,7 +195,7 @@ enum BackgroundMigrationOutboxRunner {
             snapshot.nextActionAccountUuid(endpoint: endpoint, height: $0)
           }
         )
-        result.heldForUpgrade = snapshot.holdsDueItemForUpgrade(
+        result.heldForUpgradeTxids = snapshot.dueTxidsHeldForUpgrade(
           remoteHeight: remoteHeight,
           endpoint: endpoint
         )
