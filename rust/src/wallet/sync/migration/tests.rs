@@ -11,6 +11,77 @@ fn terminal_phases_sql_lists_the_terminal_phases() {
     assert_eq!(TERMINAL_PHASES_SQL, listed);
 }
 
+/// Every writer of a run's phase leaves an ended run alone, by excluding the
+/// terminal phases or by replacing only the phase it expects.
+#[test]
+fn every_run_phase_writer_leaves_ended_runs_alone() {
+    for (file, source) in [
+        ("migration.rs", include_str!("../migration.rs")),
+        ("migration/schema.rs", include_str!("schema.rs")),
+    ] {
+        let mut writers = 0;
+        for (offset, _) in source.match_indices("SET phase") {
+            let start = source[..offset].rfind("UPDATE").unwrap();
+            let end = offset + source[offset..].find('"').unwrap();
+            let statement = &source[start..end];
+            assert!(
+                statement.contains("{TERMINAL_PHASES_SQL}")
+                    || statement.contains("AND phase = ?")
+                    || statement.contains("AND phase IN ("),
+                "{file}: a phase writer can overwrite an ended run: {statement}"
+            );
+            writers += 1;
+        }
+        assert!(writers > 0, "{file} has no phase writers to check");
+    }
+}
+
+#[test]
+fn a_stopped_run_keeps_its_phase_against_later_writers() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().into_owned();
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE scan_queue (block_range_end INTEGER NOT NULL);
+         INSERT INTO scan_queue (block_range_end) VALUES (1000);",
+    )
+    .unwrap();
+    let run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &[100_000],
+        &[MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 100_000,
+            block_offset: 1,
+            blocks_per_reference_block: 1,
+        }],
+        PreparationTimingPolicy::Immediate,
+    )
+    .unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1, last_error = 'stopped' WHERE run_id = ?2"),
+        params![PHASE_STOPPED_BY_UPGRADE, run_id],
+    )
+    .unwrap();
+
+    mark_run_phase(&db_path, &run_id, PHASE_BROADCASTING, None).unwrap();
+    retire_run_for_rebuild(&db_path, WalletNetwork::Test, &run_id, "rebuild").unwrap();
+
+    let (phase, last_error): (String, String) = conn
+        .query_row(
+            &format!("SELECT phase, last_error FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_STOPPED_BY_UPGRADE);
+    assert_eq!(last_error, "stopped");
+}
+
 #[test]
 fn wallet_lock_reconciliation_retries_when_terminal_disposition_changes() {
     assert!(migration_phase_releases_wallet_locks(PHASE_COMPLETE));

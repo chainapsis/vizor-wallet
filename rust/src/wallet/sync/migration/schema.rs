@@ -272,7 +272,7 @@ fn backfill_legacy_signed_schedule_metadata(
                     "UPDATE {RUNS_TABLE}
                      SET phase = ?1,
                          last_error = 'Legacy migration signatures crossed a ZIP 318 expiry boundary and must be recreated'
-                     WHERE run_id = ?2"
+                     WHERE run_id = ?2 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
                 ),
                 params![PHASE_READY_TO_MIGRATE, run_id],
             )
@@ -408,7 +408,7 @@ fn backfill_legacy_pending_schedule_metadata(
                     "UPDATE {RUNS_TABLE}
                      SET phase = ?1,
                          last_error = 'Legacy migration schedule crossed a ZIP 318 expiry boundary and must be recreated'
-                     WHERE run_id = ?2"
+                     WHERE run_id = ?2 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
                 ),
                 params![PHASE_READY_TO_MIGRATE, run_id],
             )

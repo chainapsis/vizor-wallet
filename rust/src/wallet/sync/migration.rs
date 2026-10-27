@@ -1701,11 +1701,13 @@ pub(crate) fn mark_run_phase(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let now = now_ms()?;
+    // An ended run keeps its phase: a stop or completion committed while this
+    // writer was in flight must not be undone.
     conn.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
              SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-             WHERE run_id = ?4"
+             WHERE run_id = ?4 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
         ),
         params![phase, now, message, run_id],
     )
@@ -4893,15 +4895,20 @@ pub(crate) fn retire_run_for_rebuild(
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin migration rebuild transition: {e}"))?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-             WHERE run_id = ?4"
-        ),
-        params![PHASE_FAILED_TERMINAL, now, message, run_id],
-    )
-    .map_err(|e| format!("Mark migration run for rebuild: {e}"))?;
+    let retired = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                 WHERE run_id = ?4 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
+            ),
+            params![PHASE_FAILED_TERMINAL, now, message, run_id],
+        )
+        .map_err(|e| format!("Mark migration run for rebuild: {e}"))?;
+    // A run that already ended released its locks when it did.
+    if retired == 0 {
+        return Ok(());
+    }
     tx.execute(
         &format!(
             "UPDATE {PREPARED_NOTES_TABLE}
@@ -6027,7 +6034,7 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2,
                      last_error = 'Migration schedule crossed a ZIP 318 expiry boundary'
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![PHASE_READY_TO_MIGRATE, now_ms()?, run_id],
         )
