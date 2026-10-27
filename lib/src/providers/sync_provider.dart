@@ -1499,12 +1499,27 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           if (manual) throw StateError('Swap history check was cancelled.');
           return null;
         }
+        if (!manual && ref.mounted) {
+          // Waiting for sync or for the service is progress, not a failure.
+          final waiting = switch (error) {
+            rust_swap.ReceiveError(
+              kind: rust_swap.ReceiveErrorKind.waitingForSync ||
+                  rust_swap.ReceiveErrorKind.waitingForService,
+            ) =>
+              true,
+            _ => false,
+          };
+          ref.read(swapRecoveryRoundFailedProvider.notifier).set(!waiting);
+        }
         // A round can commit results and then fail (see
         // `SwapRecoveryRound.changed`), such as a payment that now waits for
         // sync to admit it.
         await _refreshAfterSwapRecovery();
         await _syncIfAwaitingAdmission();
         rethrow;
+      }
+      if (!manual && ref.mounted && generation == _swapRecoveryGeneration) {
+        ref.read(swapRecoveryRoundFailedProvider.notifier).set(false);
       }
       if (round == null) return null;
       if (round.rescan) startSync();
@@ -4740,6 +4755,22 @@ class SwapRecoveryRounds extends Notifier<int> {
 
   /// Records that a round finished.
   void ended() => state++;
+}
+
+/// Whether the last automatic swap recovery round failed, such as when the
+/// receiver service can't be reached. The next round that succeeds clears it.
+final swapRecoveryRoundFailedProvider =
+    NotifierProvider<SwapRecoveryRoundFailed, bool>(
+      SwapRecoveryRoundFailed.new,
+    );
+
+/// See [swapRecoveryRoundFailedProvider].
+class SwapRecoveryRoundFailed extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  /// Records the latest automatic round's outcome.
+  void set(bool failed) => state = failed;
 }
 
 /// Reads the wallet's saved swap recovery state without network access, or

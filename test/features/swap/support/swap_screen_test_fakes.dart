@@ -31,9 +31,13 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     BigInt? displaySpendableBalance,
     this.displaySpendableFreshness = SpendableBalanceFreshness.authoritative,
     this.recentTransactions = const [],
+    this.chainTipHeight = 0,
+    this.scannedHeight = 0,
   }) : displaySpendableBalance = displaySpendableBalance ?? spendableBalance;
 
   final BigInt spendableBalance;
+  final int chainTipHeight;
+  final int scannedHeight;
   final BigInt displaySpendableBalance;
   final SpendableBalanceFreshness displaySpendableFreshness;
   final List<rust_sync.TransactionInfo> recentTransactions;
@@ -45,6 +49,13 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
 
   /// What each waited round reports: its failure, or null when it succeeded.
   Object? swapRecoveryFailure;
+
+  /// The wallet's saved swap recovery state, or null for no wallet.
+  SwapRecoveryStatus? swapRecoveryStatusResult;
+
+  @override
+  Future<SwapRecoveryStatus?> swapRecoveryStatus() async =>
+      swapRecoveryStatusResult;
 
   /// Counts recovery rounds a swap flow starts without waiting.
   @override
@@ -71,6 +82,8 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     displaySpendableFreshness: displaySpendableFreshness,
     totalBalance: spendableBalance,
     recentTransactions: recentTransactions,
+    chainTipHeight: chainTipHeight,
+    scannedHeight: scannedHeight,
   );
 
   @override
@@ -920,6 +933,11 @@ class _HeldFirstQuoteSwapProvider extends _NewDepositPerQuoteSwapProvider {
 
 /// NEAR swap privacy, off at first, that a test sets without the settings
 /// store or native calls.
+class _OnNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
+  @override
+  bool build() => true;
+}
+
 class _FakeNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
   @override
   bool build() => false;

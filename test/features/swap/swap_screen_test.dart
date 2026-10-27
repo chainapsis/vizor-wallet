@@ -53,7 +53,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_receive_reservatio
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show PlatformInt64Util;
 import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart'
-    show ReceiveDeposit, ReceiveError, ReceiveErrorKind;
+    show ReceiveDeposit, ReceiveError, ReceiveErrorKind, SwapRecoveryStatus;
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -8988,6 +8988,113 @@ void main() {
     });
   }
 
+  testWidgets(
+    'with NEAR swap privacy on, an address still unchecked after its retry '
+    'waits on the button until the next round',
+    (tester) async {
+      final container = await _pumpSwapScreen(
+        tester,
+        swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+        nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+        reservationStore: _StaleFirstReservationStore(),
+        reserveSwapAddress: ({required accountUuid, required direction}) async {
+          throw const ReceiveError(
+            message: 'Preparing a private swap address. Try again in a moment.',
+            kind: ReceiveErrorKind.receiveHistory,
+          );
+        },
+      );
+      final notifier = container.read(swapStateProvider.notifier);
+      notifier.selectDirection(SwapDirection.externalToZec);
+      notifier.updateAmount('25');
+      notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+      await notifier.showReview();
+      await tester.pumpAndSettle();
+
+      final button = find.byKey(const ValueKey('swap_review_button'));
+      expect(container.read(swapStateProvider).quoteError, isNull);
+      expect(
+        find.descendant(of: button, matching: find.text('Preparing address…')),
+        findsOneWidget,
+      );
+      expect(tester.widget<AppButton>(button).onPressed, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('swap_one_time_address_payout')),
+          matching: find.text('Preparing address…'),
+        ),
+        findsOneWidget,
+      );
+
+      // The next round may have checked it, so the button asks again.
+      container.read(swapRecoveryRoundsProvider.notifier).ended();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: button, matching: find.text('Review swap')),
+        findsOneWidget,
+      );
+      expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+    },
+  );
+
+  testWidgets('the history lookup after turning on NEAR swap privacy holds the '
+      'button before any quote', (tester) async {
+    final container = await _pumpSwapScreen(
+      tester,
+      swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+      nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+    );
+    final sync = container.read(syncProvider.notifier) as _FakeSwapSyncNotifier;
+    sync.swapRecoveryStatusResult = const SwapRecoveryStatus(
+      roundDue: false,
+      awaitingAdmission: false,
+      checkingHistory: true,
+      manualCheckActive: false,
+      upgradeRequired: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.externalToZec);
+    notifier.updateAmount('25');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    container.read(swapRecoveryRoundsProvider.notifier).ended();
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Preparing address…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+
+    // A failed round lets a press show why instead of waiting.
+    container.read(swapRecoveryRoundFailedProvider.notifier).set(true);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+  });
+
+  testWidgets('a ZEC swap with a one-time refund address waits for sync', (
+    tester,
+  ) async {
+    final container = await _pumpSwapScreen(
+      tester,
+      swapProvider: _FakeSwapProvider(),
+      nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+      syncHeights: (chainTip: 1000, scanned: 900),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.zecToExternal);
+    notifier.updateAmount('1');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Waiting for sync…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
   for (final (failure, message, name) in <(Object?, String, String)>[
     (
       null,
@@ -11888,6 +11995,7 @@ Future<ProviderContainer> _pumpSwapScreen(
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
   SwapDepositSender? depositSender,
+  ({int chainTip, int scanned})? syncHeights,
 }) async {
   await _setDesktopViewport(tester);
   await tester.pumpWidget(
@@ -11907,6 +12015,7 @@ Future<ProviderContainer> _pumpSwapScreen(
       reservationStore: reservationStore,
       nearSwapPrivacy: nearSwapPrivacy,
       onProviderSnapshot: onProviderSnapshot,
+      syncHeights: syncHeights,
     ),
   );
   await tester.pumpAndSettle();
@@ -11946,6 +12055,7 @@ Widget _routerHarness(
   onProviderSnapshot,
   SwapActivityStore? activityStore,
   NetworkUpgradeWindowState? upgradeWindow,
+  ({int chainTip, int scanned})? syncHeights,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -11973,6 +12083,8 @@ Widget _routerHarness(
           displaySpendableBalance: displaySpendableBalance,
           displaySpendableFreshness: displaySpendableFreshness,
           recentTransactions: recentTransactions,
+          chainTipHeight: syncHeights?.chainTip ?? 0,
+          scannedHeight: syncHeights?.scanned ?? 0,
         ),
       ),
       payDepositTransactionLoaderProvider.overrideWithValue(

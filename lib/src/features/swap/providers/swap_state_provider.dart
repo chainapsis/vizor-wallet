@@ -16,6 +16,7 @@ import '../../../providers/sync_provider.dart';
 import '../../../rust/api/one_time_ivk.dart'
     show ReceiveError, ReceiveErrorKind;
 import 'swap_activity_tracker.dart';
+import 'swap_address_wait_provider.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
 import 'swap_max_amount_estimator.dart';
@@ -991,6 +992,22 @@ class SwapNotifier extends Notifier<SwapState> {
           retry: false,
           recoveryFailure: recoveryFailure,
         );
+      }
+      // A payout address the wallet is still checking waits for the next
+      // recovery round, which the button shows, rather than an error.
+      if (kind == ReceiveErrorKind.receiveHistory &&
+          !state.payMode &&
+          !state.direction.sendsZec &&
+          ref.read(swapUsesOneTimeAddressProvider) &&
+          _addressRecoveryFailureMessage(recoveryFailure) == null) {
+        ref.read(swapAddressHistoryPendingProvider.notifier).quoteRefused();
+        state = state.copyWith(
+          reviewVisible: false,
+          quoteLoading: false,
+          clearQuoteError: true,
+          clearReview: true,
+        );
+        return;
       }
       state = state.copyWith(
         reviewVisible: false,
