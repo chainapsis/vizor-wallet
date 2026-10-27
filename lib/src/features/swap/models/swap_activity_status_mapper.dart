@@ -12,6 +12,7 @@ import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
 import 'swap_status_presentation.dart';
 import 'swap_token_amount_formatting.dart';
+import 'one_time_address_role.dart';
 
 class SwapActivityAccountDetail {
   const SwapActivityAccountDetail({required this.name, this.profilePictureId});
@@ -98,6 +99,7 @@ class SwapActivityStatusPresentation {
     this.paymentMode = false,
     this.payStatus,
     required this.showTabs,
+    this.oneTimeAddress,
   });
 
   final String title;
@@ -136,6 +138,10 @@ class SwapActivityStatusPresentation {
   final bool paymentMode;
   final PayActivityStatusPresentation? payStatus;
   final bool showTabs;
+
+  /// Set when the swap's ZEC side uses a one-time address: the payout when
+  /// receiving ZEC, the refund when sending it.
+  final OneTimeAddressRole? oneTimeAddress;
 }
 
 SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
@@ -194,6 +200,9 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   }
 
   return SwapActivityStatusPresentation(
+    oneTimeAddress: intent.privateAddress
+        ? (sendsZec ? OneTimeAddressRole.refund : OneTimeAddressRole.payout)
+        : null,
     // Keep the generic swap presentation stable. Pay surfaces consume the
     // dedicated [payStatus] contract instead of relabelling generic details.
     title: _swapActivityStatusTitle(intent),

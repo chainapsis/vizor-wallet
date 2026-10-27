@@ -35,6 +35,7 @@ import 'mobile/mobile_swap_review_header.dart';
 import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
 import 'pay_activity_status_content.dart';
+import 'one_time_address_label.dart';
 import 'swap_status_page_content.dart';
 
 /// Which rendering the detail surface uses. The orchestration (intent
@@ -935,6 +936,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
           bottomText: presentation.payDetailText,
+          oneTimeAddress:
+              presentation.oneTimeAddress == OneTimeAddressRole.refund
+              ? OneTimeAddressRole.refund
+              : null,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
           label: presentation.receiveLabel,
@@ -944,6 +949,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
               ? 'To: ${_headerRecipientText(recipient, presentation: presentation, contacts: addressBookContacts, contactId: recipientContactId)}'
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
+          oneTimeAddress:
+              presentation.oneTimeAddress == OneTimeAddressRole.payout
+              ? OneTimeAddressRole.payout
+              : null,
         ),
         activeTab: _activeTab,
         detailsExpanded: _detailsExpanded,
@@ -1011,6 +1020,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       progressTabLabel: presentation.progressTabLabel,
       paymentMode: presentation.paymentMode,
       showTabs: presentation.showTabs,
+      oneTimeAddress: presentation.oneTimeAddress,
       onTabChanged: (tab) {
         setState(() {
           _activeTab = tab;

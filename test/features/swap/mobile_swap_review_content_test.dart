@@ -32,6 +32,7 @@ MobileSwapReviewContent _content({
   Iterable<AddressBookContact> addressBookContacts = const [],
   String? userExternalContactId,
   SwapDirection direction = SwapDirection.zecToExternal,
+  bool oneTimeZecAddress = false,
 }) {
   const externalAddress = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
   const walletAddress =
@@ -46,6 +47,7 @@ MobileSwapReviewContent _content({
     externalAsset: SwapAsset.usdc,
     userExternalAddress: externalAddress,
     walletZecAddress: walletAddress,
+    oneTimeZecAddress: oneTimeZecAddress,
   );
 
   return MobileSwapReviewContent(
@@ -62,6 +64,40 @@ MobileSwapReviewContent _content({
 }
 
 void main() {
+  testWidgets('a one-time payout address is named on the ZEC row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        _content(
+          direction: SwapDirection.externalToZec,
+          oneTimeZecAddress: true,
+        ),
+      ),
+    );
+
+    expect(find.text('One-time address'), findsOneWidget);
+    expect(find.text('One-time refund address'), findsNothing);
+  });
+
+  testWidgets('a swap sending ZEC names its one-time refund address', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(_content(oneTimeZecAddress: true)));
+
+    expect(find.text('One-time refund address'), findsOneWidget);
+    // The recipient row keeps its own address action.
+    expect(find.text('Full address'), findsOneWidget);
+  });
+
+  testWidgets('an ordinary address shows no one-time label', (tester) async {
+    await tester.pumpWidget(
+      _harness(_content(direction: SwapDirection.externalToZec)),
+    );
+
+    expect(find.text('One-time address'), findsNothing);
+  });
+
   testWidgets(
     'review card omits account destination and price protection rows',
     (tester) async {

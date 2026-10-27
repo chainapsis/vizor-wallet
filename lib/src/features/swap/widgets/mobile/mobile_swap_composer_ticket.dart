@@ -9,6 +9,7 @@ import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_fiat_amount.dart';
 import '../../models/swap_models.dart';
+import '../one_time_address_label.dart';
 import '../swap_asset_icon.dart';
 
 /// Mobile swap composer ticket — Figma `Swap` (4686:101421): the white
@@ -35,10 +36,18 @@ class MobileSwapComposerTicket extends StatefulWidget {
     required this.onUseMaxZecAmount,
     required this.zecAvailableText,
     this.destinationContactName,
+    this.oneTimeZecAddress = false,
+    this.preparingOneTimeAddress = false,
     super.key,
   });
 
   final SwapState state;
+
+  /// See [SwapComposerPanel.oneTimeZecAddress].
+  final bool oneTimeZecAddress;
+
+  /// See [SwapComposerPanel.preparingOneTimeAddress].
+  final bool preparingOneTimeAddress;
 
   /// Address-book label for the current destination address, shown in the
   /// address chip instead of the truncated address when set.
@@ -205,7 +214,12 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
         onTap: () => widget.onToggleFiatInputMode(SwapAmountInputSide.pay),
       ),
       addressChip: sendsZec
-          ? null
+          ? (widget.oneTimeZecAddress
+                ? const OneTimeAddressSlot(
+                    role: OneTimeAddressRole.refund,
+                    height: _MobileSwapComposerTicketState._bottomRowHeight,
+                  )
+                : null)
           : _AddressChip(
               value: state.destinationText,
               contactName: widget.destinationContactName,
@@ -257,6 +271,12 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
               contactName: widget.destinationContactName,
               emptyText: 'Add recipient address...',
               onTap: widget.onOpenDestinationAddress,
+            )
+          : widget.oneTimeZecAddress
+          ? OneTimeAddressSlot(
+              role: OneTimeAddressRole.payout,
+              height: _MobileSwapComposerTicketState._bottomRowHeight,
+              preparing: widget.preparingOneTimeAddress,
             )
           : null,
     );

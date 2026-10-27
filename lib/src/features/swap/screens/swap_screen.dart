@@ -27,6 +27,7 @@ import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_models.dart';
 import '../models/swap_address_book_helpers.dart';
 import '../providers/swap_state_provider.dart';
+import '../providers/swap_zec_staging_address_service.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
@@ -173,6 +174,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
+    final oneTimeZecAddress = ref.watch(swapUsesOneTimeAddressProvider);
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
@@ -269,6 +271,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         ref.watch(addressBookProvider).value?.contacts ??
                             const [],
                       )?.label,
+                      oneTimeZecAddress: oneTimeZecAddress,
                     );
                     // Figma container (420×656, 16px vertical padding): the
                     // title is pinned under the toolbar, the attribution and

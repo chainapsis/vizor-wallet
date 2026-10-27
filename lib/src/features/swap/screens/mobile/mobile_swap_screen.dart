@@ -26,6 +26,7 @@ import '../../../address_scan/widgets/mobile_address_scan_view.dart'
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_state_provider.dart';
+import '../../providers/swap_zec_staging_address_service.dart';
 import '../../widgets/mobile/mobile_swap_address_edit_modal.dart';
 import '../../widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
@@ -326,6 +327,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
+    final oneTimeZecAddress = ref.watch(swapUsesOneTimeAddressProvider);
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
@@ -398,6 +400,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           ref.watch(addressBookProvider).value?.contacts ??
                               const [],
                         )?.label,
+                        oneTimeZecAddress: oneTimeZecAddress,
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Row(
