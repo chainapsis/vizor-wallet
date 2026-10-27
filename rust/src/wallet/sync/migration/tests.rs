@@ -1441,6 +1441,50 @@ fn canonical_migration_expiry_scales_its_modulus_from_nu7_activation() {
 }
 
 #[test]
+fn children_an_earlier_build_signed_for_the_new_branch_are_counted_for_rebuild() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let main = WalletNetwork::Main;
+    let activation = 3_543_405;
+    let scheduled = activation + 20;
+    let legacy = legacy_zip318_canonical_migration_expiry_height(scheduled).unwrap();
+    let canonical = zip318_canonical_migration_expiry_height(&main, scheduled).unwrap();
+    for (message_id, target_height, expiry_height) in [
+        // Signed by an earlier build for the new branch.
+        ("legacy", activation + 10, legacy),
+        ("current", activation + 10, canonical),
+        // Signed for the old branch: held and stopped instead.
+        ("old-branch", activation - 100, legacy),
+    ] {
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE} (
+                     run_id, message_id, child_index, encrypted_base_pczt,
+                     encrypted_compact_sigs, target_height, expiry_height,
+                     scheduled_height, value_zatoshi, fee_zatoshi,
+                     selected_note_json, metadata_json
+                 ) VALUES ('run-1', ?1, 0, '', '', ?2, ?3, ?4, 0, 0, '{{}}', '{{}}')"
+            ),
+            params![message_id, target_height, expiry_height, scheduled],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(
+        legacy_expiry_signed_child_count(
+            &db_path.to_string_lossy(),
+            main,
+            "run-1",
+            activation + 30
+        )
+        .unwrap(),
+        1
+    );
+}
+
+#[test]
 fn pending_insert_rejects_expiry_from_a_different_schedule_bucket() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir

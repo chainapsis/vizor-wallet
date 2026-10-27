@@ -5471,6 +5471,18 @@ fn finalize_presigned_migration_children(
     if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
         return Ok(0);
     }
+    let next_height = u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+        .map_err(|_| "Migration chain tip exceeds u32".to_string())?
+        .saturating_add(1);
+    let legacy_count =
+        super::migration::legacy_expiry_signed_child_count(db_path, network, run_id, next_height)?;
+    if legacy_count > 0 {
+        let message = format!(
+            "{legacy_count} migration transaction(s) were signed by an earlier version of Vizor with an outdated expiry. Review and approve a fresh schedule for the remaining Orchard balance."
+        );
+        super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
+        return Err(message);
+    }
     // Keystone persists one bounded QR batch at a time while the run remains
     // ready_to_migrate. Do not promote the first batch and move the run to
     // broadcast_scheduled before every remaining batch has been signed.

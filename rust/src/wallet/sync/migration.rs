@@ -2770,6 +2770,55 @@ pub(crate) fn persist_signed_child_pczts_for_run(
         .map_err(|e| format!("Commit signed migration handoff: {e}"))
 }
 
+/// Unpromoted children an earlier build signed for the branch at
+/// `next_height` with the pre-NU7 expiry modulus. Promotion requires the
+/// current canonical expiry, so such a run is rebuilt; children for the old
+/// branch are held and stopped instead.
+pub(crate) fn legacy_expiry_signed_child_count(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    next_height: u32,
+) -> Result<u32, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT c.target_height, c.expiry_height, c.scheduled_height
+             FROM {SIGNED_CHILD_PCZTS_TABLE} c
+             WHERE c.run_id = ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM {PENDING_TXS_TABLE} p
+                   WHERE p.run_id = c.run_id AND p.part_index = c.child_index
+               )"
+        ))
+        .map_err(|e| format!("Prepare signed migration expiry query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, u32>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+            ))
+        })
+        .map_err(|e| format!("Query signed migration expiries: {e}"))?;
+    let mut count = 0;
+    for row in rows {
+        let (target_height, expiry_height, scheduled_height) =
+            row.map_err(|e| format!("Read signed migration expiry: {e}"))?;
+        let Some(scheduled_height) = scheduled_height else {
+            continue;
+        };
+        if !network_upgrade::crosses(&network, target_height, next_height)
+            && expiry_height
+                != zip318_canonical_migration_expiry_height(&network, scheduled_height)?
+        {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 pub(crate) fn signed_child_pczts_for_run(
     db_path: &str,
     run_id: &str,
