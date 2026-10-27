@@ -9095,6 +9095,41 @@ void main() {
     expect(tester.widget<AppButton>(button).onPressed, isNull);
   });
 
+  testWidgets('a payment with a one-time refund address waits for sync', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        seedSwapActivityFixtures: false,
+        nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+        syncHeights: (chainTip: 1000, scanned: 900),
+        ironwoodBalance: BigInt.from(10000000000),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('pay_select_recipient_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Waiting for sync…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
   for (final privacy in [true, false]) {
     testWidgets(
       'a ZEC amount above the Ironwood balance '

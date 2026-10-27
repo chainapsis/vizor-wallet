@@ -17,6 +17,7 @@ import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../../../providers/account_provider.dart';
 import '../../../address_book/providers/address_book_provider.dart';
+import '../../../swap/providers/swap_address_wait_provider.dart';
 import '../../../swap/providers/swap_funding_balance_provider.dart';
 import '../../../swap/providers/swap_zec_staging_address_service.dart';
 import '../../../swap/models/swap_intent_presentation_mapper.dart'
@@ -341,6 +342,8 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       _MobilePayStep.amount => 'Pay in ${swapState.externalAsset.symbol}',
       _MobilePayStep.recipient => 'Select Recipient',
     };
+    // A payment sends ZEC, so a one-time refund address may wait for sync.
+    final addressWait = ref.watch(swapAddressWaitProvider(true));
     final funding = ref.watch(
       swapFundingBalanceProvider((
         accountUuid: activeAccountUuid,
@@ -405,6 +408,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                       enabled:
                           swapState.externalAssetIsAvailable &&
                           !addressBookInitialLoading,
+                      waitLabel: addressWait == null
+                          ? null
+                          : swapAddressWaitLabel(addressWait),
                       selectedContactId: swapState.userExternalContactId,
                       externalAsset: swapState.externalAsset,
                       onAddressChanged: _handleAddressChanged,

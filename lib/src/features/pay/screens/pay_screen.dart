@@ -18,6 +18,7 @@ import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../providers/privacy_mode_provider.dart';
+import '../../swap/providers/swap_address_wait_provider.dart';
 import '../../swap/providers/swap_funding_balance_provider.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_intent_presentation_mapper.dart'
@@ -353,6 +354,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       _PayWizardStep.recipient => 'Amount',
       _PayWizardStep.review => 'Recipient',
     };
+    // A payment sends ZEC, so a one-time refund address may wait for sync.
+    final addressWait = ref.watch(swapAddressWaitProvider(true));
     final recipientActions = PayRecipientActions(
       typedAddress: swapState.destinationText,
       addressError: swapState.destinationAddressFormatError,
@@ -360,6 +363,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       busy: swapState.quoteLoading,
       enabled: swapState.externalAssetIsAvailable && !addressBookInitialLoading,
       quoteError: swapState.externalAssetSupportError ?? swapState.quoteError,
+      waitLabel: addressWait == null ? null : swapAddressWaitLabel(addressWait),
       onSelectRecipient: () => unawaited(_reviewRecipient(effectiveSelection)),
       onAddToContacts: network == null
           ? () {}

@@ -634,6 +634,42 @@ void main() {
       );
     });
 
+    testWidgets('Continue waits with its reason as the label', (tester) async {
+      final controller = TextEditingController(text: _recentRecipient);
+      addTearDown(controller.dispose);
+
+      await _pumpStep(
+        tester,
+        MobilePayRecipientStep(
+          controller: controller,
+          typedAddress: _recentRecipient,
+          addressError: null,
+          contacts: const [],
+          recents: [_recents.first],
+          busy: false,
+          waitLabel: 'Waiting for sync…',
+          externalAsset: SwapAsset.usdc,
+          onAddressChanged: (_) {},
+          onOpenScanner: () {},
+          onChooseRecipient: (_) {},
+          onSelectRecipient: () {},
+          onAddToContacts: () {},
+        ),
+      );
+
+      final continueButton = find.byKey(
+        const ValueKey('mobile_pay_recipient_continue_button'),
+      );
+      expect(
+        find.descendant(
+          of: continueButton,
+          matching: find.text('Waiting for sync…'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.widget<AppButton>(continueButton).onPressed, isNull);
+    });
+
     testWidgets('shows support errors and blocks recipient continuation', (
       tester,
     ) async {
