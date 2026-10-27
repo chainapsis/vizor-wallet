@@ -262,7 +262,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     payStatus: payStatus,
     // Mobile keeps the shared progress tabs while reading its detail values
     // from [payStatus]; desktop renders its dedicated Pay status content.
-    showTabs: !intent.status.isTerminal,
+    // A payout still being found keeps its steps, like any swap in progress.
+    showTabs: findingPayout || !intent.status.isTerminal,
   );
 }
 

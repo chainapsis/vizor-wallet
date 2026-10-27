@@ -8,6 +8,7 @@ import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_deposit_transaction_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_payout_discovery_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -129,12 +130,16 @@ void main() {
     );
     expect(finding.statusLabel, kSwapFindingPayoutLabel);
     expect(finding.title, 'Swap in progress...');
+    // The progress tab, not the completed summary.
+    expect(finding.showTabs, isTrue);
+    expect(finding.badgeKind, SwapStatusBadgeKind.liveQuote);
     expect(finding.steps.last.activeTitle, kSwapFindingPayoutLabel);
     expect(finding.steps.last.lastCheckedLabel, isNull);
     // Same steps as an ordinary swap, so the page doesn't grow.
     final found = swapActivityStatusPresentationForIntent(_state, intent);
     expect(finding.steps, hasLength(found.steps.length));
     expect(found.statusLabel, isNot(kSwapFindingPayoutLabel));
+    expect(found.showTabs, isFalse);
   });
 
   testWidgets('an Activity row says it is finding the payout', (tester) async {
