@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -166,9 +167,7 @@ final _historyCheck = find.byKey(
 /// Opens the NEAR swap privacy explanation from its info button in Settings
 /// and finds the sheet.
 Future<Finder> _openNearSwapPrivacyInfo(WidgetTester tester) async {
-  final info = find.byKey(
-    const ValueKey('mobile_settings_near_swap_privacy_info'),
-  );
+  final info = find.byKey(const ValueKey('near_swap_privacy_learn_more'));
   await tester.scrollUntilVisible(info, 200);
   await tester.ensureVisible(info);
   await tester.pumpAndSettle();
@@ -616,9 +615,7 @@ void main() {
       reason: 'shown as an option of Private queries',
     );
 
-    final info = find.byKey(
-      const ValueKey('mobile_settings_near_swap_privacy_info'),
-    );
+    final info = find.byKey(const ValueKey('near_swap_privacy_learn_more'));
     await tester.ensureVisible(info);
     await tester.pumpAndSettle();
     await tester.tap(info);
@@ -806,11 +803,56 @@ void main() {
       expect(find.text(kNearSwapPrivacyHardwareCopy), findsOneWidget);
       expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
       expect(
+        tester
+            .widget<Text>(
+              find.byKey(
+                const ValueKey('mobile_settings_near_swap_privacy_status'),
+              ),
+            )
+            .data,
+        kNearSwapPrivacyUnavailableLabel,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_settings_near_swap_privacy_toggle')),
+        findsNothing,
+      );
+      expect(
         find.byKey(const ValueKey('settings_check_swap_history')),
         findsNothing,
       );
     });
   }
+
+  testWidgets('the NEAR swap privacy label fits at 320px and 130% text', (
+    tester,
+  ) async {
+    await loadFigmaCompareFonts();
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      _app(
+        enhancePirEnabled: true,
+        nearSwapPrivacyEnabled: true,
+        textScale: 1.3,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final row = find.byKey(
+      const ValueKey('mobile_settings_near_swap_privacy_row'),
+    );
+    await tester.scrollUntilVisible(row, 200);
+    final label = find.descendant(
+      of: row,
+      matching: find.text('NEAR swap privacy'),
+    );
+    expect(
+      tester.renderObject<RenderParagraph>(label).didExceedMaxLines,
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('turning NEAR swap privacy off with a refund possible asks', (
     tester,

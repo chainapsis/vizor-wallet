@@ -4,8 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_icon_hover_button.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../near_swap_privacy_info.dart';
 import '../near_swap_privacy_turn_off.dart';
@@ -66,13 +64,16 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _MobileToggleRow(
+                  _MobileSubOptionRow(
                     label: 'NEAR swap privacy',
                     keyPrefix: 'mobile_settings_near_swap_privacy',
                     enabled: nearSwapPrivacy.enabled,
-                    onToggle: () =>
-                        unawaited(toggleNearSwapPrivacy(context, ref)),
-                    onInfo: () => unawaited(showNearSwapPrivacyInfo(context)),
+                    unavailableLabel: nearSwapPrivacy.available
+                        ? null
+                        : kNearSwapPrivacyUnavailableLabel,
+                    onToggle: nearSwapPrivacy.available
+                        ? () => unawaited(toggleNearSwapPrivacy(context, ref))
+                        : null,
                   ),
                   // Feedback for this toggle only, as under Private queries.
                   if (nearSwapPrivacy.transition case final transition?)
@@ -100,6 +101,17 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                       ),
                     ),
                   ),
+                  if (nearSwapPrivacy.checkingPastSwaps) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    const Padding(
+                      padding: EdgeInsetsDirectional.only(
+                        start: AppSpacing.xxs,
+                      ),
+                      child: NearSwapPrivacyCheckingPastSwaps(),
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.xs),
+                  const NearSwapPrivacyLearnMore(),
                 ],
               ),
             ),
@@ -110,111 +122,83 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
   }
 }
 
-class _MobileToggleRow extends StatelessWidget {
-  const _MobileToggleRow({
+/// A sub-option row: the label with its status under it, and the switch at
+/// the end. The sub-option's hook joins it to the parent row, so it has no
+/// icon of its own, which leaves the label room for two lines.
+class _MobileSubOptionRow extends StatelessWidget {
+  const _MobileSubOptionRow({
     required this.label,
     required this.keyPrefix,
     required this.enabled,
     required this.onToggle,
-    this.onInfo,
+    this.unavailableLabel,
   });
   final String label;
   final String keyPrefix;
   final bool enabled;
   final VoidCallback? onToggle;
 
-  /// Shows an explanation of the setting from an info icon after the label.
-  final VoidCallback? onInfo;
+  /// Shown in place of On/Off, with no switch, where the setting doesn't
+  /// apply.
+  final String? unavailableLabel;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Only the info icon keeps its own semantics; the rest reads as the toggle.
+    final unavailable = unavailableLabel != null;
     return Semantics(
       container: true,
-      button: true,
-      toggled: enabled,
+      button: !unavailable,
+      toggled: unavailable ? null : enabled,
       enabled: onToggle != null,
-      label: label,
+      label: unavailable ? '$label, $unavailableLabel' : label,
       onTap: onToggle,
+      excludeSemantics: true,
       child: GestureDetector(
         key: ValueKey('${keyPrefix}_row'),
         behavior: HitTestBehavior.opaque,
         onTap: onToggle,
-        child: SizedBox(
-          height: _rowHeight,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _rowHeight),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
             child: Row(
               children: [
-                ExcludeSemantics(
-                  child: SizedBox.square(
-                    dimension: 32,
-                    child: Center(
-                      child: AppIcon(
-                        AppIcons.eye,
-                        size: 20,
-                        color: enabled
-                            ? colors.icon.brandCrimson
-                            : colors.icon.muted,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.s),
                 Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: ExcludeSemantics(
-                          child: Text(
-                            label,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelLarge.copyWith(
-                              color: colors.text.accent,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (onInfo case final onInfo?) ...[
-                        const SizedBox(width: AppSpacing.xxs),
-                        AppIconHoverButton(
-                          key: ValueKey('${keyPrefix}_info'),
-                          icon: AppIcons.help,
-                          semanticLabel: "What's this?",
-                          size: 32,
-                          iconSize: 16,
-                          iconColor: colors.icon.muted,
-                          onTap: onInfo,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                ExcludeSemantics(
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        enabled ? 'On' : 'Off',
-                        key: ValueKey('${keyPrefix}_status'),
+                        label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
-                          color: enabled
-                              ? colors.text.brandCrimson
-                              : colors.text.secondary,
+                          color: colors.text.accent,
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.s),
-                      MobilePrivacyToggle(
-                        key: ValueKey('${keyPrefix}_toggle'),
-                        enabled: enabled,
-                        interactive: onToggle != null,
-                        thumbKey: ValueKey('${keyPrefix}_toggle_thumb'),
+                      Text(
+                        unavailableLabel ?? (enabled ? 'On' : 'Off'),
+                        key: ValueKey('${keyPrefix}_status'),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: enabled && !unavailable
+                              ? colors.text.brandCrimson
+                              : colors.text.secondary,
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ],
                   ),
                 ),
+                if (!unavailable) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  MobilePrivacyToggle(
+                    key: ValueKey('${keyPrefix}_toggle'),
+                    enabled: enabled,
+                    interactive: onToggle != null,
+                    thumbKey: ValueKey('${keyPrefix}_toggle_thumb'),
+                  ),
+                ],
               ],
             ),
           ),

@@ -636,7 +636,7 @@ void main() {
       reason: 'shown as an option of Private queries',
     );
 
-    final info = find.byKey(const ValueKey('settings_near_swap_privacy_info'));
+    final info = find.byKey(const ValueKey('near_swap_privacy_learn_more'));
     await tester.ensureVisible(info);
     await tester.pumpAndSettle();
     await tester.tap(info);
@@ -756,7 +756,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('settings_near_swap_privacy_info')),
+      find.byKey(const ValueKey('near_swap_privacy_learn_more')),
       findsOneWidget,
     );
     expect(find.byType(SwapHistoryCheckControl), findsNothing);
@@ -1117,11 +1117,70 @@ void main() {
     await tester.pump();
     expect(find.text(kNearSwapPrivacyHardwareCopy), findsOneWidget);
     expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+    // No switch, and no "On" beside "not available".
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('settings_near_swap_privacy_status')),
+          )
+          .data,
+      kNearSwapPrivacyUnavailableLabel,
+    );
+    expect(
+      find.byKey(const ValueKey('settings_near_swap_privacy_toggle')),
+      findsNothing,
+    );
     // Hardware accounts have no one-time keys to check.
     expect(
       find.byKey(const ValueKey('settings_check_swap_history')),
       findsNothing,
     );
+  });
+
+  testWidgets('NEAR swap privacy says while it checks past swaps', (
+    tester,
+  ) async {
+    var checking = true;
+    await tester.pumpWidget(
+      _settingsHarness(
+        nearSwapPrivacyEnabled: true,
+        extraOverrides: [
+          swapRecoveryStatusReaderProvider.overrideWithValue(
+            () async => SwapRecoveryStatus(
+              roundDue: false,
+              awaitingAdmission: false,
+              checkingHistory: checking,
+              manualCheckActive: false,
+              upgradeRequired: false,
+            ),
+          ),
+        ],
+      ),
+    );
+    // The loader keeps spinning, so step frames instead of settling.
+    await tester.pump();
+    await tester.pump();
+    final line = find.text(kNearSwapPrivacyCheckingPastSwapsCopy);
+    expect(line, findsOneWidget);
+    // It sits on the description's edge, as Learn more's icon does.
+    final description = find.byKey(
+      const ValueKey('settings_near_swap_privacy_description'),
+    );
+    expect(
+      tester
+          .getTopLeft(
+            find.byKey(const ValueKey('near_swap_privacy_checking_past_swaps')),
+          )
+          .dx,
+      tester.getTopLeft(description).dx,
+    );
+
+    checking = false;
+    final container = ProviderScope.containerOf(tester.element(line));
+    container.read(swapRecoveryRoundsProvider.notifier).ended();
+    await tester.pump();
+    await tester.pump();
+    expect(line, findsNothing);
   });
 
   testWidgets('connected Tor state describes Vizor and external app routes', (
@@ -1655,7 +1714,7 @@ final _historyCheck = find.byKey(
 /// Opens the NEAR swap privacy explanation from its info button in Settings
 /// and finds the dialog.
 Future<Finder> _openNearSwapPrivacyInfo(WidgetTester tester) async {
-  final info = find.byKey(const ValueKey('settings_near_swap_privacy_info'));
+  final info = find.byKey(const ValueKey('near_swap_privacy_learn_more'));
   await tester.ensureVisible(info);
   await tester.pumpAndSettle();
   await tester.tap(info);

@@ -1,9 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../main.dart' show log;
-import '../../../providers/enhance_pir_provider.dart';
+import '../../../providers/swap_past_swaps_check_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'swap_zec_staging_address_service.dart';
 
@@ -69,11 +66,12 @@ bool swapRefundAddressNeedsSync({
 /// Whether the next one-time payout address is still having its history
 /// checked, so a quote would be refused.
 ///
-/// True while the wallet's automatic history lookup is unfinished, unless the
-/// last recovery round failed: a press then shows why instead of waiting
-/// without end. Also true after a quote was refused for it, until the next
-/// round ends. The wallet reports one state for all its accounts, so another
-/// account's lookup can hold this one's quote too.
+/// True while the wallet's automatic history lookup is unfinished (see
+/// [swapPastSwapsCheckProvider]), unless the last recovery round failed: a
+/// press then shows why instead of waiting without end. Also true after a
+/// quote was refused for it, until the next round ends. The wallet reports
+/// one state for all its accounts, so another account's lookup can hold this
+/// one's quote too.
 final swapAddressHistoryPendingProvider =
     NotifierProvider<SwapAddressHistoryPending, bool>(
       SwapAddressHistoryPending.new,
@@ -81,23 +79,18 @@ final swapAddressHistoryPendingProvider =
 
 /// See [swapAddressHistoryPendingProvider].
 class SwapAddressHistoryPending extends Notifier<bool> {
-  var _reads = 0;
-  var _checking = false;
   var _refused = false;
 
   @override
   bool build() {
-    _reads = 0;
-    _checking = false;
     _refused = false;
     ref.listen(swapRecoveryRoundsProvider, (_, _) {
       _refused = false;
-      unawaited(_read());
+      _publish();
     });
-    ref.listen(nearSwapPrivacyProvider, (_, _) => unawaited(_read()));
+    ref.listen(swapPastSwapsCheckProvider, (_, _) => _publish());
     ref.listen(swapRecoveryRoundFailedProvider, (_, _) => _publish());
-    unawaited(Future<void>.microtask(_read));
-    return false;
+    return _pending();
   }
 
   /// Records that a quote was refused because the address's history is
@@ -107,24 +100,12 @@ class SwapAddressHistoryPending extends Notifier<bool> {
     _publish();
   }
 
-  Future<void> _read() async {
-    final read = ++_reads;
-    try {
-      final status = await ref.read(swapRecoveryStatusReaderProvider)();
-      if (!ref.mounted || read != _reads) return;
-      _checking =
-          status != null && status.checkingHistory && !status.manualCheckActive;
-    } catch (error) {
-      // A wallet change holds admission; keep the last answer.
-      log('Swap address history state not read: $error');
-      return;
-    }
-    _publish();
-  }
+  bool _pending() =>
+      _refused ||
+      (ref.read(swapPastSwapsCheckProvider) &&
+          !ref.read(swapRecoveryRoundFailedProvider));
 
   void _publish() {
-    if (!ref.mounted) return;
-    state =
-        _refused || (_checking && !ref.read(swapRecoveryRoundFailedProvider));
+    if (ref.mounted) state = _pending();
   }
 }
