@@ -9,20 +9,28 @@ import '../providers/nu7_announcement_provider.dart';
 
 /// NU7 announcement content, shown in the mobile sheet and the desktop modal.
 class Nu7AnnouncementContent extends StatelessWidget {
-  const Nu7AnnouncementContent({required this.onClose, super.key});
+  const Nu7AnnouncementContent({
+    required this.onClose,
+    this.compact = false,
+    super.key,
+  });
 
   final VoidCallback onClose;
+
+  /// Desktop sizing, matching the Ironwood announcement modal.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final gap = compact ? AppSpacing.sm : AppSpacing.md;
     return Column(
       key: const ValueKey('nu7_announcement'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Nu7AnnouncementHeader(onClose: onClose),
-        const SizedBox(height: AppSpacing.md),
+        _Nu7AnnouncementHeader(onClose: onClose, compact: compact),
+        SizedBox(height: gap),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Text(
@@ -33,7 +41,7 @@ class Nu7AnnouncementContent extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
+        SizedBox(height: gap),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Column(
@@ -55,7 +63,7 @@ class Nu7AnnouncementContent extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
+        SizedBox(height: gap),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: AppButton(
@@ -63,22 +71,23 @@ class Nu7AnnouncementContent extends StatelessWidget {
             variant: AppButtonVariant.secondary,
             expand: true,
             constrainContent: true,
-            height: 50,
+            height: compact ? 44 : 50,
             onPressed: onClose,
             child: const Text('Got it'),
           ),
         ),
-        const SizedBox(height: AppSpacing.base),
+        SizedBox(height: compact ? AppSpacing.sm : AppSpacing.base),
       ],
     );
   }
 }
 
-/// Desktop card around [Nu7AnnouncementContent], styled like the mobile sheet.
+/// Desktop card around [Nu7AnnouncementContent], as wide as the Ironwood
+/// announcement modal.
 class Nu7AnnouncementModal extends StatelessWidget {
   const Nu7AnnouncementModal({required this.onClose, super.key});
 
-  static const width = 361.0;
+  static const width = 312.0;
 
   final VoidCallback onClose;
 
@@ -90,7 +99,7 @@ class Nu7AnnouncementModal extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: context.colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.xLarge),
+        borderRadius: BorderRadius.circular(AppRadii.large),
         // Figma `Shadow Overlay`, as on the mobile sheet.
         boxShadow: const [
           BoxShadow(
@@ -110,37 +119,36 @@ class Nu7AnnouncementModal extends StatelessWidget {
           ),
         ],
       ),
-      child: Nu7AnnouncementContent(onClose: onClose),
+      child: Nu7AnnouncementContent(onClose: onClose, compact: true),
     );
   }
 }
 
 class _Nu7AnnouncementHeader extends ConsumerWidget {
-  const _Nu7AnnouncementHeader({required this.onClose});
+  const _Nu7AnnouncementHeader({required this.onClose, required this.compact});
 
-  static const _height = 210.0;
-
-  // The logo's bounds in the Figma header.
-  static const _logoTop = 61.0;
-  static const _logoWidth = 241.0;
-  static const _logoHeight = 99.0;
+  // The logo's bounds in the Figma header. The compact header matches the
+  // Ironwood modal's 154 hero with the logo scaled to the narrower card.
+  static const _logoAspect = 241 / 99;
 
   final VoidCallback onClose;
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final isDark = context.appTheme == AppThemeData.dark;
     final animate = ref.watch(nu7AnnouncementMotionEnabledProvider);
+    final logoWidth = compact ? 208.0 : 241.0;
     return SizedBox(
-      height: _height,
+      height: compact ? 154 : 210,
       child: Stack(
         children: [
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            height: 209,
+            bottom: 1,
             child: ShaderMask(
               blendMode: BlendMode.dstIn,
               shaderCallback: (bounds) => LinearGradient(
@@ -152,22 +160,22 @@ class _Nu7AnnouncementHeader extends ConsumerWidget {
                   const Color(0x00FFFFFF),
                 ],
               ).createShader(bounds),
-              child: const Image(
-                image: AssetImage(
+              child: Image(
+                image: const AssetImage(
                   'assets/illustrations/nu7_announcement_background.webp',
                 ),
-                fit: BoxFit.fill,
+                fit: compact ? BoxFit.cover : BoxFit.fill,
               ),
             ),
           ),
           Positioned(
-            top: _logoTop,
+            top: compact ? 34 : 61,
             left: 0,
             right: 0,
             child: Center(
               child: SizedBox(
-                width: _logoWidth,
-                height: _logoHeight,
+                width: logoWidth,
+                height: logoWidth / _logoAspect,
                 child: LiquidMetal(
                   image: const AssetImage(
                     'assets/illustrations/nu7_liquid_metal_shape.webp',
