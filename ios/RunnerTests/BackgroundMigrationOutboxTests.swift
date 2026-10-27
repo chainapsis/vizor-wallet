@@ -504,6 +504,96 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     }
   }
 
+  func testRedrawFitsEveryPeerThatValidationAccepts() throws {
+    let activation = try testnetNu7ActivationHeight()
+    // From NU7 each redrawn peer takes at least three blocks.
+    let afterNu7 = activation + 1_000
+    // Before NU7 a peer that expires first still leaves room for later ones.
+    for (remoteHeight, expiryHeights) in [
+      (afterNu7, [afterNu7 + 10, afterNu7 + 10, afterNu7 + 10]),
+      (UInt64(200), [202, 210]),
+    ] {
+      var batch = makeBatch(
+        batchId: "batch-a",
+        account: "account-a",
+        heights: Array(repeating: 100, count: expiryHeights.count + 1)
+      )
+      batch.items = batch.items.enumerated().map { index, item in
+        BackgroundMigrationOutboxItem(
+          itemId: item.itemId,
+          partIndex: item.partIndex,
+          txidHex: item.txidHex,
+          rawTransaction: item.rawTransaction,
+          anchorBoundaryHeight: item.anchorBoundaryHeight,
+          scheduledHeight: item.scheduledHeight,
+          scheduleStartHeight: item.scheduleStartHeight,
+          expiryHeight: index == 0 ? remoteHeight + 100 : expiryHeights[index - 1]
+        )
+      }
+      var snapshot = BackgroundMigrationOutboxSnapshot()
+      try snapshot.stage(batch)
+      try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+      let selected = try XCTUnwrap(snapshot.selectDue(remoteHeight: remoteHeight, at: now))
+      XCTAssertEqual(selected.item.itemId, "item-0")
+      try snapshot.validateReschedulingAfterAcceptance(
+        itemId: selected.item.itemId,
+        remoteHeight: remoteHeight
+      )
+      try snapshot.beginSubmission(itemId: selected.item.itemId, attemptId: "attempt", at: now)
+      // Zero draws the longest delay each time.
+      var random = SeededOutboxRandom(values: Array(repeating: 0, count: 16))
+
+      try snapshot.recordAccepted(
+        itemId: selected.item.itemId,
+        equivalent: false,
+        remoteHeight: remoteHeight,
+        responseCode: 0,
+        responseMessage: "",
+        at: now,
+        random: &random
+      )
+
+      let updates = snapshot.receipts[0].scheduleUpdates
+      XCTAssertEqual(updates.count, expiryHeights.count)
+      for update in updates {
+        let item = try XCTUnwrap(
+          snapshot.batches[0].items.first(where: { $0.itemId == update.itemId })
+        )
+        XCTAssertLessThan(update.scheduledHeight, item.expiryHeight)
+      }
+    }
+  }
+
+  func testValidationReservesThreeBlocksPerPeerAfterNu7() throws {
+    let remoteHeight = try testnetNu7ActivationHeight() + 1_000
+    var batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100, 100, 100])
+    batch.items = batch.items.enumerated().map { index, item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: item.scheduledHeight,
+        scheduleStartHeight: item.scheduleStartHeight,
+        expiryHeight: index == 0 ? remoteHeight + 100 : remoteHeight + 6
+      )
+    }
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+
+    // Two peers three blocks apart need seven blocks before their expiry.
+    XCTAssertThrowsError(
+      try snapshot.validateReschedulingAfterAcceptance(
+        itemId: "item-0",
+        remoteHeight: remoteHeight
+      )
+    ) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .invalidSchedule)
+    }
+  }
+
   func testSubmissionIsRejectedBeforeBroadcastWhenPeersCannotFitBeforeExpiry() throws {
     var batch = makeBatch(
       batchId: "batch-a",
@@ -682,25 +772,128 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     }
   }
 
+  func testCadenceUsesTwentyFiveSecondBlocksFromNu7() {
+    // Blocks 101...109 take 75 seconds; 110...120 take 25.
+    XCTAssertEqual(
+      BackgroundMigrationOutboxCadence.estimatedSeconds(
+        from: 100,
+        to: 120,
+        nu7ActivationHeight: 110
+      ),
+      9 * 75 + 11 * 25
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxCadence.nextCheckDelay(
+        remoteHeight: 100,
+        nextScheduledHeight: 120,
+        nu7ActivationHeight: 110
+      ),
+      350
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxCadence.nextCheckDelay(
+        remoteHeight: 200,
+        nextScheduledHeight: 230,
+        nu7ActivationHeight: 110
+      ),
+      150
+    )
+  }
+
+  func testBroadcastsAreHeldAroundNu7ByTheirTargetHeight() throws {
+    let activation = try testnetNu7ActivationHeight()
+    func armedSnapshot(targetHeight: UInt64?) throws -> BackgroundMigrationOutboxSnapshot {
+      let batch = try makeBatchBeforeNu7(targetHeight: targetHeight)
+      var snapshot = BackgroundMigrationOutboxSnapshot()
+      try snapshot.stage(batch)
+      try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+      return snapshot
+    }
+    func due(_ targetHeight: UInt64?, at remoteHeight: UInt64) throws -> Bool {
+      var snapshot = try armedSnapshot(targetHeight: targetHeight)
+      return snapshot.selectDue(remoteHeight: remoteHeight, at: now) != nil
+    }
+
+    // Signed for the old branch: held from A - 11 and after activation.
+    XCTAssertTrue(try due(activation - 100, at: activation - 12))
+    XCTAssertFalse(try due(activation - 100, at: activation - 11))
+    XCTAssertFalse(try due(activation - 100, at: activation - 1))
+    XCTAssertFalse(try due(activation - 100, at: activation))
+    // Signed for the new branch: nothing to hold.
+    XCTAssertTrue(try due(activation, at: activation - 1))
+    // A part saved by an older build is held by the tip until activation.
+    XCTAssertFalse(try due(nil, at: activation - 11))
+    XCTAssertFalse(try due(nil, at: activation - 1))
+    XCTAssertTrue(try due(nil, at: activation))
+  }
+
+  func testRunnerReportsAPartHeldForTheUpgrade() throws {
+    let activation = try testnetNu7ActivationHeight()
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = try makeBatchBeforeNu7(targetHeight: activation - 100)
+    try stageAndArm(batch, in: harness.store)
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: BackgroundMigrationOutboxRunnerDependencies(
+        latestBlockHeight: { _, _ in .success(activation - 5) },
+        sendTransaction: { _, _, _ in
+          XCTFail("A held part must not be sent")
+          return .success(NativeLightwalletdSendResponse(errorCode: 0, errorMessage: ""))
+        }
+      )
+    )
+
+    XCTAssertEqual(outcome.heldForUpgradeTxids, [batch.items[0].txidHex])
+    XCTAssertTrue(try harness.store.read().receipts.isEmpty)
+  }
+
+  func testZip318DurationsFollowRust() {
+    // Mainnet NU7 activates at 3,543,405: the expiry modulus becomes 103,680.
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: 3_543_404, network: "main"),
+      3_594_240
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: 3_543_405, network: "main"),
+      3_732_480
+    )
+    XCTAssertNil(BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: 100, network: "nope"))
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(at: 3_543_404, network: "main"),
+      1
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(at: 3_543_405, network: "main"),
+      3
+    )
+  }
+
   func testCadenceChecksAheadOfDueHeightAndCapsPolling() {
     XCTAssertEqual(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: 101
+        nextScheduledHeight: 101,
+        nu7ActivationHeight: nil
       ),
       60
     )
     XCTAssertEqual(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: 244
+        nextScheduledHeight: 244,
+        nu7ActivationHeight: nil
       ),
       600
     )
     XCTAssertNil(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: nil
+        nextScheduledHeight: nil,
+        nu7ActivationHeight: nil
       )
     )
   }
@@ -1688,6 +1881,33 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
         )
       }
     )
+  }
+
+  private func testnetNu7ActivationHeight() throws -> UInt64 {
+    try XCTUnwrap(BackgroundMigrationOutboxCadence.nu7ActivationHeight(network: "test"))
+  }
+
+  /// One part due 12 blocks before testnet NU7, signed for `targetHeight`.
+  private func makeBatchBeforeNu7(targetHeight: UInt64?) throws -> BackgroundMigrationOutboxBatch {
+    let scheduledHeight = try testnetNu7ActivationHeight() - 12
+    let expiryHeight = try XCTUnwrap(
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: scheduledHeight, network: "test")
+    )
+    var batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [scheduledHeight])
+    batch.items = batch.items.map { item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: scheduledHeight,
+        scheduleStartHeight: scheduledHeight - 1,
+        expiryHeight: expiryHeight,
+        targetHeight: targetHeight
+      )
+    }
+    return batch
   }
 
   private func digests(_ batch: BackgroundMigrationOutboxBatch) -> [String: String] {

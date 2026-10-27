@@ -19,13 +19,18 @@ wallet:
   before the next upgrade.
 - `START_HOLD_MESSAGE` and `SEND_HOLD_MESSAGE`.
 
-Dart reads these rules rather than restating them:
+Other layers read these rules rather than restating them:
 
 - `get_network_upgrade_window` exposes `hold_heights`.
   `networkUpgradeWindowProvider` applies it to the wallet's tip so swaps and
   Gift Cards stop before side effects Rust cannot undo.
 - `networkUpgradeHoldMessage` in `lib/src/core/zcash/network_upgrade_hold.dart`
   turns the Rust message into user copy.
+- The iOS outbox asks `zcash_migration_broadcast_held` whether a part is
+  held, and takes ZIP 318 expiry and spacing from
+  `zcash_zip318_canonical_expiry_height` and
+  `zcash_zip318_blocks_per_reference_block`, so it carries no window or
+  modulus of its own.
 - `upgrade_hold_heights_match_the_send_and_migration_refusals` checks
   `hold_heights` against the refusals tip by tip.
 
@@ -38,7 +43,7 @@ Dart reads these rules rather than restating them:
 | up to `A − 12` | Normal. |
 | `A − 11` to `A − 2` | Migration parts and preparation stages are not broadcast. New Private and Immediate migrations, Keystone prepares and Keystone batch signing are refused. A Private run whose first part would land here is refused earlier. |
 | `A − 4` to `A − 2` | Sends, send-max, shielding, swap deposits and Gift Cards are also refused: their expiry, capped at `A − 1`, is too close for nodes to accept. Swaps that send ZEC and Gift Card creation stop before they start. |
-| `A − 1` | New transactions target the new branch and are accepted again. Old-branch migration parts stay held: a node that missed the upgrade stops here and would still accept them. |
+| `A − 1` | New transactions target the new branch and are accepted again. Old-branch migration parts stay held, in the foreground and in the iOS outbox: a node that missed the upgrade stops here and would still accept them. |
 | once `A − 1` is scanned | Runs whose transactions are still unmined on the old branch end as `stopped_by_upgrade`. |
 
 ## Sends
@@ -101,6 +106,14 @@ server's tip cannot be read, nothing is sent. While a run is held, the
 foreground does not mark its parts for new signatures, so a wallet catching up
 after activation leaves them for the stop.
 
+The iOS outbox holds each part by the height it was signed for, as the
+foreground does; a part saved by an older build has none and is held by the
+tip until `A`. It reports a held part to Dart, which waits rather than
+treating it as a failed broadcast. From NU7's activation the expiry modulus
+changes, so the outbox finds old-branch parts' expiry no longer canonical and
+marks them for new signatures instead of sending them; the foreground stops
+the run once it scans `A − 1`.
+
 **Stop.** `stopped_by_upgrade` is terminal. A run stops at either of two
 points:
 
@@ -142,7 +155,8 @@ blocks:
 
 A schedule drawn before activation keeps one block per reference block. Its
 parts past activation are held and stopped, so ZIP 318's rule to sign them
-for both branches is not implemented.
+for both branches is not implemented. The iOS outbox redraws overdue parts
+with the spacing at each part's start, and Rust checks receipts the same way.
 
 ## NU7 block spacing
 
@@ -154,6 +168,7 @@ span at activation:
 - `BlockSpacing` and `blockSpacingProvider` in Dart for wait-time text. They
   read `get_block_spacing_schedule`, which takes the 25-second value from
   Common's spacing ratio.
+- The iOS outbox check cadence.
 
 If the schedule cannot be read, Dart falls back to 75-second spacing, which
 only affects estimates.
@@ -170,7 +185,9 @@ The hold, stop, expiry cap and copy follow from Common's activation heights
 and need no change. Check the rest:
 
 - **Block spacing or ZIP 318 parameters.** If they change again, update
-  `block_times.rs` and Dart `BlockSpacing`.
+  `block_times.rs`, Dart `BlockSpacing` and the iOS outbox cadence, which
+  restates the 75- and 25-second spacing in Swift for its check estimates.
+  The outbox's expiry and schedule spacing come from Rust.
 - **Hardware signing.** Check
   `orchard_circuit_version_for_consensus_branch` in `pczt.rs`: it keys on the
   branch's Orchard protocol revision. Also check whether Keystone and Ledger

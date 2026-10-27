@@ -5185,6 +5185,73 @@ void main() {
     );
   });
 
+  for (final (name, heldTxids, waits) in [
+    ('iOS waits out the network upgrade without an error', {'txid-1'}, true),
+    (
+      "iOS still surfaces a due transfer while another batch's part is held",
+      {'txid-other'},
+      false,
+    ),
+  ]) {
+    test(name, () async {
+      final store = await _boundBackgroundCredentialStore();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'session-password',
+        isMobile: () => true,
+        isIOS: () => true,
+        isMacOS: () => false,
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(),
+        stageMigrationOutboxBatch: (_) async => const {'txid-1': 'digest-1'},
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async => true,
+        runMigrationOutboxOnceNow: () async => IronwoodMigrationOutboxRunResult(
+          outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+          nextHeight: 288,
+          observedHeight: 300,
+          heldForUpgradeTxids: heldTxids,
+        ),
+      );
+
+      final continued = service.continueSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+      );
+      if (waits) {
+        await continued;
+      } else {
+        await expectLater(continued, throwsA(isA<StateError>()));
+      }
+    });
+  }
+
   test(
     'a failed receipt does not block later receipts or outbox recovery',
     () async {
@@ -5683,6 +5750,7 @@ rust_sync.MigrationOutboxBatch _outboxBatch({
                 scheduledHeight: 288,
                 scheduleStartHeight: 288,
                 expiryHeight: 34_560,
+                targetHeight: 288,
               ),
           ]
         : [
@@ -5695,6 +5763,7 @@ rust_sync.MigrationOutboxBatch _outboxBatch({
               scheduledHeight: 288,
               scheduleStartHeight: 288,
               expiryHeight: 34_560,
+              targetHeight: 288,
             ),
           ],
   );

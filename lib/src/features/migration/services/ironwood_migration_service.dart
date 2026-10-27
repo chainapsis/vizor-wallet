@@ -370,6 +370,7 @@ class IronwoodMigrationOutboxRunResult {
     this.observedHeight,
     this.accountUuid,
     this.retryDelay,
+    this.heldForUpgradeTxids = const {},
   });
 
   factory IronwoodMigrationOutboxRunResult.fromMap(
@@ -392,6 +393,11 @@ class IronwoodMigrationOutboxRunResult {
       nextHeight: (values['nextHeight'] as num?)?.toInt(),
       observedHeight: (values['observedHeight'] as num?)?.toInt(),
       accountUuid: values['accountUuid'] as String?,
+      heldForUpgradeTxids: {
+        for (final txid
+            in (values['heldForUpgradeTxids'] as List<Object?>?) ?? const [])
+          if (txid is String) txid.toLowerCase(),
+      },
       retryDelay: switch (values['delaySeconds']) {
         final num seconds when seconds > 0 => Duration(
           milliseconds: (seconds * Duration.millisecondsPerSecond).ceil(),
@@ -406,6 +412,9 @@ class IronwoodMigrationOutboxRunResult {
   final int? observedHeight;
   final String? accountUuid;
   final Duration? retryDelay;
+
+  /// Due parts that wait for the network upgrade rather than a retry.
+  final Set<String> heldForUpgradeTxids;
 }
 
 typedef IronwoodMigrationKeystoneDenominationPreparer =
@@ -2820,6 +2829,7 @@ class IronwoodMigrationService {
               'scheduledHeight': item.scheduledHeight,
               'scheduleStartHeight': item.scheduleStartHeight,
               'expiryHeight': item.expiryHeight,
+              'targetHeight': item.targetHeight,
             },
           )
           .toList(growable: false),
@@ -2858,9 +2868,14 @@ class IronwoodMigrationService {
     required Set<String> reconciledTxids,
   }) {
     final observedHeight = run.observedHeight;
+    // Parts the network upgrade holds wait like the desktop's do.
     final hadDueItem =
         observedHeight != null &&
-        batch.items.any((item) => item.scheduledHeight <= observedHeight);
+        batch.items.any(
+          (item) =>
+              item.scheduledHeight <= observedHeight &&
+              !run.heldForUpgradeTxids.contains(item.txidHex.toLowerCase()),
+        );
 
     switch (run.outcome) {
       case IronwoodMigrationOutboxRunOutcome.accepted:

@@ -25,6 +25,7 @@ use zcash_client_backend::data_api::status::{
     PublicTransactionStatusRequest, TransactionStatusRead, TransactionStatusWork,
 };
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
@@ -658,6 +659,85 @@ pub extern "C" fn zcash_list_migration_preparation_txids(
     }
 }
 
+/// NU7 activation height for `network`, or 0 when it is unscheduled or the
+/// network is unknown; the iOS outbox paces its checks with it.
+#[no_mangle]
+pub extern "C" fn zcash_nu7_activation_height(network: *const c_char) -> u64 {
+    std::panic::catch_unwind(|| {
+        unsafe { c_str_to_str(network) }
+            .and_then(WalletNetwork::from_str)
+            .and_then(|network| network.activation_height(NetworkUpgrade::Nu7))
+            .map_or(0, |height| u64::from(u32::from(height)))
+    })
+    .unwrap_or(0)
+}
+
+/// Whether the iOS outbox holds a migration part signed for `target_height`
+/// at `remote_height` on `network`, as the foreground judges it. A part saved
+/// by an older build has no target (0) and is held by the tip alone, which
+/// ends at activation. False for an unknown network.
+#[no_mangle]
+pub extern "C" fn zcash_migration_broadcast_held(
+    network: *const c_char,
+    target_height: u64,
+    remote_height: u64,
+) -> bool {
+    std::panic::catch_unwind(|| {
+        let Some(network) = unsafe { c_str_to_str(network) }.and_then(WalletNetwork::from_str)
+        else {
+            return false;
+        };
+        let Ok(tip) = u32::try_from(remote_height) else {
+            return false;
+        };
+        match u32::try_from(target_height) {
+            Ok(0) => crate::wallet::network_upgrade::hold_heights(&network, tip)
+                .is_some_and(|heights| heights.holds_migrations_at(tip)),
+            Ok(target) => crate::wallet::network_upgrade::holds_transaction(&network, target, tip),
+            Err(_) => false,
+        }
+    })
+    .unwrap_or(false)
+}
+
+/// ZIP 318 canonical expiry for a part scheduled at `height` on `network`, or
+/// 0 for an unknown network or an overflow. The iOS outbox redraws with it.
+#[no_mangle]
+pub extern "C" fn zcash_zip318_canonical_expiry_height(network: *const c_char, height: u64) -> u64 {
+    std::panic::catch_unwind(|| {
+        let Some(network) = unsafe { c_str_to_str(network) }.and_then(WalletNetwork::from_str)
+        else {
+            return 0;
+        };
+        u32::try_from(height)
+            .ok()
+            .and_then(|height| {
+                crate::wallet::sync::zip318_canonical_migration_expiry_height(&network, height).ok()
+            })
+            .map_or(0, u64::from)
+    })
+    .unwrap_or(0)
+}
+
+/// Blocks per ZIP 318 reference block at `height` on `network`: one before
+/// NU7, three from it, and one for an unknown network.
+#[no_mangle]
+pub extern "C" fn zcash_zip318_blocks_per_reference_block(
+    network: *const c_char,
+    height: u64,
+) -> u64 {
+    std::panic::catch_unwind(|| {
+        let Some(network) = unsafe { c_str_to_str(network) }.and_then(WalletNetwork::from_str)
+        else {
+            return 1;
+        };
+        u32::try_from(height).map_or(1, |height| {
+            u64::from(crate::wallet::sync::zip318_blocks_at(network, height, 1).max(1))
+        })
+    })
+    .unwrap_or(1)
+}
+
 #[no_mangle]
 pub extern "C" fn zcash_inspect_migration_proof_readiness(
     db_path: *const c_char,
@@ -719,6 +799,68 @@ pub extern "C" fn zcash_inspect_migration_proof_readiness(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nu7_activation_height_reads_the_network_schedule() {
+        let main = std::ffi::CString::new("main").unwrap();
+        let unknown = std::ffi::CString::new("mainnet").unwrap();
+        assert_eq!(zcash_nu7_activation_height(main.as_ptr()), 3_543_405);
+        assert_eq!(zcash_nu7_activation_height(unknown.as_ptr()), 0);
+        assert_eq!(zcash_nu7_activation_height(std::ptr::null()), 0);
+    }
+
+    #[test]
+    fn migration_broadcasts_are_held_like_the_foreground() {
+        let main = std::ffi::CString::new("main").unwrap();
+        let activation: u64 = 3_543_405;
+        let held =
+            |target: u64, tip: u64| zcash_migration_broadcast_held(main.as_ptr(), target, tip);
+        // Signed for the old branch: held from A − 11 and after activation.
+        assert!(!held(activation - 100, activation - 12));
+        assert!(held(activation - 100, activation - 11));
+        assert!(held(activation - 100, activation - 1));
+        assert!(held(activation - 100, activation + 50));
+        // Signed for the new branch: nothing to hold.
+        assert!(!held(activation, activation + 50));
+        // A part from an older build is held by the tip alone.
+        assert!(held(0, activation - 1));
+        assert!(!held(0, activation));
+        assert!(!zcash_migration_broadcast_held(
+            std::ptr::null(),
+            1,
+            activation - 1
+        ));
+    }
+
+    #[test]
+    fn zip318_durations_follow_rust() {
+        let main = std::ffi::CString::new("main").unwrap();
+        let activation: u64 = 3_543_405;
+        assert_eq!(
+            zcash_zip318_canonical_expiry_height(main.as_ptr(), activation - 1),
+            3_594_240
+        );
+        assert_eq!(
+            zcash_zip318_canonical_expiry_height(main.as_ptr(), activation),
+            3_732_480
+        );
+        assert_eq!(
+            zcash_zip318_blocks_per_reference_block(main.as_ptr(), activation - 1),
+            1
+        );
+        assert_eq!(
+            zcash_zip318_blocks_per_reference_block(main.as_ptr(), activation),
+            3
+        );
+        assert_eq!(
+            zcash_zip318_canonical_expiry_height(std::ptr::null(), activation),
+            0
+        );
+        assert_eq!(
+            zcash_zip318_blocks_per_reference_block(std::ptr::null(), activation),
+            1
+        );
+    }
 
     #[test]
     fn status_abi_result_codes_are_unambiguous() {
