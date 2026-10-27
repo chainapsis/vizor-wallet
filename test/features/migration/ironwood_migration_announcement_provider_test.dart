@@ -10,7 +10,9 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -297,6 +299,21 @@ void main() {
     expect(state.accountUuid, _accountUuid);
     expect(state.status?.phase, kIronwoodMigrationReadyPhase);
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
+  });
+
+  test('gives way to the NU7 announcement once the tip reaches NU7', () async {
+    Future<bool> visibleWith(int nu7ActivationHeight) async {
+      final container = _container(nu7ActivationHeight: nu7ActivationHeight);
+      addTearDown(container.dispose);
+      await _settleCoreProviders(container);
+      return (await container.read(
+        ironwoodMigrationAnnouncementProvider.future,
+      )).visible;
+    }
+
+    // The ready state's tip is 3,500,000.
+    expect(await visibleWith(3_500_001), isTrue);
+    expect(await visibleWith(3_500_000), isFalse);
   });
 
   test('shows no migration UI for Ledger with Orchard funds', () async {
@@ -1151,9 +1168,18 @@ ProviderContainer _container({
   Object? migrationStatusError,
   OrchardMigrationStatusGetter? getMigrationStatus,
   bool isLedgerAccount = false,
+  int? nu7ActivationHeight,
 }) {
   return ProviderContainer(
     overrides: [
+      if (nu7ActivationHeight != null)
+        blockSpacingProvider.overrideWithValue(
+          BlockSpacing(
+            preNu7BlockSeconds: 75,
+            nu7BlockSeconds: 25,
+            nu7ActivationHeight: nu7ActivationHeight,
+          ),
+        ),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(isLedgerAccount: isLedgerAccount),
       ),

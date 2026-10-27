@@ -2950,6 +2950,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-nu7-announcement',
+    description: 'Mobile NU7 announcement sheet',
+    builder: buildMobileHomeNu7AnnouncementUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-nu7-announcement',
+    description: 'Desktop NU7 announcement modal',
+    builder: buildDesktopHomeNu7AnnouncementUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-announcement-modal',
     description: 'Ironwood migration announcement modal',
     builder: buildIronwoodMigrationAnnouncementModalUseCase,

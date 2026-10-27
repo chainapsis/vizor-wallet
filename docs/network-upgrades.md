@@ -93,6 +93,12 @@ span at activation:
 If the schedule cannot be read, Dart falls back to 75-second spacing, which
 only affects estimates.
 
+## NU7 announcement
+
+Home shows the NU7 announcement once per network after the tip reaches
+activation. From then on the Ironwood announcement no longer shows. Wallets
+with no account born before activation skip it.
+
 ## When the next upgrade is scheduled
 
 The expiry cap, the send refusal and their copy follow from Common's activation
@@ -104,3 +110,5 @@ heights and need no change. Check the rest:
   `orchard_circuit_version_for_consensus_branch` in `pczt.rs`: it keys on the
   branch's Orchard protocol revision. Also check whether Keystone and Ledger
   firmware accept the new branch.
+- **Announcement.** `nu7AnnouncementProvider` keys on NU7; a new upgrade
+  needs its own copy and seen key.

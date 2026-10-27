@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../core/zcash/block_spacing.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'rpc_endpoint_failover_provider.dart';
+import 'sync_provider.dart';
 
 typedef BlockSpacingScheduleGetter =
     rust_wallet.BlockSpacingSchedule Function({required String network});
@@ -31,4 +34,22 @@ final blockSpacingProvider = Provider<BlockSpacing>((ref) {
     log('BlockSpacing: schedule unavailable, using pre-NU7 spacing: $error');
     return BlockSpacing.preNu7;
   }
+});
+
+/// Whether the wallet's tip has reached NU7, read as
+/// `networkUpgradeWindowProvider` reads the tip.
+final nu7ActiveAtWalletTipProvider = Provider<bool>((ref) {
+  final activation = ref.watch(
+    blockSpacingProvider.select((spacing) => spacing.nu7ActivationHeight),
+  );
+  if (activation == null) return false;
+  final tipHeight = ref.watch(
+    syncProvider.select((sync) {
+      final state = sync.value;
+      return state == null
+          ? 0
+          : math.max(state.chainTipHeight, state.scannedHeight);
+    }),
+  );
+  return tipHeight >= activation;
 });
