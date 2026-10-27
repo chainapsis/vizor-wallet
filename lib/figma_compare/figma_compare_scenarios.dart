@@ -1371,6 +1371,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-send-recipient-recents',
+    description: 'Mobile recipient step with recents and contacts',
+    builder: buildMobileSendRecipientRecentsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-send-amount-contact',
     description: 'Mobile amount screen resolving a saved contact (4479:47503)',
     builder: buildMobileSendAmountContactUseCase,
