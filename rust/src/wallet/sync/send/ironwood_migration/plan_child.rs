@@ -177,17 +177,14 @@ impl OrchardMigrationPrivatePlan {
         let Some(first_offset) = schedule.iter().map(|entry| entry.block_offset).min() else {
             return Ok(());
         };
-        // A part leaves at its scheduled height, or once its proofs are ready.
-        let first_part_height = self
+        // A part leaves once the tip reaches its scheduled height and its
+        // proofs are ready.
+        let first_broadcast_tip = self
             .target_height
             .saturating_sub(1)
             .saturating_add(first_offset)
             .max(self.estimated_proof_ready_height.unwrap_or(0));
-        if network_upgrade::holds_transaction(
-            &network,
-            self.target_height,
-            first_part_height.saturating_sub(1),
-        ) {
+        if network_upgrade::holds_transaction(&network, self.target_height, first_broadcast_tip) {
             return Err(network_upgrade::START_HOLD_MESSAGE.to_string());
         }
         Ok(())

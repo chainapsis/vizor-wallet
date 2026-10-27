@@ -1126,12 +1126,13 @@ fn a_private_plan_whose_first_part_would_meet_the_upgrade_hold_is_refused() {
     };
 
     assert!(!refused(plan(activation - 100, None)));
-    // The first part leaves once its proofs are ready: at A − 11 it still
-    // goes before the hold, from A − 10 it would be held and stopped.
-    assert!(!refused(plan(activation - 100, Some(activation - 11))));
-    assert!(refused(plan(activation - 100, Some(activation - 10))));
+    // The first part leaves once its proofs are ready: at A − 12 it still
+    // goes before the hold, from A − 11 it would be held and stopped.
+    assert!(!refused(plan(activation - 100, Some(activation - 12))));
+    assert!(refused(plan(activation - 100, Some(activation - 11))));
     // Its scheduled height alone can reach the hold too.
-    assert!(refused(plan(activation - 14, None)));
+    assert!(!refused(plan(activation - 16, None)));
+    assert!(refused(plan(activation - 15, None)));
     // Planned on the new branch, nothing is held.
     assert!(!refused(plan(activation, Some(activation + 500))));
 }

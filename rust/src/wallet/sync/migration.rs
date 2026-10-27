@@ -4972,9 +4972,7 @@ pub(crate) fn stop_run_if_network_upgrade_invalidated(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     // A server behind the wallet would otherwise read a new-branch part as old.
-    let chain_tip_height = wallet_tip(&conn)?
-        .unwrap_or(0)
-        .max(server_tip_height);
+    let chain_tip_height = wallet_tip(&conn)?.unwrap_or(0).max(server_tip_height);
     if !network_upgrade_invalidates_unsent_at(
         &conn,
         network,
