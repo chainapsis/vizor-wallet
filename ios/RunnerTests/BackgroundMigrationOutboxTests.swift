@@ -504,6 +504,96 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     }
   }
 
+  func testRedrawFitsEveryPeerThatValidationAccepts() throws {
+    let activation = try testnetNu7ActivationHeight()
+    // From NU7 each redrawn peer takes at least three blocks.
+    let afterNu7 = activation + 1_000
+    // Before NU7 a peer that expires first still leaves room for later ones.
+    for (remoteHeight, expiryHeights) in [
+      (afterNu7, [afterNu7 + 10, afterNu7 + 10, afterNu7 + 10]),
+      (UInt64(200), [202, 210]),
+    ] {
+      var batch = makeBatch(
+        batchId: "batch-a",
+        account: "account-a",
+        heights: Array(repeating: 100, count: expiryHeights.count + 1)
+      )
+      batch.items = batch.items.enumerated().map { index, item in
+        BackgroundMigrationOutboxItem(
+          itemId: item.itemId,
+          partIndex: item.partIndex,
+          txidHex: item.txidHex,
+          rawTransaction: item.rawTransaction,
+          anchorBoundaryHeight: item.anchorBoundaryHeight,
+          scheduledHeight: item.scheduledHeight,
+          scheduleStartHeight: item.scheduleStartHeight,
+          expiryHeight: index == 0 ? remoteHeight + 100 : expiryHeights[index - 1]
+        )
+      }
+      var snapshot = BackgroundMigrationOutboxSnapshot()
+      try snapshot.stage(batch)
+      try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+      let selected = try XCTUnwrap(snapshot.selectDue(remoteHeight: remoteHeight, at: now))
+      XCTAssertEqual(selected.item.itemId, "item-0")
+      try snapshot.validateReschedulingAfterAcceptance(
+        itemId: selected.item.itemId,
+        remoteHeight: remoteHeight
+      )
+      try snapshot.beginSubmission(itemId: selected.item.itemId, attemptId: "attempt", at: now)
+      // Zero draws the longest delay each time.
+      var random = SeededOutboxRandom(values: Array(repeating: 0, count: 16))
+
+      try snapshot.recordAccepted(
+        itemId: selected.item.itemId,
+        equivalent: false,
+        remoteHeight: remoteHeight,
+        responseCode: 0,
+        responseMessage: "",
+        at: now,
+        random: &random
+      )
+
+      let updates = snapshot.receipts[0].scheduleUpdates
+      XCTAssertEqual(updates.count, expiryHeights.count)
+      for update in updates {
+        let item = try XCTUnwrap(
+          snapshot.batches[0].items.first(where: { $0.itemId == update.itemId })
+        )
+        XCTAssertLessThan(update.scheduledHeight, item.expiryHeight)
+      }
+    }
+  }
+
+  func testValidationReservesThreeBlocksPerPeerAfterNu7() throws {
+    let remoteHeight = try testnetNu7ActivationHeight() + 1_000
+    var batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100, 100, 100])
+    batch.items = batch.items.enumerated().map { index, item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: item.scheduledHeight,
+        scheduleStartHeight: item.scheduleStartHeight,
+        expiryHeight: index == 0 ? remoteHeight + 100 : remoteHeight + 6
+      )
+    }
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+
+    // Two peers three blocks apart need seven blocks before their expiry.
+    XCTAssertThrowsError(
+      try snapshot.validateReschedulingAfterAcceptance(
+        itemId: "item-0",
+        remoteHeight: remoteHeight
+      )
+    ) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .invalidSchedule)
+    }
+  }
+
   func testSubmissionIsRejectedBeforeBroadcastWhenPeersCannotFitBeforeExpiry() throws {
     var batch = makeBatch(
       batchId: "batch-a",

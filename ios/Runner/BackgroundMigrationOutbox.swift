@@ -877,9 +877,13 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       }
       .map(\.expiryHeight)
       .sorted()
+    let spacing = Self.redrawSpacing(
+      expiryHeights: expiryHeights,
+      network: batches[location.batch].network
+    )
     var nextHeight = remoteHeight
     for expiryHeight in expiryHeights {
-      let (candidate, overflow) = nextHeight.addingReportingOverflow(1)
+      let (candidate, overflow) = nextHeight.addingReportingOverflow(spacing)
       guard !overflow, candidate < expiryHeight else {
         throw BackgroundMigrationOutboxError.invalidSchedule
       }
@@ -1087,15 +1091,24 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         < batches[batchIndex].items[$1].expiryHeight
     }
     let network = batches[batchIndex].network
+    let expiryHeights = overdueIndexes.map { batches[batchIndex].items[$0].expiryHeight }
+    let spacing = Self.redrawSpacing(expiryHeights: expiryHeights, network: network)
+    // The latest height each item can take while every later one still fits
+    // `spacing` apart before its own expiry, the shape validation checks.
+    var latestHeights = [UInt64](repeating: 0, count: expiryHeights.count)
+    var laterBound = UInt64.max
+    for position in expiryHeights.indices.reversed() {
+      guard expiryHeights[position] > 0 else {
+        throw BackgroundMigrationOutboxError.invalidSchedule
+      }
+      let latest = min(expiryHeights[position] - 1, laterBound)
+      latestHeights[position] = latest
+      laterBound = latest >= spacing ? latest - spacing : 0
+    }
     var elapsed: UInt64 = 0
     var updates: [BackgroundMigrationOutboxScheduleUpdate] = []
     for (offset, itemIndex) in overdueIndexes.enumerated() {
-      let item = batches[batchIndex].items[itemIndex]
-      let remainingCount = UInt64(overdueIndexes.count - offset - 1)
-      guard item.expiryHeight > remainingCount + 1 else {
-        throw BackgroundMigrationOutboxError.invalidSchedule
-      }
-      let latestHeight = item.expiryHeight - remainingCount - 1
+      let latestHeight = latestHeights[offset]
       let currentHeight = remoteHeight.saturatingAdd(elapsed)
       guard latestHeight > currentHeight else {
         throw BackgroundMigrationOutboxError.invalidSchedule
@@ -1200,6 +1213,15 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       network: batch.network,
       targetHeight: item.targetHeight,
       remoteHeight: remoteHeight
+    )
+  }
+
+  /// Blocks reserved per redrawn item: one reference block at the latest
+  /// expiry, the widest spacing any draw before it can take.
+  static func redrawSpacing(expiryHeights: [UInt64], network: String) -> UInt64 {
+    BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(
+      at: expiryHeights.max() ?? 0,
+      network: network
     )
   }
 
