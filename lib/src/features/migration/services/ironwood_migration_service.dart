@@ -370,6 +370,7 @@ class IronwoodMigrationOutboxRunResult {
     this.observedHeight,
     this.accountUuid,
     this.retryDelay,
+    this.heldForUpgrade = false,
   });
 
   factory IronwoodMigrationOutboxRunResult.fromMap(
@@ -392,6 +393,7 @@ class IronwoodMigrationOutboxRunResult {
       nextHeight: (values['nextHeight'] as num?)?.toInt(),
       observedHeight: (values['observedHeight'] as num?)?.toInt(),
       accountUuid: values['accountUuid'] as String?,
+      heldForUpgrade: values['heldForUpgrade'] == true,
       retryDelay: switch (values['delaySeconds']) {
         final num seconds when seconds > 0 => Duration(
           milliseconds: (seconds * Duration.millisecondsPerSecond).ceil(),
@@ -406,6 +408,9 @@ class IronwoodMigrationOutboxRunResult {
   final int? observedHeight;
   final String? accountUuid;
   final Duration? retryDelay;
+
+  /// A due part waits for the network upgrade rather than a retry.
+  final bool heldForUpgrade;
 }
 
 typedef IronwoodMigrationKeystoneDenominationPreparer =
@@ -2820,6 +2825,7 @@ class IronwoodMigrationService {
               'scheduledHeight': item.scheduledHeight,
               'scheduleStartHeight': item.scheduleStartHeight,
               'expiryHeight': item.expiryHeight,
+              'targetHeight': item.targetHeight,
             },
           )
           .toList(growable: false),
@@ -2887,7 +2893,8 @@ class IronwoodMigrationService {
         }
         return;
       case IronwoodMigrationOutboxRunOutcome.waiting:
-        if (hadDueItem) {
+        // Parts the network upgrade holds wait like the desktop's do.
+        if (hadDueItem && !run.heldForUpgrade) {
           throw StateError('Migration broadcast is waiting to retry.');
         }
         return;

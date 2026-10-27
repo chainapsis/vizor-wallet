@@ -710,74 +710,73 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
-  func testBroadcastsAreHeldInTheTenBlocksBeforeNu7() throws {
-    let activation = try XCTUnwrap(
-      BackgroundMigrationOutboxCadence.nu7ActivationHeight(network: "test")
-    )
-    let scheduledHeight = activation - 12
-    var batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [scheduledHeight])
-    batch.items = batch.items.map { item in
-      BackgroundMigrationOutboxItem(
-        itemId: item.itemId,
-        partIndex: item.partIndex,
-        txidHex: item.txidHex,
-        rawTransaction: item.rawTransaction,
-        anchorBoundaryHeight: item.anchorBoundaryHeight,
-        scheduledHeight: scheduledHeight,
-        scheduleStartHeight: scheduledHeight - 1,
-        expiryHeight: BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(
-          for: scheduledHeight,
-          nu7ActivationHeight: activation
-        )!
-      )
+  func testBroadcastsAreHeldAroundNu7ByTheirTargetHeight() throws {
+    let activation = try testnetNu7ActivationHeight()
+    func armedSnapshot(targetHeight: UInt64?) throws -> BackgroundMigrationOutboxSnapshot {
+      let batch = try makeBatchBeforeNu7(targetHeight: targetHeight)
+      var snapshot = BackgroundMigrationOutboxSnapshot()
+      try snapshot.stage(batch)
+      try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+      return snapshot
     }
-    let held = { BackgroundMigrationOutboxCadence.holdsBroadcasts(network: "test", remoteHeight: $0) }
-    XCTAssertFalse(held(activation - 12))
-    XCTAssertTrue(held(activation - 11))
-    // A node that missed NU7 stops at the last pre-NU7 tip and would accept it.
-    XCTAssertTrue(held(activation - 1))
-    // From NU7 the network rejects it, which stops the run.
-    XCTAssertFalse(held(activation))
+    func due(_ targetHeight: UInt64?, at remoteHeight: UInt64) throws -> Bool {
+      var snapshot = try armedSnapshot(targetHeight: targetHeight)
+      return snapshot.selectDue(remoteHeight: remoteHeight, at: now) != nil
+    }
 
-    var snapshot = BackgroundMigrationOutboxSnapshot()
-    try snapshot.stage(batch)
-    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
-
-    XCTAssertNotNil(snapshot.selectDue(remoteHeight: activation - 12, at: now))
-    XCTAssertNil(snapshot.selectDue(remoteHeight: activation - 11, at: now))
-    XCTAssertNil(snapshot.selectDue(remoteHeight: activation - 2, at: now))
-    XCTAssertNil(snapshot.selectDue(remoteHeight: activation - 1, at: now))
+    // Signed for the old branch: held from A - 11 and after activation.
+    XCTAssertTrue(try due(activation - 100, at: activation - 12))
+    XCTAssertFalse(try due(activation - 100, at: activation - 11))
+    XCTAssertFalse(try due(activation - 100, at: activation - 1))
+    XCTAssertFalse(try due(activation - 100, at: activation))
+    // Signed for the new branch: nothing to hold.
+    XCTAssertTrue(try due(activation, at: activation - 1))
+    // A part saved by an older build is held by the tip until activation.
+    XCTAssertFalse(try due(nil, at: activation - 11))
+    XCTAssertFalse(try due(nil, at: activation - 1))
+    XCTAssertTrue(try due(nil, at: activation))
   }
 
-  func testZip318DurationsScaleFromNu7() {
+  func testRunnerReportsAPartHeldForTheUpgrade() throws {
+    let activation = try testnetNu7ActivationHeight()
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    try stageAndArm(try makeBatchBeforeNu7(targetHeight: activation - 100), in: harness.store)
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: BackgroundMigrationOutboxRunnerDependencies(
+        latestBlockHeight: { _, _ in .success(activation - 5) },
+        sendTransaction: { _, _, _ in
+          XCTFail("A held part must not be sent")
+          return .success(NativeLightwalletdSendResponse(errorCode: 0, errorMessage: ""))
+        }
+      )
+    )
+
+    XCTAssertTrue(outcome.heldForUpgrade)
+    XCTAssertTrue(try harness.store.read().receipts.isEmpty)
+  }
+
+  func testZip318DurationsFollowRust() {
     // Mainnet NU7 activates at 3,543,405: the expiry modulus becomes 103,680.
     XCTAssertEqual(
-      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(
-        for: 3_543_404,
-        nu7ActivationHeight: 3_543_405
-      ),
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: 3_543_404, network: "main"),
       3_594_240
     )
     XCTAssertEqual(
-      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(
-        for: 3_543_405,
-        nu7ActivationHeight: 3_543_405
-      ),
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: 3_543_405, network: "main"),
       3_732_480
     )
+    XCTAssertNil(BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: 100, network: "nope"))
     XCTAssertEqual(
-      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(
-        for: 3_543_405,
-        nu7ActivationHeight: nil
-      ),
-      3_594_240
-    )
-    XCTAssertEqual(
-      BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(at: 109, nu7ActivationHeight: 110),
+      BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(at: 3_543_404, network: "main"),
       1
     )
     XCTAssertEqual(
-      BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(at: 110, nu7ActivationHeight: 110),
+      BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(at: 3_543_405, network: "main"),
       3
     )
   }
@@ -1791,6 +1790,33 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
         )
       }
     )
+  }
+
+  private func testnetNu7ActivationHeight() throws -> UInt64 {
+    try XCTUnwrap(BackgroundMigrationOutboxCadence.nu7ActivationHeight(network: "test"))
+  }
+
+  /// One part due 12 blocks before testnet NU7, signed for `targetHeight`.
+  private func makeBatchBeforeNu7(targetHeight: UInt64?) throws -> BackgroundMigrationOutboxBatch {
+    let scheduledHeight = try testnetNu7ActivationHeight() - 12
+    let expiryHeight = try XCTUnwrap(
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(for: scheduledHeight, network: "test")
+    )
+    var batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [scheduledHeight])
+    batch.items = batch.items.map { item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: scheduledHeight,
+        scheduleStartHeight: scheduledHeight - 1,
+        expiryHeight: expiryHeight,
+        targetHeight: targetHeight
+      )
+    }
+    return batch
   }
 
   private func digests(_ batch: BackgroundMigrationOutboxBatch) -> [String: String] {

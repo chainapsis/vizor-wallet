@@ -26,8 +26,11 @@ Other layers read these rules rather than restating them:
   Gift Cards stop before side effects Rust cannot undo.
 - `networkUpgradeHoldMessage` in `lib/src/core/zcash/network_upgrade_hold.dart`
   turns the Rust message into user copy.
-- The iOS outbox asks `zcash_migration_broadcasts_held` whether a broadcast is
-  held, so it carries no window of its own.
+- The iOS outbox asks `zcash_migration_broadcast_held` whether a part is
+  held, and takes ZIP 318 expiry and spacing from
+  `zcash_zip318_canonical_expiry_height` and
+  `zcash_zip318_blocks_per_reference_block`, so it carries no window or
+  modulus of its own.
 - `upgrade_hold_heights_match_the_send_and_migration_refusals` checks
   `hold_heights` against the refusals tip by tip.
 
@@ -103,10 +106,13 @@ server's tip cannot be read, nothing is sent. While a run is held, the
 foreground does not mark its parts for new signatures, so a wallet catching up
 after activation leaves them for the stop.
 
-The iOS outbox holds through the C function until it sees a block at `A` or
-later. From `A` it finds the parts' expiry no longer canonical and marks them
-for new signatures instead of sending them; the foreground stops the run once
-it scans `A − 1`.
+The iOS outbox holds each part by the height it was signed for, as the
+foreground does; a part saved by an older build has none and is held by the
+tip until `A`. It reports a held part to Dart, which waits rather than
+treating it as a failed broadcast. From NU7's activation the expiry modulus
+changes, so the outbox finds old-branch parts' expiry no longer canonical and
+marks them for new signatures instead of sending them; the foreground stops
+the run once it scans `A − 1`.
 
 **Stop.** `stopped_by_upgrade` is terminal. A run stops at either of two
 points:
@@ -179,9 +185,9 @@ The hold, stop, expiry cap and copy follow from Common's activation heights
 and need no change. Check the rest:
 
 - **Block spacing or ZIP 318 parameters.** If they change again, update
-  `block_times.rs`, Dart `BlockSpacing` and the iOS outbox. The outbox
-  restates the expiry modulus and spacing in Swift, and no cross-language test
-  catches a drift.
+  `block_times.rs`, Dart `BlockSpacing` and the iOS outbox cadence, which
+  restates the 75- and 25-second spacing in Swift for its check estimates.
+  The outbox's expiry and schedule spacing come from Rust.
 - **Hardware signing.** Check
   `orchard_circuit_version_for_consensus_branch` in `pczt.rs`: it keys on the
   branch's Orchard protocol revision. Also check whether Keystone and Ledger

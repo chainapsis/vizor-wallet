@@ -187,7 +187,7 @@ enum BackgroundMigrationOutboxRunner {
         } else {
           transport = .noWork
         }
-        return BackgroundMigrationOutboxRunResult(
+        var result = BackgroundMigrationOutboxRunResult(
           transport: transport,
           proofReady: proofReady,
           broadcastComplete: broadcastComplete,
@@ -195,6 +195,11 @@ enum BackgroundMigrationOutboxRunner {
             snapshot.nextActionAccountUuid(endpoint: endpoint, height: $0)
           }
         )
+        result.heldForUpgrade = snapshot.holdsDueItemForUpgrade(
+          remoteHeight: remoteHeight,
+          endpoint: endpoint
+        )
+        return result
       }
       selection = selected
     } catch BackgroundMigrationOutboxError.invalidSchedule {

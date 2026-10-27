@@ -258,6 +258,7 @@ pub(crate) struct MigrationOutboxItem {
     pub scheduled_height: u32,
     pub schedule_start_height: u32,
     pub expiry_height: u32,
+    pub target_height: u32,
 }
 
 #[derive(Debug)]
@@ -3391,7 +3392,7 @@ pub(crate) fn export_scheduled_migration_outbox(
         .prepare_cached(&format!(
             "SELECT part_index, txid_hex, encrypted_raw_tx,
                     anchor_boundary_height, scheduled_height,
-                    schedule_start_height, expiry_height
+                    schedule_start_height, expiry_height, target_height
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status = 'scheduled'
              ORDER BY scheduled_height ASC, part_index ASC, txid_hex ASC"
@@ -3407,6 +3408,7 @@ pub(crate) fn export_scheduled_migration_outbox(
                 row.get::<_, u32>(4)?,
                 row.get::<_, Option<u32>>(5)?,
                 row.get::<_, u32>(6)?,
+                row.get::<_, u32>(7)?,
             ))
         })
         .map_err(|e| format!("Query migration outbox export: {e}"))?;
@@ -3421,6 +3423,7 @@ pub(crate) fn export_scheduled_migration_outbox(
             scheduled_height,
             schedule_start_height,
             expiry_height,
+            target_height,
         ) = row.map_err(|e| format!("Read migration outbox export: {e}"))?;
         let part_index = part_index.ok_or_else(|| {
             format!("Migration outbox transaction {txid_hex} is missing its part index")
@@ -3452,6 +3455,7 @@ pub(crate) fn export_scheduled_migration_outbox(
             scheduled_height,
             schedule_start_height,
             expiry_height,
+            target_height,
         });
     }
     if items.is_empty() && next_proof_height.is_none() {

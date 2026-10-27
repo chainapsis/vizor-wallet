@@ -39,6 +39,8 @@ struct BackgroundMigrationOutboxItem: Codable, Equatable {
   let scheduledHeight: UInt64
   let scheduleStartHeight: UInt64
   let expiryHeight: UInt64
+  /// Height the part was signed for; nil for a part saved by an older build.
+  var targetHeight: UInt64?
   var status: BackgroundMigrationOutboxItemStatus
   var attemptCount: UInt32
   var attemptId: String?
@@ -54,7 +56,8 @@ struct BackgroundMigrationOutboxItem: Codable, Equatable {
     anchorBoundaryHeight: UInt64,
     scheduledHeight: UInt64,
     scheduleStartHeight: UInt64,
-    expiryHeight: UInt64
+    expiryHeight: UInt64,
+    targetHeight: UInt64? = nil
   ) {
     self.itemId = itemId
     self.partIndex = partIndex
@@ -65,6 +68,7 @@ struct BackgroundMigrationOutboxItem: Codable, Equatable {
     self.scheduledHeight = scheduledHeight
     self.scheduleStartHeight = scheduleStartHeight
     self.expiryHeight = expiryHeight
+    self.targetHeight = targetHeight
     status = .staged
     attemptCount = 0
     attemptId = nil
@@ -176,6 +180,8 @@ struct BackgroundMigrationOutboxRunResult: Equatable {
   let proofReady: BackgroundMigrationProofReadyMetadata?
   let broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata?
   let transportAccountUuid: String?
+  /// A due part waits for the network upgrade rather than a retry.
+  var heldForUpgrade = false
 
   init(
     transport: BackgroundMigrationTransportOutcome,
@@ -267,7 +273,8 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       }
       var addedItem = false
       for incoming in batch.items {
-        if let existingItem = existing.items.first(where: { $0.itemId == incoming.itemId }) {
+        if let existingIndex = existing.items.firstIndex(where: { $0.itemId == incoming.itemId }) {
+          let existingItem = existing.items[existingIndex]
           guard existingItem.partIndex == incoming.partIndex,
             existingItem.txidHex == incoming.txidHex,
             existingItem.payloadDigestHex == incoming.payloadDigestHex,
@@ -275,6 +282,9 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
             existingItem.expiryHeight == incoming.expiryHeight
           else {
             throw BackgroundMigrationOutboxError.conflictingBatch
+          }
+          if existingItem.targetHeight == nil {
+            batches[batchIndex].items[existingIndex].targetHeight = incoming.targetHeight
           }
           continue
         }
@@ -760,9 +770,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       guard batches[batchIndex].lightwalletdUrl == endpoint,
         let canonicalExpiryHeight = Self.canonicalExpiryHeight(
           for: remoteHeight,
-          nu7ActivationHeight: BackgroundMigrationOutboxCadence.nu7ActivationHeight(
-            network: batches[batchIndex].network
-          )
+          network: batches[batchIndex].network
         )
       else { continue }
       var foundNoncanonicalItem = false
@@ -803,14 +811,11 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       batchIndex, batch -> (Int, BackgroundMigrationOutboxBatch)? in
       guard endpoint == nil || batch.lightwalletdUrl == endpoint,
         batch.armedAt != nil,
-        !BackgroundMigrationOutboxCadence.holdsBroadcasts(
-          network: batch.network,
-          remoteHeight: remoteHeight
-        ),
         batch.items.contains(where: {
           $0.status == .armed && $0.scheduledHeight <= remoteHeight
             && remoteHeight < $0.expiryHeight
             && ($0.nextAttemptAt == nil || $0.nextAttemptAt! <= date)
+            && !Self.upgradeHolds($0, in: batch, remoteHeight: remoteHeight)
         })
       else { return nil }
       return (batchIndex, batch)
@@ -832,6 +837,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
           $0.status == .armed && $0.scheduledHeight <= remoteHeight
             && remoteHeight < $0.expiryHeight
             && ($0.nextAttemptAt == nil || $0.nextAttemptAt! <= date)
+            && !Self.upgradeHolds($0, in: batch, remoteHeight: remoteHeight)
         })
         .sorted(by: {
           ($0.scheduledHeight, $0.txidHex) < ($1.scheduledHeight, $1.txidHex)
@@ -1080,9 +1086,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       batches[batchIndex].items[$0].expiryHeight
         < batches[batchIndex].items[$1].expiryHeight
     }
-    let nu7ActivationHeight = BackgroundMigrationOutboxCadence.nu7ActivationHeight(
-      network: batches[batchIndex].network
-    )
+    let network = batches[batchIndex].network
     var elapsed: UInt64 = 0
     var updates: [BackgroundMigrationOutboxScheduleUpdate] = []
     for (offset, itemIndex) in overdueIndexes.enumerated() {
@@ -1099,7 +1103,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       // ZIP 318 delays are reference blocks; from NU7 each spans three blocks.
       let blocksPerReferenceBlock = BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(
         at: currentHeight,
-        nu7ActivationHeight: nu7ActivationHeight
+        network: network
       )
       let boundedMax = min(max, (latestHeight - currentHeight) / blocksPerReferenceBlock)
       guard boundedMax > 0 else {
@@ -1143,7 +1147,8 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       anchorBoundaryHeight: item.anchorBoundaryHeight,
       scheduledHeight: scheduledHeight,
       scheduleStartHeight: scheduleStartHeight,
-      expiryHeight: item.expiryHeight
+      expiryHeight: item.expiryHeight,
+      targetHeight: item.targetHeight
     )
     copy.status = item.status
     copy.attemptCount = item.attemptCount
@@ -1179,31 +1184,41 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     )
   }
 
-  /// ZIP 318's expiry modulus is 34,560 blocks before NU7 and 103,680 from it.
-  static func canonicalExpiryHeight(
-    for height: UInt64,
-    nu7ActivationHeight: UInt64?
-  ) -> UInt64? {
-    let modulus =
-      34_560
-      * BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(
-        at: height,
-        nu7ActivationHeight: nu7ActivationHeight
-      )
-    let boundary = height - (height % modulus)
-    let window = modulus * 2
-    let (expiryHeight, expiryOverflow) = boundary.addingReportingOverflow(window)
-    return expiryOverflow ? nil : expiryHeight
+  /// ZIP 318's canonical expiry for a part scheduled at `height`, from Rust.
+  static func canonicalExpiryHeight(for height: UInt64, network: String) -> UInt64? {
+    let expiryHeight = network.withCString { zcash_zip318_canonical_expiry_height($0, height) }
+    return expiryHeight == 0 ? nil : expiryHeight
+  }
+
+  /// Whether the network upgrade holds `item`, as the foreground judges it.
+  static func upgradeHolds(
+    _ item: BackgroundMigrationOutboxItem,
+    in batch: BackgroundMigrationOutboxBatch,
+    remoteHeight: UInt64
+  ) -> Bool {
+    BackgroundMigrationOutboxCadence.holdsBroadcast(
+      network: batch.network,
+      targetHeight: item.targetHeight,
+      remoteHeight: remoteHeight
+    )
+  }
+
+  /// Whether a due part on `endpoint` waits for the network upgrade.
+  func holdsDueItemForUpgrade(remoteHeight: UInt64, endpoint: String) -> Bool {
+    batches.contains { batch in
+      batch.lightwalletdUrl == endpoint
+        && batch.items.contains {
+          $0.status == .armed && $0.scheduledHeight <= remoteHeight
+            && Self.upgradeHolds($0, in: batch, remoteHeight: remoteHeight)
+        }
+    }
   }
 }
 
 enum BackgroundMigrationOutboxSchedule {
-  /// ZIP 218's NU7 block target spacing ratio.
-  static let nu7SpacingRatio: UInt64 = 3
-
-  static func blocksPerReferenceBlock(at height: UInt64, nu7ActivationHeight: UInt64?) -> UInt64 {
-    guard let nu7ActivationHeight, height >= nu7ActivationHeight else { return 1 }
-    return nu7SpacingRatio
+  /// Blocks per ZIP 318 reference block at `height`, from Rust.
+  static func blocksPerReferenceBlock(at height: UInt64, network: String) -> UInt64 {
+    max(1, network.withCString { zcash_zip318_blocks_per_reference_block($0, height) })
   }
 
   static func sampleDelay(
@@ -1264,11 +1279,17 @@ enum BackgroundMigrationOutboxCadence {
     return height == 0 ? nil : height
   }
 
-  /// Whether broadcasts wait for a network upgrade at `remoteHeight`: one
-  /// sent then could miss the last old-branch block and keep its input spent
-  /// until expiry. Rust owns the window.
-  static func holdsBroadcasts(network: String, remoteHeight: UInt64) -> Bool {
-    network.withCString { zcash_migration_broadcasts_held($0, remoteHeight) }
+  /// Whether a part signed for `targetHeight` waits for a network upgrade at
+  /// `remoteHeight`: sent then, it could miss the last old-branch block and
+  /// keep its input spent until expiry. Rust owns the window.
+  static func holdsBroadcast(
+    network: String,
+    targetHeight: UInt64?,
+    remoteHeight: UInt64
+  ) -> Bool {
+    network.withCString {
+      zcash_migration_broadcast_held($0, targetHeight ?? 0, remoteHeight)
+    }
   }
 
   static func retryDelay(attemptCount: UInt32) -> TimeInterval {

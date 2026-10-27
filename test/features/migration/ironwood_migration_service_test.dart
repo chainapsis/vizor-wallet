@@ -5185,6 +5185,58 @@ void main() {
     );
   });
 
+  test('iOS waits out the network upgrade without an error', () async {
+    final store = await _boundBackgroundCredentialStore();
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus(activeRunId: 'run-1'));
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      getEndpoint: _testEndpoint,
+      getSessionPassword: () => 'session-password',
+      isMobile: () => true,
+      isIOS: () => true,
+      isMacOS: () => false,
+      listMigrationOutboxReceipts: () async => const [],
+      prepareMigrationOutbox:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async => _migrationResult(),
+      exportMigrationOutbox:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async => _outboxBatch(),
+      stageMigrationOutboxBatch: (_) async => const {'txid-1': 'digest-1'},
+      armMigrationOutboxBatch:
+          ({required batchId, required expectedDigests}) async => true,
+      runMigrationOutboxOnceNow: () async =>
+          const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+            nextHeight: 288,
+            observedHeight: 300,
+            heldForUpgrade: true,
+          ),
+    );
+
+    await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
+  });
+
   test(
     'a failed receipt does not block later receipts or outbox recovery',
     () async {
@@ -5683,6 +5735,7 @@ rust_sync.MigrationOutboxBatch _outboxBatch({
                 scheduledHeight: 288,
                 scheduleStartHeight: 288,
                 expiryHeight: 34_560,
+                targetHeight: 288,
               ),
           ]
         : [
@@ -5695,6 +5748,7 @@ rust_sync.MigrationOutboxBatch _outboxBatch({
               scheduledHeight: 288,
               scheduleStartHeight: 288,
               expiryHeight: 34_560,
+              targetHeight: 288,
             ),
           ],
   );
