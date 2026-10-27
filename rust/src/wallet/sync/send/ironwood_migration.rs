@@ -56,6 +56,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     }) {
         return Err("Migration already has an active run. Start migration next.".to_string());
     }
+    super::migration::ensure_migration_can_start_at_wallet_tip(db_path, network)?;
     {
         let mut request_store = keystone_single_qr_migration_requests()
             .lock()
@@ -353,6 +354,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     if super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)? {
         return Err("Migration already has an active run.".to_string());
     }
+    super::migration::ensure_migration_can_start_at_wallet_tip(db_path, network)?;
     {
         let mut store = keystone_denomination_requests()
             .lock()
@@ -389,11 +391,16 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         .len()
         .checked_add(split.stages.len())
         .ok_or("Keystone migration message count overflow")?;
+    let next_height = u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+        .map_err(|_| "Migration chain tip exceeds u32".to_string())?
+        .saturating_add(1);
     super::migration::validate_schedule(
         &approved_schedule,
         &split.plan.migration_outputs,
         network,
+        next_height,
     )?;
+    super::migration::ensure_schedule_drawn_for_height(&approved_schedule, network, next_height)?;
     let mut child_messages = Vec::with_capacity(split.predicted_notes.len());
     for (index, predicted) in split.predicted_notes.iter().enumerate() {
         let part_index = index as u32;
@@ -729,6 +736,7 @@ pub(crate) fn prepare_orchard_migration_immediate_pczt(
         StoredImmediateMigrationPczt {
             account_uuid: account_uuid.to_string(),
             network,
+            target_height: built.target_height,
             message_id,
             state: KeystoneMigrationRequestState::Proofing,
             proof_error: None,
@@ -801,6 +809,25 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
             .remove(request_id)
             .ok_or("Keystone Immediate migration request disappeared")?
     };
+    // Signing can outlast the build-time hold check; dropping the request
+    // releases its inputs.
+    match super::migration::network_upgrade_holds_transaction_at_wallet_tip(
+        db_path,
+        network,
+        stored.target_height,
+    ) {
+        Ok(false) => {}
+        Ok(true) => {
+            return Err(crate::wallet::network_upgrade::START_HOLD_MESSAGE.to_string());
+        }
+        // Keep the signed request for a retry rather than send unchecked.
+        Err(error) => {
+            if let Ok(mut store) = keystone_immediate_migration_requests().lock() {
+                store.insert(request_id.to_string(), stored);
+            }
+            return Err(error);
+        }
+    }
     let signatures = signed_by_id
         .remove(&stored.message_id)
         .ok_or("Keystone Immediate migration signature is missing")?;

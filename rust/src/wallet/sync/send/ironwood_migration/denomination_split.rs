@@ -404,7 +404,7 @@ fn create_padded_orchard_denomination_pczts(
             .get(stage_index)
             .ok_or("Migration preparation schedule is missing a stage")?;
         let expiry_height =
-            super::migration::zip318_canonical_migration_expiry_height(scheduled_height)?;
+            super::migration::zip318_canonical_migration_expiry_height(&network, scheduled_height)?;
         let mut stage_notes = Vec::new();
         let mut stage_input_refs = Vec::new();
         let mut root_inputs = Vec::new();

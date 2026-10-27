@@ -35,9 +35,21 @@ fn random_schedule_block_offsets_with_rng<R: RngCore + CryptoRng + ?Sized>(
     offsets
 }
 
+/// Cumulative reference-block offsets drawn at `from_height`, in blocks.
+/// From NU7 activation each reference block spans three blocks. A schedule
+/// drawn before activation keeps one block each; its parts past activation
+/// are held and stopped, so their heights are never broadcast.
+fn offsets_in_blocks(network: WalletNetwork, from_height: u32, offsets: Vec<u32>) -> Vec<u32> {
+    offsets
+        .into_iter()
+        .map(|offset| zip318_blocks_at(network, from_height, offset))
+        .collect()
+}
+
 pub(crate) fn planned_transfer_schedule<R, I>(
     values: I,
     network: WalletNetwork,
+    from_height: u32,
     rng: &mut R,
 ) -> Vec<MigrationScheduleEntry>
 where
@@ -51,6 +63,7 @@ where
             .map(|(part_index, value_zatoshi)| (part_index as u32, value_zatoshi)),
         network,
         configured_timing_policy(network),
+        from_height,
         rng,
     )
 }
@@ -59,6 +72,7 @@ fn planned_transfer_schedule_with_policy<R, I>(
     values: I,
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
+    from_height: u32,
     rng: &mut R,
 ) -> Vec<MigrationScheduleEntry>
 where
@@ -72,6 +86,7 @@ where
             .map(|(part_index, value_zatoshi)| (part_index as u32, value_zatoshi)),
         network,
         timing_policy,
+        from_height,
         rng,
     )
 }
@@ -80,6 +95,7 @@ fn planned_transfer_schedule_for_parts_with_policy<R, I>(
     parts: I,
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
+    from_height: u32,
     rng: &mut R,
 ) -> Vec<MigrationScheduleEntry>
 where
@@ -90,11 +106,15 @@ where
     parts.shuffle(rng);
     let (mean_delay_blocks, max_delay_blocks) =
         schedule_parameters_with_policy_for_part_count(network, timing_policy, parts.len());
-    let offsets = random_schedule_block_offsets_with_rng(
-        parts.len(),
-        mean_delay_blocks,
-        max_delay_blocks,
-        rng,
+    let offsets = offsets_in_blocks(
+        network,
+        from_height,
+        random_schedule_block_offsets_with_rng(
+            parts.len(),
+            mean_delay_blocks,
+            max_delay_blocks,
+            rng,
+        ),
     );
     parts
         .into_iter()
@@ -119,6 +139,7 @@ pub(crate) fn rebuild_schedule_block_offsets<R: RngCore + CryptoRng + ?Sized>(
     recoveries: &[(u32, u64)],
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
+    from_height: u32,
     rng: &mut R,
 ) -> Result<Vec<u32>, String> {
     for (part_index, value_zatoshi) in recoveries {
@@ -128,11 +149,15 @@ pub(crate) fn rebuild_schedule_block_offsets<R: RngCore + CryptoRng + ?Sized>(
 
     let (mean_delay_blocks, max_delay_blocks) =
         schedule_parameters_with_policy(network, timing_policy);
-    let offsets = random_schedule_block_offsets_with_rng(
-        recoveries.len(),
-        mean_delay_blocks,
-        max_delay_blocks,
-        rng,
+    let offsets = offsets_in_blocks(
+        network,
+        from_height,
+        random_schedule_block_offsets_with_rng(
+            recoveries.len(),
+            mean_delay_blocks,
+            max_delay_blocks,
+            rng,
+        ),
     );
     // Hand out the cumulative slots in a shuffled order so the rebuilt
     // broadcast order does not reveal which original part each transfer is.
@@ -149,12 +174,14 @@ pub(crate) fn validate_schedule(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],
     network: WalletNetwork,
+    height: u32,
 ) -> Result<(), String> {
     validate_schedule_with_policy(
         schedule,
         target_values,
         network,
         configured_timing_policy(network),
+        height,
     )
 }
 
@@ -197,11 +224,14 @@ pub(crate) fn target_values_from_schedule(
         .collect()
 }
 
+/// `height` is the wallet's next block: a schedule drawn from NU7 activation
+/// may space its parts up to three times the reference-block maximum.
 fn validate_schedule_with_policy(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
+    height: u32,
 ) -> Result<(), String> {
     if schedule.len() != target_values.len() {
         return Err("Approved migration schedule count changed".to_string());
@@ -219,7 +249,7 @@ fn validate_schedule_with_policy(
     }
     validate_schedule_part_indexes(schedule, &target_values_by_part)?;
 
-    let (_, max_delay_blocks) = schedule_parameters_with_policy(network, timing_policy);
+    let (_, max_delay_blocks) = schedule_delays_in_blocks(network, timing_policy, 0, height);
     let mut previous_offset = 0;
     for entry in schedule {
         let gap = entry
@@ -230,6 +260,27 @@ fn validate_schedule_with_policy(
             return Err("Approved migration schedule delay is outside policy".to_string());
         }
         previous_offset = entry.block_offset;
+    }
+    Ok(())
+}
+
+pub(crate) const STALE_SCHEDULE_MESSAGE: &str =
+    "Migration schedule was drawn before the network upgrade; review the plan again";
+
+/// Refuses a new run whose schedule was drawn before an upgrade changed the
+/// block spacing: its offsets count one block per reference block, so its
+/// delays would pass in a third of the time.
+pub(crate) fn ensure_schedule_drawn_for_height(
+    schedule: &[MigrationScheduleEntry],
+    network: WalletNetwork,
+    height: u32,
+) -> Result<(), String> {
+    let blocks_per_reference_block = zip318_blocks_at(network, height, 1);
+    if schedule
+        .iter()
+        .any(|entry| entry.block_offset % blocks_per_reference_block != 0)
+    {
+        return Err(STALE_SCHEDULE_MESSAGE.to_string());
     }
     Ok(())
 }

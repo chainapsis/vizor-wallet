@@ -6,6 +6,12 @@ const TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const TEST_SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn terminal_phases_sql_lists_the_terminal_phases() {
+    let listed = TERMINAL_PHASES.map(|phase| format!("'{phase}'")).join(", ");
+    assert_eq!(TERMINAL_PHASES_SQL, listed);
+}
+
+#[test]
 fn wallet_lock_reconciliation_retries_when_terminal_disposition_changes() {
     assert!(migration_phase_releases_wallet_locks(PHASE_COMPLETE));
     assert!(migration_phase_releases_wallet_locks(PHASE_FAILED_TERMINAL));
@@ -1387,20 +1393,47 @@ fn planner_uses_one_two_five_digit_expansion_below_cap() {
 
 #[test]
 fn canonical_migration_expiry_uses_zip318_window_boundaries() {
-    assert_eq!(ZIP318_EXPIRY_MODULUS, 34_560);
+    let main = WalletNetwork::Main;
     assert_eq!(
-        zip318_canonical_migration_expiry_height(3_428_143).unwrap(),
+        zip318_canonical_migration_expiry_height(&main, 3_428_143).unwrap(),
         3_490_560
     );
     assert_eq!(
-        zip318_canonical_migration_expiry_height(3_455_999).unwrap(),
+        zip318_canonical_migration_expiry_height(&main, 3_455_999).unwrap(),
         3_490_560
     );
     assert_eq!(
-        zip318_canonical_migration_expiry_height(3_456_000).unwrap(),
+        zip318_canonical_migration_expiry_height(&main, 3_456_000).unwrap(),
         3_525_120
     );
-    assert_eq!(zip318_canonical_migration_expiry_height(0).unwrap(), 69_120);
+    assert_eq!(
+        zip318_canonical_migration_expiry_height(&main, 0).unwrap(),
+        69_120
+    );
+}
+
+#[test]
+fn canonical_migration_expiry_scales_its_modulus_from_nu7_activation() {
+    // ZIP 318's example: the last pre-NU7 Mainnet height keeps 34,560.
+    let main = WalletNetwork::Main;
+    assert_eq!(
+        zip318_canonical_migration_expiry_height(&main, 3_543_404).unwrap(),
+        3_594_240
+    );
+    // From activation (3,543,405) the modulus is 103,680 blocks.
+    assert_eq!(
+        zip318_canonical_migration_expiry_height(&main, 3_543_405).unwrap(),
+        3_732_480
+    );
+    // Rows signed by earlier builds past activation keep reading as canonical.
+    assert!(is_stored_migration_expiry_canonical(main, 3_600_000, 3_732_480).unwrap());
+    assert!(is_stored_migration_expiry_canonical(
+        main,
+        3_600_000,
+        legacy_zip318_canonical_migration_expiry_height(3_600_000).unwrap(),
+    )
+    .unwrap());
+    assert!(!is_stored_migration_expiry_canonical(main, 3_600_000, 3_594_240).unwrap());
 }
 
 #[test]
@@ -1599,6 +1632,61 @@ fn on_open_reschedule_redraws_overdue_transfers_across_wallet_runs() {
         vec!["run-1", "run-2"]
     );
     assert!(remaining.iter().all(|entry| entry.1 > 503));
+}
+
+#[test]
+fn wallet_overdue_reschedule_leaves_stopped_runs_alone() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-1", &[100, 200], &[Some(90), Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    // Parts held at an upgrade stay scheduled, overdue and off the canonical expiry.
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 503, schedule_start_height = 502, expiry_height = 1
+             WHERE status = 'scheduled'"
+        ),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = 'run-1'"),
+        params![PHASE_STOPPED_BY_UPGRADE],
+    )
+    .unwrap();
+    drop(conn);
+
+    reschedule_wallet_overdue_pending_txs(&db_path, WalletNetwork::Regtest, 503).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = 'run-1'"),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_STOPPED_BY_UPGRADE);
+    let parts = conn
+        .prepare(&format!(
+            "SELECT status, scheduled_height FROM {PENDING_TXS_TABLE} WHERE run_id = 'run-1'"
+        ))
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(parts.len(), 2);
+    assert!(parts
+        .iter()
+        .all(|(status, height)| status == "scheduled" && *height == 503));
 }
 
 #[test]
@@ -2548,7 +2636,9 @@ fn create_signed_children_rebase_fixture(
     .unwrap();
     for (part_index, value_zatoshi, block_offset) in parts {
         let scheduled_height = origin + block_offset;
-        let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+        let expiry_height =
+            zip318_canonical_migration_expiry_height(&WalletNetwork::Test, scheduled_height)
+                .unwrap();
         let selected_note = PreparedOrchardNoteRef {
             txid_hex: format!("{:064x}", 100 + part_index),
             output_index: 0,
@@ -2639,7 +2729,11 @@ fn rebase_fixture_pending(
         raw_tx: vec![part_index as u8, 0xaa, 0x55],
         target_height: 101,
         anchor_boundary_height: Some(90),
-        expiry_height: zip318_canonical_migration_expiry_height(scheduled_height).unwrap(),
+        expiry_height: zip318_canonical_migration_expiry_height(
+            &WalletNetwork::Test,
+            scheduled_height,
+        )
+        .unwrap(),
         scheduled_height,
         value_zatoshi,
         fee_zatoshi: 10,
@@ -2965,7 +3059,11 @@ fn keystone_batches_finish_signing_before_atomic_rebase_promotion() {
                 sigs: Vec::new(),
                 target_height: 101,
                 anchor_boundary_height: None,
-                expiry_height: zip318_canonical_migration_expiry_height(scheduled_height).unwrap(),
+                expiry_height: zip318_canonical_migration_expiry_height(
+                    &WalletNetwork::Test,
+                    scheduled_height,
+                )
+                .unwrap(),
                 scheduled_height,
                 value_zatoshi,
                 fee_zatoshi: 10,
@@ -3169,13 +3267,13 @@ fn initial_schedule_rebase_skips_atomically_when_expiry_bucket_would_change() {
         "rebase-expiry",
         100,
         &[(0, 100, 0), (1, 200, 48)],
-        Some(ZIP318_EXPIRY_MODULUS),
+        Some(zcash_protocol::zip318::EXPIRY_MODULUS),
     );
 
     assert!(!rebase_initial_signed_schedule_for_anchor_readiness(
         &db_path,
         "rebase-expiry",
-        ZIP318_EXPIRY_MODULUS,
+        zcash_protocol::zip318::EXPIRY_MODULUS,
     )
     .unwrap());
 
@@ -3883,6 +3981,7 @@ fn rebuilt_parts_fit_a_remaining_count_schedule() {
         target_values.iter().copied(),
         WalletNetwork::Main,
         MigrationTimingPolicy::Standard,
+        3_500_000,
         &mut rng,
     );
     // Six parts survive at scattered schedule positions (broadcast order is
@@ -3898,6 +3997,7 @@ fn rebuilt_parts_fit_a_remaining_count_schedule() {
         &recoveries,
         WalletNetwork::Main,
         MigrationTimingPolicy::Standard,
+        3_500_000,
         &mut rng,
     )
     .unwrap();
@@ -3991,7 +4091,7 @@ fn preparation_schedule_is_planned_across_dependency_layers() {
     assert!(root_end >= 3_455_989);
     assert!(descendant_start >= root_end + denomination_confirmations_required());
     assert!(heights.iter().all(|height| {
-        zip318_canonical_migration_expiry_height(*height)
+        zip318_canonical_migration_expiry_height(&WalletNetwork::Test, *height)
             .is_ok_and(|expiry_height| expiry_height > *height)
     }));
 }
@@ -4461,7 +4561,12 @@ fn legacy_preparation_policy_remains_immediate() {
 fn planned_schedule_delays_every_transfer() {
     let values = (1..=32).collect::<Vec<_>>();
     let mut rng = StdRng::seed_from_u64(0x318);
-    let schedule = planned_transfer_schedule(values.iter().copied(), WalletNetwork::Test, &mut rng);
+    let schedule = planned_transfer_schedule(
+        values.iter().copied(),
+        WalletNetwork::Test,
+        4_000_000,
+        &mut rng,
+    );
 
     assert_eq!(schedule.len(), values.len());
     assert_ne!(schedule[0].block_offset, 0);
@@ -4470,7 +4575,7 @@ fn planned_schedule_delays_every_transfer() {
         let gap = entries[1].block_offset - entries[0].block_offset;
         gap <= ZIP318_TRANSFER_MAX_DELAY_BLOCKS
     }));
-    validate_schedule(&schedule, &values, WalletNetwork::Test).unwrap();
+    validate_schedule(&schedule, &values, WalletNetwork::Test, 4_000_000).unwrap();
 }
 
 #[test]
@@ -4488,7 +4593,7 @@ fn schedule_validation_accepts_zero_delay_gaps() {
         },
     ];
 
-    validate_schedule(&schedule, &[100, 200], WalletNetwork::Test).unwrap();
+    validate_schedule(&schedule, &[100, 200], WalletNetwork::Test, 4_000_000).unwrap();
 }
 
 #[test]
@@ -4506,7 +4611,7 @@ fn schedule_validation_keeps_legacy_positive_first_offsets_compatible() {
         },
     ];
 
-    validate_schedule(&schedule, &[100, 200], WalletNetwork::Test).unwrap();
+    validate_schedule(&schedule, &[100, 200], WalletNetwork::Test, 4_000_000).unwrap();
 }
 
 #[test]
@@ -4726,6 +4831,7 @@ fn fast_testnet_adopts_unstarted_run_and_replaces_schedule() {
         &[100, 200, 300],
         WalletNetwork::Test,
         MigrationTimingPolicy::FastTestnet,
+        4_000_000,
     )
     .unwrap();
 }
@@ -5253,14 +5359,21 @@ fn durable_anchor_check_matches_the_pinned_librustzcash_interval() {
     // them, not only the ones that happen to be multiples of a wider interval.
     let floor = Some(BlockHeight::from_u32(1_000));
 
-    assert!(is_wallet_durable_anchor(1_008, floor));
-    assert!(is_wallet_durable_anchor(1_152, floor));
-    assert!(!is_wallet_durable_anchor(1_100, floor));
+    let main = WalletNetwork::Main;
+    assert!(is_wallet_durable_anchor(main, 1_008, floor));
+    assert!(is_wallet_durable_anchor(main, 1_152, floor));
+    assert!(!is_wallet_durable_anchor(main, 1_100, floor));
 
     // Below activation librustzcash retains nothing, so migration owns the
     // checkpoint outright and may release it.
-    assert!(!is_wallet_durable_anchor(864, floor));
-    assert!(!is_wallet_durable_anchor(144, None));
+    assert!(!is_wallet_durable_anchor(main, 864, floor));
+    assert!(!is_wallet_durable_anchor(main, 144, None));
+
+    // From NU7 activation (Testnet 4,465,026) the grid is 3 x 144 blocks.
+    let test = WalletNetwork::Test;
+    assert!(is_wallet_durable_anchor(test, 4_465_008, floor));
+    assert!(is_wallet_durable_anchor(test, 4_465_152, floor));
+    assert!(!is_wallet_durable_anchor(test, 4_465_296, floor));
 }
 
 #[test]
@@ -5313,8 +5426,11 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
                 format!("child-{part_index}"),
                 part_index,
                 target_height,
-                zip318_canonical_migration_expiry_height(if part_index == 0 { 502 } else { 501 })
-                    .unwrap(),
+                zip318_canonical_migration_expiry_height(
+                    &WalletNetwork::Test,
+                    if part_index == 0 { 502 } else { 501 }
+                )
+                .unwrap(),
                 if part_index == 0 { 502 } else { 501 },
                 if part_index == 0 { 100 } else { 200 },
                 serde_json::to_string(&selected_note).unwrap(),
@@ -5862,7 +5978,8 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
                 raw_tx: vec![7, 8, 9],
                 target_height: 102,
                 anchor_boundary_height: Some(90),
-                expiry_height: zip318_canonical_migration_expiry_height(102).unwrap(),
+                expiry_height: zip318_canonical_migration_expiry_height(&WalletNetwork::Test, 102)
+                    .unwrap(),
                 scheduled_height: 102,
                 value_zatoshi: 100,
                 fee_zatoshi: 10,
@@ -6004,7 +6121,8 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
     drop(conn);
 
     let scheduled_height = 95;
-    let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+    let expiry_height =
+        zip318_canonical_migration_expiry_height(&WalletNetwork::Test, scheduled_height).unwrap();
     insert_pending_txs(
         &db_path,
         "store-retry-run",
@@ -6173,7 +6291,8 @@ fn rebuild_replacement_for(
         funding_account_uuid: "account-1".to_string(),
         selected_note: note.clone(),
     };
-    let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+    let expiry_height =
+        zip318_canonical_migration_expiry_height(&WalletNetwork::Test, scheduled_height).unwrap();
     (
         PendingMigrationTxReplacement {
             old_txid_hex: old_txid_hex.to_string(),
@@ -6354,8 +6473,11 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     // the signed child's scheduled height cannot precede that origin.
     let (stray_replacement, mut stray_child) = replacement_for(last_row, last_part_index, 6_001);
     stray_child.scheduled_height = 4_999;
-    stray_child.expiry_height =
-        zip318_canonical_migration_expiry_height(stray_child.scheduled_height).unwrap();
+    stray_child.expiry_height = zip318_canonical_migration_expiry_height(
+        &WalletNetwork::Test,
+        stray_child.scheduled_height,
+    )
+    .unwrap();
     assert_eq!(
         replace_resigned_pending_parts(
             &db_path,
@@ -6710,7 +6832,9 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
                 selected_note: note.clone(),
             };
             let scheduled_height = scheduled_heights[index];
-            let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+            let expiry_height =
+                zip318_canonical_migration_expiry_height(&WalletNetwork::Test, scheduled_height)
+                    .unwrap();
             let value_zatoshi = 100 + 100 * index as u64;
             (
                 PendingMigrationTxReplacement {
@@ -10486,4 +10610,593 @@ fn due_pending_unblocks_later_parts_after_stale_head_is_mined() {
         2,
         "after promoting part 0, two later scheduled parts remain due at tip"
     );
+}
+
+const TEST_NU7_ACTIVATION_HEIGHT: u32 = 4_465_026;
+
+fn insert_upgrade_test_run(conn: &rusqlite::Connection, signed_target_height: Option<u32>) {
+    ensure_schema(conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES ('upgrade-run', 'account-1', 'test', 'wallet.db', ?1,
+                     1, 1, '[100000]')"
+        ),
+        params![PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PREPARED_NOTES_TABLE}
+             (run_id, txid_hex, output_index, value_zatoshi, note_version, lock_state)
+             VALUES ('upgrade-run', ?1, 0, 115000, 2, 'locked')"
+        ),
+        params!["11".repeat(32)],
+    )
+    .unwrap();
+    let Some(target_height) = signed_target_height else {
+        return;
+    };
+    conn.execute(
+        &format!(
+            "INSERT INTO {PENDING_TXS_TABLE}
+             (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+              expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+              selected_note_output_index, selected_note_value, scheduled_at_ms,
+              scheduled_height, status, metadata_json)
+             VALUES ('upgrade-run', ?1, 0, 'encrypted', ?2, ?3, 100000,
+                     15000, ?4, 0, 115000, 1, ?2, 'scheduled', '{{}}')"
+        ),
+        params![
+            "22".repeat(32),
+            target_height,
+            zip318_canonical_migration_expiry_height(&WalletNetwork::Test, target_height).unwrap(),
+            "11".repeat(32),
+        ],
+    )
+    .unwrap();
+}
+
+fn upgrade_test_db(signed_target_height: Option<u32>) -> (tempfile::TempDir, String) {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    insert_upgrade_test_run(&conn, signed_target_height);
+    (temp_dir, db_path)
+}
+
+fn upgrade_test_run_state(db_path: &str) -> (String, String) {
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    conn.query_row(
+        &format!(
+            "SELECT r.phase, n.lock_state
+             FROM {RUNS_TABLE} r
+             JOIN {PREPARED_NOTES_TABLE} n ON n.run_id = r.run_id
+             WHERE r.run_id = 'upgrade-run'"
+        ),
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap()
+}
+
+#[test]
+fn network_upgrade_holds_broadcasts_from_ten_blocks_before_activation() {
+    let (_temp_dir, db_path) = upgrade_test_db(Some(TEST_NU7_ACTIVATION_HEIGHT - 500));
+    let first_held_tip = TEST_NU7_ACTIVATION_HEIGHT - 1 - network_upgrade::BROADCAST_HOLD_BLOCKS;
+
+    assert!(!network_upgrade_holds_broadcasts(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        first_held_tip - 1,
+    )
+    .unwrap());
+    assert!(network_upgrade_holds_broadcasts(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        first_held_tip,
+    )
+    .unwrap());
+}
+
+#[test]
+fn network_upgrade_ignores_runs_with_nothing_signed_or_signed_after_it() {
+    let (_temp_dir, unsigned_db) = upgrade_test_db(None);
+    let (_temp_dir_2, post_upgrade_db) = upgrade_test_db(Some(TEST_NU7_ACTIVATION_HEIGHT + 5));
+
+    for db_path in [&unsigned_db, &post_upgrade_db] {
+        assert!(!network_upgrade_holds_broadcasts(
+            db_path,
+            WalletNetwork::Test,
+            "upgrade-run",
+            TEST_NU7_ACTIVATION_HEIGHT + 10,
+        )
+        .unwrap());
+        assert!(!stop_run_if_network_upgrade_invalidated(
+            db_path,
+            WalletNetwork::Test,
+            "upgrade-run",
+            TEST_NU7_ACTIVATION_HEIGHT + 10,
+        )
+        .unwrap());
+        assert_eq!(upgrade_test_run_state(db_path).0, PHASE_BROADCAST_SCHEDULED);
+    }
+}
+
+#[test]
+fn network_upgrade_stops_run_once_the_next_block_uses_the_new_branch() {
+    let (_temp_dir, db_path) = upgrade_test_db(Some(TEST_NU7_ACTIVATION_HEIGHT - 500));
+
+    assert!(!stop_run_if_network_upgrade_invalidated(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        TEST_NU7_ACTIVATION_HEIGHT - 2,
+    )
+    .unwrap());
+    assert_eq!(
+        upgrade_test_run_state(&db_path),
+        (PHASE_BROADCAST_SCHEDULED.to_string(), "locked".to_string())
+    );
+
+    assert!(stop_run_if_network_upgrade_invalidated(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        TEST_NU7_ACTIVATION_HEIGHT - 1,
+    )
+    .unwrap());
+    assert_eq!(
+        upgrade_test_run_state(&db_path),
+        (PHASE_STOPPED_BY_UPGRADE.to_string(), "unlocked".to_string())
+    );
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    assert!(active_run(&conn, "account-1", WalletNetwork::Test)
+        .unwrap()
+        .is_none());
+    assert!(
+        !migration_reserves_orchard_inputs(&db_path, "account-1", WalletNetwork::Test).unwrap()
+    );
+}
+
+#[test]
+fn network_upgrade_stops_a_run_whose_broadcast_part_missed_it() {
+    let (_temp_dir, db_path) = upgrade_test_db(Some(TEST_NU7_ACTIVATION_HEIGHT - 500));
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute(
+        &format!("UPDATE {PENDING_TXS_TABLE} SET status = 'broadcasted'"),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(stop_run_if_network_upgrade_invalidated(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        TEST_NU7_ACTIVATION_HEIGHT - 1,
+    )
+    .unwrap());
+    assert_eq!(
+        upgrade_test_run_state(&db_path).0,
+        PHASE_STOPPED_BY_UPGRADE.to_string()
+    );
+}
+
+#[test]
+fn network_upgrade_stops_a_run_whose_broadcast_stage_missed_it() {
+    let (_temp_dir, db_path) = upgrade_test_db(None);
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {STAGES_TABLE}
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height,
+              scheduled_height, expiry_height, fee_zatoshi, status)
+             VALUES ('upgrade-run', 0, 'pczt', 'sigs', 'raw', ?1, ?2, ?2, ?3, 10,
+                     'broadcasted')"
+        ),
+        params![
+            "aa".repeat(32),
+            TEST_NU7_ACTIVATION_HEIGHT - 500,
+            TEST_NU7_ACTIVATION_HEIGHT - 1,
+        ],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(stop_run_if_network_upgrade_invalidated(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        TEST_NU7_ACTIVATION_HEIGHT - 1,
+    )
+    .unwrap());
+}
+
+#[test]
+fn a_run_the_upgrade_stopped_is_not_marked_for_new_signatures() {
+    let (_temp_dir, db_path) = upgrade_test_db(Some(TEST_NU7_ACTIVATION_HEIGHT - 500));
+    assert!(stop_run_if_network_upgrade_invalidated(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        TEST_NU7_ACTIVATION_HEIGHT - 1,
+    )
+    .unwrap());
+
+    // Past NU7 the old part's expiry is never canonical again.
+    let tip = TEST_NU7_ACTIVATION_HEIGHT + 10;
+    assert_eq!(
+        mark_due_parts_with_noncanonical_broadcast_height_for_resign(&db_path, "upgrade-run", tip)
+            .unwrap(),
+        0
+    );
+    mark_expired_pending_parts_for_resign(&db_path, "upgrade-run", u32::MAX - 1).unwrap();
+    assert_eq!(
+        upgrade_test_run_state(&db_path).0,
+        PHASE_STOPPED_BY_UPGRADE.to_string()
+    );
+}
+
+#[test]
+fn network_upgrade_counts_parts_awaiting_a_later_signing_batch() {
+    let (_temp_dir, db_path) = upgrade_test_db(None);
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET signed_schedule_origin_height = ?1"),
+        params![TEST_NU7_ACTIVATION_HEIGHT - 500],
+    )
+    .unwrap();
+    drop(conn);
+
+    // The unsigned batch will be signed for the origin's branch.
+    assert!(stop_run_if_network_upgrade_invalidated(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        TEST_NU7_ACTIVATION_HEIGHT - 1,
+    )
+    .unwrap());
+}
+
+#[test]
+fn private_migration_cannot_start_inside_the_upgrade_hold_window() {
+    let start_at_tip = |tip: u32| {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE scan_queue (block_range_end INTEGER NOT NULL);
+             INSERT INTO scan_queue (block_range_end) VALUES ({});",
+            tip + 1
+        ))
+        .unwrap();
+        drop(conn);
+        create_or_resume_private_migration_draft(
+            &db_path.to_string_lossy(),
+            "account-1",
+            WalletNetwork::Test,
+            &[100_000],
+            &[],
+            PreparationTimingPolicy::Immediate,
+        )
+    };
+    let first_held_tip = TEST_NU7_ACTIVATION_HEIGHT - 1 - network_upgrade::BROADCAST_HOLD_BLOCKS;
+
+    assert_eq!(
+        start_at_tip(first_held_tip).unwrap_err(),
+        network_upgrade::START_HOLD_MESSAGE
+    );
+    assert_ne!(
+        start_at_tip(first_held_tip - 1).err().as_deref(),
+        Some(network_upgrade::START_HOLD_MESSAGE)
+    );
+    assert_ne!(
+        start_at_tip(TEST_NU7_ACTIVATION_HEIGHT).err().as_deref(),
+        Some(network_upgrade::START_HOLD_MESSAGE)
+    );
+}
+
+#[test]
+fn schedules_drawn_before_the_upgrade_are_refused_after_it() {
+    let entries = |offsets: &[u32]| {
+        offsets
+            .iter()
+            .map(|&block_offset| MigrationScheduleEntry {
+                part_index: None,
+                value_zatoshi: 100_000,
+                block_offset,
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = TEST_NU7_ACTIVATION_HEIGHT - 1;
+    let after = TEST_NU7_ACTIVATION_HEIGHT;
+
+    assert!(
+        ensure_schedule_drawn_for_height(&entries(&[1, 5]), WalletNetwork::Test, before).is_ok()
+    );
+    assert_eq!(
+        ensure_schedule_drawn_for_height(&entries(&[1, 5]), WalletNetwork::Test, after)
+            .unwrap_err(),
+        STALE_SCHEDULE_MESSAGE
+    );
+    // NU7 draws every offset in whole three-block reference blocks.
+    assert!(
+        ensure_schedule_drawn_for_height(&entries(&[0, 3, 12]), WalletNetwork::Test, after).is_ok()
+    );
+}
+
+#[test]
+fn a_draft_saved_before_the_upgrade_takes_the_schedule_approved_after_it() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().into_owned();
+    let set_tip = |tip: u32| {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE IF NOT EXISTS scan_queue (block_range_end INTEGER NOT NULL);
+             DELETE FROM scan_queue;
+             INSERT INTO scan_queue (block_range_end) VALUES ({});",
+            tip + 1
+        ))
+        .unwrap();
+    };
+    let schedule = |block_offset: u32| {
+        vec![MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 100_000,
+            block_offset,
+        }]
+    };
+    let resume = |block_offset: u32| {
+        create_or_resume_private_migration_draft(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            &[100_000],
+            &schedule(block_offset),
+            PreparationTimingPolicy::Immediate,
+        )
+        .unwrap()
+    };
+    ensure_schema(&rusqlite::Connection::open(&db_path).unwrap()).unwrap();
+
+    set_tip(TEST_NU7_ACTIVATION_HEIGHT - 30);
+    let run_id = resume(1);
+    set_tip(TEST_NU7_ACTIVATION_HEIGHT + 5);
+    assert_eq!(resume(3), run_id);
+    assert_eq!(
+        approved_schedule_for_run(&db_path, &run_id).unwrap(),
+        schedule(3)
+    );
+    // A schedule drawn for the new spacing stays.
+    assert_eq!(resume(6), run_id);
+    assert_eq!(
+        approved_schedule_for_run(&db_path, &run_id).unwrap(),
+        schedule(3)
+    );
+}
+
+#[test]
+fn a_wallet_without_a_tip_is_not_held_for_an_upgrade() {
+    // Regtest activates most upgrades at height 1, so a missing tip read as
+    // height 0 looked like the block before one.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute_batch("CREATE TABLE scan_queue (block_range_end INTEGER NOT NULL);")
+        .unwrap();
+    drop(conn);
+
+    assert!(ensure_migration_can_start_at_wallet_tip(
+        &db_path.to_string_lossy(),
+        WalletNetwork::Regtest
+    )
+    .is_ok());
+}
+
+#[test]
+fn post_sync_keeps_runs_whose_tip_is_before_the_upgrade() {
+    let (_temp_dir, db_path) = upgrade_test_db(Some(TEST_NU7_ACTIVATION_HEIGHT - 500));
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute_batch(&format!(
+        "CREATE TABLE scan_queue (block_range_end INTEGER NOT NULL);
+         INSERT INTO scan_queue (block_range_end) VALUES ({});",
+        TEST_NU7_ACTIVATION_HEIGHT - 1
+    ))
+    .unwrap();
+    drop(conn);
+
+    // The tip check settles this without opening the wallet, which this
+    // fixture has no tables for.
+    reconcile_wallet_locks_after_sync(&db_path, WalletNetwork::Test).unwrap();
+
+    assert_eq!(
+        upgrade_test_run_state(&db_path).0,
+        PHASE_BROADCAST_SCHEDULED
+    );
+}
+
+#[test]
+fn stopped_run_is_reported_while_orchard_funds_remain() {
+    let (_temp_dir, db_path) = upgrade_test_db(Some(TEST_NU7_ACTIVATION_HEIGHT - 500));
+    stop_run_if_network_upgrade_invalidated(
+        &db_path,
+        WalletNetwork::Test,
+        "upgrade-run",
+        TEST_NU7_ACTIVATION_HEIGHT,
+    )
+    .unwrap();
+
+    create_creation_evidence_fixture(&rusqlite::Connection::open(&db_path).unwrap());
+    let status_with_orchard = |orchard_spendable| {
+        migration_status_with_projection_height(
+            &db_path,
+            WalletNetwork::Test,
+            "account-1",
+            orchard_spendable,
+            0,
+            0,
+            0,
+            Some(TEST_NU7_ACTIVATION_HEIGHT),
+        )
+        .unwrap()
+    };
+
+    let status = status_with_orchard(100_000_000);
+    assert_eq!(status.phase, PHASE_STOPPED_BY_UPGRADE);
+    assert_eq!(status.active_run_id, None);
+    assert!(!status.can_abandon);
+    assert_eq!(status.total_count, 1);
+
+    assert_eq!(status_with_orchard(0).phase, PHASE_NO_ORCHARD_FUNDS);
+}
+
+#[test]
+fn planned_schedule_scales_reference_offsets_from_nu7_activation() {
+    let values = (1..=32).collect::<Vec<_>>();
+    let draw = |from_height| {
+        planned_transfer_schedule(
+            values.iter().copied(),
+            WalletNetwork::Test,
+            from_height,
+            &mut StdRng::seed_from_u64(0x318),
+        )
+    };
+    let before = draw(TEST_NU7_ACTIVATION_HEIGHT - 1);
+    let after = draw(TEST_NU7_ACTIVATION_HEIGHT);
+
+    // The same reference draw spans three blocks per reference block, so
+    // every gap lands on a multiple of three as in other ZIP 318 wallets.
+    for (pre, post) in before.iter().zip(&after) {
+        assert_eq!(post.part_index, pre.part_index);
+        assert_eq!(post.block_offset, pre.block_offset * 3);
+    }
+}
+
+#[test]
+fn schedule_delays_are_in_blocks_at_the_given_height() {
+    let test = WalletNetwork::Test;
+    let policy = MigrationTimingPolicy::Standard90Minutes;
+    let (mean, max) = schedule_parameters_with_policy(test, policy);
+    let a = TEST_NU7_ACTIVATION_HEIGHT;
+    assert_eq!(
+        schedule_delays_in_blocks(test, policy, 0, a - 1),
+        (mean, max)
+    );
+    assert_eq!(
+        schedule_delays_in_blocks(test, policy, 0, a),
+        (mean * 3, max * 3)
+    );
+    // Dense runs halve the mean, not the maximum.
+    let dense = DENSE_MIGRATION_PART_THRESHOLD + 1;
+    assert_eq!(
+        schedule_delays_in_blocks(test, policy, dense, a),
+        ((mean / 2).max(1) * 3, max * 3)
+    );
+}
+
+#[test]
+fn zip318_advance_spans_the_nu7_spacing_change() {
+    let a = TEST_NU7_ACTIVATION_HEIGHT;
+    let test = WalletNetwork::Test;
+    assert_eq!(zip318_advance(test, a - 20, 10).unwrap(), a - 10);
+    assert_eq!(zip318_advance(test, a, 10).unwrap(), a + 30);
+    // Ten reference blocks starting four before activation: four plus 3 x 6.
+    assert_eq!(zip318_advance(test, a - 4, 10).unwrap(), a + 18);
+    // Regtest has no NU7 activation and keeps one block each.
+    assert_eq!(
+        zip318_advance(WalletNetwork::Regtest, 100, 10).unwrap(),
+        110
+    );
+}
+
+#[test]
+fn anchor_boundaries_follow_the_nu7_grid() {
+    let test = WalletNetwork::Test;
+    let policy = MigrationTimingPolicy::Standard90Minutes;
+    // Last boundary before activation (4,465,026) is a multiple of 144; the
+    // first one after it a multiple of 432.
+    assert_eq!(
+        zip318_anchor_boundary_at_or_before_with_policy(test, policy, 4_465_100),
+        Some(4_465_008)
+    );
+    assert_eq!(
+        anchor_boundary_containing_note_with_policy(test, policy, 4_465_010).unwrap(),
+        4_465_152
+    );
+    assert_eq!(
+        zip318_anchor_boundary_at_or_before_with_policy(test, policy, 4_465_500),
+        Some(4_465_152)
+    );
+    // Ages count boundaries across the seam, not multiples of 144.
+    let candidates = zip318_anchor_candidate_boundaries_with_policy(
+        test, policy, 4_465_600, 4_464_000, 4_134_000,
+    );
+    assert_eq!(candidates, vec![4_465_152, 4_465_008, 4_464_864, 4_464_720]);
+    assert_eq!(
+        zip318_anchor_boundary_age(test, policy, 4_465_584, 4_465_008),
+        Some(2)
+    );
+    assert!(!zip318_anchor_boundary_is_candidate_with_policy(
+        test, policy, 4_465_296, 4_465_600, 4_464_000, 4_134_000,
+    ));
+}
+
+#[test]
+fn schedule_validation_allows_spacing_drawn_after_nu7_activation() {
+    let values = (1..=8).collect::<Vec<_>>();
+    let schedule = planned_transfer_schedule(
+        values.iter().copied(),
+        WalletNetwork::Test,
+        TEST_NU7_ACTIVATION_HEIGHT,
+        &mut StdRng::seed_from_u64(0x318),
+    );
+    validate_schedule(
+        &schedule,
+        &values,
+        WalletNetwork::Test,
+        TEST_NU7_ACTIVATION_HEIGHT,
+    )
+    .unwrap();
+
+    // The same gaps are three times the maximum before activation.
+    let max = schedule_parameters(WalletNetwork::Test).1;
+    let stretched = [
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 1,
+            block_offset: max * 3,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 2,
+            block_offset: max * 6,
+        },
+    ];
+    validate_schedule(
+        &stretched,
+        &[1, 2],
+        WalletNetwork::Test,
+        TEST_NU7_ACTIVATION_HEIGHT,
+    )
+    .unwrap();
+    assert!(validate_schedule(
+        &stretched,
+        &[1, 2],
+        WalletNetwork::Test,
+        TEST_NU7_ACTIVATION_HEIGHT - 1
+    )
+    .is_err());
 }

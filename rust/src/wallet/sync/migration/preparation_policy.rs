@@ -155,14 +155,11 @@ pub(crate) fn planned_preparation_scheduled_heights<
         let mut scheduled_height = layer_base;
         for stage_index in stage_indices {
             if preparation_policy == PreparationTimingPolicy::Zip318Spaced {
-                scheduled_height = scheduled_height
-                    .checked_add(preparation_delay_with_rng(
-                        network,
-                        timing_policy,
-                        transaction_count,
-                        rng,
-                    ))
-                    .ok_or("Migration preparation scheduled height overflow")?;
+                scheduled_height = zip318_advance(
+                    network,
+                    scheduled_height,
+                    preparation_delay_with_rng(network, timing_policy, transaction_count, rng),
+                )?;
             }
             heights[stage_index] = scheduled_height;
         }
@@ -221,14 +218,11 @@ pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
 
     let mut preceding_height = chain_tip_height;
     for (stage_index, scheduled_height, existing_not_before_height) in &remaining {
-        let randomized_height = preceding_height
-            .checked_add(preparation_delay_with_rng(
-                network,
-                timing_policy,
-                transaction_count,
-                rng,
-            ))
-            .ok_or("Migration preparation catch-up height overflow")?;
+        let randomized_height = zip318_advance(
+            network,
+            preceding_height,
+            preparation_delay_with_rng(network, timing_policy, transaction_count, rng),
+        )?;
         let effective_height = randomized_height
             .max(*scheduled_height)
             .max(existing_not_before_height.unwrap_or(0));

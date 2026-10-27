@@ -130,9 +130,17 @@ fn get_orchard_migration_private_plan_for_targets(
         .split_fee_zatoshi
         .checked_add(migration_fee_zatoshi)
         .ok_or("Migration total fee estimate overflow")?;
+    let (schedule_mean_delay_blocks, schedule_max_delay_blocks) =
+        super::migration::schedule_delays_in_blocks(
+            network,
+            super::migration::configured_timing_policy(network),
+            planned_batch_count as usize,
+            u32::from(target_height),
+        );
     let scheduled_transfers = super::migration::planned_transfer_schedule(
         padded_plan.denominations.migration_outputs.iter().copied(),
         network,
+        u32::from(target_height),
         &mut OsRng,
     );
 
@@ -148,13 +156,8 @@ fn get_orchard_migration_private_plan_for_targets(
         denomination_split_stage_count,
         denomination_split_layer_count,
         signing_batch_limit: super::migration::MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
-        schedule_mean_delay_blocks:
-            super::migration::schedule_parameters_for_part_count(
-                network,
-                planned_batch_count as usize,
-            )
-            .0,
-        schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
+        schedule_mean_delay_blocks,
+        schedule_max_delay_blocks,
         proof_readiness_delay_blocks,
         estimated_proof_ready_height,
         scheduled_transfers,
@@ -170,11 +173,15 @@ fn private_plan_proof_timing(
     layer_count: u32,
     direct_note_mined_heights: &[u32],
 ) -> Result<(u32, Option<u32>), String> {
-    let spacing_delay = super::migration::estimated_preparation_spacing_delay_blocks(
+    let spacing_delay = super::migration::zip318_blocks_at(
         network,
-        preparation_timing_policy,
-        stage_count,
-    )?;
+        target_height,
+        super::migration::estimated_preparation_spacing_delay_blocks(
+            network,
+            preparation_timing_policy,
+            stage_count,
+        )?,
+    );
     let confirmation_lag = super::migration::denomination_confirmations_required().saturating_sub(1);
 
     let mut final_ready_height = direct_note_mined_heights
@@ -301,7 +308,7 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
 ) -> Result<Builder<P, ()>, String> {
     let scheduled_height_u32: u32 = scheduled_height.into();
     let expiry_height =
-        super::migration::zip318_canonical_migration_expiry_height(scheduled_height_u32)?;
+        super::migration::zip318_canonical_migration_expiry_height(&network, scheduled_height_u32)?;
 
     Ok(Builder::new(
         network,

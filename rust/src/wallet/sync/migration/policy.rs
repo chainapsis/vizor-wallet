@@ -4,7 +4,6 @@ pub(crate) const ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI: u64 = 10_000 * ZATOS
 pub(crate) const ZIP318_ANCHOR_BUCKET_MODULUS: u32 = 144;
 pub(crate) const REGTEST_ANCHOR_BUCKET_MODULUS: u32 = 1;
 pub(crate) const ZIP318_ANCHOR_AGE_CAP: u32 = 4;
-pub(crate) const ZIP318_EXPIRY_MODULUS: u32 = 34_560;
 // Keep the original value readable for runs created before the shorter policy.
 pub(crate) const ZIP318_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 144;
 pub(crate) const ZIP318_TRANSFER_MAX_DELAY_BLOCKS: u32 = 576;
@@ -56,6 +55,47 @@ impl MigrationTimingPolicy {
 
 }
 
+/// The height `reference_blocks` ZIP 318 reference blocks after `from`. Each
+/// spans one block before NU7 activation and three from it.
+pub(crate) fn zip318_advance(
+    network: WalletNetwork,
+    from: u32,
+    reference_blocks: u32,
+) -> Result<u32, String> {
+    let height = u32::from(
+        BlockSpacing::for_network(&network).advance(BlockHeight::from_u32(from), reference_blocks),
+    );
+    // The library saturates instead of failing.
+    (height < u32::MAX)
+        .then_some(height)
+        .ok_or_else(|| "ZIP 318 delay height overflow".to_string())
+}
+
+/// `reference_blocks` reported in blocks at `height`, for screens that turn
+/// block counts into time.
+pub(crate) fn zip318_blocks_at(network: WalletNetwork, height: u32, reference_blocks: u32) -> u32 {
+    reference_blocks.saturating_mul(
+        BlockSpacing::for_network(&network).blocks_per_reference_block(BlockHeight::from_u32(height)),
+    )
+}
+
+/// Mean and maximum gaps between migration parts for `timing_policy`, in
+/// blocks for a schedule drawn at `height`. Statuses and plans report them at
+/// the wallet's next block, where Rust draws and validates new schedules.
+pub(crate) fn schedule_delays_in_blocks(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    part_count: usize,
+    height: u32,
+) -> (u32, u32) {
+    let (mean, max) =
+        schedule_parameters_with_policy_for_part_count(network, timing_policy, part_count);
+    (
+        zip318_blocks_at(network, height, mean),
+        zip318_blocks_at(network, height, max),
+    )
+}
+
 pub(crate) fn configure_fast_testnet_migration(enabled: bool) {
     FAST_TESTNET_MIGRATION_ENABLED.store(enabled, Ordering::Relaxed);
 }
@@ -72,19 +112,9 @@ pub(crate) fn configured_timing_policy(network: WalletNetwork) -> MigrationTimin
     }
 }
 
+#[cfg(test)]
 pub(crate) fn schedule_parameters(network: WalletNetwork) -> (u32, u32) {
     schedule_parameters_with_policy(network, configured_timing_policy(network))
-}
-
-pub(crate) fn schedule_parameters_for_part_count(
-    network: WalletNetwork,
-    part_count: usize,
-) -> (u32, u32) {
-    schedule_parameters_with_policy_for_part_count(
-        network,
-        configured_timing_policy(network),
-        part_count,
-    )
 }
 
 fn schedule_parameters_with_policy_for_part_count(
