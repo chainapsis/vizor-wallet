@@ -2247,7 +2247,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     }
     let BuiltImmediateMigration {
         base_pczt,
-        target_height: _,
+        target_height,
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
@@ -2260,6 +2260,13 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
     let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
     let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
+    // The build judged the hold at the wallet's tip, which can trail the
+    // server's. Dropping the input lock on refusal releases the inputs.
+    if upgrade_holds_transaction_at_live_tip(db_path, lightwalletd_url, network, target_height)
+        .await?
+    {
+        return Err(network_upgrade::START_HOLD_MESSAGE.to_string());
+    }
     let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
@@ -6463,6 +6470,28 @@ async fn broadcast_due_scheduled_migration_txs(
 
 fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {
     error.starts_with("Broadcast rejected:")
+}
+
+/// Whether the upgrade holds a transaction for `signed_target_height`, judged
+/// just before sending at the later of the wallet's and the server's tip.
+/// Fails closed while the server's tip cannot be read.
+async fn upgrade_holds_transaction_at_live_tip(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    signed_target_height: u32,
+) -> Result<bool, String> {
+    let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
+        .await
+        .map_err(|e| format!("Migration broadcast could not refresh the chain tip: {e}"))?;
+    let server_tip_height = u32::try_from(tip.height)
+        .map_err(|_| "Live migration chain tip exceeds u32".to_string())?;
+    super::migration::network_upgrade_holds_transaction_at_wallet_tip(
+        db_path,
+        network,
+        signed_target_height,
+        server_tip_height,
+    )
 }
 
 /// Rechecks a rejection against the server's tip, which can pass the upgrade
