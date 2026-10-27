@@ -643,21 +643,28 @@ void main() {
     await tester.pumpAndSettle();
     final dialog = find.byKey(const ValueKey('near_swap_privacy_info_dialog'));
     expect(dialog, findsOneWidget);
-    expect(find.text(kNearSwapPrivacyInfoTitle), findsOneWidget);
-    for (final paragraph in kNearSwapPrivacyInfoParagraphs) {
-      expect(find.text(paragraph), findsOneWidget);
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text(kNearSwapPrivacyInfoTitle),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(kNearSwapPrivacyInfoLead), findsOneWidget);
+    for (final section in kNearSwapPrivacyInfoSections) {
+      expect(find.text(section.title), findsOneWidget);
+      expect(find.text(section.body), findsOneWidget);
     }
     // It names what one-time Zcash addresses leave linkable, including the
     // reuse the design allows.
-    expect(find.textContaining('still shared with NEAR'), findsOneWidget);
+    expect(find.textContaining('Ethereum address you reuse'), findsOneWidget);
     expect(
       find.textContaining('expired unpaid can be used again'),
       findsOneWidget,
     );
     expect(find.textContaining('two devices'), findsOneWidget);
-    expect(find.textContaining('new Zcash addresses'), findsNothing);
     expect(
-      find.textContaining("Hardware wallet accounts don't use"),
+      find.textContaining('Hardware wallet accounts use regular addresses'),
       findsOneWidget,
     );
     await tester.tap(
@@ -734,8 +741,8 @@ void main() {
     await tester.pump();
     final dialog = await _openNearSwapPrivacyInfo(tester);
     expect(dialog, findsOneWidget);
-    expect(find.text(kNearSwapPrivacyInfoParagraphs.last), findsOneWidget);
-    expect(_troubleshooting, findsOneWidget);
+    expect(find.text(kNearSwapPrivacyInfoSections.last.body), findsOneWidget);
+    expect(_historyCheck, findsOneWidget);
     expect(find.byType(SwapHistoryCheckControl), findsOneWidget);
   });
 
@@ -754,7 +761,6 @@ void main() {
     );
     expect(find.byType(SwapHistoryCheckControl), findsNothing);
     for (final key in [
-      'settings_swap_history_explanation',
       'settings_check_swap_history',
       'settings_cancel_swap_history',
       'settings_check_swap_history_status',
@@ -763,13 +769,13 @@ void main() {
     }
   });
 
-  testWidgets('the NEAR swap privacy explanation ends with troubleshooting', (
+  testWidgets('the NEAR swap privacy explanation ends with the history check', (
     tester,
   ) async {
     await tester.pumpWidget(_settingsHarness(nearSwapPrivacyEnabled: true));
     await tester.pump();
     final dialog = await _openNearSwapPrivacyInfo(tester);
-    final section = find.descendant(of: dialog, matching: _troubleshooting);
+    final section = find.descendant(of: dialog, matching: _historyCheck);
     expect(section, findsOneWidget);
     // In the scrolling body, so a short window can still reach it.
     expect(
@@ -782,18 +788,14 @@ void main() {
       ),
       findsOneWidget,
     );
-    for (final text in [
-      kNearSwapPrivacyTroubleshootingTitle,
-      kNearSwapPrivacyTroubleshootingCopy,
-      kSwapHistoryCheckExplanation,
-    ]) {
-      expect(
-        find.descendant(of: section, matching: find.text(text)),
-        findsOneWidget,
-      );
-    }
+    expect(
+      find.descendant(
+        of: section,
+        matching: find.text(swapHistoryCheckStatus(SwapHistoryCheck.idle)),
+      ),
+      findsOneWidget,
+    );
     for (final key in [
-      'settings_swap_history_explanation',
       'settings_check_swap_history',
       'settings_check_swap_history_status',
     ]) {
@@ -808,10 +810,40 @@ void main() {
     expect(
       tester.getTopLeft(section).dy,
       greaterThan(
-        tester.getBottomLeft(find.text(kNearSwapPrivacyInfoParagraphs.last)).dy,
+        tester
+            .getBottomLeft(find.text(kNearSwapPrivacyInfoSections.last.body))
+            .dy,
       ),
       reason: 'after the explanation',
     );
+  });
+
+  testWidgets('the explanation fades the edges that have more past them', (
+    tester,
+  ) async {
+    // The macOS default window less its title bar, where the body scrolls.
+    await tester.binding.setSurfaceSize(const Size(1080, 692));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_settingsHarness(nearSwapPrivacyEnabled: true));
+    await tester.pump();
+    final dialog = await _openNearSwapPrivacyInfo(tester);
+    double fade(String edge) => tester
+        .widget<AnimatedOpacity>(
+          find.byKey(ValueKey('near_swap_privacy_info_fade_$edge')),
+        )
+        .opacity;
+    expect(
+      find.descendant(of: dialog, matching: find.byType(RawScrollbar)),
+      findsNothing,
+    );
+    expect((fade('top'), fade('bottom')), (0, 1));
+
+    await tester.drag(
+      find.descendant(of: dialog, matching: find.byType(SingleChildScrollView)),
+      const Offset(0, -1000),
+    );
+    await tester.pumpAndSettle();
+    expect((fade('top'), fade('bottom')), (1, 0), reason: 'at the end');
   });
 
   testWidgets('a running history check survives closing the explanation', (
@@ -924,10 +956,12 @@ void main() {
     await tester.pump();
     await _openNearSwapPrivacyInfo(tester);
     await tester.pump();
-    final button = find.byKey(const ValueKey('settings_check_swap_history'));
-    await tester.ensureVisible(button);
     expect(find.text(kSwapRecoveryUpdateMessage), findsOneWidget);
-    expect(tester.widget<AppButton>(button).onPressed, isNull);
+    // Only an update helps, so there is nothing to press.
+    expect(
+      find.byKey(const ValueKey('settings_check_swap_history')),
+      findsNothing,
+    );
   });
 
   testWidgets('an interrupted history check still offers pause', (
@@ -1015,7 +1049,6 @@ void main() {
     );
     await tester.pump();
     await _openNearSwapPrivacyInfo(tester);
-    expect(find.text(kSwapHistoryCheckExplanation), findsOneWidget);
     final start = find.byKey(const ValueKey('settings_check_swap_history'));
     final status = find.byKey(
       const ValueKey('settings_check_swap_history_status'),
@@ -1613,9 +1646,10 @@ void _resetPlatformOverride() {
   debugDefaultTargetPlatformOverride = null;
 }
 
-/// Finds the troubleshooting section of the NEAR swap privacy explanation.
-final _troubleshooting = find.byKey(
-  const ValueKey('near_swap_privacy_troubleshooting'),
+/// Finds the swap history check at the end of the NEAR swap privacy
+/// explanation.
+final _historyCheck = find.byKey(
+  const ValueKey('near_swap_privacy_history_check'),
 );
 
 /// Opens the NEAR swap privacy explanation from its info button in Settings

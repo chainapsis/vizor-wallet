@@ -11,9 +11,9 @@ import '../../../providers/sync_provider.dart'
 
 /// What the swap history check says for each state.
 String swapHistoryCheckStatus(SwapHistoryCheck check) => switch (check) {
-  SwapHistoryCheck.idle => 'Check older addresses for repeat payments.',
-  SwapHistoryCheck.checking => 'Checking swap history…',
-  SwapHistoryCheck.done => 'Swap history check complete.',
+  SwapHistoryCheck.idle => 'Missing a payout or refund?',
+  SwapHistoryCheck.checking => 'Checking… this can take a few minutes.',
+  SwapHistoryCheck.done => 'Check complete.',
   // Mobile runs no rounds in the background (see canRunAppProcessWork).
   SwapHistoryCheck.continuing =>
     'The check will keep going while Vizor is open.',
@@ -39,14 +39,15 @@ const kSwapRecoveryUpdateMessage =
     'Update Vizor to keep checking private swap addresses. '
     'Your saved progress is kept.';
 
-/// Why the check exists, under the button.
-const kSwapHistoryCheckExplanation =
-    'Only needed if a swap payment or refund is missing.';
-
-/// The "Check swap history" button and its progress, at the bottom of the
-/// NEAR swap privacy explanation on desktop and mobile.
+/// The "Check swap history" control at the bottom of the NEAR swap privacy
+/// explanation: why to run it, or how it is going, with the one action that
+/// fits. Screen readers hear each change. On desktop it is a row beside a
+/// light button; [stacked] puts the line over a full-width primary button,
+/// where a mobile sheet's buttons go.
 class SwapHistoryCheckControl extends ConsumerWidget {
-  const SwapHistoryCheckControl({super.key});
+  const SwapHistoryCheckControl({this.stacked = false, super.key});
+
+  final bool stacked;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -58,52 +59,59 @@ class SwapHistoryCheckControl extends ConsumerWidget {
             watched != SwapHistoryCheck.checking
         ? SwapHistoryCheck.updateRequired
         : watched;
-    final running = check == SwapHistoryCheck.checking;
     final notifier = ref.read(swapHistoryCheckProvider.notifier);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          kSwapHistoryCheckExplanation,
-          key: const ValueKey('settings_swap_history_explanation'),
-          style: AppTypography.labelMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xs,
-          children: [
-            AppButton(
-              key: const ValueKey('settings_check_swap_history'),
-              onPressed: running || check == SwapHistoryCheck.updateRequired
-                  ? null
-                  : () => unawaited(notifier.check()),
-              size: AppButtonSize.medium,
-              child: const Text('Check swap history'),
+    // Only a call in flight or a job the wallet still has can be paused.
+    final pausable =
+        check == SwapHistoryCheck.checking ||
+        ref.watch(swapHistoryJobSavedProvider);
+    final status = Semantics(
+      liveRegion: true,
+      child: Text(
+        swapHistoryCheckStatus(check),
+        key: const ValueKey('settings_check_swap_history_status'),
+        textAlign: stacked ? TextAlign.center : TextAlign.start,
+        style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
+      ),
+    );
+    final variant = stacked ? AppButtonVariant.primary : AppButtonVariant.ghost;
+    final size = stacked ? AppButtonSize.large : AppButtonSize.small;
+    final Widget? action = pausable
+        ? AppButton(
+            key: const ValueKey('settings_cancel_swap_history'),
+            onPressed: () => unawaited(notifier.cancel()),
+            variant: variant,
+            size: size,
+            expand: stacked,
+            child: const Text('Pause'),
+          )
+        : check == SwapHistoryCheck.updateRequired
+        ? null
+        : AppButton(
+            key: const ValueKey('settings_check_swap_history'),
+            onPressed: () => unawaited(notifier.check()),
+            variant: variant,
+            size: size,
+            expand: stacked,
+            child: Text(
+              check == SwapHistoryCheck.idle
+                  ? 'Check swap history'
+                  : 'Check again',
             ),
-            // Only a call in flight or a job the wallet still has can be
-            // paused.
-            if (running || ref.watch(swapHistoryJobSavedProvider))
-              AppButton(
-                key: const ValueKey('settings_cancel_swap_history'),
-                onPressed: () => unawaited(notifier.cancel()),
-                variant: AppButtonVariant.ghost,
-                size: AppButtonSize.medium,
-                child: const Text('Pause check'),
-              ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          swapHistoryCheckStatus(check),
-          key: const ValueKey('settings_check_swap_history_status'),
-          style: AppTypography.bodyMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
+          );
+    if (stacked) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          status,
+          if (action != null) ...[const SizedBox(height: AppSpacing.s), action],
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(child: status),
+        if (action != null) ...[const SizedBox(width: AppSpacing.xs), action],
       ],
     );
   }
