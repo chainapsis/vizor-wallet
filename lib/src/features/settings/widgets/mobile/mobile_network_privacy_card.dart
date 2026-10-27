@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../near_swap_privacy_info.dart';
 import '../near_swap_privacy_turn_off.dart';
@@ -65,6 +66,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _MobileSubOptionRow(
+                    iconName: AppIcons.linkOff,
                     label: 'NEAR swap privacy',
                     keyPrefix: 'mobile_settings_near_swap_privacy',
                     enabled: nearSwapPrivacy.enabled,
@@ -122,17 +124,19 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
   }
 }
 
-/// A sub-option row: the label with its status under it, and the switch at
-/// the end. The sub-option's hook joins it to the parent row, so it has no
-/// icon of its own, which leaves the label room for two lines.
+/// A sub-option row: the icon under the parent's label as on desktop, the
+/// label with its status under it, and the switch at the end. At 320px with
+/// large text the label wraps to three lines rather than truncating.
 class _MobileSubOptionRow extends StatelessWidget {
   const _MobileSubOptionRow({
+    required this.iconName,
     required this.label,
     required this.keyPrefix,
     required this.enabled,
     required this.onToggle,
     this.unavailableLabel,
   });
+  final String iconName;
   final String label;
   final String keyPrefix;
   final bool enabled;
@@ -164,6 +168,14 @@ class _MobileSubOptionRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
             child: Row(
               children: [
+                AppIcon(
+                  iconName,
+                  size: 20,
+                  color: enabled && !unavailable
+                      ? colors.icon.brandCrimson
+                      : colors.icon.muted,
+                ),
+                const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,7 +183,7 @@ class _MobileSubOptionRow extends StatelessWidget {
                     children: [
                       Text(
                         label,
-                        maxLines: 2,
+                        maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,

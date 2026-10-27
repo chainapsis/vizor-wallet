@@ -851,6 +851,15 @@ void main() {
       tester.renderObject<RenderParagraph>(label).didExceedMaxLines,
       isFalse,
     );
+    // Even beside the same icon as on desktop.
+    expect(
+      tester
+          .widget<AppIcon>(
+            find.descendant(of: row, matching: find.byType(AppIcon)),
+          )
+          .name,
+      AppIcons.linkOff,
+    );
     expect(tester.takeException(), isNull);
   });
 
