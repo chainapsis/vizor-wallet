@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
@@ -6,7 +7,8 @@ import 'app_tooltip.dart';
 
 /// Small hover-filled icon button: a fixed-size circle (or rounded rect)
 /// that tints its background while the pointer is over it. The shared form
-/// of the per-feature `_SmallIconButton` copies.
+/// of the per-feature `_SmallIconButton` copies. Keyboard focus reaches it,
+/// Enter or Space presses it, and a focus ring shows only for the keyboard.
 class AppIconHoverButton extends StatefulWidget {
   const AppIconHoverButton({
     required this.icon,
@@ -44,11 +46,23 @@ class AppIconHoverButton extends StatefulWidget {
 }
 
 class _AppIconHoverButtonState extends State<AppIconHoverButton> {
+  static const _activationShortcuts = <ShortcutActivator, Intent>{
+    SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+    SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+    SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+  };
+
   bool _hovered = false;
+  bool _focused = false;
 
   void _setHovered(bool value) {
     if (_hovered == value) return;
     setState(() => _hovered = value);
+  }
+
+  void _setFocused(bool value) {
+    if (_focused == value) return;
+    setState(() => _focused = value);
   }
 
   @override
@@ -61,30 +75,50 @@ class _AppIconHoverButtonState extends State<AppIconHoverButton> {
     Widget button = Semantics(
       button: true,
       label: widget.semanticLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => _setHovered(true),
-        onExit: (_) => _setHovered(false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOut,
-            width: widget.size,
-            height: widget.size,
-            decoration: BoxDecoration(
-              color: _hovered ? hoverColor : idleColor,
-              shape: widget.borderRadius == null
-                  ? BoxShape.circle
-                  : BoxShape.rectangle,
-              borderRadius: widget.borderRadius,
-            ),
-            child: Center(
-              child: AppIcon(
-                widget.icon,
-                size: widget.iconSize,
-                color: widget.iconColor ?? colors.icon.accent,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowFocusHighlight: _setFocused,
+        shortcuts: _activationShortcuts,
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<Intent>(
+            onInvoke: (_) {
+              widget.onTap();
+              return null;
+            },
+          ),
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => _setHovered(true),
+          onExit: (_) => _setHovered(false),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                color: _hovered ? hoverColor : idleColor,
+                shape: widget.borderRadius == null
+                    ? BoxShape.circle
+                    : BoxShape.rectangle,
+                borderRadius: widget.borderRadius,
+                border: _focused
+                    ? Border.all(
+                        color: colors.state.focusRing,
+                        width: 2,
+                        strokeAlign: BorderSide.strokeAlignOutside,
+                      )
+                    : null,
+              ),
+              child: Center(
+                child: AppIcon(
+                  widget.icon,
+                  size: widget.iconSize,
+                  color: widget.iconColor ?? colors.icon.accent,
+                ),
               ),
             ),
           ),
