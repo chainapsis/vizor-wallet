@@ -72,13 +72,15 @@ final nu7AnnouncementProvider = FutureProvider<Nu7AnnouncementState>((
   );
   if (tipHeight < activation) return const Nu7AnnouncementState.hidden();
 
-  // A wallet that began after activation has nothing to compare against.
+  // A wallet that began after activation has nothing to compare against. An
+  // account created this session has no birthday until relaunch.
   final walletPredatesNu7 = ref.watch(
     accountProvider.select(
       (state) =>
-          state.value?.accounts.any(
-            (account) => (account.birthdayHeight ?? 0) < activation,
-          ) ??
+          state.value?.accounts.any((account) {
+            final birthday = account.birthdayHeight;
+            return birthday != null && birthday < activation;
+          }) ??
           false,
     ),
   );

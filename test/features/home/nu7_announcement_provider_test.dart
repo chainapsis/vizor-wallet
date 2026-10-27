@@ -69,6 +69,15 @@ void main() {
     expect(state.visible, isTrue);
   });
 
+  test('does not count an unknown birthday as before activation', () async {
+    final container = _container(tip: _activation + 100, birthdays: [null]);
+    addTearDown(container.dispose);
+
+    final state = await _read(container);
+
+    expect(state.visible, isFalse);
+  });
+
   test('stays hidden while NU7 is unscheduled', () async {
     final container = _container(tip: _activation, activation: null);
     addTearDown(container.dispose);
