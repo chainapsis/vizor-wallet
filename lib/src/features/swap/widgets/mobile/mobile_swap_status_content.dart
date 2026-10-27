@@ -42,6 +42,7 @@ class MobileSwapStatusContent extends StatelessWidget {
     required this.onTabChanged,
     required this.onToggleDetails,
     this.paymentHeader,
+    this.flowConnector,
     super.key,
   });
 
@@ -54,6 +55,9 @@ class MobileSwapStatusContent extends StatelessWidget {
   final VoidCallback onToggleDetails;
   final Widget? paymentHeader;
 
+  /// Optional replacement for the paying/receiving flow arrow row.
+  final Widget? flowConnector;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -65,6 +69,7 @@ class MobileSwapStatusContent extends StatelessWidget {
             MobileSwapReviewHeader(
               pay: payHeaderRow,
               receive: receiveHeaderRow,
+              flowConnector: flowConnector,
             ),
         const SizedBox(height: _mobileStatusHeaderToBodyGap),
         if (presentation.showTabs) ...[
@@ -126,6 +131,7 @@ class MobilePayStatusHeader extends StatelessWidget {
     this.label = "You're paying",
     this.recipientName,
     this.recipientProfilePictureId,
+    this.flowConnector,
     super.key,
   });
 
@@ -136,6 +142,9 @@ class MobilePayStatusHeader extends StatelessWidget {
   final String label;
   final String? recipientName;
   final String? recipientProfilePictureId;
+
+  /// Optional replacement for the amount-to-recipient arrow.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -169,23 +178,24 @@ class MobilePayStatusHeader extends StatelessWidget {
               scaleHeadlineToFit: true,
               bottomText: fiatText,
             ),
-            SizedBox(
-              width: 40,
-              height: 40,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
+            flowConnector ??
+                SizedBox(
                   width: 40,
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.arrowDown,
-                      size: AppIconSize.large,
-                      color: context.colors.icon.accent,
+                  height: 40,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox(
+                      width: 40,
+                      child: Center(
+                        child: AppIcon(
+                          AppIcons.arrowDown,
+                          size: AppIconSize.large,
+                          color: context.colors.icon.accent,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
             _MobilePayStatusHeaderRow(
               key: const ValueKey('mobile_pay_status_recipient_row'),
               leading: profilePictureId != null && profilePictureId.isNotEmpty
@@ -594,6 +604,8 @@ class _MobilePaymentDetails extends StatelessWidget {
             label: 'Tx ID',
             value: payStatus.txIdText,
             linkUri: payStatus.txIdUri,
+            copyable: payStatus.txIdCopyText != null,
+            copyText: payStatus.txIdCopyText,
           );
     final convertedFrom = SwapStatusDetailRowData(
       label: 'Converted from',

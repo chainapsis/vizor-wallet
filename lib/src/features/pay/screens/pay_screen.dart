@@ -30,6 +30,7 @@ import '../../swap/providers/swap_state_provider.dart';
 import '../../swap/screens/swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import '../../swap/widgets/swap_asset_selector_modal.dart';
+import '../../swap/widgets/swap_confidential_ui.dart';
 import '../../swap/widgets/swap_slippage_modal.dart';
 import '../models/pay_recent_recipients.dart';
 import '../widgets/pay_add_contact_modal.dart';
@@ -71,6 +72,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   DateTime? _expiryDeadline;
   Duration? _expiryRemaining;
 
+  final _confidentialReveal = SwapConfidentialRevealCounter();
+
   @override
   void initState() {
     super.initState();
@@ -100,7 +103,15 @@ class _PayScreenState extends ConsumerState<PayScreen> {
 
   void _closePayModal() {
     if (_payModal == null) return;
-    setState(() => _payModal = null);
+    final settingsClosed = _payModal == _PayModalSurface.slippage;
+    setState(() {
+      _payModal = null;
+      if (settingsClosed) {
+        _confidentialReveal.settingsClosed(
+          confidential: ref.read(swapStateProvider).confidential,
+        );
+      }
+    });
   }
 
   void _syncController(TextEditingController controller, String value) {
@@ -146,6 +157,13 @@ class _PayScreenState extends ConsumerState<PayScreen> {
   Future<void> _reviewRecipient(PayRecipientSelection selection) async {
     _chooseRecipient(selection);
     await _openReview();
+  }
+
+  Future<void> _reviewRecipientConfidentially(
+    PayRecipientSelection selection,
+  ) async {
+    ref.read(swapStateProvider.notifier).selectConfidential(true);
+    await _reviewRecipient(selection);
   }
 
   Future<void> _openReview() async {
@@ -254,6 +272,16 @@ class _PayScreenState extends ConsumerState<PayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(swapStateProvider.select((state) => state.confidential), (
+      previous,
+      next,
+    ) {
+      if (previous != false || !next) return;
+      final changed = _confidentialReveal.turnedOn(
+        settingsOpen: _payModal == _PayModalSurface.slippage,
+      );
+      if (changed) setState(() {});
+    });
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -356,6 +384,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     };
     // A payment sends ZEC, so a one-time refund address may wait for sync.
     final addressWait = ref.watch(swapAddressWaitProvider(true));
+    final offersConfidential =
+        swapState.externalAssetSupportError == null &&
+        swapState.offersConfidentialQuote;
     final recipientActions = PayRecipientActions(
       typedAddress: swapState.destinationText,
       addressError: swapState.destinationAddressFormatError,
@@ -364,7 +395,12 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       enabled: swapState.externalAssetIsAvailable && !addressBookInitialLoading,
       quoteError: swapState.externalAssetSupportError ?? swapState.quoteError,
       waitLabel: addressWait == null ? null : swapAddressWaitLabel(addressWait),
-      onSelectRecipient: () => unawaited(_reviewRecipient(effectiveSelection)),
+      selectLabel: offersConfidential ? 'Get confidential quote' : null,
+      onSelectRecipient: () => unawaited(
+        offersConfidential
+            ? _reviewRecipientConfidentially(effectiveSelection)
+            : _reviewRecipient(effectiveSelection),
+      ),
       onAddToContacts: network == null
           ? () {}
           : () => setState(() => _payModal = _PayModalSurface.addContact),
@@ -418,6 +454,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
               headingTrailing: _wizardStep == _PayWizardStep.amount
                   ? _PaySlippageControl(
                       label: formatSwapSlippage(swapState.slippageBps),
+                      confidential: swapState.confidential,
+                      confidentialReveal: _confidentialReveal.value,
                       selected: _payModal == _PayModalSurface.slippage,
                       onTap: () =>
                           setState(() => _payModal = _PayModalSurface.slippage),
@@ -485,6 +523,11 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                           onShowFullAddress: () => setState(
                             () => _payModal = _PayModalSurface.verifyAddress,
                           ),
+                          flowConnector: quote.confidential
+                              ? const SwapConfidentialRouteConnector.pay(
+                                  review: true,
+                                )
+                              : null,
                           onConfirm: _startIntent,
                           onReviewAgain: () => unawaited(_openReview()),
                         ),
@@ -531,6 +574,10 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                             ),
                     _PayModalSurface.slippage => SwapSlippageModal(
                       slippageBps: swapState.slippageBps,
+                      confidential: swapState.confidential,
+                      onConfidentialChanged: ref
+                          .read(swapStateProvider.notifier)
+                          .selectConfidential,
                       paymentMode: true,
                       onSubmitted: (bps) {
                         ref
@@ -567,11 +614,17 @@ class _PayScreenState extends ConsumerState<PayScreen> {
 class _PaySlippageControl extends StatelessWidget {
   const _PaySlippageControl({
     required this.label,
+    required this.confidential,
+    required this.confidentialReveal,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
+
+  /// Marks the button while the confidential route is set inside it.
+  final bool confidential;
+  final int confidentialReveal;
   final bool selected;
   final VoidCallback onTap;
 
@@ -597,6 +650,10 @@ class _PaySlippageControl extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (confidential) ...[
+                SwapConfidentialIcon(reveal: confidentialReveal),
+                const SizedBox(width: AppSpacing.xxs),
+              ],
               Text(
                 label,
                 style: AppTypography.labelLarge.copyWith(

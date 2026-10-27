@@ -11,11 +11,24 @@ import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/features/activity/models/activity_row_data.dart';
 import '../src/features/activity/gift_card_activity_index.dart';
+import '../src/features/activity/swap_activity_row_mapper.dart';
 import '../src/features/activity/widgets/activity_feed.dart';
 import '../src/features/activity/widgets/gift_card_activity_detail_view.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
+import '../src/features/swap/models/swap_models.dart';
 
-Widget buildActivityPageUseCase(BuildContext context) {
+Widget buildActivityPageUseCase(BuildContext context) =>
+    _activityPage(context, _activitySections(context));
+
+/// Confidential swap and pay rows built by the production row mapper, beside
+/// a standard swap and a shielded send for comparison.
+Widget buildConfidentialActivityPageUseCase(BuildContext context) =>
+    _activityPage(context, _confidentialActivitySections(context));
+
+Widget _activityPage(
+  BuildContext context,
+  List<ActivityFeedSectionData> sections,
+) {
   return Center(
     child: FittedBox(
       fit: BoxFit.scaleDown,
@@ -70,7 +83,7 @@ Widget buildActivityPageUseCase(BuildContext context) {
                                 top: AppSpacing.sm,
                               ),
                               child: ActivityFeed(
-                                sections: _activitySections(context),
+                                sections: sections,
                                 rowKeyPrefix: 'activity_page',
                               ),
                             ),
@@ -181,9 +194,7 @@ Widget _buildGiftCardActivityDetailUseCase(
             message: 'Hope this makes your day a little brighter!',
             timestampText: '25 May, 13:30',
             txIdText: 'f154...8143',
-            feeText: kind == GiftCardActivityKind.created
-                ? '0.0002 ZEC'
-                : null,
+            feeText: kind == GiftCardActivityKind.created ? '0.0002 ZEC' : null,
             onTxIdPressed: _noop,
             onToggleMessage: _noop,
           ),
@@ -291,6 +302,57 @@ List<ActivityFeedSectionData> _activitySections(BuildContext context) {
           title: 'Shielded',
           iconName: AppIcons.shieldKeyholeOutline,
           amountText: '0.30 ZEC',
+        ),
+      ],
+    ),
+  ];
+}
+
+List<ActivityFeedSectionData> _confidentialActivitySections(
+  BuildContext context,
+) {
+  ActivityRowData swapRow(
+    String id, {
+    required bool confidential,
+    required int hour,
+    bool payMode = false,
+  }) {
+    return buildSwapActivityRow(
+      context: context,
+      item: SwapActivityRowItem(
+        intentId: id,
+        providerLabel: 'NEAR Intents',
+        sellAmountText: '0.4200 ZEC',
+        receiveEstimateText: '25.10 USDC',
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        activityTimestamp: DateTime(2026, 5, 25, hour, 30),
+        payMode: payMode,
+        confidential: confidential,
+      ),
+    );
+  }
+
+  return [
+    ActivityFeedSectionData(
+      title: 'May 2026',
+      rows: [
+        swapRow('confidential-swap', confidential: true, hour: 15),
+        swapRow(
+          'confidential-pay',
+          confidential: true,
+          payMode: true,
+          hour: 14,
+        ),
+        swapRow('standard-swap', confidential: false, hour: 13),
+        _activityRow(
+          context,
+          title: 'Sent ZEC',
+          iconName: AppIcons.plane,
+          subtitle: 'Shielded',
+          subtitleIconName: AppIcons.shieldKeyholeOutline,
+          amountText: '-4.12 ZEC',
         ),
       ],
     ),

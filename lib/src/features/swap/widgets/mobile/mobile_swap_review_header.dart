@@ -54,11 +54,15 @@ class MobileSwapReviewHeader extends StatelessWidget {
   const MobileSwapReviewHeader({
     required this.pay,
     required this.receive,
+    this.flowConnector,
     super.key,
   });
 
   final MobileSwapReviewHeaderRow pay;
   final MobileSwapReviewHeaderRow receive;
+
+  /// Optional replacement for the whole flow arrow row.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -68,16 +72,17 @@ class MobileSwapReviewHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _HeaderRow(row: pay),
-          SizedBox(
-            width: 40,
-            child: Center(
-              child: AppIcon(
-                AppIcons.arrowDown,
-                size: AppIconSize.large,
-                color: context.colors.icon.accent,
+          flowConnector ??
+              SizedBox(
+                width: 40,
+                child: Center(
+                  child: AppIcon(
+                    AppIcons.arrowDown,
+                    size: AppIconSize.large,
+                    color: context.colors.icon.accent,
+                  ),
+                ),
               ),
-            ),
-          ),
           _HeaderRow(row: receive),
         ],
       ),

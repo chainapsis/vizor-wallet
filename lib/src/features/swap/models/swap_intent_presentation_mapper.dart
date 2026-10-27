@@ -51,6 +51,7 @@ SwapIntent _swapIntentFromRecord(SwapIntentRecord record, {DateTime? now}) {
     privateAddress: record.privateAddress,
     walletReleased: record.walletReleased,
     startPending: record.startPending,
+    confidential: record.confidential,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     completedAt:
@@ -158,6 +159,7 @@ SwapIntent swapIntentFromSnapshot({
     payMode: payMode,
     privateAddress:
         quote.swapRefundIndex != null || quote.receiveRequestId != null,
+    confidential: snapshot.confidential || quote.confidential,
     createdAt: now,
     updatedAt: now,
     completedAt: status.isTerminal ? now : null,
@@ -310,6 +312,8 @@ SwapIntent updateSwapIntentFromSnapshot(
         intent.depositAddress ?? snapshot.depositInstruction.address,
     depositMemo: intent.depositMemo ?? snapshot.depositInstruction.memo,
     depositDeadline: depositDeadline,
+    // A status response that omits the echo must not clear a recorded route.
+    confidential: intent.confidential || snapshot.confidential,
     updatedAt: timestamp,
     completedAt: intent.completedAt ?? (status.isTerminal ? timestamp : null),
   );

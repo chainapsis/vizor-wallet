@@ -31,6 +31,29 @@ void main() {
       'https://explorer.near-intents.org/transactions/t1provider-deposit',
     );
   });
+
+  test('a confidential swap keeps the tx id row without a link', () {
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1provider-deposit',
+        nearIntentHash: 'intent-hash-123',
+        originChainTxHash: 'zec-origin-txid',
+        confidential: true,
+      ),
+    );
+
+    final txId = presentation.details.singleWhere(
+      (row) => row.label == 'Tx ID',
+    );
+    expect(txId.value, 't1provider-deposit');
+    expect(txId.linkUri, isNull);
+    expect(txId.copyable, isTrue);
+    expect(txId.copyText, 't1provider-deposit');
+  });
 }
 
 SwapState _state() {
@@ -53,6 +76,7 @@ SwapIntent _intent({
   String? depositAddress,
   String? nearIntentHash,
   String? originChainTxHash,
+  bool confidential = false,
 }) {
   return SwapIntent(
     id: 'swap-activity',
@@ -68,5 +92,6 @@ SwapIntent _intent({
     minimumReceiveText: '140.00 USDC',
     nearIntentHash: nearIntentHash,
     originChainTxHash: originChainTxHash,
+    confidential: confidential,
   );
 }

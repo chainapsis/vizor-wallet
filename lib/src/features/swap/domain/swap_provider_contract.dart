@@ -36,6 +36,7 @@ class SwapIntentSnapshot {
     this.originChainTxHashes = const [],
     this.destinationChainTxHashes = const [],
     this.statusOnly = false,
+    this.confidential = false,
   });
 
   factory SwapIntentSnapshot.fromQuote(
@@ -62,6 +63,7 @@ class SwapIntentSnapshot {
       minimumReceiveText: quote.minimumReceiveText,
       providerRefundInfo: quote.providerRefundInfo,
       fiatValueBasis: quote.fiatValueBasis,
+      confidential: quote.confidential,
     );
   }
 
@@ -131,7 +133,9 @@ class SwapIntentSnapshot {
     originChainTxHashes: originChainTxHashes,
     destinationChainTxHashes: destinationChainTxHashes,
     statusOnly: statusOnly,
+    confidential: confidential,
   );
+  final bool confidential;
 }
 
 class SwapPricingSnapshot {

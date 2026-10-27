@@ -132,6 +132,7 @@ class _FakeSwapProvider implements SwapProvider {
     this.submitDepositError,
     this.quoteExpiresAt,
     this.zecDepositMemo = 'memo-live',
+    this.standardLiquidityUnavailable = false,
   }) : supportedAssets = supportedAssets ?? swapExternalAssets;
 
   final requests = <SwapQuoteRequest>[];
@@ -155,6 +156,10 @@ class _FakeSwapProvider implements SwapProvider {
   /// The address on external deposit instructions, read once per quote.
   String get externalDepositAddress => '0xlive-deposit';
 
+  /// Standard quotes fail as 1Click does when only the confidential route
+  /// has liquidity.
+  final bool standardLiquidityUnavailable;
+
   @override
   String get providerLabel => 'NEAR Intents';
 
@@ -175,6 +180,13 @@ class _FakeSwapProvider implements SwapProvider {
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
     await send(request);
+    if (standardLiquidityUnavailable && !request.confidential) {
+      throw const OneClickApiException(
+        'No liquidity available',
+        operation: 'quote',
+        statusCode: 400,
+      );
+    }
     final estimate = SwapQuote.estimate(
       direction: request.direction,
       externalAsset: request.externalAsset,
@@ -207,6 +219,7 @@ class _FakeSwapProvider implements SwapProvider {
             )
           : null,
       fiatValueBasis: _fakeFiatValueBasis(estimate),
+      confidential: request.confidential,
       depositInstruction: SwapDepositInstruction(
         asset: estimate.sellAsset,
         address: request.direction == SwapDirection.zecToExternal

@@ -33,6 +33,7 @@ import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
+import '../widgets/swap_confidential_ui.dart';
 import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_slippage_modal.dart';
 
@@ -58,6 +59,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     debugLabel: 'swap_toast_overlay_context',
   );
   _SwapModalSurface? _swapModal;
+  final _confidentialReveal = SwapConfidentialRevealCounter();
 
   @override
   void initState() {
@@ -100,7 +102,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
 
   void _closeSwapModal() {
     if (_swapModal == null) return;
-    setState(() => _swapModal = null);
+    final settingsClosed = _swapModal == _SwapModalSurface.slippageSettings;
+    setState(() {
+      _swapModal = null;
+      if (settingsClosed) {
+        _confidentialReveal.settingsClosed(
+          confidential: ref.read(swapStateProvider).confidential,
+        );
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shortcutFocusNode.requestFocus();
@@ -173,6 +183,16 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         setState(() => _swapModal = null);
       },
     );
+    ref.listen(swapStateProvider.select((state) => state.confidential), (
+      previous,
+      next,
+    ) {
+      if (previous != false || !next) return;
+      final changed = _confidentialReveal.turnedOn(
+        settingsOpen: _swapModal == _SwapModalSurface.slippageSettings,
+      );
+      if (changed) setState(() {});
+    });
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final oneTimeZecAddress = ref.watch(swapUsesOneTimeAddressProvider);
@@ -216,6 +236,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
           await context.push('/swap/review');
         }
       }());
+    }
+
+    void getConfidentialQuote() {
+      swapNotifier.selectConfidential(true);
+      openReview();
     }
 
     void refreshStatus() {
@@ -266,6 +291,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final panel = SwapComposerPanel(
+                      confidentialReveal: _confidentialReveal.value,
                       state: swapState,
                       onAmountChanged: swapNotifier.updateAmount,
                       onAmountFiatChanged: swapNotifier.updateAmountFiat,
@@ -321,6 +347,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                           zecAvailableZatoshi: zecSpendable,
                           onOpenDestinationAddress: _openAddressEditor,
                           onReviewQuote: openReview,
+                          onGetConfidentialQuote: getConfidentialQuote,
                         ),
                       ],
                     );
@@ -390,6 +417,8 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         ),
                       _SwapModalSurface.slippageSettings => SwapSlippageModal(
                         slippageBps: swapState.slippageBps,
+                        confidential: swapState.confidential,
+                        onConfidentialChanged: swapNotifier.selectConfidential,
                         onSubmitted: (value) {
                           swapNotifier.updateSlippageBps(value);
                           _closeSwapModal();
@@ -454,6 +483,7 @@ class _SwapReviewFooter extends StatelessWidget {
     required this.zecAvailableZatoshi,
     required this.onOpenDestinationAddress,
     required this.onReviewQuote,
+    required this.onGetConfidentialQuote,
   });
 
   final SwapState state;
@@ -461,6 +491,7 @@ class _SwapReviewFooter extends StatelessWidget {
   final BigInt zecAvailableZatoshi;
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
+  final VoidCallback onGetConfidentialQuote;
 
   @override
   Widget build(BuildContext context) {
@@ -472,8 +503,11 @@ class _SwapReviewFooter extends StatelessWidget {
     final destinationFormatError = state.destinationAddressFormatError;
     final waiting = addressWait != null && !state.quoteLoading;
     final canReview = state.canReviewQuote && !balanceExceeded && !waiting;
+    final offersConfidential = canReview && state.offersConfidentialQuote;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
+        : offersConfidential
+        ? onGetConfidentialQuote
         : canReview
         ? onReviewQuote
         : null;
@@ -487,6 +521,8 @@ class _SwapReviewFooter extends StatelessWidget {
                   ? 'Getting quote'
                   : waiting
                   ? swapAddressWaitLabel(addressWait!)
+                  : offersConfidential
+                  ? 'Get confidential quote'
                   : 'Review swap');
     final reviewReady =
         !needsDestinationAddress &&

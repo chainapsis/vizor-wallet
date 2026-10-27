@@ -49,6 +49,7 @@ class SwapIntentRecord {
     this.privateAddress = false,
     this.walletReleased = false,
     this.startPending = false,
+    this.confidential = false,
     this.createdAt,
     this.updatedAt,
     this.completedAt,
@@ -95,6 +96,7 @@ class SwapIntentRecord {
       privateAddress: intent.privateAddress,
       walletReleased: intent.walletReleased,
       startPending: intent.startPending,
+      confidential: intent.confidential,
       createdAt: intent.createdAt,
       updatedAt: intent.updatedAt,
       completedAt: intent.completedAt,
@@ -146,6 +148,9 @@ class SwapIntentRecord {
 
   /// See [SwapIntent.startPending].
   final bool startPending;
+
+  /// Started on NEAR Intents' confidential route.
+  final bool confidential;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt;
@@ -193,6 +198,7 @@ class SwapIntentRecord {
     bool? privateAddress,
     bool? walletReleased,
     bool? startPending,
+    bool? confidential,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? completedAt,
@@ -247,6 +253,7 @@ class SwapIntentRecord {
       privateAddress: privateAddress ?? this.privateAddress,
       walletReleased: walletReleased ?? this.walletReleased,
       startPending: startPending ?? this.startPending,
+      confidential: confidential ?? this.confidential,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: completedAt ?? this.completedAt,
@@ -293,6 +300,7 @@ class SwapIntent {
     this.privateAddress = false,
     this.walletReleased = false,
     this.startPending = false,
+    this.confidential = false,
     this.createdAt,
     this.updatedAt,
     this.completedAt,
@@ -349,6 +357,9 @@ class SwapIntent {
   /// One still set when loaded in a later launch never finished starting (see
   /// `SwapActivityTracker.loadIntents`).
   final bool startPending;
+
+  /// Started on NEAR Intents' confidential route.
+  final bool confidential;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt;
@@ -410,6 +421,7 @@ class SwapIntent {
     bool? privateAddress,
     bool? walletReleased,
     bool? startPending,
+    bool? confidential,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? completedAt,
@@ -460,6 +472,7 @@ class SwapIntent {
       privateAddress: privateAddress ?? this.privateAddress,
       walletReleased: walletReleased ?? this.walletReleased,
       startPending: startPending ?? this.startPending,
+      confidential: confidential ?? this.confidential,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: completedAt ?? this.completedAt,

@@ -23,6 +23,7 @@ import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_state_provider.dart';
+import '../widgets/swap_confidential_ui.dart';
 import '../widgets/swap_review_page_content.dart';
 
 class SwapReviewScreen extends ConsumerStatefulWidget {
@@ -206,6 +207,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                         amount: quote.receiveAmount,
                       ),
                       payMode: widget.payMode,
+                      flowConnector: quote.confidential
+                          ? const SwapConfidentialRouteConnector.swap()
+                          : null,
                       onCopy: _copyAddress,
                     ),
                     const SizedBox(height: AppSpacing.base),

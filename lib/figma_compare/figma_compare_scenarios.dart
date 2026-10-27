@@ -129,6 +129,110 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.android,
   ),
   FigmaCompareScenario(
+    id: 'pay-confidential-amount',
+    description: 'Confidential pay prototype: standard mode on the amount step',
+    builder: buildConfidentialPayAmountUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-amount-on',
+    description:
+        'Confidential pay prototype: confidential mode on the amount step',
+    builder: buildConfidentialPayAmountOnUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-liquidity',
+    description:
+        'Confidential pay prototype: no standard quote on the recipient step',
+    builder: buildConfidentialPayLiquidityUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-review',
+    description: 'Confidential pay prototype: confidential review',
+    builder: buildConfidentialPayReviewUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-in-progress',
+    description: 'Confidential pay prototype: confidential payment in progress',
+    builder: buildConfidentialPayInProgressUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'pay-confidential-completed',
+    description: 'Confidential pay prototype: confidential payment completed',
+    builder: buildConfidentialPayCompletedUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-standard',
+    description: 'Confidential swap prototype: standard quote ready',
+    builder: buildConfidentialSwapStandardUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-settings',
+    description: 'Confidential swap prototype: settings',
+    builder: buildConfidentialSwapSettingsUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-settings-on',
+    description: 'Confidential swap prototype: settings-on',
+    builder: buildConfidentialSwapSettingsOnUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-liquidity',
+    description: 'Confidential swap prototype: liquidity',
+    builder: buildConfidentialSwapLiquidityUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-minimum',
+    description: 'Confidential swap prototype: minimum',
+    builder: buildConfidentialSwapMinimumUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-network',
+    description: 'Confidential swap prototype: network',
+    builder: buildConfidentialSwapNetworkUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-ready',
+    description: 'Confidential swap prototype: ready',
+    builder: buildConfidentialSwapReadyUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-loading',
+    description: 'Confidential swap prototype: loading',
+    builder: buildConfidentialSwapLoadingUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-review',
+    description: 'Confidential swap prototype: review',
+    builder: buildConfidentialSwapReviewUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-status',
+    description: 'Confidential swap prototype: status',
+    builder: buildConfidentialSwapStatusUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-confidential-completed',
+    description: 'Confidential swap prototype: completed',
+    builder: buildConfidentialSwapCompletedUseCase,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-onboarding-access-preparing',
     description: 'Ledger onboarding: Bluetooth access check before discovery',
     builder: buildLedgerOnboardingAccessPreparation,
@@ -1912,6 +2016,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'activity-gift-cards',
     description: 'Desktop Activity with Gift Card creation and redemption',
     builder: buildActivityPageUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-confidential-rows',
+    description: 'Desktop Activity with confidential swap and pay rows',
+    builder: buildConfidentialActivityPageUseCase,
   ),
   FigmaCompareScenario(
     id: 'activity-gift-card-created-detail',

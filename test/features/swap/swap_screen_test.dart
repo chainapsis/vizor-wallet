@@ -66,6 +66,7 @@ import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_asset_icon.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_confidential_ui.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_review_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
@@ -1055,6 +1056,72 @@ void main() {
     expect(find.text('First'), findsNothing);
   });
 
+  testWidgets('Pay recovers a missing standard quote on the hidden route', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(standardLiquidityUnavailable: true);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        addressBookRepository: _FakeAddressBookRepository([
+          const AddressBookContact(
+            id: 'merchant',
+            label: 'Merchant',
+            network: AddressBookNetwork.ethereum,
+            address: '0x52908400098527886e0f7030069857d2e4169ee7',
+            profilePictureId: 'pfp-01',
+            createdAtMs: 0,
+            updatedAtMs: 0,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('pay_slippage_button')),
+        matching: find.byType(SwapConfidentialIcon),
+      ),
+      findsNothing,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Merchant'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests.single.confidential, isFalse);
+    expect(find.text('No quote for this amount'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('pay_select_recipient_button')),
+        matching: find.text('Get confidential quote'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests.last.confidential, isTrue);
+    expect(find.byKey(const ValueKey('pay_review_step')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_confidential_route')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Pay retry waits for its original dynamic asset', (tester) async {
     await _setDesktopViewport(tester);
     final savedBaseUsdc = SwapAsset.live(
@@ -1271,6 +1338,50 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('swap status draws the recorded confidential route', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(1080, 720));
+    Future<void> pumpStatus({required bool confidential}) async {
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/activity/swap/status-route?from=swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _PricingSwapProvider([200]),
+          seedSwapActivityFixtures: false,
+          sessionStore: _FakeSwapPersistenceStore(
+            initialIntents: [
+              _persistedIntent(
+                id: 'status-route',
+                txHash: '',
+                status: SwapIntentStatus.complete,
+                nextAction: 'Swap complete',
+              ).copyWith(confidential: confidential),
+            ],
+          ),
+        ),
+      );
+      await _pumpUntilPresent(
+        tester,
+        find.byKey(const ValueKey('swap_review_info')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpStatus(confidential: true);
+    expect(
+      find.byKey(const ValueKey('swap_confidential_route')),
+      findsOneWidget,
+    );
+
+    // Drop the first ProviderScope so its swap state does not carry over.
+    await tester.pumpWidget(const SizedBox());
+    await pumpStatus(confidential: false);
+    expect(find.byKey(const ValueKey('swap_confidential_route')), findsNothing);
   });
 
   testWidgets('status progress route shows the animated active-step loader', (
@@ -4756,6 +4867,114 @@ void main() {
     expect(swapProvider.requests.single.slippageBps, 200);
   });
 
+  testWidgets('the confidential setting sends the confidential route', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final mark = find.descendant(
+      of: find.byKey(const ValueKey('swap_settings_button')),
+      matching: find.byType(SwapConfidentialIcon),
+    );
+    expect(mark, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+    await tester.pumpAndSettle();
+    // It applies as it is switched, as the Settings privacy toggles do.
+    expect(mark, findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_cancel_button')));
+    await tester.pumpAndSettle();
+    expect(mark, findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests.single.confidential, isTrue);
+    expect(find.byType(SwapReviewScreen), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_confidential_route')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a missing standard quote offers the confidential route', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(standardLiquidityUnavailable: true);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests.single.confidential, isFalse);
+    expect(find.text('No quote for this amount'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_button')),
+        matching: find.text('Get confidential quote'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('swap_confidential_route')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.requests, hasLength(2));
+    expect(swapProvider.requests.last.confidential, isTrue);
+    expect(find.byType(SwapReviewScreen), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_confidential_route')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('custom slippage settings are sent with the next quote request', (
     tester,
   ) async {
@@ -4779,14 +4998,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
     await tester.pumpAndSettle();
 
-    final slippageModalTop = tester
-        .getTopLeft(find.byKey(const ValueKey('swap_slippage_modal')))
+    final explainerTop = tester
+        .getTopLeft(find.textContaining("Sets the maximum rate change you'll"))
         .dy;
     final customCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
         .dy;
-    // The explainer occupies three lines and a 16dp gap before the presets.
-    expect(customCardTop - slippageModalTop, 296);
+    // Below the confidential setting, the slippage explainer (four lines in
+    // the test font) and a 16dp gap sit before the presets, as before.
+    expect(customCardTop - explainerTop, 232);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_slippage_50bps'))).height,
       40,

@@ -25,6 +25,7 @@ class SwapQuoteRequest {
     this.slippageBps,
     this.deadline,
     this.beforeSend,
+    this.confidential = false,
   }) : assert(
          amount != null || sellAmount != null,
          'SwapQuoteRequest amount is required',
@@ -43,6 +44,10 @@ class SwapQuoteRequest {
   final int? slippageBps;
   final Duration? deadline;
   final SwapQuoteSendHook? beforeSend;
+
+  /// Requests NEAR Intents' confidential route, which hides the link between
+  /// the deposit and the payout.
+  final bool confidential;
 
   SwapAsset get sellAsset => direction.fromAsset(externalAsset);
   SwapAsset get receiveAsset => direction.toAsset(externalAsset);
@@ -153,6 +158,7 @@ class SwapQuote {
     this.fiatValueBasis,
     this.swapRefundIndex,
     this.receiveRequestId,
+    this.confidential = false,
   });
 
   factory SwapQuote.estimate({
@@ -273,8 +279,12 @@ class SwapQuote {
        rateTextOverride = quote.rateTextOverride,
        providerRefundInfo = quote.providerRefundInfo,
        fiatValueBasis = quote.fiatValueBasis,
+       confidential = quote.confidential,
        swapRefundIndex = swapRefundIndex ?? quote.swapRefundIndex,
        receiveRequestId = receiveRequestId ?? quote.receiveRequestId;
+
+  /// Whether the provider confirmed the confidential route for this quote.
+  final bool confidential;
 
   /// Deadline used by review countdowns and the start gate. Provider quote
   /// expiries reserve [kSwapQuoteStartExpiryBuffer]; deposit-only deadlines

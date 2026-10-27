@@ -1,11 +1,15 @@
 // ignore_for_file: depend_on_referenced_packages
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
+import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
+import '../src/core/layout/app_form_factor.dart';
 import '../src/core/layout/app_pane_scroll_scaffold.dart';
+import '../src/core/layout/mobile/app_mobile_sheet.dart';
+import '../src/core/layout/mobile/mobile_top_nav.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
@@ -15,6 +19,9 @@ import '../src/core/widgets/app_profile_picture.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/address_book/models/address_format_validator.dart';
 import '../src/features/pay/models/pay_recent_recipients.dart';
+import '../src/features/pay/widgets/mobile/mobile_pay_amount_step.dart';
+import '../src/features/pay/widgets/mobile/mobile_pay_recipient_step.dart';
+import '../src/features/pay/widgets/mobile/mobile_pay_review_content.dart';
 import '../src/features/pay/widgets/pay_add_contact_modal.dart';
 import '../src/features/pay/widgets/pay_amount_step.dart';
 import '../src/features/pay/widgets/pay_recipient_step.dart';
@@ -23,8 +30,16 @@ import '../src/features/pay/widgets/pay_wizard_page.dart';
 import '../src/features/swap/models/swap_models.dart';
 import '../src/features/swap/models/swap_activity_status_mapper.dart';
 import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
+import '../src/features/swap/models/swap_status_presentation.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
 import '../src/features/swap/widgets/pay_activity_status_content.dart';
 import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
+import '../src/features/swap/widgets/swap_confidential_ui.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
+import '../src/features/swap/widgets/swap_slippage_modal.dart';
+
+part 'confidential_pay_use_cases.dart';
 
 const _previewWindowSize = Size(1080, 720);
 const _contactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';

@@ -48,12 +48,16 @@ class SwapReviewInfo extends StatelessWidget {
     required this.pay,
     required this.receive,
     this.onCopy,
+    this.flowConnector,
     super.key,
   });
 
   final SwapReviewInfoSideData pay;
   final SwapReviewInfoSideData receive;
   final ValueChanged<String>? onCopy;
+
+  /// Optional replacement for the whole flow arrow row.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -69,16 +73,17 @@ class SwapReviewInfo extends StatelessWidget {
             key: const ValueKey('swap_review_info_pay'),
             copyButtonKey: const ValueKey('swap_review_info_pay_copy'),
           ),
-          SizedBox(
-            height: 24,
-            child: Center(
-              child: AppIcon(
-                AppIcons.arrowDownward,
-                size: 24,
-                color: colors.icon.accent,
+          flowConnector ??
+              SizedBox(
+                height: 24,
+                child: Center(
+                  child: AppIcon(
+                    AppIcons.arrowDownward,
+                    size: 24,
+                    color: colors.icon.accent,
+                  ),
+                ),
               ),
-            ),
-          ),
           _side(
             data: receive,
             key: const ValueKey('swap_review_info_receive'),

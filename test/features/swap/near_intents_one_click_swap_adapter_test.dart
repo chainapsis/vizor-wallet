@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_failure_policy.dart';
 
 void main() {
   test('quote posts exact-input payload and parses 1Click quote', () async {
@@ -882,6 +883,127 @@ void main() {
       );
     },
   );
+
+  group('confidential route', () {
+    const request = SwapQuoteRequest(
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+      sellAmount: 1,
+      sellAmountText: '1',
+      destination: '0xrecipient',
+      refundAddress: 'u1refund',
+    );
+    const confidentialRequest = SwapQuoteRequest(
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+      sellAmount: 1,
+      sellAmountText: '1',
+      destination: '0xrecipient',
+      refundAddress: 'u1refund',
+      confidential: true,
+    );
+
+    _FakeOneClickTransport quoteTransport({String? confidentiality}) =>
+        _FakeOneClickTransport([
+          _FakeResponse.get('/v0/tokens', _tokens),
+          _FakeResponse.post(
+            '/v0/quote',
+            _quoteResponse(
+              originAsset: 'nep141:zec.omft.near',
+              destinationAsset: 'nep141:usdc.example',
+              amountInFormatted: '1',
+              amountOutFormatted: '70',
+              minAmountOut: '69300000',
+              depositAddress: 't1deposit',
+              confidentiality: confidentiality,
+              status: null,
+            ),
+          ),
+        ]);
+
+    test('standard quotes omit the field and stay public', () async {
+      final transport = quoteTransport();
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final quote = await provider.quote(request);
+
+      expect(transport.requests.last.body, isNot(contains('confidentiality')));
+      expect(quote.confidential, isFalse);
+    });
+
+    test('a standard quote accepts an explicit public echo', () async {
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: quoteTransport(confidentiality: 'PUBLIC'),
+      );
+
+      expect((await provider.quote(request)).confidential, isFalse);
+    });
+
+    test('confidential quotes request basic and record the echo', () async {
+      final transport = quoteTransport(confidentiality: 'basic');
+      final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+      final quote = await provider.quote(confidentialRequest);
+
+      expect(transport.requests.last.body?['confidentiality'], 'basic');
+      expect(quote.confidential, isTrue);
+      expect(SwapIntentSnapshot.fromQuote(quote).confidential, isTrue);
+    });
+
+    for (final echo in [null, 'public', 'advanced']) {
+      test('a confidential quote rejects a $echo echo', () async {
+        final provider = NearIntentsOneClickSwapAdapter(
+          transport: quoteTransport(confidentiality: echo),
+        );
+
+        await expectLater(
+          provider.quote(confidentialRequest),
+          throwsA(
+            isA<OneClickApiException>().having(
+              (error) => swapFailureCategory(SwapFailureOperation.quote, error),
+              'category',
+              SwapFailureCategory.unverifiedResponse,
+            ),
+          ),
+        );
+      });
+    }
+
+    test('a standard quote rejects a confidential echo', () async {
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: quoteTransport(confidentiality: 'basic'),
+      );
+
+      await expectLater(
+        provider.quote(request),
+        throwsA(isA<OneClickApiException>()),
+      );
+    });
+
+    test('status snapshots carry the confidential echo', () async {
+      final provider = NearIntentsOneClickSwapAdapter(
+        transport: _FakeOneClickTransport([
+          _FakeResponse.get('/v0/tokens', _tokens),
+          _FakeResponse.get(
+            '/v0/status',
+            _quoteResponse(
+              originAsset: 'nep141:zec.omft.near',
+              destinationAsset: 'nep141:usdc.example',
+              amountInFormatted: '1',
+              amountOutFormatted: '70',
+              depositAddress: 'status-deposit',
+              confidentiality: 'basic',
+              status: 'PROCESSING',
+            ),
+          ),
+        ]),
+      );
+
+      final status = await provider.getStatus('status-deposit');
+
+      expect(status.confidential, isTrue);
+    });
+  });
 
   test('quote rejects response with mismatched slippage echo', () async {
     final transport = _FakeOneClickTransport([
@@ -2804,6 +2926,7 @@ Map<String, Object?> _quoteResponse({
   String? quoteRequestAmount,
   String quoteRequestRefundTo = 'u1refund',
   String quoteRequestRecipient = '0xrecipient',
+  String? confidentiality,
   Map<String, Object?>? swapDetails,
 }) {
   final resolvedAmountIn =
@@ -2832,6 +2955,7 @@ Map<String, Object?> _quoteResponse({
       'recipientType': 'DESTINATION_CHAIN',
       'deadline': quoteRequestDeadline,
       'appFees': appFees,
+      'confidentiality': ?confidentiality,
     },
     'quote': {
       'amountIn': resolvedAmountIn,

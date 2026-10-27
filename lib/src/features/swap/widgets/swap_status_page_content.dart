@@ -54,6 +54,7 @@ class SwapStatusPageContent extends StatefulWidget {
     this.oneTimeAddress,
     this.onTabChanged,
     this.onCopy,
+    this.flowConnector,
     super.key,
   });
 
@@ -97,6 +98,9 @@ class SwapStatusPageContent extends StatefulWidget {
 
   /// Copy callback for the [SwapReviewInfo] address lines (clipboard + toast).
   final ValueChanged<String>? onCopy;
+
+  /// Optional replacement for the paying/receiving flow arrow row.
+  final Widget? flowConnector;
 
   @override
   State<SwapStatusPageContent> createState() => _SwapStatusPageContentState();
@@ -250,6 +254,7 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             )
           else
             SwapReviewInfo(
+              flowConnector: widget.flowConnector,
               pay: SwapReviewInfoSideData(
                 asset: widget.payAsset,
                 label: widget.payLabel,

@@ -352,6 +352,7 @@ class SwapNotifier extends Notifier<SwapState> {
           reviewVisible: false,
           depositTxHashText: '',
           payMode: true,
+          confidential: false,
           clearReview: true,
           clearQuoteError: true,
           clearStatusError: true,
@@ -405,6 +406,7 @@ class SwapNotifier extends Notifier<SwapState> {
           reviewVisible: false,
           depositTxHashText: '',
           payMode: false,
+          confidential: false,
           clearReview: true,
           clearQuoteError: true,
           clearStatusError: true,
@@ -823,6 +825,14 @@ class SwapNotifier extends Notifier<SwapState> {
     _reviewStagingAddresses.remove((accountUuid, direction));
   }
 
+  /// Sets the quote mode for the next review. A failed quote belongs to the
+  /// previous mode, so its error clears.
+  void selectConfidential(bool confidential) {
+    if (state.confidential == confidential) return;
+    _clearReviewState();
+    state = state.copyWith(confidential: confidential);
+  }
+
   Future<void> showReview({bool preserveCurrentReview = false}) =>
       _showReview(preserveCurrentReview: preserveCurrentReview, retry: true);
 
@@ -847,6 +857,7 @@ class SwapNotifier extends Notifier<SwapState> {
     final userExternalAddress = state.destinationText;
     final quoteMode = state.quoteMode;
     final amountText = state.quoteAmountText;
+    final confidential = state.confidential;
     final generation = ++_quoteGeneration;
     final preferences = _currentComposerPreferences;
     final keepCurrentReview =
@@ -906,6 +917,7 @@ class SwapNotifier extends Notifier<SwapState> {
                     amount: amount,
                     amountText: amountText,
                     slippageBps: state.slippageBps,
+                    confidential: confidential,
                     beforeSend: (deadline) async {
                       // A hook that throws stops the request before it leaves.
                       await beforeSend?.call(deadline);
@@ -1008,6 +1020,13 @@ class SwapNotifier extends Notifier<SwapState> {
         );
         return;
       }
+      final noLiquidity =
+          swapFailureCategory(
+            SwapFailureOperation.quote,
+            e,
+            torEnabled: ref.read(networkPrivacyProvider).torEnabled,
+          ) ==
+          SwapFailureCategory.noQuoteOrLiquidity;
       state = state.copyWith(
         reviewVisible: false,
         quoteLoading: false,
@@ -1016,7 +1035,13 @@ class SwapNotifier extends Notifier<SwapState> {
                 kind == ReceiveErrorKind.limit
             ? _addressRecoveryFailureMessage(recoveryFailure) ??
                   _friendlyQuoteError(e)
+            // Liquidity is separate per mode. Only Confidential is a named mode.
+            : noLiquidity
+            ? (confidential
+                  ? 'No confidential quote for this amount'
+                  : 'No quote for this amount')
             : _friendlyQuoteError(e),
+        quoteNoLiquidity: noLiquidity,
         clearReview: true,
       );
     }
@@ -1443,6 +1468,8 @@ class SwapNotifier extends Notifier<SwapState> {
       quoteLoading: false,
       depositTxHashText: '',
       payMode: retryingPay,
+      // A retry must not silently fall back to the public route.
+      confidential: intent.confidential,
       clearReview: true,
       clearQuoteError: true,
       clearStatusError: true,
@@ -2065,6 +2092,7 @@ class SwapNotifier extends Notifier<SwapState> {
       clearMaxAmountError: true,
       clearSelectedIntent: true,
       clearPendingHardwareSigningIntent: true,
+      confidential: false,
     );
   }
 

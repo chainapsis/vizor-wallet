@@ -1120,7 +1120,9 @@ class _ActivityRowSubtitle extends StatelessWidget {
           AppIcon(
             iconName!,
             size: _activityRowSubtitleIconSize,
-            color: iconName == AppIcons.shieldKeyholeOutline
+            color:
+                iconName == AppIcons.shieldKeyholeOutline ||
+                    iconName == AppIcons.incognito
                 ? colors.icon.brandCrimson
                 : colors.icon.muted,
           ),

@@ -29,6 +29,7 @@ class PayReviewStep extends StatelessWidget {
     required this.onShowFullAddress,
     required this.onConfirm,
     required this.onReviewAgain,
+    this.flowConnector,
     super.key,
   });
 
@@ -52,6 +53,9 @@ class PayReviewStep extends StatelessWidget {
   final VoidCallback onShowFullAddress;
   final VoidCallback onConfirm;
   final VoidCallback onReviewAgain;
+
+  /// Optional replacement for the gap between the paying and recipient rows.
+  final Widget? flowConnector;
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +99,7 @@ class PayReviewStep extends StatelessWidget {
                   leading: SwapAssetIcon(asset: quote.externalAsset, size: 32),
                   bottomLeftText: payingFiatText,
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                flowConnector ?? const SizedBox(height: AppSpacing.sm),
                 ReviewInfoRow(
                   key: const ValueKey('pay_review_to_row'),
                   rowHeight: 76,

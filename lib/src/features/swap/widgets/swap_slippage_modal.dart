@@ -8,10 +8,16 @@ import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../models/swap_models.dart';
+import 'swap_confidential_ui.dart';
 
+/// Quote settings for swap and Pay: the confidential route, then slippage.
+/// Confidential applies as soon as it is switched, as the Settings privacy
+/// toggles do; Update and Cancel concern slippage only.
 class SwapSlippageModal extends StatefulWidget {
   const SwapSlippageModal({
     required this.slippageBps,
+    required this.confidential,
+    required this.onConfidentialChanged,
     required this.onSubmitted,
     required this.onCancel,
     this.initialCustomText,
@@ -20,6 +26,8 @@ class SwapSlippageModal extends StatefulWidget {
   });
 
   final int slippageBps;
+  final bool confidential;
+  final ValueChanged<bool> onConfidentialChanged;
   final ValueChanged<int> onSubmitted;
   final VoidCallback onCancel;
   final String? initialCustomText;
@@ -36,6 +44,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
   late int? _selectedPresetBps;
   late TextEditingController _customController;
   late final FocusNode _customFocusNode;
+  late bool _confidential = widget.confidential;
 
   @override
   void initState() {
@@ -47,6 +56,9 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
   @override
   void didUpdateWidget(covariant SwapSlippageModal oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.confidential != widget.confidential) {
+      _confidential = widget.confidential;
+    }
     if (oldWidget.slippageBps == widget.slippageBps &&
         oldWidget.initialCustomText == widget.initialCustomText) {
       return;
@@ -139,13 +151,28 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Slippage',
+            widget.paymentMode ? 'Payment settings' : 'Swap settings',
             style: AppTypography.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
               color: colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
+          SwapConfidentialSetting(
+            confidential: _confidential,
+            onChanged: (value) {
+              setState(() => _confidential = value);
+              widget.onConfidentialChanged(value);
+            },
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Container(height: 1, color: colors.border.regular),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Slippage',
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
           Text(
             widget.paymentMode
                 ? 'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'

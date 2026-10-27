@@ -35,6 +35,7 @@ class SwapActivityRowItem {
     this.payMode = false,
     this.startPending = false,
     this.privateAddress = false,
+    this.confidential = false,
   });
 
   factory SwapActivityRowItem.fromRecord(SwapIntentRecord record) {
@@ -82,6 +83,7 @@ class SwapActivityRowItem {
       payMode: record.payMode,
       startPending: record.startPending,
       privateAddress: record.privateAddress,
+      confidential: record.confidential,
     );
   }
 
@@ -137,6 +139,9 @@ class SwapActivityRowItem {
     walletTxid: receiveWalletTxidHex,
     now: now,
   );
+
+  /// Started on NEAR Intents' confidential route.
+  final bool confidential;
 }
 
 List<SwapActivityRowItem> swapActivityRowItemsFromRecords(
@@ -181,6 +186,8 @@ ActivityRowData buildSwapActivityRow({
     subtitle: payMode
         ? _payActivitySubtitle(receiveAsset)
         : _swapActivityAssetSubtitle(sellAsset) ?? item.providerLabel,
+    // Only the confidential route is marked; standard rows stay unmarked.
+    subtitleIconName: item.confidential ? AppIcons.incognito : null,
     amountText: activityAmountTextForFormFactor(
       payMode
           ? _payActivityAmountText(item, privacyModeEnabled: privacyModeEnabled)

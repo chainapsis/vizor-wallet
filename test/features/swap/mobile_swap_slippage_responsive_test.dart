@@ -48,6 +48,8 @@ void main() {
                         child: MobileSwapSlippageStepperModal(
                           slippageBps: 50,
                           paymentMode: paymentMode,
+                          confidential: false,
+                          onConfidentialChanged: (_) {},
                           onSubmitted: (value) => submittedBps = value,
                           onCancel: () {},
                         ),

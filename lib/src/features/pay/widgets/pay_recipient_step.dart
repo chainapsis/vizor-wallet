@@ -231,6 +231,7 @@ class PayRecipientActions extends StatelessWidget {
     required this.onAddToContacts,
     this.enabled = true,
     this.waitLabel,
+    this.selectLabel,
     super.key,
   });
 
@@ -245,6 +246,9 @@ class PayRecipientActions extends StatelessWidget {
   final String? waitLabel;
   final VoidCallback onSelectRecipient;
   final VoidCallback onAddToContacts;
+
+  /// Replaces "Select recipient", e.g. with a quote recovery action.
+  final String? selectLabel;
 
   bool get visible {
     final typed = typedAddress.trim();
@@ -301,7 +305,9 @@ class PayRecipientActions extends StatelessWidget {
               ? null
               : onSelectRecipient,
           child: Text(
-            busy ? 'Fetching quote' : waitLabel ?? 'Select recipient',
+            busy
+                ? 'Fetching quote'
+                : waitLabel ?? selectLabel ?? 'Select recipient',
           ),
         ),
       ],

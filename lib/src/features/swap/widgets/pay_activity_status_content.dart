@@ -25,6 +25,7 @@ class PayActivityStatusContent extends StatelessWidget {
     required this.onShowFullAddress,
     this.recipientContact,
     this.onOpenExplorer,
+    this.flowConnector,
     super.key,
   });
 
@@ -36,6 +37,9 @@ class PayActivityStatusContent extends StatelessWidget {
   final AddressBookContact? recipientContact;
   final VoidCallback onShowFullAddress;
   final VoidCallback? onOpenExplorer;
+
+  /// Optional replacement for the amount-to-recipient arrow.
+  final Widget? flowConnector;
 
   static const Size contentSize = Size(396, 549);
   static const double reviewInfoHeight = 204;
@@ -112,19 +116,20 @@ class PayActivityStatusContent extends StatelessWidget {
               ),
               bottomLeftText: amountFiatText,
             ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                width: AppAssetSize.size,
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.arrowDown,
-                    size: AppIconSize.large,
-                    color: context.colors.text.accent,
+            flowConnector ??
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: AppAssetSize.size,
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.arrowDown,
+                        size: AppIconSize.large,
+                        color: context.colors.text.accent,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
             ReviewInfoRow(
               key: const ValueKey('pay_status_recipient_row'),
               label: 'To',
@@ -197,6 +202,8 @@ class PayActivityStatusContent extends StatelessWidget {
                     ? null
                     : AppIcons.arrowTopRight,
                 trailingIconColor: colors.icon.muted,
+                // Without an explorer link the row copies the Tx ID instead.
+                copyText: onOpenExplorer == null ? status.txIdCopyText : null,
                 onPressed: onOpenExplorer,
               ),
             ],

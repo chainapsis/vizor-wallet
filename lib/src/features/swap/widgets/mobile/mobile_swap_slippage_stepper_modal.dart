@@ -6,6 +6,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../../core/widgets/decimal_amount_input_formatter.dart';
+import '../swap_confidential_ui.dart';
 
 /// Mobile slippage editor — Figma `Slippage` (`_Modal Type` 4755:84761): a
 /// 60px Young Serif value flanked by 60×50 minus/plus pills (0.1% steps within
@@ -13,9 +14,13 @@ import '../../../../core/widgets/decimal_amount_input_formatter.dart';
 /// places. Out-of-range input turns the value and a "Slippage must be 0.1 - 5%"
 /// message destructive and disables Update. The stepper keeps its 160px body;
 /// guidance and input scroll together when the keyboard limits the space.
+/// The confidential route sits above slippage and applies as soon as it is
+/// switched, as in the desktop [SwapSlippageModal].
 class MobileSwapSlippageStepperModal extends StatefulWidget {
   const MobileSwapSlippageStepperModal({
     required this.slippageBps,
+    required this.confidential,
+    required this.onConfidentialChanged,
     required this.onSubmitted,
     required this.onCancel,
     this.paymentMode = false,
@@ -23,6 +28,8 @@ class MobileSwapSlippageStepperModal extends StatefulWidget {
   });
 
   final int slippageBps;
+  final bool confidential;
+  final ValueChanged<bool> onConfidentialChanged;
   final ValueChanged<int> onSubmitted;
   final VoidCallback onCancel;
 
@@ -45,6 +52,7 @@ class _MobileSwapSlippageStepperModalState
   static const _bodyHeight = 160.0;
 
   late final TextEditingController _controller;
+  late bool _confidential = widget.confidential;
   final FocusNode _focusNode = FocusNode();
   final GlobalKey _stepperKey = GlobalKey();
   double _keyboardInset = 0;
@@ -62,14 +70,23 @@ class _MobileSwapSlippageStepperModalState
   }
 
   @override
+  void didUpdateWidget(covariant MobileSwapSlippageStepperModal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.confidential != widget.confidential) {
+      _confidential = widget.confidential;
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final inset = MediaQuery.viewInsetsOf(context).bottom;
     if (inset == _keyboardInset) return;
     _keyboardInset = inset;
     if (inset > 0) {
-      // Opening the keyboard shrinks the scroll viewport after autofocus.
-      // Reveal the whole input row, including the adjacent stepper buttons.
+      // Opening the keyboard shrinks the scroll viewport once the value takes
+      // focus. Reveal the whole input row, including the adjacent stepper
+      // buttons.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final stepperContext = _stepperKey.currentContext;
         if (mounted && _keyboardInset > 0 && stepperContext != null) {
@@ -124,7 +141,7 @@ class _MobileSwapSlippageStepperModalState
     final valueColor = invalid ? colors.text.destructive : colors.text.accent;
 
     return MobileModalScaffold(
-      title: 'Slippage',
+      title: widget.paymentMode ? 'Payment settings' : 'Swap settings',
       onClose: widget.onCancel,
       constrainBody: true,
       // _Modal Type slippage variant: pb-16 (vs the default 24).
@@ -139,11 +156,27 @@ class _MobileSwapSlippageStepperModalState
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  SwapConfidentialSetting(
+                    confidential: _confidential,
+                    onChanged: (value) {
+                      setState(() => _confidential = value);
+                      widget.onConfidentialChanged(value);
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Container(height: 1, color: colors.border.regular),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Slippage',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
                   Text(
                     widget.paymentMode
                         ? 'Allows this much extra ZEC for quote movement before execution fails. Network fees are separate.'
                         : "Sets the maximum rate change you'll accept. Network fees are separate.",
-                    textAlign: TextAlign.center,
                     style: AppTypography.bodySmall.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -284,7 +317,8 @@ class _MobileSwapSlippageStepperModalState
                 key: const ValueKey('mobile_swap_slippage_value'),
                 controller: _controller,
                 focusNode: _focusNode,
-                autofocus: true,
+                // No autofocus: the sheet also opens to flip confidential,
+                // and the keypad would cover its actions.
                 onChanged: _onChanged,
                 textAlign: TextAlign.center,
                 keyboardType: const TextInputType.numberWithOptions(

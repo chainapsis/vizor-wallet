@@ -6,8 +6,12 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
+import '../src/core/layout/app_form_factor.dart';
 import '../src/core/layout/app_pane_scroll_scaffold.dart';
 import '../src/core/layout/mobile/app_mobile_sheet.dart';
+import '../src/core/layout/mobile/app_mobile_shell.dart';
+import '../src/core/layout/mobile/app_mobile_tab_bar.dart';
+import '../src/core/layout/mobile/mobile_top_nav.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
@@ -25,8 +29,16 @@ import '../src/features/swap/widgets/swap_composer_panel.dart';
 import '../src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 import '../src/features/swap/widgets/swap_near_intents_attribution.dart';
 import '../src/features/swap/widgets/swap_review_page_content.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import '../src/features/swap/widgets/swap_slippage_modal.dart';
 import '../src/features/swap/widgets/swap_status_page_content.dart';
+import '../src/features/swap/widgets/swap_confidential_ui.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_composer_ticket.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
+import '../src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
+
+part 'confidential_swap_use_cases.dart';
 
 Widget buildSwapPageFigmaNode1UseCase(BuildContext context) {
   return _SwapPageFrame(
@@ -197,6 +209,8 @@ Widget buildSwapSlippageModalUseCase(BuildContext context) {
   return _SwapPageModalFrame(
     child: SwapSlippageModal(
       slippageBps: 50,
+      confidential: false,
+      onConfidentialChanged: (_) {},
       onSubmitted: (_) {},
       onCancel: () {},
     ),
@@ -207,6 +221,8 @@ Widget buildSwapSlippageModalCustomUseCase(BuildContext context) {
   return _SwapPageModalFrame(
     child: SwapSlippageModal(
       slippageBps: 125,
+      confidential: false,
+      onConfidentialChanged: (_) {},
       onSubmitted: (_) {},
       onCancel: () {},
     ),
@@ -218,6 +234,8 @@ Widget buildSwapSlippageModalInvalidUseCase(BuildContext context) {
     child: SwapSlippageModal(
       slippageBps: 50,
       initialCustomText: '15',
+      confidential: false,
+      onConfidentialChanged: (_) {},
       onSubmitted: (_) {},
       onCancel: () {},
     ),

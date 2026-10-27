@@ -24,6 +24,7 @@ class MobilePayReviewContent extends StatefulWidget {
     required this.convertedFiatText,
     required this.expiresInText,
     required this.expired,
+    this.flowConnector,
     super.key,
   });
 
@@ -34,6 +35,9 @@ class MobilePayReviewContent extends StatefulWidget {
   final String? convertedFiatText;
   final String? expiresInText;
   final bool expired;
+
+  /// Optional replacement for the gap between the paying and recipient rows.
+  final Widget? flowConnector;
 
   @override
   State<MobilePayReviewContent> createState() => _MobilePayReviewContentState();
@@ -82,7 +86,7 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
                 ),
                 bottomLeftText: widget.payingFiatText,
               ),
-              const SizedBox(height: AppSpacing.md),
+              widget.flowConnector ?? const SizedBox(height: AppSpacing.md),
               ReviewInfoRow(
                 key: const ValueKey('mobile_pay_review_recipient_row'),
                 label: 'To',

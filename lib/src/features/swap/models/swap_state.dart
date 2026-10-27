@@ -74,6 +74,8 @@ class SwapState {
     this.selectedIntentId,
     this.payMode = false,
     this.userExternalContactId,
+    this.confidential = false,
+    this.quoteNoLiquidity = false,
   });
 
   final SwapDirection direction;
@@ -114,6 +116,19 @@ class SwapState {
   final String? selectedIntentId;
   final bool payMode;
   final String? userExternalContactId;
+
+  /// Quote mode for the next review. Session-only: it is not saved with the
+  /// composer preferences.
+  final bool confidential;
+
+  /// The last quote failed because the selected mode had no liquidity.
+  /// Cleared with [quoteError].
+  final bool quoteNoLiquidity;
+
+  /// Standard had no quote, so the primary action offers the confidential
+  /// route instead.
+  bool get offersConfidentialQuote =>
+      quoteError != null && quoteNoLiquidity && !confidential;
 
   SwapIntent? get selectedIntentOrNull {
     final selectedId = selectedIntentId;
@@ -320,6 +335,8 @@ class SwapState {
     String? selectedIntentId,
     bool? payMode,
     String? userExternalContactId,
+    bool? confidential,
+    bool? quoteNoLiquidity,
     bool clearReview = false,
     bool clearQuoteError = false,
     bool clearSupportedAssetsError = false,
@@ -382,6 +399,10 @@ class SwapState {
       userExternalContactId: clearUserExternalContactId
           ? null
           : userExternalContactId ?? this.userExternalContactId,
+      confidential: confidential ?? this.confidential,
+      quoteNoLiquidity: clearQuoteError
+          ? false
+          : quoteNoLiquidity ?? this.quoteNoLiquidity,
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -29,6 +30,7 @@ import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../../swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
 import '../../models/pay_amount_input.dart';
+import '../../../swap/widgets/swap_confidential_ui.dart';
 import '../../models/pay_recent_recipients.dart';
 import '../../widgets/mobile/mobile_pay_add_contact_card.dart';
 import '../../widgets/mobile/mobile_pay_amount_step.dart';
@@ -57,6 +59,8 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   bool _reviewRequestInFlight = false;
   int _reviewRequestGeneration = 0;
   var _step = _MobilePayStep.amount;
+
+  final _confidentialReveal = SwapConfidentialRevealCounter();
 
   @override
   void initState() {
@@ -108,7 +112,12 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
             AppTheme(data: appTheme, child: _buildPayModal()),
       ).whenComplete(() {
         _modalRouteOpen = false;
-        if (mounted) setState(() => _payModal.value = null);
+        if (mounted) {
+          setState(() {
+            _settingsClosed();
+            _payModal.value = null;
+          });
+        }
       }),
     );
   }
@@ -119,8 +128,19 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       return;
     }
     if (_payModal.value != null) {
-      setState(() => _payModal.value = null);
+      setState(() {
+        _settingsClosed();
+        _payModal.value = null;
+      });
     }
+  }
+
+  /// Plays a reveal held back while the settings covered the amount step.
+  void _settingsClosed() {
+    if (_payModal.value != _PayModalSurface.slippage) return;
+    _confidentialReveal.settingsClosed(
+      confidential: ref.read(swapStateProvider).confidential,
+    );
   }
 
   void _handleAssetSelected(SwapAsset asset) {
@@ -155,6 +175,13 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
   Future<void> _reviewRecipient(PayRecipientSelection selection) async {
     _chooseRecipient(selection);
     await _openReview(selection);
+  }
+
+  Future<void> _reviewRecipientConfidentially(
+    PayRecipientSelection selection,
+  ) async {
+    ref.read(swapStateProvider.notifier).selectConfidential(true);
+    await _reviewRecipient(selection);
   }
 
   Future<void> _saveContact(
@@ -222,6 +249,8 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                       ),
               _PayModalSurface.slippage => MobileSwapSlippageStepperModal(
                 slippageBps: swapState.slippageBps,
+                confidential: swapState.confidential,
+                onConfidentialChanged: swapNotifier.selectConfidential,
                 paymentMode: true,
                 onSubmitted: (value) {
                   swapNotifier.updateSlippageBps(value);
@@ -280,6 +309,17 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(swapStateProvider.select((state) => state.confidential), (
+      previous,
+      next,
+    ) {
+      if (previous != false || !next) return;
+      unawaited(AppHaptics.privacyToggle());
+      final changed = _confidentialReveal.turnedOn(
+        settingsOpen: _payModal.value == _PayModalSurface.slippage,
+      );
+      if (changed) setState(() {});
+    });
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
@@ -324,6 +364,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
               contactId: swapState.userExternalContactId,
             ),
     );
+    final offersConfidential =
+        swapState.externalAssetSupportError == null &&
+        swapState.offersConfidentialQuote;
 
     void back() {
       if (_step == _MobilePayStep.recipient) {
@@ -388,6 +431,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                       onOpenAssetSelector: () =>
                           _openModal(_PayModalSurface.assetSelector),
                       slippageLabel: formatSwapSlippage(swapState.slippageBps),
+                      confidentialReveal: _confidentialReveal.value,
                       onOpenSlippage: () =>
                           _openModal(_PayModalSurface.slippage),
                       onContinue: () {
@@ -417,8 +461,16 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                       onOpenScanner: () =>
                           _openModal(_PayModalSurface.addressScanner),
                       onChooseRecipient: _chooseRecipient,
-                      onSelectRecipient: () =>
-                          unawaited(_reviewRecipient(effectiveSelection)),
+                      // A missing standard quote offers the confidential
+                      // route, as desktop Pay does.
+                      selectLabel: offersConfidential
+                          ? 'Get confidential quote'
+                          : null,
+                      onSelectRecipient: () => unawaited(
+                        offersConfidential
+                            ? _reviewRecipientConfidentially(effectiveSelection)
+                            : _reviewRecipient(effectiveSelection),
+                      ),
                       onAddToContacts: () =>
                           _openModal(_PayModalSurface.addContact),
                     ),
