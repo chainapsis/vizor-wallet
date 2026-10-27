@@ -4806,10 +4806,12 @@ pub(crate) fn network_upgrade_holds_transaction_at_wallet_tip(
     db_path: &str,
     network: WalletNetwork,
     signed_target_height: u32,
+    server_tip_height: Option<u32>,
 ) -> Result<bool, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     let chain_tip_height = wallet_tip(&conn)?
         .unwrap_or(0)
+        .max(server_tip_height.unwrap_or(0))
         .max(signed_target_height.saturating_sub(1));
     Ok(network_upgrade::holds_transaction(
         &network,

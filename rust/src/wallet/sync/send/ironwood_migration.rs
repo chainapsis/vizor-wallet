@@ -809,12 +809,18 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
             .remove(request_id)
             .ok_or("Keystone Immediate migration request disappeared")?
     };
-    // Signing can outlast the build-time hold check; dropping the request
-    // releases its inputs.
+    // Signing can outlast the build-time hold check, and the wallet's tip can
+    // trail the server's; dropping the request releases its inputs.
+    let server_tip_height =
+        crate::wallet::sync_engine::latest_block_for_transaction(lightwalletd_url, network)
+            .await
+            .ok()
+            .and_then(|tip| u32::try_from(tip.height).ok());
     match super::migration::network_upgrade_holds_transaction_at_wallet_tip(
         db_path,
         network,
         stored.target_height,
+        server_tip_height,
     ) {
         Ok(false) => {}
         Ok(true) => {

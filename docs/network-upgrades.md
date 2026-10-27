@@ -116,10 +116,11 @@ the new branch.
 builds call `ensure_migration_can_start`. A new run also refuses a schedule
 drawn before the upgrade (`ensure_schedule_drawn_for_height`): a plan reviewed
 before NU7 and started after it would pass its delays in a third of the time.
-A saved draft resumed after the upgrade takes the schedule approved then. A
+A schedule drawn in the running app is judged by the spacing it was drawn at,
+one from before a restart by its offsets. A saved draft resumed after the upgrade takes the schedule approved then. A
 wallet without a scanned tip is not held: it has no target yet. A hardware
-Immediate migration checks again before broadcasting, because signing can
-outlast the first check.
+Immediate migration checks again before broadcasting, at the later of the
+wallet's and the server's tip, because signing can outlast the first check.
 
 **ZIP 318 durations.** ZIP 318 states delays, the anchor bucket interval and
 the expiry modulus in 75-second reference blocks. From NU7 each one spans three

@@ -10937,6 +10937,66 @@ fn schedules_drawn_before_the_upgrade_are_refused_after_it() {
 }
 
 #[test]
+fn a_schedule_drawn_before_the_upgrade_is_stale_even_in_multiples_of_three() {
+    let single_part = |value_zatoshi: u64| {
+        vec![MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi,
+            block_offset: 3,
+        }]
+    };
+    let after = TEST_NU7_ACTIVATION_HEIGHT;
+    // Drawn at one block per reference block, before NU7.
+    remember_schedule_spacing(&single_part(7_100_001), 1);
+    remember_schedule_spacing(&single_part(7_100_002), 3);
+
+    assert_eq!(
+        ensure_schedule_drawn_for_height(&single_part(7_100_001), WalletNetwork::Test, after)
+            .unwrap_err(),
+        STALE_SCHEDULE_MESSAGE
+    );
+    assert!(
+        ensure_schedule_drawn_for_height(&single_part(7_100_002), WalletNetwork::Test, after)
+            .is_ok()
+    );
+    // Not drawn in this process: judged by its offsets alone.
+    assert!(
+        ensure_schedule_drawn_for_height(&single_part(7_100_003), WalletNetwork::Test, after)
+            .is_ok()
+    );
+}
+
+#[test]
+fn an_upgrade_hold_check_uses_the_later_of_the_wallet_and_server_tips() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let wallet_tip = TEST_NU7_ACTIVATION_HEIGHT - 20;
+    conn.execute_batch(&format!(
+        "CREATE TABLE scan_queue (block_range_end INTEGER NOT NULL);
+         INSERT INTO scan_queue (block_range_end) VALUES ({});",
+        wallet_tip + 1
+    ))
+    .unwrap();
+    drop(conn);
+    let held = |server_tip: Option<u32>| {
+        network_upgrade_holds_transaction_at_wallet_tip(
+            &db_path.to_string_lossy(),
+            WalletNetwork::Test,
+            wallet_tip + 1,
+            server_tip,
+        )
+        .unwrap()
+    };
+
+    assert!(!held(None));
+    assert!(!held(Some(wallet_tip - 5)));
+    // Signing outlasted the wallet's last sync and the server is in the hold.
+    assert!(held(Some(TEST_NU7_ACTIVATION_HEIGHT - 5)));
+}
+
+#[test]
 fn a_draft_saved_before_the_upgrade_takes_the_schedule_approved_after_it() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
