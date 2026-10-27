@@ -33,6 +33,7 @@ import '../../payment_links/providers/payment_link_cards_provider.dart';
 import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
 import '../widgets/near_swap_privacy_info.dart';
+import '../widgets/near_swap_privacy_turn_off.dart';
 import '../widgets/network_privacy_control.dart';
 import '../widgets/enhance_pir_privacy_control.dart';
 import '../widgets/private_queries_turn_off.dart';
@@ -649,9 +650,8 @@ class _SettingsList extends ConsumerWidget {
                   onInfo: () => unawaited(showNearSwapPrivacyInfo(context)),
                   enabled: nearSwapPrivacy.enabled,
                   transition: nearSwapPrivacy.transition,
-                  onToggle: () => unawaited(
-                    ref.read(nearSwapPrivacyProvider.notifier).toggle(),
-                  ),
+                  onToggle: () =>
+                      unawaited(toggleNearSwapPrivacy(context, ref)),
                 ),
               ),
             ],

@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart'
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/enhance_pir_privacy_control.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/near_swap_privacy_info.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/near_swap_privacy_turn_off.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/swap_history_check_control.dart';
 import 'package:zcash_wallet/src/providers/swap_history_check_provider.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/network_privacy_control.dart';
@@ -1291,6 +1292,70 @@ void main() {
     }
   });
 
+  group('turning NEAR swap privacy off', () {
+    Future<_SwapPrivacyToggle> pumpOn(
+      WidgetTester tester,
+      NearSwapPrivacyPendingSwaps pending,
+    ) async {
+      final privacy = _SwapPrivacyToggle(true);
+      await tester.binding.setSurfaceSize(const Size(1512, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _settingsHarness(
+          nearSwapPrivacyEnabled: true,
+          pendingSwaps: pending,
+          extraOverrides: [nearSwapPrivacyProvider.overrideWith(() => privacy)],
+        ),
+      );
+      await tester.pump();
+      final toggle = find.byKey(
+        const ValueKey('settings_near_swap_privacy_toggle'),
+      );
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      return privacy;
+    }
+
+    for (final (pending, copy) in [
+      ((payout: true, refund: false), kNearSwapPrivacyTurnOffPayoutCopy),
+      ((payout: false, refund: true), kNearSwapPrivacyTurnOffRefundCopy),
+    ]) {
+      testWidgets('asks first while a swap can still send ZEC: $copy', (
+        tester,
+      ) async {
+        final privacy = await pumpOn(tester, pending);
+        expect(find.text(kNearSwapPrivacyTurnOffTitle), findsOneWidget);
+        expect(find.text(copy), findsOneWidget);
+        expect(find.text(kNearSwapPrivacyTurnOffKeptCopy), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const ValueKey('near_swap_privacy_turn_off_cancel')),
+        );
+        await tester.pumpAndSettle();
+        expect(privacy.on, isTrue);
+
+        await tester.tap(
+          find.byKey(const ValueKey('settings_near_swap_privacy_toggle')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('near_swap_privacy_turn_off_confirm')),
+        );
+        await tester.pumpAndSettle();
+        expect(privacy.on, isFalse);
+      });
+    }
+
+    testWidgets('turns off without asking when no swap is pending', (
+      tester,
+    ) async {
+      final privacy = await pumpOn(tester, (payout: false, refund: false));
+      expect(find.text(kNearSwapPrivacyTurnOffTitle), findsNothing);
+      expect(privacy.on, isFalse);
+    });
+  });
+
   group('turning private queries off', () {
     testWidgets('overlapping confirmations both turn private queries off', (
       tester,
@@ -1582,6 +1647,7 @@ Widget _settingsHarness({
   String network = 'main',
   bool enhancePirEnabled = false,
   bool nearSwapPrivacyEnabled = false,
+  NearSwapPrivacyPendingSwaps pendingSwaps = (payout: false, refund: false),
 }) {
   final router = GoRouter(
     initialLocation: '/settings',
@@ -1611,6 +1677,9 @@ Widget _settingsHarness({
 
   return ProviderScope(
     overrides: [
+      nearSwapPrivacyPendingSwapsProvider.overrideWithValue(
+        () async => pendingSwaps,
+      ),
       appBootstrapProvider.overrideWithValue(
         _settingsBootstrap(
           accountState ?? _bootstrap.initialAccountState,
@@ -1822,3 +1891,21 @@ const _idleRecovery = SwapRecoveryStatus(
   manualCheckActive: false,
   upgradeRequired: false,
 );
+
+/// NEAR swap privacy that flips when the settings toggle asks, as the real
+/// setting does once its change is applied, without storage or native calls.
+class _SwapPrivacyToggle extends NearSwapPrivacyNotifier {
+  _SwapPrivacyToggle(this.on);
+
+  /// The current setting, readable by fakes that follow it.
+  bool on;
+
+  @override
+  bool build() => on;
+
+  @override
+  Future<void> set(bool enabled) async {
+    on = enabled;
+    state = enabled;
+  }
+}

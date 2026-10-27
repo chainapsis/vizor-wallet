@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/near_swap_privacy_info.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/near_swap_privacy_turn_off.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/swap_history_check_control.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
@@ -191,6 +192,7 @@ Widget _app({
   EnhancePirNotifier Function()? enhancePir,
   bool walletTransparentPrivate = false,
   List<Override> extraOverrides = const [],
+  NearSwapPrivacyPendingSwaps pendingSwaps = (payout: false, refund: false),
 }) {
   Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
     data: themeData ?? AppThemeData.dark,
@@ -224,6 +226,9 @@ Widget _app({
       : MaterialApp.router(routerConfig: router, builder: themedBuilder);
   return ProviderScope(
     overrides: [
+      nearSwapPrivacyPendingSwapsProvider.overrideWithValue(
+        () async => pendingSwaps,
+      ),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(
           accountState: accountState,
@@ -317,6 +322,9 @@ Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
   );
   return ProviderScope(
     overrides: [
+      nearSwapPrivacyPendingSwapsProvider.overrideWithValue(
+        () async => (payout: false, refund: false),
+      ),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       themeModeProvider.overrideWith(_FakeThemeModeNotifier.new),
@@ -808,6 +816,41 @@ void main() {
       );
     });
   }
+
+  testWidgets('turning NEAR swap privacy off with a refund possible asks', (
+    tester,
+  ) async {
+    final privacy = _SwapPrivacyToggle(true);
+    await tester.pumpWidget(
+      _app(
+        enhancePirEnabled: true,
+        nearSwapPrivacyEnabled: true,
+        pendingSwaps: (payout: false, refund: true),
+        extraOverrides: [nearSwapPrivacyProvider.overrideWith(() => privacy)],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final row = find.byKey(
+      const ValueKey('mobile_settings_near_swap_privacy_row'),
+    );
+    await tester.scrollUntilVisible(row, 200);
+    await tester.pumpAndSettle();
+    // The row's own tap handler, which turns the setting over.
+    tester.widget<GestureDetector>(row).onTap!();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('near_swap_privacy_turn_off_sheet')),
+      findsOneWidget,
+    );
+    expect(find.text(kNearSwapPrivacyTurnOffRefundCopy), findsOneWidget);
+    expect(find.text(kNearSwapPrivacyTurnOffKeptCopy), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('near_swap_privacy_turn_off_confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(privacy.on, isFalse);
+  });
 
   testWidgets('the Tor toggle matches the keep-awake toggle', (tester) async {
     await tester.pumpWidget(
@@ -2001,4 +2044,22 @@ class _RecordingToggle extends EnhancePirNotifier {
 class _PrivateWallet extends WalletTransparentPrivateNotifier {
   @override
   bool build() => true;
+}
+
+/// NEAR swap privacy that flips when the settings toggle asks, as the real
+/// setting does once its change is applied, without storage or native calls.
+class _SwapPrivacyToggle extends NearSwapPrivacyNotifier {
+  _SwapPrivacyToggle(this.on);
+
+  /// The current setting, readable by fakes that follow it.
+  bool on;
+
+  @override
+  bool build() => on;
+
+  @override
+  Future<void> set(bool enabled) async {
+    on = enabled;
+    state = enabled;
+  }
 }
