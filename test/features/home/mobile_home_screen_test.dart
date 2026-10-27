@@ -29,6 +29,8 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
+import 'package:zcash_wallet/src/core/navigation/mobile_sidebar_route_observer.dart';
 import 'package:zcash_wallet/src/features/home/providers/nu7_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
@@ -263,8 +265,10 @@ Widget _app(
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final ironwoodAnnouncementStore = _FakeIronwoodAnnouncementStore();
   final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
+  final popupObserver = MobileSidebarRouteObserver();
   final router = GoRouter(
     initialLocation: '/home',
+    observers: [popupObserver],
     routes: [
       if (useShellRouter)
         // The production mobile shell keeps every branch mounted, so a widget
@@ -433,6 +437,7 @@ Widget _app(
             : nu7Announcement,
       ),
       nu7AnnouncementStoreProvider.overrideWithValue(nu7Store),
+      mobileSidebarRouteObserverProvider.overrideWithValue(popupObserver),
       nu7AnnouncementMotionEnabledProvider.overrideWithValue(false),
       if (migrationCoordinator != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(migrationCoordinator),
@@ -2703,6 +2708,46 @@ void main() {
     router.go('/home');
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
+
+  testWidgets('holds the NU7 announcement while another sheet is open', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final home = tester.element(find.byType(MobileHomeScreen));
+    unawaited(
+      showAppMobileSheet<void>(
+        context: home,
+        builder: (_) => const Text('other sheet'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    store.seen.clear();
+    ProviderScope.containerOf(
+      home,
+    ).invalidate(nu7AnnouncementEligibilityProvider);
+    await tester.pumpAndSettle();
+
+    expect(find.text('other sheet'), findsOneWidget);
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    Navigator.of(home, rootNavigator: true).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('other sheet'), findsNothing);
     expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
   });
 

@@ -23,6 +23,8 @@ import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
+import '../../../../core/navigation/mobile_sidebar_route_observer.dart';
+import '../../../../core/navigation/route_stack.dart';
 import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -543,10 +545,14 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
   bool _showing = false;
   String? _shownFor;
   GoRouter? _router;
+  late final MobileSidebarRouteObserver _popups;
 
   @override
   void initState() {
     super.initState();
+    // Root sheets and dialogs do not change the router's location.
+    _popups = ref.read(mobileSidebarRouteObserverProvider)
+      ..addListener(_scheduleEvaluate);
     _scheduleEvaluate();
   }
 
@@ -563,6 +569,7 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
   @override
   void dispose() {
     _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    _popups.removeListener(_scheduleEvaluate);
     super.dispose();
   }
 
@@ -573,16 +580,19 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
   }
 
   void _scheduleEvaluate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _evaluate();
-    });
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (mounted) _evaluate();
+      })
+      ..ensureVisualUpdate();
   }
 
   void _evaluate() {
     final network = ref.read(nu7AnnouncementProvider).value?.network;
     if (network == null || _showing || _shownFor == network) return;
-    // This branch stays mounted behind other tabs and pushed routes.
-    if (_router?.routerDelegate.currentConfiguration.uri.path != '/home') {
+    // This branch stays mounted behind other tabs, pushed routes and sheets.
+    if (_router?.routerDelegate.currentConfiguration.uri.path != '/home' ||
+        !isRouteTopmost(context)) {
       return;
     }
     _shownFor = network;
