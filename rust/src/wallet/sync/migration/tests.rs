@@ -10964,6 +10964,13 @@ fn a_schedule_drawn_before_the_upgrade_is_stale_even_in_multiples_of_three() {
         ensure_schedule_drawn_for_height(&single_part(7_100_003), WalletNetwork::Test, after)
             .is_ok()
     );
+    // Drawn again after NU7 with the same offsets: neither plan passes.
+    remember_schedule_spacing(&single_part(7_100_001), 3);
+    assert_eq!(
+        ensure_schedule_drawn_for_height(&single_part(7_100_001), WalletNetwork::Test, after)
+            .unwrap_err(),
+        network_upgrade::STALE_SCHEDULE_MESSAGE
+    );
 }
 
 #[test]
