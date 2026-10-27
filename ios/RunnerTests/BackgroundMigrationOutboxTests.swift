@@ -682,25 +682,128 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     }
   }
 
+  func testCadenceUsesTwentyFiveSecondBlocksFromNu7() {
+    // Blocks 101...109 take 75 seconds; 110...120 take 25.
+    XCTAssertEqual(
+      BackgroundMigrationOutboxCadence.estimatedSeconds(
+        from: 100,
+        to: 120,
+        nu7ActivationHeight: 110
+      ),
+      9 * 75 + 11 * 25
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxCadence.nextCheckDelay(
+        remoteHeight: 100,
+        nextScheduledHeight: 120,
+        nu7ActivationHeight: 110
+      ),
+      350
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxCadence.nextCheckDelay(
+        remoteHeight: 200,
+        nextScheduledHeight: 230,
+        nu7ActivationHeight: 110
+      ),
+      150
+    )
+  }
+
+  func testBroadcastsAreHeldInTheTenBlocksBeforeNu7() throws {
+    let activation = try XCTUnwrap(
+      BackgroundMigrationOutboxCadence.nu7ActivationHeight(network: "test")
+    )
+    let scheduledHeight = activation - 12
+    var batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [scheduledHeight])
+    batch.items = batch.items.map { item in
+      BackgroundMigrationOutboxItem(
+        itemId: item.itemId,
+        partIndex: item.partIndex,
+        txidHex: item.txidHex,
+        rawTransaction: item.rawTransaction,
+        anchorBoundaryHeight: item.anchorBoundaryHeight,
+        scheduledHeight: scheduledHeight,
+        scheduleStartHeight: scheduledHeight - 1,
+        expiryHeight: BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(
+          for: scheduledHeight,
+          nu7ActivationHeight: activation
+        )!
+      )
+    }
+    let held = { BackgroundMigrationOutboxCadence.holdsBroadcasts(network: "test", remoteHeight: $0) }
+    XCTAssertFalse(held(activation - 12))
+    XCTAssertTrue(held(activation - 11))
+    // A node that missed NU7 stops at the last pre-NU7 tip and would accept it.
+    XCTAssertTrue(held(activation - 1))
+    // From NU7 the network rejects it, which stops the run.
+    XCTAssertFalse(held(activation))
+
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+
+    XCTAssertNotNil(snapshot.selectDue(remoteHeight: activation - 12, at: now))
+    XCTAssertNil(snapshot.selectDue(remoteHeight: activation - 11, at: now))
+    XCTAssertNil(snapshot.selectDue(remoteHeight: activation - 2, at: now))
+    XCTAssertNil(snapshot.selectDue(remoteHeight: activation - 1, at: now))
+  }
+
+  func testZip318DurationsScaleFromNu7() {
+    // Mainnet NU7 activates at 3,543,405: the expiry modulus becomes 103,680.
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(
+        for: 3_543_404,
+        nu7ActivationHeight: 3_543_405
+      ),
+      3_594_240
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(
+        for: 3_543_405,
+        nu7ActivationHeight: 3_543_405
+      ),
+      3_732_480
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSnapshot.canonicalExpiryHeight(
+        for: 3_543_405,
+        nu7ActivationHeight: nil
+      ),
+      3_594_240
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(at: 109, nu7ActivationHeight: 110),
+      1
+    )
+    XCTAssertEqual(
+      BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(at: 110, nu7ActivationHeight: 110),
+      3
+    )
+  }
+
   func testCadenceChecksAheadOfDueHeightAndCapsPolling() {
     XCTAssertEqual(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: 101
+        nextScheduledHeight: 101,
+        nu7ActivationHeight: nil
       ),
       60
     )
     XCTAssertEqual(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: 244
+        nextScheduledHeight: 244,
+        nu7ActivationHeight: nil
       ),
       600
     )
     XCTAssertNil(
       BackgroundMigrationOutboxCadence.nextCheckDelay(
         remoteHeight: 100,
-        nextScheduledHeight: nil
+        nextScheduledHeight: nil,
+        nu7ActivationHeight: nil
       )
     )
   }

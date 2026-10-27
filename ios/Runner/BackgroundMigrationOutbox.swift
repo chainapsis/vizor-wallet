@@ -448,6 +448,10 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     return selected
   }
 
+  func network(endpoint: String) -> String? {
+    batches.first { $0.lightwalletdUrl == endpoint }?.network
+  }
+
   func nextActionHeight(endpoint: String) -> UInt64? {
     let transactionHeight = batches.filter { $0.lightwalletdUrl == endpoint }.flatMap(\.items)
       .filter { $0.status == .armed }
@@ -752,11 +756,15 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     endpoint: String,
     at date: Date
   ) {
-    guard let canonicalExpiryHeight = Self.canonicalExpiryHeight(for: remoteHeight) else {
-      return
-    }
     for batchIndex in batches.indices {
-      guard batches[batchIndex].lightwalletdUrl == endpoint else { continue }
+      guard batches[batchIndex].lightwalletdUrl == endpoint,
+        let canonicalExpiryHeight = Self.canonicalExpiryHeight(
+          for: remoteHeight,
+          nu7ActivationHeight: BackgroundMigrationOutboxCadence.nu7ActivationHeight(
+            network: batches[batchIndex].network
+          )
+        )
+      else { continue }
       var foundNoncanonicalItem = false
       for itemIndex in batches[batchIndex].items.indices {
         let item = batches[batchIndex].items[itemIndex]
@@ -795,6 +803,10 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       batchIndex, batch -> (Int, BackgroundMigrationOutboxBatch)? in
       guard endpoint == nil || batch.lightwalletdUrl == endpoint,
         batch.armedAt != nil,
+        !BackgroundMigrationOutboxCadence.holdsBroadcasts(
+          network: batch.network,
+          remoteHeight: remoteHeight
+        ),
         batch.items.contains(where: {
           $0.status == .armed && $0.scheduledHeight <= remoteHeight
             && remoteHeight < $0.expiryHeight
@@ -1068,6 +1080,9 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       batches[batchIndex].items[$0].expiryHeight
         < batches[batchIndex].items[$1].expiryHeight
     }
+    let nu7ActivationHeight = BackgroundMigrationOutboxCadence.nu7ActivationHeight(
+      network: batches[batchIndex].network
+    )
     var elapsed: UInt64 = 0
     var updates: [BackgroundMigrationOutboxScheduleUpdate] = []
     for (offset, itemIndex) in overdueIndexes.enumerated() {
@@ -1081,13 +1096,21 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       guard latestHeight > currentHeight else {
         throw BackgroundMigrationOutboxError.invalidSchedule
       }
-      let boundedMax = min(max, latestHeight - currentHeight)
+      // ZIP 318 delays are reference blocks; from NU7 each spans three blocks.
+      let blocksPerReferenceBlock = BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(
+        at: currentHeight,
+        nu7ActivationHeight: nu7ActivationHeight
+      )
+      let boundedMax = min(max, (latestHeight - currentHeight) / blocksPerReferenceBlock)
+      guard boundedMax > 0 else {
+        throw BackgroundMigrationOutboxError.invalidSchedule
+      }
       elapsed = elapsed.saturatingAdd(
         BackgroundMigrationOutboxSchedule.sampleDelay(
           meanBlocks: mean,
           maxBlocks: boundedMax,
           random: &random
-        )
+        ) * blocksPerReferenceBlock
       )
       let scheduledHeight = remoteHeight.saturatingAdd(elapsed)
       batches[batchIndex].items[itemIndex] = replacingSchedule(
@@ -1156,8 +1179,17 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     )
   }
 
-  private static func canonicalExpiryHeight(for height: UInt64) -> UInt64? {
-    let modulus: UInt64 = 34_560
+  /// ZIP 318's expiry modulus is 34,560 blocks before NU7 and 103,680 from it.
+  static func canonicalExpiryHeight(
+    for height: UInt64,
+    nu7ActivationHeight: UInt64?
+  ) -> UInt64? {
+    let modulus =
+      34_560
+      * BackgroundMigrationOutboxSchedule.blocksPerReferenceBlock(
+        at: height,
+        nu7ActivationHeight: nu7ActivationHeight
+      )
     let boundary = height - (height % modulus)
     let window = modulus * 2
     let (expiryHeight, expiryOverflow) = boundary.addingReportingOverflow(window)
@@ -1166,6 +1198,14 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
 }
 
 enum BackgroundMigrationOutboxSchedule {
+  /// ZIP 218's NU7 block target spacing ratio.
+  static let nu7SpacingRatio: UInt64 = 3
+
+  static func blocksPerReferenceBlock(at height: UInt64, nu7ActivationHeight: UInt64?) -> UInt64 {
+    guard let nu7ActivationHeight, height >= nu7ActivationHeight else { return 1 }
+    return nu7SpacingRatio
+  }
+
   static func sampleDelay(
     meanBlocks: UInt64,
     maxBlocks: UInt64,
@@ -1181,15 +1221,54 @@ enum BackgroundMigrationOutboxSchedule {
 }
 
 enum BackgroundMigrationOutboxCadence {
-  static let secondsPerBlock: TimeInterval = 75
+  static let preNu7SecondsPerBlock: TimeInterval = 75
+  /// ZIP 218 target spacing from NU7 activation.
+  static let nu7SecondsPerBlock: TimeInterval = 25
   static let rollingCheckInterval: TimeInterval = 10 * 60
   static let dueLeadTime: TimeInterval = 10 * 60
 
-  static func nextCheckDelay(remoteHeight: UInt64, nextScheduledHeight: UInt64?) -> TimeInterval? {
+  static func nextCheckDelay(
+    remoteHeight: UInt64,
+    nextScheduledHeight: UInt64?,
+    nu7ActivationHeight: UInt64?
+  ) -> TimeInterval? {
     guard let nextScheduledHeight else { return nil }
     if nextScheduledHeight <= remoteHeight { return 60 }
-    let estimated = TimeInterval(nextScheduledHeight - remoteHeight) * secondsPerBlock
+    let estimated = estimatedSeconds(
+      from: remoteHeight,
+      to: nextScheduledHeight,
+      nu7ActivationHeight: nu7ActivationHeight
+    )
     return min(rollingCheckInterval, max(60, estimated - dueLeadTime))
+  }
+
+  /// Blocks up to `nu7ActivationHeight - 1` take 75 seconds, later ones 25.
+  static func estimatedSeconds(
+    from remoteHeight: UInt64,
+    to targetHeight: UInt64,
+    nu7ActivationHeight: UInt64?
+  ) -> TimeInterval {
+    guard targetHeight > remoteHeight else { return 0 }
+    let blocks = targetHeight - remoteHeight
+    var preNu7Blocks = blocks
+    if let activation = nu7ActivationHeight, activation > 0 {
+      let lastPreNu7 = min(activation - 1, targetHeight)
+      preNu7Blocks = lastPreNu7 > remoteHeight ? lastPreNu7 - remoteHeight : 0
+    }
+    return TimeInterval(preNu7Blocks) * preNu7SecondsPerBlock
+      + TimeInterval(blocks - preNu7Blocks) * nu7SecondsPerBlock
+  }
+
+  static func nu7ActivationHeight(network: String) -> UInt64? {
+    let height = network.withCString { zcash_nu7_activation_height($0) }
+    return height == 0 ? nil : height
+  }
+
+  /// Whether broadcasts wait for a network upgrade at `remoteHeight`: one
+  /// sent then could miss the last old-branch block and keep its input spent
+  /// until expiry. Rust owns the window.
+  static func holdsBroadcasts(network: String, remoteHeight: UInt64) -> Bool {
+    network.withCString { zcash_migration_broadcasts_held($0, remoteHeight) }
   }
 
   static func retryDelay(attemptCount: UInt32) -> TimeInterval {

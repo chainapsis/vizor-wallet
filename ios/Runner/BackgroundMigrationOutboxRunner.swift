@@ -178,7 +178,10 @@ enum BackgroundMigrationOutboxRunner {
             observedHeight: remoteHeight,
             delay: BackgroundMigrationOutboxCadence.nextCheckDelay(
               remoteHeight: remoteHeight,
-              nextScheduledHeight: nextHeight
+              nextScheduledHeight: nextHeight,
+              nu7ActivationHeight: snapshot.network(endpoint: endpoint).flatMap(
+                BackgroundMigrationOutboxCadence.nu7ActivationHeight(network:)
+              )
             )
           )
         } else {
@@ -275,7 +278,10 @@ enum BackgroundMigrationOutboxRunner {
               observedHeight: remoteHeight,
               delay: BackgroundMigrationOutboxCadence.nextCheckDelay(
                 remoteHeight: remoteHeight,
-                nextScheduledHeight: nextHeight
+                nextScheduledHeight: nextHeight,
+                nu7ActivationHeight: snapshot.network(endpoint: endpoint).flatMap(
+                  BackgroundMigrationOutboxCadence.nu7ActivationHeight(network:)
+                )
               )
             ),
             proofReady: proofReady,

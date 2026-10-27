@@ -25,6 +25,7 @@ use zcash_client_backend::data_api::status::{
     PublicTransactionStatusRequest, TransactionStatusRead, TransactionStatusWork,
 };
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
@@ -658,6 +659,40 @@ pub extern "C" fn zcash_list_migration_preparation_txids(
     }
 }
 
+/// NU7 activation height for `network`, or 0 when it is unscheduled or the
+/// network is unknown; the iOS outbox paces its checks with it.
+#[no_mangle]
+pub extern "C" fn zcash_nu7_activation_height(network: *const c_char) -> u64 {
+    std::panic::catch_unwind(|| {
+        unsafe { c_str_to_str(network) }
+            .and_then(WalletNetwork::from_str)
+            .and_then(|network| network.activation_height(NetworkUpgrade::Nu7))
+            .map_or(0, |height| u64::from(u32::from(height)))
+    })
+    .unwrap_or(0)
+}
+
+/// Whether the iOS outbox holds migration broadcasts at `remote_height` on
+/// `network` because an upgrade is about to activate. False for an unknown
+/// network.
+#[no_mangle]
+pub extern "C" fn zcash_migration_broadcasts_held(
+    network: *const c_char,
+    remote_height: u64,
+) -> bool {
+    std::panic::catch_unwind(|| {
+        let Some(network) = unsafe { c_str_to_str(network) }.and_then(WalletNetwork::from_str)
+        else {
+            return false;
+        };
+        u32::try_from(remote_height).ok().is_some_and(|tip| {
+            crate::wallet::network_upgrade::hold_heights(&network, tip)
+                .is_some_and(|heights| heights.holds_migrations_at(tip))
+        })
+    })
+    .unwrap_or(false)
+}
+
 #[no_mangle]
 pub extern "C" fn zcash_inspect_migration_proof_readiness(
     db_path: *const c_char,
@@ -719,6 +754,32 @@ pub extern "C" fn zcash_inspect_migration_proof_readiness(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nu7_activation_height_reads_the_network_schedule() {
+        let main = std::ffi::CString::new("main").unwrap();
+        let unknown = std::ffi::CString::new("mainnet").unwrap();
+        assert_eq!(zcash_nu7_activation_height(main.as_ptr()), 3_543_405);
+        assert_eq!(zcash_nu7_activation_height(unknown.as_ptr()), 0);
+        assert_eq!(zcash_nu7_activation_height(std::ptr::null()), 0);
+    }
+
+    #[test]
+    fn migration_broadcasts_are_held_until_a_new_branch_block() {
+        let main = std::ffi::CString::new("main").unwrap();
+        let held = |tip: u64| zcash_migration_broadcasts_held(main.as_ptr(), tip);
+        let activation = 3_543_405;
+        assert!(!held(activation - 12));
+        assert!(held(activation - 11));
+        // A node that missed the upgrade stops here and would accept them.
+        assert!(held(activation - 1));
+        // From here the network rejects old-branch transactions instead.
+        assert!(!held(activation));
+        assert!(!zcash_migration_broadcasts_held(
+            std::ptr::null(),
+            activation - 5
+        ));
+    }
 
     #[test]
     fn status_abi_result_codes_are_unambiguous() {

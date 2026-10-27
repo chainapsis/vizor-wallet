@@ -94,6 +94,15 @@ pub(crate) struct HoldHeights {
     pub send_hold_from_tip: u32,
 }
 
+impl HoldHeights {
+    /// Whether migration transactions are held at chain tip `tip`. The hold
+    /// lasts until a new-branch block is seen: a node that missed the upgrade
+    /// stops at `A - 1` and would still accept an old-branch transaction.
+    pub(crate) fn holds_migrations_at(&self, tip: u32) -> bool {
+        tip >= self.migration_hold_from_tip && tip < self.next_activation_height
+    }
+}
+
 /// [`HoldHeights`] for the first upgrade that activates after `tip`, or none
 /// when no upgrade is scheduled.
 pub(crate) fn hold_heights<P: Parameters>(network: &P, tip: u32) -> Option<HoldHeights> {

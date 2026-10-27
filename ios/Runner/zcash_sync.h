@@ -80,6 +80,14 @@ int32_t zcash_list_migration_preparation_txids(
     uintptr_t* output_len
 );
 
+/// NU7 activation height for network ("main", "test", "regtest"), or 0 when
+/// it is unscheduled or the network is unknown.
+uint64_t zcash_nu7_activation_height(const char* network);
+
+/// Whether migration broadcasts are held at remote_height on network because
+/// an upgrade is about to activate; false for an unknown network.
+bool zcash_migration_broadcasts_held(const char* network, uint64_t remote_height);
+
 int32_t zcash_inspect_migration_proof_readiness(
     const char* db_path,
     const char* network,
