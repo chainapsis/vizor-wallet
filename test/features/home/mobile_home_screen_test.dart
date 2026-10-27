@@ -2668,6 +2668,41 @@ void main() {
     expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
   });
 
+  testWidgets('holds the NU7 announcement until home is visible', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // Seen until the test clears it, standing in for activation arriving later.
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        useShellRouter: true,
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final home = tester.element(find.byType(MobileHomeScreen));
+    final router = GoRouter.of(home);
+    router.go('/shell-activity');
+    await tester.pumpAndSettle();
+
+    store.seen.clear();
+    ProviderScope.containerOf(home).invalidate(nu7AnnouncementProvider);
+    await tester.pumpAndSettle();
+
+    expect(find.text('shell activity route'), findsOneWidget);
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    router.go('/home');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
+
   testWidgets('shows the mobile Ironwood announcement sheet', (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
     addTearDown(() => tester.binding.setSurfaceSize(null));

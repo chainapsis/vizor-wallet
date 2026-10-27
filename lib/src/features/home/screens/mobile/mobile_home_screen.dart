@@ -542,13 +542,28 @@ class _Nu7AnnouncementHost extends ConsumerStatefulWidget {
 class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
   bool _showing = false;
   String? _shownFor;
+  GoRouter? _router;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _evaluate();
-    });
+    _scheduleEvaluate();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (identical(_router, router)) return;
+    _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    _router = router;
+    router.routerDelegate.addListener(_scheduleEvaluate);
+  }
+
+  @override
+  void dispose() {
+    _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    super.dispose();
   }
 
   @override
@@ -558,9 +573,19 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
     return const SizedBox.shrink();
   }
 
+  void _scheduleEvaluate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _evaluate();
+    });
+  }
+
   void _evaluate() {
     final network = ref.read(nu7AnnouncementProvider).value?.network;
     if (network == null || _showing || _shownFor == network) return;
+    // This branch stays mounted behind other tabs and pushed routes.
+    if (_router?.routerDelegate.currentConfiguration.uri.path != '/home') {
+      return;
+    }
     final ironwood = ref.read(ironwoodMigrationAnnouncementProvider);
     if (ironwood.isLoading && !ironwood.hasValue) return;
     if (ironwood.value?.visible ?? false) return;
