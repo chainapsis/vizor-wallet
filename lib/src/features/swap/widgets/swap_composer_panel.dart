@@ -35,6 +35,7 @@ class SwapComposerPanel extends StatefulWidget {
     this.destinationContactName,
     this.oneTimeZecAddress = false,
     this.preparingOneTimeAddress = false,
+    this.balanceMessage,
     super.key,
   });
 
@@ -48,6 +49,9 @@ class SwapComposerPanel extends StatefulWidget {
   /// Whether the one-time payout address is still being checked, shown in
   /// the same slot while receiving ZEC.
   final bool preparingOneTimeAddress;
+
+  /// Why the ZEC amount can't be funded, shown where quote errors go.
+  final String? balanceMessage;
 
   /// Address-book label for the current destination address, shown in the
   /// address chip instead of the truncated address when set.
@@ -148,6 +152,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final quoteError =
         state.quoteAmountPrecisionError ??
         state.externalAssetSupportError ??
+        widget.balanceMessage ??
         state.quoteError;
     final zecAmountOverAvailable = _zecAmountOverAvailable(
       state,

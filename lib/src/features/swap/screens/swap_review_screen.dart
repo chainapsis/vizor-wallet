@@ -15,7 +15,9 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../core/privacy/privacy_mask.dart';
+import '../../../providers/privacy_mode_provider.dart';
+import '../providers/swap_funding_balance_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
@@ -130,17 +132,31 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(
-        swapState.reviewAccountUuid ?? activeAccountUuid,
-      ),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: swapState.reviewAccountUuid ?? activeAccountUuid,
+        oneTimeRefund:
+            addressPlan.oneTimeZecAddress && quote.direction.sendsZec,
+      )),
     );
+    bool exceeds(BigInt available) =>
+        swapReviewQuoteExceedsAvailableZec(quote, available);
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final startBlockedReason =
-        swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
-        ? widget.payMode
-              ? "You don't have enough ZEC for this payment. Try a smaller amount."
-              : "You don't have enough ZEC for this swap. Try a smaller amount."
-        : null;
+        swapIronwoodOnlyShortfallMessage(
+          funding,
+          exceeds,
+          payment: widget.payMode,
+          maskAmount: (amount) => hideAmountIfPrivacyMode(
+            amount,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
+        ) ??
+        (exceeds(funding.spendable)
+            ? widget.payMode
+                  ? "You don't have enough ZEC for this payment. Try a smaller amount."
+                  : "You don't have enough ZEC for this swap. Try a smaller amount."
+            : null);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),

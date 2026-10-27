@@ -33,11 +33,15 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     this.recentTransactions = const [],
     this.chainTipHeight = 0,
     this.scannedHeight = 0,
+    this.ironwoodBalance,
   }) : displaySpendableBalance = displaySpendableBalance ?? spendableBalance;
 
   final BigInt spendableBalance;
   final int chainTipHeight;
   final int scannedHeight;
+
+  /// Spendable Ironwood value, which one-time refund addresses fund from.
+  final BigInt? ironwoodBalance;
   final BigInt displaySpendableBalance;
   final SpendableBalanceFreshness displaySpendableFreshness;
   final List<rust_sync.TransactionInfo> recentTransactions;
@@ -84,6 +88,7 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     recentTransactions: recentTransactions,
     chainTipHeight: chainTipHeight,
     scannedHeight: scannedHeight,
+    ironwoodBalance: ironwoodBalance,
   );
 
   @override

@@ -9080,6 +9080,7 @@ void main() {
       swapProvider: _FakeSwapProvider(),
       nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
       syncHeights: (chainTip: 1000, scanned: 900),
+      ironwoodBalance: BigInt.from(10000000000),
     );
     final notifier = container.read(swapStateProvider.notifier);
     notifier.selectDirection(SwapDirection.zecToExternal);
@@ -9094,6 +9095,47 @@ void main() {
     );
     expect(tester.widget<AppButton>(button).onPressed, isNull);
   });
+
+  for (final privacy in [true, false]) {
+    testWidgets(
+      'a ZEC amount above the Ironwood balance '
+      '${privacy ? 'is short with NEAR swap privacy on' : 'is fine with it off'}',
+      (tester) async {
+        final container = await _pumpSwapScreen(
+          tester,
+          swapProvider: _FakeSwapProvider(),
+          nearSwapPrivacy: privacy
+              ? _OnNearSwapPrivacyNotifier.new
+              : _FakeNearSwapPrivacyNotifier.new,
+          ironwoodBalance: BigInt.from(820000000),
+        );
+        final notifier = container.read(swapStateProvider.notifier);
+        notifier.selectDirection(SwapDirection.zecToExternal);
+        notifier.updateAmount('9');
+        notifier.updateDestination(
+          '0x52908400098527886e0f7030069857d2e4169ee7',
+        );
+        await tester.pumpAndSettle();
+
+        final button = find.byKey(const ValueKey('swap_review_button'));
+        const message =
+            'Private swaps use Ironwood ZEC only. You have 8.2\u00A0ZEC there.';
+        if (privacy) {
+          expect(
+            find.descendant(of: button, matching: find.text('Not enough ZEC')),
+            findsOneWidget,
+          );
+          expect(find.text(message), findsOneWidget);
+        } else {
+          expect(
+            find.descendant(of: button, matching: find.text('Review swap')),
+            findsOneWidget,
+          );
+          expect(find.text(message), findsNothing);
+        }
+      },
+    );
+  }
 
   for (final (failure, message, name) in <(Object?, String, String)>[
     (
@@ -11996,6 +12038,7 @@ Future<ProviderContainer> _pumpSwapScreen(
   AccountNotifier Function()? accountNotifier,
   SwapDepositSender? depositSender,
   ({int chainTip, int scanned})? syncHeights,
+  BigInt? ironwoodBalance,
 }) async {
   await _setDesktopViewport(tester);
   await tester.pumpWidget(
@@ -12016,6 +12059,7 @@ Future<ProviderContainer> _pumpSwapScreen(
       nearSwapPrivacy: nearSwapPrivacy,
       onProviderSnapshot: onProviderSnapshot,
       syncHeights: syncHeights,
+      ironwoodBalance: ironwoodBalance,
     ),
   );
   await tester.pumpAndSettle();
@@ -12056,6 +12100,7 @@ Widget _routerHarness(
   SwapActivityStore? activityStore,
   NetworkUpgradeWindowState? upgradeWindow,
   ({int chainTip, int scanned})? syncHeights,
+  BigInt? ironwoodBalance,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -12085,6 +12130,7 @@ Widget _routerHarness(
           recentTransactions: recentTransactions,
           chainTipHeight: syncHeights?.chainTip ?? 0,
           scannedHeight: syncHeights?.scanned ?? 0,
+          ironwoodBalance: ironwoodBalance,
         ),
       ),
       payDepositTransactionLoaderProvider.overrideWithValue(

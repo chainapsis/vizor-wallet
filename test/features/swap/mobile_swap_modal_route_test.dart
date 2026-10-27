@@ -66,6 +66,7 @@ Widget _app({
   bool oneTimeZecAddress = false,
   int chainTipHeight = 0,
   int scannedHeight = 0,
+  BigInt? ironwoodBalance,
 }) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
@@ -87,6 +88,9 @@ Widget _app({
           spendableBalance: BigInt.from(100000000),
           chainTipHeight: chainTipHeight,
           scannedHeight: scannedHeight,
+          ironwoodBalance:
+              ironwoodBalance ??
+              (oneTimeZecAddress ? BigInt.from(100000000) : null),
         ),
       ),
     ),
@@ -609,6 +613,44 @@ void main() {
     expect(tester.widget<AppButton>(button).onPressed, isNull);
     expect(
       find.byKey(const ValueKey('swap_one_time_address_refund')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a one-time refund address is funded from Ironwood only', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(oneTimeZecAddress: true, ironwoodBalance: BigInt.from(10000000)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.5',
+    );
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_swap_review_button')),
+        matching: find.text('Not enough ZEC'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Private swaps use Ironwood ZEC only. You have 0.1\u00A0ZEC there.',
+      ),
       findsOneWidget,
     );
   });

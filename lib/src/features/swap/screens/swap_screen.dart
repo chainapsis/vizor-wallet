@@ -22,12 +22,12 @@ import '../../address_book/contact_label_generator.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_models.dart';
 import '../models/swap_address_book_helpers.dart';
 import '../providers/swap_state_provider.dart';
 import '../providers/swap_address_wait_provider.dart';
+import '../providers/swap_funding_balance_provider.dart';
 import '../providers/swap_zec_staging_address_service.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
@@ -182,14 +182,28 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: oneTimeZecAddress && swapState.direction.sendsZec,
+      )),
     );
+    final zecSpendable = funding.spendable;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final zecAvailableText = hideAmountIfPrivacyMode(
       ZecAmount.fromZatoshi(
-        migrationSpendable,
+        zecSpendable,
       ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
-      privacyModeEnabled: ref.watch(privacyModeProvider),
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    final balanceMessage = swapIronwoodOnlyShortfallMessage(
+      funding,
+      (available) => _reviewAmountExceedsAvailableZec(swapState, available),
+      payment: false,
+      maskAmount: (amount) => hideAmountIfPrivacyMode(
+        amount,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
     );
     void openReview() {
       unawaited(() async {
@@ -269,7 +283,8 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                           _swapModal == _SwapModalSurface.slippageSettings,
                       onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                       zecAvailableText: zecAvailableText,
-                      zecAvailableZatoshi: migrationSpendable,
+                      zecAvailableZatoshi: zecSpendable,
+                      balanceMessage: balanceMessage,
                       destinationContactName: swapDestinationContactFor(
                         swapState,
                         ref.watch(addressBookProvider).value?.contacts ??
@@ -302,7 +317,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         _SwapReviewFooter(
                           state: swapState,
                           addressWait: addressWait,
-                          zecAvailableZatoshi: migrationSpendable,
+                          zecAvailableZatoshi: zecSpendable,
                           onOpenDestinationAddress: _openAddressEditor,
                           onReviewQuote: openReview,
                         ),

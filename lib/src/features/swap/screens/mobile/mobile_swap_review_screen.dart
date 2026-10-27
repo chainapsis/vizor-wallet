@@ -15,7 +15,7 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../pay/widgets/mobile/mobile_pay_review_content.dart';
 import '../../../pay/models/pay_recent_recipients.dart';
 import '../../../address_book/providers/address_book_provider.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../providers/swap_funding_balance_provider.dart';
 import '../../domain/swap_direction.dart';
 import '../../domain/swap_quote.dart';
 import '../../models/swap_activity_navigation.dart';
@@ -301,11 +301,16 @@ class _MobileSwapReviewScreenState
     _hadReviewState = true;
 
     final accountState = ref.watch(accountProvider).value;
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(
-        swapState.reviewAccountUuid ?? accountState?.activeAccountUuid,
-      ),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid:
+            swapState.reviewAccountUuid ?? accountState?.activeAccountUuid,
+        oneTimeRefund:
+            addressPlan.oneTimeZecAddress && quote.direction.sendsZec,
+      )),
     );
+    bool exceeds(BigInt available) =>
+        swapReviewQuoteExceedsAvailableZec(quote, available);
     final accountLabel = _accountLabelFor(
       accountState,
       swapState.reviewAccountUuid,
@@ -315,11 +320,16 @@ class _MobileSwapReviewScreenState
       swapState.reviewAccountUuid,
     );
     final startBlockedReason =
-        swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
-        ? widget.payMode
-              ? "You don't have enough ZEC for this payment. Try a smaller amount."
-              : "You don't have enough ZEC for this swap. Try a smaller amount."
-        : null;
+        swapIronwoodOnlyShortfallMessage(
+          funding,
+          exceeds,
+          payment: widget.payMode,
+        ) ??
+        (exceeds(funding.spendable)
+            ? widget.payMode
+                  ? "You don't have enough ZEC for this payment. Try a smaller amount."
+                  : "You don't have enough ZEC for this swap. Try a smaller amount."
+            : null);
     _ensureExpiryTicker(widget.payMode ? quote : null);
     final paymentQuoteExpired =
         swapState.quoteExpired ||
