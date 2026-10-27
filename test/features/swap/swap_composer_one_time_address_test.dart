@@ -67,7 +67,13 @@ void main() {
   testWidgets('sending ZEC names the one-time refund address', (tester) async {
     await tester.pumpWidget(_panel(SwapDirection.zecToExternal));
 
-    expect(find.text('One-time refund address'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_one_time_address_refund')),
+        matching: find.text('One-time address'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('ordinary addresses leave the slot empty', (tester) async {

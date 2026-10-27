@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_address_formatting.da
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/one_time_address_label.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(
@@ -77,7 +78,10 @@ void main() {
     );
 
     expect(find.text('One-time address'), findsOneWidget);
-    expect(find.text('One-time refund address'), findsNothing);
+    expect(
+      tester.widget<OneTimeAddressLabel>(find.byType(OneTimeAddressLabel)).role,
+      OneTimeAddressRole.payout,
+    );
   });
 
   testWidgets('a swap sending ZEC names its one-time refund address', (
@@ -85,7 +89,11 @@ void main() {
   ) async {
     await tester.pumpWidget(_harness(_content(oneTimeZecAddress: true)));
 
-    expect(find.text('One-time refund address'), findsOneWidget);
+    expect(find.text('One-time address'), findsOneWidget);
+    expect(
+      tester.widget<OneTimeAddressLabel>(find.byType(OneTimeAddressLabel)).role,
+      OneTimeAddressRole.refund,
+    );
     // The recipient row keeps its own address action.
     expect(find.text('Full address'), findsOneWidget);
   });
