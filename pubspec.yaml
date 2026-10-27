@@ -116,6 +116,9 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  shaders:
+    - shaders/liquid_metal.frag
+
   assets:
     - assets/fonts/ShieldingSerif-OFL.txt
     - assets/animations/
