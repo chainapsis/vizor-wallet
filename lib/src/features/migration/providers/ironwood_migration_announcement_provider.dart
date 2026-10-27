@@ -787,10 +787,7 @@ final ironwoodMigrationAnnouncementProvider =
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
-      if (!inputs.hasAccountScopedData ||
-          inputs.isSyncing ||
-          inputs.isBackgroundMode ||
-          inputs.hasSyncFailure) {
+      if (_ironwoodAnnouncementPending(inputs)) {
         return const IronwoodMigrationAnnouncementState.hidden();
       }
 
@@ -824,6 +821,22 @@ final ironwoodMigrationAnnouncementProvider =
         status: status,
       );
     });
+
+/// Whether a hidden Ironwood announcement may still appear once the account's
+/// data and sync settle. Announcements queued behind it wait while this holds.
+final ironwoodMigrationAnnouncementPendingProvider = Provider<bool>(
+  (ref) => ref.watch(
+    ironwoodMigrationInputsProvider.select(_ironwoodAnnouncementPending),
+  ),
+);
+
+bool _ironwoodAnnouncementPending(IronwoodMigrationInputs inputs) =>
+    inputs.ironwoodActiveAtTip &&
+    inputs.accountUuid != null &&
+    (!inputs.hasAccountScopedData ||
+        inputs.isSyncing ||
+        inputs.isBackgroundMode ||
+        inputs.hasSyncFailure);
 
 final ironwoodHomeMigrationCtaProvider =
     FutureProvider<IronwoodHomeMigrationCtaState>((ref) async {

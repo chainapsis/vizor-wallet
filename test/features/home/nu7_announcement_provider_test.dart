@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/features/home/providers/nu7_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -78,6 +79,24 @@ void main() {
     expect(state.visible, isFalse);
   });
 
+  test('waits while the Ironwood announcement may still appear', () async {
+    final container = _container(tip: _activation, ironwoodPending: true);
+    addTearDown(container.dispose);
+
+    final state = await _read(container);
+
+    expect(state.visible, isFalse);
+  });
+
+  test('goes ahead when the Ironwood lookup fails', () async {
+    final container = _container(tip: _activation, ironwoodFails: true);
+    addTearDown(container.dispose);
+
+    final state = await _read(container);
+
+    expect(state.visible, isTrue);
+  });
+
   test('stays hidden while NU7 is unscheduled', () async {
     final container = _container(tip: _activation, activation: null);
     addTearDown(container.dispose);
@@ -99,6 +118,8 @@ ProviderContainer _container({
   int? activation = _activation,
   List<int?> birthdays = const [3_000_000],
   Nu7AnnouncementStore? store,
+  bool ironwoodPending = false,
+  bool ironwoodFails = false,
 }) {
   const endpoint = RpcEndpointConfig(
     networkName: 'main',
@@ -145,6 +166,14 @@ ProviderContainer _container({
       accountProvider.overrideWith(() => _FakeAccountNotifier(accounts)),
       nu7AnnouncementStoreProvider.overrideWithValue(
         store ?? _MemoryNu7AnnouncementStore(),
+      ),
+      ironwoodMigrationAnnouncementPendingProvider.overrideWithValue(
+        ironwoodPending,
+      ),
+      ironwoodMigrationAnnouncementProvider.overrideWith(
+        (ref) async => ironwoodFails
+            ? throw StateError('status lookup failed')
+            : const IronwoodMigrationAnnouncementState.hidden(),
       ),
     ],
   );

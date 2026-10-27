@@ -426,7 +426,8 @@ Widget _app(
       ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
         ironwoodAnnouncementStore,
       ),
-      nu7AnnouncementProvider.overrideWith(
+      ironwoodMigrationAnnouncementPendingProvider.overrideWithValue(false),
+      nu7AnnouncementEligibilityProvider.overrideWith(
         (ref) async => nu7Store.seen.contains(nu7Announcement.network)
             ? const Nu7AnnouncementState.hidden()
             : nu7Announcement,
@@ -2691,7 +2692,9 @@ void main() {
     await tester.pumpAndSettle();
 
     store.seen.clear();
-    ProviderScope.containerOf(home).invalidate(nu7AnnouncementProvider);
+    ProviderScope.containerOf(
+      home,
+    ).invalidate(nu7AnnouncementEligibilityProvider);
     await tester.pumpAndSettle();
 
     expect(find.text('shell activity route'), findsOneWidget);

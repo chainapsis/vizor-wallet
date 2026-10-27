@@ -241,7 +241,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     if (!mounted) return;
-    ref.invalidate(nu7AnnouncementProvider);
+    ref.invalidate(nu7AnnouncementEligibilityProvider);
   }
 
   void _dismissIronwoodAnnouncement(
@@ -373,12 +373,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _visibleIronwoodAnnouncement = null;
     }
     final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
-    // The Ironwood announcement goes first.
+    // The provider already queues NU7 behind Ironwood; never stack the two.
     final nu7Network = ref.watch(nu7AnnouncementProvider).value?.network;
     final visibleNu7Network =
         visibleIronwoodAnnouncement == null &&
-            (!ironwoodAnnouncementAsync.isLoading ||
-                ironwoodAnnouncementAsync.hasValue) &&
             nu7Network != _dismissedNu7Network
         ? nu7Network
         : null;

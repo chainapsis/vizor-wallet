@@ -529,8 +529,8 @@ class _IronwoodMigrationAnnouncementHostState
   }
 }
 
-/// Shows the NU7 announcement once per network, after any Ironwood
-/// announcement: the Ironwood host's dismissal re-runs this evaluation.
+/// Shows the NU7 announcement once per network while home is visible.
+/// [nu7AnnouncementProvider] holds it back behind the Ironwood announcement.
 class _Nu7AnnouncementHost extends ConsumerStatefulWidget {
   const _Nu7AnnouncementHost();
 
@@ -569,7 +569,6 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
   @override
   Widget build(BuildContext context) {
     ref.listen(nu7AnnouncementProvider, (_, _) => _evaluate());
-    ref.listen(ironwoodMigrationAnnouncementProvider, (_, _) => _evaluate());
     return const SizedBox.shrink();
   }
 
@@ -586,9 +585,6 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
     if (_router?.routerDelegate.currentConfiguration.uri.path != '/home') {
       return;
     }
-    final ironwood = ref.read(ironwoodMigrationAnnouncementProvider);
-    if (ironwood.isLoading && !ironwood.hasValue) return;
-    if (ironwood.value?.visible ?? false) return;
     _shownFor = network;
     unawaited(_show(network));
   }
@@ -610,7 +606,7 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
       } catch (_) {
         return;
       }
-      if (mounted) ref.invalidate(nu7AnnouncementProvider);
+      if (mounted) ref.invalidate(nu7AnnouncementEligibilityProvider);
     } finally {
       _showing = false;
     }

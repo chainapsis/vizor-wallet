@@ -1920,7 +1920,8 @@ Widget _appHarness(
   final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
   return ProviderScope(
     overrides: [
-      nu7AnnouncementProvider.overrideWith(
+      ironwoodMigrationAnnouncementPendingProvider.overrideWithValue(false),
+      nu7AnnouncementEligibilityProvider.overrideWith(
         (ref) async => nu7Store.seen.contains(nu7Announcement.network)
             ? const Nu7AnnouncementState.hidden()
             : nu7Announcement,
