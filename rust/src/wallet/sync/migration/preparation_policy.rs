@@ -96,6 +96,26 @@ pub(crate) fn estimated_preparation_spacing_delay_blocks(
         .ok_or_else(|| "Migration preparation spacing estimate overflow".to_string())
 }
 
+/// The longest spacing `transaction_count` preparation transactions can draw,
+/// in reference blocks: every delay at its maximum.
+pub(crate) fn latest_preparation_spacing_delay_blocks(
+    network: WalletNetwork,
+    preparation_policy: PreparationTimingPolicy,
+    transaction_count: u32,
+) -> Result<u32, String> {
+    if preparation_policy == PreparationTimingPolicy::Immediate {
+        return Ok(0);
+    }
+    preparation_schedule_parameters_for_transaction_count(
+        network,
+        configured_timing_policy(network),
+        transaction_count as usize,
+    )
+    .1
+    .checked_mul(transaction_count)
+    .ok_or_else(|| "Migration preparation spacing bound overflow".to_string())
+}
+
 fn preparation_delay_with_rng<R: RngCore + CryptoRng + ?Sized>(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,

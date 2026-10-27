@@ -1091,6 +1091,22 @@ fn private_plan_timing_accounts_for_spaced_preparation_transactions() {
 
     assert_eq!(immediate, (144, Some(1154)));
     assert_eq!(spaced, (288, Some(1298)));
+    // The upgrade gate takes every preparation delay at its maximum.
+    let latest = plan_proof_timing_for_spacing(
+        WalletNetwork::Main,
+        1008,
+        1006,
+        1,
+        &[],
+        migration::latest_preparation_spacing_delay_blocks(
+            WalletNetwork::Main,
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            5,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(latest.1 > spaced.1);
 }
 
 #[test]
@@ -1100,8 +1116,8 @@ fn a_private_plan_whose_first_part_would_meet_the_upgrade_hold_is_refused() {
         .activation_height(consensus::NetworkUpgrade::Nu7)
         .map(u32::from)
         .unwrap();
-    let plan = |target_height: u32, estimated_proof_ready_height: Option<u32>| {
-        OrchardMigrationPrivatePlan {
+    let plan =
+        |target_height: u32, latest_proof_ready_height: Option<u32>| OrchardMigrationPrivatePlan {
             target_values_zatoshi: vec![100_000],
             total_input_zatoshi: 0,
             total_migratable_zatoshi: 0,
@@ -1116,11 +1132,11 @@ fn a_private_plan_whose_first_part_would_meet_the_upgrade_hold_is_refused() {
             schedule_mean_delay_blocks: 0,
             schedule_max_delay_blocks: 0,
             proof_readiness_delay_blocks: 0,
-            estimated_proof_ready_height,
+            estimated_proof_ready_height: latest_proof_ready_height,
+            latest_proof_ready_height,
             scheduled_transfers: Vec::new(),
             target_height,
-        }
-    };
+        };
     let schedule = [migration::MigrationScheduleEntry {
         part_index: Some(0),
         value_zatoshi: 100_000,

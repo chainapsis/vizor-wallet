@@ -132,9 +132,10 @@ saved during the stop cannot undo it.
 
 **Start.** Software starts, Keystone prepares and batch signing, draft creation
 and Immediate builds call `ensure_migration_can_start`. A Private run is also
-refused when its first part could not leave before the hold, counting the
-wait for its proofs (`ensure_first_part_precedes_upgrade_hold`): it would be
-held and stopped after paying for its preparation.
+refused when its first part might not leave before the hold, counting the
+longest wait for its proofs the preparation could draw
+(`ensure_first_part_precedes_upgrade_hold`): it would be held and stopped after
+paying for its preparation.
 
 A new run refuses a schedule drawn before the upgrade
 (`validate_new_run_schedule`): a plan reviewed before NU7 and started after it

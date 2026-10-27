@@ -643,6 +643,9 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     /// Estimated absolute height at which the projected final prepared note
     /// can first use a valid migration anchor.
     pub estimated_proof_ready_height: Option<u32>,
+    /// The latest that height can be, with every preparation delay drawn at
+    /// its maximum; the upgrade gate uses it.
+    pub latest_proof_ready_height: Option<u32>,
     pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
     /// The wallet's next height when the plan was estimated.
     pub target_height: u32,
