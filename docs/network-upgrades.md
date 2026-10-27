@@ -96,8 +96,8 @@ only affects estimates.
 ## NU7 announcement
 
 Home shows the NU7 announcement once per network after the tip reaches
-activation, after any Ironwood announcement. Wallets whose accounts all began
-after activation skip it.
+activation. From then on the Ironwood announcement no longer shows. Wallets
+with no account born before activation skip it.
 
 ## When the next upgrade is scheduled
 

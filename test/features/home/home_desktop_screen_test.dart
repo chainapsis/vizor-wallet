@@ -462,7 +462,7 @@ void main() {
     expect(store.seen, {'main'});
   });
 
-  testWidgets('home holds the NU7 announcement behind the Ironwood one', (
+  testWidgets('home does not stack the NU7 announcement on the Ironwood one', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -1339,6 +1339,49 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('home holds the NU7 announcement during hardware shielding', (
+    tester,
+  ) async {
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          transparentBalance: BigInt.from(242_000_000),
+          canShieldTransparentBalance: true,
+          totalBalance: BigInt.from(242_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('home_shield_balance_button')));
+    await tester.pump();
+
+    store.seen.clear();
+    ProviderScope.containerOf(
+      tester.element(find.byType(ZcashWalletApp)),
+    ).invalidate(nu7AnnouncementProvider);
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('ledger_shield_signing_overlay_surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('nu7_announcement_overlay')),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   for (final height in [600.0, 720.0, 900.0]) {
     testWidgets('five skeleton rows match loaded desktop geometry at $height', (
       tester,
@@ -1920,8 +1963,7 @@ Widget _appHarness(
   final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
   return ProviderScope(
     overrides: [
-      ironwoodMigrationAnnouncementPendingProvider.overrideWithValue(false),
-      nu7AnnouncementEligibilityProvider.overrideWith(
+      nu7AnnouncementProvider.overrideWith(
         (ref) async => nu7Store.seen.contains(nu7Announcement.network)
             ? const Nu7AnnouncementState.hidden()
             : nu7Announcement,

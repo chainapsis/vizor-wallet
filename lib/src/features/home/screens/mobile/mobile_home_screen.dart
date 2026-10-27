@@ -531,8 +531,8 @@ class _IronwoodMigrationAnnouncementHostState
   }
 }
 
-/// Shows the NU7 announcement once per network while home is visible.
-/// [nu7AnnouncementProvider] holds it back behind the Ironwood announcement.
+/// Shows the NU7 announcement once per network while home is visible and
+/// uncovered.
 class _Nu7AnnouncementHost extends ConsumerStatefulWidget {
   const _Nu7AnnouncementHost();
 
@@ -616,7 +616,7 @@ class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
       } catch (_) {
         return;
       }
-      if (mounted) ref.invalidate(nu7AnnouncementEligibilityProvider);
+      if (mounted) ref.invalidate(nu7AnnouncementProvider);
     } finally {
       _showing = false;
     }

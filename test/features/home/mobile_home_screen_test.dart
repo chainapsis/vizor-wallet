@@ -430,8 +430,7 @@ Widget _app(
       ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
         ironwoodAnnouncementStore,
       ),
-      ironwoodMigrationAnnouncementPendingProvider.overrideWithValue(false),
-      nu7AnnouncementEligibilityProvider.overrideWith(
+      nu7AnnouncementProvider.overrideWith(
         (ref) async => nu7Store.seen.contains(nu7Announcement.network)
             ? const Nu7AnnouncementState.hidden()
             : nu7Announcement,
@@ -2636,7 +2635,7 @@ void main() {
     expect(store.seen, {'main'});
   });
 
-  testWidgets('shows the NU7 announcement after the Ironwood one', (
+  testWidgets('does not stack the NU7 announcement on an Ironwood sheet', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -2697,9 +2696,7 @@ void main() {
     await tester.pumpAndSettle();
 
     store.seen.clear();
-    ProviderScope.containerOf(
-      home,
-    ).invalidate(nu7AnnouncementEligibilityProvider);
+    ProviderScope.containerOf(home).invalidate(nu7AnnouncementProvider);
     await tester.pumpAndSettle();
 
     expect(find.text('shell activity route'), findsOneWidget);
@@ -2736,9 +2733,7 @@ void main() {
     await tester.pumpAndSettle();
 
     store.seen.clear();
-    ProviderScope.containerOf(
-      home,
-    ).invalidate(nu7AnnouncementEligibilityProvider);
+    ProviderScope.containerOf(home).invalidate(nu7AnnouncementProvider);
     await tester.pumpAndSettle();
 
     expect(find.text('other sheet'), findsOneWidget);

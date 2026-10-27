@@ -1,13 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
-import '../../../providers/sync_provider.dart';
 
 String nu7AnnouncementSeenStorageKey(String network) =>
     'zcash_nu7_announcement_seen_$network';
@@ -54,63 +50,37 @@ class Nu7AnnouncementState {
   bool get visible => network != null;
 }
 
-/// The NU7 announcement to present now. It waits behind the Ironwood
-/// announcement, including while that one may still appear.
+/// Visible once the wallet's tip reaches NU7 activation, until dismissed.
+/// From then on it replaces the Ironwood announcement.
 final nu7AnnouncementProvider = FutureProvider<Nu7AnnouncementState>((
   ref,
 ) async {
-  if (ref.watch(ironwoodMigrationAnnouncementPendingProvider)) {
+  final activation = ref.watch(
+    blockSpacingProvider.select((spacing) => spacing.nu7ActivationHeight),
+  );
+  if (activation == null || !ref.watch(nu7ActiveAtWalletTipProvider)) {
     return const Nu7AnnouncementState.hidden();
   }
-  try {
-    final ironwood = await ref.watch(
-      ironwoodMigrationAnnouncementProvider.future,
-    );
-    if (ironwood.visible) return const Nu7AnnouncementState.hidden();
-  } catch (_) {
-    // A failed Ironwood lookup shows nothing, so it holds nothing back.
+
+  // A wallet that began after activation has nothing to compare against. An
+  // account created this session has no birthday until relaunch.
+  final walletPredatesNu7 = ref.watch(
+    accountProvider.select(
+      (state) =>
+          state.value?.accounts.any((account) {
+            final birthday = account.birthdayHeight;
+            return birthday != null && birthday < activation;
+          }) ??
+          false,
+    ),
+  );
+  if (!walletPredatesNu7) return const Nu7AnnouncementState.hidden();
+
+  final network = ref.watch(
+    rpcEndpointFailoverProvider.select((state) => state.current.networkName),
+  );
+  if (await ref.watch(nu7AnnouncementStoreProvider).isSeen(network)) {
+    return const Nu7AnnouncementState.hidden();
   }
-  return ref.watch(nu7AnnouncementEligibilityProvider.future);
+  return Nu7AnnouncementState.visible(network: network);
 });
-
-/// Visible once the wallet's tip reaches NU7 activation, until dismissed.
-final nu7AnnouncementEligibilityProvider = FutureProvider<Nu7AnnouncementState>(
-  (ref) async {
-    final activation = ref.watch(
-      blockSpacingProvider.select((spacing) => spacing.nu7ActivationHeight),
-    );
-    if (activation == null) return const Nu7AnnouncementState.hidden();
-
-    final tipHeight = ref.watch(
-      syncProvider.select((sync) {
-        final state = sync.value;
-        return state == null
-            ? 0
-            : math.max(state.chainTipHeight, state.scannedHeight);
-      }),
-    );
-    if (tipHeight < activation) return const Nu7AnnouncementState.hidden();
-
-    // A wallet that began after activation has nothing to compare against. An
-    // account created this session has no birthday until relaunch.
-    final walletPredatesNu7 = ref.watch(
-      accountProvider.select(
-        (state) =>
-            state.value?.accounts.any((account) {
-              final birthday = account.birthdayHeight;
-              return birthday != null && birthday < activation;
-            }) ??
-            false,
-      ),
-    );
-    if (!walletPredatesNu7) return const Nu7AnnouncementState.hidden();
-
-    final network = ref.watch(
-      rpcEndpointFailoverProvider.select((state) => state.current.networkName),
-    );
-    if (await ref.watch(nu7AnnouncementStoreProvider).isSeen(network)) {
-      return const Nu7AnnouncementState.hidden();
-    }
-    return Nu7AnnouncementState.visible(network: network);
-  },
-);

@@ -241,7 +241,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     if (!mounted) return;
-    ref.invalidate(nu7AnnouncementEligibilityProvider);
+    ref.invalidate(nu7AnnouncementProvider);
   }
 
   void _dismissIronwoodAnnouncement(
@@ -373,10 +373,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _visibleIronwoodAnnouncement = null;
     }
     final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
-    // The provider already queues NU7 behind Ironwood; never stack the two.
+    // Never stack it on an open Ironwood modal or hardware signing.
     final nu7Network = ref.watch(nu7AnnouncementProvider).value?.network;
     final visibleNu7Network =
         visibleIronwoodAnnouncement == null &&
+            _shieldHardwareSignerKind == null &&
             nu7Network != _dismissedNu7Network
         ? nu7Network
         : null;
