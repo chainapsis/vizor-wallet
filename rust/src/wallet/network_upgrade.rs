@@ -18,6 +18,12 @@ pub(crate) const START_HOLD_MESSAGE: &str =
     "Migrations can't start this close to the network upgrade. Try again after it activates.";
 pub(crate) const SEND_HOLD_MESSAGE: &str =
     "Transactions can't be sent this close to the network upgrade. Try again after it activates.";
+pub(crate) const MIGRATION_HOLD_MESSAGE: &str =
+    "Migration transactions are held for the network upgrade.";
+pub(crate) const MIGRATION_STOP_MESSAGE: &str = "The network upgrade stopped this migration. \
+     Transactions signed before the upgrade can't be sent after it.";
+pub(crate) const STALE_SCHEDULE_MESSAGE: &str =
+    "Migration schedule was drawn before the network upgrade; review the plan again";
 
 /// The first upgrade activation after `height`, if one is scheduled.
 pub(crate) fn next_activation_after<P: Parameters>(

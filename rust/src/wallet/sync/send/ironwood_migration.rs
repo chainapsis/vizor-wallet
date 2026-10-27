@@ -22,6 +22,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
         Some(&target_values_zatoshi),
     )?
     .ok_or("Migration plan is unavailable")?;
+    plan.ensure_first_part_precedes_upgrade_hold(network, &approved_schedule)?;
     super::migration::create_or_resume_private_migration_draft(
         db_path,
         account_uuid,
@@ -57,6 +58,14 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
         return Err("Migration already has an active run. Start migration next.".to_string());
     }
     super::migration::ensure_migration_can_start_at_wallet_tip(db_path, network)?;
+    if let Some(run) = &draft_run {
+        super::migration::refresh_draft_schedule_for_upgrade(
+            db_path,
+            &run.run_id,
+            network,
+            approved_schedule.unwrap_or_default(),
+        )?;
+    }
     {
         let mut request_store = keystone_single_qr_migration_requests()
             .lock()
@@ -80,6 +89,17 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             super::migration::configured_timing_policy(network),
         ),
     };
+    let schedule = match &draft_run {
+        Some(run) => super::migration::approved_schedule_for_run(db_path, &run.run_id)?,
+        None => approved_schedule.unwrap_or_default().to_vec(),
+    };
+    ensure_first_part_precedes_upgrade_hold(
+        db_path,
+        network,
+        account_uuid,
+        preparation_policy_for_build,
+        &schedule,
+    )?;
     let target_values_zatoshi =
         migration_target_values_for_request(draft_run.as_ref(), approved_schedule)?;
     let split = with_wallet_db_write_lock("send.migration.prepare_denominations_pczt", || {
@@ -368,6 +388,13 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         ensure_no_live_single_qr_migration_request(&mut store, account_uuid, network)?;
     }
 
+    ensure_first_part_precedes_upgrade_hold(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        &approved_schedule,
+    )?;
     let target_values_zatoshi = super::migration::target_values_from_schedule(&approved_schedule)?;
     let split = with_wallet_db_write_lock("send.migration.prepare_single_qr_pczt", || {
         create_padded_orchard_denomination_pczts(
@@ -394,13 +421,13 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     let next_height = u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
         .map_err(|_| "Migration chain tip exceeds u32".to_string())?
         .saturating_add(1);
-    super::migration::validate_schedule(
+    super::migration::validate_new_run_schedule(
         &approved_schedule,
         &split.plan.migration_outputs,
         network,
+        super::migration::configured_timing_policy(network),
         next_height,
     )?;
-    super::migration::ensure_schedule_drawn_for_height(&approved_schedule, network, next_height)?;
     let mut child_messages = Vec::with_capacity(split.predicted_notes.len());
     for (index, predicted) in split.predicted_notes.iter().enumerate() {
         let part_index = index as u32;
@@ -951,6 +978,9 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let run = super::migration::active_migration_run(db_path, account_uuid, network)?
         .ok_or("No active migration run")?;
+    // Parts signed in the hold would target the old branch and stop the run;
+    // signed once the next block is on the new branch, they carry on.
+    super::migration::ensure_migration_can_start_at_wallet_tip(db_path, network)?;
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;

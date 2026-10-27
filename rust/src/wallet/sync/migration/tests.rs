@@ -10928,7 +10928,7 @@ fn schedules_drawn_before_the_upgrade_are_refused_after_it() {
     assert_eq!(
         ensure_schedule_drawn_for_height(&entries(&[1, 5]), WalletNetwork::Test, after)
             .unwrap_err(),
-        STALE_SCHEDULE_MESSAGE
+        network_upgrade::STALE_SCHEDULE_MESSAGE
     );
     // NU7 draws every offset in whole three-block reference blocks.
     assert!(
@@ -10953,7 +10953,7 @@ fn a_schedule_drawn_before_the_upgrade_is_stale_even_in_multiples_of_three() {
     assert_eq!(
         ensure_schedule_drawn_for_height(&single_part(7_100_001), WalletNetwork::Test, after)
             .unwrap_err(),
-        STALE_SCHEDULE_MESSAGE
+        network_upgrade::STALE_SCHEDULE_MESSAGE
     );
     assert!(
         ensure_schedule_drawn_for_height(&single_part(7_100_002), WalletNetwork::Test, after)
@@ -10981,7 +10981,7 @@ fn an_upgrade_hold_check_uses_the_later_of_the_wallet_and_server_tips() {
     .unwrap();
     drop(conn);
     let held = |server_tip: u32| {
-        network_upgrade_holds_transaction_at_wallet_tip(
+        network_upgrade_holds_transaction_at(
             &db_path.to_string_lossy(),
             WalletNetwork::Test,
             wallet_tip + 1,
@@ -11044,6 +11044,52 @@ fn a_draft_saved_before_the_upgrade_takes_the_schedule_approved_after_it() {
         approved_schedule_for_run(&db_path, &run_id).unwrap(),
         schedule(3)
     );
+}
+
+#[test]
+fn a_draft_resumed_after_the_upgrade_without_a_review_draws_its_schedule_again() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().into_owned();
+    let set_tip = |tip: u32| {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE IF NOT EXISTS scan_queue (block_range_end INTEGER NOT NULL);
+             DELETE FROM scan_queue;
+             INSERT INTO scan_queue (block_range_end) VALUES ({});",
+            tip + 1
+        ))
+        .unwrap();
+    };
+    ensure_schema(&rusqlite::Connection::open(&db_path).unwrap()).unwrap();
+    set_tip(TEST_NU7_ACTIVATION_HEIGHT - 30);
+    let run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &[100_000],
+        &[MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 100_000,
+            block_offset: 1,
+        }],
+        PreparationTimingPolicy::Immediate,
+    )
+    .unwrap();
+
+    set_tip(TEST_NU7_ACTIVATION_HEIGHT + 5);
+    // The app resumes a saved draft with no schedule of its own.
+    refresh_draft_schedule_for_upgrade(&db_path, &run_id, WalletNetwork::Test, &[]).unwrap();
+
+    let redrawn = approved_schedule_for_run(&db_path, &run_id).unwrap();
+    assert_eq!(redrawn.len(), 1);
+    assert_eq!(redrawn[0].value_zatoshi, 100_000);
+    assert!(ensure_schedule_drawn_for_height(
+        &redrawn,
+        WalletNetwork::Test,
+        TEST_NU7_ACTIVATION_HEIGHT + 6
+    )
+    .is_ok());
 }
 
 #[test]

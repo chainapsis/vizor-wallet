@@ -161,7 +161,62 @@ fn get_orchard_migration_private_plan_for_targets(
         proof_readiness_delay_blocks,
         estimated_proof_ready_height,
         scheduled_transfers,
+        target_height: u32::from(target_height),
     }))
+}
+
+impl OrchardMigrationPrivatePlan {
+    /// Refuses `schedule` when its first part could not leave before the next
+    /// upgrade's hold: signed for the current branch, the run would be held and
+    /// stopped after paying for its preparation.
+    pub(crate) fn ensure_first_part_precedes_upgrade_hold(
+        &self,
+        network: WalletNetwork,
+        schedule: &[super::migration::MigrationScheduleEntry],
+    ) -> Result<(), String> {
+        let Some(first_offset) = schedule.iter().map(|entry| entry.block_offset).min() else {
+            return Ok(());
+        };
+        // A part leaves at its scheduled height, or once its proofs are ready.
+        let first_part_height = self
+            .target_height
+            .saturating_sub(1)
+            .saturating_add(first_offset)
+            .max(self.estimated_proof_ready_height.unwrap_or(0));
+        if network_upgrade::holds_transaction(
+            &network,
+            self.target_height,
+            first_part_height.saturating_sub(1),
+        ) {
+            return Err(network_upgrade::START_HOLD_MESSAGE.to_string());
+        }
+        Ok(())
+    }
+}
+
+/// [`OrchardMigrationPrivatePlan::ensure_first_part_precedes_upgrade_hold`]
+/// for a run about to start from `schedule`.
+fn ensure_first_part_precedes_upgrade_hold(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    schedule: &[super::migration::MigrationScheduleEntry],
+) -> Result<(), String> {
+    if schedule.is_empty() {
+        return Ok(());
+    }
+    let target_values = super::migration::target_values_from_schedule(schedule)?;
+    match get_orchard_migration_private_plan_for_targets(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        Some(&target_values),
+    )? {
+        Some(plan) => plan.ensure_first_part_precedes_upgrade_hold(network, schedule),
+        None => Ok(()),
+    }
 }
 
 fn private_plan_proof_timing(

@@ -644,6 +644,8 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     /// can first use a valid migration anchor.
     pub estimated_proof_ready_height: Option<u32>,
     pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
+    /// The wallet's next height when the plan was estimated.
+    pub target_height: u32,
 }
 
 pub(crate) struct KeystoneMigrationMessage {
@@ -1915,6 +1917,13 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::configured_timing_policy(network),
         ),
     };
+    ensure_first_part_precedes_upgrade_hold(
+        db_path,
+        network,
+        account_uuid,
+        preparation_policy_for_build,
+        &signing_schedule,
+    )?;
     let target_values_zatoshi =
         migration_target_values_for_request(draft_run.as_ref(), Some(&signing_schedule))?;
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
@@ -5912,8 +5921,8 @@ async fn broadcast_pending_denomination_stages(
             ),
         }));
     }
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
+    let live_chain_tip_height = match live_chain_tip_height(lightwalletd_url).await {
+        Ok(height) => height,
         Err(e) => {
             return Ok(Some(CreatedBroadcastResult {
                 broadcast_failure_kind: None,
@@ -5921,27 +5930,10 @@ async fn broadcast_pending_denomination_stages(
                 status: CreatedBroadcastResult::PENDING_BROADCAST,
                 broadcasted_count: 0,
                 total_count,
-                message: Some(format!("Denomination split broadcast could not start: {e}")),
+                message: Some(e),
             }));
         }
     };
-    let live_chain_tip_height =
-        match crate::wallet::sync_engine::get_latest_block(&mut client).await {
-            Ok(tip) => u32::try_from(tip.height)
-                .map_err(|_| "Live migration chain tip exceeds u32".to_string())?,
-            Err(e) => {
-                return Ok(Some(CreatedBroadcastResult {
-                    broadcast_failure_kind: None,
-                    txids,
-                    status: CreatedBroadcastResult::PENDING_BROADCAST,
-                    broadcasted_count: 0,
-                    total_count,
-                    message: Some(format!(
-                        "Denomination split broadcast could not refresh the chain tip: {e}"
-                    )),
-                }));
-            }
-        };
     let chain_tip_height = known_chain_tip_height.max(live_chain_tip_height);
     let expired_at_live_tip = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -5965,7 +5957,7 @@ async fn broadcast_pending_denomination_stages(
             status: CreatedBroadcastResult::PENDING_BROADCAST,
             broadcasted_count: 0,
             total_count,
-            message: Some(super::migration::NETWORK_UPGRADE_HOLD_MESSAGE.to_string()),
+            message: Some(network_upgrade::MIGRATION_HOLD_MESSAGE.to_string()),
         }));
     }
     let due = pending
@@ -6156,14 +6148,7 @@ async fn broadcast_due_scheduled_migration_txs(
     // wait for its stop rather than new signatures. After sleep the wallet's
     // tip can trail the server's by more than the hold window, so hold on
     // whichever is later, and send nothing while the server's is unknown.
-    let live_tip_height = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
-        .await
-        .map_err(|e| e.to_string())
-        .and_then(|tip| {
-            u32::try_from(tip.height)
-                .map_err(|_| "Live migration chain tip exceeds u32".to_string())
-        });
-    let hold_tip_height = match live_tip_height {
+    let hold_tip_height = match live_chain_tip_height(lightwalletd_url).await {
         Ok(live) => chain_tip_height.max(live),
         Err(e) => {
             let status = super::migration::run_phase(db_path, run_id)?;
@@ -6171,9 +6156,7 @@ async fn broadcast_due_scheduled_migration_txs(
                 migration_result_from_pending_totals(
                     totals_before,
                     &status,
-                    Some(format!(
-                        "Migration broadcast could not refresh the chain tip: {e}"
-                    )),
+                    Some(e),
                     fallback_total_count,
                     fallback_migrated_zatoshi,
                 ),
@@ -6191,7 +6174,7 @@ async fn broadcast_due_scheduled_migration_txs(
             migration_result_from_pending_totals(
                 totals_before,
                 &status,
-                Some(super::migration::NETWORK_UPGRADE_HOLD_MESSAGE.to_string()),
+                Some(network_upgrade::MIGRATION_HOLD_MESSAGE.to_string()),
                 fallback_total_count,
                 fallback_migrated_zatoshi,
             ),
@@ -6310,7 +6293,7 @@ async fn broadcast_due_scheduled_migration_txs(
                         migration_result_from_pending_totals(
                             totals,
                             super::migration::PHASE_STOPPED_BY_UPGRADE,
-                            Some(super::migration::NETWORK_UPGRADE_STOP_MESSAGE.to_string()),
+                            Some(network_upgrade::MIGRATION_STOP_MESSAGE.to_string()),
                             fallback_total_count,
                             fallback_migrated_zatoshi,
                         ),
@@ -6481,12 +6464,8 @@ async fn upgrade_holds_transaction_at_live_tip(
     network: WalletNetwork,
     signed_target_height: u32,
 ) -> Result<bool, String> {
-    let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
-        .await
-        .map_err(|e| format!("Migration broadcast could not refresh the chain tip: {e}"))?;
-    let server_tip_height = u32::try_from(tip.height)
-        .map_err(|_| "Live migration chain tip exceeds u32".to_string())?;
-    super::migration::network_upgrade_holds_transaction_at_wallet_tip(
+    let server_tip_height = live_chain_tip_height(lightwalletd_url).await?;
+    super::migration::network_upgrade_holds_transaction_at(
         db_path,
         network,
         signed_target_height,
@@ -6494,24 +6473,31 @@ async fn upgrade_holds_transaction_at_live_tip(
     )
 }
 
-/// Rechecks a rejection against the server's tip, which can pass the upgrade
-/// before the wallet's own tip does and so slip past the broadcast hold.
+/// The server's tip, read fresh for an upgrade hold: a cached tip can predate
+/// a sleep, which is when a desktop most often wakes near an upgrade.
+async fn live_chain_tip_height(lightwalletd_url: &str) -> Result<u32, String> {
+    let refresh_failed = |e: &dyn std::fmt::Display| {
+        format!("Migration broadcast could not refresh the chain tip: {e}")
+    };
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| refresh_failed(&e))?;
+    let tip = crate::wallet::sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| refresh_failed(&e))?;
+    u32::try_from(tip.height).map_err(|_| "Live migration chain tip exceeds u32".to_string())
+}
+
+/// Whether a rejected part shows the upgrade ended its run, judged at the
+/// later of the wallet's and the server's tip. While neither can be read the
+/// run stays as it is, rather than failing for a rejection the upgrade caused.
 async fn network_upgrade_stopped_run_after_rejection(
     db_path: &str,
     lightwalletd_url: &str,
     network: WalletNetwork,
     run_id: &str,
 ) -> Result<bool, String> {
-    let Ok(mut client) = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await
-    else {
-        return Ok(false);
-    };
-    let Ok(tip) = crate::wallet::sync_engine::get_latest_block(&mut client).await else {
-        return Ok(false);
-    };
-    let Ok(live_tip) = u32::try_from(tip.height) else {
-        return Ok(false);
-    };
+    let live_tip = live_chain_tip_height(lightwalletd_url).await?;
     super::migration::stop_run_if_network_upgrade_invalidated(db_path, network, run_id, live_tip)
 }
 

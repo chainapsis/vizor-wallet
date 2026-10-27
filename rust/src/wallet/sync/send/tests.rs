@@ -1088,6 +1088,55 @@ fn private_plan_timing_accounts_for_spaced_preparation_transactions() {
 }
 
 #[test]
+fn a_private_plan_whose_first_part_would_meet_the_upgrade_hold_is_refused() {
+    let network = WalletNetwork::Test;
+    let activation = network
+        .activation_height(consensus::NetworkUpgrade::Nu7)
+        .map(u32::from)
+        .unwrap();
+    let plan = |target_height: u32, estimated_proof_ready_height: Option<u32>| {
+        OrchardMigrationPrivatePlan {
+            target_values_zatoshi: vec![100_000],
+            total_input_zatoshi: 0,
+            total_migratable_zatoshi: 0,
+            orchard_change_zatoshi: None,
+            denomination_split_fee_zatoshi: 0,
+            migration_fee_zatoshi: 0,
+            estimated_total_fee_zatoshi: 0,
+            planned_batch_count: 1,
+            denomination_split_stage_count: 0,
+            denomination_split_layer_count: 0,
+            signing_batch_limit: 1,
+            schedule_mean_delay_blocks: 0,
+            schedule_max_delay_blocks: 0,
+            proof_readiness_delay_blocks: 0,
+            estimated_proof_ready_height,
+            scheduled_transfers: Vec::new(),
+            target_height,
+        }
+    };
+    let schedule = [migration::MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100_000,
+        block_offset: 5,
+    }];
+    let refused = |plan: OrchardMigrationPrivatePlan| {
+        plan.ensure_first_part_precedes_upgrade_hold(network, &schedule)
+            .is_err()
+    };
+
+    assert!(!refused(plan(activation - 100, None)));
+    // The first part leaves once its proofs are ready: at A − 11 it still
+    // goes before the hold, from A − 10 it would be held and stopped.
+    assert!(!refused(plan(activation - 100, Some(activation - 11))));
+    assert!(refused(plan(activation - 100, Some(activation - 10))));
+    // Its scheduled height alone can reach the hold too.
+    assert!(refused(plan(activation - 14, None)));
+    // Planned on the new branch, nothing is held.
+    assert!(!refused(plan(activation, Some(activation + 500))));
+}
+
+#[test]
 fn private_plan_timing_uses_direct_note_mined_height_without_split_layers() {
     let waiting = private_plan_proof_timing(
         WalletNetwork::Main,

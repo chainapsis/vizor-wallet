@@ -201,6 +201,7 @@ pub(crate) fn rebuild_schedule_block_offsets<R: RngCore + CryptoRng + ?Sized>(
     Ok(assigned)
 }
 
+#[cfg(test)]
 pub(crate) fn validate_schedule(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],
@@ -295,9 +296,6 @@ fn validate_schedule_with_policy(
     Ok(())
 }
 
-pub(crate) const STALE_SCHEDULE_MESSAGE: &str =
-    "Migration schedule was drawn before the network upgrade; review the plan again";
-
 /// Refuses a new run whose schedule was drawn before an upgrade changed the
 /// block spacing: its offsets count one block per reference block, so its
 /// delays would pass in a third of the time. A schedule drawn in this process
@@ -316,9 +314,22 @@ pub(crate) fn ensure_schedule_drawn_for_height(
             .iter()
             .any(|entry| entry.block_offset % blocks_per_reference_block != 0)
     {
-        return Err(STALE_SCHEDULE_MESSAGE.to_string());
+        return Err(network_upgrade::STALE_SCHEDULE_MESSAGE.to_string());
     }
     Ok(())
+}
+
+/// Checks a schedule a new run will sign at `height`: its parts and delays
+/// under `timing_policy`, drawn at the block spacing in effect there.
+pub(crate) fn validate_new_run_schedule(
+    schedule: &[MigrationScheduleEntry],
+    target_values: &[u64],
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    height: u32,
+) -> Result<(), String> {
+    validate_schedule_with_policy(schedule, target_values, network, timing_policy, height)?;
+    ensure_schedule_drawn_for_height(schedule, network, height)
 }
 
 fn validate_schedule_part_indexes(

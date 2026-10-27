@@ -1312,14 +1312,13 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let schedule_json = match approved_schedule {
         Some(schedule) => {
             let next_height = wallet_next_height(&conn)?;
-            validate_schedule_with_policy(
+            validate_new_run_schedule(
                 schedule,
                 &plan.migration_outputs,
                 network,
                 timing_policy,
                 next_height,
             )?;
-            ensure_schedule_drawn_for_height(schedule, network, next_height)?;
             serde_json::to_string(schedule)
                 .map_err(|e| format!("Encode approved migration schedule: {e}"))?
         }
@@ -1425,14 +1424,13 @@ pub(crate) fn create_or_resume_private_migration_draft(
 
     let timing_policy = configured_timing_policy(network);
     let next_height = wallet_next_height(&tx)?;
-    validate_schedule_with_policy(
+    validate_new_run_schedule(
         approved_schedule,
         target_values_zatoshi,
         network,
         timing_policy,
         next_height,
     )?;
-    ensure_schedule_drawn_for_height(approved_schedule, network, next_height)?;
     let run_id = new_run_id(account_uuid);
     let now = now_ms()?;
     let target_values_json = serde_json::to_string(target_values_zatoshi)
@@ -1480,8 +1478,9 @@ pub(crate) fn refresh_draft_schedule_for_upgrade(
 }
 
 /// A saved draft keeps the schedule it was drawn with. Once an upgrade has
-/// changed the block spacing, the schedule approved now replaces it; a draft
-/// that had signed anything for the old branch was stopped by the upgrade.
+/// changed the block spacing, the schedule approved now replaces it, or a
+/// fresh draw when the draft is resumed without a new review. A draft that
+/// had signed anything for the old branch was stopped by the upgrade.
 fn replace_draft_schedule_drawn_before_upgrade(
     conn: &rusqlite::Connection,
     run_id: &str,
@@ -1515,15 +1514,26 @@ fn replace_draft_schedule_drawn_before_upgrade(
     }
     let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
         .map_err(|e| format!("Decode migration run target values: {e}"))?;
-    validate_schedule_with_policy(
-        approved_schedule,
+    let timing_policy = timing_policy_for_run_with_conn(conn, run_id, network)?;
+    let replacement = if approved_schedule.is_empty() {
+        planned_transfer_schedule_with_policy(
+            target_values.iter().copied(),
+            network,
+            timing_policy,
+            next_height,
+            &mut OsRng,
+        )
+    } else {
+        approved_schedule.to_vec()
+    };
+    validate_new_run_schedule(
+        &replacement,
         &target_values,
         network,
-        timing_policy_for_run_with_conn(conn, run_id, network)?,
+        timing_policy,
         next_height,
     )?;
-    ensure_schedule_drawn_for_height(approved_schedule, network, next_height)?;
-    let schedule_json = serde_json::to_string(approved_schedule)
+    let schedule_json = serde_json::to_string(&replacement)
         .map_err(|e| format!("Encode approved migration schedule: {e}"))?;
     conn.execute(
         &format!(
@@ -2480,15 +2490,20 @@ fn insert_pending_txs_with_tx(
     }
 
     let now = now_ms()?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3"
-        ),
-        params![PHASE_BROADCAST_SCHEDULED, now, run_id],
-    )
-    .map_err(|e| format!("Mark migration broadcast scheduled: {e}"))?;
+    let updated = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
+            ),
+            params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+        )
+        .map_err(|e| format!("Mark migration broadcast scheduled: {e}"))?;
+    // A sync can stop the run meanwhile; rolling back keeps the stop.
+    if updated != 1 {
+        return Err(RUN_ENDED_DURING_UPDATE_MESSAGE.to_string());
+    }
     Ok(())
 }
 
@@ -4462,7 +4477,7 @@ pub(crate) fn pending_parts_needing_resign(
 pub(crate) fn replace_resigned_pending_parts(
     db_path: &str,
     run_id: &str,
-    _network: WalletNetwork,
+    network: WalletNetwork,
     chain_tip_height: u32,
     mut replacements: Vec<PendingMigrationTxReplacement>,
     signed_children: Vec<SignedMigrationPcztInsert>,
@@ -4551,9 +4566,9 @@ pub(crate) fn replace_resigned_pending_parts(
         }
 
         let pending = replacement.replacement;
-        record_pending_creation(&tx, _network, &pending)?;
+        record_pending_creation(&tx, network, &pending)?;
         let canonical_expiry =
-            zip318_canonical_migration_expiry_height(&_network, pending.scheduled_height)?;
+            zip318_canonical_migration_expiry_height(&network, pending.scheduled_height)?;
         if pending.expiry_height != canonical_expiry {
             return Err(
                 "Replacement migration expiry is not canonical for its scheduled height"
@@ -4644,15 +4659,19 @@ pub(crate) fn replace_resigned_pending_parts(
         SignedChildInsertMode::Replacement,
     )?;
     let now = now_ms()?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3"
-        ),
-        params![PHASE_BROADCAST_SCHEDULED, now, run_id],
-    )
-    .map_err(|e| format!("Mark recovered migration scheduled: {e}"))?;
+    let updated = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
+            ),
+            params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+        )
+        .map_err(|e| format!("Mark recovered migration scheduled: {e}"))?;
+    if updated != 1 {
+        return Err(RUN_ENDED_DURING_UPDATE_MESSAGE.to_string());
+    }
     tx.commit()
         .map_err(|e| format!("Commit migration part replacement: {e}"))
 }
@@ -4795,14 +4814,9 @@ pub(crate) fn retire_run_for_rebuild(
     reconcile_wallet_locks_for_run(db_path, network, run_id)
 }
 
-pub(crate) const NETWORK_UPGRADE_STOP_MESSAGE: &str =
-    "The network upgrade stopped this migration. \
-     Transactions signed before the upgrade can't be sent after it.";
-pub(crate) const NETWORK_UPGRADE_HOLD_MESSAGE: &str =
-    "Migration transactions are held for the network upgrade.";
-/// [`network_upgrade::holds_transaction`] at the wallet's chain tip, for a
-/// transaction signed while the wallet kept syncing.
-pub(crate) fn network_upgrade_holds_transaction_at_wallet_tip(
+/// [`network_upgrade::holds_transaction`] at the later of the wallet's and
+/// the server's tip, for a transaction signed while the wallet kept syncing.
+pub(crate) fn network_upgrade_holds_transaction_at(
     db_path: &str,
     network: WalletNetwork,
     signed_target_height: u32,
@@ -4947,14 +4961,20 @@ pub(crate) fn network_upgrade_holds_broadcasts(
 /// include its unsent transactions. For a rejection the network reported
 /// before the wallet scanned the upgrade; the post-sync pass confirms parts
 /// mined before it afterwards.
+const RUN_ENDED_DURING_UPDATE_MESSAGE: &str = "Migration run ended while it was being updated";
+
 pub(crate) fn stop_run_if_network_upgrade_invalidated(
     db_path: &str,
     network: WalletNetwork,
     run_id: &str,
-    chain_tip_height: u32,
+    server_tip_height: u32,
 ) -> Result<bool, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
+    // A server behind the wallet would otherwise read a new-branch part as old.
+    let chain_tip_height = wallet_tip(&conn)?
+        .unwrap_or(0)
+        .max(server_tip_height);
     if !network_upgrade_invalidates_unsent_at(
         &conn,
         network,
@@ -5024,7 +5044,7 @@ fn stop_run_for_network_upgrade(conn: &rusqlite::Connection, run_id: &str) -> Re
             params![
                 PHASE_STOPPED_BY_UPGRADE,
                 now,
-                NETWORK_UPGRADE_STOP_MESSAGE,
+                network_upgrade::MIGRATION_STOP_MESSAGE,
                 run_id
             ],
         )
@@ -5716,12 +5736,13 @@ fn update_run_after_pending_broadcast(
     } else {
         PHASE_WAITING_MIGRATION_CONFIRMATIONS
     };
+    // A run the sync stopped meanwhile keeps its stop.
     if needs_resign_remaining > 0 {
         tx.execute(
             &format!(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![next_phase, now, run_id],
         )
@@ -5731,7 +5752,7 @@ fn update_run_after_pending_broadcast(
             &format!(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![next_phase, now, run_id],
         )

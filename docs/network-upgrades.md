@@ -36,7 +36,7 @@ Dart reads these rules rather than restating them:
 | Tip | Effect |
 | --- | --- |
 | up to `A − 12` | Normal. |
-| `A − 11` to `A − 2` | Migration parts and preparation stages are not broadcast. New Private and Immediate migrations and Keystone prepares are refused. |
+| `A − 11` to `A − 2` | Migration parts and preparation stages are not broadcast. New Private and Immediate migrations, Keystone prepares and Keystone batch signing are refused. A Private run whose first part would land here is refused earlier. |
 | `A − 4` to `A − 2` | Sends, send-max, shielding, swap deposits and Gift Cards are also refused: their expiry, capped at `A − 1`, is too close for nodes to accept. Swaps that send ZEC and Gift Card creation stop before they start. |
 | `A − 1` | New transactions target the new branch and are accepted again. Old-branch migration parts stay held: a node that missed the upgrade stops here and would still accept them. |
 | once `A − 1` is scanned | Runs whose transactions are still unmined on the old branch end as `stopped_by_upgrade`. |
@@ -93,36 +93,43 @@ transactions that are not mined yet:
 - parts a later Keystone batch will sign for the run's schedule origin.
 
 **Hold.** `network_upgrade_holds_broadcasts` keeps parts and stages unsent
-from `A − 11`. Parts and stages are judged at the later of the wallet's tip
-and the server's, since a desktop that wakes near the upgrade can broadcast
-before sync catches up, and wait while the server's tip cannot be read; starts
-read the wallet's tip. While a run is held, the
-foreground does not mark its parts for new signatures, so a wallet catching
-up after activation leaves them for the stop.
+from `A − 11`. Every first broadcast, Immediate ones included, judges the hold
+at the later of the wallet's tip and the server's, read fresh
+(`live_chain_tip_height`): a desktop that wakes near the upgrade can broadcast
+before sync catches up, and a cached tip can predate the sleep. While the
+server's tip cannot be read, nothing is sent. While a run is held, the
+foreground does not mark its parts for new signatures, so a wallet catching up
+after activation leaves them for the stop.
 
 **Stop.** `stopped_by_upgrade` is terminal. A run stops at either of two
 points:
 
 - when a broadcast is rejected after activation
-  (`stop_run_if_network_upgrade_invalidated`);
+  (`stop_run_if_network_upgrade_invalidated`), judged at the later of the
+  wallet's and the server's tip; while the tip cannot be read the run waits
+  instead of failing;
 - after a sync whose fully scanned height reaches `A − 1`
   (`network_upgrade_stops_run`). Waiting for that scan lets parts mined before
   the upgrade confirm first, so the receipt reports them as moved.
 
 Stopping releases the run's note locks. Migration status keeps the run as a
 receipt while Orchard funds remain, so the rest can move in a new run under
-the new branch.
+the new branch. Writers that move a run forward skip a stopped one, so a part
+saved during the stop cannot undo it.
 
-**Start.** Software starts, Keystone prepares, draft creation and Immediate
-builds call `ensure_migration_can_start`. A new run also refuses a schedule
-drawn before the upgrade (`ensure_schedule_drawn_for_height`): a plan reviewed
-before NU7 and started after it would pass its delays in a third of the time.
-A schedule drawn in the running app is judged by the spacing it was drawn at,
-one from before a restart by its offsets. A saved draft resumed after the upgrade takes the schedule approved then. A
-wallet without a scanned tip is not held: it has no target yet. An Immediate
-migration checks again just before broadcasting, at the later of the wallet's
-and the server's tip: the build reads only the wallet's tip, and hardware
-signing can outlast it.
+**Start.** Software starts, Keystone prepares and batch signing, draft creation
+and Immediate builds call `ensure_migration_can_start`. A Private run is also
+refused when its first part could not leave before the hold, counting the
+wait for its proofs (`ensure_first_part_precedes_upgrade_hold`): it would be
+held and stopped after paying for its preparation.
+
+A new run refuses a schedule drawn before the upgrade
+(`validate_new_run_schedule`): a plan reviewed before NU7 and started after it
+would pass its delays in a third of the time. A schedule drawn in the running
+app is judged by the spacing it was drawn at, one from before a restart by its
+offsets. A saved draft resumed after the upgrade takes the schedule approved
+then, or a fresh draw when it is resumed without a new review. A wallet without
+a scanned tip is not held: it has no target yet.
 
 **ZIP 318 durations.** ZIP 318 states delays, the anchor bucket interval and
 the expiry modulus in 75-second reference blocks. From NU7 each one spans three
