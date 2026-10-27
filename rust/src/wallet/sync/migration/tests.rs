@@ -10980,7 +10980,7 @@ fn an_upgrade_hold_check_uses_the_later_of_the_wallet_and_server_tips() {
     ))
     .unwrap();
     drop(conn);
-    let held = |server_tip: Option<u32>| {
+    let held = |server_tip: u32| {
         network_upgrade_holds_transaction_at_wallet_tip(
             &db_path.to_string_lossy(),
             WalletNetwork::Test,
@@ -10990,10 +10990,9 @@ fn an_upgrade_hold_check_uses_the_later_of_the_wallet_and_server_tips() {
         .unwrap()
     };
 
-    assert!(!held(None));
-    assert!(!held(Some(wallet_tip - 5)));
+    assert!(!held(wallet_tip - 5));
     // Signing outlasted the wallet's last sync and the server is in the hold.
-    assert!(held(Some(TEST_NU7_ACTIVATION_HEIGHT - 5)));
+    assert!(held(TEST_NU7_ACTIVATION_HEIGHT - 5));
 }
 
 #[test]

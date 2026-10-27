@@ -95,7 +95,8 @@ transactions that are not mined yet:
 **Hold.** `network_upgrade_holds_broadcasts` keeps parts and stages unsent
 from `A − 11`. Parts and stages are judged at the later of the wallet's tip
 and the server's, since a desktop that wakes near the upgrade can broadcast
-before sync catches up; starts read the wallet's tip. While a run is held, the
+before sync catches up, and wait while the server's tip cannot be read; starts
+read the wallet's tip. While a run is held, the
 foreground does not mark its parts for new signatures, so a wallet catching
 up after activation leaves them for the stop.
 

@@ -811,17 +811,22 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
     };
     // Signing can outlast the build-time hold check, and the wallet's tip can
     // trail the server's; dropping the request releases its inputs.
-    let server_tip_height =
-        crate::wallet::sync_engine::latest_block_for_transaction(lightwalletd_url, network)
-            .await
-            .ok()
-            .and_then(|tip| u32::try_from(tip.height).ok());
-    match super::migration::network_upgrade_holds_transaction_at_wallet_tip(
-        db_path,
-        network,
-        stored.target_height,
-        server_tip_height,
-    ) {
+    let held = crate::wallet::sync_engine::latest_block_for_transaction(lightwalletd_url, network)
+        .await
+        .map_err(|e| format!("Migration broadcast could not refresh the chain tip: {e}"))
+        .and_then(|tip| {
+            u32::try_from(tip.height)
+                .map_err(|_| "Live migration chain tip exceeds u32".to_string())
+        })
+        .and_then(|server_tip_height| {
+            super::migration::network_upgrade_holds_transaction_at_wallet_tip(
+                db_path,
+                network,
+                stored.target_height,
+                server_tip_height,
+            )
+        });
+    match held {
         Ok(false) => {}
         Ok(true) => {
             return Err(crate::wallet::network_upgrade::START_HOLD_MESSAGE.to_string());

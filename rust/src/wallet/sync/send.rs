@@ -6148,13 +6148,31 @@ async fn broadcast_due_scheduled_migration_txs(
     // Before expiry and broadcast-height recovery: parts the upgrade holds
     // wait for its stop rather than new signatures. After sleep the wallet's
     // tip can trail the server's by more than the hold window, so hold on
-    // whichever is later.
-    let hold_tip_height =
-        match sync_engine::latest_block_for_transaction(lightwalletd_url, network).await {
-            Ok(tip) => u32::try_from(tip.height)
-                .map_or(chain_tip_height, |live| chain_tip_height.max(live)),
-            Err(_) => chain_tip_height,
-        };
+    // whichever is later, and send nothing while the server's is unknown.
+    let live_tip_height = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|tip| {
+            u32::try_from(tip.height)
+                .map_err(|_| "Live migration chain tip exceeds u32".to_string())
+        });
+    let hold_tip_height = match live_tip_height {
+        Ok(live) => chain_tip_height.max(live),
+        Err(e) => {
+            let status = super::migration::run_phase(db_path, run_id)?;
+            return Ok(MigrationBroadcastAdvance::without_acceptance(
+                migration_result_from_pending_totals(
+                    totals_before,
+                    &status,
+                    Some(format!(
+                        "Migration broadcast could not refresh the chain tip: {e}"
+                    )),
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
+                ),
+            ));
+        }
+    };
     if super::migration::network_upgrade_holds_broadcasts(
         db_path,
         network,
