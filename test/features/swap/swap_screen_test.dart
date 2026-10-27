@@ -8945,8 +8945,7 @@ void main() {
             'Your saved progress is kept.',
         kind: ReceiveErrorKind.upgradeRequired,
       ),
-      'Update Vizor to keep checking private swap addresses. '
-          'Your saved progress is kept.',
+      kSwapRecoveryUpdateMessage,
       'a round that needs a newer app asks for an update',
     ),
   ]) {
@@ -9140,8 +9139,8 @@ void main() {
   for (final (failure, message, name) in <(Object?, String, String)>[
     (
       null,
-      'No swap address is free. Wait for a swap in progress to finish.',
-      'a round that succeeded keeps the wallet wording',
+      kPrivateSwapAddressLimitMessage,
+      'a round that succeeded says too many swaps are waiting',
     ),
     (
       const ReceiveError(
@@ -9150,8 +9149,8 @@ void main() {
             'wallet yet. Try again in a few minutes.',
         kind: ReceiveErrorKind.waitingForService,
       ),
-      'No swap address is free. Wait for a swap in progress to finish.',
-      'a round waiting for the receiver service keeps the wallet wording',
+      kPrivateSwapAddressLimitMessage,
+      'a round waiting for the receiver service says the same',
     ),
     (
       const ReceiveError(message: 'HTTP 503', kind: ReceiveErrorKind.other),
@@ -9195,6 +9194,13 @@ void main() {
       // One round ran, and the address was asked for again after it.
       expect(sync.swapRecoveryRounds, rounds + 1);
       expect(reservations, 2);
+      // Only the waiting swaps can free an address, so it links to them.
+      expect(
+        find.text('View swaps'),
+        message == kPrivateSwapAddressLimitMessage
+            ? findsOneWidget
+            : findsNothing,
+      );
     });
   }
 
@@ -9583,6 +9589,17 @@ void main() {
     await _openActivitySurface(tester);
     await _openActivityDetail(tester, 'left-starting');
     expect(find.text(swapStartFailedText), findsOneWidget);
+    // A warning, not the sync icon of a swap still starting.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_activity_start_pending')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon && widget.name == AppIcons.warningCircle,
+        ),
+      ),
+      findsOneWidget,
+    );
     expect(find.byType(SwapDepositTokensPageContent), findsNothing);
   });
 

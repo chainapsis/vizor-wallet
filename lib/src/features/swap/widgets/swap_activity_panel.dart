@@ -714,14 +714,16 @@ class _SwapActivityFlowContent extends StatelessWidget {
     // Nothing that could fund the swap shows before the wallet locks its
     // reservation (see [SwapIntent.startPending]).
     if (intent.startPending) {
-      final message = intent.status.isTerminal
-          ? swapStartFailedText
-          : swapStartingText;
+      final failed = intent.status.isTerminal;
       final mobile = layout == SwapActivityDetailLayout.mobile;
       return SizedBox(
         key: const ValueKey('swap_activity_start_pending'),
         width: mobile ? null : 400,
-        child: _ActivityStatusErrorPanel(message: message),
+        child: _ActivityStatusErrorPanel(
+          message: failed ? swapStartFailedText : swapStartingText,
+          iconName: failed ? AppIcons.warningCircle : AppIcons.loader,
+          iconColor: failed ? context.colors.icon.destructive : null,
+        ),
       );
     }
     final depositInstruction = SwapActivityDepositInstruction.fromIntent(
@@ -1212,9 +1214,17 @@ class _ActivityDetailScrollAreaState extends State<_ActivityDetailScrollArea> {
 }
 
 class _ActivityStatusErrorPanel extends StatelessWidget {
-  const _ActivityStatusErrorPanel({required this.message});
+  const _ActivityStatusErrorPanel({
+    required this.message,
+    this.iconName = AppIcons.sync,
+    this.iconColor,
+  });
 
   final String message;
+  final String iconName;
+
+  /// Defaults to the muted icon color.
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1232,9 +1242,9 @@ class _ActivityStatusErrorPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AppIcon(
-            AppIcons.sync,
+            iconName,
             size: AppIconSize.large,
-            color: colors.icon.muted,
+            color: iconColor ?? colors.icon.muted,
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(

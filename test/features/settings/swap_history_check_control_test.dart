@@ -228,10 +228,7 @@ void main() {
     );
     await tester.pump();
     expect(
-      find.text(
-        'Update Vizor to keep checking private swap addresses. '
-        'Your saved progress is kept.',
-      ),
+      find.text(kSwapRecoveryUpdateMessage),
       findsOneWidget,
     );
   });

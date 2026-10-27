@@ -285,6 +285,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       zecAvailableText: zecAvailableText,
                       zecAvailableZatoshi: zecSpendable,
                       balanceMessage: balanceMessage,
+                      onViewSwaps: () => context.go('/activity'),
                       destinationContactName: swapDestinationContactFor(
                         swapState,
                         ref.watch(addressBookProvider).value?.contacts ??

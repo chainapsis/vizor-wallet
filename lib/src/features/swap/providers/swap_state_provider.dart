@@ -32,8 +32,12 @@ export 'swap_provider_config.dart';
 /// Shown when a private incoming quote still gets no receive address after
 /// the recovery round before its retry failed.
 const kPrivateSwapAddressUnavailableMessage =
-    'Private swap addresses are unavailable right now. Try again later, or '
-    'turn off NEAR swap privacy to swap now.';
+    "Private swaps aren't available right now. Try again in a few minutes.";
+
+/// Shown when open quotes hold every one-time receive address, with a link
+/// to the swaps holding them.
+const kPrivateSwapAddressLimitMessage =
+    'Too many swaps are waiting. Try again after one finishes or expires.';
 
 final swapInitialIntentsProvider = Provider<List<SwapIntent>>((ref) {
   return const [];
@@ -2609,14 +2613,18 @@ class SwapNotifier extends Notifier<SwapState> {
     null ||
     ReceiveError(kind: ReceiveErrorKind.waitingForSync) ||
     ReceiveError(kind: ReceiveErrorKind.waitingForService) => null,
-    ReceiveError(kind: ReceiveErrorKind.upgradeRequired, :final message) =>
-      message,
+    ReceiveError(kind: ReceiveErrorKind.upgradeRequired) =>
+      kSwapRecoveryUpdateMessage,
     _ => kPrivateSwapAddressUnavailableMessage,
   };
 
   String _friendlyQuoteError(Object error) {
     if (_receiveError(error) case final receiveError?) {
-      return receiveError.message;
+      return switch (receiveError.kind) {
+        ReceiveErrorKind.limit => kPrivateSwapAddressLimitMessage,
+        ReceiveErrorKind.upgradeRequired => kSwapRecoveryUpdateMessage,
+        _ => receiveError.message,
+      };
     }
     if (error is SwapZecStagingAddressUnavailableException) {
       return error.toString();

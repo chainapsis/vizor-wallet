@@ -7,7 +7,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/swap_history_check_provider.dart';
 import '../../../providers/sync_provider.dart'
-    show swapRecoveryUpdateRequiredProvider;
+    show kSwapRecoveryUpdateMessage, swapRecoveryUpdateRequiredProvider;
+
+export '../../../providers/sync_provider.dart' show kSwapRecoveryUpdateMessage;
 
 /// What the swap history check says for each state.
 String swapHistoryCheckStatus(SwapHistoryCheck check) => switch (check) {
@@ -32,12 +34,6 @@ String swapHistoryCheckStatus(SwapHistoryCheck check) => switch (check) {
         'Try again in a few minutes.',
   SwapHistoryCheck.updateRequired => kSwapRecoveryUpdateMessage,
 };
-
-/// Shown when the receiver service needs a newer app. Matches the swap quote's
-/// update message.
-const kSwapRecoveryUpdateMessage =
-    'Update Vizor to keep checking private swap addresses. '
-    'Your saved progress is kept.';
 
 /// The "Check swap history" control at the bottom of the NEAR swap privacy
 /// explanation: why to run it, or how it is going, with the one action that

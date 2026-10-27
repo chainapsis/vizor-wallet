@@ -50,11 +50,7 @@ void main() {
       await h.review('25');
       expect(h.reservations, 1);
       expect(h.sync.awaited, 0);
-      expect(
-        h.state.quoteError,
-        'Update Vizor to keep checking private swap addresses. '
-        'Your saved progress is kept.',
-      );
+      expect(h.state.quoteError, kSwapRecoveryUpdateMessage);
     },
   );
 

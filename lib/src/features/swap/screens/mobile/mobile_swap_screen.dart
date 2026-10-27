@@ -452,6 +452,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           message: quoteError,
                           textKey: const ValueKey('swap_quote_error_message'),
                           maxLines: 2,
+                          action: swapQuoteErrorAction(
+                            quoteError,
+                            onViewSwaps: () => context.go('/activity'),
+                          ),
                         ),
                       ],
                     ],

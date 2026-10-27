@@ -36,6 +36,7 @@ class SwapComposerPanel extends StatefulWidget {
     this.oneTimeZecAddress = false,
     this.preparingOneTimeAddress = false,
     this.balanceMessage,
+    this.onViewSwaps,
     super.key,
   });
 
@@ -52,6 +53,9 @@ class SwapComposerPanel extends StatefulWidget {
 
   /// Why the ZEC amount can't be funded, shown where quote errors go.
   final String? balanceMessage;
+
+  /// Opens Activity from a quote error about swaps holding every address.
+  final VoidCallback? onViewSwaps;
 
   /// Address-book label for the current destination address, shown in the
   /// address chip instead of the truncated address when set.
@@ -338,6 +342,13 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                 message: quoteError,
                 textKey: const ValueKey('swap_quote_error_message'),
                 maxLines: 2,
+                action: switch (widget.onViewSwaps) {
+                  final onViewSwaps? => swapQuoteErrorAction(
+                    quoteError,
+                    onViewSwaps: onViewSwaps,
+                  ),
+                  null => null,
+                },
               ),
             ],
           ],

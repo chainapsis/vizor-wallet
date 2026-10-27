@@ -7,7 +7,7 @@ const swapStartingText = 'Starting swap…';
 
 /// Shown for a swap whose wallet start never finished.
 const swapStartFailedText =
-    "This swap didn't finish starting. Start a new swap if you still want one.";
+    "This swap didn't start. Start a new one to try again.";
 
 class SwapIntentRecord {
   const SwapIntentRecord({
