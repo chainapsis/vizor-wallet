@@ -1158,6 +1158,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       contacts: addressBookContacts,
       address: _reviewArgs.address,
       ownAccounts: ownAccounts,
+      znsName: _reviewArgs.recipientZnsName,
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = _reviewArgs.memo;

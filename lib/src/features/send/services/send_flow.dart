@@ -83,6 +83,7 @@ class SendReviewArgs {
     this.requestedBy,
     this.requestedAmountZatoshi,
     this.flowKind = SendFlowKind.send,
+    this.recipientZnsName,
   });
 
   final BigInt proposalId;
@@ -109,6 +110,11 @@ class SendReviewArgs {
   /// Kept alongside [amountZatoshi] rather than replacing it so the review can
   /// say what was requested when the user edited the amount before confirming.
   final BigInt? requestedAmountZatoshi;
+
+  /// The Zcash name the user entered (display form, such as `alice.zcash`),
+  /// already resolved to [address]. Display only: the proposal pays
+  /// [address], and nothing resolves the name again after compose.
+  final String? recipientZnsName;
 
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
 
@@ -389,6 +395,7 @@ Future<SendReviewArgs> proposeSendTransfer({
   String? requestedBy,
   BigInt? requestedAmountZatoshi,
   SendFlowKind flowKind = SendFlowKind.send,
+  String? recipientZnsName,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) => proposeSendTransferWith(
   syncNotifier: ref.read(syncProvider.notifier),
@@ -403,6 +410,7 @@ Future<SendReviewArgs> proposeSendTransfer({
   requestedBy: requestedBy,
   requestedAmountZatoshi: requestedAmountZatoshi,
   flowKind: flowKind,
+  recipientZnsName: recipientZnsName,
   loadDbPath: loadDbPath,
 );
 
@@ -427,6 +435,7 @@ Future<SendReviewArgs> proposeSendTransferWith({
   String? requestedBy,
   BigInt? requestedAmountZatoshi,
   SendFlowKind flowKind = SendFlowKind.send,
+  String? recipientZnsName,
   Future<String> Function() loadDbPath = getWalletDbPath,
 }) async {
   final proposal = await syncNotifier.runWithAuthoritativeSpendable(
@@ -459,6 +468,7 @@ Future<SendReviewArgs> proposeSendTransferWith({
     requestedBy: sanitisePaymentRequestLabel(requestedBy),
     requestedAmountZatoshi: requestedAmountZatoshi,
     flowKind: flowKind,
+    recipientZnsName: recipientZnsName,
   );
 }
 

@@ -355,6 +355,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       contacts: addressBookContacts,
       address: widget.args.address,
       ownAccounts: ownAccounts,
+      znsName: widget.args.recipientZnsName,
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = widget.args.memo;
