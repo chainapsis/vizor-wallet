@@ -369,7 +369,7 @@ class _ImmediateReviewRow extends StatelessWidget {
 }
 
 String _immediateMigrationStartErrorMessage(Object error) {
-  final upgradeHold = ironwoodUpgradeHoldStartMessage(error);
+  final upgradeHold = networkUpgradeHoldMessage(error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('plan changed')) {

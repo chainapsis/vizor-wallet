@@ -328,16 +328,10 @@ class _IronwoodMigrationAttentionHostState
   @override
   Widget build(BuildContext context) {
     ref.listen(syncProvider, (_, _) => _evaluateInitialEntry());
-    ref.listen(ironwoodHomeMigrationPresentationProvider, (previous, next) {
-      _evaluateInitialEntry();
-      // A stop is news mid-session; other attention waits for entry or resume.
-      if (!_initialEvaluationPending &&
-          next.mode == IronwoodHomeMigrationCtaMode.stopped &&
-          (previous?.mode != IronwoodHomeMigrationCtaMode.stopped ||
-              previous?.accountUuid != next.accountUuid)) {
-        _evaluate();
-      }
-    });
+    ref.listen(
+      ironwoodHomeMigrationPresentationProvider,
+      (_, _) => _evaluateInitialEntry(),
+    );
     return const SizedBox.shrink();
   }
 

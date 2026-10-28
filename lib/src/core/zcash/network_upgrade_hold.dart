@@ -1,5 +1,5 @@
-/// Rust refuses new transactions in the last blocks before a network upgrade;
-/// the same action works again once it activates.
+/// Rust refuses new migrations and transactions in the last blocks before a
+/// network upgrade; the same action works again once it activates.
 const kNetworkUpgradeHoldMessage =
     'Paused for the network upgrade. Try again in a few minutes.';
 
@@ -11,4 +11,3 @@ String? networkUpgradeHoldMessage(Object error) =>
 
 /// Label for an action held until the upgrade activates.
 const kNetworkUpgradeHoldActionLabel = 'Paused for network upgrade';
-
