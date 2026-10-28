@@ -84,6 +84,11 @@ int32_t zcash_list_migration_preparation_txids(
 /// it is unscheduled or the network is unknown.
 uint64_t zcash_nu7_activation_height(const char* network);
 
+/// The first upgrade activation after height on network, or 0 when none is
+/// scheduled or the network is unknown.
+uint64_t zcash_next_upgrade_activation_height(const char* network,
+                                              uint64_t height);
+
 /// Whether the iOS outbox holds a migration part signed for target_height at
 /// remote_height on network, as the foreground judges it. A target of 0 (a
 /// part saved by an older build) is held by the tip alone.

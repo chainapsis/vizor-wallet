@@ -34,9 +34,10 @@ Other layers read these rules rather than restating them:
 - Once no old-branch block is left for an unsent part, the iOS outbox posts
   one "Migration stopped by network upgrade" alert per upgrade, when
   notifications are on, in place of its generic needs-attention alert.
-- The iOS preparation tracker reads `zcash_nu7_activation_height` and hands
-  a wave to the foreground when a transaction it saw before the upgrade stays
-  unknown to the server after it.
+- The iOS preparation tracker hands a wave to the foreground when a
+  transaction it saw before the upgrade stays unknown to the server after it.
+- Both find the upgrade with `zcash_next_upgrade_activation_height`, so they
+  follow any upgrade Common schedules.
 - `upgrade_hold_heights_match_the_send_and_migration_refusals` checks
   `hold_heights` against the refusals tip by tip.
 

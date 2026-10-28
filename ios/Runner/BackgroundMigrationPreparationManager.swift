@@ -421,6 +421,8 @@ func migrationPreparationConfirmationProgress(
 let migrationPreparationUpgradeDroppedPassLimit = 2
 
 struct MigrationPreparationUpgradeDropTracking: Equatable {
+  /// The upgrade that ends the branch of `oldBranchTransactionIds`.
+  var upgradeActivationHeight: UInt64?
   /// Transactions seen broadcast while the next block was on the old branch.
   /// The hold sends nothing new before the upgrade, so they target that branch.
   var oldBranchTransactionIds: Set<String> = []
@@ -439,22 +441,27 @@ func migrationPreparationUpgradeDropTracking(
   transactionIds: [String],
   observations: [NativeLightwalletdTransactionObservation],
   chainTipHeight: UInt64,
-  upgradeActivationHeight: UInt64
+  nextUpgradeActivationHeight: UInt64
 ) -> MigrationPreparationUpgradeDropTracking {
-  guard upgradeActivationHeight > 0 else {
-    return MigrationPreparationUpgradeDropTracking()
-  }
   var next = previous
-  guard chainTipHeight >= upgradeActivationHeight - 1 else {
-    next.oldBranchTransactionIds.formUnion(transactionIds)
-    next.missedPasses = [:]
+  next.missedPasses = [:]
+  if let activation = previous.upgradeActivationHeight, chainTipHeight >= activation - 1 {
+    for (id, observation) in zip(transactionIds, observations)
+    where observation == .notFound && previous.oldBranchTransactionIds.contains(id) {
+      next.missedPasses[id] = (previous.missedPasses[id] ?? 0) + 1
+    }
     return next
   }
-  next.missedPasses = [:]
-  for (id, observation) in zip(transactionIds, observations)
-  where observation == .notFound && previous.oldBranchTransactionIds.contains(id) {
-    next.missedPasses[id] = (previous.missedPasses[id] ?? 0) + 1
+  // `nextUpgradeActivationHeight` is the first activation after the tip, or 0.
+  guard nextUpgradeActivationHeight > 0, chainTipHeight < nextUpgradeActivationHeight - 1 else {
+    return MigrationPreparationUpgradeDropTracking()
   }
+  if next.upgradeActivationHeight != nextUpgradeActivationHeight {
+    next = MigrationPreparationUpgradeDropTracking(
+      upgradeActivationHeight: nextUpgradeActivationHeight
+    )
+  }
+  next.oldBranchTransactionIds.formUnion(transactionIds)
   return next
 }
 
@@ -2025,8 +2032,8 @@ final class BackgroundMigrationPreparationManager {
         transactionIds: transactionIds,
         observations: observations,
         chainTipHeight: tip,
-        upgradeActivationHeight: manifest.network.withCString {
-          zcash_nu7_activation_height($0)
+        nextUpgradeActivationHeight: manifest.network.withCString {
+          zcash_next_upgrade_activation_height($0, tip)
         }
       )
       upgradeDropTrackingByScope[scope] = upgradeDropTracking
