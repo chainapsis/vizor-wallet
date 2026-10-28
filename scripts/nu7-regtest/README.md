@@ -31,5 +31,8 @@ scripts/nu7-regtest/down.sh
 - Zebra regtest reports a meaningless `estimatedheight`, so the app's stalled
   endpoint checks treat a custom endpoint on this chain as stalled.
 
-Run the Rust scenario with `scripts/nu7-regtest/run-rust-test.sh` and the
-macOS app scenario with `scripts/e2e/flutter-macos-nu7-migration-stop.sh`.
+Run the Rust scenario with `scripts/nu7-regtest/run-rust-test.sh`, the
+macOS app scenario with `scripts/e2e/flutter-macos-nu7-migration-stop.sh`, and
+its iOS simulator counterpart with
+`scripts/e2e/flutter-ios-regtest-mobile-nu7-migration-stop.sh` (one booted
+simulator, or `SIMULATOR_UDID`).
