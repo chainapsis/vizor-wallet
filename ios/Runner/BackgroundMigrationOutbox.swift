@@ -1241,14 +1241,14 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
   /// left for an unsent part on `endpoint` signed for the branch it ended. The
   /// foreground stops that part's run on its next sync.
   func upgradeStopKey(remoteHeight: UInt64, endpoint: String) -> String? {
-    for batch in batches where batch.lightwalletdUrl == endpoint {
+    let crossed = batches.filter { $0.lightwalletdUrl == endpoint }.flatMap { batch in
       // A server can report any tip, so this must not add to it.
-      guard let activation = Self.branchEndingActivations(batch).first(where: {
-        remoteHeight >= $0 - 1
-      }) else { continue }
-      return "\(batch.network):\(activation)"
+      Self.branchEndingActivations(batch).filter { remoteHeight >= $0 - 1 }
+        .map { (network: batch.network, activation: $0) }
     }
-    return nil
+    // The latest, so an earlier stop left unreconciled can't hide this alert.
+    return crossed.max { $0.activation < $1.activation }
+      .map { "\($0.network):\($0.activation)" }
   }
 
   /// Whether any batch still holds an unsent part signed for the branch the

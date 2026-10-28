@@ -878,6 +878,23 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(try key(activation - 100, at: activation + 5, attempts: 1))
   }
 
+  func testUpgradeStopKeyNamesTheLatestCrossedUpgrade() throws {
+    let activation = try testnetNu7ActivationHeight()
+    let batch = try makeBatchBeforeNu7(targetHeight: activation - 100)
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+    // A part an earlier upgrade stopped that the foreground never reconciled.
+    var earlier = snapshot.batches[0].items[0]
+    earlier.targetHeight = 1
+    snapshot.batches[0].items.insert(earlier, at: 0)
+
+    XCTAssertEqual(
+      snapshot.upgradeStopKey(remoteHeight: activation, endpoint: batch.lightwalletdUrl),
+      "test:\(activation)"
+    )
+  }
+
   func testStopAlertCoversOnlyUnsentPartsItsUpgradeStopped() throws {
     let activation = try testnetNu7ActivationHeight()
     let key = "test:\(activation)"
