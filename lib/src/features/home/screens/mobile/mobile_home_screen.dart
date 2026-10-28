@@ -328,10 +328,16 @@ class _IronwoodMigrationAttentionHostState
   @override
   Widget build(BuildContext context) {
     ref.listen(syncProvider, (_, _) => _evaluateInitialEntry());
-    ref.listen(
-      ironwoodHomeMigrationPresentationProvider,
-      (_, _) => _evaluateInitialEntry(),
-    );
+    ref.listen(ironwoodHomeMigrationPresentationProvider, (previous, next) {
+      _evaluateInitialEntry();
+      // A stop is news mid-session; other attention waits for entry or resume.
+      if (!_initialEvaluationPending &&
+          next.mode == IronwoodHomeMigrationCtaMode.stopped &&
+          (previous?.mode != IronwoodHomeMigrationCtaMode.stopped ||
+              previous?.accountUuid != next.accountUuid)) {
+        _evaluate();
+      }
+    });
     return const SizedBox.shrink();
   }
 
@@ -354,10 +360,7 @@ class _IronwoodMigrationAttentionHostState
     final stopped = cta.mode == IronwoodHomeMigrationCtaMode.stopped;
     if (cta.mode != IronwoodHomeMigrationCtaMode.resume && !stopped) return;
     final accountUuid = cta.accountUuid;
-    // A stopped run has no active run id; one sheet per account is enough.
-    final runId = stopped
-        ? kIronwoodMigrationStoppedByUpgradePhase
-        : cta.status?.activeRunId;
+    final runId = mobileIronwoodMigrationAttentionRunId(cta.status);
     final sync = ref.read(syncProvider).value;
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(

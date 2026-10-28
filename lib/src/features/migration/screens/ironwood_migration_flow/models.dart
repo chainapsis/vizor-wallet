@@ -149,7 +149,9 @@ bool _routeShouldResumeMigration(rust_sync.MigrationStatus status) {
 }
 
 bool _routeShouldStartMigration(String phase) {
-  return kIronwoodMigrationStartPhases.contains(phase);
+  // A stopped run's remainder starts a new run, as on the home CTA.
+  return kIronwoodMigrationStartPhases.contains(phase) ||
+      phase == kIronwoodMigrationStoppedByUpgradePhase;
 }
 
 bool _isEmptyCompletedMigrationStatus(rust_sync.MigrationStatus status) {

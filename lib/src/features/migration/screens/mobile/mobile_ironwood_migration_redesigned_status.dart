@@ -1305,7 +1305,7 @@ class _MobileMigrationRedesignedStatusState
   /// to the navigation that brought the user here: a launch that dies before
   /// the frame is drawn should still owe the user its result.
   void _recordVisibleAttention(String? accountUuid) {
-    final runId = widget.status.activeRunId;
+    final runId = mobileIronwoodMigrationAttentionRunId(widget.status);
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(
       widget.status,

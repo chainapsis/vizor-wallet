@@ -117,6 +117,14 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
       : null;
 }
 
+/// The run an attention sheet is keyed to. A stopped run has no active run
+/// id; one sheet per account is enough.
+String? mobileIronwoodMigrationAttentionRunId(
+  rust_sync.MigrationStatus? status,
+) => status?.phase == kIronwoodMigrationStoppedByUpgradePhase
+    ? kIronwoodMigrationStoppedByUpgradePhase
+    : status?.activeRunId;
+
 String mobileIronwoodMigrationAttentionFingerprint({
   required String accountUuid,
   required String runId,
