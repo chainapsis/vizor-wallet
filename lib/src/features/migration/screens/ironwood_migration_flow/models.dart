@@ -13,7 +13,7 @@ enum IronwoodMigrationFlowStep {
 enum IronwoodMigrationReviewPreviewStage { review, analyzing }
 
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
-const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 6);
+const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 2);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
 const _migrationPrepareConfirmationBlocks = 3;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';

@@ -41,5 +41,5 @@ enum MobileIronwoodMigrationPreviewSurface {
 const _migrationProgress = 60 / 196;
 
 final mobileIronwoodMigrationStartMinimumDurationProvider = Provider<Duration>(
-  (_) => const Duration(seconds: 3),
+  (_) => const Duration(seconds: 2),
 );
