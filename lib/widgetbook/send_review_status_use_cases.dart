@@ -22,6 +22,11 @@ const _contactRecipient = SendReviewContactRecipient(
   profilePictureId: 'pfp-02',
 );
 
+const _znsNameRecipient = SendReviewNameRecipient(
+  address: _sampleAddress,
+  name: 'alice.zcash',
+);
+
 const _requestContactRecipient = SendReviewContactRecipient(
   address: _sampleAddress,
   name: 'Blue Door Coffee',
@@ -55,6 +60,25 @@ Widget buildSendReviewContactUseCase(BuildContext context) {
       amountText: '123.12 ZEC',
       fiatText: r'$250.12',
       recipient: _contactRecipient,
+      memoText: _sampleMemo,
+      feeText: '0.012 ZEC',
+      onConfirm: () {},
+      onCancel: () {},
+      onShowFullAddress: () {},
+      onExpandMemo: () {},
+      onFeeHelp: () {},
+    ),
+  );
+}
+
+/// Review send — recipient entered as a Zcash name (globe badge + name
+/// headline, pool badge and truncated address sub-line).
+Widget buildSendReviewZnsNameUseCase(BuildContext context) {
+  return _SendReviewStatusFrame(
+    child: SendReviewContentView(
+      amountText: '123.12 ZEC',
+      fiatText: r'$250.12',
+      recipient: _znsNameRecipient,
       memoText: _sampleMemo,
       feeText: '0.012 ZEC',
       onConfirm: () {},
