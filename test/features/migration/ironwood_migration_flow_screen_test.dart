@@ -1532,6 +1532,89 @@ void main() {
     expect(find.text('Amount to migrate'), findsOneWidget);
   });
 
+  for (final refusal in [
+    (
+      error:
+          "Migrations can't start this close to the network upgrade. Try "
+          'again after it activates.',
+      copy: kNetworkUpgradeHoldMessage,
+      redraws: false,
+    ),
+    (
+      error:
+          'Migration schedule was drawn before the network upgrade; review '
+          'the plan again',
+      copy: kNetworkUpgradeScheduleChangedMessage,
+      redraws: true,
+    ),
+  ]) {
+    testWidgets('private review explains an upgrade refusal: ${refusal.copy}', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var planReads = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async {
+              planReads++;
+              return _privatePlan();
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => defaultRpcEndpointConfig('main'),
+        getSessionPassword: () => 'test-password',
+        getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
+        isMacOS: () => false,
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) => Future.error(StateError(refusal.error)),
+      );
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(
+          initialLocation: '/migration/private/review',
+          migrationService: service,
+          usePrivatePreview: false,
+          // No run started, so the review keeps the refusal on screen.
+          statusGetter:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => _migrationStatus(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final readsBeforeStart = planReads;
+
+      await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      expect(find.text(refusal.copy), findsOneWidget);
+      expect(find.textContaining('network upgrade;'), findsNothing);
+      // Only a schedule drawn before the upgrade is drawn again.
+      expect(planReads > readsBeforeStart, refusal.redraws);
+    });
+  }
+
   testWidgets('moving the rest of an upgrade-stopped run names it on options', (
     tester,
   ) async {
