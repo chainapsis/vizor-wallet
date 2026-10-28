@@ -10,7 +10,6 @@ class IronwoodMigrationUpgradeStop {
     required this.remainingAmountText,
     required this.completedParts,
     required this.totalParts,
-    this.amountsHidden = false,
   });
 
   final String migratedAmountText;
@@ -18,10 +17,5 @@ class IronwoodMigrationUpgradeStop {
   final int completedParts;
   final int totalParts;
 
-  /// Privacy mode masks the amounts, so the action names no amount either.
-  final bool amountsHidden;
-
-  String get moveRemainingLabel => amountsHidden
-      ? 'Move remaining balance'
-      : 'Move remaining $remainingAmountText';
+  String get moveRemainingLabel => 'Move remaining $remainingAmountText';
 }

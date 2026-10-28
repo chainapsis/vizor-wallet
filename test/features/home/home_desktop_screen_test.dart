@@ -740,7 +740,7 @@ void main() {
       find.byKey(const ValueKey('home_desktop_ironwood_migration_cta_button')),
     );
 
-    expect(find.text('Migration stopped by upgrade'), findsOneWidget);
+    expect(find.text('Migration stopped by network upgrade'), findsOneWidget);
     expect(find.textContaining('still migrating'), findsNothing);
     expect(
       find.byKey(

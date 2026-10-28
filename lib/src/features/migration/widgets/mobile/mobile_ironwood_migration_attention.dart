@@ -184,7 +184,7 @@ class _MobileIronwoodMigrationBannerState
             MobileIronwoodMigrationAttentionKind.lateBroadcast =>
               'Migration needs attention',
             MobileIronwoodMigrationAttentionKind.upgradeStopped =>
-              'Migration stopped by upgrade',
+              'Migration stopped',
           }
         : widget.inProgress
         ? widget.preparing

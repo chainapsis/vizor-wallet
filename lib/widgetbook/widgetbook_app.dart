@@ -644,11 +644,11 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildIronwoodMigrationCompleteUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Migration stopped by upgrade',
+                      name: 'Migration stopped by network upgrade',
                       builder: buildIronwoodMigrationUpgradeStoppedUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Home - Migration stopped by upgrade',
+                      name: 'Home - Migration stopped by network upgrade',
                       builder:
                           buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase,
                     ),

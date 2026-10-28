@@ -1885,7 +1885,7 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
               label: migrationRequired
                   ? 'Migrate to Ironwood'
                   : migrationStopped
-                  ? 'Migration stopped by upgrade'
+                  ? 'Migration stopped by network upgrade'
                   : widget.waitingForMigrationConfirmation
                   ? 'Waiting for confirmation...'
                   : '${hideAmountIfPrivacyMode('${widget.migratingBalanceText} ZEC', privacyModeEnabled: widget.privacyModeEnabled)} still migrating',

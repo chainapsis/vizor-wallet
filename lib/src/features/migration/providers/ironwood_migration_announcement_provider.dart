@@ -510,7 +510,8 @@ class IronwoodHomeMigrationCtaState {
   String get buttonLabel => switch (mode) {
     IronwoodHomeMigrationCtaMode.start => 'Migrate to Ironwood Pool',
     IronwoodHomeMigrationCtaMode.resume => 'Continue migration',
-    IronwoodHomeMigrationCtaMode.stopped => 'Migration stopped by upgrade',
+    IronwoodHomeMigrationCtaMode.stopped =>
+      'Migration stopped by network upgrade',
     IronwoodHomeMigrationCtaMode.hidden => '',
   };
 }

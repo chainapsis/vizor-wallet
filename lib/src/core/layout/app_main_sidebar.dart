@@ -717,6 +717,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
               label: 'Home',
               iconName: AppIcons.home,
               onTap: onHome,
+              // A stopped run released its notes, so Orchard is no longer held.
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -724,15 +725,19 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
                     orchardLabel,
                     key: ValueKey('sidebar_orchard_balance'),
                     style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.secondary.withValues(alpha: 0.5),
+                      color: stopped
+                          ? colors.text.secondary
+                          : colors.text.secondary.withValues(alpha: 0.5),
                     ),
                   ),
-                  SizedBox(width: AppSpacing.xxs),
-                  AppIcon(
-                    AppIcons.lock,
-                    size: 16,
-                    color: colors.icon.regular.withValues(alpha: 0.5),
-                  ),
+                  if (!stopped) ...[
+                    SizedBox(width: AppSpacing.xxs),
+                    AppIcon(
+                      AppIcons.lock,
+                      size: 16,
+                      color: colors.icon.regular.withValues(alpha: 0.5),
+                    ),
+                  ],
                 ],
               ),
             ),
