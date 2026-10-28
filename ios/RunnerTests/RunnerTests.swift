@@ -1318,30 +1318,44 @@ class RunnerTests: XCTestCase {
     )
   }
 
-  func testUpgradeDroppedPassesCountOnlyUnknownTransactionsPastTheUpgrade() {
-    func passes(
-      previous: Int,
+  func testUpgradeDropTrackingCountsOnlyOldBranchTransactionsPastTheUpgrade() {
+    let old = "aa"
+    let new = "bb"
+    func track(
+      _ previous: MigrationPreparationUpgradeDropTracking,
+      _ ids: [String],
       _ observations: [NativeLightwalletdTransactionObservation],
       tip: UInt64,
       activation: UInt64 = 600
-    ) -> Int {
-      migrationPreparationUpgradeDroppedPasses(
-        previous: previous,
+    ) -> MigrationPreparationUpgradeDropTracking {
+      migrationPreparationUpgradeDropTracking(
+        previous,
+        transactionIds: ids,
         observations: observations,
         chainTipHeight: tip,
         upgradeActivationHeight: activation
       )
     }
 
-    // Block 599 can still include it.
-    XCTAssertEqual(passes(previous: 1, [.notFound], tip: 598), 0)
-    XCTAssertEqual(passes(previous: 0, [.notFound], tip: 599), 1)
-    XCTAssertEqual(passes(previous: 1, [.mined(height: 590), .notFound], tip: 610), 2)
-    // A transaction the server still holds or mined resets the count.
-    XCTAssertEqual(passes(previous: 1, [.mempool], tip: 610), 0)
-    XCTAssertEqual(passes(previous: 1, [.mined(height: 599)], tip: 610), 0)
+    // Seen while block 599 could still take it: signed for the old branch.
+    let seen = track(.init(), [old], [.mempool], tip: 598)
+    XCTAssertEqual(seen.oldBranchTransactionIds, [old])
+    XCTAssertEqual(seen.passes, 0)
+    let once = track(seen, [old], [.notFound], tip: 600)
+    XCTAssertEqual(once.passes, 1)
+    XCTAssertEqual(track(once, [old], [.notFound], tip: 601).passes, 2)
+    // Still held or mined resets the count.
+    XCTAssertEqual(track(once, [old], [.mempool], tip: 601).passes, 0)
+    XCTAssertEqual(track(once, [old], [.mined(height: 599)], tip: 601).passes, 0)
+    // A transaction first seen from tip 599 may target the new branch.
+    let later = track(.init(), [new], [.notFound], tip: 599)
+    XCTAssertEqual(later, MigrationPreparationUpgradeDropTracking())
+    XCTAssertEqual(track(once, [new], [.notFound], tip: 601).passes, 0)
     // No scheduled upgrade.
-    XCTAssertEqual(passes(previous: 1, [.notFound], tip: 610, activation: 0), 0)
+    XCTAssertEqual(
+      track(once, [old], [.notFound], tip: 601, activation: 0),
+      MigrationPreparationUpgradeDropTracking()
+    )
   }
 
   func testTransactionDroppedAtTheUpgradeHandsTheWaveToTheForeground() {
