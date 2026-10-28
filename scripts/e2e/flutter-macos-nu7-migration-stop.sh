@@ -11,9 +11,10 @@ NU7_HEIGHT="${NU7_REGTEST_NU7_HEIGHT:-600}"
 APP_START_BEFORE_NU7="${E2E_APP_START_BEFORE_NU7:-100}"
 LIGHTWALLETD_URL="http://127.0.0.1:${NU7_REGTEST_LIGHTWALLETD_PORT:-49067}"
 FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
+VIZOR_FORM_FACTOR="${VIZOR_FORM_FACTOR:-desktop}"
 DRIVER_PORT="${E2E_DRIVER_PORT:-39080}"
 DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
-TEST_FILE="integration_test/regtest_nu7_migration_stop_test.dart"
+TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_nu7_migration_stop_test.dart}"
 DRIVER_LOG="$ROOT_DIR/.nu7-regtest/e2e-driver.log"
 
 # The app starts once Ironwood is active, so NU7 must leave room after NU6.3.
@@ -69,9 +70,13 @@ for _ in range(100):
 raise SystemExit("Timed out waiting for the NU7 E2E driver")
 PY
 
-echo "running Flutter NU7 migration stop integration test"
+echo "running Flutter NU7 migration stop integration test: $TEST_FILE"
+flutter_args=("$TEST_FILE" -d "$FLUTTER_DEVICE")
+if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
+  flutter_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+fi
 set +e
-fvm flutter test "$TEST_FILE" -d "$FLUTTER_DEVICE" \
+fvm flutter test "${flutter_args[@]}" \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$NU63_HEIGHT" \
   --dart-define=ZCASH_REGTEST_NU7_ACTIVATION_HEIGHT="$NU7_HEIGHT" \
