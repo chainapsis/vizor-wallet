@@ -73,7 +73,8 @@ PY
 echo "running Flutter NU7 migration stop integration test: $TEST_FILE"
 flutter_args=("$TEST_FILE" -d "$FLUTTER_DEVICE")
 if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
-  flutter_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+  # The mobile test is tagged out of the default (desktop) lane.
+  flutter_args+=(--tags mobile --run-skipped --dart-define=VIZOR_FORM_FACTOR=mobile)
 fi
 set +e
 fvm flutter test "${flutter_args[@]}" \
