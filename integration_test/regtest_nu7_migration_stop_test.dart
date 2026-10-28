@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_phases.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/desktop_regtest_flow.dart';
@@ -69,7 +70,8 @@ void main() {
       tipHeight: BigInt.from(tip),
     )!;
     expect(window.nextActivationHeight.toInt(), nu7);
-    final holdStarts = window.migrationHoldFromTip.toInt();
+    // Migrations hold from the tip 11 blocks before activation.
+    final holdStarts = nu7 - 11;
     if (tip < holdStarts) {
       await _mine(holdStarts - tip);
     }
@@ -92,12 +94,10 @@ void main() {
       description: 'run stopped by the upgrade',
     );
     expect(stopped.activeRunId, isNull);
-    await pumpUntil(
-      tester,
-      () => tester.any(find.text('Migration stopped by upgrade')),
-      description: 'stopped migration on home',
-    );
+    expect(firstRun.activeRunId, isNotNull);
 
+    // The screens for a stopped run and the restart come with the Dart slice;
+    // until then, check the app keeps the run stopped past activation.
     e2eLog('activating NU7');
     await _mine(1);
     await _waitForScan(tester, container, nu7);
@@ -105,65 +105,17 @@ void main() {
       (await ironwoodDriverGet(_driverUrl, '/status'))['nu7Active'],
       isTrue,
     );
-
-    await tapAppButton(
-      tester,
-      const ValueKey('home_desktop_ironwood_migration_cta_button'),
+    final afterActivation = await rust_sync.getOrchardMigrationStatus(
+      dbPath: await getWalletDbPath(),
+      network: 'regtest',
+      accountUuid: accountUuid,
     );
-    await tapAppButton(
-      tester,
-      const ValueKey('ironwood_upgrade_stop_move_remaining'),
+    expect(afterActivation.phase, 'stopped_by_upgrade');
+    expect(
+      (await ironwoodDriverGet(_driverUrl, '/mempool'))['size'],
+      0,
+      reason: 'no old-branch part is sent after activation',
     );
-    await pumpUntil(
-      tester,
-      () => tester.any(
-        find.byKey(const ValueKey('ironwood_migration_private_option')),
-      ),
-      description: 'migration options for the remainder',
-    );
-    await tapAppWidget(
-      tester,
-      const ValueKey('ironwood_migration_private_option'),
-    );
-    await tapAppButton(
-      tester,
-      const ValueKey('ironwood_migration_select_review_button'),
-    );
-    await startPrivateMigrationFromReview(tester);
-    final secondRun = await waitForDesktopRegtestMigrationStatus(
-      tester,
-      accountUuid,
-      (status) =>
-          status.activeRunId != null &&
-          status.activeRunId != firstRun.activeRunId &&
-          status.scheduledBroadcasts.isNotEmpty,
-      description: 'second run scheduled under NU7',
-    );
-    for (final part in secondRun.scheduledBroadcasts) {
-      final start = part.scheduleStartHeight;
-      if (start == null) continue;
-      expect(
-        (part.scheduledHeight - start) % 3,
-        0,
-        reason: 'NU7 delays span whole 75-second reference blocks',
-      );
-    }
-    await waitForDesktopActiveMigrationStatus(tester);
-    await leaveDesktopMigrationStatusForHome(tester);
-
-    await advanceDesktopRegtestMigrationSchedule(
-      tester,
-      _driverUrl,
-      accountUuid,
-    );
-    await _mine(10);
-    final complete = await waitForDesktopRegtestMigrationStatus(
-      tester,
-      accountUuid,
-      (status) => status.phase == kIronwoodMigrationCompletePhase,
-      description: 'completed second run',
-    );
-    expect(complete.confirmedTxCount, complete.totalCount);
   }, timeout: const Timeout(Duration(minutes: 30)));
 }
 
