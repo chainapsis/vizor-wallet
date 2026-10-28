@@ -21,11 +21,13 @@ import 'package:zcash_wallet/src/core/widgets/app_carousel.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -1057,6 +1059,17 @@ void main() {
     },
   );
 
+  test('Keystone migration explains the network upgrade hold', () {
+    final message = ironwoodMigrationKeystoneSigningErrorMessage(
+      Exception(
+        "Migrations can't start this close to the network upgrade. "
+        'Try again after it activates.',
+      ),
+    );
+
+    expect(message, kNetworkUpgradeHoldMessage);
+  });
+
   testWidgets(
     'desktop immediate migration uses the shared signing QR display',
     (tester) async {
@@ -1517,6 +1530,54 @@ void main() {
 
     expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(find.text('Amount to migrate'), findsOneWidget);
+  });
+
+  testWidgets('moving the rest of an upgrade-stopped run names it on options', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final stopped = _stoppedByUpgradeStatus();
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/status',
+        statusRoutePreview: stopped,
+        presentationCta: IronwoodHomeMigrationCtaState.stopped(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: stopped,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Move remaining balance'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_upgrade_stop_move_remaining')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('How to move the rest'), findsOneWidget);
+    expect(
+      find.text(
+        '0.1 ZEC is still in Orchard. Choose between more privacy over time '
+        'or a faster migration.',
+      ),
+      findsOneWidget,
+    );
+    // Back returns to the stopped run rather than the first-run intro.
+    await tester.tap(find.text('Ironwood Migration'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_status_stopped_by_upgrade'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('private status shows resume progress state', (tester) async {
@@ -5315,6 +5376,9 @@ void main() {
       final expected = _privatePlan();
       final container = ProviderContainer(
         overrides: [
+          networkUpgradeWindowProvider.overrideWithValue(
+            NetworkUpgradeWindowState.none,
+          ),
           ironwoodMigrationFlowDataProvider.overrideWith(
             (ref) => IronwoodMigrationFlowData(
               amountZatoshi: BigInt.from(10_000_000),
@@ -5383,6 +5447,9 @@ void main() {
       final expected = _privatePlan();
       final container = ProviderContainer(
         overrides: [
+          networkUpgradeWindowProvider.overrideWithValue(
+            NetworkUpgradeWindowState.none,
+          ),
           ironwoodMigrationInputsProvider.overrideWith(
             (ref) => ref.watch(inputsProvider),
           ),
@@ -5427,11 +5494,82 @@ void main() {
       expect(planCallCount, 1);
     },
   );
+
+  test('private plan is drawn again when the upgrade activates', () async {
+    final windowProvider =
+        NotifierProvider<_UpgradeWindowNotifier, NetworkUpgradeWindowState>(
+          _UpgradeWindowNotifier.new,
+        );
+    var planCallCount = 0;
+    final container = ProviderContainer(
+      overrides: [
+        networkUpgradeWindowProvider.overrideWith(
+          (ref) => ref.watch(windowProvider),
+        ),
+        ironwoodMigrationInputsProvider.overrideWithValue(_migrationInputs()),
+        ironwoodMigrationServiceProvider.overrideWithValue(
+          IronwoodMigrationService(
+            getWalletDbPath: () async => '/tmp/wallet.db',
+            getStatus:
+                ({required dbPath, required network, required accountUuid}) {
+                  return Future.value(_migrationStatus());
+                },
+            getPrivatePlan:
+                ({required dbPath, required network, required accountUuid}) {
+                  planCallCount += 1;
+                  return Future.value(_privatePlan());
+                },
+            secureStore: AppSecureStore.testing(
+              storage: const FlutterSecureStorage(),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationPrivatePlanProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final window = container.read(windowProvider.notifier);
+
+    await container.read(ironwoodMigrationPrivatePlanProvider.future);
+    expect(planCallCount, 1);
+
+    window.set(
+      const NetworkUpgradeWindowState(
+        nextActivationHeight: 600,
+        holdsTransactions: true,
+      ),
+    );
+    await container.read(ironwoodMigrationPrivatePlanProvider.future);
+    expect(planCallCount, 2);
+
+    // The hold ends at the last old-branch tip, where a run's first block is
+    // already on the new branch.
+    window.set(const NetworkUpgradeWindowState(nextActivationHeight: 600));
+    await container.read(ironwoodMigrationPrivatePlanProvider.future);
+    expect(planCallCount, 3);
+
+    window.set(NetworkUpgradeWindowState.none);
+    await container.read(ironwoodMigrationPrivatePlanProvider.future);
+    expect(planCallCount, 4);
+  });
 }
 
 Future<void> _openShuffleReview(WidgetTester tester) async {
   expect(find.text('Review shuffle'), findsNothing);
   expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
+}
+
+class _UpgradeWindowNotifier extends Notifier<NetworkUpgradeWindowState> {
+  @override
+  NetworkUpgradeWindowState build() =>
+      const NetworkUpgradeWindowState(nextActivationHeight: 600);
+
+  void set(NetworkUpgradeWindowState value) => state = value;
 }
 
 class _MigrationInputsNotifier extends Notifier<IronwoodMigrationInputs> {
@@ -5508,6 +5646,8 @@ Widget _migrationOptionsHarness({
   List<String> previewCombinedSigningUrParts = const [],
   rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
   LedgerImmediateMigrationService? ledgerImmediateMigrationService,
+  IronwoodHomeMigrationCtaState? presentationCta,
+  rust_sync.MigrationStatus? statusRoutePreview,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -5575,7 +5715,9 @@ Widget _migrationOptionsHarness({
         path: '/migration/private/status',
         builder: (_, _) => realStatusRoute
             ? const IronwoodMigrationPrivateStatusScreen()
-            : IronwoodMigrationPrivateStatusScreen(previewStatus: _status()),
+            : IronwoodMigrationPrivateStatusScreen(
+                previewStatus: statusRoutePreview ?? _status(),
+              ),
       ),
       GoRoute(
         path: '/migration/private/keystone/sign',
@@ -5685,6 +5827,10 @@ Widget _migrationOptionsHarness({
       if (ledgerImmediateMigrationService != null)
         ledgerImmediateMigrationServiceProvider.overrideWithValue(
           ledgerImmediateMigrationService,
+        ),
+      if (presentationCta != null)
+        ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+          presentationCta,
         ),
     ],
     child: MaterialApp.router(
@@ -6755,6 +6901,32 @@ rust_sync.MigrationStatus _status() {
     signingBatchLimit: 40,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    scheduledBroadcasts: const [],
+    parts: const [],
+  );
+}
+
+rust_sync.MigrationStatus _stoppedByUpgradeStatus() {
+  final status = _status();
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationStoppedByUpgradePhase,
+    activeRunId: null,
+    targetValuesZatoshi: status.targetValuesZatoshi,
+    preparedNoteCount: status.preparedNoteCount,
+    denominationConfirmationCount: status.denominationConfirmationCount,
+    denominationConfirmationTarget: status.denominationConfirmationTarget,
+    denominationSplitCompletedCount: status.denominationSplitCompletedCount,
+    denominationSplitTotalCount: status.denominationSplitTotalCount,
+    pendingTxCount: 0,
+    broadcastedTxCount: 0,
+    confirmedTxCount: 0,
+    totalCount: status.totalCount,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: status.signingBatchLimit,
+    scheduleMeanDelayBlocks: status.scheduleMeanDelayBlocks,
+    scheduleMaxDelayBlocks: status.scheduleMaxDelayBlocks,
     scheduledBroadcasts: const [],
     parts: const [],
   );

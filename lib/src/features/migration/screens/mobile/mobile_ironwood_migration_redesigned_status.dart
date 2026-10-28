@@ -903,6 +903,23 @@ class _MobileMigrationRedesignedStatusState
       );
     }
 
+    if (widget.status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
+      return _MigrationUpgradeStoppedView(
+        stop: IronwoodMigrationUpgradeStop(
+          migratedAmountText: _migratedAmountText(widget.status),
+          // What the next run moves; the options and review start from it.
+          remainingAmountText:
+              '${ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText} ZEC',
+          completedParts: _completedParts(widget.status),
+          totalParts: _totalParts(widget.status),
+        ),
+        completedSegments: _completedRingSegments(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
+        onMoveRemaining: () => context.go('/migration/options'),
+        onBack: () => context.go('/home'),
+      );
+    }
+
     if (widget.status.phase == kIronwoodMigrationCompletePhase) {
       return _MigrationCompleteSurface(
         status: widget.status,
@@ -1056,7 +1073,10 @@ class _MobileMigrationRedesignedStatusState
       if (broadcast.status.toLowerCase() != 'scheduled' ||
           broadcast.scheduledHeight <= 0 ||
           currentHeight <
-              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks) {
+              ironwoodMigrationLateHeight(
+                broadcast.scheduledHeight,
+                ref.read(blockSpacingProvider),
+              )) {
         continue;
       }
       if (earliest == null || broadcast.scheduledHeight < earliest) {
@@ -1287,13 +1307,14 @@ class _MobileMigrationRedesignedStatusState
   /// to the navigation that brought the user here: a launch that dies before
   /// the frame is drawn should still owe the user its result.
   void _recordVisibleAttention(String? accountUuid) {
-    final runId = widget.status.activeRunId;
+    final runId = mobileIronwoodMigrationAttentionRunId(widget.status);
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(
       widget.status,
       currentHeight: _currentHeight(),
       broadcastHeight: _currentBroadcastHeight(),
       isKeystone: widget.isHardware,
+      blockSpacing: ref.read(blockSpacingProvider),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -1415,7 +1436,10 @@ class _MobileMigrationRedesignedStatusState
         if (broadcast.status.toLowerCase() != 'scheduled' ||
             broadcast.scheduledHeight <= 0 ||
             currentHeight <
-                broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks) {
+                ironwoodMigrationLateHeight(
+                  broadcast.scheduledHeight,
+                  ref.read(blockSpacingProvider),
+                )) {
           continue;
         }
         for (final part in ordered) {

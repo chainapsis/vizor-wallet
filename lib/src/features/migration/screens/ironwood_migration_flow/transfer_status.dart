@@ -317,6 +317,169 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
   }
 }
 
+/// A run the network upgrade stopped: what moved, what is left, one action.
+class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
+  const _MigrationUpgradeStoppedStatusContent({
+    required this.status,
+    required this.onMoveRemaining,
+    this.orchardBalanceZatoshi,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final VoidCallback onMoveRemaining;
+
+  /// What the next run moves; the options and review start from it too.
+  final BigInt? orchardBalanceZatoshi;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final parts = orderedMigrationParts(_displayMigrationParts(status));
+    var values = parts.isNotEmpty
+        ? [for (final part in parts) part.valueZatoshi]
+        : [for (final value in status.targetValuesZatoshi) value];
+    if (values.isEmpty) values = [BigInt.zero];
+    final runStatuses = parts.isNotEmpty
+        ? [for (final part in parts) _migrationBatchStatus(part.state)]
+        : _legacyMigrationBatchStatuses(status, values.length);
+    // Unconfirmed parts were never accepted, so they read as not started.
+    final statuses = [
+      for (final partStatus in runStatuses)
+        partStatus == _MigrationBatchStatus.complete
+            ? _MigrationBatchStatus.complete
+            : _MigrationBatchStatus.none,
+    ];
+    final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
+    final moved = _migrationCompletedAmount(values, statuses);
+    final remaining =
+        orchardBalanceZatoshi ?? (total > moved ? total - moved : BigInt.zero);
+    final usesLargeText = MediaQuery.textScalerOf(context).scale(1) > 1;
+    final message = Semantics(
+      liveRegion: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(AppIcons.warning, size: 20, color: colors.icon.warning),
+          const SizedBox(height: 8),
+          Text(
+            kIronwoodUpgradeStopRingMessage,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+        ],
+      ),
+    );
+    final summary = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _MigrationSummaryMetric(
+          label: 'Moved to Ironwood',
+          value: '${_formatZecAmountCompact(moved)} ZEC',
+          secondary: true,
+        ),
+        const SizedBox(height: 16),
+        _MigrationSummaryMetric(
+          label: 'Still in Orchard',
+          value: '${_formatZecAmountCompact(remaining)} ZEC',
+        ),
+      ],
+    );
+    final body = Text(
+      kIronwoodUpgradeStopBody,
+      textAlign: TextAlign.center,
+      style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
+    );
+    // 230 wide unless the label needs more; past the column it wraps.
+    final action = IntrinsicWidth(
+      child: AppButton(
+        key: const ValueKey('ironwood_upgrade_stop_move_remaining'),
+        onPressed: onMoveRemaining,
+        height: 44,
+        minWidth: 230,
+        growWithContent: true,
+        constrainContent: true,
+        child: const Text(
+          kIronwoodUpgradeStopMoveRemainingLabel,
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+    return SizedBox(
+      key: const ValueKey('ironwood_migration_status_stopped_by_upgrade'),
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 12,
+            top: 16,
+            width: 396,
+            child: Text(
+              'Ironwood Migration',
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineSmall.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 82,
+            top: 72,
+            width: 256,
+            height: 256,
+            child: _MigrationMorphingRing(
+              preparing: false,
+              preparationColor: colors.text.accent.withValues(alpha: 0.20),
+              palette: _migrationRingPalette(colors),
+              values: values,
+              totalZatoshi: total,
+              statuses: statuses,
+              // Large text shrinks the message to stay inside the ring.
+              child: usesLargeText
+                  ? SizedBox.square(
+                      dimension: 256 * 0.7,
+                      child: FittedBox(fit: BoxFit.scaleDown, child: message),
+                    )
+                  : message,
+            ),
+          ),
+          if (!usesLargeText) ...[
+            Positioned(left: 12, top: 354, width: 396, child: summary),
+            Positioned(left: 45, top: 446, width: 330, child: body),
+            Positioned(
+              left: 12,
+              top: 584,
+              width: 396,
+              child: Center(child: action),
+            ),
+          ] else
+            Positioned(
+              left: 12,
+              top: 344,
+              width: 396,
+              bottom: 8,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [summary, const SizedBox(height: 16), body],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  action,
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MigrationLiveStatusContent extends ConsumerWidget {
   const _MigrationLiveStatusContent({
     super.key,
@@ -2072,6 +2235,8 @@ int _currentMigrationHeight(SyncState? syncState) {
 }
 
 String _privateMigrationStartErrorMessage(Object error) {
+  final upgradeHold = networkUpgradeHoldMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {

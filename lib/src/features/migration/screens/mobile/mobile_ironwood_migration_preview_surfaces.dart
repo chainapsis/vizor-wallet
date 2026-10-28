@@ -102,6 +102,23 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
         const _MigrationHomeAttentionPreview(showModal: true),
       MobileIronwoodMigrationPreviewSurface.keystoneScanHelp =>
         const _MigrationKeystoneHelpPreview(),
+      MobileIronwoodMigrationPreviewSurface.migrationUpgradeStopped =>
+        const _MigrationUpgradeStoppedView(
+          stop: _previewUpgradeStop,
+          onMoveRemaining: _noopMigrationPreviewAction,
+          onBack: _noopMigrationPreviewAction,
+        ),
+      MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStopped =>
+        const _MigrationHomeAttentionPreview(
+          kind: MobileIronwoodMigrationAttentionKind.upgradeStopped,
+          count: 1,
+        ),
+      MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStoppedModal =>
+        const _MigrationHomeAttentionPreview(
+          kind: MobileIronwoodMigrationAttentionKind.upgradeStopped,
+          count: 1,
+          showModal: true,
+        ),
     };
   }
 }
@@ -1371,6 +1388,7 @@ class _MigrationBatchDial extends StatelessWidget {
       text: TextSpan(text: combinedAmount, style: amountStyle),
       maxLines: 1,
       textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
     )..layout();
     final splitAmount =
         amountPainter.width > dimension * 0.75 || combinedAmount.length >= 18;
@@ -1668,6 +1686,7 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
           text: TextSpan(text: label, style: labelStyle),
           maxLines: 1,
           textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
         )..layout();
         final maxLabelWidth = math.max(
           0.0,
@@ -1679,7 +1698,7 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
           math.max(0.0, constraints.maxWidth - labelWidth),
         );
         return SizedBox(
-          height: 20,
+          height: math.max(20, labelPainter.height),
           child: Row(
             children: [
               SizedBox(
@@ -2335,6 +2354,163 @@ class _MigrationCompleteSurfaceState
   }
 }
 
+const _previewUpgradeStop = IronwoodMigrationUpgradeStop(
+  migratedAmountText: '2.10 ZEC',
+  remainingAmountText: '3.40 ZEC',
+  completedParts: 7,
+  totalParts: 20,
+);
+
+/// Result for a run the network upgrade stopped; the live status uses it too.
+class _MigrationUpgradeStoppedView extends StatelessWidget {
+  const _MigrationUpgradeStoppedView({
+    required this.stop,
+    this.completedSegments,
+    this.segmentValuesZatoshi,
+    this.onMoveRemaining,
+    this.onBack,
+  });
+
+  final IronwoodMigrationUpgradeStop stop;
+  final Set<int>? completedSegments;
+  final List<BigInt>? segmentValuesZatoshi;
+  final VoidCallback? onMoveRemaining;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final segments = math.max(1, stop.totalParts);
+    final usesLargeText = MediaQuery.textScalerOf(context).scale(1) > 1;
+    final body = Text(
+      kIronwoodUpgradeStopBody,
+      textAlign: TextAlign.center,
+      style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
+    );
+    final summary = _MigrationSummaryRows(
+      first: _MigrationValueRow(
+        label: 'Moved to Ironwood',
+        value: stop.migratedAmountText,
+      ),
+      second: _MigrationValueRow(
+        label: 'Still in Orchard',
+        value: stop.remainingAmountText,
+        accented: true,
+      ),
+    );
+    final message = Semantics(
+      liveRegion: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(AppIcons.warning, size: 20, color: colors.icon.warning),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            kIronwoodUpgradeStopRingMessage,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+        ],
+      ),
+    );
+    Widget ring(double dimension) => SizedBox.square(
+      dimension: dimension,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          _AnimatedMigrationAttentionRing(
+            dimension: dimension,
+            segmentWeights: _normalizedMigrationRingWeights(
+              segments: segments,
+              valuesZatoshi: segmentValuesZatoshi,
+            ),
+            completedSegments:
+                completedSegments ??
+                {
+                  for (
+                    var index = 0;
+                    index < stop.completedParts.clamp(0, segments);
+                    index++
+                  )
+                    index,
+                },
+            awaitingSegments: const {},
+            highlightedSegments: const {},
+          ),
+          // Large text shrinks the message to stay inside the ring.
+          if (usesLargeText)
+            SizedBox.square(
+              dimension: dimension * 0.7,
+              child: FittedBox(fit: BoxFit.scaleDown, child: message),
+            )
+          else
+            message,
+        ],
+      ),
+    );
+    return _MigrationPreviewPage(
+      navTitle: 'Ironwood Migration',
+      onBack: onBack,
+      contentGap: AppSpacing.md,
+      // Large text scrolls the page rather than shrinking the ring away.
+      scrollableContent: usesLargeText,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!usesLargeText) ...[body, const SizedBox(height: AppSpacing.md)],
+          AppButton(
+            key: const ValueKey('mobile_ironwood_upgrade_stop_move_remaining'),
+            expand: true,
+            height: 50,
+            growWithContent: true,
+            constrainContent: true,
+            onPressed: onMoveRemaining,
+            child: const Text(
+              kIronwoodUpgradeStopMoveRemainingLabel,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+      child: usesLargeText
+          ? Column(
+              children: [
+                ring(
+                  math.min(
+                    256.0,
+                    MediaQuery.sizeOf(context).width - 2 * AppSpacing.sm,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                summary,
+                const SizedBox(height: AppSpacing.md),
+                body,
+              ],
+            )
+          : Column(
+              children: [
+                // The ring shrinks on short screens so the page never scrolls.
+                Flexible(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => ring(
+                      math.min(
+                        256.0,
+                        math.min(constraints.maxHeight, constraints.maxWidth),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                summary,
+              ],
+            ),
+    );
+  }
+}
+
 class _MigrationCompletePreview extends StatelessWidget {
   const _MigrationCompletePreview({required this.amountText, this.onDone});
 
@@ -2409,9 +2585,15 @@ class _MigrationCompletePreview extends StatelessWidget {
 }
 
 class _MigrationHomeAttentionPreview extends StatelessWidget {
-  const _MigrationHomeAttentionPreview({this.showModal = false});
+  const _MigrationHomeAttentionPreview({
+    this.showModal = false,
+    this.kind = MobileIronwoodMigrationAttentionKind.signature,
+    this.count = 2,
+  });
 
   final bool showModal;
+  final MobileIronwoodMigrationAttentionKind kind;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
@@ -2449,8 +2631,8 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           MobileIronwoodMigrationBanner(
             inProgress: false,
-            attentionKind: MobileIronwoodMigrationAttentionKind.signature,
-            actionNeededCount: 2,
+            attentionKind: kind,
+            actionNeededCount: count,
             remainingText: null,
             onTap: () {},
           ),
@@ -2478,8 +2660,8 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
     return _MigrationModalPreview(
       background: background,
       child: MobileIronwoodMigrationAttentionSheetBody(
-        kind: MobileIronwoodMigrationAttentionKind.signature,
-        count: 2,
+        kind: kind,
+        count: count,
         onOpenMigration: () {},
         onLater: () {},
       ),
@@ -2661,65 +2843,51 @@ class _MigrationValueRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 20,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final style =
-              (emphasized
-                      ? AppTypography.labelLarge
-                      : AppTypography.labelLarge.copyWith(
-                          fontWeight: FontWeight.w400,
-                        ))
-                  .copyWith(
-                    color: emphasized || accented
-                        ? context.colors.text.accent
-                        : context.colors.text.primary,
-                  );
-          final labelPainter = TextPainter(
-            text: TextSpan(text: label, style: style),
-            maxLines: 1,
-            textDirection: Directionality.of(context),
-          )..layout();
-          final fixedWidth = icon == null ? 0.0 : 20 + AppSpacing.xs;
-          const minimumValueWidth = 80.0;
-          final labelWidth = math.min(
-            labelPainter.width,
-            math.max(
-              0.0,
-              constraints.maxWidth - fixedWidth - minimumValueWidth,
-            ),
-          );
-          final labelText = Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: style,
-          );
-          final valueText = Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: style,
-          );
-          return Row(
+    final style =
+        (emphasized
+                ? AppTypography.labelLarge
+                : AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w400,
+                  ))
+            .copyWith(
+              color: emphasized || accented
+                  ? context.colors.text.accent
+                  : context.colors.text.primary,
+            );
+    final labelText = Text(label, style: style);
+    // Label and value share a line while they fit; with large text the value
+    // wraps below the label rather than either being cut off.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 20),
+      child: Center(
+        // Full width, so spaceBetween puts the value at the trailing edge.
+        child: SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (icon != null) ...[
-                AppIcon(
-                  icon!,
-                  size: 20,
-                  color: emphasized || accented
-                      ? context.colors.text.accent
-                      : context.colors.text.primary,
+              if (icon == null)
+                labelText
+              else
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(
+                      icon!,
+                      size: 20,
+                      color: emphasized || accented
+                          ? context.colors.text.accent
+                          : context.colors.text.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Flexible(child: labelText),
+                  ],
                 ),
-                const SizedBox(width: AppSpacing.xs),
-              ],
-              SizedBox(width: labelWidth, child: labelText),
-              Expanded(child: valueText),
+              Text(value, textAlign: TextAlign.end, style: style),
             ],
-          );
-        },
+          ),
+        ),
       ),
     );
   }

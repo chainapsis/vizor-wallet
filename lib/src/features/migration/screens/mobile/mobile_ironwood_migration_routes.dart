@@ -109,8 +109,17 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
+        data: data,
         privateEnabled: privateMigrationEnabled,
         privateUnavailableForLedger: ledgerAccount,
+        // A stopped run's remainder starts here; say so and lead back.
+        movingRest:
+            !previewMode &&
+            ref.watch(
+              ironwoodHomeMigrationPresentationProvider.select(
+                (cta) => cta.mode == IronwoodHomeMigrationCtaMode.stopped,
+              ),
+            ),
       ),
       MobileIronwoodMigrationStep.notifications =>
         _MobileMigrationNotificationPermissionScreen(
@@ -251,7 +260,8 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         final status = cta.status;
         final accountUuid = cta.accountUuid;
         final isHardware = activeAccount?.isKeystone ?? false;
-        if (cta.mode != IronwoodHomeMigrationCtaMode.resume ||
+        if ((cta.mode != IronwoodHomeMigrationCtaMode.resume &&
+                cta.mode != IronwoodHomeMigrationCtaMode.stopped) ||
             status == null ||
             accountUuid == null ||
             !_hasMobileMigrationStatusDesign(status.phase)) {
@@ -296,6 +306,7 @@ bool _hasMobileMigrationStatusDesign(String phase) {
       phase == kIronwoodMigrationWaitingConfirmationsPhase ||
       phase == kIronwoodMigrationPausedPhase ||
       phase == kIronwoodMigrationFailedRecoverablePhase ||
+      phase == kIronwoodMigrationStoppedByUpgradePhase ||
       phase == kIronwoodMigrationCompletePhase;
 }
 

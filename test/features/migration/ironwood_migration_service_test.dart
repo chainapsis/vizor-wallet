@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
+import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_phases.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_operation_registry.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
@@ -5448,6 +5449,39 @@ void main() {
       expect(cancelledCount, 1);
     },
   );
+
+  test('a run the upgrade stopped cancels the scheduler', () async {
+    final store = _backgroundCredentialStore();
+    await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+    var cancelledCount = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(
+          _migrationStatus(phase: kIronwoodMigrationStoppedByUpgradePhase),
+        );
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      isMobile: () => true,
+      cancelBackgroundMigration: () async => cancelledCount++,
+    );
+
+    await service.status(network: 'test', accountUuid: 'account-1');
+
+    expect(cancelledCount, 1);
+  });
 
   test(
     'status stays read-only and explicit recovery records proof readiness',

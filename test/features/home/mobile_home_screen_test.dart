@@ -17,6 +17,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_participation_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -2574,6 +2575,7 @@ void main() {
         currentHeight: currentHeight,
         broadcastHeight: currentHeight,
         isKeystone: false,
+        blockSpacing: BlockSpacing.preNu7,
       )!;
       final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
         accountUuid: 'account-1',

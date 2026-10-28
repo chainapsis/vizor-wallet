@@ -448,6 +448,109 @@ void main() {
     expect(state.buttonLabel, 'Continue migration');
   });
 
+  test(
+    'a run stopped by the upgrade shows as stopped, not resumable',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationStoppedByUpgradePhase,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_543_500,
+          chainTipHeight: 3_543_500,
+          orchardBalance: BigInt.from(3_000_000),
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(4_000_000),
+          totalBalance: BigInt.from(4_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+      final routeCta = await container.read(
+        ironwoodMigrationRouteCtaProvider.future,
+      );
+      final postMigration = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
+      expect(routeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
+      // Orchard funds stay spendable: no in-progress Ironwood-only display.
+      expect(postMigration.mode, IronwoodPostMigrationMode.required);
+      expect(
+        container.read(
+          ironwoodMigrationAwareDisplaySpendableProvider(_accountUuid),
+        ),
+        BigInt.from(4_000_000),
+      );
+    },
+  );
+
+  test('a stopped run stays visible while the wallet syncs', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationStoppedByUpgradePhase,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncing: true,
+        scannedHeight: 3_543_400,
+        chainTipHeight: 3_543_500,
+        orchardBalance: BigInt.from(3_000_000),
+        spendableBalance: BigInt.from(3_000_000),
+        totalBalance: BigInt.from(3_000_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final homeCta = await container.read(
+      ironwoodHomeMigrationCtaProvider.future,
+    );
+    final routeCta = await container.read(
+      ironwoodMigrationRouteCtaProvider.future,
+    );
+
+    expect(homeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
+    expect(routeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
+  });
+
+  test(
+    'moving the rest of a stopped run shows the remaining balance',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationStoppedByUpgradePhase,
+        migrationTargetValues: const [5_000_000],
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_543_500,
+          chainTipHeight: 3_543_500,
+          orchardBalance: BigInt.from(3_000_000),
+          spendableBalance: BigInt.from(3_000_000),
+          totalBalance: BigInt.from(3_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodHomeMigrationCtaProvider.future);
+
+      expect(
+        container.read(ironwoodMigrationFlowDataProvider)?.amountZatoshi,
+        BigInt.from(3_000_000),
+      );
+    },
+  );
+
   test('active migration keeps migrated Ironwood funds usable', () async {
     final container = _container(
       ironwoodActiveAtTip: true,

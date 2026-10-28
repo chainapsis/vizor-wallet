@@ -53,10 +53,11 @@ class IronwoodMigrationEntryScreen extends ConsumerWidget {
       ironwoodHomeMigrationPresentationProvider,
     );
     final routeCta = ref.watch(ironwoodMigrationRouteCtaProvider).asData?.value;
-    final cta = presentationCta.mode == IronwoodHomeMigrationCtaMode.resume
-        ? presentationCta
-        : routeCta;
-    final target = cta?.mode == IronwoodHomeMigrationCtaMode.resume
+    bool showsStatus(IronwoodHomeMigrationCtaState? cta) =>
+        cta?.mode == IronwoodHomeMigrationCtaMode.resume ||
+        cta?.mode == IronwoodHomeMigrationCtaMode.stopped;
+    final cta = showsStatus(presentationCta) ? presentationCta : routeCta;
+    final target = showsStatus(cta)
         ? '/migration/private/status'
         : '/migration/prepare';
     return _RedirectTo(target);
