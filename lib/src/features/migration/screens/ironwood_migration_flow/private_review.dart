@@ -103,6 +103,11 @@ class _IronwoodMigrationPrivateReviewContentState
         return;
       }
       if (!mounted) return;
+      // A schedule drawn before the upgrade can never start; draw a new one.
+      if (networkUpgradeHoldMessage(e) ==
+          kNetworkUpgradeScheduleChangedMessage) {
+        ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+      }
       setState(() {
         _startError = _privateMigrationStartErrorMessage(e);
       });

@@ -105,6 +105,13 @@ final ironwoodMigrationPrivatePlanProvider =
           (inputs) => inputs.statusRequest,
         ),
       );
+      // Rust refuses a schedule drawn before an upgrade, so draw again once
+      // the next block is on the new branch.
+      ref.watch(
+        networkUpgradeWindowProvider.select(
+          (window) => (window.nextActivationHeight, window.holdsTransactions),
+        ),
+      );
       if (request == null) return null;
 
       return ref

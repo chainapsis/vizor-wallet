@@ -27,6 +27,7 @@ import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -5327,6 +5328,9 @@ void main() {
       final expected = _privatePlan();
       final container = ProviderContainer(
         overrides: [
+          networkUpgradeWindowProvider.overrideWithValue(
+            NetworkUpgradeWindowState.none,
+          ),
           ironwoodMigrationFlowDataProvider.overrideWith(
             (ref) => IronwoodMigrationFlowData(
               amountZatoshi: BigInt.from(10_000_000),
@@ -5395,6 +5399,9 @@ void main() {
       final expected = _privatePlan();
       final container = ProviderContainer(
         overrides: [
+          networkUpgradeWindowProvider.overrideWithValue(
+            NetworkUpgradeWindowState.none,
+          ),
           ironwoodMigrationInputsProvider.overrideWith(
             (ref) => ref.watch(inputsProvider),
           ),
@@ -5439,11 +5446,82 @@ void main() {
       expect(planCallCount, 1);
     },
   );
+
+  test('private plan is drawn again when the upgrade activates', () async {
+    final windowProvider =
+        NotifierProvider<_UpgradeWindowNotifier, NetworkUpgradeWindowState>(
+          _UpgradeWindowNotifier.new,
+        );
+    var planCallCount = 0;
+    final container = ProviderContainer(
+      overrides: [
+        networkUpgradeWindowProvider.overrideWith(
+          (ref) => ref.watch(windowProvider),
+        ),
+        ironwoodMigrationInputsProvider.overrideWithValue(_migrationInputs()),
+        ironwoodMigrationServiceProvider.overrideWithValue(
+          IronwoodMigrationService(
+            getWalletDbPath: () async => '/tmp/wallet.db',
+            getStatus:
+                ({required dbPath, required network, required accountUuid}) {
+                  return Future.value(_migrationStatus());
+                },
+            getPrivatePlan:
+                ({required dbPath, required network, required accountUuid}) {
+                  planCallCount += 1;
+                  return Future.value(_privatePlan());
+                },
+            secureStore: AppSecureStore.testing(
+              storage: const FlutterSecureStorage(),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationPrivatePlanProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final window = container.read(windowProvider.notifier);
+
+    await container.read(ironwoodMigrationPrivatePlanProvider.future);
+    expect(planCallCount, 1);
+
+    window.set(
+      const NetworkUpgradeWindowState(
+        nextActivationHeight: 600,
+        holdsTransactions: true,
+      ),
+    );
+    await container.read(ironwoodMigrationPrivatePlanProvider.future);
+    expect(planCallCount, 2);
+
+    // The hold ends at the last old-branch tip, where a run's first block is
+    // already on the new branch.
+    window.set(const NetworkUpgradeWindowState(nextActivationHeight: 600));
+    await container.read(ironwoodMigrationPrivatePlanProvider.future);
+    expect(planCallCount, 3);
+
+    window.set(NetworkUpgradeWindowState.none);
+    await container.read(ironwoodMigrationPrivatePlanProvider.future);
+    expect(planCallCount, 4);
+  });
 }
 
 Future<void> _openShuffleReview(WidgetTester tester) async {
   expect(find.text('Review shuffle'), findsNothing);
   expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
+}
+
+class _UpgradeWindowNotifier extends Notifier<NetworkUpgradeWindowState> {
+  @override
+  NetworkUpgradeWindowState build() =>
+      const NetworkUpgradeWindowState(nextActivationHeight: 600);
+
+  void set(NetworkUpgradeWindowState value) => state = value;
 }
 
 class _MigrationInputsNotifier extends Notifier<IronwoodMigrationInputs> {
