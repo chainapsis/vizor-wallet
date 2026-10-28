@@ -349,6 +349,23 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
     final moved = _migrationCompletedAmount(values, statuses);
     final remaining = total > moved ? total - moved : BigInt.zero;
     final usesLargeText = MediaQuery.textScalerOf(context).scale(1) > 1;
+    final message = Semantics(
+      liveRegion: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(AppIcons.warning, size: 20, color: colors.icon.warning),
+          const SizedBox(height: 8),
+          Text(
+            kIronwoodUpgradeStopRingMessage,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+        ],
+      ),
+    );
     final summary = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -369,8 +386,21 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
       textAlign: TextAlign.center,
       style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
     );
-    final actionLabel =
-        'Move remaining ${_formatZecAmountCompact(remaining)} ZEC';
+    // 230 wide unless the label needs more; past the column it wraps.
+    final action = IntrinsicWidth(
+      child: AppButton(
+        key: const ValueKey('ironwood_upgrade_stop_move_remaining'),
+        onPressed: onMoveRemaining,
+        height: 44,
+        minWidth: 230,
+        growWithContent: true,
+        constrainContent: true,
+        child: Text(
+          'Move remaining ${_formatZecAmountCompact(remaining)} ZEC',
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
     return SizedBox(
       key: const ValueKey('ironwood_migration_status_stopped_by_upgrade'),
       width: 420,
@@ -401,46 +431,23 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
               values: values,
               totalZatoshi: total,
               statuses: statuses,
-              child: Semantics(
-                liveRegion: true,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppIcon(
-                      AppIcons.warning,
-                      size: 20,
-                      color: colors.icon.warning,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      kIronwoodUpgradeStopRingMessage,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Large text shrinks the message to stay inside the ring.
+              child: usesLargeText
+                  ? SizedBox.square(
+                      dimension: 256 * 0.7,
+                      child: FittedBox(fit: BoxFit.scaleDown, child: message),
+                    )
+                  : message,
             ),
           ),
           if (!usesLargeText) ...[
             Positioned(left: 12, top: 354, width: 396, child: summary),
             Positioned(left: 45, top: 446, width: 330, child: body),
-            // The amount sets the label width, so the button grows past 230.
             Positioned(
               left: 12,
               top: 584,
               width: 396,
-              child: Center(
-                child: AppButton(
-                  key: const ValueKey('ironwood_upgrade_stop_move_remaining'),
-                  onPressed: onMoveRemaining,
-                  height: 44,
-                  minWidth: 230,
-                  child: Text(actionLabel),
-                ),
-              ),
+              child: Center(child: action),
             ),
           ] else
             Positioned(
@@ -458,15 +465,7 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  AppButton(
-                    key: const ValueKey('ironwood_upgrade_stop_move_remaining'),
-                    onPressed: onMoveRemaining,
-                    height: 44,
-                    expand: true,
-                    growWithContent: true,
-                    constrainContent: true,
-                    child: Text(actionLabel, textAlign: TextAlign.center),
-                  ),
+                  action,
                 ],
               ),
             ),
