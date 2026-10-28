@@ -591,11 +591,9 @@ rust/src/
 ├── ffi.rs              # Thin, read-only C adapter for iOS Ironwood migration
 │                        # inspection and observable preparation-txid listing.
 ├── migration_preparation.rs
-│                       # Platform-neutral mobile preparation core. Android JNI
-│                       # uses its operation lifecycle, preparation-only sync,
-│                       # inspect/advance, cancellation, and foreground-sync
-│                       # exclusion. iOS C FFI exposes only read-only inspect,
-│                       # proof-readiness, and observable txid reads.
+│                       # Mobile preparation core. The iOS C FFI uses only its
+│                       # read-only inspect, proof-readiness, and observable
+│                       # txid reads.
 │                       # Located outside api/ to avoid FRB codegen picking it up.
 ├── wallet/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
@@ -646,15 +644,10 @@ Normal wallet sync has one path: Dart calls `start_full_sync()` through
 `DESIRED_SYNC_MODE`, `SYNC_CANCEL`, and `SYNC_RUNNING` belong to that foreground
 path.
 
-iOS and Android intentionally have different preparation contracts:
+iOS tracks preparation confirmations in the background. Android has no
+background preparation, and Private migration is off there:
 
 ```
-Android IronwoodMigrationPreparationWorker
-    → JNI adapter
-    → begin preparation operation
-    → preparation-only Rust full sync / inspect / advance
-    → end preparation operation
-
 Swift BackgroundMigrationPreparationManager
     → submit user-visible BGContinuedProcessingTask
     → read-only C FFI inspect / observable preparation txids
@@ -684,13 +677,6 @@ Swift BackgroundMigrationPreparationManager
   pass is reported as pause-and-re-arm, never as failure. Foreground reentry
   owns the wallet sync, denomination advance, and submission of a fresh
   read-only task for the next wave.
-- Android keeps its WorkManager foreground worker and native preparation path.
-  The worker may run the existing mode-2 full sync, inspect proof readiness,
-  advance denomination preparation, and enqueue a continuation.
-- `rust/src/migration_preparation.rs` owns the mobile preparation operation's
-  cancel token and desired mode. Foreground `cancelFullSync()` does not cancel
-  that operation; the paths share `SYNC_RUNNING` while the sync engine is active
-  so two wallet scans cannot run concurrently.
 - Already-signed migration outbox transport remains background-capable. It may
   query the chain tip and broadcast exact signed bytes, but it never scans the
   wallet.
@@ -737,8 +723,7 @@ policy-aware openers and fails closed while Tor is starting or broken.
   is the executable statement of this rule.
 
 Key files:
-- `rust/src/migration_preparation.rs` — shared mobile preparation core
-- `rust/src/android_jni.rs` — Android preparation execution adapter
+- `rust/src/migration_preparation.rs` — mobile preparation core
 - `rust/src/ffi.rs` — iOS read-only inspection and query adapter
 - `ios/Runner/zcash_sync.h` — matching C header
 - `ios/Runner/BackgroundMigrationPreparationManager.swift` — continued-task
