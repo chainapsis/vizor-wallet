@@ -245,7 +245,6 @@ async fn an_explicit_off_lowers_to_public_in_every_build() {
     }
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn explicit_reenable_after_lowering_advances_policy_generation() {
     let (_dir, path, _db) = main_wallet();

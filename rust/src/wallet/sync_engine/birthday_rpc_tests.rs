@@ -125,7 +125,6 @@ fn height_request(method: &str, height: u64) -> (String, BlockId) {
     )
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn compiled_birthday_batch_sends_only_the_bucket_block_range() {
     let birthday = tree_states::restore_birthday(WalletNetwork::Main, 2_345_678);
@@ -138,7 +137,6 @@ async fn compiled_birthday_batch_sends_only_the_bucket_block_range() {
     );
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn restore_past_the_table_queries_the_grid_instead_of_the_exact_birthday() {
     let birthday = tree_states::restore_birthday(WalletNetwork::Main, 9_000_123);
@@ -152,7 +150,6 @@ async fn restore_past_the_table_queries_the_grid_instead_of_the_exact_birthday()
     assert!(calls.contains(&height_request("GetTreeState", 9_000_000)));
 }
 
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test]
 async fn mismatched_compiled_checkpoint_falls_back_by_predecessor_hash_only() {
     let birthday = tree_states::restore_birthday(WalletNetwork::Main, 2_345_678);
@@ -180,11 +177,7 @@ async fn mismatched_compiled_checkpoint_falls_back_by_predecessor_hash_only() {
 
 #[tokio::test]
 async fn non_mainnet_batches_keep_the_network_tree_state_lookup() {
-    let mut networks = vec![WalletNetwork::Test, WalletNetwork::Regtest];
-    if cfg!(ironwood_masquerade) {
-        networks.push(WalletNetwork::Main);
-    }
-    for network in networks {
+    for network in [WalletNetwork::Test, WalletNetwork::Regtest] {
         let state = chain::ChainState::empty(BlockHeight::from_u32(2_340_000), BlockHash([8; 32]));
         let server = FakeLwd::start(&state).await;
         scan_one_block(&server, network, 2_340_001).await;
