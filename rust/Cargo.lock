@@ -4213,7 +4213,7 @@ dependencies = [
 [[package]]
 name = "pq-crypto"
 version = "0.1.0-rc2"
-source = "git+https://github.com/p0mvn/pq-crypto?rev=03bc5bde8991ed78d8eba4415a34b84bbde82389#03bc5bde8991ed78d8eba4415a34b84bbde82389"
+source = "git+https://github.com/p0mvn/pq-crypto?rev=0b93e671ba3d4a68311fb5677a5a634d6bd52dca#0b93e671ba3d4a68311fb5677a5a634d6bd52dca"
 dependencies = [
  "rand_core 0.10.1",
  "sha2 0.11.1",

@@ -168,6 +168,8 @@ pub fn run_pq_signature_benchmark(iterations: u32) -> Vec<PqSchemeTiming> {
         bench_wots(iterations),
         bench_fors!("FORS 256f", 35, 9, 32, 40, iterations),
         bench_fors!("FORS 256s", 22, 14, 32, 39, iterations),
+        bench_fors!("FORS 192f", 33, 8, 24, 33, iterations),
+        bench_fors!("FORS 192s", 17, 14, 24, 30, iterations),
         bench_fors!("FORS 16x16", 16, 16, 32, 32, iterations),
         bench_fors!("FORS 128s", 14, 12, 16, 21, iterations),
         bench_slh_dsa::<slh_dsa::Sha2_128s>("SLH-DSA-SHA2-128s", 16, iterations),
