@@ -95,7 +95,8 @@ fn migration_and_sends_cross_nu7_activation() {
         .expect("read the upgrade window")
         .expect("NU7 is ahead");
     assert_eq!(window.next_activation_height, nu7);
-    let hold_starts = window.migration_hold_from_tip;
+    // Migrations hold from the tip 11 blocks before activation.
+    let hold_starts = nu7 - 11;
     while migration_status(&migrator_db, &migrator.account_uuid).phase != "broadcast_scheduled" {
         assert!(
             latest_height() < hold_starts,
@@ -219,6 +220,141 @@ fn migration_and_sends_cross_nu7_activation() {
     let migrated = balance(&migrator_db, &migrator.account_uuid);
     assert!(migrated.ironwood > 0);
     assert!(migrated.orchard < funded.orchard);
+}
+
+/// A part broadcast before the hold that the network never mines: once the
+/// upgrade stops the run, its input returns to the Orchard balance at once
+/// rather than at its ZIP 318 expiry.
+#[test]
+#[ignore = "requires the Dockerized NU7 regtest stack (scripts/nu7-regtest)"]
+fn a_part_that_misses_the_upgrade_returns_its_input_when_the_run_stops() {
+    let (nu6_3, nu7) = activation_heights();
+    simple_api::configure_regtest_ironwood_activation_height(nu6_3 as u32)
+        .expect("configure wallet NU6.3 activation");
+    simple_api::configure_regtest_nu7_activation_height(nu7 as u32)
+        .expect("configure wallet NU7 activation");
+    simple_api::configure_fast_testnet_migration(true);
+    run_harness("up.sh", &[]);
+    run_harness("mine.sh", &["1"]);
+
+    let migrator_dir = tempfile::tempdir().expect("migrator tempdir");
+    let migrator_db = path_string(&migrator_dir.path().join("zcash_wallet.db"));
+    let migrator = wallet_api::import_wallet(
+        MIGRATION_MNEMONIC.to_string(),
+        String::new(),
+        Some(latest_height()),
+        NETWORK.to_string(),
+        migrator_db.clone(),
+        Some("NU7 migration".to_string()),
+    )
+    .expect("import migration wallet");
+    run_harness("fund.sh", &[&migrator.unified_address, "2"]);
+    mine(COINBASE_MATURITY + 10);
+    mine_to(nu6_3 + 1);
+    mine_to(nu7 - RUN_START_BEFORE_NU7);
+    sync(&migrator_db);
+    migrate(&migrator_db, &migrator.account_uuid);
+    let run_id = migration_status(&migrator_db, &migrator.account_uuid)
+        .active_run_id
+        .expect("run is active");
+    let hold_starts = nu7 - 11;
+    let broadcast = |db: &str| {
+        run_parts(db, &run_id)
+            .into_iter()
+            .find(|part| part.status == "broadcasted")
+    };
+    // The Orchard total just before the pass that sends the first part.
+    let mut orchard_before = 0;
+    while migration_status(&migrator_db, &migrator.account_uuid).phase != "broadcast_scheduled" {
+        assert!(
+            latest_height() < hold_starts,
+            "preparation ran into the hold"
+        );
+        mine(1);
+        sync(&migrator_db);
+        orchard_before = orchard_total(&balance(&migrator_db, &migrator.account_uuid));
+        advance(&migrator_db, &migrator.account_uuid);
+    }
+
+    // Broadcast the first due part before the hold.
+    let first_due = run_parts(&migrator_db, &run_id)
+        .iter()
+        .map(|part| part.scheduled_height)
+        .min()
+        .expect("the run schedules parts");
+    assert!(
+        first_due < hold_starts,
+        "a part must fall due before the hold: first at {first_due}"
+    );
+    if broadcast(&migrator_db).is_none() {
+        mine_to(first_due);
+        sync(&migrator_db);
+        orchard_before = orchard_total(&balance(&migrator_db, &migrator.account_uuid));
+        advance(&migrator_db, &migrator.account_uuid);
+    }
+    let sent = broadcast(&migrator_db).expect("a part was broadcast before the hold");
+    let stored_expiry = wallet_expiry_height(&migrator_db, &sent.txid_hex)
+        .expect("the wallet stores the broadcast part");
+    assert!(stored_expiry > nu7, "its ZIP 318 expiry runs past NU7");
+    eprintln!(
+        "orchard before {orchard_before}, after broadcast {}",
+        describe(&balance(&migrator_db, &migrator.account_uuid))
+    );
+
+    // The node forgets it, and the chain moves past NU7 before the wallet looks again.
+    run_harness("drop-mempool.sh", &[]);
+    mine_to(nu7 + 1);
+    sync(&migrator_db);
+
+    let status = migration_status(&migrator_db, &migrator.account_uuid);
+    assert_eq!(status.phase, "stopped_by_upgrade", "{:?}", status.message);
+    eprintln!(
+        "after stop {}",
+        describe(&balance(&migrator_db, &migrator.account_uuid))
+    );
+    assert_eq!(
+        wallet_expiry_height(&migrator_db, &sent.txid_hex),
+        Some(nu7 - 1),
+        "the wallet expires the unminable part at the last pre-NU7 block"
+    );
+    assert_eq!(
+        orchard_total(&balance(&migrator_db, &migrator.account_uuid)),
+        orchard_before,
+        "the part's input is back in the Orchard balance"
+    );
+}
+
+fn describe(balance: &sync_api::WalletBalance) -> String {
+    format!(
+        "orchard {} locked {} pending {}, ironwood {} pending {}",
+        balance.orchard,
+        balance.orchard_locked,
+        balance.orchard_pending,
+        balance.ironwood,
+        balance.ironwood_pending
+    )
+}
+
+fn orchard_total(balance: &sync_api::WalletBalance) -> u64 {
+    balance.orchard + balance.orchard_locked + balance.orchard_pending
+}
+
+/// The wallet's expiry for `txid`, which it stores in either byte order.
+fn wallet_expiry_height(db_path: &str, txid: &str) -> Option<u64> {
+    let conn = rusqlite::Connection::open(db_path).expect("open wallet DB");
+    [
+        hex::decode(txid).unwrap(),
+        hex::decode(reversed_hex(txid)).unwrap(),
+    ]
+    .into_iter()
+    .find_map(|blob| {
+        conn.query_row(
+            "SELECT expiry_height FROM transactions WHERE txid = ?1",
+            [blob],
+            |row| row.get::<_, u64>(0),
+        )
+        .ok()
+    })
 }
 
 struct Part {
