@@ -408,7 +408,6 @@ async fn run_with<R: DiscoveryRpc>(
                 .map_err(|e| SyncError::db(e.to_string()))?;
                 let candidates = next_candidates(
                     db_path,
-                    network,
                     id,
                     scope_code,
                     progress.next_index,
@@ -555,7 +554,6 @@ async fn run_with<R: DiscoveryRpc>(
 // registered receiver again for each four-address batch.
 fn next_candidates(
     db_path: &str,
-    network: WalletNetwork,
     id: AccountUuid,
     scope: u32,
     next_index: u32,
@@ -583,17 +581,8 @@ fn next_candidates(
             |r| Ok((r.get::<_, u32>(0)?, r.get::<_, String>(1)?)),
         )
         .map_err(|e| SyncError::db(e.to_string()))?;
-    rows.map(|r| {
-        let (index, address) = r.map_err(|e| SyncError::db(e.to_string()))?;
-        super::transparent_address_for_query(
-            &address,
-            network,
-            super::transparent_utxo_query_network(network),
-        )
-        .map(|a| (index, a))
-        .map_err(SyncError::parse)
-    })
-    .collect()
+    rows.map(|r| r.map_err(|e| SyncError::db(e.to_string())))
+        .collect()
 }
 
 async fn store_history(
@@ -901,10 +890,7 @@ mod tests {
                 .collect::<Vec<_>>();
             expected.sort_by_key(|c| c.0);
             expected.truncate(4);
-            assert_eq!(
-                next_candidates(&path, WalletNetwork::Main, id, code, 1, 4).unwrap(),
-                expected
-            );
+            assert_eq!(next_candidates(&path, id, code, 1, 4).unwrap(), expected);
         }
     }
 
