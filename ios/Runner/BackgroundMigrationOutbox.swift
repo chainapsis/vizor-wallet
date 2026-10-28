@@ -175,6 +175,16 @@ enum BackgroundMigrationTransportOutcome: Equatable {
   case cancelled
 }
 
+/// The upgrade-stop key to alert for, or nil once that upgrade was alerted:
+/// one alert per upgrade, however many batches or accounts it stopped.
+func backgroundMigrationUpgradeStopAlertKey(
+  _ key: String?,
+  alreadyAlerted: String?
+) -> String? {
+  guard let key, key != alreadyAlerted else { return nil }
+  return key
+}
+
 struct BackgroundMigrationOutboxRunResult: Equatable {
   let transport: BackgroundMigrationTransportOutcome
   let proofReady: BackgroundMigrationProofReadyMetadata?
@@ -182,6 +192,8 @@ struct BackgroundMigrationOutboxRunResult: Equatable {
   let transportAccountUuid: String?
   /// Due parts that wait for the network upgrade rather than a retry.
   var heldForUpgradeTxids: [String] = []
+  /// The upgrade, as "network:activation height", that left a part unsendable.
+  var upgradeStopKey: String?
 
   init(
     transport: BackgroundMigrationTransportOutcome,
@@ -1223,6 +1235,26 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       at: expiryHeights.max() ?? 0,
       network: network
     )
+  }
+
+  /// The upgrade, as "network:activation height", once no block before it is
+  /// left for an unsent part on `endpoint` signed for the branch it ended. The
+  /// foreground stops that part's run on its next sync.
+  func upgradeStopKey(remoteHeight: UInt64, endpoint: String) -> String? {
+    for batch in batches where batch.lightwalletdUrl == endpoint {
+      guard
+        let activation = BackgroundMigrationOutboxCadence.nu7ActivationHeight(
+          network: batch.network
+        ),
+        remoteHeight + 1 >= activation,
+        batch.items.contains(where: {
+          ($0.status == .armed || $0.status == .needsResignAwaitingReconciliation)
+            && ($0.targetHeight ?? activation) < activation
+        })
+      else { continue }
+      return "\(batch.network):\(activation)"
+    }
+    return nil
   }
 
   /// Txids of due parts on `endpoint` that wait for the network upgrade.
