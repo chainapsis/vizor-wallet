@@ -28,7 +28,7 @@ import '../../../send/screens/mobile/mobile_send_screen.dart'
 import '../../../send/services/sapling_params.dart';
 import '../../services/transparent_shielding_service.dart';
 import '../../services/hardware_shielding_session.dart';
-import '../../../../core/formatting/zec_amount.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/wallet_provider.dart';
 import '../../widgets/mobile/shield/mobile_shield_scene.dart';
 import '../../widgets/mobile/shield/keystone_shield_morph.dart';
@@ -553,6 +553,7 @@ class _MobileKeystoneShieldScreenState
 
   @override
   Widget build(BuildContext context) {
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final scanning = _stage == _ShieldSignStage.scanning;
     final terminal =
         _stage == _ShieldSignStage.failed ||
@@ -573,8 +574,14 @@ class _MobileKeystoneShieldScreenState
               : scanning || _stage == _ShieldSignStage.showQr
               ? MobileShieldPhase.hardware
               : MobileShieldPhase.working,
-          amount: formatZecAmount(_amount),
-          resultAmount: formatZecAmount(_shieldedAmount ?? _amount),
+          amount: mobileShieldAmountText(
+            _amount,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
+          resultAmount: mobileShieldAmountText(
+            _shieldedAmount ?? _amount,
+            privacyModeEnabled: privacyModeEnabled,
+          ),
           title: !_started
               ? 'Transparent Balance'
               : _done

@@ -33,12 +33,13 @@ String _mobileImmediateMigrationStartErrorMessage(Object error) {
 }
 
 String _mobileImmediateMigratedAmountText(
-  rust_sync.OrchardMigrationImmediatePlan plan,
-) {
+  rust_sync.OrchardMigrationImmediatePlan plan, {
+  required bool privacyModeEnabled,
+}) {
   final amount = ZecAmount.fromZatoshi(
     plan.migratedZatoshi,
   ).pretty(minFractionDigits: 2, maxFractionDigits: 2).amountText;
-  return '$amount ZEC';
+  return '${hideIfPrivacyMode(amount, privacyModeEnabled: privacyModeEnabled)} ZEC';
 }
 
 String _mobileImmediateFeeText(rust_sync.OrchardMigrationImmediatePlan plan) {
@@ -48,10 +49,12 @@ String _mobileImmediateFeeText(rust_sync.OrchardMigrationImmediatePlan plan) {
 class _MobileMigrationFastReview extends ConsumerStatefulWidget {
   const _MobileMigrationFastReview({
     required this.data,
+    required this.privacyModeEnabled,
     required this.previewPlan,
   });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
   final rust_sync.OrchardMigrationImmediatePlan? previewPlan;
 
   @override
@@ -212,7 +215,7 @@ class _MobileMigrationFastReviewState
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    '${_mobileImmediateMigratedAmountText(submittedPlan)} is '
+                    '${_mobileImmediateMigratedAmountText(submittedPlan, privacyModeEnabled: widget.privacyModeEnabled)} is '
                     'on its way to Ironwood.',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
@@ -250,15 +253,22 @@ class _MobileMigrationFastReviewState
     final ledgerSigning = ledgerAccountUuid != null && ledgerPlan != null;
     final canBroadcast = plan != null && !_isBroadcasting && !ledgerSigning;
     final placeholderText = planUnavailable ? 'Unavailable' : 'Calculating…';
+    final privacyModeEnabled = widget.privacyModeEnabled;
     final migratedText = plan == null
         ? placeholderText
-        : _mobileImmediateMigratedAmountText(plan);
+        : _mobileImmediateMigratedAmountText(
+            plan,
+            privacyModeEnabled: privacyModeEnabled,
+          );
     final feeText = plan == null
         ? placeholderText
         : _mobileImmediateFeeText(plan);
     final privacyAmountText = plan == null
-        ? '${widget.data.amountText} ZEC'
-        : _mobileImmediateMigratedAmountText(plan);
+        ? '${hideIfPrivacyMode(widget.data.amountText, privacyModeEnabled: privacyModeEnabled)} ZEC'
+        : _mobileImmediateMigratedAmountText(
+            plan,
+            privacyModeEnabled: privacyModeEnabled,
+          );
     final leaveReview = _isBroadcasting || ledgerSigning
         ? null
         : () => context.go('/migration/options');

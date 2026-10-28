@@ -58,12 +58,14 @@ class _IronwoodMigrationShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ledgerAccount =
         ref.watch(accountProvider).value?.activeAccount?.isLedger ?? false;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final content = switch (step) {
       IronwoodMigrationFlowStep.prepare => const Center(
         child: CircularProgressIndicator(),
       ),
       IronwoodMigrationFlowStep.intro => _IronwoodMigrationIntroContent(
         data: data,
+        privacyModeEnabled: privacyModeEnabled,
         onOpenReleaseNotes: () =>
             _openReleaseNotes(context, override: onOpenReleaseNotesOverride),
       ),
@@ -196,16 +198,21 @@ class _IronwoodMigrationFrame extends StatelessWidget {
 class _IronwoodMigrationIntroContent extends StatelessWidget {
   const _IronwoodMigrationIntroContent({
     required this.data,
+    required this.privacyModeEnabled,
     required this.onOpenReleaseNotes,
   });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
   final VoidCallback onOpenReleaseNotes;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final amount = data.amountText;
+    final amount = hideIfPrivacyMode(
+      data.amountText,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final isDark = colors.background.window == AppColors.dark.background.window;
 
     return SizedBox(
@@ -218,7 +225,10 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
             top: 26,
             width: 420,
             height: 200,
-            child: _PoolMigrationHero(data: data),
+            child: _PoolMigrationHero(
+              data: data,
+              privacyModeEnabled: privacyModeEnabled,
+            ),
           ),
           Positioned(
             left: 0,

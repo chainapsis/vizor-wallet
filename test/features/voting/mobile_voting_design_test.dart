@@ -1229,6 +1229,76 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('privacy mode masks voting power on mobile poll surfaces', (
+    tester,
+  ) async {
+    Widget active({required bool privacyModeEnabled}) => MobileVotingScaffold(
+      title: 'Coinholder voting',
+      child: VotingActivePollContent(
+        showDesktopToolbar: false,
+        roundId: 'private',
+        title: 'Private round',
+        snapshotHeight: 100,
+        description: '',
+        forumUri: null,
+        endDate: null,
+        votingPowerZatoshi: BigInt.from(37_500_000),
+        votingPowerPreparing: false,
+        privacyModeEnabled: privacyModeEnabled,
+        votingEligibilityConfirmed: true,
+        answersEditable: true,
+        votingEligibilityMessage: null,
+        votingEligibilityErrorMessage: null,
+        onVotingEligibilityRetry: () {},
+        proposals: const [
+          VotingProposalView(
+            id: 1,
+            title: 'Question',
+            description: '',
+            options: [VotingOptionView(index: 0, label: 'Yes')],
+          ),
+        ],
+        draft: const VotingDraftState(),
+        onChoice: (_, _) {},
+      ),
+    );
+    Widget voted({required bool privacyModeEnabled}) => MobileVotingScaffold(
+      title: 'Voted',
+      child: VotingVotedPollContent(
+        showDesktopToolbar: false,
+        roundTitle: 'Private round',
+        snapshotHeight: 1,
+        description: '',
+        forumUri: null,
+        votingPowerZatoshi: BigInt.from(37_500_000),
+        votingPowerPreparing: false,
+        privacyModeEnabled: privacyModeEnabled,
+        votedAt: null,
+        proposals: const [],
+        choicesByProposalId: const {},
+      ),
+    );
+    void expectNoDoubledDenomination() {
+      expect(find.textContaining('ZEC ZEC', findRichText: true), findsNothing);
+      expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+    }
+
+    await _pumpMobileFixture(tester, (_) => active(privacyModeEnabled: false));
+    expect(find.text('Voting power 0.375 ZEC'), findsOneWidget);
+    await _pumpMobileFixture(tester, (_) => active(privacyModeEnabled: true));
+    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.textContaining('0.375'), findsNothing);
+    expectNoDoubledDenomination();
+
+    await _pumpMobileFixture(tester, (_) => voted(privacyModeEnabled: false));
+    expect(find.text('0.375 ZEC'), findsOneWidget);
+    await _pumpMobileFixture(tester, (_) => voted(privacyModeEnabled: true));
+    expect(find.text('Voting power'), findsOneWidget);
+    expect(find.text('****** ZEC'), findsOneWidget);
+    expect(find.textContaining('0.375'), findsNothing);
+    expectNoDoubledDenomination();
+  });
 }
 
 Future<void> _pumpMobileFixture(

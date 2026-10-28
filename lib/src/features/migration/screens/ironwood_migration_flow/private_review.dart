@@ -158,6 +158,7 @@ class _IronwoodMigrationPrivateReviewContentState
         ? ref.watch(ironwoodMigrationPrivatePlanProvider)
         : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     return FutureBuilder<void>(
       future: _minimumAnalyzingDelay,
       builder: (context, snapshot) {
@@ -192,6 +193,7 @@ class _IronwoodMigrationPrivateReviewContentState
 
         return _MigrationReviewContent(
           plan: plan,
+          privacyModeEnabled: privacyModeEnabled,
           isStarting: _isStarting,
           error: _startError,
           onContinue: () => unawaited(_startMigration(plan)),
@@ -601,12 +603,14 @@ const _migrationPlanDonutSize = 256.0;
 class _MigrationReviewContent extends StatelessWidget {
   const _MigrationReviewContent({
     required this.plan,
+    required this.privacyModeEnabled,
     required this.isStarting,
     required this.onContinue,
     this.error,
   });
 
   final rust_sync.OrchardMigrationPrivatePlan plan;
+  final bool privacyModeEnabled;
   final bool isStarting;
   final VoidCallback onContinue;
   final String? error;
@@ -665,7 +669,7 @@ class _MigrationReviewContent extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${_formatZecAmountCompact(plan.totalMigratableZatoshi)}\nZEC',
+                      '${_displayZecAmountCompact(plan.totalMigratableZatoshi, privacyModeEnabled: privacyModeEnabled)}\nZEC',
                       textAlign: TextAlign.center,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.text.accent,

@@ -420,6 +420,26 @@ class PaymentRequestView {
     );
   }
 
+  /// Same request, with the spendable balance replaced for display, such as
+  /// by its privacy-mode mask.
+  PaymentRequestView withSpendableText(String? spendableText) {
+    if (spendableText == this.spendableText) return this;
+    return PaymentRequestView(
+      source: source,
+      address: address,
+      amountZecText: amountZecText,
+      requesterLabel: requesterLabel,
+      fiatText: fiatText,
+      memo: memo,
+      note: note,
+      spendableText: spendableText,
+      recipientIdentity: recipientIdentity,
+      status: status,
+      statusMessage: statusMessage,
+      replacedNotice: replacedNotice,
+    );
+  }
+
   /// Same request, with the recipient's resolved name attached (or removed).
   ///
   /// The host re-applies this on every build, because the address book and

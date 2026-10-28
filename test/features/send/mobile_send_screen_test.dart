@@ -221,7 +221,10 @@ class _TestZecUsdPriceNotifier extends Notifier<double?> {
   }
 }
 
-AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
+AppBootstrapState _bootstrap({
+  AccountState? accountState,
+  bool privacyModeEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/send',
   initialAccountState:
       accountState ??
@@ -234,7 +237,7 @@ AppBootstrapState _bootstrap({AccountState? accountState}) => AppBootstrapState(
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.light,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyModeEnabled,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
@@ -568,10 +571,12 @@ Widget _app({
   );
 }
 
-Widget _amountStepWithPriceLoadingApp() {
+Widget _amountStepWithPriceLoadingApp({bool privacyModeEnabled = false}) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(privacyModeEnabled: privacyModeEnabled),
+      ),
       sendProvingKeyWarmupProvider.overrideWithValue(() {}),
       syncProvider.overrideWith(_FakeSyncNotifier.new),
       zecLiveUsdUnitPriceProvider.overrideWithValue(null),
@@ -3553,6 +3558,36 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(loadingFinder, findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('amount step masks the spendable balance in privacy mode', (
+    tester,
+  ) async {
+    final visibleBalance = ZecAmount.fromZatoshi(
+      BigInt.from(500000000),
+    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final balanceRow = find.byKey(
+      const ValueKey('mobile_send_amount_balance_row'),
+    );
+
+    await tester.pumpWidget(_amountStepWithPriceLoadingApp());
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(of: balanceRow, matching: find.text(visibleBalance)),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(
+      _amountStepWithPriceLoadingApp(privacyModeEnabled: true),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(of: balanceRow, matching: find.text('****** ZEC')),
+      findsOneWidget,
+    );
+    expect(find.textContaining(visibleBalance), findsNothing);
   });
 
   testWidgets('amount input displays a leading zero and keeps the cursor', (

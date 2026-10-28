@@ -1,9 +1,13 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
 class _MobileMigrationIntro extends StatelessWidget {
-  const _MobileMigrationIntro({required this.data});
+  const _MobileMigrationIntro({
+    required this.data,
+    required this.privacyModeEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +42,10 @@ class _MobileMigrationIntro extends StatelessWidget {
                     children: [
                       SizedBox(
                         height: 172,
-                        child: _MobilePoolMigrationHero(data: data),
+                        child: _MobilePoolMigrationHero(
+                          data: data,
+                          privacyModeEnabled: privacyModeEnabled,
+                        ),
                       ),
                       const SizedBox(height: 46),
                       SvgPicture.asset(
@@ -61,7 +68,8 @@ class _MobileMigrationIntro extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        'Your ${data.amountText} ZEC is currently in Orchard. '
+                        'Your ${hideIfPrivacyMode(data.amountText, privacyModeEnabled: privacyModeEnabled)} '
+                        'ZEC is currently in Orchard. '
                         'To keep using these funds for shielded payments, '
                         "you'll need to move them to Ironwood. You'll review "
                         'the migration plan before any funds move.',

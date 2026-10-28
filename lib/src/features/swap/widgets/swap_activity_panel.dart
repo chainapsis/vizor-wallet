@@ -13,6 +13,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
@@ -410,6 +411,7 @@ class _SwapActivityDetailSurfaceState
     );
 
     final state = ref.watch(swapStateProvider);
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final initialIntentId = widget.intentId.trim();
     if (!_initialIntentApplied && initialIntentId.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -462,6 +464,7 @@ class _SwapActivityDetailSurfaceState
             onSignZecDeposit: _signZecDeposit,
             intentIsHardware: _isHardwareIntent(activityDetailIntent),
             onShowPayRecipientAddress: _showPayRecipientAddress,
+            privacyModeEnabled: privacyModeEnabled,
           );
 
     return Stack(
@@ -603,6 +606,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.onSignZecDeposit,
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
+    this.privacyModeEnabled = false,
     super.key,
   });
 
@@ -621,6 +625,11 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
 
+  /// Stored records mask their amounts in privacy mode, including right
+  /// after a submit. The deposit pages show the amount the user must send
+  /// (docs/privacy-mode.md).
+  final bool privacyModeEnabled;
+
   @override
   Widget build(BuildContext context) {
     final flowContent = _SwapActivityFlowContent(
@@ -637,6 +646,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       onSignZecDeposit: onSignZecDeposit,
       intentIsHardware: intentIsHardware,
       onShowPayRecipientAddress: onShowPayRecipientAddress,
+      privacyModeEnabled: privacyModeEnabled,
     );
     final isDepositPage = swapActivityShowsDepositPage(
       intent,
@@ -690,6 +700,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.onSignZecDeposit,
     required this.intentIsHardware,
     this.onShowPayRecipientAddress,
+    required this.privacyModeEnabled,
   });
 
   final SwapState state;
@@ -706,6 +717,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final bool intentIsHardware;
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -760,6 +772,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
         intent: intent,
         layout: layout,
         onShowPayRecipientAddress: onShowPayRecipientAddress,
+        privacyModeEnabled: privacyModeEnabled,
       ),
     };
 
@@ -793,12 +806,14 @@ class _SwapStatusForIntent extends ConsumerStatefulWidget {
     required this.intent,
     this.layout = SwapActivityDetailLayout.desktop,
     this.onShowPayRecipientAddress,
+    required this.privacyModeEnabled,
   });
 
   final SwapIntent intent;
   final SwapActivityDetailLayout layout;
   final void Function(String address, AddressBookContact? contact)?
   onShowPayRecipientAddress;
+  final bool privacyModeEnabled;
 
   @override
   ConsumerState<_SwapStatusForIntent> createState() =>
@@ -886,6 +901,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       confirmedDepositFeeZatoshi: _confirmedPayDepositFeeZatoshi(
         depositTransaction,
       ),
+      privacyModeEnabled: widget.privacyModeEnabled,
     );
     if (widget.layout == SwapActivityDetailLayout.mobile) {
       final recipient = intent.oneClickRecipient?.trim();

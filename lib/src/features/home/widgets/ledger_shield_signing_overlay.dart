@@ -23,8 +23,8 @@ import '../../ledger/widgets/ledger_signing_modal.dart';
 import '../../ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
 import '../../ledger/widgets/mobile/mobile_ledger_help_navigation.dart';
 import '../../../core/navigation/external_action_guard_hold.dart';
-import '../../../core/formatting/zec_amount.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import 'mobile/shield/mobile_shield_scene.dart';
 import 'mobile/shield/mobile_shield_backdrop.dart';
 import '../../send/services/sapling_params.dart';
@@ -752,6 +752,7 @@ class _LedgerShieldSigningOverlayState
           : null,
     );
     if (widget.mobile) {
+      final privacyModeEnabled = ref.watch(privacyModeProvider);
       return ExternalActionGuardHold(
         child: Stack(
           key: const ValueKey('mobile_ledger_shield_signing_surface'),
@@ -771,9 +772,15 @@ class _LedgerShieldSigningOverlayState
                     : broadcasting
                     ? MobileShieldPhase.working
                     : MobileShieldPhase.hardware,
-                amount: formatZecAmount(_initialAmount),
+                amount: mobileShieldAmountText(
+                  _initialAmount,
+                  privacyModeEnabled: privacyModeEnabled,
+                ),
                 resultAmount: _shieldedTotal > BigInt.zero
-                    ? formatZecAmount(_shieldedTotal)
+                    ? mobileShieldAmountText(
+                        _shieldedTotal,
+                        privacyModeEnabled: privacyModeEnabled,
+                      )
                     : null,
                 showResultAmount: _shieldedTotalKnown,
                 title: !_momentStarted

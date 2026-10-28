@@ -1591,7 +1591,15 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final quote = _maxFundingQuote;
     if (quote == null || quote.sourceAccountUuid != accountUuid) return null;
-    return _maxAmountTextFor(quote.recipientAmountZatoshi);
+    final text = _maxAmountTextFor(quote.recipientAmountZatoshi);
+    // Display only: callers append the currency, and _useMaxAmount fills the
+    // field from the real amount.
+    return text == null
+        ? null
+        : hideIfPrivacyMode(
+            text,
+            privacyModeEnabled: ref.watch(privacyModeProvider),
+          );
   }
 
   String? _maxAmountTextFor(BigInt amount) {

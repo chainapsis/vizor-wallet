@@ -63,6 +63,15 @@ String _formatZecAmountCompact(BigInt zatoshi) {
   ).compactBalancePretty(minFractionDigits: 0, maxFractionDigits: 4).amountText;
 }
 
+/// Bare compact amount for display; callers append their own `ZEC`.
+String _displayZecAmountCompact(
+  BigInt zatoshi, {
+  required bool privacyModeEnabled,
+}) => hideIfPrivacyMode(
+  _formatZecAmountCompact(zatoshi),
+  privacyModeEnabled: privacyModeEnabled,
+);
+
 double _transferProgress(rust_sync.MigrationStatus status) {
   final partProgress = _migrationPartProgress(status);
   if (partProgress != null) return partProgress;
@@ -697,14 +706,20 @@ class _DarkBadge extends StatelessWidget {
 }
 
 class _PoolMigrationHero extends StatelessWidget {
-  const _PoolMigrationHero({required this.data});
+  const _PoolMigrationHero({
+    required this.data,
+    required this.privacyModeEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final amount = '${data.amountText} $kZcashDefaultCurrencyTicker';
+    final amount =
+        '${hideIfPrivacyMode(data.amountText, privacyModeEnabled: privacyModeEnabled)} '
+        '$kZcashDefaultCurrencyTicker';
     final isDark = colors.background.window == AppColors.dark.background.window;
 
     return ClipRRect(

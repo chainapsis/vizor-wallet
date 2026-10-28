@@ -98,6 +98,40 @@ void main() {
     },
   );
 
+  for (final privacyModeEnabled in [false, true]) {
+    testWidgets(
+      'home desktop zero balance with privacy mode $privacyModeEnabled',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _appHarness(
+            '/home',
+            privacyModeEnabled: privacyModeEnabled,
+            syncState: SyncState(
+              accountUuid: 'account-1',
+              hasAccountScopedData: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final amount = find.byKey(
+          const ValueKey('home_desktop_balance_amount_text'),
+        );
+        final expected = privacyModeEnabled ? '******' : '0';
+        expect(tester.widget<Text>(amount).data, expected);
+        expect(tester.getSemantics(amount).label, expected);
+        expect(
+          find.text('0'),
+          privacyModeEnabled ? findsNothing : findsOneWidget,
+        );
+        expect(find.textContaining('ZEC ZEC'), findsNothing);
+        expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+        semantics.dispose();
+      },
+    );
+  }
+
   testWidgets('home desktop shows fiat balance when pricing is available', (
     tester,
   ) async {

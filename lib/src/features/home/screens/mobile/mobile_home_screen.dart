@@ -1251,7 +1251,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     ),
                 attentionKind: migrationAttention?.kind,
                 actionNeededCount: migrationAttention?.count ?? 0,
-                remainingText: _mobileIronwoodRemainingAmountText(sync),
+                remainingText: _mobileIronwoodRemainingAmountText(
+                  sync,
+                  privacyModeEnabled: privacyModeEnabled,
+                ),
                 onTap: () {
                   final target = migrationRequired
                       ? '/migration/intro'
@@ -1922,10 +1925,17 @@ class _BalanceCard extends StatelessWidget {
   }
 }
 
-String? _mobileIronwoodRemainingAmountText(SyncState sync) {
+// Bare amount: the banner appends its own ` ZEC`.
+String? _mobileIronwoodRemainingAmountText(
+  SyncState sync, {
+  required bool privacyModeEnabled,
+}) {
   final remaining = sync.displayOrchardHoldingsBalance;
   if (remaining == BigInt.zero) return null;
-  return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
+  return hideIfPrivacyMode(
+    ZecAmount.fromZatoshi(remaining).compactBalance.amountText,
+    privacyModeEnabled: privacyModeEnabled,
+  );
 }
 
 int _mobileIronwoodSafelyObservedHeight(SyncState? sync) {

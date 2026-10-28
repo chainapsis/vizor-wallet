@@ -904,6 +904,7 @@ class _PaymentLinkBulkPreviewState extends State<_PaymentLinkBulkPreview> {
           : null,
     ),
     spendable: BigInt.from(_count > 30 ? 1000000000 : 400000000),
+    privacyModeEnabled: false,
     quote:
         widget.initialPreparing || widget.error != null || _amount.text.isEmpty
         ? null

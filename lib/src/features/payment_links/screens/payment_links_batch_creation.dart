@@ -570,6 +570,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
         _batchPresentationDirty = true;
       }),
       spendable: spendable,
+      privacyModeEnabled: ref.watch(privacyModeProvider),
       quote: quote,
       preparing: batchQuote is _BatchQuotePreparing,
       waitingForSync: batchQuote is _BatchQuoteWaitingForSync,

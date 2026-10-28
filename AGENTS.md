@@ -314,6 +314,10 @@ Ledger accounts keep the decorative dot style.
   string — `find.text(...)` matchers, `expectedNextAction` fields, and
   `_tooltipWithMessage(...)` helpers will break otherwise.
 
+## Privacy Mode
+
+Before adding or changing UI that shows an amount, read `docs/privacy-mode.md` (the hide-balance toggle).
+
 ## Release Notes
 
 When asked to prepare user-facing release notes or a changelog for a release,

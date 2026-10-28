@@ -92,6 +92,8 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         ? null
         : ref.watch(accountProvider).value?.activeAccount;
     final ledgerAccount = activeAccount?.isLedger ?? false;
+    // Previews run without an app bootstrap, like the account read above.
+    final privacyModeEnabled = !previewMode && ref.watch(privacyModeProvider);
     final privateMigrationEnabled =
         !ledgerAccount &&
         (privateMigrationSupported ??
@@ -105,7 +107,10 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     }
     final isHardware = !previewMode && (activeAccount?.isKeystone ?? false);
     return switch (step) {
-      MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(data: data),
+      MobileIronwoodMigrationStep.intro => _MobileMigrationIntro(
+        data: data,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
@@ -118,6 +123,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
+        privacyModeEnabled: privacyModeEnabled,
         previewPlan: previewImmediatePlan,
       ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(

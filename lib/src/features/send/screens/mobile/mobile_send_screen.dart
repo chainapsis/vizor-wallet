@@ -15,6 +15,7 @@ import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/external_action_guard_provider.dart';
+import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -31,6 +32,7 @@ import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../core/widgets/review_info_row.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/privacy_mode_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
@@ -2677,9 +2679,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ? recipient.profilePictureId
         : _contactPictureId;
     final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
-    final spendableText = ZecAmount.fromZatoshi(
-      _spendable,
-    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final spendableText = hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(
+        _spendable,
+      ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
     final showError = _amountError != null && _amountError!.isNotEmpty;
     final amountStyle = AppTypography.displayLarge.copyWith(
       color: showError ? colors.text.destructive : colors.text.accent,

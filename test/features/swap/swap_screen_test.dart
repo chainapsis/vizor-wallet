@@ -52,6 +52,7 @@ import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
+import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
@@ -3859,6 +3860,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(maxEstimator.requests, ['account-1']);
     expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
+  });
+
+  testWidgets('mobile ZEC swap composer masks the max balance in privacy mode', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(390, 844));
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            // The mobile shell supplies the Material ancestor in the app.
+            GoRoute(
+              path: '/swap',
+              builder: (_, _) => const Material(child: MobileSwapScreen()),
+            ),
+          ],
+        ),
+        bootstrap: _privacyModeBootstrap,
+        seedSwapActivityFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(),
+        spendableBalance: BigInt.from(123450000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Max: ****** ZEC'), findsOneWidget);
+    expect(find.textContaining('1.2345'), findsNothing);
   });
 
   testWidgets('ZEC max amount request keeps the max label spinner-free', (

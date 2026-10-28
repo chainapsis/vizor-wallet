@@ -610,6 +610,7 @@ class _MobileMigrationRedesignedStatusState
       );
     });
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     final coordinatorError = accountUuid == null
         ? null
@@ -642,7 +643,10 @@ class _MobileMigrationRedesignedStatusState
       context.push('/migration/private/preparation-schedule');
     }
 
-    final leftToMigrateText = _leftToMigrateText(widget.status);
+    final leftToMigrateText = _leftToMigrateText(
+      widget.status,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final completionEstimateText = _completionEstimateText(widget.status);
     _recordVisibleAttention(accountUuid);
 
@@ -698,14 +702,24 @@ class _MobileMigrationRedesignedStatusState
       }
       return _MigrationProgressPreview(
         state: _MigrationProgressState.syncing,
+        privacyModeEnabled: privacyModeEnabled,
         onBack: () => context.go('/home'),
         onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
-        migratedAmountText: _migratedAmountText(widget.status),
-        totalAmountText: _totalAmountText(widget.status),
-        availableAmountText: _availableAmountText(accountUuid),
+        migratedAmountText: _migratedAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        totalAmountText: _totalAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        availableAmountText: _availableAmountText(
+          accountUuid,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
         leftToMigrateText: leftToMigrateText,
         completionEstimateText: completionEstimateText,
       );
@@ -745,6 +759,7 @@ class _MobileMigrationRedesignedStatusState
           : 'Sign migration transactions';
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
+        privacyModeEnabled: privacyModeEnabled,
         onBack: () => context.go('/home'),
         onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
@@ -754,9 +769,18 @@ class _MobileMigrationRedesignedStatusState
         totalBatches: batchProgress.totalBatches,
         completedRingSegments: _completedRingSegments(widget.status),
         awaitingRingSegments: _awaitingRingSegments(widget.status),
-        migratedAmountText: _migratedAmountText(widget.status),
-        totalAmountText: _totalAmountText(widget.status),
-        availableAmountText: _availableAmountText(accountUuid),
+        migratedAmountText: _migratedAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        totalAmountText: _totalAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        availableAmountText: _availableAmountText(
+          accountUuid,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
         leftToMigrateText: leftToMigrateText,
         completionEstimateText: completionEstimateText,
         nextActionPresentation: _nextMigrationPresentation(
@@ -807,6 +831,7 @@ class _MobileMigrationRedesignedStatusState
       final paused = widget.status.phase == kIronwoodMigrationPausedPhase;
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
+        privacyModeEnabled: privacyModeEnabled,
         onBack: () => context.go('/home'),
         onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
@@ -816,9 +841,18 @@ class _MobileMigrationRedesignedStatusState
         totalBatches: batchProgress.totalBatches,
         completedRingSegments: _completedRingSegments(widget.status),
         awaitingRingSegments: _awaitingRingSegments(widget.status),
-        migratedAmountText: _migratedAmountText(widget.status),
-        totalAmountText: _totalAmountText(widget.status),
-        availableAmountText: _availableAmountText(accountUuid),
+        migratedAmountText: _migratedAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        totalAmountText: _totalAmountText(
+          widget.status,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
+        availableAmountText: _availableAmountText(
+          accountUuid,
+          privacyModeEnabled: privacyModeEnabled,
+        ),
         leftToMigrateText: leftToMigrateText,
         completionEstimateText: completionEstimateText,
         nextActionPresentation: _nextMigrationPresentation(
@@ -931,6 +965,7 @@ class _MobileMigrationRedesignedStatusState
         );
     return _MigrationProgressPreview(
       state: state,
+      privacyModeEnabled: privacyModeEnabled,
       isHardware: widget.isHardware,
       showPreparationCompleteModal: _showPreparationComplete,
       onPreparationCompleteDone: () => unawaited(_dismissPreparationComplete()),
@@ -945,9 +980,18 @@ class _MobileMigrationRedesignedStatusState
       completedRingSegments: _completedRingSegments(widget.status),
       awaitingRingSegments: _awaitingRingSegments(widget.status),
       currentSigningPartIndices: _currentSigningRingSegments(widget.status),
-      migratedAmountText: _migratedAmountText(widget.status),
-      totalAmountText: _totalAmountText(widget.status),
-      availableAmountText: _availableAmountText(accountUuid),
+      migratedAmountText: _migratedAmountText(
+        widget.status,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      totalAmountText: _totalAmountText(
+        widget.status,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
+      availableAmountText: _availableAmountText(
+        accountUuid,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
       leftToMigrateText: leftToMigrateText,
       completionEstimateText: completionEstimateText,
       nextActionPresentation: _nextMigrationPresentation(
@@ -967,14 +1011,21 @@ class _MobileMigrationRedesignedStatusState
           ? 'Transactions needing signature'
           : 'Batch #$batchNumber',
       actionBatchValue: signingAllKeystoneTransactions
-          ? _allMigrationActionValueText(widget.status)
+          ? _allMigrationActionValueText(
+              widget.status,
+              privacyModeEnabled: privacyModeEnabled,
+            )
           : resigningKeystoneTransactions
-          ? _needsInputActionValueText(widget.status)
+          ? _needsInputActionValueText(
+              widget.status,
+              privacyModeEnabled: privacyModeEnabled,
+            )
           : batchProgress.currentBatchParts.isEmpty
           ? null
           : _actionBatchValueText(
               widget.status,
               batchProgress.currentBatchParts,
+              privacyModeEnabled: privacyModeEnabled,
             ),
       actionRunning: _actionRunning,
       onAction: accountUuid == null || _actionRunning
@@ -1263,11 +1314,14 @@ class _MobileMigrationRedesignedStatusState
     );
   }
 
-  String _leftToMigrateText(rust_sync.MigrationStatus status) {
+  String _leftToMigrateText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
     final total = migrationTargetTotal(status);
     final completed = migrationCompletedValue(status);
     final remaining = total > completed ? total - completed : BigInt.zero;
-    return '${_compactZec(remaining)} ZEC';
+    return '${hideIfPrivacyMode(_compactZec(remaining), privacyModeEnabled: privacyModeEnabled)} ZEC';
   }
 
   String _completionEstimateText(rust_sync.MigrationStatus status) {
@@ -1527,13 +1581,17 @@ class _MobileMigrationRedesignedStatusState
 
   String _actionBatchValueText(
     rust_sync.MigrationStatus status,
-    List<rust_sync.MigrationPartStatus> parts,
-  ) {
+    List<rust_sync.MigrationPartStatus> parts, {
+    required bool privacyModeEnabled,
+  }) {
     final batchValue = parts.fold<BigInt>(
       BigInt.zero,
       (sum, part) => sum + part.valueZatoshi,
     );
-    final amount = ZecAmount.fromZatoshi(batchValue).compactBalance.amountText;
+    final amount = hideIfPrivacyMode(
+      ZecAmount.fromZatoshi(batchValue).compactBalance.amountText,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final total = status.parts.fold<BigInt>(
       BigInt.zero,
       (sum, item) => sum + item.valueZatoshi,
@@ -1544,7 +1602,10 @@ class _MobileMigrationRedesignedStatusState
     return '$amount ZEC ($percentage%)';
   }
 
-  String _allMigrationActionValueText(rust_sync.MigrationStatus status) {
+  String _allMigrationActionValueText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
     final total = status.parts.isNotEmpty
         ? status.parts.fold<BigInt>(
             BigInt.zero,
@@ -1554,11 +1615,17 @@ class _MobileMigrationRedesignedStatusState
             BigInt.zero,
             (sum, value) => sum + value,
           );
-    final amount = ZecAmount.fromZatoshi(total).compactBalance.amountText;
+    final amount = hideIfPrivacyMode(
+      ZecAmount.fromZatoshi(total).compactBalance.amountText,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     return '$amount ZEC (100%)';
   }
 
-  String _needsInputActionValueText(rust_sync.MigrationStatus status) {
+  String _needsInputActionValueText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
     final total = status.parts.fold<BigInt>(
       BigInt.zero,
       (sum, part) => sum + part.valueZatoshi,
@@ -1566,7 +1633,10 @@ class _MobileMigrationRedesignedStatusState
     final needsInput = status.parts
         .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
         .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi);
-    final amount = ZecAmount.fromZatoshi(needsInput).compactBalance.amountText;
+    final amount = hideIfPrivacyMode(
+      ZecAmount.fromZatoshi(needsInput).compactBalance.amountText,
+      privacyModeEnabled: privacyModeEnabled,
+    );
     final percentage = total <= BigInt.zero
         ? 0
         : ((needsInput * BigInt.from(100)) ~/ total).toInt();
@@ -1630,23 +1700,36 @@ class _MobileMigrationRedesignedStatusState
     return values.length == totalParts ? values : null;
   }
 
-  String _migratedAmountText(rust_sync.MigrationStatus status) {
+  String _migratedAmountText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
     final completed = migrationCompletedValue(status);
-    return '${ZecAmount.fromZatoshi(completed).compactBalance.amountText} ZEC';
+    return '${hideIfPrivacyMode(ZecAmount.fromZatoshi(completed).compactBalance.amountText, privacyModeEnabled: privacyModeEnabled)} ZEC';
   }
 
-  String _totalAmountText(rust_sync.MigrationStatus status) {
-    return migrationCompletedAmountText(
-      status,
-      fallbackAmountText: widget.data.amountText,
+  String _totalAmountText(
+    rust_sync.MigrationStatus status, {
+    required bool privacyModeEnabled,
+  }) {
+    return hideAmountIfPrivacyMode(
+      migrationCompletedAmountText(
+        status,
+        fallbackAmountText: widget.data.amountText,
+      ),
+      privacyModeEnabled: privacyModeEnabled,
+      denomination: 'ZEC',
     );
   }
 
-  String _availableAmountText(String? accountUuid) {
+  String _availableAmountText(
+    String? accountUuid, {
+    required bool privacyModeEnabled,
+  }) {
     final sync = (ref.watch(syncProvider).value ?? SyncState()).scopedToAccount(
       accountUuid,
     );
     final amount = sync.hasBalanceData ? sync.ironwoodBalance : BigInt.zero;
-    return '${ZecAmount.fromZatoshi(amount).compactBalance.amountText} ZEC';
+    return '${hideIfPrivacyMode(ZecAmount.fromZatoshi(amount).compactBalance.amountText, privacyModeEnabled: privacyModeEnabled)} ZEC';
   }
 }

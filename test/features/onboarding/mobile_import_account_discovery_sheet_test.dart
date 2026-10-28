@@ -4,10 +4,12 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_import_account_discovery_sheet.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 const _accounts = [
@@ -24,20 +26,38 @@ const _accounts = [
 Widget _app({
   required ValueChanged<List<int>> onConfirm,
   bool allowEmptySelection = true,
+  bool privacyModeEnabled = false,
   MobileImportAccountTransparentBalanceLoader? loadTransparentBalance,
 }) {
-  return MaterialApp(
-    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
-    home: MobileImportAccountDiscoverySheet(
-      accounts: _accounts,
-      allowEmptySelection: allowEmptySelection,
-      bip44CoinType: 133,
-      loadTransparentBalance:
-          loadTransparentBalance ?? (_) async => BigInt.zero,
-      onConfirm: onConfirm,
-      onCancel: () {},
+  return ProviderScope(
+    overrides: [
+      privacyModeProvider.overrideWith(() => _Privacy(privacyModeEnabled)),
+    ],
+    child: MaterialApp(
+      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      home: MobileImportAccountDiscoverySheet(
+        accounts: _accounts,
+        allowEmptySelection: allowEmptySelection,
+        bip44CoinType: 133,
+        loadTransparentBalance:
+            loadTransparentBalance ?? (_) async => BigInt.zero,
+        onConfirm: onConfirm,
+        onCancel: () {},
+      ),
     ),
   );
+}
+
+class _Privacy extends PrivacyModeNotifier {
+  _Privacy(this.initial);
+
+  final bool initial;
+
+  @override
+  bool build() => initial;
+
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
 }
 
 void main() {
@@ -138,5 +158,43 @@ void main() {
     await tester.pump();
 
     expect(find.text('-'), findsOneWidget);
+  });
+
+  testWidgets('shows transparent balance previews in privacy mode', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final account1Balance = Completer<BigInt>();
+    final account2Balance = Completer<BigInt>();
+
+    await tester.pumpWidget(
+      _app(
+        privacyModeEnabled: true,
+        onConfirm: (_) {},
+        loadTransparentBalance: (account) {
+          return switch (account.zip32AccountIndex) {
+            1 => account1Balance.future,
+            2 => account2Balance.future,
+            _ => Future.error(StateError('unexpected account')),
+          };
+        },
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Loading'), findsNWidgets(2));
+
+    account1Balance.complete(BigInt.from(123456789));
+    account2Balance.complete(BigInt.zero);
+    await tester.pump();
+    await tester.pump();
+
+    // The balances are what the user chooses accounts by, so privacy mode
+    // keeps them visible (docs/privacy-mode.md).
+    expect(find.text('1.2345 ZEC'), findsOneWidget);
+    expect(find.text('0 ZEC'), findsOneWidget);
+    expect(find.textContaining('******'), findsNothing);
+    expect(find.bySemanticsLabel(RegExp(r'\*{6}')), findsNothing);
+    semantics.dispose();
   });
 }

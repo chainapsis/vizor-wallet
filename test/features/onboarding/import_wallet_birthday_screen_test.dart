@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/onboarding/import/import_split_view.da
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
@@ -258,6 +259,43 @@ void main() {
 
     expect(find.text('-'), findsOneWidget);
   });
+
+  testWidgets('account discovery modal shows balances in privacy mode', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final account1Balance = Completer<BigInt>();
+    final account2Balance = Completer<BigInt>();
+
+    await tester.pumpWidget(
+      _modalHarness(
+        privacyModeEnabled: true,
+        onConfirm: (_) {},
+        loadTransparentBalance: (account) {
+          return switch (account.zip32AccountIndex) {
+            1 => account1Balance.future,
+            2 => account2Balance.future,
+            _ => Future.error(StateError('unexpected account')),
+          };
+        },
+      ),
+    );
+
+    expect(find.text('Loading'), findsNWidgets(2));
+
+    account1Balance.complete(BigInt.from(123456789));
+    account2Balance.complete(BigInt.zero);
+    await tester.pump();
+    await tester.pump();
+
+    // The balances are what the user chooses accounts by, so privacy mode
+    // keeps them visible (docs/privacy-mode.md).
+    expect(find.text('1.2345 ZEC'), findsOneWidget);
+    expect(find.text('0 ZEC'), findsOneWidget);
+    expect(find.textContaining('******'), findsNothing);
+    expect(find.bySemanticsLabel(RegExp(r'\*{6}')), findsNothing);
+    semantics.dispose();
+  });
 }
 
 Future<void> _setDesktopSurface(WidgetTester tester) async {
@@ -348,44 +386,62 @@ Widget _birthdayRouterHarness({required ImportBirthdayArgs args}) {
 Widget _modalHarness({
   bool allowEmptySelection = true,
   int bip44CoinType = 133,
+  bool privacyModeEnabled = false,
   ImportAccountTransparentBalanceLoader? loadTransparentBalance,
   required ValueChanged<List<int>> onConfirm,
 }) {
-  return MaterialApp(
-    home: MediaQuery(
-      data: const MediaQueryData(textScaler: TextScaler.linear(1)),
-      child: AppTheme(
-        data: AppThemeData.light,
-        child: Directionality(
-          textDirection: TextDirection.ltr,
-          child: Stack(
-            children: [
-              ImportAccountDiscoveryModal(
-                accounts: const [
-                  rust_wallet.SoftwareWalletDiscoveredAccount(
-                    zip32AccountIndex: 1,
-                    firstTransparentAddress:
-                        't1VzLrfU8ZRs3xEGzR84xHWL2QK7C9Tt6yV',
-                  ),
-                  rust_wallet.SoftwareWalletDiscoveredAccount(
-                    zip32AccountIndex: 2,
-                    firstTransparentAddress:
-                        't1UhrwzXxQBmduARnkbYqkKFSUMN6VAx9QS',
-                  ),
-                ],
-                allowEmptySelection: allowEmptySelection,
-                bip44CoinType: bip44CoinType,
-                loadTransparentBalance:
-                    loadTransparentBalance ?? ((_) async => BigInt.zero),
-                onConfirm: onConfirm,
-                onCancel: () {},
-              ),
-            ],
+  return ProviderScope(
+    overrides: [
+      privacyModeProvider.overrideWith(() => _Privacy(privacyModeEnabled)),
+    ],
+    child: MaterialApp(
+      home: MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(1)),
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Stack(
+              children: [
+                ImportAccountDiscoveryModal(
+                  accounts: const [
+                    rust_wallet.SoftwareWalletDiscoveredAccount(
+                      zip32AccountIndex: 1,
+                      firstTransparentAddress:
+                          't1VzLrfU8ZRs3xEGzR84xHWL2QK7C9Tt6yV',
+                    ),
+                    rust_wallet.SoftwareWalletDiscoveredAccount(
+                      zip32AccountIndex: 2,
+                      firstTransparentAddress:
+                          't1UhrwzXxQBmduARnkbYqkKFSUMN6VAx9QS',
+                    ),
+                  ],
+                  allowEmptySelection: allowEmptySelection,
+                  bip44CoinType: bip44CoinType,
+                  loadTransparentBalance:
+                      loadTransparentBalance ?? ((_) async => BigInt.zero),
+                  onConfirm: onConfirm,
+                  onCancel: () {},
+                ),
+              ],
+            ),
           ),
         ),
       ),
     ),
   );
+}
+
+class _Privacy extends PrivacyModeNotifier {
+  _Privacy(this.initial);
+
+  final bool initial;
+
+  @override
+  bool build() => initial;
+
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
 }
 
 MouseCursor _cursorForText(WidgetTester tester, String text) {

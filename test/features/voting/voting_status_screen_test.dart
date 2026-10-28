@@ -38,6 +38,7 @@ import 'package:zcash_wallet/src/features/voting/voting_routes.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_metadata_widgets.dart';
 import 'package:zcash_wallet/src/features/voting/widgets/voting_pane_scroll_area.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
@@ -2936,8 +2937,9 @@ void main() {
   /// Pumps the proposal detail screen with a fixed privacy-trim result.
   Future<void> pumpPollWithPrivacyTrim(
     WidgetTester tester,
-    BigInt droppedZatoshi,
-  ) async {
+    BigInt droppedZatoshi, {
+    bool privacyModeEnabled = false,
+  }) async {
     await tester.binding.setSurfaceSize(const Size(1152, 768));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -2950,6 +2952,11 @@ void main() {
       accountOverride: _MnemonicAccountNotifier.new,
       recoveryApi: recoveryApi,
       rust: rust,
+      overrides: [
+        privacyModeProvider.overrideWith(
+          () => _TestPrivacyModeNotifier(privacyModeEnabled),
+        ),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -2985,6 +2992,123 @@ void main() {
     // must not drag the failure affordances in with it.
     expect(find.text('Retry eligibility'), findsNothing);
     expect(find.text('Voting power unavailable'), findsNothing);
+  });
+
+  testWidgets('privacy mode masks voting power and the withheld amount', (
+    tester,
+  ) async {
+    await pumpPollWithPrivacyTrim(tester, BigInt.zero);
+    expect(find.text('Voting power 0.000001 ZEC'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpPollWithPrivacyTrim(
+      tester,
+      BigInt.from(19000000),
+      privacyModeEnabled: true,
+    );
+
+    expect(
+      find.text(
+        '****** ZEC is left out of this vote to keep your submission less '
+        'identifiable.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.textContaining('0.19'), findsNothing);
+    expect(find.textContaining('0.000001'), findsNothing);
+    _expectNoDoubledDenomination();
+  });
+
+  testWidgets('desktop voted header masks voting power in privacy mode', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    Widget voted({required bool privacyModeEnabled}) => MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: Scaffold(
+          body: VotingVotedPollContent(
+            showDesktopToolbar: false,
+            roundTitle: 'Private round',
+            snapshotHeight: 1,
+            description: '',
+            forumUri: null,
+            votingPowerZatoshi: BigInt.from(37_500_000),
+            votingPowerPreparing: false,
+            privacyModeEnabled: privacyModeEnabled,
+            votedAt: null,
+            proposals: const [],
+            choicesByProposalId: const {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(voted(privacyModeEnabled: false));
+    expect(find.text('Voting power 0.375 ZEC'), findsOneWidget);
+
+    await tester.pumpWidget(voted(privacyModeEnabled: true));
+    expect(find.text('Voting power ****** ZEC'), findsOneWidget);
+    expect(find.textContaining('0.375'), findsNothing);
+    _expectNoDoubledDenomination();
+  });
+
+  testWidgets('submission receipt masks voting power in privacy mode', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        privacyModeProvider.overrideWith(() => _TestPrivacyModeNotifier(true)),
+        votingSessionProvider(_roundId).overrideWith(
+          () => _StaticVotingSessionNotifier(
+            VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              phase: VotingSessionPhase.done,
+              roundPlan: apiRoundPlan(
+                roundId: _roundId,
+                pendingRecovery: false,
+                nextSteps: const [],
+                openProposals: Uint32List(0),
+                allDecided: true,
+                completedVoteArtifact: true,
+                completedForDisplay: true,
+              ),
+              eligibleWeightZatoshi: BigInt.from(100),
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _submissionHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('Submission confirmed!'));
+
+    expect(find.text('Voting power'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(VotingSubmissionConfirmationView),
+        matching: find.text('****** ZEC'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('0.000001'), findsNothing);
+    _expectNoDoubledDenomination();
   });
 
   testWidgets('poll retries voting power from error state', (tester) async {
@@ -7330,4 +7454,22 @@ class _RetainedRedirectAccountNotifier extends _MnemonicAccountNotifier {
   }
 
   void resume() => state = AsyncData(_bootstrap.initialAccountState);
+}
+
+class _TestPrivacyModeNotifier extends PrivacyModeNotifier {
+  _TestPrivacyModeNotifier(this.initial);
+
+  final bool initial;
+
+  @override
+  bool build() => initial;
+
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
+}
+
+/// Masking a bare amount with a denominated helper doubles the unit.
+void _expectNoDoubledDenomination() {
+  expect(find.textContaining('ZEC ZEC', findRichText: true), findsNothing);
+  expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
 }

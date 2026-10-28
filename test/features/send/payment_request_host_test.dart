@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -21,6 +22,7 @@ import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.d
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/migration_send_gate_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
+import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -200,6 +202,15 @@ class _StallingSendApi {
   );
 }
 
+class _TestPrivacyMode extends PrivacyModeNotifier {
+  _TestPrivacyMode(this._enabled);
+
+  final bool _enabled;
+
+  @override
+  bool build() => _enabled;
+}
+
 class _TestRpcEndpoint extends RpcEndpointNotifier {
   @override
   RpcEndpointConfig build() => const RpcEndpointConfig(
@@ -216,6 +227,7 @@ Future<ProviderContainer> _pumpHost(
   PaymentRequestPrecheck? precheck,
   WidgetBuilder? homeScreen,
   PaymentRequestScanner? scanner,
+  bool privacyModeEnabled = false,
 }) async {
   tester.view.physicalSize = const Size(1280, 900);
   tester.view.devicePixelRatio = 1.0;
@@ -246,6 +258,9 @@ Future<ProviderContainer> _pumpHost(
     ProviderScope(
       overrides: [
         rpcEndpointProvider.overrideWith(_TestRpcEndpoint.new),
+        privacyModeProvider.overrideWith(
+          () => _TestPrivacyMode(privacyModeEnabled),
+        ),
         if (scanner != null)
           paymentRequestScannerProvider.overrideWithValue(scanner),
         paymentRequestPrecheckProvider.overrideWithValue(
@@ -803,6 +818,55 @@ void main() {
 
   // A card that has run out of ways to answer itself stops promising an
   // update and hands the next move to the user.
+  for (final privacyModeEnabled in [false, true]) {
+    testWidgets('insufficient funds copy follows privacy mode '
+        '(privacy: $privacyModeEnabled)', (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final container = await _pumpHost(
+          tester,
+          privacyModeEnabled: privacyModeEnabled,
+        );
+        container
+            .read(paymentRequestFlowProvider.notifier)
+            .present(
+              const SendPrefillArgs(
+                id: 'payment-uri-large',
+                source: kPaymentUriPrefillSource,
+                address: _address,
+                amountText: '5',
+                label: 'Coffee shop',
+              ),
+              source: PaymentRequestSource.qrCode,
+            );
+        await tester.pumpAndSettle();
+
+        // The harness's spendable balance is 1 ZEC.
+        final visible = ZecAmount.fromZatoshi(
+          BigInt.from(100000000),
+        ).activityDetail.toString().replaceFirst(' ZEC', '');
+        final shown = privacyModeEnabled ? '******' : visible;
+        expect(
+          find.text(
+            'Not enough ZEC for this amount and the network fee '
+            '($shown available)',
+          ),
+          findsOneWidget,
+        );
+        if (privacyModeEnabled) {
+          expect(find.textContaining('($visible available)'), findsNothing);
+          expect(
+            find.bySemanticsLabel(RegExp(RegExp.escape('($visible available)'))),
+            findsNothing,
+          );
+          expect(find.textContaining('ZEC ZEC'), findsNothing);
+        }
+      } finally {
+        semantics.dispose();
+      }
+    });
+  }
+
   testWidgets('a stalled check offers Check again instead of a dead Review', (
     tester,
   ) async {

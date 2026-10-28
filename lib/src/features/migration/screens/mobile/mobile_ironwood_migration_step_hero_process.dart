@@ -1,14 +1,20 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
 class _MobilePoolMigrationHero extends StatelessWidget {
-  const _MobilePoolMigrationHero({required this.data});
+  const _MobilePoolMigrationHero({
+    required this.data,
+    required this.privacyModeEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool privacyModeEnabled;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final amount = '${data.amountText} $kZcashDefaultCurrencyTicker';
+    final amount =
+        '${hideIfPrivacyMode(data.amountText, privacyModeEnabled: privacyModeEnabled)} '
+        '$kZcashDefaultCurrencyTicker';
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadii.xLarge),
       child: ColoredBox(

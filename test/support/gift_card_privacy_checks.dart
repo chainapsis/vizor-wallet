@@ -245,6 +245,46 @@ void registerGiftCardPrivacyChecks({required bool mobile}) {
     });
   }
 
+  testWidgets('privacy masks the gift card max amount', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      // The surface size alone leaves MediaQuery at the default test view.
+      tester.view.physicalSize = size * tester.view.devicePixelRatio;
+      addTearDown(tester.view.resetPhysicalSize);
+      await pumpPaymentLinksScreen(
+        tester,
+        logicalSize: size,
+        privacyNotifier: _Privacy(),
+      );
+      await tester.tap(
+        mobile
+            ? find.byKey(const ValueKey('payment_links_mobile_create_button'))
+            : find.text('Create new card'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Use max: ******'), findsOneWidget);
+      expect(find.bySemanticsLabel('Use max: ****** ZEC'), findsWidgets);
+      expect(find.textContaining('142.2298'), findsNothing);
+      expect(find.bySemanticsLabel(RegExp(r'142\.2298')), findsNothing);
+      expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+
+      // Typing swaps the inline action for the Max button; its label stays
+      // masked, and tapping it still fills the real amount.
+      final editor = find.byKey(const ValueKey('payment_link_amount_editor'));
+      await tester.enterText(editor, '0.1');
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel(RegExp(r'142\.2298')), findsNothing);
+      expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('payment_link_max_button')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<EditableText>(editor).controller.text, '142.2298');
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   testWidgets('privacy keeps gift creation and claim amounts visible', (
     tester,
   ) async {

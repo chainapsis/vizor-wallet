@@ -1927,6 +1927,54 @@ void main() {
     expect(find.text('2 ZEC still migrating'), findsOneWidget);
   });
 
+  testWidgets('privacy mode masks the migrating amount in the banner', (
+    tester,
+  ) async {
+    tester.view.physicalSize =
+        const Size(393, 852) * tester.view.devicePixelRatio;
+    addTearDown(tester.view.resetPhysicalSize);
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(200_000_000),
+          ironwoodBalance: BigInt.from(200_000_000),
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(
+            kIronwoodMigrationBroadcastScheduledPhase,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('2 ZEC still migrating'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp('2 ZEC still migrating')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.bySemanticsLabel('Hide balance'));
+    await tester.pump();
+
+    expect(find.text('****** ZEC still migrating'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp(r'\*{6} ZEC still migrating')),
+      findsOneWidget,
+    );
+    expect(find.text('2 ZEC still migrating'), findsNothing);
+    expect(
+      find.bySemanticsLabel(RegExp('2 ZEC still migrating')),
+      findsNothing,
+    );
+    expect(find.textContaining('ZEC ZEC', findRichText: true), findsNothing);
+    expect(find.bySemanticsLabel(RegExp('ZEC ZEC')), findsNothing);
+    semantics.dispose();
+  });
+
   testWidgets('waits for confirmation after Orchard holdings reach zero', (
     tester,
   ) async {
