@@ -21,6 +21,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/app_field_status_line.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
@@ -2665,14 +2667,16 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final currentZns = _zns.resolutionFor(_addressController.text);
     Widget? line;
     if (znsStatus != null) {
-      line = Text(
-        znsStatus.message,
+      line = AppFieldStatusLine(
         key: const ValueKey('mobile_send_address_zns_status'),
-        style: AppTypography.labelLarge.copyWith(
-          color: znsStatus.isError
-              ? colors.text.destructive
-              : colors.text.secondary,
-        ),
+        text: znsStatus.message,
+        tone: znsStatus.isError
+            ? AppTextFieldTone.destructive
+            : AppTextFieldTone.neutral,
+        icon: znsStatus.isError
+            ? null
+            : AppIcon(AppIcons.globe, size: 16, color: colors.icon.muted),
+        style: AppTypography.labelLarge,
       );
     } else if (showError) {
       line = Text(
@@ -2707,14 +2711,11 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           iconSize: 16,
         );
       } else if (currentZns != null) {
-        line = Text(
-          'Resolves to ${_truncateAddress(currentZns.address)}',
+        line = AppFieldStatusLine(
           key: const ValueKey('mobile_send_address_zns_match'),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelLarge.copyWith(
-            color: colors.text.secondary,
-          ),
+          text: 'Resolves to ${_truncateAddress(currentZns.address)}',
+          tone: AppTextFieldTone.success,
+          style: AppTypography.labelLarge,
         );
       }
     }

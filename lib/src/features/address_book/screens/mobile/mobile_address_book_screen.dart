@@ -17,6 +17,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_context_menu.dart';
 import '../../../../core/widgets/app_copy_feedback.dart';
+import '../../../../core/widgets/app_field_status_line.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
@@ -34,6 +35,7 @@ import '../../models/contact_zns_lookup.dart';
 import '../../models/address_format_validator.dart';
 import '../../providers/address_book_provider.dart';
 import '../../widgets/address_book_network_icon.dart';
+import '../../widgets/contact_zns_message_style.dart';
 
 /// Mobile Contacts screen — Figma `CONTACTS` mobile frames (node 5032:83888).
 ///
@@ -1064,7 +1066,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     if (znsMessage != null) return znsMessage;
     if (_zns.isName(address, _network)) return null;
     final issue = addressFormatIssue(_network, address);
-    return issue == null ? null : ContactZnsMessage(issue, isError: true);
+    return issue == null
+        ? null
+        : ContactZnsMessage(issue, ContactZnsMessageKind.error);
   }
 
   Future<void> _pickNetwork() async {
@@ -1329,14 +1333,12 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
               ),
               if (addressMessage != null) ...[
                 const SizedBox(height: AppSpacing.xs),
-                Text(
-                  addressMessage.text,
+                AppFieldStatusLine(
                   key: const ValueKey('mobile_address_book_address_message'),
-                  style: AppTypography.bodySmall.copyWith(
-                    color: addressMessage.isError
-                        ? colors.text.destructive
-                        : colors.text.secondary,
-                  ),
+                  text: addressMessage.text,
+                  tone: contactZnsMessageTone(addressMessage.kind),
+                  icon: contactZnsMessageIcon(addressMessage.kind, colors),
+                  style: AppTypography.bodySmall,
                 ),
               ],
               const SizedBox(height: AppSpacing.md),

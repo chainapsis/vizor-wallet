@@ -1214,10 +1214,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     _addressController.edgeHighlightColor = null;
 
-    final addressTone = switch (_addressType) {
-      'invalid' || 'error' => AppTextFieldTone.destructive,
-      _ => AppTextFieldTone.neutral,
-    };
     // Live contact-match feedback: when the entered address is valid and
     // matches a saved contact (or one of the user's own accounts — the same
     // resolution the review screen shows), surface the name under the field
@@ -1240,6 +1236,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final znsResolvedLine = currentZns != null && matchedRecipientName == null
         ? 'Resolves to ${truncatedAddress(currentZns.address)}'
         : null;
+    // A resolved name takes the field's success tone (check icon), the same
+    // state on every send surface.
+    final addressTone = switch (_addressType) {
+      'invalid' || 'error' => AppTextFieldTone.destructive,
+      _ when znsResolvedLine != null => AppTextFieldTone.success,
+      _ => AppTextFieldTone.neutral,
+    };
     final znsStatusMessage = _zns.status?.message;
     final addressMessage =
         znsStatusMessage ??
@@ -1270,12 +1273,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                       size: 16,
                       color: colors.icon.brandCrimson,
                     )
-                  : znsResolvedLine != null
-                  ? AppIcon(
-                      AppIcons.globe,
-                      size: 16,
-                      color: colors.icon.brandCrimson,
-                    )
+                  // Null lets the success tone show its check icon.
                   : null,
           };
     final addressHasText = _addressController.text.trim().isNotEmpty;

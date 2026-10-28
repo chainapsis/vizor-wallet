@@ -29,6 +29,7 @@ import '../models/contact_zns_lookup.dart';
 import '../models/address_format_validator.dart';
 import '../providers/address_book_provider.dart';
 import '../widgets/address_book_network_icon.dart';
+import '../widgets/contact_zns_message_style.dart';
 
 /// Fixed content column width for the group cards (Figma contacts design).
 const double _kContactsContentWidth = 352;
@@ -1196,6 +1197,15 @@ class _ContactFormModalState extends State<_ContactFormModal> {
         showAddressError ||
         (znsMessage?.isError ?? false) ||
         addressFormatFinding?.severity == AddressFormatSeverity.error;
+    // A name line keeps its own tone: success for a resolved name.
+    final addressTone = addressHasError
+        ? AppTextFieldTone.destructive
+        : znsMessage == null || showAddressError
+        ? AppTextFieldTone.neutral
+        : contactZnsMessageTone(znsMessage.kind);
+    final addressMessageIcon = znsMessage == null || showAddressError
+        ? null
+        : contactZnsMessageIcon(znsMessage.kind, context.colors);
 
     return AppModalCard(
       child: Column(
@@ -1255,9 +1265,8 @@ class _ContactFormModalState extends State<_ContactFormModal> {
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
               messageText: addressMessage,
-              tone: addressHasError
-                  ? AppTextFieldTone.destructive
-                  : AppTextFieldTone.neutral,
+              messageIcon: addressMessageIcon,
+              tone: addressTone,
               onChanged: _emitAddress,
               onSubmitted: (_) => widget.onSubmit(),
             ),

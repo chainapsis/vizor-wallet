@@ -6,12 +6,29 @@ import '../../../core/naming/zns_recipient_lookup.dart';
 import 'address_book_contact.dart';
 import 'address_format_validator.dart';
 
+/// What a contact form's name line says, which sets its tone and icon.
+enum ContactZnsMessageKind {
+  /// The lookup is in flight.
+  pending,
+
+  /// The name resolved to a usable address.
+  resolved,
+
+  /// An edited contact keeps the name it was saved from.
+  saved,
+
+  /// The name has no usable address, or a plain address has a format error.
+  error,
+}
+
 /// The line a contact form shows under its address field for a Zcash name.
 class ContactZnsMessage {
-  const ContactZnsMessage(this.text, {required this.isError});
+  const ContactZnsMessage(this.text, this.kind);
 
   final String text;
-  final bool isError;
+  final ContactZnsMessageKind kind;
+
+  bool get isError => kind == ContactZnsMessageKind.error;
 }
 
 /// Resolves a Zcash name typed into a contact form's address field.
@@ -99,18 +116,26 @@ class ContactZnsLookup {
   ContactZnsMessage? message(String address) {
     final status = _state.status;
     if (status != null) {
-      return ContactZnsMessage(status.message, isError: status.isError);
+      return ContactZnsMessage(
+        status.message,
+        status.isError
+            ? ContactZnsMessageKind.error
+            : ContactZnsMessageKind.pending,
+      );
     }
     final resolution = _state.resolutionFor(address);
     if (resolution != null) {
       return ContactZnsMessage(
         'Resolves to ${truncatedAddress(resolution.address)}',
-        isError: false,
+        ContactZnsMessageKind.resolved,
       );
     }
     final savedName = _state.displayName(address);
     if (savedName != null) {
-      return ContactZnsMessage('Saved from $savedName', isError: false);
+      return ContactZnsMessage(
+        'Saved from $savedName',
+        ContactZnsMessageKind.saved,
+      );
     }
     return null;
   }
