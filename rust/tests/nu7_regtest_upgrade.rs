@@ -1,0 +1,487 @@
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use rust_lib_zcash_wallet::api::{simple as simple_api, sync as sync_api, wallet as wallet_api};
+
+const NETWORK: &str = "regtest";
+const MIGRATION_MNEMONIC: &str = "winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used";
+const PENDING_PASSWORD: &str = "nu7-regtest-password";
+const PENDING_SALT_BASE64: &str = "AAECAwQFBgcICQoLDA0ODw==";
+const COINBASE_MATURITY: u64 = 100;
+const SEND_ZATOSHI: u64 = 1_000_000;
+const PRE_NU7_EXPIRY_DELTA: u64 = 40;
+const NU7_EXPIRY_DELTA: u64 = 120;
+/// Early enough that preparation finishes and parts fall due before NU7 under
+/// fast migration timing (delays of at most 48 blocks).
+const RUN_START_BEFORE_NU7: u64 = 100;
+const PRE_NU7_EXPIRY_MODULUS: u64 = 34_560;
+const NU7_EXPIRY_MODULUS: u64 = 103_680;
+/// The app's polling makes several broadcast passes per 25-second block.
+const BROADCASTS_PER_BLOCK: usize = 3;
+/// Blocks past the last scheduled height before a waiting run fails the test.
+const SCHEDULE_SLACK_BLOCKS: u64 = 20;
+
+/// Crosses NU6.3 and NU7 on a Zebra regtest chain: send expiry on either side
+/// of NU7 and at its edge, a Private migration stopped by the upgrade, and the
+/// rest of the Orchard balance moved by a new run under NU7 durations.
+#[test]
+#[ignore = "requires the Dockerized NU7 regtest stack (scripts/nu7-regtest)"]
+fn migration_and_sends_cross_nu7_activation() {
+    let (nu6_3, nu7) = activation_heights();
+    simple_api::configure_regtest_ironwood_activation_height(nu6_3 as u32)
+        .expect("configure wallet NU6.3 activation");
+    simple_api::configure_regtest_nu7_activation_height(nu7 as u32)
+        .expect("configure wallet NU7 activation");
+    simple_api::configure_fast_testnet_migration(true);
+    run_harness("up.sh", &[]);
+    run_harness("mine.sh", &["1"]);
+
+    let tip = latest_height();
+    let migrator_dir = tempfile::tempdir().expect("migrator tempdir");
+    let migrator_db = path_string(&migrator_dir.path().join("zcash_wallet.db"));
+    let migrator = wallet_api::import_wallet(
+        MIGRATION_MNEMONIC.to_string(),
+        String::new(),
+        Some(tip),
+        NETWORK.to_string(),
+        migrator_db.clone(),
+        Some("NU7 migration".to_string()),
+    )
+    .expect("import migration wallet");
+    let sender_mnemonic = wallet_api::generate_mnemonic();
+    let sender_dir = tempfile::tempdir().expect("sender tempdir");
+    let sender_db = path_string(&sender_dir.path().join("zcash_wallet.db"));
+    let sender = wallet_api::import_wallet(
+        sender_mnemonic.clone(),
+        String::new(),
+        Some(tip),
+        NETWORK.to_string(),
+        sender_db.clone(),
+        Some("NU7 sender".to_string()),
+    )
+    .expect("import sender wallet");
+
+    // Orchard funds must exist before NU6.3; Ironwood coinbase comes after it.
+    run_harness("fund.sh", &[&migrator.unified_address, "2"]);
+    mine(COINBASE_MATURITY + 10);
+    mine_to(nu6_3 + 1);
+    run_harness("fund.sh", &[&sender.unified_address, "1"]);
+    mine(COINBASE_MATURITY + 10);
+    sync(&migrator_db);
+    sync(&sender_db);
+    let funded = balance(&migrator_db, &migrator.account_uuid);
+    assert!(funded.orchard > 0, "migration wallet needs Orchard funds");
+    assert!(
+        balance(&sender_db, &sender.account_uuid).ironwood > 0,
+        "sender needs Ironwood funds"
+    );
+
+    let target = latest_height() + 1;
+    let txid = send_to_self(&sender_db, &sender, &sender_mnemonic);
+    assert_eq!(expiry_height(&txid), target + PRE_NU7_EXPIRY_DELTA);
+    mine(10);
+    sync(&sender_db);
+
+    mine_to(nu7 - RUN_START_BEFORE_NU7);
+    sync(&migrator_db);
+    let first = migrate(&migrator_db, &migrator.account_uuid);
+    assert_eq!(first.status, "waiting_denom_confirmations");
+    let first_run_id = migration_status(&migrator_db, &migrator.account_uuid)
+        .active_run_id
+        .expect("first run is active");
+
+    let window = wallet_api::get_network_upgrade_window(NETWORK.into(), latest_height())
+        .expect("read the upgrade window")
+        .expect("NU7 is ahead");
+    assert_eq!(window.next_activation_height, nu7);
+    let hold_starts = window.migration_hold_from_tip;
+    while migration_status(&migrator_db, &migrator.account_uuid).phase != "broadcast_scheduled" {
+        assert!(
+            latest_height() < hold_starts,
+            "preparation was still running at {}",
+            latest_height()
+        );
+        mine(1);
+        sync(&migrator_db);
+        advance(&migrator_db, &migrator.account_uuid);
+    }
+    let first_due = run_parts(&migrator_db, &first_run_id)
+        .iter()
+        .map(|part| part.scheduled_height)
+        .min()
+        .expect("the first run schedules parts");
+    assert!(
+        first_due < nu7,
+        "a part must fall due before NU7 to exercise the hold: first at {first_due}"
+    );
+
+    // The app stays closed until the hold window, so every part is still unsent.
+    mine_to(hold_starts - 4);
+    sync(&sender_db);
+    let txid = send_to_self(&sender_db, &sender, &sender_mnemonic);
+    // A transaction signed for this branch is invalid once NU7 activates.
+    assert_eq!(expiry_height(&txid), nu7 - 1);
+    mine_to(hold_starts);
+    while latest_height() < nu7 - 1 {
+        sync(&migrator_db);
+        advance(&migrator_db, &migrator.account_uuid);
+        assert!(
+            mempool_migration_txids(&first_run_id, &migrator_db).is_empty(),
+            "a migration part was broadcast inside the hold window at {}",
+            latest_height()
+        );
+        mine(1);
+    }
+
+    sync(&migrator_db);
+    let held = run_parts(&migrator_db, &first_run_id);
+    assert!(
+        held.iter()
+            .any(|part| part.status == "scheduled" && part.scheduled_height < nu7),
+        "a part due before NU7 was held"
+    );
+    assert!(
+        held.iter().all(|part| part.status != "broadcasted"),
+        "no part is left in flight at the upgrade"
+    );
+    assert!(
+        held.iter()
+            .all(|part| part.expiry_height % PRE_NU7_EXPIRY_MODULUS == 0),
+        "pre-NU7 parts use the pre-NU7 expiry modulus"
+    );
+    let held_statuses = part_statuses(&held);
+    let stopped = migration_status(&migrator_db, &migrator.account_uuid);
+    assert_eq!(
+        stopped.phase, "stopped_by_upgrade",
+        "the run stops once the block before NU7 is scanned: {:?}",
+        stopped.message
+    );
+    assert!(
+        stopped.active_run_id.is_none(),
+        "a stopped run is a receipt"
+    );
+
+    mine(1);
+    let target = latest_height() + 1;
+    sync(&sender_db);
+    let txid = send_to_self(&sender_db, &sender, &sender_mnemonic);
+    assert_eq!(expiry_height(&txid), target + NU7_EXPIRY_DELTA);
+
+    sync(&migrator_db);
+    let second = migrate(&migrator_db, &migrator.account_uuid);
+    let second_run_id = migration_status(&migrator_db, &migrator.account_uuid)
+        .active_run_id
+        .expect("second run is active");
+    assert_ne!(second_run_id, first_run_id);
+    let second_parts = run_parts(&migrator_db, &second_run_id);
+    assert!(!second_parts.is_empty(), "the second run schedules parts");
+    for part in &second_parts {
+        assert_eq!(
+            (part.scheduled_height - part.schedule_start_height) % 3,
+            0,
+            "NU7 delays span whole 75-second reference blocks"
+        );
+        assert_eq!(part.expiry_height % NU7_EXPIRY_MODULUS, 0);
+    }
+    let last_scheduled = second_parts
+        .iter()
+        .map(|part| part.scheduled_height)
+        .max()
+        .unwrap_or_default();
+    let mut phase = second.status;
+    while phase != "complete" {
+        assert!(
+            latest_height() <= last_scheduled + SCHEDULE_SLACK_BLOCKS,
+            "second run still {phase} at {}",
+            latest_height()
+        );
+        mine(1);
+        sync(&migrator_db);
+        advance(&migrator_db, &migrator.account_uuid);
+        phase = migration_status(&migrator_db, &migrator.account_uuid).phase;
+    }
+
+    // The stopped run stays a receipt: a later run must not reopen or retire it.
+    let phases = run_phases(&migrator_db);
+    assert_eq!(
+        phases,
+        vec![
+            (first_run_id.clone(), "stopped_by_upgrade".to_string()),
+            (second_run_id, "complete".to_string()),
+        ]
+    );
+    assert_eq!(
+        part_statuses(&run_parts(&migrator_db, &first_run_id)),
+        held_statuses,
+        "the stopped run's parts are untouched"
+    );
+    let migrated = balance(&migrator_db, &migrator.account_uuid);
+    assert!(migrated.ironwood > 0);
+    assert!(migrated.orchard < funded.orchard);
+}
+
+struct Part {
+    status: String,
+    schedule_start_height: u64,
+    scheduled_height: u64,
+    expiry_height: u64,
+    txid_hex: String,
+}
+
+fn activation_heights() -> (u64, u64) {
+    let read = |name: &str, default: u64| {
+        std::env::var(name)
+            .ok()
+            .map(|value| value.parse().expect("activation height must be a u64"))
+            .unwrap_or(default)
+    };
+    (
+        read("NU7_REGTEST_NU63_HEIGHT", 300),
+        read("NU7_REGTEST_NU7_HEIGHT", 600),
+    )
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("rust crate must be inside the repository")
+        .to_path_buf()
+}
+
+fn path_string(path: &Path) -> String {
+    path.to_str().expect("UTF-8 path").to_string()
+}
+
+fn run_harness(script: &str, args: &[&str]) -> String {
+    let (nu6_3, nu7) = activation_heights();
+    let path = repo_root().join("scripts").join("nu7-regtest").join(script);
+    let output = Command::new(path)
+        .args(args)
+        .current_dir(repo_root())
+        .env("NU7_REGTEST_NU63_HEIGHT", nu6_3.to_string())
+        .env("NU7_REGTEST_NU7_HEIGHT", nu7.to_string())
+        .output()
+        .unwrap_or_else(|error| panic!("run {script}: {error}"));
+    assert!(
+        output.status.success(),
+        "{script} failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn rpc(method: &str, params: &str) -> serde_json::Value {
+    serde_json::from_str(&run_harness("rpc.sh", &[method, params])).expect("rpc returns JSON")
+}
+
+fn lightwalletd_url() -> String {
+    let port =
+        std::env::var("NU7_REGTEST_LIGHTWALLETD_PORT").unwrap_or_else(|_| "49067".to_string());
+    format!("http://127.0.0.1:{port}")
+}
+
+fn latest_height() -> u64 {
+    wallet_api::get_latest_block_height(lightwalletd_url(), NETWORK.into())
+        .expect("read NU7 regtest tip")
+}
+
+fn mine(blocks: u64) {
+    run_harness("mine.sh", &[&blocks.to_string()]);
+}
+
+fn mine_to(height: u64) {
+    let tip = latest_height();
+    if tip < height {
+        mine(height - tip);
+    }
+}
+
+fn sync(db_path: &str) {
+    sync_api::run_full_sync_blocking(
+        db_path.to_string(),
+        lightwalletd_url(),
+        NETWORK.to_string(),
+        1,
+    )
+    .expect("sync wallet");
+}
+
+fn balance(db_path: &str, account_uuid: &str) -> sync_api::WalletBalance {
+    sync_api::get_balance(
+        db_path.to_string(),
+        NETWORK.to_string(),
+        account_uuid.to_string(),
+    )
+    .expect("wallet balance")
+}
+
+fn send_to_self(db_path: &str, wallet: &wallet_api::WalletImportResult, mnemonic: &str) -> String {
+    let flow_id = format!("nu7-send-{}", latest_height());
+    let proposal = sync_api::propose_send(
+        db_path.to_string(),
+        NETWORK.to_string(),
+        wallet.account_uuid.clone(),
+        flow_id.clone(),
+        wallet.unified_address.clone(),
+        SEND_ZATOSHI,
+        None,
+    )
+    .expect("propose send");
+    let result = sync_api::execute_proposal(
+        db_path.to_string(),
+        lightwalletd_url(),
+        proposal.proposal_id,
+        flow_id,
+        mnemonic.as_bytes().to_vec(),
+        None,
+        None,
+    )
+    .expect("execute send");
+    result
+        .txids
+        .split(',')
+        .next()
+        .expect("send txid")
+        .to_string()
+}
+
+fn expiry_height(txid: &str) -> u64 {
+    rpc("getrawtransaction", &format!("[\"{txid}\", 1]"))["expiryheight"]
+        .as_u64()
+        .expect("transaction reports its expiry height")
+}
+
+fn mempool_migration_txids(run_id: &str, db_path: &str) -> BTreeSet<String> {
+    let mempool = rpc("getrawmempool", "[]")
+        .as_array()
+        .expect("mempool is a list")
+        .iter()
+        .filter_map(|txid| txid.as_str().map(str::to_string))
+        .collect::<BTreeSet<_>>();
+    run_parts(db_path, run_id)
+        .into_iter()
+        .map(|part| part.txid_hex)
+        .filter(|txid| mempool.contains(txid) || mempool.contains(&reversed_hex(txid)))
+        .collect()
+}
+
+/// Stored txids may use either byte order.
+fn reversed_hex(txid: &str) -> String {
+    (0..txid.len())
+        .step_by(2)
+        .rev()
+        .map(|index| &txid[index..index + 2])
+        .collect()
+}
+
+fn migration_status(db_path: &str, account_uuid: &str) -> sync_api::MigrationStatus {
+    sync_api::get_orchard_migration_status(
+        db_path.to_string(),
+        NETWORK.to_string(),
+        account_uuid.to_string(),
+    )
+    .expect("read migration status")
+}
+
+/// Starts a run when none is active; otherwise continues the active one.
+fn migrate(db_path: &str, account_uuid: &str) -> sync_api::IronwoodMigrationResult {
+    let approved_schedule = if migration_status(db_path, account_uuid)
+        .active_run_id
+        .is_some()
+    {
+        Vec::new()
+    } else {
+        sync_api::get_orchard_migration_private_plan(
+            db_path.to_string(),
+            NETWORK.to_string(),
+            account_uuid.to_string(),
+            false,
+        )
+        .expect("read migration plan")
+        .map(|plan| plan.scheduled_transfers)
+        .unwrap_or_default()
+    };
+    sync_api::migrate_orchard_to_ironwood(
+        db_path.to_string(),
+        lightwalletd_url(),
+        NETWORK.to_string(),
+        account_uuid.to_string(),
+        MIGRATION_MNEMONIC.as_bytes().to_vec(),
+        PENDING_PASSWORD.to_string(),
+        PENDING_SALT_BASE64.to_string(),
+        approved_schedule,
+        false,
+    )
+    .expect("migrate Orchard to Ironwood")
+}
+
+/// Does what the foreground app does each block for an active run. The app
+/// broadcasts one due part per pass, which also redraws overdue parts across
+/// the wallet.
+fn advance(db_path: &str, account_uuid: &str) {
+    let status = migration_status(db_path, account_uuid);
+    if status.active_run_id.is_none() {
+        return;
+    }
+    if status.phase != "broadcast_scheduled" {
+        migrate(db_path, account_uuid);
+        return;
+    }
+    for _ in 0..BROADCASTS_PER_BLOCK {
+        sync_api::broadcast_one_due_orchard_migration_transaction(
+            db_path.to_string(),
+            lightwalletd_url(),
+            NETWORK.to_string(),
+            account_uuid.to_string(),
+            PENDING_PASSWORD.to_string(),
+            PENDING_SALT_BASE64.to_string(),
+            None,
+        )
+        .expect("broadcast a due migration part");
+    }
+}
+
+fn run_parts(db_path: &str, run_id: &str) -> Vec<Part> {
+    let conn = rusqlite::Connection::open(db_path).expect("open wallet DB");
+    let mut stmt = conn
+        .prepare(
+            "SELECT status, COALESCE(schedule_start_height, 0), scheduled_height,
+                    expiry_height, txid_hex
+             FROM vizor_migration_pending_txs
+             WHERE run_id = ?1
+             ORDER BY part_index",
+        )
+        .expect("prepare part query");
+    stmt.query_map([run_id], |row| {
+        Ok(Part {
+            status: row.get(0)?,
+            schedule_start_height: row.get(1)?,
+            scheduled_height: row.get(2)?,
+            expiry_height: row.get(3)?,
+            txid_hex: row.get(4)?,
+        })
+    })
+    .expect("query parts")
+    .collect::<Result<_, _>>()
+    .expect("read parts")
+}
+
+fn part_statuses(parts: &[Part]) -> Vec<(String, String)> {
+    parts
+        .iter()
+        .map(|part| (part.txid_hex.clone(), part.status.clone()))
+        .collect()
+}
+
+fn run_phases(db_path: &str) -> Vec<(String, String)> {
+    let conn = rusqlite::Connection::open(db_path).expect("open wallet DB");
+    let mut stmt = conn
+        .prepare("SELECT run_id, phase FROM vizor_migration_runs ORDER BY created_at_ms")
+        .expect("prepare run query");
+    stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("query runs")
+        .collect::<Result<_, _>>()
+        .expect("read runs")
+}
