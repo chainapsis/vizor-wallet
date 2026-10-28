@@ -1036,6 +1036,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         requestedBy: previous.requestedBy,
         requestedAmountZatoshi: previous.requestedAmountZatoshi,
         flowKind: previous.flowKind,
+        recipientZnsName: previous.recipientZnsName,
       );
       if (!mounted) {
         await discardSendProposal(

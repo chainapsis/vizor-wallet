@@ -3,7 +3,8 @@ import 'zns_name_resolver.dart';
 
 /// Why a Zcash name in the send recipient field has no usable address yet.
 ///
-/// Desktop and mobile send show the same [message] under the field.
+/// Desktop and mobile send show the same [message] under the field. Each
+/// message fits one line beside the status icon at phone width.
 enum ZnsLookupStatus {
   /// The lookup is in flight.
   resolving('Looking up name'),
@@ -12,10 +13,10 @@ enum ZnsLookupStatus {
   notRegistered('This name is not registered'),
 
   /// The wallet's network has no ZNS registry (regtest).
-  unsupportedNetwork('Zcash names are not available on this network'),
+  unsupportedNetwork("Names aren't available on this network"),
 
   /// No resolver answered, or its reply could not be read.
-  failed("Couldn't look up this name. Check your connection"),
+  failed("Couldn't reach the name service"),
 
   /// The name points to an address this wallet cannot pay.
   unusableAddress('This name points to an invalid address');

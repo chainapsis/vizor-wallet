@@ -233,6 +233,34 @@ void main() {
       expect(bridge.calls.map((call) => call.$1).toSet(), {primary});
     });
 
+    test('a failing primary hands the lookup to the fallback', () async {
+      for (final failure in [
+        _HttpReply(502, utf8.encode('<html>Bad gateway</html>')),
+        _HttpReply(200, utf8.encode('<html>challenge</html>')),
+        _HttpReply(
+          200,
+          utf8.encode(
+            jsonEncode({
+              'jsonrpc': '2.0',
+              'id': 1,
+              'error': {'code': -32603, 'message': 'internal'},
+            }),
+          ),
+        ),
+      ]) {
+        final bridge = _ScriptedTorBridge({
+          primary: failure,
+          fallback: _reply(_record()),
+        });
+
+        expect(
+          (await resolverOver(bridge).resolve('alice'))?.address,
+          _address,
+          reason: '${failure.statusCode}',
+        );
+      }
+    });
+
     test('throws when no resolver can be reached', () async {
       final bridge = _ScriptedTorBridge({
         primary: const SocketException('unreachable'),
@@ -276,6 +304,12 @@ class _ScriptedTorBridge implements TorHttpBridge {
     bodies.add(bodyBytes);
     final scripted = resolve[uri];
     if (scripted is Exception) throw scripted;
+    if (scripted is _HttpReply) {
+      return NetworkHttpResponse(
+        statusCode: scripted.statusCode,
+        bodyBytes: Uint8List.fromList(scripted.body),
+      );
+    }
     final entry = method == 'status' ? status[uri] ?? _status() : scripted;
     return NetworkHttpResponse(
       statusCode: 200,
@@ -298,4 +332,12 @@ class _ScriptedTorBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required String destinationPath,
   }) => throw UnimplementedError();
+}
+
+/// A scripted host failure, returned for every method on that host.
+class _HttpReply {
+  const _HttpReply(this.statusCode, this.body);
+
+  final int statusCode;
+  final List<int> body;
 }

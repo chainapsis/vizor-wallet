@@ -112,6 +112,13 @@ class ZnsLookupException implements Exception {
   String toString() => 'ZnsLookupException: $message';
 }
 
+/// A host that failed rather than answered: an HTTP error, a reply that is
+/// not JSON-RPC (such as a proxy's error page), or a JSON-RPC error. The
+/// next host is tried.
+class ZnsHostUnavailableException extends ZnsLookupException {
+  const ZnsHostUnavailableException(super.message);
+}
+
 abstract interface class ZnsNameResolver {
   /// Returns the registration for bare [name], or null when the name is not
   /// registered.
@@ -125,7 +132,7 @@ class ZnsJsonRpcNameResolver implements ZnsNameResolver {
     required List<Uri> endpoints,
     required this.registryViewingKey,
     NetworkHttpClient? networkClient,
-    this.timeout = const Duration(seconds: 20),
+    this.timeout = const Duration(seconds: 15),
   }) : assert(endpoints.isNotEmpty),
        _endpoints = List.unmodifiable(endpoints),
        _client = networkClient ?? NetworkHttpClient();
@@ -143,23 +150,25 @@ class ZnsJsonRpcNameResolver implements ZnsNameResolver {
   @override
   Future<ZnsResolution?> resolve(String name) async {
     for (final endpoint in _endpoints) {
-      final NetworkHttpResponse response;
       try {
         await _verifyRegistry(endpoint);
-        response = await _call(endpoint, 'resolve', {'query': name});
+        final response = await _call(endpoint, 'resolve', {'query': name});
+        return parseZnsResolveResponse(
+          statusCode: response.statusCode,
+          body: response.bodyBytes,
+          requestedName: name,
+        );
+      } on ZnsHostUnavailableException catch (e) {
+        log('ZNS: resolver ${endpoint.host} failed: ${e.message}');
+        continue;
       } on ZnsLookupException {
+        // The host answered: no registration, a malformed record, or another
+        // registry. That answer is final and is not retried elsewhere.
         rethrow;
       } catch (e) {
-        // Unreachable: try the next resolver. A resolver that answered is
-        // final, so an HTTP, JSON-RPC, or registry error is never retried.
         log('ZNS: resolver ${endpoint.host} unreachable: $e');
         continue;
       }
-      return parseZnsResolveResponse(
-        statusCode: response.statusCode,
-        body: response.bodyBytes,
-        requestedName: name,
-      );
     }
     throw const ZnsLookupException('No ZNS resolver could be reached');
   }
@@ -210,25 +219,25 @@ class ZnsJsonRpcNameResolver implements ZnsNameResolver {
   }
 }
 
-/// The `result` of one JSON-RPC reply. Throws [ZnsLookupException] for an
-/// HTTP failure, a reply that is not JSON-RPC, or a JSON-RPC error.
+/// The `result` of one JSON-RPC reply. Throws [ZnsHostUnavailableException]
+/// for an HTTP failure, a reply that is not JSON-RPC, or a JSON-RPC error.
 Object? _rpcResult(int statusCode, List<int> body) {
   if (statusCode < 200 || statusCode >= 300) {
-    throw ZnsLookupException('ZNS resolver returned HTTP $statusCode');
+    throw ZnsHostUnavailableException('HTTP $statusCode');
   }
   final Object? decoded;
   try {
     decoded = jsonDecode(utf8.decode(body));
   } on FormatException {
-    throw const ZnsLookupException('ZNS resolver reply is not JSON');
+    throw const ZnsHostUnavailableException('reply is not JSON');
   }
   if (decoded is! Map<String, dynamic>) {
-    throw const ZnsLookupException('ZNS resolver reply is not an object');
+    throw const ZnsHostUnavailableException('reply is not an object');
   }
   final error = decoded['error'];
   if (error != null) {
     final message = error is Map ? error['message'] : null;
-    throw ZnsLookupException('ZNS resolver error: ${message ?? error}');
+    throw ZnsHostUnavailableException('JSON-RPC error ${message ?? error}');
   }
   return decoded['result'];
 }

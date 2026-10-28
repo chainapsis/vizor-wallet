@@ -1076,7 +1076,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
       context: context,
       builder: (_) => _NetworkPickerSheet(selected: _network),
     );
-    if (picked == null || !mounted) return;
+    // Picking the same network again is not an edit, and must not drop the
+    // name a contact was saved from.
+    if (picked == null || picked == _network || !mounted) return;
     setState(() => _network = picked);
     _updateZns();
   }

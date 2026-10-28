@@ -224,6 +224,7 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
         ).id,
         createdAtMs: imported.createdAtMs > 0 ? imported.createdAtMs : now,
         updatedAtMs: imported.updatedAtMs > 0 ? imported.updatedAtMs : now,
+        znsName: _cleanZnsName(imported.network, imported.znsName),
       );
       contacts.add(contact);
       existingIds.add(nextId);

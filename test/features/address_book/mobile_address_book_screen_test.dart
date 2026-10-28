@@ -301,6 +301,50 @@ void main() {
       expect(repo.contacts.single.znsName, 'alice.zcash');
     });
 
+    testWidgets('re-picking the same network keeps a saved name', (
+      tester,
+    ) async {
+      await _setMobileViewport(tester);
+      final repo = _FakeRepo([
+        AddressBookContact(
+          id: 'alice',
+          label: 'Alice',
+          network: AddressBookNetwork.zcash,
+          address: _znsAddress,
+          profilePictureId: kDefaultProfilePictureId,
+          createdAtMs: 0,
+          updatedAtMs: 0,
+          znsName: 'alice.zcash',
+        ),
+      ]);
+      await tester.pumpWidget(
+        _harness(repo, znsResolver: FakeZnsNameResolver()),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_contact_menu_alice')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_contact_menu_edit')));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved from alice.zcash'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_address_book_network')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Zcash').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Saved from alice.zcash'), findsOneWidget);
+      final saveButton = find.byKey(const ValueKey('mobile_address_book_save'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+
+      expect(repo.contacts.single.znsName, 'alice.zcash');
+    });
+
     testWidgets('an unregistered name keeps save off', (tester) async {
       await _setMobileViewport(tester);
       await tester.pumpWidget(

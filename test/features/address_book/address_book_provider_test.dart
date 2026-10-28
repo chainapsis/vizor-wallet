@@ -288,6 +288,45 @@ void main() {
     },
   );
 
+  test('contacts keep or clear their ZNS name as the address allows', () async {
+    final repo = _FakeAddressBookRepository();
+    final container = _container(repo);
+    addTearDown(container.dispose);
+    await container.read(addressBookProvider.future);
+    final notifier = container.read(addressBookProvider.notifier);
+
+    final imported = AddressBookContact(
+      id: 'alice',
+      label: 'Alice',
+      network: AddressBookNetwork.zcash,
+      address: 'u1alice',
+      profilePictureId: 'pfp-01',
+      createdAtMs: 1,
+      updatedAtMs: 1,
+      znsName: 'alice.zcash',
+    );
+    await notifier.importContacts([imported]);
+    expect(
+      container.read(addressBookProvider).value!.contacts.single.znsName,
+      'alice.zcash',
+      reason: 'an import keeps the name',
+    );
+
+    await notifier.updateContact(
+      'alice',
+      label: 'Alice',
+      network: AddressBookNetwork.ethereum,
+      address: '0x0000000000000000000000000000000000000001',
+      profilePictureId: 'pfp-01',
+      znsName: 'alice.zcash',
+    );
+    expect(
+      container.read(addressBookProvider).value!.contacts.single.znsName,
+      isNull,
+      reason: 'only a Zcash contact carries a name',
+    );
+  });
+
   test('alreadyImportedContactIds uses the import dedupe key', () async {
     const evmAddress = '0xAbC0000000000000000000000000000000000123';
     final repo = _FakeAddressBookRepository([

@@ -3328,7 +3328,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final feeText = _feeZatoshi == null
         ? '—'
         : ZecAmount.fromZatoshi(_feeZatoshi!).fee.toString();
-    final address = _addressController.text.trim();
+    final address = _recipientAddress;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
@@ -3499,7 +3499,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ZecAmount.tryParse(_amountText)?.receipt.toString() ??
         '$_amountText ZEC';
     final toLabel =
-        _contactLabel ?? _truncateAddress(_addressController.text.trim());
+        _contactLabel ??
+        _recipientZnsName ??
+        _truncateAddress(_recipientAddress);
 
     return Padding(
       key: ValueKey('mobile_send_status_${_phase.name}'),
