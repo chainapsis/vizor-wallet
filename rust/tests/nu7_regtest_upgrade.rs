@@ -26,6 +26,8 @@ const SCHEDULE_SLACK_BLOCKS: u64 = 20;
 const CROSSING_NU7_GAP: u64 = 2 + (COINBASE_MATURITY + 10) + 10 + RUN_START_BEFORE_NU7;
 /// After NU6.3: the run's lead before NU7.
 const MISSED_PART_NU7_GAP: u64 = 1 + RUN_START_BEFORE_NU7;
+/// After NU6.3: room for one Immediate migration before the hold opens.
+const IMMEDIATE_NU7_GAP: u64 = 1 + 12;
 
 /// Crosses NU6.3 and NU7 on a Zebra regtest chain: send expiry on either side
 /// of NU7 and at its edge, a Private migration stopped by the upgrade, and the
@@ -327,6 +329,125 @@ fn a_part_that_misses_the_upgrade_returns_its_input_when_the_run_stops() {
         orchard_before,
         "the part's input is back in the Orchard balance"
     );
+}
+
+/// An Immediate migration sent just before the hold is mined on the old
+/// branch; one inside the hold is refused with its inputs left spendable, and
+/// goes through once NU7 activates.
+#[test]
+#[ignore = "requires the Dockerized NU7 regtest stack (scripts/nu7-regtest)"]
+fn an_immediate_migration_is_held_at_the_upgrade_and_sent_after_it() {
+    let (nu6_3, nu7) = activation_heights(IMMEDIATE_NU7_GAP);
+    simple_api::configure_regtest_ironwood_activation_height(nu6_3 as u32)
+        .expect("configure wallet NU6.3 activation");
+    simple_api::configure_regtest_nu7_activation_height(nu7 as u32)
+        .expect("configure wallet NU7 activation");
+    run_harness("up.sh", &[]);
+    run_harness("mine.sh", &["1"]);
+
+    let tip = latest_height();
+    let early_dir = tempfile::tempdir().expect("early tempdir");
+    let early_db = path_string(&early_dir.path().join("zcash_wallet.db"));
+    let early = wallet_api::import_wallet(
+        MIGRATION_MNEMONIC.to_string(),
+        String::new(),
+        Some(tip),
+        NETWORK.to_string(),
+        early_db.clone(),
+        Some("NU7 immediate before the hold".to_string()),
+    )
+    .expect("import early wallet");
+    let late_mnemonic = wallet_api::generate_mnemonic();
+    let late_dir = tempfile::tempdir().expect("late tempdir");
+    let late_db = path_string(&late_dir.path().join("zcash_wallet.db"));
+    let late = wallet_api::import_wallet(
+        late_mnemonic.clone(),
+        String::new(),
+        Some(tip),
+        NETWORK.to_string(),
+        late_db.clone(),
+        Some("NU7 immediate in the hold".to_string()),
+    )
+    .expect("import late wallet");
+
+    // Orchard coinbase before NU6.3, so both wallets have Orchard to migrate.
+    run_harness("fund.sh", &[&early.unified_address, "2"]);
+    run_harness("fund.sh", &[&late.unified_address, "2"]);
+    mine(COINBASE_MATURITY + 10);
+    mine_to(nu6_3 + 1);
+
+    mine_to(nu7 - 12);
+    sync(&early_db);
+    let sent = migrate_immediately(&early_db, &early.account_uuid, MIGRATION_MNEMONIC)
+        .expect("an Immediate migration one block before the hold is sent");
+    let txid = sent.txids.split(',').next().expect("immediate txid");
+    // ZIP 318 canonical expiry, past NU7: only the hold's lead keeps it minable.
+    let early_expiry = expiry_height(txid);
+    assert!(
+        early_expiry > nu7 && early_expiry % PRE_NU7_EXPIRY_MODULUS == 0,
+        "expiry {early_expiry}"
+    );
+    mine(1);
+    sync(&early_db);
+    let migrated = balance(&early_db, &early.account_uuid);
+    assert!(
+        migrated.ironwood + migrated.ironwood_pending > 0,
+        "mined before NU7: {}",
+        describe(&migrated)
+    );
+
+    sync(&late_db);
+    let before = balance(&late_db, &late.account_uuid);
+    assert!(before.orchard > 0, "{}", describe(&before));
+    let Err(refused) = migrate_immediately(&late_db, &late.account_uuid, &late_mnemonic) else {
+        panic!("an Immediate migration inside the hold is refused");
+    };
+    assert!(
+        refused.contains("this close to the network upgrade"),
+        "{refused}"
+    );
+    let after = balance(&late_db, &late.account_uuid);
+    assert_eq!(after.orchard, before.orchard, "{}", describe(&after));
+    assert_eq!(after.orchard_locked, 0, "the refusal releases its inputs");
+
+    mine_to(nu7 + 1);
+    sync(&late_db);
+    let sent = migrate_immediately(&late_db, &late.account_uuid, &late_mnemonic)
+        .expect("the same migration goes through after NU7");
+    let txid = sent.txids.split(',').next().expect("immediate txid");
+    assert!(expiry_height(txid) > nu7, "signed for the NU7 branch");
+    mine(1);
+    sync(&late_db);
+    let migrated = balance(&late_db, &late.account_uuid);
+    assert!(
+        migrated.ironwood + migrated.ironwood_pending > 0,
+        "mined after NU7: {}",
+        describe(&migrated)
+    );
+}
+
+fn migrate_immediately(
+    db_path: &str,
+    account_uuid: &str,
+    mnemonic: &str,
+) -> Result<sync_api::IronwoodMigrationResult, String> {
+    let plan = sync_api::get_orchard_migration_immediate_plan(
+        db_path.to_string(),
+        NETWORK.to_string(),
+        account_uuid.to_string(),
+    )?
+    .ok_or_else(|| "no Immediate plan".to_string())?;
+    sync_api::migrate_orchard_to_ironwood_immediately(
+        db_path.to_string(),
+        lightwalletd_url(),
+        NETWORK.to_string(),
+        account_uuid.to_string(),
+        mnemonic.as_bytes().to_vec(),
+        plan.total_input_zatoshi,
+        plan.fee_zatoshi,
+        plan.migrated_zatoshi,
+        plan.input_note_count,
+    )
 }
 
 fn describe(balance: &sync_api::WalletBalance) -> String {

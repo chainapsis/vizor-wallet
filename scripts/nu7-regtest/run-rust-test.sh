@@ -15,6 +15,7 @@ if [[ "${#scenarios[@]}" -eq 0 ]]; then
   scenarios=(
     migration_and_sends_cross_nu7_activation
     a_part_that_misses_the_upgrade_returns_its_input_when_the_run_stops
+    an_immediate_migration_is_held_at_the_upgrade_and_sent_after_it
   )
 fi
 
