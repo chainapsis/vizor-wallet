@@ -761,12 +761,11 @@ while an executed denomination preparation waits for confirmations.
 - `NotFound`, mempool height `0`, and fork height `UInt64.max` contribute zero
   confirmations. A normal mined height contributes
   `tip - minedHeight + 1`, capped at 3.
-- An unmined preparation transaction that can no longer be mined (past its
-  expiry, or signed for a branch an upgrade ended) hands the wave to the
-  foreground without failing the task, through the read-only
-  `zcash_migration_preparation_txid_unminable`. Only the foreground can stop
-  or rebuild the run. A failed inspection, such as a legacy stage schema, is
-  handed over like the other inspection failures.
+- Once the block after the tip is past NU7, a preparation transaction the
+  server reports `NotFound` on two consecutive passes was dropped at
+  activation (nodes clear old-branch transactions, ZIP 200). The wave goes to
+  the foreground without failing the task, since only the foreground can stop
+  the run. The check reads `zcash_nu7_activation_height`, not the wallet DB.
 - Reaching 3 confirmations finishes only the current observation wave. The
   manager stores a foreground-continuation token, posts an “Open Vizor”
   notification under its own `confirmedWaveReady` kind so healthy copy never

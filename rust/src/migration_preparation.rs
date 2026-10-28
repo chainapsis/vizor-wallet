@@ -276,23 +276,6 @@ pub fn observable_transaction_ids(
         .map_err(MigrationPreparationError::Execution)
 }
 
-pub fn observable_transaction_unminable(
-    db_path: &str,
-    network: WalletNetwork,
-    expected_run_id: &str,
-    txid_hex: &str,
-    chain_tip_height: u32,
-) -> Result<bool, MigrationPreparationError> {
-    sync::denomination_stage_unminable_read_only(
-        db_path,
-        network,
-        expected_run_id,
-        txid_hex,
-        chain_tip_height,
-    )
-    .map_err(MigrationPreparationError::Execution)
-}
-
 pub fn inspect_proof_readiness(
     db_path: &str,
     network: WalletNetwork,

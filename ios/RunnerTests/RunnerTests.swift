@@ -1318,48 +1318,55 @@ class RunnerTests: XCTestCase {
     )
   }
 
-  func testUnminableTransactionHandsTheWaveToTheForegroundWithoutFailing() {
-    var askedIndices: [Int] = []
+  func testUpgradeDroppedPassesCountOnlyUnknownTransactionsPastTheUpgrade() {
+    func passes(
+      previous: Int,
+      _ observations: [NativeLightwalletdTransactionObservation],
+      tip: UInt64,
+      activation: UInt64 = 600
+    ) -> Int {
+      migrationPreparationUpgradeDroppedPasses(
+        previous: previous,
+        observations: observations,
+        chainTipHeight: tip,
+        upgradeActivationHeight: activation
+      )
+    }
+
+    // Block 599 can still include it.
+    XCTAssertEqual(passes(previous: 1, [.notFound], tip: 598), 0)
+    XCTAssertEqual(passes(previous: 0, [.notFound], tip: 599), 1)
+    XCTAssertEqual(passes(previous: 1, [.mined(height: 590), .notFound], tip: 610), 2)
+    // A transaction the server still holds or mined resets the count.
+    XCTAssertEqual(passes(previous: 1, [.mempool], tip: 610), 0)
+    XCTAssertEqual(passes(previous: 1, [.mined(height: 599)], tip: 610), 0)
+    // No scheduled upgrade.
+    XCTAssertEqual(passes(previous: 1, [.notFound], tip: 610, activation: 0), 0)
+  }
+
+  func testTransactionDroppedAtTheUpgradeHandsTheWaveToTheForeground() {
     let disposition = migrationPreparationConfirmationDisposition(
-      observations: [.mined(height: 100), .notFound, .mempool],
-      chainTipHeight: 102,
+      observations: [.mined(height: 590), .notFound],
+      chainTipHeight: 610,
       confirmationTarget: 3,
-      transactionCannotBeMined: { index in
-        askedIndices.append(index)
-        return index == 2
-      }
+      upgradeDroppedPasses: migrationPreparationUpgradeDroppedPassLimit
     )
 
     XCTAssertEqual(
       disposition,
       .needsForegroundRecovery(
-        fingerprint: "unminable-transaction",
+        fingerprint: "dropped-at-upgrade",
         taskFailed: false
       )
     )
-    // A mined transaction is never asked about.
-    XCTAssertEqual(askedIndices, [1, 2])
   }
 
-  func testMinedTransactionPastItsBranchEndStillConfirms() {
+  func testOneUnknownPassPastTheUpgradeKeepsTracking() {
     let disposition = migrationPreparationConfirmationDisposition(
-      observations: [.mined(height: 100)],
-      chainTipHeight: 102,
+      observations: [.mined(height: 590), .notFound],
+      chainTipHeight: 610,
       confirmationTarget: 3,
-      transactionCannotBeMined: { _ in true }
-    )
-
-    guard case .completed = disposition else {
-      return XCTFail("expected completion, got \(disposition)")
-    }
-  }
-
-  func testMinableUnminedTransactionKeepsTracking() {
-    let disposition = migrationPreparationConfirmationDisposition(
-      observations: [.mined(height: 100), .notFound],
-      chainTipHeight: 102,
-      confirmationTarget: 3,
-      transactionCannotBeMined: { _ in false }
+      upgradeDroppedPasses: migrationPreparationUpgradeDroppedPassLimit - 1
     )
 
     guard case .progress = disposition else {
@@ -1367,26 +1374,12 @@ class RunnerTests: XCTestCase {
     }
   }
 
-  func testFailedUnminableInspectionHandsTheWaveToTheForeground() {
-    let disposition = migrationPreparationConfirmationDisposition(
-      observations: [.mined(height: 100), .notFound],
-      chainTipHeight: 102,
-      confirmationTarget: 3,
-      transactionCannotBeMined: { _ in nil }
-    )
-
-    XCTAssertEqual(
-      disposition,
-      migrationPreparationTxidInspectionFailureDisposition()
-    )
-  }
-
-  func testForkedTransactionTakesPrecedenceOverAnUnminableOne() {
+  func testForkedTransactionTakesPrecedenceOverAnUpgradeDroppedOne() {
     let disposition = migrationPreparationConfirmationDisposition(
       observations: [.notFound, .forked],
-      chainTipHeight: 102,
+      chainTipHeight: 610,
       confirmationTarget: 3,
-      transactionCannotBeMined: { _ in true }
+      upgradeDroppedPasses: migrationPreparationUpgradeDroppedPassLimit
     )
 
     XCTAssertEqual(

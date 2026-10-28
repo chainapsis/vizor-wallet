@@ -416,12 +416,35 @@ func migrationPreparationConfirmationProgress(
   )
 }
 
+/// Consecutive passes an upgrade-dropped transaction must stay unknown before
+/// the wave goes to the foreground; a transaction sent moments ago can be too.
+let migrationPreparationUpgradeDroppedPassLimit = 2
+
+/// Counts consecutive passes in which the server does not know a transaction
+/// once the block after `chainTipHeight` is past the upgrade. Nodes clear
+/// old-branch transactions from the mempool at activation (ZIP 200), so one
+/// that missed the old branch is never found again.
+func migrationPreparationUpgradeDroppedPasses(
+  previous: Int,
+  observations: [NativeLightwalletdTransactionObservation],
+  chainTipHeight: UInt64,
+  upgradeActivationHeight: UInt64
+) -> Int {
+  guard upgradeActivationHeight > 0,
+    chainTipHeight >= upgradeActivationHeight - 1,
+    observations.contains(.notFound)
+  else {
+    return 0
+  }
+  return previous + 1
+}
+
 func migrationPreparationConfirmationDisposition(
   observations: [NativeLightwalletdTransactionObservation],
   chainTipHeight: UInt64,
   confirmationTarget: UInt64,
   totalStageCount: UInt32 = 0,
-  transactionCannotBeMined: (Int) -> Bool? = { _ in false }
+  upgradeDroppedPasses: Int = 0
 ) -> MigrationPreparationScopeTrackingDisposition {
   if observations.contains(where: {
     if case .forked = $0 { return true }
@@ -432,22 +455,12 @@ func migrationPreparationConfirmationDisposition(
       taskFailed: true
     )
   }
-  // An unmined transaction past its expiry or its branch's end never
-  // confirms; only the foreground can stop or rebuild the run. A failed
-  // inspection (nil) goes to the foreground like the other inspections.
-  for index in observations.indices {
-    if case .mined = observations[index] { continue }
-    switch transactionCannotBeMined(index) {
-    case false?:
-      continue
-    case true?:
-      return .needsForegroundRecovery(
-        fingerprint: "unminable-transaction",
-        taskFailed: false
-      )
-    case nil:
-      return migrationPreparationTxidInspectionFailureDisposition()
-    }
+  // The transaction can never confirm; only the foreground can stop the run.
+  if upgradeDroppedPasses >= migrationPreparationUpgradeDroppedPassLimit {
+    return .needsForegroundRecovery(
+      fingerprint: "dropped-at-upgrade",
+      taskFailed: false
+    )
   }
   let progress = migrationPreparationConfirmationProgress(
     observations: observations,
@@ -931,6 +944,7 @@ final class BackgroundMigrationPreparationManager {
   /// foreground commit still in flight.
   private static let emptyObservationPassLimit = 2
   private var emptyObservationPassesByScope: [String: Int] = [:]
+  private var upgradeDroppedPassesByScope: [String: Int] = [:]
 
   private static let schedulingTraceFileName =
     "ironwood-preparation-scheduling-trace.jsonl"
@@ -1637,6 +1651,7 @@ final class BackgroundMigrationPreparationManager {
       taskRunning = true
       expired = false
       emptyObservationPassesByScope.removeAll()
+      upgradeDroppedPassesByScope.removeAll()
       trackingProgressByScope.removeAll()
       latestTrackingProgress = nil
       displayedProgressUnits = 0
@@ -1983,19 +1998,21 @@ final class BackgroundMigrationPreparationManager {
         )
         continue
       }
+      let upgradeDroppedPasses = migrationPreparationUpgradeDroppedPasses(
+        previous: upgradeDroppedPassesByScope[scope] ?? 0,
+        observations: observations,
+        chainTipHeight: tip,
+        upgradeActivationHeight: manifest.network.withCString {
+          zcash_nu7_activation_height($0)
+        }
+      )
+      upgradeDroppedPassesByScope[scope] = upgradeDroppedPasses
       let disposition = migrationPreparationConfirmationDisposition(
         observations: observations,
         chainTipHeight: tip,
         confirmationTarget: Self.confirmationTarget,
         totalStageCount: preparation.total_stage_count,
-        transactionCannotBeMined: { index in
-          self.preparationTransactionCannotBeMined(
-            manifest: manifest,
-            runId: runId,
-            transactionIdHex: transactionIds[index],
-            chainTipHeight: tip
-          )
-        }
+        upgradeDroppedPasses: upgradeDroppedPasses
       )
       results.append(
         MigrationPreparationScopeTrackingResult(
@@ -2053,32 +2070,6 @@ final class BackgroundMigrationPreparationManager {
     }
     if payload.isEmpty { return [] }
     return payload.split(separator: "\n").map(String.init)
-  }
-
-  /// Nil when the inspection failed, for example on a stage schema only the
-  /// foreground can upgrade.
-  private func preparationTransactionCannotBeMined(
-    manifest: IronwoodMigrationBackgroundManifest,
-    runId: String,
-    transactionIdHex: String,
-    chainTipHeight: UInt64
-  ) -> Bool? {
-    var cannotBeMined = false
-    let code = zcash_migration_preparation_txid_unminable(
-      manifest.dbPath,
-      manifest.network,
-      runId,
-      transactionIdHex,
-      chainTipHeight,
-      &cannotBeMined
-    )
-    guard code == 0 else {
-      print(
-        "[BGPreparation] txid expiry inspection failed code=\(code) account=\(manifest.accountUuid)"
-      )
-      return nil
-    }
-    return cannotBeMined
   }
 
   private func transactionObservation(
