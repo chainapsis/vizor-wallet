@@ -796,13 +796,11 @@ final class BackgroundMigrationManager {
           BackgroundMigrationPreparationManager.shared
             .notifyPreparationNeedsForeground()
         }
+        // Keep the rest of the result, such as an upgrade stop, as it is.
+        var announcedResult = runResult
+        announcedResult.proofReady = announced
         self.finishOutboxRun(
-          BackgroundMigrationOutboxRunResult(
-            transport: runResult.transport,
-            proofReady: announced,
-            broadcastComplete: runResult.broadcastComplete,
-            transportAccountUuid: runResult.transportAccountUuid
-          ),
+          announcedResult,
           task: task,
           preparationResult: preparationResult
         )

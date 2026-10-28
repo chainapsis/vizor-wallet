@@ -187,7 +187,7 @@ func backgroundMigrationUpgradeStopAlertKey(
 
 struct BackgroundMigrationOutboxRunResult: Equatable {
   let transport: BackgroundMigrationTransportOutcome
-  let proofReady: BackgroundMigrationProofReadyMetadata?
+  var proofReady: BackgroundMigrationProofReadyMetadata?
   let broadcastComplete: BackgroundMigrationBroadcastCompleteMetadata?
   let transportAccountUuid: String?
   /// Due parts that wait for the network upgrade rather than a retry.
