@@ -878,6 +878,21 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(try key(activation - 100, at: activation + 5, attempts: 1))
   }
 
+  func testHoldsPartsStoppedByUpgradeOnlyForUnsentOldBranchParts() throws {
+    let activation = try testnetNu7ActivationHeight()
+    let stopped = try makeBatchBeforeNu7(targetHeight: activation - 100)
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(stopped)
+    try snapshot.armBatch(batchId: stopped.batchId, expectedDigests: digests(stopped), at: now)
+    // From A the part waits for a new signature and no longer counts as work.
+    snapshot.batches[0].items[0].status = .needsResignAwaitingReconciliation
+    XCTAssertTrue(snapshot.holdsPartsStoppedByUpgrade)
+
+    snapshot.batches[0].items[0].attemptCount = 1
+    XCTAssertFalse(snapshot.holdsPartsStoppedByUpgrade)
+    XCTAssertFalse(BackgroundMigrationOutboxSnapshot().holdsPartsStoppedByUpgrade)
+  }
+
   func testRunnerReportsTheUpgradeThatStoppedAPart() throws {
     let activation = try testnetNu7ActivationHeight()
     func outcome(at remoteHeight: UInt64) throws -> BackgroundMigrationOutboxRunResult {

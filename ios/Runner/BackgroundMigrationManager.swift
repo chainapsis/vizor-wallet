@@ -323,12 +323,15 @@ private enum BackgroundMigrationNotification {
     return "com.keplr.vizor.ironwood-migration.sent.\(digest)"
   }
 
-  static func remove(batchIds: [String], includeNeedsAction: Bool) {
+  static func remove(batchIds: [String], includeNeedsAction: Bool, includeUpgradeStop: Bool) {
     var identifiers = batchIds.flatMap {
       [proofReadyIdentifier(batchId: $0), broadcastCompleteIdentifier(batchId: $0)]
     }
     if includeNeedsAction {
-      identifiers.append(contentsOf: [needsActionIdentifier, upgradeStopIdentifier])
+      identifiers.append(needsActionIdentifier)
+    }
+    if includeUpgradeStop {
+      identifiers.append(upgradeStopIdentifier)
     }
     guard !identifiers.isEmpty else { return }
     let center = UNUserNotificationCenter.current()
@@ -657,7 +660,9 @@ final class BackgroundMigrationManager {
       let hasRemainingWork = self.hasRunnableOutboxWork()
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,
-        includeNeedsAction: !hasRemainingWork
+        includeNeedsAction: !hasRemainingWork,
+        // Another account's run may still be stopped by the upgrade.
+        includeUpgradeStop: !hasRemainingWork && !self.holdsPartsStoppedByUpgrade()
       )
       return revoked
     } completion: { completion($0) }
@@ -675,7 +680,8 @@ final class BackgroundMigrationManager {
       }
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,
-        includeNeedsAction: true
+        includeNeedsAction: true,
+        includeUpgradeStop: true
       )
       return removed
     } completion: { completion($0) }
@@ -1072,6 +1078,11 @@ final class BackgroundMigrationManager {
         || (batch.broadcastCompleteNotificationPendingAt != nil
           && batch.broadcastCompleteNotifiedAt == nil)
     }
+  }
+
+  private func holdsPartsStoppedByUpgrade() -> Bool {
+    // Keeps the alert when the outbox can't be read, like hasRunnableOutboxWork.
+    (try? BackgroundMigrationOutboxStore.shared.read())?.holdsPartsStoppedByUpgrade ?? true
   }
 
   private func hasResumablePreparationWork() -> Bool {

@@ -1248,16 +1248,36 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         ),
         // A server can report any tip, so this must not add to it.
         remoteHeight >= activation - 1,
-        // A part sent before may already be mined; only the foreground knows.
-        batch.items.contains(where: {
-          ($0.status == .armed || $0.status == .needsResignAwaitingReconciliation)
-            && $0.attemptCount == 0
-            && ($0.targetHeight ?? activation) < activation
-        })
+        Self.holdsOldBranchPart(batch, activation: activation)
       else { continue }
       return "\(batch.network):\(activation)"
     }
     return nil
+  }
+
+  /// Whether any batch still holds an unsent part signed for the branch the
+  /// upgrade ends, at any tip, so the stop alert may still apply.
+  var holdsPartsStoppedByUpgrade: Bool {
+    batches.contains { batch in
+      guard
+        let activation = BackgroundMigrationOutboxCadence.nu7ActivationHeight(
+          network: batch.network
+        )
+      else { return false }
+      return Self.holdsOldBranchPart(batch, activation: activation)
+    }
+  }
+
+  private static func holdsOldBranchPart(
+    _ batch: BackgroundMigrationOutboxBatch,
+    activation: UInt64
+  ) -> Bool {
+    // A part sent before may already be mined; only the foreground knows.
+    batch.items.contains(where: {
+      ($0.status == .armed || $0.status == .needsResignAwaitingReconciliation)
+        && $0.attemptCount == 0
+        && ($0.targetHeight ?? activation) < activation
+    })
   }
 
   /// Txids of due parts on `endpoint` that wait for the network upgrade.
