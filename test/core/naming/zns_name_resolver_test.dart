@@ -118,6 +118,25 @@ void main() {
       );
     });
 
+    test('a reply that is not a JSON-RPC answer is a host failure', () {
+      for (final reply in <Object?>[
+        {'status': 'maintenance'},
+        {'jsonrpc': '2.0', 'id': 1},
+        {'jsonrpc': '1.0', 'id': 1, 'result': null},
+        {'jsonrpc': '2.0', 'id': 7, 'result': null},
+      ]) {
+        expect(
+          () => parseZnsResolveResponse(
+            statusCode: 200,
+            body: utf8.encode(jsonEncode(reply)),
+            requestedName: 'alice',
+          ),
+          throwsA(isA<ZnsHostUnavailableException>()),
+          reason: '$reply',
+        );
+      }
+    });
+
     test('refuses a record that does not answer the question asked', () {
       for (final record in [
         _record(name: 'mallory'),
@@ -260,6 +279,34 @@ void main() {
         );
       }
     });
+
+    test(
+      'a JSON page or a bad status hands the lookup to the fallback',
+      () async {
+        final maintenance = _HttpReply(
+          200,
+          utf8.encode(jsonEncode({'status': 'maintenance'})),
+        );
+        for (final bridge in [
+          _ScriptedTorBridge({
+            primary: maintenance,
+            fallback: _reply(_record()),
+          }),
+          _ScriptedTorBridge(
+            {primary: _reply(_record()), fallback: _reply(_record())},
+            status: {
+              primary: _reply({'synced': true}),
+            },
+          ),
+        ]) {
+          expect(
+            (await resolverOver(bridge).resolve('alice'))?.address,
+            _address,
+          );
+          expect(bridge.calls.last, (fallback, 'resolve'));
+        }
+      },
+    );
 
     test('throws when no resolver can be reached', () async {
       final bridge = _ScriptedTorBridge({

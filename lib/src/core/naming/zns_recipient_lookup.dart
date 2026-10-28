@@ -76,7 +76,7 @@ Future<ZnsRecipientLookup> lookUpZnsRecipient(
         ? const ZnsRecipientMissing(ZnsLookupStatus.notRegistered)
         : ZnsRecipientFound(resolution);
   } catch (e) {
-    log('Send: ZNS lookup error: $e');
+    log('ZNS: lookup error: $e');
     return const ZnsRecipientMissing(ZnsLookupStatus.failed);
   }
 }

@@ -65,6 +65,9 @@ const _znsInputSuffixes = <String>['.zcash', '.zec'];
 /// The registry accepts 1-63 lowercase ASCII letters or digits.
 final _znsNamePattern = RegExp(r'^[a-z0-9]{1,63}$');
 
+/// Every call is one request on its own connection, so a fixed id suffices.
+const _rpcRequestId = 1;
+
 /// A `status` or `resolve` reply holds one small JSON object.
 const _maxReplyBytes = 64 * 1024;
 
@@ -206,7 +209,7 @@ class ZnsJsonRpcNameResolver implements ZnsNameResolver {
       bodyBytes: utf8.encode(
         jsonEncode({
           'jsonrpc': '2.0',
-          'id': 1,
+          'id': _rpcRequestId,
           'method': method,
           'params': params,
         }),
@@ -220,7 +223,12 @@ class ZnsJsonRpcNameResolver implements ZnsNameResolver {
 }
 
 /// The `result` of one JSON-RPC reply. Throws [ZnsHostUnavailableException]
-/// for an HTTP failure, a reply that is not JSON-RPC, or a JSON-RPC error.
+/// for an HTTP failure, a reply that is not a JSON-RPC 2.0 response to this
+/// request, or a JSON-RPC error.
+///
+/// A present `result` of null is a real answer (no registration). A missing
+/// `result` is not: a proxy's JSON error page must not read as "not
+/// registered", which would skip the fallback host.
 Object? _rpcResult(int statusCode, List<int> body) {
   if (statusCode < 200 || statusCode >= 300) {
     throw ZnsHostUnavailableException('HTTP $statusCode');
@@ -234,10 +242,18 @@ Object? _rpcResult(int statusCode, List<int> body) {
   if (decoded is! Map<String, dynamic>) {
     throw const ZnsHostUnavailableException('reply is not an object');
   }
+  if (decoded['jsonrpc'] != '2.0' || decoded['id'] != _rpcRequestId) {
+    throw const ZnsHostUnavailableException(
+      'reply is not a JSON-RPC 2.0 response to this request',
+    );
+  }
   final error = decoded['error'];
   if (error != null) {
     final message = error is Map ? error['message'] : null;
     throw ZnsHostUnavailableException('JSON-RPC error ${message ?? error}');
+  }
+  if (!decoded.containsKey('result')) {
+    throw const ZnsHostUnavailableException('reply has no result');
   }
   return decoded['result'];
 }
@@ -252,7 +268,7 @@ String parseZnsStatusViewingKey({
       ? result['viewing_key']
       : null;
   if (viewingKey is! String || viewingKey.isEmpty) {
-    throw const ZnsLookupException('ZNS resolver status has no viewing key');
+    throw const ZnsHostUnavailableException('status has no viewing key');
   }
   return viewingKey;
 }
