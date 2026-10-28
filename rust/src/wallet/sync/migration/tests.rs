@@ -1193,6 +1193,46 @@ fn a_broadcast_stage_cannot_be_mined_past_its_expiry_or_its_branch_end() {
 }
 
 #[test]
+fn a_legacy_stage_schema_is_reported_without_an_upgrade() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute_batch(&format!(
+        "CREATE TABLE {STAGES_TABLE} (
+           run_id TEXT NOT NULL,
+           stage_index INTEGER NOT NULL,
+           expected_txid_hex TEXT NOT NULL,
+           status TEXT NOT NULL
+         );
+         INSERT INTO {STAGES_TABLE}
+           (run_id, stage_index, expected_txid_hex, status)
+         VALUES ('run-1', 0, '{}', 'broadcasted');",
+        "11".repeat(32),
+    ))
+    .unwrap();
+    drop(conn);
+
+    // The iOS tracker hands an error to the foreground, which owns the upgrade.
+    assert!(denomination_stage_unminable_read_only(
+        db_path.to_str().unwrap(),
+        WalletNetwork::Test,
+        "run-1",
+        &"11".repeat(32),
+        TEST_NU7_ACTIVATION_HEIGHT,
+    )
+    .is_err());
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let columns: i64 = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM pragma_table_info('{STAGES_TABLE}')"),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(columns, 4);
+}
+
+#[test]
 fn observable_denomination_transaction_ids_do_not_upgrade_legacy_schema() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");

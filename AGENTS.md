@@ -765,7 +765,8 @@ while an executed denomination preparation waits for confirmations.
   expiry, or signed for a branch an upgrade ended) hands the wave to the
   foreground without failing the task, through the read-only
   `zcash_migration_preparation_txid_unminable`. Only the foreground can stop
-  or rebuild the run.
+  or rebuild the run. A failed inspection, such as a legacy stage schema, is
+  handed over like the other inspection failures.
 - Reaching 3 confirmations finishes only the current observation wave. The
   manager stores a foreground-continuation token, posts an “Open Vizor”
   notification under its own `confirmedWaveReady` kind so healthy copy never

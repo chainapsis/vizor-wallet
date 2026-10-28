@@ -421,7 +421,7 @@ func migrationPreparationConfirmationDisposition(
   chainTipHeight: UInt64,
   confirmationTarget: UInt64,
   totalStageCount: UInt32 = 0,
-  transactionCannotBeMined: (Int) -> Bool = { _ in false }
+  transactionCannotBeMined: (Int) -> Bool? = { _ in false }
 ) -> MigrationPreparationScopeTrackingDisposition {
   if observations.contains(where: {
     if case .forked = $0 { return true }
@@ -433,15 +433,21 @@ func migrationPreparationConfirmationDisposition(
     )
   }
   // An unmined transaction past its expiry or its branch's end never
-  // confirms; only the foreground can stop or rebuild the run.
-  if observations.indices.contains(where: { index in
-    if case .mined = observations[index] { return false }
-    return transactionCannotBeMined(index)
-  }) {
-    return .needsForegroundRecovery(
-      fingerprint: "unminable-transaction",
-      taskFailed: false
-    )
+  // confirms; only the foreground can stop or rebuild the run. A failed
+  // inspection (nil) goes to the foreground like the other inspections.
+  for index in observations.indices {
+    if case .mined = observations[index] { continue }
+    switch transactionCannotBeMined(index) {
+    case false?:
+      continue
+    case true?:
+      return .needsForegroundRecovery(
+        fingerprint: "unminable-transaction",
+        taskFailed: false
+      )
+    case nil:
+      return migrationPreparationTxidInspectionFailureDisposition()
+    }
   }
   let progress = migrationPreparationConfirmationProgress(
     observations: observations,
@@ -2049,13 +2055,14 @@ final class BackgroundMigrationPreparationManager {
     return payload.split(separator: "\n").map(String.init)
   }
 
-  /// A failed inspection keeps tracking, as the pass did before this check.
+  /// Nil when the inspection failed, for example on a stage schema only the
+  /// foreground can upgrade.
   private func preparationTransactionCannotBeMined(
     manifest: IronwoodMigrationBackgroundManifest,
     runId: String,
     transactionIdHex: String,
     chainTipHeight: UInt64
-  ) -> Bool {
+  ) -> Bool? {
     var cannotBeMined = false
     let code = zcash_migration_preparation_txid_unminable(
       manifest.dbPath,
@@ -2069,7 +2076,7 @@ final class BackgroundMigrationPreparationManager {
       print(
         "[BGPreparation] txid expiry inspection failed code=\(code) account=\(manifest.accountUuid)"
       )
-      return false
+      return nil
     }
     return cannotBeMined
   }

@@ -1367,6 +1367,20 @@ class RunnerTests: XCTestCase {
     }
   }
 
+  func testFailedUnminableInspectionHandsTheWaveToTheForeground() {
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.mined(height: 100), .notFound],
+      chainTipHeight: 102,
+      confirmationTarget: 3,
+      transactionCannotBeMined: { _ in nil }
+    )
+
+    XCTAssertEqual(
+      disposition,
+      migrationPreparationTxidInspectionFailureDisposition()
+    )
+  }
+
   func testForkedTransactionTakesPrecedenceOverAnUnminableOne() {
     let disposition = migrationPreparationConfirmationDisposition(
       observations: [.notFound, .forked],
