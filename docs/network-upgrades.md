@@ -125,10 +125,14 @@ points:
   (`network_upgrade_stops_run`). Waiting for that scan lets parts mined before
   the upgrade confirm first, so the receipt reports them as moved.
 
-Stopping releases the run's note locks. Migration status keeps the run as a
-receipt while Orchard funds remain, so the rest can move in a new run under
-the new branch. Writers that move a run forward skip a stopped one, so a part
-saved during the stop cannot undo it.
+Stopping releases the run's note locks. It also expires, in the wallet, the
+run's unmined transactions for the ended branch at that branch's last block:
+the network can no longer mine them, so their inputs return at once instead of
+at the ZIP 318 expiry, weeks later. A reorg that mines one restores it when the
+wallet scans the block. Migration status keeps the run as a receipt while
+Orchard funds remain, so the rest can move in a new run under the new branch.
+Writers that move a run forward skip a stopped one, so a part saved during the
+stop cannot undo it.
 
 **Start.** Software starts, Keystone prepares and batch signing, draft creation
 and Immediate builds call `ensure_migration_can_start`. A Private run is also

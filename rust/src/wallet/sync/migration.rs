@@ -1222,8 +1222,10 @@ pub(crate) fn reconcile_wallet_locks_after_sync(
                 reconcile_run_confirmations(&conn, &run.run_id)?;
                 backfill_ready_migration_proof_retry_height(&conn, &run.run_id)?;
                 // After confirmations, so parts mined before the upgrade count.
-                if network_upgrade_stops_run(&conn, db_path, network, &run.run_id)? {
-                    stop_run_for_network_upgrade(&conn, &run.run_id)?;
+                if let Some(next_height) =
+                    network_upgrade_stops_run(&conn, db_path, network, &run.run_id)?
+                {
+                    stop_run_for_network_upgrade(&conn, network, &run.run_id, next_height)?;
                 }
             }
         }
@@ -5083,34 +5085,31 @@ pub(crate) fn stop_run_if_network_upgrade_invalidated(
     ensure_schema(&conn)?;
     // A server behind the wallet would otherwise read a new-branch part as old.
     let chain_tip_height = wallet_tip(&conn)?.unwrap_or(0).max(server_tip_height);
-    if !network_upgrade_invalidates_unsent_at(
-        &conn,
-        network,
-        run_id,
-        chain_tip_height.saturating_add(1),
-    )? {
+    let next_height = chain_tip_height.saturating_add(1);
+    if !network_upgrade_invalidates_unsent_at(&conn, network, run_id, next_height)? {
         return Ok(false);
     }
-    stop_run_for_network_upgrade(&conn, run_id)?;
+    stop_run_for_network_upgrade(&conn, network, run_id, next_height)?;
     drop(conn);
     reconcile_wallet_locks_for_run(db_path, network, run_id)?;
     Ok(true)
 }
 
-/// Whether the run's unsent transactions belong to a branch that ended below
-/// the fully scanned height. Waiting for the scan lets parts mined before the
-/// upgrade be confirmed first, so the stopped run reports them as moved.
+/// The height after the fully scanned block when the run's unsent
+/// transactions belong to a branch that ended below it. Waiting for the scan
+/// lets parts mined before the upgrade be confirmed first, so the stopped run
+/// reports them as moved.
 fn network_upgrade_stops_run(
     conn: &rusqlite::Connection,
     db_path: &str,
     network: WalletNetwork,
     run_id: &str,
-) -> Result<bool, String> {
+) -> Result<Option<u32>, String> {
     use zcash_client_backend::data_api::WalletRead;
 
     // The tip settles it for almost every sync, before the wallet is opened.
     let Some(chain_tip_height) = wallet_tip(conn)? else {
-        return Ok(false);
+        return Ok(None);
     };
     if !network_upgrade_invalidates_unsent_at(
         conn,
@@ -5118,25 +5117,30 @@ fn network_upgrade_stops_run(
         run_id,
         chain_tip_height.saturating_add(1),
     )? {
-        return Ok(false);
+        return Ok(None);
     }
     let fully_scanned = super::open_wallet_db_for_read(db_path, network)?
         .block_fully_scanned()
         .map_err(|e| format!("Read fully scanned height for the network upgrade: {e}"))?;
     let Some(block) = fully_scanned else {
-        return Ok(false);
+        return Ok(None);
     };
-    network_upgrade_invalidates_unsent_at(
-        conn,
-        network,
-        run_id,
-        u32::from(block.block_height()).saturating_add(1),
+    let next_height = u32::from(block.block_height()).saturating_add(1);
+    Ok(
+        network_upgrade_invalidates_unsent_at(conn, network, run_id, next_height)?
+            .then_some(next_height),
     )
 }
 
 /// Ends the run like [`retire_run_for_rebuild`], under its own phase so the
-/// wallet can explain the stop and offer to move the rest.
-fn stop_run_for_network_upgrade(conn: &rusqlite::Connection, run_id: &str) -> Result<(), String> {
+/// wallet can explain the stop and offer to move the rest. `next_height` is
+/// the height the stop was judged at.
+fn stop_run_for_network_upgrade(
+    conn: &rusqlite::Connection,
+    network: WalletNetwork,
+    run_id: &str,
+    next_height: u32,
+) -> Result<(), String> {
     let now = now_ms()?;
     let tx = conn
         .unchecked_transaction()
@@ -5171,9 +5175,72 @@ fn stop_run_for_network_upgrade(conn: &rusqlite::Connection, run_id: &str) -> Re
         params![run_id],
     )
     .map_err(|e| format!("Release migration note locks after the upgrade: {e}"))?;
+    expire_unminable_run_transactions(&tx, network, run_id, next_height)?;
     tx.commit()
         .map_err(|e| format!("Commit migration upgrade stop: {e}"))?;
     log::info!("migration: the network upgrade stopped run {run_id}");
+    Ok(())
+}
+
+/// Expires in the wallet the run's unmined transactions whose branch ended
+/// before `next_height`, at that branch's last block. The network can no
+/// longer mine them, yet their inputs would stay spent until the ZIP 318
+/// expiry, weeks away. Scanning one that a reorg mines restores it.
+fn expire_unminable_run_transactions(
+    conn: &rusqlite::Connection,
+    network: WalletNetwork,
+    run_id: &str,
+    next_height: u32,
+) -> Result<(), String> {
+    if !table_exists(conn, "transactions")? {
+        return Ok(());
+    }
+    let mut queries = Vec::new();
+    if table_exists(conn, PENDING_TXS_TABLE)? {
+        queries.push(format!(
+            "SELECT txid_hex, target_height FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status IN ('scheduled', 'needs_resign', 'broadcasted')"
+        ));
+    }
+    if table_exists(conn, STAGES_TABLE)? {
+        queries.push(format!(
+            "SELECT expected_txid_hex, target_height FROM {STAGES_TABLE}
+             WHERE run_id = ?1 AND status IN ('pending', 'broadcasted')"
+        ));
+    }
+    for query in queries {
+        let mut stmt = conn
+            .prepare(&query)
+            .map_err(|e| format!("Prepare unminable migration transaction query: {e}"))?;
+        let rows = stmt
+            .query_map(params![run_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+            })
+            .map_err(|e| format!("Query unminable migration transactions: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read unminable migration transaction: {e}"))?;
+        for (txid_hex, target_height) in rows {
+            if !network_upgrade::crosses(&network, target_height, next_height) {
+                continue;
+            }
+            let Some(next_activation) = network_upgrade::next_activation_after(
+                &network,
+                BlockHeight::from_u32(target_height),
+            ) else {
+                continue;
+            };
+            let branch_end = u32::from(next_activation).saturating_sub(1);
+            for txid in txid_blob_variants(&txid_hex)? {
+                conn.execute(
+                    "UPDATE transactions SET expiry_height = ?1
+                     WHERE txid = ?2 AND mined_height IS NULL
+                       AND (expiry_height IS NULL OR expiry_height = 0 OR expiry_height > ?1)",
+                    params![branch_end, txid],
+                )
+                .map_err(|e| format!("Expire unminable migration transaction: {e}"))?;
+            }
+        }
+    }
     Ok(())
 }
 

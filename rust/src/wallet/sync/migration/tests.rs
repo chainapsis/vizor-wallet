@@ -1556,6 +1556,94 @@ fn children_an_earlier_build_signed_for_the_new_branch_are_counted_for_rebuild()
 }
 
 #[test]
+fn the_upgrade_stop_expires_old_branch_transactions_the_network_cannot_mine() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB NOT NULL UNIQUE, mined_height INTEGER, expiry_height INTEGER
+         );",
+    )
+    .unwrap();
+    let activation = TEST_NU7_ACTIVATION_HEIGHT;
+    let wallet_expiry = activation + 50_000;
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('run-1', 'account-1', 'test', 'db', ?1, 1, 1, '[100]', '[]')"
+        ),
+        params![PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
+    // Display-order txids; the wallet stores them reversed.
+    let txid_hex = |tag: u8| format!("{tag:02x}{}", "00".repeat(31));
+    let wallet_txid = |tag: u8| {
+        let mut bytes = hex::decode(txid_hex(tag)).unwrap();
+        bytes.reverse();
+        bytes
+    };
+    for (tag, target_height, mined_height) in [
+        // Broadcast for the old branch and never mined.
+        (1u8, activation - 100, None),
+        // Mined before the upgrade.
+        (2, activation - 100, Some(activation - 5)),
+        // Signed for the new branch.
+        (3, activation + 5, None),
+    ] {
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  schedule_start_height, scheduled_height, status, metadata_json)
+                 VALUES ('run-1', ?1, ?2, 'raw', ?3, ?4, 100, 0, ?5,
+                         0, 100, 1, ?3, ?3, 'broadcasted', '{{}}')"
+            ),
+            params![
+                txid_hex(tag),
+                tag,
+                target_height,
+                wallet_expiry,
+                "22".repeat(32)
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height, expiry_height) VALUES (?1, ?2, ?3)",
+            params![wallet_txid(tag), mined_height, wallet_expiry],
+        )
+        .unwrap();
+    }
+
+    stop_run_for_network_upgrade(&conn, WalletNetwork::Test, "run-1", activation + 1).unwrap();
+
+    let expiry = |tag: u8| -> u32 {
+        conn.query_row(
+            "SELECT expiry_height FROM transactions WHERE txid = ?1",
+            params![wallet_txid(tag)],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(expiry(1), activation - 1);
+    assert_eq!(expiry(2), wallet_expiry);
+    assert_eq!(expiry(3), wallet_expiry);
+    let phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = 'run-1'"),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_STOPPED_BY_UPGRADE);
+}
+
+#[test]
 fn pending_insert_rejects_expiry_from_a_different_schedule_bucket() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
