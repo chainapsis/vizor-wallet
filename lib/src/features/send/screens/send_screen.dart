@@ -1425,7 +1425,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                         : null,
                                     focusNode: focusNode,
                                     controller: controller,
-                                    hintText: 'Address or request link',
+                                    hintText: 'Address, name, or request link',
                                     leading: AppIcon(
                                       addressLeadingIcon,
                                       size: 20,

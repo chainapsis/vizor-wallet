@@ -2601,7 +2601,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       fieldKey: const ValueKey('mobile_send_address_input'),
       controller: _addressController,
       focusNode: _addressFocus,
-      hintText: 'Address or request link',
+      hintText: 'Address, name, or request link',
       leading: SizedBox(
         width: AppInputSizing.iconWrapWidth,
         height: AppInputSizing.height,
