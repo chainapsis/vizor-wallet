@@ -16,6 +16,11 @@ DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
 TEST_FILE="integration_test/regtest_nu7_migration_stop_test.dart"
 DRIVER_LOG="$ROOT_DIR/.nu7-regtest/e2e-driver.log"
 
+# The app starts once Ironwood is active, so NU7 must leave room after NU6.3.
+if [[ "$((NU7_HEIGHT - APP_START_BEFORE_NU7))" -le "$NU63_HEIGHT" ]]; then
+  echo "NU7_REGTEST_NU7_HEIGHT must be more than E2E_APP_START_BEFORE_NU7 ($APP_START_BEFORE_NU7) blocks after NU7_REGTEST_NU63_HEIGHT" >&2
+  exit 1
+fi
 for command in cargo docker fvm python3 grpcurl; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "missing required command: $command" >&2

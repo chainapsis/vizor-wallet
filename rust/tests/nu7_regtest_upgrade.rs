@@ -21,6 +21,11 @@ const NU7_EXPIRY_MODULUS: u64 = 103_680;
 const BROADCASTS_PER_BLOCK: usize = 3;
 /// Blocks past the last scheduled height before a waiting run fails the test.
 const SCHEDULE_SLACK_BLOCKS: u64 = 20;
+/// After NU6.3: sender coinbase and maturity, a send mined for 10 blocks, then
+/// the run's lead before NU7.
+const CROSSING_NU7_GAP: u64 = 2 + (COINBASE_MATURITY + 10) + 10 + RUN_START_BEFORE_NU7;
+/// After NU6.3: the run's lead before NU7.
+const MISSED_PART_NU7_GAP: u64 = 1 + RUN_START_BEFORE_NU7;
 
 /// Crosses NU6.3 and NU7 on a Zebra regtest chain: send expiry on either side
 /// of NU7 and at its edge, a Private migration stopped by the upgrade, and the
@@ -28,7 +33,7 @@ const SCHEDULE_SLACK_BLOCKS: u64 = 20;
 #[test]
 #[ignore = "requires the Dockerized NU7 regtest stack (scripts/nu7-regtest)"]
 fn migration_and_sends_cross_nu7_activation() {
-    let (nu6_3, nu7) = activation_heights();
+    let (nu6_3, nu7) = activation_heights(CROSSING_NU7_GAP);
     simple_api::configure_regtest_ironwood_activation_height(nu6_3 as u32)
         .expect("configure wallet NU6.3 activation");
     simple_api::configure_regtest_nu7_activation_height(nu7 as u32)
@@ -228,7 +233,7 @@ fn migration_and_sends_cross_nu7_activation() {
 #[test]
 #[ignore = "requires the Dockerized NU7 regtest stack (scripts/nu7-regtest)"]
 fn a_part_that_misses_the_upgrade_returns_its_input_when_the_run_stops() {
-    let (nu6_3, nu7) = activation_heights();
+    let (nu6_3, nu7) = activation_heights(MISSED_PART_NU7_GAP);
     simple_api::configure_regtest_ironwood_activation_height(nu6_3 as u32)
         .expect("configure wallet NU6.3 activation");
     simple_api::configure_regtest_nu7_activation_height(nu7 as u32)
@@ -365,7 +370,7 @@ struct Part {
     txid_hex: String,
 }
 
-fn activation_heights() -> (u64, u64) {
+fn configured_heights() -> (u64, u64) {
     let read = |name: &str, default: u64| {
         std::env::var(name)
             .ok()
@@ -376,6 +381,17 @@ fn activation_heights() -> (u64, u64) {
         read("NU7_REGTEST_NU63_HEIGHT", 300),
         read("NU7_REGTEST_NU7_HEIGHT", 600),
     )
+}
+
+/// The stack accepts any NU7 above NU6.3; a scenario refuses a gap it cannot use.
+fn activation_heights(min_gap: u64) -> (u64, u64) {
+    let (nu6_3, nu7) = configured_heights();
+    assert!(
+        nu7 >= nu6_3 + min_gap,
+        "this scenario needs NU7_REGTEST_NU7_HEIGHT at least {min_gap} blocks after \
+         NU7_REGTEST_NU63_HEIGHT"
+    );
+    (nu6_3, nu7)
 }
 
 fn repo_root() -> PathBuf {
@@ -390,7 +406,7 @@ fn path_string(path: &Path) -> String {
 }
 
 fn run_harness(script: &str, args: &[&str]) -> String {
-    let (nu6_3, nu7) = activation_heights();
+    let (nu6_3, nu7) = configured_heights();
     let path = repo_root().join("scripts").join("nu7-regtest").join(script);
     let output = Command::new(path)
         .args(args)

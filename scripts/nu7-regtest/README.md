@@ -15,7 +15,9 @@ scripts/nu7-regtest/down.sh
 ```
 
 - Heights default to NU6.3 at 300 and NU7 at 600. The first `up.sh` pins them
-  in `.nu7-regtest/`; reset before changing them.
+  in `.nu7-regtest/`; reset before changing them. The stack accepts any NU7
+  above NU6.3, but the Rust scenarios and the macOS E2E need a wider gap and
+  refuse heights they cannot use.
 - Funding pays block coinbase to the address with `generatetoaddress`: Orchard
   before NU6.3, Ironwood from it. Coinbase needs 100 confirmations.
 - Ports bind loopback only: Zebra RPC on 48232 (`NU7_REGTEST_RPC_PORT`) and
