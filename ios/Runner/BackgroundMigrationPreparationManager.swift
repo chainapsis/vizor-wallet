@@ -424,7 +424,10 @@ struct MigrationPreparationUpgradeDropTracking: Equatable {
   /// Transactions seen broadcast while the next block was on the old branch.
   /// The hold sends nothing new before the upgrade, so they target that branch.
   var oldBranchTransactionIds: Set<String> = []
-  var passes = 0
+  /// Consecutive passes each of those has been unknown to the server.
+  var missedPasses: [String: Int] = [:]
+  /// The longest streak, so one transaction must be missing on every pass.
+  var passes: Int { missedPasses.values.max() ?? 0 }
 }
 
 /// Counts consecutive passes, past the upgrade, in which the server does not
@@ -444,13 +447,14 @@ func migrationPreparationUpgradeDropTracking(
   var next = previous
   guard chainTipHeight >= upgradeActivationHeight - 1 else {
     next.oldBranchTransactionIds.formUnion(transactionIds)
-    next.passes = 0
+    next.missedPasses = [:]
     return next
   }
-  let dropped = zip(transactionIds, observations).contains { id, observation in
-    observation == .notFound && previous.oldBranchTransactionIds.contains(id)
+  next.missedPasses = [:]
+  for (id, observation) in zip(transactionIds, observations)
+  where observation == .notFound && previous.oldBranchTransactionIds.contains(id) {
+    next.missedPasses[id] = (previous.missedPasses[id] ?? 0) + 1
   }
-  next.passes = dropped ? previous.passes + 1 : 0
   return next
 }
 

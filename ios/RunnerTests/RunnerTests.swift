@@ -1347,6 +1347,13 @@ class RunnerTests: XCTestCase {
     // Still held or mined resets the count.
     XCTAssertEqual(track(once, [old], [.mempool], tip: 601).passes, 0)
     XCTAssertEqual(track(once, [old], [.mined(height: 599)], tip: 601).passes, 0)
+    // Each transaction keeps its own streak.
+    let both = track(.init(), [old, new], [.mempool, .mempool], tip: 598)
+    let first = track(both, [old, new], [.notFound, .mined(height: 599)], tip: 600)
+    XCTAssertEqual(
+      track(first, [old, new], [.mined(height: 599), .notFound], tip: 601).passes,
+      1
+    )
     // A transaction first seen from tip 599 may target the new branch.
     let later = track(.init(), [new], [.notFound], tip: 599)
     XCTAssertEqual(later, MigrationPreparationUpgradeDropTracking())
