@@ -31,6 +31,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_loading_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
@@ -2439,6 +2440,53 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
   });
+
+  // Mobile saves a draft before starting, so a refused start lands on the
+  // status screen, which resumes the draft and shows the refusal.
+  for (final refusal in [
+    (
+      error:
+          "Migrations can't start this close to the network upgrade. Try "
+          'again after it activates.',
+      copy: kNetworkUpgradeHoldMessage,
+    ),
+    (
+      error:
+          'Migration schedule was drawn before the network upgrade; review '
+          'the plan again',
+      copy: kNetworkUpgradeScheduleChangedMessage,
+    ),
+  ]) {
+    testWidgets('a draft resume explains an upgrade refusal: ${refusal.copy}', (
+      tester,
+    ) async {
+      _useMobileViewport(tester);
+      final draftStatus = _status(
+        phase: kIronwoodMigrationAwaitingPreparationPhase,
+      );
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(
+            onGetStatus: () async => draftStatus,
+            onStart: (_, _) => Future.error(StateError(refusal.error)),
+          ),
+          status: draftStatus,
+          ctaBuilder: () => IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: draftStatus,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(refusal.copy), findsOneWidget);
+      expect(find.textContaining('network upgrade;'), findsNothing);
+      expect(find.text('Continue preparation'), findsOneWidget);
+    });
+  }
 
   testWidgets('a failed plan is retryable on the preparation screen', (
     tester,

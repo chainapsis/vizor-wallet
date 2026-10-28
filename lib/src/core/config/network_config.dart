@@ -88,6 +88,13 @@ const kZcashRegtestIronwoodActivationHeight = int.fromEnvironment(
   defaultValue: 0xFFFFFFFF,
 );
 
+const kZcashRegtestNu7ActivationHeightEnvKey =
+    'ZCASH_REGTEST_NU7_ACTIVATION_HEIGHT';
+const kZcashRegtestNu7ActivationHeight = int.fromEnvironment(
+  kZcashRegtestNu7ActivationHeightEnvKey,
+  defaultValue: 0xFFFFFFFF,
+);
+
 const kZcashFastTestnetMigrationEnvKey = 'ZCASH_FAST_TESTNET_MIGRATION';
 const kZcashFastTestnetMigration = bool.fromEnvironment(
   kZcashFastTestnetMigrationEnvKey,
