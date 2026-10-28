@@ -445,7 +445,11 @@ func migrationPreparationUpgradeDropTracking(
 ) -> MigrationPreparationUpgradeDropTracking {
   var next = previous
   next.missedPasses = [:]
-  if let activation = previous.upgradeActivationHeight, chainTipHeight >= activation - 1 {
+  // A wave without the upgrade's old-branch transactions is a later one, so
+  // tracking moves on to the next upgrade.
+  if let activation = previous.upgradeActivationHeight, chainTipHeight >= activation - 1,
+    transactionIds.contains(where: previous.oldBranchTransactionIds.contains)
+  {
     for (id, observation) in zip(transactionIds, observations)
     where observation == .notFound && previous.oldBranchTransactionIds.contains(id) {
       next.missedPasses[id] = (previous.missedPasses[id] ?? 0) + 1
