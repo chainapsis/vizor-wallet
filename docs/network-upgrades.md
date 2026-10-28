@@ -31,6 +31,9 @@ Other layers read these rules rather than restating them:
   `zcash_zip318_canonical_expiry_height` and
   `zcash_zip318_blocks_per_reference_block`, so it carries no window or
   modulus of its own.
+- Once no old-branch block is left for an unsent part, the iOS outbox posts
+  one "Migration stopped by network upgrade" alert per upgrade, when
+  notifications are on, in place of its generic needs-attention alert.
 - The iOS preparation tracker reads `zcash_nu7_activation_height` and hands
   a wave to the foreground when a transaction it saw before the upgrade stays
   unknown to the server after it.

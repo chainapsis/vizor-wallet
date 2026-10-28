@@ -851,6 +851,77 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertTrue(try harness.store.read().receipts.isEmpty)
   }
 
+  func testUpgradeStopKeyNamesTheUpgradeOnceNoOldBranchBlockIsLeft() throws {
+    let activation = try testnetNu7ActivationHeight()
+    func key(
+      _ targetHeight: UInt64?,
+      at remoteHeight: UInt64,
+      attempts: UInt32 = 0
+    ) throws -> String? {
+      let batch = try makeBatchBeforeNu7(targetHeight: targetHeight)
+      var snapshot = BackgroundMigrationOutboxSnapshot()
+      try snapshot.stage(batch)
+      try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+      snapshot.batches[0].items[0].attemptCount = attempts
+      return snapshot.upgradeStopKey(remoteHeight: remoteHeight, endpoint: batch.lightwalletdUrl)
+    }
+
+    // Block A - 1 can still take an old-branch part.
+    XCTAssertNil(try key(activation - 100, at: activation - 2))
+    XCTAssertEqual(try key(activation - 100, at: activation - 1), "test:\(activation)")
+    XCTAssertEqual(try key(activation - 100, at: activation + 5), "test:\(activation)")
+    XCTAssertEqual(try key(activation - 100, at: UInt64.max), "test:\(activation)")
+    // Signed for the new branch, or saved by an older build with no target.
+    XCTAssertNil(try key(activation, at: activation + 5))
+    XCTAssertNil(try key(nil, at: activation + 5))
+    // A part sent before with no recorded outcome may already be mined.
+    XCTAssertNil(try key(activation - 100, at: activation + 5, attempts: 1))
+  }
+
+  func testRunnerReportsTheUpgradeThatStoppedAPart() throws {
+    let activation = try testnetNu7ActivationHeight()
+    func outcome(at remoteHeight: UInt64) throws -> BackgroundMigrationOutboxRunResult {
+      let harness = try makeStoreHarness()
+      defer { harness.cleanup() }
+      try stageAndArm(try makeBatchBeforeNu7(targetHeight: activation - 100), in: harness.store)
+      return BackgroundMigrationOutboxRunner.runOnce(
+        store: harness.store,
+        cancellation: BackgroundMigrationCancellation(),
+        now: now,
+        dependencies: BackgroundMigrationOutboxRunnerDependencies(
+          latestBlockHeight: { _, _ in .success(remoteHeight) },
+          sendTransaction: { _, _, _ in
+            XCTFail("A part the upgrade stopped must not be sent")
+            return .success(NativeLightwalletdSendResponse(errorCode: 0, errorMessage: ""))
+          }
+        )
+      )
+    }
+
+    // Still held at A - 1.
+    let held = try outcome(at: activation - 1)
+    XCTAssertEqual(held.upgradeStopKey, "test:\(activation)")
+    XCTAssertFalse(held.transport == .needsUserAction)
+    // From A the part also crosses the ZIP 318 expiry bucket and needs a new
+    // signature, which the stop alert covers.
+    let crossed = try outcome(at: activation)
+    XCTAssertEqual(crossed.transport, .needsUserAction)
+    XCTAssertEqual(crossed.upgradeStopKey, "test:\(activation)")
+  }
+
+  func testUpgradeStopAlertGoesOutOncePerUpgrade() {
+    XCTAssertEqual(
+      backgroundMigrationUpgradeStopAlertKey("test:600", alreadyAlerted: nil),
+      "test:600"
+    )
+    XCTAssertNil(backgroundMigrationUpgradeStopAlertKey("test:600", alreadyAlerted: "test:600"))
+    XCTAssertEqual(
+      backgroundMigrationUpgradeStopAlertKey("main:700", alreadyAlerted: "test:600"),
+      "main:700"
+    )
+    XCTAssertNil(backgroundMigrationUpgradeStopAlertKey(nil, alreadyAlerted: nil))
+  }
+
   func testZip318DurationsFollowRust() {
     // Mainnet NU7 activates at 3,543,405: the expiry modulus becomes 103,680.
     XCTAssertEqual(
