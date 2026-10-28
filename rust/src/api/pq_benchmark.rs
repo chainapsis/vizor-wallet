@@ -174,6 +174,8 @@ pub fn run_pq_signature_benchmark(iterations: u32) -> Vec<PqSchemeTiming> {
         bench_fors!("FORS 128s", 14, 12, 16, 21, iterations),
         bench_slh_dsa::<slh_dsa::Sha2_128s>("SLH-DSA-SHA2-128s", 16, iterations),
         bench_slh_dsa::<slh_dsa::Sha2_128f>("SLH-DSA-SHA2-128f", 16, iterations),
+        bench_slh_dsa::<slh_dsa::Sha2_192s>("SLH-DSA-SHA2-192s", 24, iterations),
+        bench_slh_dsa::<slh_dsa::Sha2_192f>("SLH-DSA-SHA2-192f", 24, iterations),
         bench_slh_dsa::<slh_dsa::Sha2_256s>("SLH-DSA-SHA2-256s", 32, iterations),
     ];
     // One line per scheme so results can be read from the device log. Logged at warn
