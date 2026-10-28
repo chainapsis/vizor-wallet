@@ -793,6 +793,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _addressWrongNetwork = false;
         _zns.begin();
       });
+      await Future<void>.delayed(kZnsLookupDebounce);
+      if (!mounted || seq != _addressSeq) return;
       final lookup = await lookUpZnsRecipient(
         ref.read(znsNameResolverProvider),
         znsName,

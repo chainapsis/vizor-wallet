@@ -43,7 +43,9 @@ void main() {
           address,
         );
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
+        // Past the lookup debounce, then one frame for the answer.
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump();
         FocusManager.instance.primaryFocus?.unfocus();
         await tester.pump(const Duration(milliseconds: 400));
       },

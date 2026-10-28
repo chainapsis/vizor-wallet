@@ -26,6 +26,7 @@ void main() {
       savedName: savedName,
       readResolver: () => resolver,
       onChanged: onChanged ?? () {},
+      debounce: Duration.zero,
     );
 
     test('a resolved name saves its address and keeps the name', () async {
@@ -79,7 +80,7 @@ void main() {
       expect(lookup.nameToSave('alice.zcash', AddressBookNetwork.near), isNull);
     });
 
-    test('the resolver is read only when a name needs a lookup', () {
+    test('the resolver is read only when a name needs a lookup', () async {
       var reads = 0;
       final lookup = ContactZnsLookup(
         readResolver: () {
@@ -87,11 +88,14 @@ void main() {
           return null;
         },
         onChanged: () {},
+        debounce: Duration.zero,
       );
 
       lookup.update(address: _address, network: _zcash);
+      await pumpEventQueue();
       expect(reads, 0);
       lookup.update(address: 'alice.zcash', network: _zcash);
+      await pumpEventQueue();
       expect(reads, 1);
     });
 
@@ -102,6 +106,40 @@ void main() {
 
       lookup.update(address: '${_address}x', network: _zcash);
       expect(lookup.nameToSave('${_address}x', _zcash), isNull);
+    });
+
+    test('rapid edits look up only the last name', () async {
+      final resolver = FakeZnsNameResolver({'alice': _address});
+      final lookup = ContactZnsLookup(
+        readResolver: () => resolver,
+        onChanged: () {},
+        debounce: const Duration(milliseconds: 20),
+      );
+
+      for (final text in ['a.zcash', 'al.zcash', 'ali.zcash', 'alice.zcash']) {
+        lookup.update(address: text, network: _zcash);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(resolver.lookups, ['alice']);
+      expect(lookup.canSave('alice.zcash', _zcash), isTrue);
+    });
+
+    test('a resolver that cannot be read shows the lookup failure', () async {
+      final lookup = ContactZnsLookup(
+        readResolver: () => throw StateError('no network configuration'),
+        onChanged: () {},
+        debounce: Duration.zero,
+      );
+
+      lookup.update(address: 'alice.zcash', network: _zcash);
+      await pumpEventQueue();
+
+      expect(
+        lookup.message('alice.zcash')?.text,
+        ZnsLookupStatus.failed.message,
+      );
+      expect(lookup.canSave('alice.zcash', _zcash), isFalse);
     });
 
     test('a late answer for an earlier input is ignored', () async {

@@ -784,6 +784,7 @@ void main() {
       await openAddForm(tester);
 
       await tester.enterText(addressField, 'Alice.zcash');
+      await tester.pump(kZnsLookupDebounce);
       await tester.pumpAndSettle();
 
       expect(resolver.lookups, ['alice']);
@@ -812,6 +813,7 @@ void main() {
       await openAddForm(tester);
 
       await tester.enterText(addressField, 'nobody.zec');
+      await tester.pump(kZnsLookupDebounce);
       await tester.pumpAndSettle();
       await tester.tap(submit);
       await tester.pumpAndSettle();

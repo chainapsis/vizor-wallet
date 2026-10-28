@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../../main.dart' show log;
 import '../../../core/formatting/address_display.dart';
 import '../../../core/naming/zns_name_resolver.dart';
 import '../../../core/naming/zns_recipient_lookup.dart';
@@ -46,10 +47,14 @@ class ContactZnsLookup {
     required this.onChanged,
     required this.readResolver,
     String? savedName,
+    this.debounce = kZnsLookupDebounce,
   }) : _state = ZnsRecipientState(carriedName: savedName);
 
   final void Function() onChanged;
   final ZnsNameResolver? Function() readResolver;
+
+  /// The pause after the last edit before a lookup starts.
+  final Duration debounce;
   final ZnsRecipientState _state;
   int _seq = 0;
   var _disposed = false;
@@ -62,18 +67,26 @@ class ContactZnsLookup {
     final name = _nameIn(address, network);
     if (name != null) {
       _state.begin();
-      unawaited(_lookUp(address, name, readResolver(), seq));
+      unawaited(_lookUp(address, name, seq));
     }
     onChanged();
   }
 
-  Future<void> _lookUp(
-    String address,
-    String name,
-    ZnsNameResolver? resolver,
-    int seq,
-  ) async {
-    final lookup = await lookUpZnsRecipient(resolver, name);
+  Future<void> _lookUp(String address, String name, int seq) async {
+    await Future<void>.delayed(debounce);
+    if (_disposed || seq != _seq) return;
+    final ZnsRecipientLookup lookup;
+    try {
+      lookup = await lookUpZnsRecipient(readResolver(), name);
+    } catch (e) {
+      // Reading the resolver can fail when the network configuration does
+      // not load; the field shows the lookup failure instead of breaking.
+      log('Contacts: ZNS resolver unavailable: $e');
+      if (_disposed || seq != _seq) return;
+      _state.fail(ZnsLookupStatus.failed);
+      onChanged();
+      return;
+    }
     if (_disposed || seq != _seq) return;
     switch (lookup) {
       case ZnsRecipientMissing(:final status):

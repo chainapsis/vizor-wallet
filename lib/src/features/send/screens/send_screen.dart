@@ -426,6 +426,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _addressWrongNetwork = false;
         _zns.begin();
       });
+      await Future<void>.delayed(kZnsLookupDebounce);
+      if (!mounted || seq != _addressSeq) return;
       final lookup = await lookUpZnsRecipient(
         ref.read(znsNameResolverProvider),
         znsName,

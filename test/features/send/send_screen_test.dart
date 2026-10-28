@@ -1697,6 +1697,7 @@ void main() {
   group('a Zcash name in the address field', () {
     Future<void> enterRecipient(WidgetTester tester, String text) async {
       await tester.enterText(_editableIn('send_address_field'), text);
+      await tester.pump(kZnsLookupDebounce);
       await tester.pumpAndSettle();
     }
 
@@ -1849,6 +1850,24 @@ void main() {
       await enterRecipient(tester, _shieldedAddress);
 
       expect(resolver.lookups, isEmpty);
+    });
+
+    testWidgets('typing inside a name sends only the settled name', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      final resolver = FakeZnsNameResolver({'alice': _shieldedAddress});
+      await tester.pumpWidget(_sendHarness(znsResolver: () => resolver));
+      await tester.pumpAndSettle();
+
+      for (final text in ['a.zcash', 'al.zcash', 'ali.zcash', 'alice.zcash']) {
+        await tester.enterText(_editableIn('send_address_field'), text);
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.pump(kZnsLookupDebounce);
+      await tester.pumpAndSettle();
+
+      expect(resolver.lookups, ['alice']);
     });
 
     testWidgets('editing the name drops the resolved address', (tester) async {

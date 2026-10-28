@@ -37,6 +37,11 @@ enum ZnsLookupStatus {
   };
 }
 
+/// How long a name field waits after the last edit before it looks the
+/// name up. Editing inside `alice.zcash` would otherwise send each partial
+/// name to the resolver, one request per keystroke.
+const kZnsLookupDebounce = Duration(milliseconds: 350);
+
 /// What a name lookup produced for the send recipient field.
 sealed class ZnsRecipientLookup {
   const ZnsRecipientLookup();

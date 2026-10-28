@@ -268,6 +268,7 @@ void main() {
         find.byKey(const ValueKey('mobile_address_book_address')),
         address,
       );
+      await tester.pump(kZnsLookupDebounce);
       await tester.pumpAndSettle();
     }
 

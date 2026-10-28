@@ -837,6 +837,8 @@ Future<void> _enterAddress(WidgetTester tester, String address) async {
     ),
     address,
   );
+  // A Zcash name waits out the lookup debounce; an address is unaffected.
+  await tester.pump(kZnsLookupDebounce);
   await tester.pumpAndSettle();
 }
 
