@@ -853,11 +853,16 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
 
   func testUpgradeStopKeyNamesTheUpgradeOnceNoOldBranchBlockIsLeft() throws {
     let activation = try testnetNu7ActivationHeight()
-    func key(_ targetHeight: UInt64?, at remoteHeight: UInt64) throws -> String? {
+    func key(
+      _ targetHeight: UInt64?,
+      at remoteHeight: UInt64,
+      attempts: UInt32 = 0
+    ) throws -> String? {
       let batch = try makeBatchBeforeNu7(targetHeight: targetHeight)
       var snapshot = BackgroundMigrationOutboxSnapshot()
       try snapshot.stage(batch)
       try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+      snapshot.batches[0].items[0].attemptCount = attempts
       return snapshot.upgradeStopKey(remoteHeight: remoteHeight, endpoint: batch.lightwalletdUrl)
     }
 
@@ -869,6 +874,8 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     // Signed for the new branch, or saved by an older build with no target.
     XCTAssertNil(try key(activation, at: activation + 5))
     XCTAssertNil(try key(nil, at: activation + 5))
+    // A part sent before with no recorded outcome may already be mined.
+    XCTAssertNil(try key(activation - 100, at: activation + 5, attempts: 1))
   }
 
   func testRunnerReportsTheUpgradeThatStoppedAPart() throws {

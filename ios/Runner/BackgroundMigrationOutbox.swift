@@ -1248,8 +1248,10 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         ),
         // A server can report any tip, so this must not add to it.
         remoteHeight >= activation - 1,
+        // A part sent before may already be mined; only the foreground knows.
         batch.items.contains(where: {
           ($0.status == .armed || $0.status == .needsResignAwaitingReconciliation)
+            && $0.attemptCount == 0
             && ($0.targetHeight ?? activation) < activation
         })
       else { continue }
