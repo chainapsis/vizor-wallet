@@ -31,6 +31,9 @@ Other layers read these rules rather than restating them:
   `zcash_zip318_canonical_expiry_height` and
   `zcash_zip318_blocks_per_reference_block`, so it carries no window or
   modulus of its own.
+- The iOS preparation tracker asks `zcash_migration_preparation_txid_unminable`
+  whether an unmined preparation transaction's branch has ended, and hands
+  the wave to the foreground when it has.
 - `upgrade_hold_heights_match_the_send_and_migration_refusals` checks
   `hold_heights` against the refusals tip by tip.
 

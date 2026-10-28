@@ -1318,6 +1318,72 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testUnminableTransactionHandsTheWaveToTheForegroundWithoutFailing() {
+    var askedIndices: [Int] = []
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.mined(height: 100), .notFound, .mempool],
+      chainTipHeight: 102,
+      confirmationTarget: 3,
+      transactionCannotBeMined: { index in
+        askedIndices.append(index)
+        return index == 2
+      }
+    )
+
+    XCTAssertEqual(
+      disposition,
+      .needsForegroundRecovery(
+        fingerprint: "unminable-transaction",
+        taskFailed: false
+      )
+    )
+    // A mined transaction is never asked about.
+    XCTAssertEqual(askedIndices, [1, 2])
+  }
+
+  func testMinedTransactionPastItsBranchEndStillConfirms() {
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.mined(height: 100)],
+      chainTipHeight: 102,
+      confirmationTarget: 3,
+      transactionCannotBeMined: { _ in true }
+    )
+
+    guard case .completed = disposition else {
+      return XCTFail("expected completion, got \(disposition)")
+    }
+  }
+
+  func testMinableUnminedTransactionKeepsTracking() {
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.mined(height: 100), .notFound],
+      chainTipHeight: 102,
+      confirmationTarget: 3,
+      transactionCannotBeMined: { _ in false }
+    )
+
+    guard case .progress = disposition else {
+      return XCTFail("expected progress, got \(disposition)")
+    }
+  }
+
+  func testForkedTransactionTakesPrecedenceOverAnUnminableOne() {
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.notFound, .forked],
+      chainTipHeight: 102,
+      confirmationTarget: 3,
+      transactionCannotBeMined: { _ in true }
+    )
+
+    XCTAssertEqual(
+      disposition,
+      .needsForegroundRecovery(
+        fingerprint: "forked-transaction",
+        taskFailed: true
+      )
+    )
+  }
+
   func testTxidInspectionFailureRequiresForegroundRecoveryAndFailsTheTask() {
     XCTAssertEqual(
       migrationPreparationTxidInspectionFailureDisposition(),

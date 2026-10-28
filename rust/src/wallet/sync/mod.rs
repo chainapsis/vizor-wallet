@@ -55,11 +55,12 @@ pub use crate::wallet::addresses::{
 // exactly).
 pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx,
-    denomination_confirmations_required, migration_preparation_snapshot_read_only,
-    migration_status, observable_denomination_transaction_ids, proof_retry_height,
-    reconcile_wallet_locks_after_sync, zip318_blocks_at, zip318_canonical_migration_expiry_height,
-    MigrationPartState, MigrationPreparationOutputKind, MigrationPreparationTransactionState,
-    MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
+    denomination_confirmations_required, denomination_stage_unminable_read_only,
+    migration_preparation_snapshot_read_only, migration_status,
+    observable_denomination_transaction_ids, proof_retry_height, reconcile_wallet_locks_after_sync,
+    zip318_blocks_at, zip318_canonical_migration_expiry_height, MigrationPartState,
+    MigrationPreparationOutputKind, MigrationPreparationTransactionState, MigrationScheduleEntry,
+    MigrationStatus, PreparationTimingPolicy,
 };
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, create_tex_pczts_from_proposal,

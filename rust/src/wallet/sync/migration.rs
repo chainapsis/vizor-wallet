@@ -829,6 +829,40 @@ pub(crate) fn observable_denomination_transaction_ids(
         .map_err(|e| format!("Read observable migration txids: {e}"))
 }
 
+/// Whether the run's broadcast denomination stage `txid_hex` can no longer be
+/// mined in the block after `chain_tip_height`: its expiry has passed, or a
+/// network upgrade ended the branch it was signed for. Read-only, for the iOS
+/// background tracker, which never syncs.
+pub(crate) fn denomination_stage_unminable_read_only(
+    db_path: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+    txid_hex: &str,
+    chain_tip_height: u32,
+) -> Result<bool, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    if !table_exists(&conn, STAGES_TABLE)? {
+        return Ok(false);
+    }
+    let stage = conn
+        .query_row(
+            &format!(
+                "SELECT target_height, expiry_height
+                 FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND expected_txid_hex = ?2 AND status = 'broadcasted'"
+            ),
+            params![expected_run_id, txid_hex],
+            |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration denomination stage heights: {e}"))?;
+    let next_height = chain_tip_height.saturating_add(1);
+    Ok(stage.is_some_and(|(target_height, expiry_height)| {
+        (expiry_height > 0 && expiry_height < next_height)
+            || (target_height > 0 && network_upgrade::crosses(&network, target_height, next_height))
+    }))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ReadOnlyMigrationPreparationSnapshot {
     pub phase: String,

@@ -80,6 +80,18 @@ int32_t zcash_list_migration_preparation_txids(
     uintptr_t* output_len
 );
 
+/// Whether the observable preparation transaction txid_hex can no longer be
+/// mined after chain_tip_height: its expiry passed or a network upgrade ended
+/// its branch.
+int32_t zcash_migration_preparation_txid_unminable(
+    const char* db_path,
+    const char* network,
+    const char* expected_run_id,
+    const char* txid_hex,
+    uint64_t chain_tip_height,
+    bool* output
+);
+
 /// NU7 activation height for network ("main", "test", "regtest"), or 0 when
 /// it is unscheduled or the network is unknown.
 uint64_t zcash_nu7_activation_height(const char* network);

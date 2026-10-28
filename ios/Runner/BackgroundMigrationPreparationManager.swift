@@ -420,7 +420,8 @@ func migrationPreparationConfirmationDisposition(
   observations: [NativeLightwalletdTransactionObservation],
   chainTipHeight: UInt64,
   confirmationTarget: UInt64,
-  totalStageCount: UInt32 = 0
+  totalStageCount: UInt32 = 0,
+  transactionCannotBeMined: (Int) -> Bool = { _ in false }
 ) -> MigrationPreparationScopeTrackingDisposition {
   if observations.contains(where: {
     if case .forked = $0 { return true }
@@ -429,6 +430,17 @@ func migrationPreparationConfirmationDisposition(
     return .needsForegroundRecovery(
       fingerprint: "forked-transaction",
       taskFailed: true
+    )
+  }
+  // An unmined transaction past its expiry or its branch's end never
+  // confirms; only the foreground can stop or rebuild the run.
+  if observations.indices.contains(where: { index in
+    if case .mined = observations[index] { return false }
+    return transactionCannotBeMined(index)
+  }) {
+    return .needsForegroundRecovery(
+      fingerprint: "unminable-transaction",
+      taskFailed: false
     )
   }
   let progress = migrationPreparationConfirmationProgress(
@@ -1969,7 +1981,15 @@ final class BackgroundMigrationPreparationManager {
         observations: observations,
         chainTipHeight: tip,
         confirmationTarget: Self.confirmationTarget,
-        totalStageCount: preparation.total_stage_count
+        totalStageCount: preparation.total_stage_count,
+        transactionCannotBeMined: { index in
+          self.preparationTransactionCannotBeMined(
+            manifest: manifest,
+            runId: runId,
+            transactionIdHex: transactionIds[index],
+            chainTipHeight: tip
+          )
+        }
       )
       results.append(
         MigrationPreparationScopeTrackingResult(
@@ -2027,6 +2047,31 @@ final class BackgroundMigrationPreparationManager {
     }
     if payload.isEmpty { return [] }
     return payload.split(separator: "\n").map(String.init)
+  }
+
+  /// A failed inspection keeps tracking, as the pass did before this check.
+  private func preparationTransactionCannotBeMined(
+    manifest: IronwoodMigrationBackgroundManifest,
+    runId: String,
+    transactionIdHex: String,
+    chainTipHeight: UInt64
+  ) -> Bool {
+    var cannotBeMined = false
+    let code = zcash_migration_preparation_txid_unminable(
+      manifest.dbPath,
+      manifest.network,
+      runId,
+      transactionIdHex,
+      chainTipHeight,
+      &cannotBeMined
+    )
+    guard code == 0 else {
+      print(
+        "[BGPreparation] txid expiry inspection failed code=\(code) account=\(manifest.accountUuid)"
+      )
+      return false
+    }
+    return cannotBeMined
   }
 
   private func transactionObservation(
