@@ -9,6 +9,7 @@ import 'api/keystone.dart';
 import 'api/ledger.dart';
 import 'api/network_privacy.dart';
 import 'api/pir_config.dart';
+import 'api/pq_benchmark.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
@@ -800,6 +801,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_list_pir_snapshot_endpoint_diagnostic_view(dynamic raw);
 
   @protected
+  List<PqSchemeTiming> dco_decode_list_pq_scheme_timing(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_32_loose(dynamic raw);
 
   @protected
@@ -1172,6 +1176,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PirSnapshotEndpointStatusView dco_decode_pir_snapshot_endpoint_status_view(
     dynamic raw,
   );
+
+  @protected
+  PqSchemeTiming dco_decode_pq_scheme_timing(dynamic raw);
 
   @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
@@ -2420,6 +2427,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PqSchemeTiming> sse_decode_list_pq_scheme_timing(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer);
 
   @protected
@@ -2880,6 +2892,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PirSnapshotEndpointStatusView sse_decode_pir_snapshot_endpoint_status_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  PqSchemeTiming sse_decode_pq_scheme_timing(SseDeserializer deserializer);
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
@@ -4418,6 +4433,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_pq_scheme_timing(
+    List<PqSchemeTiming> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_32_loose(
     List<int> self,
     SseSerializer serializer,
@@ -4957,6 +4978,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_pir_snapshot_endpoint_status_view(
     PirSnapshotEndpointStatusView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pq_scheme_timing(
+    PqSchemeTiming self,
     SseSerializer serializer,
   );
 

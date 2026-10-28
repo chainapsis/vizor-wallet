@@ -262,6 +262,16 @@ class MobileSettingsScreen extends ConsumerWidget {
                       onTap: () => context.push('/settings/explorer'),
                     ),
                     MobileListRow(
+                      key: const ValueKey('mobile_settings_pq_benchmark_row'),
+                      leading: _RowIcon(AppIcons.key),
+                      label: 'PQ signature benchmark',
+                      minRowHeight: _settingsRowHeight,
+                      textStyle: settingsRowStyle,
+                      chevronColor: settingsChevronColor,
+                      showChevron: true,
+                      onTap: () => context.push('/settings/pq-benchmark'),
+                    ),
+                    MobileListRow(
                       key: const ValueKey('mobile_settings_theme_row'),
                       leading: _RowIcon(AppIcons.theme),
                       label: 'Theme',

@@ -53,6 +53,7 @@ import '../../features/about/screens/mobile/mobile_about_screens.dart';
 import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
 import '../../features/settings/screens/mobile/mobile_explorer_screen.dart';
+import '../../features/settings/screens/mobile/mobile_pq_benchmark_screen.dart';
 import '../../features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../../features/settings/screens/mobile/mobile_settings_screen.dart';
 import '../../features/settings/screens/mobile/mobile_viewing_key_screen.dart';
@@ -198,6 +199,13 @@ List<RouteBase> _walletRoutes() {
       path: '/settings/explorer',
       pageBuilder: (context, state) =>
           _mobilePage(key: state.pageKey, child: const MobileExplorerScreen()),
+    ),
+    GoRoute(
+      path: '/settings/pq-benchmark',
+      pageBuilder: (context, state) => _mobilePage(
+        key: state.pageKey,
+        child: const MobilePqBenchmarkScreen(),
+      ),
     ),
     // The Set New Passcode frames also drop the tab bar — same
     // full-screen push pattern.
