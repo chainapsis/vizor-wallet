@@ -155,6 +155,10 @@ enum BackgroundMigrationOutboxRunner {
         }
       }
       guard let selected else {
+        let upgradeStopKey = snapshot.upgradeStopKey(
+          remoteHeight: remoteHeight,
+          endpoint: endpoint
+        )
         if snapshot.receipts.contains(where: {
           ($0.outcome == .expired || $0.outcome == .needsResign)
             && $0.remoteHeight == remoteHeight
@@ -163,12 +167,15 @@ enum BackgroundMigrationOutboxRunner {
             ($0.outcome == .expired || $0.outcome == .needsResign)
               && $0.remoteHeight == remoteHeight
           })?.accountUuid
-          return BackgroundMigrationOutboxRunResult(
+          var result = BackgroundMigrationOutboxRunResult(
             transport: .needsUserAction,
             proofReady: proofReady,
             broadcastComplete: broadcastComplete,
             transportAccountUuid: accountUuid
           )
+          // From NU7 an old-branch part crosses the ZIP 318 expiry bucket.
+          result.upgradeStopKey = upgradeStopKey
+          return result
         }
         let nextHeight = snapshot.nextActionHeight(endpoint: endpoint)
         let transport: BackgroundMigrationTransportOutcome
@@ -199,6 +206,7 @@ enum BackgroundMigrationOutboxRunner {
           remoteHeight: remoteHeight,
           endpoint: endpoint
         )
+        result.upgradeStopKey = upgradeStopKey
         return result
       }
       selection = selected
