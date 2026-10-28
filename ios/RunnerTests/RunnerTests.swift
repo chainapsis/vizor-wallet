@@ -1360,8 +1360,13 @@ class RunnerTests: XCTestCase {
     let later = track(.init(), [new], [.notFound], tip: 599)
     XCTAssertEqual(later, MigrationPreparationUpgradeDropTracking())
     XCTAssertEqual(track(once, [new], [.notFound], tip: 601).passes, 0)
+    XCTAssertEqual(track(once, [old, new], [.notFound, .notFound], tip: 601).passes, 2)
     // A later upgrade does not end the count for the one just crossed.
     XCTAssertEqual(track(once, [old], [.notFound], tip: 601, later: 900).passes, 2)
+    // The next wave is recorded for that later upgrade instead.
+    let nextWave = track(once, [new], [.mempool], tip: 650, later: 900)
+    XCTAssertEqual(nextWave.upgradeActivationHeight, 900)
+    XCTAssertEqual(nextWave.oldBranchTransactionIds, [new])
     // No scheduled upgrade.
     XCTAssertEqual(
       migrationPreparationUpgradeDropTracking(
