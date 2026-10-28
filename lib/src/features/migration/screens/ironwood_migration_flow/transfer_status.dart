@@ -2210,6 +2210,8 @@ int _currentMigrationHeight(SyncState? syncState) {
 }
 
 String _privateMigrationStartErrorMessage(Object error) {
+  final upgradeHold = ironwoodUpgradeHoldStartMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {

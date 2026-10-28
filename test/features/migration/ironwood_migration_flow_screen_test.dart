@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/core/widgets/app_carousel.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_upgrade_stop.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
@@ -1056,6 +1057,17 @@ void main() {
       );
     },
   );
+
+  test('Keystone migration explains the network upgrade hold', () {
+    final message = ironwoodMigrationKeystoneSigningErrorMessage(
+      Exception(
+        "Migrations can't start this close to the network upgrade. "
+        'Try again after it activates.',
+      ),
+    );
+
+    expect(message, kIronwoodUpgradeHoldStartMessage);
+  });
 
   testWidgets(
     'desktop immediate migration uses the shared signing QR display',

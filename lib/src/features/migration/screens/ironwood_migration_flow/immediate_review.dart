@@ -369,6 +369,8 @@ class _ImmediateReviewRow extends StatelessWidget {
 }
 
 String _immediateMigrationStartErrorMessage(Object error) {
+  final upgradeHold = ironwoodUpgradeHoldStartMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('plan changed')) {
     return 'The amount or fee changed. Review the updated details.';

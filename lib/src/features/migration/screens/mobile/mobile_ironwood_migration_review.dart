@@ -7,6 +7,8 @@ bool _keystoneTwoRoundPlanSupported(
 }
 
 String _mobilePrivateMigrationStartErrorMessage(Object error) {
+  final upgradeHold = ironwoodUpgradeHoldStartMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('mnemonic')) {
     return "Secret Passphrase isn't available for this account.";
