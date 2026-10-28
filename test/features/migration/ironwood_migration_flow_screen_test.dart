@@ -6448,6 +6448,7 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan({
         partIndex: 0,
         valueZatoshi: BigInt.from(10_000_000),
         blockOffset: 144,
+        blocksPerReferenceBlock: 1,
       ),
     ],
   );

@@ -27,11 +27,13 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(1_000_000),
           blockOffset: 0,
+          blocksPerReferenceBlock: 1,
         ),
         rust_sync.MigrationScheduledTransfer(
           partIndex: 1,
           valueZatoshi: BigInt.from(2_000_000),
           blockOffset: 144,
+          blocksPerReferenceBlock: 1,
         ),
       ],
     );
@@ -82,6 +84,7 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(1_000_000),
           blockOffset: 0,
+          blocksPerReferenceBlock: 1,
         ),
       ],
     );
@@ -124,6 +127,7 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(1_000_000),
           blockOffset: 0,
+          blocksPerReferenceBlock: 1,
         ),
       ],
     );

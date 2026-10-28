@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -15,8 +16,10 @@ use crate::wallet::db::{
     WALLET_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::network_upgrade;
 use crate::wallet::secret_payload;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
+use zcash_protocol::zip318::{AnchorBucketInterval, AnchorGrid, BlockSpacing};
 
 use super::READ_DB_BUSY_TIMEOUT;
 
@@ -120,7 +123,20 @@ pub(crate) const PHASE_COMPLETE: &str = "complete";
 pub(crate) const PHASE_PAUSED: &str = "paused";
 pub(crate) const PHASE_FAILED_RECOVERABLE: &str = "failed_recoverable";
 pub(crate) const PHASE_FAILED_TERMINAL: &str = "failed_terminal";
+/// A network upgrade invalidated the run's unsent transactions, which commit
+/// to the old consensus branch. Terminal; status keeps it as a receipt.
+pub(crate) const PHASE_STOPPED_BY_UPGRADE: &str = "stopped_by_upgrade";
 pub(crate) const PHASE_ABANDONED: &str = "abandoned";
+/// Phases a run never leaves.
+const TERMINAL_PHASES: [&str; 4] = [
+    PHASE_COMPLETE,
+    PHASE_FAILED_TERMINAL,
+    PHASE_STOPPED_BY_UPGRADE,
+    PHASE_ABANDONED,
+];
+/// [`TERMINAL_PHASES`] as an SQL list.
+const TERMINAL_PHASES_SQL: &str =
+    "'complete', 'failed_terminal', 'stopped_by_upgrade', 'abandoned'";
 
 include!("migration/denomination_policy.rs");
 
@@ -154,6 +170,14 @@ pub(crate) struct MigrationScheduleEntry {
     pub part_index: Option<u32>,
     pub value_zatoshi: u64,
     pub block_offset: u32,
+    /// Blocks per ZIP 318 reference block the schedule was drawn at. Builds
+    /// that saved none drew one.
+    #[serde(default = "one_block_per_reference_block")]
+    pub blocks_per_reference_block: u32,
+}
+
+fn one_block_per_reference_block() -> u32 {
+    1
 }
 
 pub(crate) struct PendingMigrationTxInsert {
@@ -242,6 +266,7 @@ pub(crate) struct MigrationOutboxItem {
     pub scheduled_height: u32,
     pub schedule_start_height: u32,
     pub expiry_height: u32,
+    pub target_height: u32,
 }
 
 #[derive(Debug)]
@@ -513,6 +538,20 @@ fn migration_status_with_projection_height(
     }
 
     let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
+    if orchard_pending > 0 || orchard_migratable {
+        if let Some(run) = latest_run(&conn, account_uuid, network)?
+            .filter(|run| run.phase == PHASE_STOPPED_BY_UPGRADE)
+        {
+            let current_scanned_height = projection_scanned_height
+                .map(Ok)
+                .unwrap_or_else(|| migration_projection_scanned_height(db_path, network))?;
+            let mut status = status_for_run(&conn, run, current_scanned_height)?;
+            // A receipt until the user moves the rest, like a completed run.
+            status.active_run_id = None;
+            status.can_abandon = false;
+            return Ok(status);
+        }
+    }
     if orchard_pending == 0 && !orchard_migratable {
         if let Some(run) = latest_completed_run(&conn, account_uuid, network)? {
             let current_scanned_height = projection_scanned_height
@@ -525,6 +564,12 @@ fn migration_status_with_projection_height(
             return Ok(status);
         }
     }
+    let schedule_delays = schedule_delays_in_blocks(
+        network,
+        configured_timing_policy(network),
+        0,
+        wallet_next_height(&conn)?,
+    );
     let phase = if orchard_pending > 0 {
         PHASE_WAITING_FOR_SPENDABLE_ORCHARD
     } else if orchard_migratable {
@@ -555,16 +600,8 @@ fn migration_status_with_projection_height(
         message: None,
         can_abandon: false,
         signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
-        schedule_mean_delay_blocks: schedule_parameters_with_policy(
-            network,
-            configured_timing_policy(network),
-        )
-        .0,
-        schedule_max_delay_blocks: schedule_parameters_with_policy(
-            network,
-            configured_timing_policy(network),
-        )
-        .1,
+        schedule_mean_delay_blocks: schedule_delays.0,
+        schedule_max_delay_blocks: schedule_delays.1,
         preparation_mean_delay_blocks: 0,
         next_action_height: None,
         next_proof_window_height: None,
@@ -723,6 +760,7 @@ fn adopt_timing_policy_for_active_run(
         run.target_values_zatoshi.iter().copied(),
         network,
         MigrationTimingPolicy::FastTestnet,
+        wallet_next_height(conn)?,
         &mut OsRng,
     );
     let schedule_json = serde_json::to_string(&schedule)
@@ -826,8 +864,7 @@ pub(crate) fn migration_preparation_snapshot_read_only(
                 "SELECT phase
                  FROM {RUNS_TABLE}
                  WHERE run_id = ?1 AND account_uuid = ?2 AND network = ?3
-                   AND phase NOT IN ('{PHASE_NO_ORCHARD_FUNDS}', '{PHASE_COMPLETE}',
-                                     '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')"
+                   AND phase NOT IN ('{PHASE_NO_ORCHARD_FUNDS}', {TERMINAL_PHASES_SQL})"
             ),
             params![expected_run_id, account_uuid, network_name(network)],
             |row| row.get::<_, String>(0),
@@ -947,10 +984,7 @@ fn migration_reserves_orchard_inputs_in_snapshot(
 }
 
 fn migration_phase_releases_wallet_locks(phase: &str) -> bool {
-    matches!(
-        phase,
-        PHASE_COMPLETE | PHASE_FAILED_TERMINAL | PHASE_ABANDONED
-    )
+    TERMINAL_PHASES.contains(&phase)
 }
 
 fn wallet_lock_reconciliation_is_stable(applied_release: bool, current_release: bool) -> bool {
@@ -1146,6 +1180,15 @@ pub(crate) fn reconcile_wallet_locks_after_sync(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
+    // A rejection can stop a run before the scan reaches the upgrade; parts
+    // mined before it still need confirming for the stopped run's receipt.
+    for account_uuid in &account_uuids {
+        if let Some(run) = latest_run(&conn, account_uuid, network)?
+            .filter(|run| run.phase == PHASE_STOPPED_BY_UPGRADE)
+        {
+            reconcile_run_confirmations(&conn, &run.run_id)?;
+        }
+    }
     drop(conn);
 
     for run in active_runs {
@@ -1178,6 +1221,12 @@ pub(crate) fn reconcile_wallet_locks_after_sync(
                 reconcile_denomination_confirmations(&conn, &run)?;
                 reconcile_run_confirmations(&conn, &run.run_id)?;
                 backfill_ready_migration_proof_retry_height(&conn, &run.run_id)?;
+                // After confirmations, so parts mined before the upgrade count.
+                if let Some(next_height) =
+                    network_upgrade_stops_run(&conn, db_path, network, &run.run_id)?
+                {
+                    stop_run_for_network_upgrade(&conn, network, &run.run_id, next_height)?;
+                }
             }
         }
     }
@@ -1273,11 +1322,13 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     };
     let schedule_json = match approved_schedule {
         Some(schedule) => {
-            validate_schedule_with_policy(
+            let next_height = wallet_next_height(&conn)?;
+            validate_new_run_schedule(
                 schedule,
                 &plan.migration_outputs,
                 network,
                 timing_policy,
+                next_height,
             )?;
             serde_json::to_string(schedule)
                 .map_err(|e| format!("Encode approved migration schedule: {e}"))?
@@ -1355,6 +1406,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
 ) -> Result<String, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
+    ensure_migration_can_start_with_conn(&conn, network)?;
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin private migration draft creation: {e}"))?;
@@ -1365,6 +1417,14 @@ pub(crate) fn create_or_resume_private_migration_draft(
                     "Saved private migration plan no longer matches this balance".to_string(),
                 );
             }
+            replace_draft_schedule_drawn_before_upgrade(
+                &tx,
+                &run.run_id,
+                network,
+                approved_schedule,
+            )?;
+            tx.commit()
+                .map_err(|e| format!("Commit private migration draft schedule: {e}"))?;
             return Ok(run.run_id);
         }
         return Err(format!("Migration already active: {}", run.run_id));
@@ -1374,11 +1434,13 @@ pub(crate) fn create_or_resume_private_migration_draft(
     }
 
     let timing_policy = configured_timing_policy(network);
-    validate_schedule_with_policy(
+    let next_height = wallet_next_height(&tx)?;
+    validate_new_run_schedule(
         approved_schedule,
         target_values_zatoshi,
         network,
         timing_policy,
+        next_height,
     )?;
     let run_id = new_run_id(account_uuid);
     let now = now_ms()?;
@@ -1411,6 +1473,129 @@ pub(crate) fn create_or_resume_private_migration_draft(
     tx.commit()
         .map_err(|e| format!("Commit private migration draft creation: {e}"))?;
     Ok(run_id)
+}
+
+/// [`replace_draft_schedule_drawn_before_upgrade`] for a draft about to be
+/// signed.
+pub(crate) fn refresh_draft_schedule_for_upgrade(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    approved_schedule: &[MigrationScheduleEntry],
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    replace_draft_schedule_drawn_before_upgrade(&conn, run_id, network, approved_schedule)
+}
+
+/// Redraws the schedule of a run that has signed no transfer yet when it was
+/// drawn before an upgrade changed the block spacing: a Keystone run whose
+/// first batch is signed after activation would otherwise pass its delays in
+/// a third of the time. A run that signed parts for the old branch is stopped
+/// by the upgrade instead.
+pub(crate) fn refresh_unsigned_schedule_for_upgrade(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let signed_anything: bool = conn
+        .query_row(
+            &format!(
+                "SELECT signed_schedule_origin_height IS NOT NULL
+                     OR EXISTS (SELECT 1 FROM {PENDING_TXS_TABLE} WHERE run_id = ?1)
+                     OR EXISTS (SELECT 1 FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1)
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Read migration signing state: {e}"))?;
+    if signed_anything {
+        return Ok(());
+    }
+    redraw_schedule_drawn_before_upgrade(&conn, run_id, network, &[])
+}
+
+/// A saved draft keeps the schedule it was drawn with. Once an upgrade has
+/// changed the block spacing, the schedule approved now replaces it, or a
+/// fresh draw when the draft is resumed without a new review. A draft that
+/// had signed anything for the old branch was stopped by the upgrade.
+fn replace_draft_schedule_drawn_before_upgrade(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    network: WalletNetwork,
+    approved_schedule: &[MigrationScheduleEntry],
+) -> Result<(), String> {
+    let phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read private migration draft phase: {e}"))?;
+    if !is_private_migration_draft_phase(&phase) {
+        return Ok(());
+    }
+    redraw_schedule_drawn_before_upgrade(conn, run_id, network, approved_schedule)
+}
+
+/// Replaces a run's schedule drawn at another block spacing with
+/// `approved_schedule`, or a fresh draw when it is empty.
+fn redraw_schedule_drawn_before_upgrade(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    network: WalletNetwork,
+    approved_schedule: &[MigrationScheduleEntry],
+) -> Result<(), String> {
+    let (schedule_json, target_values_json) = conn
+        .query_row(
+            &format!(
+                "SELECT schedule_json, target_values_json
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .map_err(|e| format!("Read migration schedule: {e}"))?;
+    let stored: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
+        .map_err(|e| format!("Decode approved migration schedule: {e}"))?;
+    let next_height = wallet_next_height(conn)?;
+    if ensure_schedule_drawn_for_height(&stored, network, next_height).is_ok() {
+        return Ok(());
+    }
+    let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
+        .map_err(|e| format!("Decode migration run target values: {e}"))?;
+    let timing_policy = timing_policy_for_run_with_conn(conn, run_id, network)?;
+    let replacement = if approved_schedule.is_empty() {
+        planned_transfer_schedule_with_policy(
+            target_values.iter().copied(),
+            network,
+            timing_policy,
+            next_height,
+            &mut OsRng,
+        )
+    } else {
+        approved_schedule.to_vec()
+    };
+    validate_new_run_schedule(
+        &replacement,
+        &target_values,
+        network,
+        timing_policy,
+        next_height,
+    )?;
+    let schedule_json = serde_json::to_string(&replacement)
+        .map_err(|e| format!("Encode approved migration schedule: {e}"))?;
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE} SET schedule_json = ?1, updated_at_ms = ?2 WHERE run_id = ?3"
+        ),
+        params![schedule_json, now_ms()?, run_id],
+    )
+    .map_err(|e| format!("Save migration schedule: {e}"))?;
+    Ok(())
 }
 
 fn is_private_migration_draft_phase(phase: &str) -> bool {
@@ -1518,11 +1703,13 @@ pub(crate) fn mark_run_phase(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let now = now_ms()?;
+    // An ended run keeps its phase: a stop or completion committed while this
+    // writer was in flight must not be undone.
     conn.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
              SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-             WHERE run_id = ?4"
+             WHERE run_id = ?4 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
         ),
         params![phase, now, message, run_id],
     )
@@ -1713,9 +1900,17 @@ pub(crate) fn migration_anchor_retention_references(
 
 /// Whether librustzcash itself retains the checkpoint at `height` as a durable
 /// anchor under the production ZIP 318 grid.
-fn is_wallet_durable_anchor(height: u32, anchor_retention_floor: Option<BlockHeight>) -> bool {
+fn is_wallet_durable_anchor(
+    network: WalletNetwork,
+    height: u32,
+    anchor_retention_floor: Option<BlockHeight>,
+) -> bool {
     anchor_retention_floor.is_some_and(|floor| height >= u32::from(floor))
-        && height.is_multiple_of(AnchorRetentionInterval::ZIP_318.block_count().get())
+        && AnchorGrid::new(
+            AnchorRetentionInterval::ZIP_318,
+            BlockSpacing::for_network(&network),
+        )
+        .is_boundary(BlockHeight::from_u32(height))
 }
 
 pub(crate) fn stage_migration_anchor_retention_references(
@@ -1764,7 +1959,7 @@ pub(crate) fn stage_migration_anchor_retention_references(
     let release = currently_owned
         .difference(&desired_heights)
         .copied()
-        .filter(|height| !is_wallet_durable_anchor(*height, anchor_retention_floor))
+        .filter(|height| !is_wallet_durable_anchor(network, *height, anchor_retention_floor))
         .collect::<Vec<_>>();
 
     let tx = conn
@@ -1784,7 +1979,7 @@ pub(crate) fn stage_migration_anchor_retention_references(
             // checkpoints directly. Adopt those legacy non-durable pins so
             // they can be released when the run no longer needs them, while
             // leaving librustzcash's independently durable anchors alone.
-            || !is_wallet_durable_anchor(*checkpoint_height, anchor_retention_floor);
+            || !is_wallet_durable_anchor(network, *checkpoint_height, anchor_retention_floor);
         let owns_retention = migration_owns && owner_assigned.insert(*checkpoint_height);
         tx.execute(
             &format!(
@@ -1999,7 +2194,13 @@ pub(crate) fn set_run_approved_schedule(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
-    validate_schedule_with_policy(schedule, target_values, network, timing_policy)?;
+    validate_schedule_with_policy(
+        schedule,
+        target_values,
+        network,
+        timing_policy,
+        wallet_next_height(&conn)?,
+    )?;
     let schedule_json = serde_json::to_string(schedule)
         .map_err(|e| format!("Encode approved migration schedule: {e}"))?;
     let updated = conn
@@ -2159,6 +2360,11 @@ fn insert_pending_txs_with_tx(
             target_values.iter().copied(),
             network,
             timing_policy,
+            pending_txs
+                .iter()
+                .map(|pending| pending.target_height)
+                .min()
+                .unwrap_or(0),
             &mut OsRng,
         );
         let schedule_json = serde_json::to_string(&schedule)
@@ -2169,7 +2375,13 @@ fn insert_pending_txs_with_tx(
         )
         .map_err(|e| format!("Save generated migration schedule: {e}"))?;
     }
-    validate_schedule_with_policy(&schedule, &target_values, network, timing_policy)?;
+    validate_schedule_with_policy(
+        &schedule,
+        &target_values,
+        network,
+        timing_policy,
+        wallet_next_height(tx)?,
+    )?;
     let persisted_signed_schedule_origin = tx
         .query_row(
             &format!(
@@ -2196,17 +2408,22 @@ fn insert_pending_txs_with_tx(
         // the original shared schedule origin when doing so does not change
         // the already-signed canonical expiry bucket.
         if pending.scheduled_height == pending.target_height
-            && pending.expiry_height
-                == zip318_canonical_migration_expiry_height(pending.target_height)?
+            && is_stored_migration_expiry_canonical(
+                network,
+                pending.target_height,
+                pending.expiry_height,
+            )?
         {
             let legacy_scheduled_height = pending
                 .target_height
                 .saturating_sub(1)
                 .checked_add(entry.block_offset)
                 .ok_or("Legacy migration scheduled height overflow")?;
-            if pending.expiry_height
-                == zip318_canonical_migration_expiry_height(legacy_scheduled_height)?
-            {
+            if is_stored_migration_expiry_canonical(
+                network,
+                legacy_scheduled_height,
+                pending.expiry_height,
+            )? {
                 pending.scheduled_height = legacy_scheduled_height;
             }
         }
@@ -2254,7 +2471,8 @@ fn insert_pending_txs_with_tx(
         } else {
             incoming_initial_schedule_origin = Some(schedule_origin);
         }
-        let canonical_expiry = zip318_canonical_migration_expiry_height(pending.scheduled_height)?;
+        let canonical_expiry =
+            zip318_canonical_migration_expiry_height(&network, pending.scheduled_height)?;
         if pending.expiry_height != canonical_expiry {
             return Err(format!(
                 "Migration transaction {} expiry is not canonical for scheduled height {}",
@@ -2327,15 +2545,20 @@ fn insert_pending_txs_with_tx(
     }
 
     let now = now_ms()?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3"
-        ),
-        params![PHASE_BROADCAST_SCHEDULED, now, run_id],
-    )
-    .map_err(|e| format!("Mark migration broadcast scheduled: {e}"))?;
+    let updated = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
+            ),
+            params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+        )
+        .map_err(|e| format!("Mark migration broadcast scheduled: {e}"))?;
+    // A sync can stop the run meanwhile; rolling back keeps the stop.
+    if updated != 1 {
+        return Err(RUN_ENDED_DURING_UPDATE_MESSAGE.to_string());
+    }
     Ok(())
 }
 
@@ -2415,8 +2638,10 @@ fn insert_signed_child_pczts_with_tx(
     };
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration PCZT salt")?;
     let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
+    let network = run_network_with_conn(tx, run_id)?;
     for child in signed_children {
-        let canonical_expiry = zip318_canonical_migration_expiry_height(child.scheduled_height)?;
+        let canonical_expiry =
+            zip318_canonical_migration_expiry_height(&network, child.scheduled_height)?;
         if child.expiry_height != canonical_expiry {
             return Err(format!(
                 "Signed migration child {} expiry {} is not canonical for scheduled height {}",
@@ -2549,6 +2774,55 @@ pub(crate) fn persist_signed_child_pczts_for_run(
         .map_err(|e| format!("Commit signed migration handoff: {e}"))
 }
 
+/// Unpromoted children an earlier build signed for the branch at
+/// `next_height` with the pre-NU7 expiry modulus. Promotion requires the
+/// current canonical expiry, so such a run is rebuilt; children for the old
+/// branch are held and stopped instead.
+pub(crate) fn legacy_expiry_signed_child_count(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    next_height: u32,
+) -> Result<u32, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT c.target_height, c.expiry_height, c.scheduled_height
+             FROM {SIGNED_CHILD_PCZTS_TABLE} c
+             WHERE c.run_id = ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM {PENDING_TXS_TABLE} p
+                   WHERE p.run_id = c.run_id AND p.part_index = c.child_index
+               )"
+        ))
+        .map_err(|e| format!("Prepare signed migration expiry query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, u32>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+            ))
+        })
+        .map_err(|e| format!("Query signed migration expiries: {e}"))?;
+    let mut count = 0;
+    for row in rows {
+        let (target_height, expiry_height, scheduled_height) =
+            row.map_err(|e| format!("Read signed migration expiry: {e}"))?;
+        let Some(scheduled_height) = scheduled_height else {
+            continue;
+        };
+        if !network_upgrade::crosses(&network, target_height, next_height)
+            && expiry_height
+                != zip318_canonical_migration_expiry_height(&network, scheduled_height)?
+        {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 pub(crate) fn signed_child_pczts_for_run(
     db_path: &str,
     run_id: &str,
@@ -2559,6 +2833,7 @@ pub(crate) fn signed_child_pczts_for_run(
     let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
+    let network = run_network_with_conn(&conn, run_id)?;
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT c.message_id, c.child_index, c.encrypted_base_pczt,
@@ -2612,7 +2887,7 @@ pub(crate) fn signed_child_pczts_for_run(
         let scheduled_height = scheduled_height.ok_or_else(|| {
             format!("Signed migration child {message_id} requires fresh signatures")
         })?;
-        if expiry_height != zip318_canonical_migration_expiry_height(scheduled_height)? {
+        if !is_stored_migration_expiry_canonical(network, scheduled_height, expiry_height)? {
             return Err(format!(
                 "Signed migration child {message_id} expiry is not canonical for scheduled height {scheduled_height}"
             ));
@@ -2928,11 +3203,7 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL,
                      proof_retry_height = NULL
                  WHERE run_id = ?3
-                   AND phase NOT IN (
-                       '{PHASE_COMPLETE}',
-                       '{PHASE_FAILED_TERMINAL}',
-                       '{PHASE_ABANDONED}'
-                   )"
+                   AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![PHASE_WAITING_DENOM_CONFIRMATIONS, now, run_id],
         )
@@ -3152,11 +3423,7 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
                     "UPDATE {RUNS_TABLE}
                      SET phase = ?1, updated_at_ms = ?2, last_error = NULL
                      WHERE run_id = ?3
-                       AND phase NOT IN (
-                           '{PHASE_COMPLETE}',
-                           '{PHASE_FAILED_TERMINAL}',
-                           '{PHASE_ABANDONED}'
-                       )"
+                       AND phase NOT IN ({TERMINAL_PHASES_SQL})"
                 ),
                 params![PHASE_WAITING_DENOM_CONFIRMATIONS, now, run_id],
             )
@@ -3181,11 +3448,19 @@ pub(crate) fn export_scheduled_migration_outbox(
     if let Ok(progress) = super::get_sync_progress(db_path, network) {
         if let Ok(chain_tip_height) = u32::try_from(progress.chain_tip_height) {
             if let Some(run) = active_migration_run(db_path, account_uuid, network)? {
-                mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+                // Parts the upgrade holds wait for its stop, not new signatures.
+                if !network_upgrade_holds_broadcasts(
                     db_path,
+                    network,
                     &run.run_id,
                     chain_tip_height,
-                )?;
+                )? {
+                    mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+                        db_path,
+                        &run.run_id,
+                        chain_tip_height,
+                    )?;
+                }
             }
         }
     }
@@ -3220,7 +3495,7 @@ pub(crate) fn export_scheduled_migration_outbox(
         .prepare_cached(&format!(
             "SELECT part_index, txid_hex, encrypted_raw_tx,
                     anchor_boundary_height, scheduled_height,
-                    schedule_start_height, expiry_height
+                    schedule_start_height, expiry_height, target_height
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status = 'scheduled'
              ORDER BY scheduled_height ASC, part_index ASC, txid_hex ASC"
@@ -3236,6 +3511,7 @@ pub(crate) fn export_scheduled_migration_outbox(
                 row.get::<_, u32>(4)?,
                 row.get::<_, Option<u32>>(5)?,
                 row.get::<_, u32>(6)?,
+                row.get::<_, u32>(7)?,
             ))
         })
         .map_err(|e| format!("Query migration outbox export: {e}"))?;
@@ -3250,6 +3526,7 @@ pub(crate) fn export_scheduled_migration_outbox(
             scheduled_height,
             schedule_start_height,
             expiry_height,
+            target_height,
         ) = row.map_err(|e| format!("Read migration outbox export: {e}"))?;
         let part_index = part_index.ok_or_else(|| {
             format!("Migration outbox transaction {txid_hex} is missing its part index")
@@ -3265,8 +3542,7 @@ pub(crate) fn export_scheduled_migration_outbox(
                 "Migration outbox transaction {txid_hex} is scheduled at or after expiry"
             ));
         }
-        let canonical_expiry = zip318_canonical_migration_expiry_height(scheduled_height)?;
-        if expiry_height != canonical_expiry {
+        if !is_stored_migration_expiry_canonical(network, scheduled_height, expiry_height)? {
             return Err(format!(
                 "Migration outbox transaction {txid_hex} expiry is not canonical for scheduled height {scheduled_height}"
             ));
@@ -3282,6 +3558,7 @@ pub(crate) fn export_scheduled_migration_outbox(
             scheduled_height,
             schedule_start_height,
             expiry_height,
+            target_height,
         });
     }
     if items.is_empty() && next_proof_height.is_none() {
@@ -3489,7 +3766,7 @@ pub(crate) fn scheduled_migration_stop_candidates(
     if phase == PHASE_ABANDONED {
         return Ok(Vec::new());
     }
-    if matches!(phase.as_str(), PHASE_COMPLETE | PHASE_FAILED_TERMINAL) {
+    if TERMINAL_PHASES.contains(&phase.as_str()) {
         return Err(format!("Migration run is already terminal ({phase})"));
     }
 
@@ -3666,6 +3943,7 @@ pub(crate) fn due_pending_txs(
     reconcile_run_pending_confirmations(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
+    let network = run_network_with_conn(&conn, run_id)?;
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT txid_hex, encrypted_raw_tx, scheduled_height, expiry_height
@@ -3694,7 +3972,7 @@ pub(crate) fn due_pending_txs(
         if local_denomination_chain_identity(&conn, &txid_hex)?.is_some() {
             continue;
         }
-        if expiry_height != zip318_canonical_migration_expiry_height(scheduled_height)? {
+        if !is_stored_migration_expiry_canonical(network, scheduled_height, expiry_height)? {
             return Err(format!(
                 "Due migration transaction {txid_hex} expiry is not canonical for scheduled height {scheduled_height}"
             ));
@@ -3726,7 +4004,10 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
     // the status update.
     let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
-    let canonical_expiry = zip318_canonical_migration_expiry_height(chain_tip_height)?;
+    let canonical_expiry = zip318_canonical_migration_expiry_height(
+        &run_network_with_conn(&conn, run_id)?,
+        chain_tip_height,
+    )?;
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| format!("Begin migration broadcast-height validation: {e}"))?;
@@ -3737,7 +4018,11 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
                 "UPDATE {PENDING_TXS_TABLE}
                  SET status = 'needs_resign'
                  WHERE run_id = ?1 AND status = 'scheduled'
-                   AND scheduled_height <= ?2 AND expiry_height != ?3"
+                   AND scheduled_height <= ?2 AND expiry_height != ?3
+                   AND EXISTS (
+                       SELECT 1 FROM {RUNS_TABLE}
+                       WHERE run_id = ?1 AND phase NOT IN ({TERMINAL_PHASES_SQL})
+                   )"
             ),
             params![run_id, chain_tip_height, canonical_expiry],
         )
@@ -3748,7 +4033,7 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2,
                      last_error = 'Migration broadcast height crossed a ZIP 318 expiry boundary'
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![PHASE_READY_TO_MIGRATE, now_ms()?, run_id],
         )
@@ -4038,7 +4323,10 @@ fn rebase_initial_signed_schedule_for_anchor_readiness_with_tx(
             )?;
             return Ok(false);
         };
-        let new_expiry = zip318_canonical_migration_expiry_height(new_scheduled_height)?;
+        let new_expiry = zip318_canonical_migration_expiry_height(
+            &run_network_with_conn(tx, run_id)?,
+            new_scheduled_height,
+        )?;
         if new_expiry != expiry_height {
             // Crossing a ZIP-318 expiry bucket would invalidate the already-
             // signed PCZT. Leave the schedule alone for catch-up / resign.
@@ -4219,7 +4507,11 @@ pub(crate) fn mark_expired_pending_parts_for_resign(
                     "UPDATE {PENDING_TXS_TABLE}
                      SET status = 'needs_resign'
                      WHERE run_id = ?1 AND txid_hex = ?2
-                       AND status IN ('scheduled', 'broadcasted')"
+                       AND status IN ('scheduled', 'broadcasted')
+                       AND EXISTS (
+                           SELECT 1 FROM {RUNS_TABLE}
+                           WHERE run_id = ?1 AND phase NOT IN ({TERMINAL_PHASES_SQL})
+                       )"
                 ),
                 params![run_id, txid_hex],
             )
@@ -4231,7 +4523,7 @@ pub(crate) fn mark_expired_pending_parts_for_resign(
             &format!(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-                 WHERE run_id = ?4"
+                 WHERE run_id = ?4 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![
                 PHASE_READY_TO_MIGRATE,
@@ -4292,7 +4584,7 @@ pub(crate) fn pending_parts_needing_resign(
 pub(crate) fn replace_resigned_pending_parts(
     db_path: &str,
     run_id: &str,
-    _network: WalletNetwork,
+    network: WalletNetwork,
     chain_tip_height: u32,
     mut replacements: Vec<PendingMigrationTxReplacement>,
     signed_children: Vec<SignedMigrationPcztInsert>,
@@ -4381,8 +4673,9 @@ pub(crate) fn replace_resigned_pending_parts(
         }
 
         let pending = replacement.replacement;
-        record_pending_creation(&tx, _network, &pending)?;
-        let canonical_expiry = zip318_canonical_migration_expiry_height(pending.scheduled_height)?;
+        record_pending_creation(&tx, network, &pending)?;
+        let canonical_expiry =
+            zip318_canonical_migration_expiry_height(&network, pending.scheduled_height)?;
         if pending.expiry_height != canonical_expiry {
             return Err(
                 "Replacement migration expiry is not canonical for its scheduled height"
@@ -4473,15 +4766,19 @@ pub(crate) fn replace_resigned_pending_parts(
         SignedChildInsertMode::Replacement,
     )?;
     let now = now_ms()?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3"
-        ),
-        params![PHASE_BROADCAST_SCHEDULED, now, run_id],
-    )
-    .map_err(|e| format!("Mark recovered migration scheduled: {e}"))?;
+    let updated = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
+            ),
+            params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+        )
+        .map_err(|e| format!("Mark recovered migration scheduled: {e}"))?;
+    if updated != 1 {
+        return Err(RUN_ENDED_DURING_UPDATE_MESSAGE.to_string());
+    }
     tx.commit()
         .map_err(|e| format!("Commit migration part replacement: {e}"))
 }
@@ -4600,15 +4897,20 @@ pub(crate) fn retire_run_for_rebuild(
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin migration rebuild transition: {e}"))?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-             WHERE run_id = ?4"
-        ),
-        params![PHASE_FAILED_TERMINAL, now, message, run_id],
-    )
-    .map_err(|e| format!("Mark migration run for rebuild: {e}"))?;
+    let retired = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                 WHERE run_id = ?4 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
+            ),
+            params![PHASE_FAILED_TERMINAL, now, message, run_id],
+        )
+        .map_err(|e| format!("Mark migration run for rebuild: {e}"))?;
+    // A run that already ended released its locks when it did.
+    if retired == 0 {
+        return Ok(());
+    }
     tx.execute(
         &format!(
             "UPDATE {PREPARED_NOTES_TABLE}
@@ -4622,6 +4924,324 @@ pub(crate) fn retire_run_for_rebuild(
         .map_err(|e| format!("Commit migration rebuild transition: {e}"))?;
     drop(conn);
     reconcile_wallet_locks_for_run(db_path, network, run_id)
+}
+
+/// [`network_upgrade::holds_transaction`] at the later of the wallet's and
+/// the server's tip, for a transaction signed while the wallet kept syncing.
+pub(crate) fn network_upgrade_holds_transaction_at(
+    db_path: &str,
+    network: WalletNetwork,
+    signed_target_height: u32,
+    server_tip_height: u32,
+) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let chain_tip_height = wallet_tip(&conn)?
+        .unwrap_or(0)
+        .max(server_tip_height)
+        .max(signed_target_height.saturating_sub(1));
+    Ok(network_upgrade::holds_transaction(
+        &network,
+        signed_target_height,
+        chain_tip_height,
+    ))
+}
+
+/// [`network_upgrade::ensure_migration_can_start`] for the wallet's next
+/// block. A wallet that has not seen the chain has no target to hold yet.
+pub(crate) fn ensure_migration_can_start_at_wallet_tip(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_migration_can_start_with_conn(&conn, network)
+}
+
+fn ensure_migration_can_start_with_conn(
+    conn: &rusqlite::Connection,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    match wallet_tip(conn)? {
+        Some(tip) => network_upgrade::ensure_migration_can_start(&network, tip.saturating_add(1)),
+        None => Ok(()),
+    }
+}
+
+/// Lowest target height among the run's transactions that are not mined yet
+/// and are, or will be, signed for a fixed target height. Signatures commit
+/// to the branch active at that height. Later Keystone batches sign for the
+/// run's schedule origin.
+fn earliest_unsent_signed_target_height(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<Option<u32>, String> {
+    let mut queries = Vec::new();
+    if table_exists(conn, PENDING_TXS_TABLE)? {
+        // Broadcast parts count too: one that missed the last old-branch
+        // block is dropped at activation and can never be mined.
+        queries.push(format!(
+            "SELECT MIN(target_height) FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status IN ('scheduled', 'needs_resign', 'broadcasted')"
+        ));
+        if table_exists(conn, SIGNED_CHILD_PCZTS_TABLE)? {
+            queries.push(format!(
+                "SELECT MIN(c.target_height) FROM {SIGNED_CHILD_PCZTS_TABLE} c
+                 WHERE c.run_id = ?1
+                   AND NOT EXISTS (
+                       SELECT 1 FROM {PENDING_TXS_TABLE} p
+                       WHERE p.run_id = c.run_id AND p.part_index = c.child_index
+                   )"
+            ));
+        }
+    }
+    if table_exists(conn, STAGES_TABLE)? {
+        // Mined stages are confirmed before the stop runs, so a broadcast one
+        // here missed the upgrade like a broadcast part.
+        queries.push(format!(
+            "SELECT MIN(target_height) FROM {STAGES_TABLE}
+             WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending', 'broadcasted')"
+        ));
+    }
+    let mut earliest = None;
+    for query in queries {
+        let height = conn
+            .query_row(&query, params![run_id], |row| row.get::<_, Option<u32>>(0))
+            .map_err(|e| format!("Read unsent migration target height: {e}"))?;
+        earliest = earliest.into_iter().chain(height).min();
+    }
+    if let Some(origin) = unsigned_batch_schedule_origin(conn, run_id)? {
+        earliest = earliest.into_iter().chain(origin.checked_add(1)).min();
+    }
+    Ok(earliest)
+}
+
+/// The signed schedule origin while planned parts still await a later
+/// signing batch.
+fn unsigned_batch_schedule_origin(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<Option<u32>, String> {
+    if !table_exists(conn, PENDING_TXS_TABLE)? || !table_exists(conn, SIGNED_CHILD_PCZTS_TABLE)? {
+        return Ok(None);
+    }
+    let origin = conn
+        .query_row(
+            &format!("SELECT signed_schedule_origin_height FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, Option<u32>>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration schedule origin: {e}"))?
+        .flatten();
+    let Some(origin) = origin else {
+        return Ok(None);
+    };
+    let signed = count_for_run(conn, PENDING_TXS_TABLE, run_id)?
+        + unpromoted_signed_child_pczt_count_with_conn(conn, run_id)?;
+    Ok((signed < planned_part_count_with_conn(conn, run_id)?).then_some(origin))
+}
+
+/// Whether a block at `height` uses a different branch from the run's unsent
+/// transactions.
+fn network_upgrade_invalidates_unsent_at(
+    conn: &rusqlite::Connection,
+    network: WalletNetwork,
+    run_id: &str,
+    height: u32,
+) -> Result<bool, String> {
+    Ok(earliest_unsent_signed_target_height(conn, run_id)?
+        .is_some_and(|target_height| network_upgrade::crosses(&network, target_height, height)))
+}
+
+/// Whether the run must not broadcast at `chain_tip_height` because the
+/// upgrade falls within the hold window.
+pub(crate) fn network_upgrade_holds_broadcasts(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    Ok(
+        earliest_unsent_signed_target_height(&conn, run_id)?.is_some_and(|target_height| {
+            network_upgrade::holds_transaction(&network, target_height, chain_tip_height)
+        }),
+    )
+}
+
+/// Stops the run when the block after `chain_tip_height` can no longer
+/// include its unsent transactions. For a rejection the network reported
+/// before the wallet scanned the upgrade; the post-sync pass confirms parts
+/// mined before it afterwards.
+const RUN_ENDED_DURING_UPDATE_MESSAGE: &str = "Migration run ended while it was being updated";
+
+pub(crate) fn stop_run_if_network_upgrade_invalidated(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    server_tip_height: u32,
+) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    // A server behind the wallet would otherwise read a new-branch part as old.
+    let chain_tip_height = wallet_tip(&conn)?.unwrap_or(0).max(server_tip_height);
+    let next_height = chain_tip_height.saturating_add(1);
+    if !network_upgrade_invalidates_unsent_at(&conn, network, run_id, next_height)? {
+        return Ok(false);
+    }
+    stop_run_for_network_upgrade(&conn, network, run_id, next_height)?;
+    drop(conn);
+    reconcile_wallet_locks_for_run(db_path, network, run_id)?;
+    Ok(true)
+}
+
+/// The height after the fully scanned block when the run's unsent
+/// transactions belong to a branch that ended below it. Waiting for the scan
+/// lets parts mined before the upgrade be confirmed first, so the stopped run
+/// reports them as moved.
+fn network_upgrade_stops_run(
+    conn: &rusqlite::Connection,
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+) -> Result<Option<u32>, String> {
+    use zcash_client_backend::data_api::WalletRead;
+
+    // The tip settles it for almost every sync, before the wallet is opened.
+    let Some(chain_tip_height) = wallet_tip(conn)? else {
+        return Ok(None);
+    };
+    if !network_upgrade_invalidates_unsent_at(
+        conn,
+        network,
+        run_id,
+        chain_tip_height.saturating_add(1),
+    )? {
+        return Ok(None);
+    }
+    let fully_scanned = super::open_wallet_db_for_read(db_path, network)?
+        .block_fully_scanned()
+        .map_err(|e| format!("Read fully scanned height for the network upgrade: {e}"))?;
+    let Some(block) = fully_scanned else {
+        return Ok(None);
+    };
+    let next_height = u32::from(block.block_height()).saturating_add(1);
+    Ok(
+        network_upgrade_invalidates_unsent_at(conn, network, run_id, next_height)?
+            .then_some(next_height),
+    )
+}
+
+/// Ends the run like [`retire_run_for_rebuild`], under its own phase so the
+/// wallet can explain the stop and offer to move the rest. `next_height` is
+/// the height the stop was judged at.
+fn stop_run_for_network_upgrade(
+    conn: &rusqlite::Connection,
+    network: WalletNetwork,
+    run_id: &str,
+    next_height: u32,
+) -> Result<(), String> {
+    let now = now_ms()?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration upgrade stop: {e}"))?;
+    let stopped = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                 WHERE run_id = ?4
+                   AND phase NOT IN ({TERMINAL_PHASES_SQL})"
+            ),
+            params![
+                PHASE_STOPPED_BY_UPGRADE,
+                now,
+                network_upgrade::MIGRATION_STOP_MESSAGE,
+                run_id
+            ],
+        )
+        .map_err(|e| format!("Mark migration run stopped by the upgrade: {e}"))?;
+    if stopped == 0 {
+        return tx
+            .rollback()
+            .map_err(|e| format!("Roll back stale migration upgrade stop: {e}"));
+    }
+    tx.execute(
+        &format!(
+            "UPDATE {PREPARED_NOTES_TABLE}
+             SET lock_state = 'unlocked'
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .map_err(|e| format!("Release migration note locks after the upgrade: {e}"))?;
+    expire_unminable_run_transactions(&tx, network, run_id, next_height)?;
+    tx.commit()
+        .map_err(|e| format!("Commit migration upgrade stop: {e}"))?;
+    log::info!("migration: the network upgrade stopped run {run_id}");
+    Ok(())
+}
+
+/// Expires in the wallet the run's unmined transactions whose branch ended
+/// before `next_height`, at that branch's last block. The network can no
+/// longer mine them, yet their inputs would stay spent until the ZIP 318
+/// expiry, weeks away. Scanning one that a reorg mines restores it.
+fn expire_unminable_run_transactions(
+    conn: &rusqlite::Connection,
+    network: WalletNetwork,
+    run_id: &str,
+    next_height: u32,
+) -> Result<(), String> {
+    if !table_exists(conn, "transactions")? {
+        return Ok(());
+    }
+    let mut queries = Vec::new();
+    if table_exists(conn, PENDING_TXS_TABLE)? {
+        queries.push(format!(
+            "SELECT txid_hex, target_height FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status IN ('scheduled', 'needs_resign', 'broadcasted')"
+        ));
+    }
+    if table_exists(conn, STAGES_TABLE)? {
+        queries.push(format!(
+            "SELECT expected_txid_hex, target_height FROM {STAGES_TABLE}
+             WHERE run_id = ?1 AND status IN ('pending', 'broadcasted')"
+        ));
+    }
+    for query in queries {
+        let mut stmt = conn
+            .prepare(&query)
+            .map_err(|e| format!("Prepare unminable migration transaction query: {e}"))?;
+        let rows = stmt
+            .query_map(params![run_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+            })
+            .map_err(|e| format!("Query unminable migration transactions: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read unminable migration transaction: {e}"))?;
+        for (txid_hex, target_height) in rows {
+            if !network_upgrade::crosses(&network, target_height, next_height) {
+                continue;
+            }
+            let Some(next_activation) = network_upgrade::next_activation_after(
+                &network,
+                BlockHeight::from_u32(target_height),
+            ) else {
+                continue;
+            };
+            let branch_end = u32::from(next_activation).saturating_sub(1);
+            for txid in txid_blob_variants(&txid_hex)? {
+                conn.execute(
+                    "UPDATE transactions SET expiry_height = ?1
+                     WHERE txid = ?2 AND mined_height IS NULL
+                       AND (expiry_height IS NULL OR expiry_height = 0 OR expiry_height > ?1)",
+                    params![branch_end, txid],
+                )
+                .map_err(|e| format!("Expire unminable migration transaction: {e}"))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Abandons the run after rechecking `evidence` in the same write
@@ -4662,7 +5282,7 @@ pub(crate) fn abandon_run(
         reconcile_wallet_locks_for_run(db_path, network, expected_run_id)?;
         return discard_unsubmitted_preparation_stages(db_path, expected_run_id);
     }
-    if matches!(run.2.as_str(), PHASE_COMPLETE | PHASE_FAILED_TERMINAL) {
+    if TERMINAL_PHASES.contains(&run.2.as_str()) {
         return Err(format!("Migration run is already terminal ({})", run.2));
     }
 
@@ -4934,6 +5554,7 @@ pub(crate) fn ensure_rebuild_schedule_generation(
             &recovery_parts,
             network,
             timing_policy,
+            origin_candidate_height,
             &mut OsRng,
         )?;
 
@@ -5017,8 +5638,12 @@ fn reschedule_overdue_pending_txs_with_options(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, expiry_height FROM {PENDING_TXS_TABLE}
-             WHERE run_id = ?1 AND status = 'scheduled' AND scheduled_height <= ?2"
+            "SELECT pending.txid_hex, pending.expiry_height
+             FROM {PENDING_TXS_TABLE} AS pending
+             JOIN {RUNS_TABLE} AS runs ON runs.run_id = pending.run_id
+             WHERE pending.run_id = ?1 AND pending.status = 'scheduled'
+               AND pending.scheduled_height <= ?2
+               AND runs.phase NOT IN ({TERMINAL_PHASES_SQL})"
         ))
         .map_err(|e| format!("Prepare overdue migration query: {e}"))?;
     let rows = stmt
@@ -5054,11 +5679,12 @@ fn reschedule_overdue_pending_txs_with_options(
     let redraw_start_ms = now_ms()?;
     let mut needs_resign = false;
     for ((txid, expiry_height), offset) in txids.into_iter().zip(offsets) {
-        let effective_offset = offset.max(minimum_delay_blocks);
-        let scheduled_height = chain_tip_height
-            .checked_add(effective_offset)
+        let minimum_height = chain_tip_height
+            .checked_add(minimum_delay_blocks)
             .ok_or("Migration rescheduled height overflow")?;
-        if zip318_canonical_migration_expiry_height(scheduled_height)? != expiry_height {
+        let scheduled_height =
+            zip318_advance(network, chain_tip_height, offset)?.max(minimum_height);
+        if zip318_canonical_migration_expiry_height(&network, scheduled_height)? != expiry_height {
             tx.execute(
                 &format!(
                     "UPDATE {PENDING_TXS_TABLE}
@@ -5076,7 +5702,7 @@ fn reschedule_overdue_pending_txs_with_options(
         // Listings order by this column; leaving the original timestamp
         // behind made redrawn parts sort — and read — as still overdue.
         let scheduled_at_ms = redraw_start_ms
-            .checked_add(i64::from(effective_offset).saturating_mul(1000))
+            .checked_add(i64::from(scheduled_height - chain_tip_height).saturating_mul(1000))
             .ok_or("Migration rescheduled time overflow")?;
         tx.execute(
             &format!(
@@ -5101,7 +5727,8 @@ fn reschedule_overdue_pending_txs_with_options(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2,
                      last_error = 'Migration schedule crossed a ZIP 318 expiry boundary'
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3
+                   AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![PHASE_READY_TO_MIGRATE, now_ms()?, run_id],
         )
@@ -5162,6 +5789,7 @@ fn reschedule_wallet_overdue_pending_txs_with_exclusion(
                  WHERE pending.status = 'scheduled'
                    AND pending.scheduled_height <= ?1
                    AND runs.network = ?2
+                   AND runs.phase NOT IN ({TERMINAL_PHASES_SQL})
                  ORDER BY pending.run_id ASC"
             ))
             .map_err(|e| format!("Prepare wallet overdue migration query: {e}"))?;
@@ -5283,12 +5911,13 @@ fn update_run_after_pending_broadcast(
     } else {
         PHASE_WAITING_MIGRATION_CONFIRMATIONS
     };
+    // A run the sync stopped meanwhile keeps its stop.
     if needs_resign_remaining > 0 {
         tx.execute(
             &format!(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![next_phase, now, run_id],
         )
@@ -5298,7 +5927,7 @@ fn update_run_after_pending_broadcast(
             &format!(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![next_phase, now, run_id],
         )
@@ -5346,7 +5975,6 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
     }
 
     let timing_policy = timing_policy_for_run_with_conn(&tx, run_id, network)?;
-    let (_, timing_max_blocks) = schedule_parameters_with_policy(network, timing_policy);
     let accepted_txid = txid_hex.to_ascii_lowercase();
     let mut supplied = BTreeMap::new();
     let mut previous_scheduled_height = remote_height;
@@ -5369,6 +5997,10 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
             .scheduled_height
             .checked_sub(previous_scheduled_height)
             .ok_or_else(|| format!("Migration outbox schedule update {item_id} moves backward"))?;
+        // The iOS outbox spaces each redraw by the blocks per reference block
+        // where it starts, so a redraw that crosses NU7 widens from there.
+        let (_, timing_max_blocks) =
+            schedule_delays_in_blocks(network, timing_policy, 0, previous_scheduled_height);
         if incremental_delay == 0 || incremental_delay > timing_max_blocks {
             return Err(format!(
                 "Migration outbox schedule update {item_id} is outside the timing window"
@@ -5424,7 +6056,8 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
             .optional()
             .map_err(|e| format!("Read migration outbox schedule target: {e}"))?
             .ok_or_else(|| format!("Migration outbox schedule item {item_id} was not found"))?;
-        let canonical_expiry = zip318_canonical_migration_expiry_height(update.scheduled_height)?;
+        let canonical_expiry =
+            zip318_canonical_migration_expiry_height(&network, update.scheduled_height)?;
         if status == "scheduled" {
             if canonical_expiry != expiry_height {
                 tx.execute(
@@ -5468,7 +6101,7 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2,
                      last_error = 'Migration schedule crossed a ZIP 318 expiry boundary'
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![PHASE_READY_TO_MIGRATE, now_ms()?, run_id],
         )
@@ -5660,7 +6293,7 @@ pub(crate) fn locked_migration_note_refs(
                  INNER JOIN {RUNS_TABLE} r ON r.run_id = pn.run_id
                  WHERE r.account_uuid = ?1
                    AND pn.lock_state = 'locked'
-                   AND r.phase NOT IN ('{PHASE_COMPLETE}', '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')"
+                   AND r.phase NOT IN ({TERMINAL_PHASES_SQL})"
             ))
             .map_err(|e| format!("Prepare migration lock query: {e}"))?;
         let rows = stmt
@@ -5675,7 +6308,7 @@ pub(crate) fn locked_migration_note_refs(
             .prepare_cached(&format!(
                 "SELECT run_id FROM {RUNS_TABLE}
                  WHERE account_uuid = ?1
-                   AND phase NOT IN ('{PHASE_COMPLETE}', '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')"
+                   AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ))
             .map_err(|e| format!("Prepare staged migration lock query: {e}"))?;
         let rows = stmt
@@ -6191,6 +6824,11 @@ fn status_for_run(
         &recovery_part_indices,
     )
     .unwrap_or_default();
+    // Durations describe the next draw, not the scan position, which trails
+    // the tip across an upgrade.
+    let next_height = wallet_next_height(conn)?;
+    let schedule_delays =
+        schedule_delays_in_blocks(network, timing_policy, total_count as usize, next_height);
 
     Ok(MigrationStatus {
         phase,
@@ -6210,24 +6848,23 @@ fn status_for_run(
         message: run.last_error,
         can_abandon,
         signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
-        schedule_mean_delay_blocks: schedule_parameters_with_policy_for_part_count(
-            network,
-            timing_policy,
-            total_count as usize,
-        )
-        .0,
-        schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
+        schedule_mean_delay_blocks: schedule_delays.0,
+        schedule_max_delay_blocks: schedule_delays.1,
         preparation_mean_delay_blocks: if preparation_timing_policy
             == PreparationTimingPolicy::Immediate
         {
             0
         } else {
-            preparation_schedule_parameters_for_transaction_count(
+            zip318_blocks_at(
                 network,
-                timing_policy,
-                denomination_split_progress.total_count as usize,
+                next_height,
+                preparation_schedule_parameters_for_transaction_count(
+                    network,
+                    timing_policy,
+                    denomination_split_progress.total_count as usize,
+                )
+                .0,
             )
-            .0
         },
         next_action_height: timing_projection.next_action_height,
         next_proof_window_height: timing_projection.next_proof_window_height,
@@ -6813,8 +7450,7 @@ fn active_run(
              FROM {RUNS_TABLE}
              WHERE account_uuid = ?1
                AND network = ?2
-               AND phase NOT IN ('{PHASE_NO_ORCHARD_FUNDS}', '{PHASE_COMPLETE}',
-                                 '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')
+               AND phase NOT IN ('{PHASE_NO_ORCHARD_FUNDS}', {TERMINAL_PHASES_SQL})
              ORDER BY created_at_ms DESC
              LIMIT 1"
         ),
@@ -6933,6 +7569,54 @@ fn latest_idempotent_broadcast_failure(
     Ok(Some((run_id, last_error)))
 }
 
+fn run_network_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<WalletNetwork, String> {
+    let network = conn
+        .query_row(
+            &format!("SELECT network FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration run network: {e}"))?;
+    WalletNetwork::from_str(&network)
+        .ok_or_else(|| format!("Unsupported migration run network: {network}"))
+}
+
+fn latest_run(
+    conn: &rusqlite::Connection,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<Option<ActiveRun>, String> {
+    if !table_exists(conn, RUNS_TABLE)? {
+        return Ok(None);
+    }
+
+    conn.query_row(
+        &format!(
+            "SELECT run_id, phase, target_values_json, last_error
+             FROM {RUNS_TABLE}
+             WHERE account_uuid = ?1 AND network = ?2
+             ORDER BY created_at_ms DESC
+             LIMIT 1"
+        ),
+        params![account_uuid, network_name(network)],
+        |row| {
+            let target_values_json: String = row.get(2)?;
+            Ok(ActiveRun {
+                run_id: row.get(0)?,
+                phase: row.get(1)?,
+                target_values_zatoshi: serde_json::from_str(&target_values_json)
+                    .unwrap_or_default(),
+                last_error: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| format!("Read latest migration run: {e}"))
+}
+
 fn latest_completed_run(
     conn: &rusqlite::Connection,
     account_uuid: &str,
@@ -6996,6 +7680,8 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
     for (txid_hex, status) in pending {
         match local_denomination_chain_identity(conn, &txid_hex)? {
             Some(_) if status != "confirmed" => {
+                // Not TERMINAL_PHASES: a run stopped by the upgrade still
+                // records the parts mined before it.
                 conn.execute(
                     &format!(
                         "UPDATE {PENDING_TXS_TABLE}
@@ -7030,11 +7716,7 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                            AND EXISTS (
                                SELECT 1 FROM {RUNS_TABLE}
                                WHERE run_id = ?2
-                                 AND phase NOT IN (
-                                     '{PHASE_COMPLETE}',
-                                     '{PHASE_FAILED_TERMINAL}',
-                                     '{PHASE_ABANDONED}'
-                                 )
+                                 AND phase NOT IN ({TERMINAL_PHASES_SQL})
                            )"
                     ),
                     params![now, run_id, txid_hex],
@@ -7052,11 +7734,7 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL
                  WHERE run_id = ?3
-                   AND phase NOT IN (
-                       '{PHASE_COMPLETE}',
-                       '{PHASE_FAILED_TERMINAL}',
-                       '{PHASE_ABANDONED}'
-                   )"
+                   AND phase NOT IN ({TERMINAL_PHASES_SQL})"
             ),
             params![PHASE_BROADCAST_SCHEDULED, now, run_id],
         )
@@ -7139,11 +7817,7 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                     "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL
                  WHERE run_id = ?3
-                   AND phase NOT IN (
-                       '{PHASE_COMPLETE}',
-                       '{PHASE_FAILED_TERMINAL}',
-                       '{PHASE_ABANDONED}'
-                   )"
+                   AND phase NOT IN ({TERMINAL_PHASES_SQL})"
                 ),
                 params![PHASE_COMPLETE, now, run_id],
             )
@@ -7648,6 +8322,20 @@ pub(crate) struct TrackedStopTransaction {
     pub kind: MigrationStopCandidateKind,
     pub txid_hex: String,
     pub expiry_height: u32,
+}
+
+/// The wallet's chain tip, or none before it has seen the chain.
+fn wallet_tip(conn: &rusqlite::Connection) -> Result<Option<u32>, String> {
+    if !table_exists(conn, "scan_queue")? {
+        return Ok(None);
+    }
+    wallet_chain_tip(conn)
+}
+
+/// The wallet's next block height for converting ZIP 318 durations, or 0
+/// before the wallet has seen the chain.
+fn wallet_next_height(conn: &rusqlite::Connection) -> Result<u32, String> {
+    Ok(wallet_tip(conn)?.map_or(0, |tip| tip.saturating_add(1)))
 }
 
 /// The chain tip the wallet judges expiry against, as librustzcash computes

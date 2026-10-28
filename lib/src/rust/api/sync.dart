@@ -2220,6 +2220,9 @@ class MigrationOutboxItem {
   final int scheduleStartHeight;
   final int expiryHeight;
 
+  /// Height the part was signed for; the outbox holds it like the foreground.
+  final int targetHeight;
+
   const MigrationOutboxItem({
     required this.itemId,
     required this.partIndex,
@@ -2229,6 +2232,7 @@ class MigrationOutboxItem {
     required this.scheduledHeight,
     required this.scheduleStartHeight,
     required this.expiryHeight,
+    required this.targetHeight,
   });
 
   @override
@@ -2240,7 +2244,8 @@ class MigrationOutboxItem {
       anchorBoundaryHeight.hashCode ^
       scheduledHeight.hashCode ^
       scheduleStartHeight.hashCode ^
-      expiryHeight.hashCode;
+      expiryHeight.hashCode ^
+      targetHeight.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2254,7 +2259,8 @@ class MigrationOutboxItem {
           anchorBoundaryHeight == other.anchorBoundaryHeight &&
           scheduledHeight == other.scheduledHeight &&
           scheduleStartHeight == other.scheduleStartHeight &&
-          expiryHeight == other.expiryHeight;
+          expiryHeight == other.expiryHeight &&
+          targetHeight == other.targetHeight;
 }
 
 class MigrationOutboxScheduleUpdate {
@@ -2517,15 +2523,23 @@ class MigrationScheduledTransfer {
   final BigInt valueZatoshi;
   final int blockOffset;
 
+  /// Blocks per ZIP 318 reference block the schedule was drawn at; an
+  /// approved schedule drawn at another spacing is refused.
+  final int blocksPerReferenceBlock;
+
   const MigrationScheduledTransfer({
     required this.partIndex,
     required this.valueZatoshi,
     required this.blockOffset,
+    required this.blocksPerReferenceBlock,
   });
 
   @override
   int get hashCode =>
-      partIndex.hashCode ^ valueZatoshi.hashCode ^ blockOffset.hashCode;
+      partIndex.hashCode ^
+      valueZatoshi.hashCode ^
+      blockOffset.hashCode ^
+      blocksPerReferenceBlock.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -2534,7 +2548,8 @@ class MigrationScheduledTransfer {
           runtimeType == other.runtimeType &&
           partIndex == other.partIndex &&
           valueZatoshi == other.valueZatoshi &&
-          blockOffset == other.blockOffset;
+          blockOffset == other.blockOffset &&
+          blocksPerReferenceBlock == other.blocksPerReferenceBlock;
 }
 
 class MigrationStatus {

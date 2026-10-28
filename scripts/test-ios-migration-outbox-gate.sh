@@ -19,6 +19,11 @@ enum NativeLightwalletdClient {
   static func latestBlockHeight(endpoint: String, cancellation: BackgroundMigrationCancellation) -> Result<UInt64, NativeLightwalletdError> { fatalError("Inject transport in tests") }
   static func sendTransaction(endpoint: String, rawTransaction: Data, cancellation: BackgroundMigrationCancellation) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError> { fatalError("Inject transport in tests") }
 }
+// Stand in for the Rust C functions: no upgrade on the test network.
+func zcash_nu7_activation_height(_ network: UnsafePointer<CChar>) -> UInt64 { 0 }
+func zcash_migration_broadcast_held(_ network: UnsafePointer<CChar>, _ targetHeight: UInt64, _ remoteHeight: UInt64) -> Bool { false }
+func zcash_zip318_canonical_expiry_height(_ network: UnsafePointer<CChar>, _ height: UInt64) -> UInt64 { height - height % 34_560 + 69_120 }
+func zcash_zip318_blocks_per_reference_block(_ network: UnsafePointer<CChar>, _ height: UInt64) -> UInt64 { 1 }
 SWIFT
 cat > "$test_dir/main.swift" <<'SWIFT'
 import XCTest

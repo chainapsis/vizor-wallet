@@ -259,8 +259,11 @@ fn shielding_expiry_for_proposal<P: Parameters>(
         .max(send_proposal_lock_expiry(network, min_target_height)))
 }
 
-fn immediate_migration_lock_expiry(target_height: BlockHeight) -> Result<BlockHeight, String> {
-    super::migration::zip318_canonical_migration_expiry_height(u32::from(target_height))
+fn immediate_migration_lock_expiry(
+    network: WalletNetwork,
+    target_height: BlockHeight,
+) -> Result<BlockHeight, String> {
+    super::migration::zip318_canonical_migration_expiry_height(&network, u32::from(target_height))
         .map(BlockHeight::from_u32)
 }
 
@@ -350,6 +353,7 @@ impl Drop for ImmediateMigrationInputLock {
 
 struct BuiltImmediateMigration {
     base_pczt: Vec<u8>,
+    target_height: u32,
     orchard_spend_action_indices: Vec<usize>,
     fee_zatoshi: u64,
     migrated_zatoshi: u64,
@@ -639,7 +643,12 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     /// Estimated absolute height at which the projected final prepared note
     /// can first use a valid migration anchor.
     pub estimated_proof_ready_height: Option<u32>,
+    /// The latest that height can be, with every preparation delay drawn at
+    /// its maximum; the upgrade gate uses it.
+    pub latest_proof_ready_height: Option<u32>,
     pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
+    /// The wallet's next height when the plan was estimated.
+    pub target_height: u32,
 }
 
 pub(crate) struct KeystoneMigrationMessage {
@@ -1887,6 +1896,15 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     } else {
         None
     };
+    super::migration::ensure_migration_can_start_at_wallet_tip(db_path, network)?;
+    if let Some(run) = &draft_run {
+        super::migration::refresh_draft_schedule_for_upgrade(
+            db_path,
+            &run.run_id,
+            network,
+            &approved_schedule,
+        )?;
+    }
 
     let signing_schedule = match &draft_run {
         Some(run) => super::migration::approved_schedule_for_run(db_path, &run.run_id)?,
@@ -1902,6 +1920,13 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::configured_timing_policy(network),
         ),
     };
+    ensure_first_part_precedes_upgrade_hold(
+        db_path,
+        network,
+        account_uuid,
+        preparation_policy_for_build,
+        &signing_schedule,
+    )?;
     let target_values_zatoshi =
         migration_target_values_for_request(draft_run.as_ref(), Some(&signing_schedule))?;
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
@@ -2031,6 +2056,7 @@ fn build_orchard_migration_immediate_pczt(
 ) -> Result<BuiltImmediateMigration, String> {
     let (
         base_pczt,
+        target_height,
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
@@ -2057,6 +2083,10 @@ fn build_orchard_migration_immediate_pczt(
             .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
             .map_err(|e| format!("Failed to read anchor height: {e}"))?
             .ok_or("Wallet must sync before migrating")?;
+        let signed_target_height = u32::from(BlockHeight::from(target_height));
+        // Held like scheduled parts: sent this close to an upgrade, it could
+        // miss the last old-branch block and keep its inputs spent for weeks.
+        network_upgrade::ensure_migration_can_start(&network, signed_target_height)?;
         let orchard_notes = select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?
             .into_iter()
             .map(|note| {
@@ -2163,7 +2193,8 @@ fn build_orchard_migration_immediate_pczt(
             0,
         )?;
         let input_lock_owner = LockOwner::random(&mut voting_crypto_deps::rand::rngs::OsRng);
-        let lock_expiry_height = immediate_migration_lock_expiry(BlockHeight::from(target_height))?;
+        let lock_expiry_height =
+            immediate_migration_lock_expiry(network, BlockHeight::from(target_height))?;
         // Persist the owner and output references before taking the DB locks,
         // exactly like ephemeral send-proposal locks. A Keystone Immediate
         // migration holds this lock across a QR signing session; if the
@@ -2188,6 +2219,7 @@ fn build_orchard_migration_immediate_pczt(
         }
         Ok::<_, String>((
             built.bytes,
+            signed_target_height,
             built.orchard_spend_action_indices,
             plan.fee_zatoshi,
             plan.migrated_zatoshi,
@@ -2197,6 +2229,7 @@ fn build_orchard_migration_immediate_pczt(
     })?;
     Ok(BuiltImmediateMigration {
         base_pczt,
+        target_height,
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
@@ -2226,6 +2259,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     }
     let BuiltImmediateMigration {
         base_pczt,
+        target_height,
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
@@ -2238,6 +2272,13 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
     let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
     let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
+    // The build judged the hold at the wallet's tip, which can trail the
+    // server's. Dropping the input lock on refusal releases the inputs.
+    if upgrade_holds_transaction_at_live_tip(db_path, lightwalletd_url, network, target_height)
+        .await?
+    {
+        return Err(network_upgrade::START_HOLD_MESSAGE.to_string());
+    }
     let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
@@ -3529,26 +3570,24 @@ fn checkpoint_representatives_for_scan(
     activation_height: u32,
     frontier_height: u32,
     batch_end: u32,
-    boundary_modulus: u32,
+    grid: zcash_protocol::zip318::AnchorGrid,
 ) -> BTreeSet<u32> {
-    if boundary_modulus == 0 || frontier_height >= batch_end {
+    if frontier_height >= batch_end {
         return BTreeSet::new();
     }
 
     let first_eligible_height = frontier_height.max(activation_height.saturating_add(1));
-    let remainder = first_eligible_height % boundary_modulus;
-    let Some(first_boundary) = (if remainder == 0 {
-        Some(first_eligible_height)
-    } else {
-        first_eligible_height.checked_add(boundary_modulus - remainder)
-    }) else {
-        return BTreeSet::new();
-    };
-
-    (first_boundary..batch_end)
-        .step_by(boundary_modulus as usize)
-        .filter_map(|boundary| representative_orchard_checkpoint(checkpoint_heights, boundary, 0))
-        .collect()
+    let mut representatives = BTreeSet::new();
+    let mut boundary = grid.boundary_at_or_above(BlockHeight::from_u32(first_eligible_height));
+    while u32::from(boundary) < batch_end {
+        representatives.extend(representative_orchard_checkpoint(
+            checkpoint_heights,
+            u32::from(boundary),
+            0,
+        ));
+        boundary = grid.boundary_after(boundary);
+    }
+    representatives
 }
 
 pub(crate) fn retain_migration_anchor_checkpoints_before_scan(
@@ -3587,13 +3626,12 @@ pub(crate) fn retain_migration_anchor_checkpoints_before_scan(
         super::migration::migration_anchor_retention_references(db_path, network)?;
 
     for (run_id, timing_policy) in run_policies {
-        let boundary_modulus = super::migration::anchor_bucket_modulus(network, timing_policy);
         for checkpoint_height in checkpoint_representatives_for_scan(
             &checkpoint_heights,
             activation_height,
             frontier_height,
             batch_end,
-            boundary_modulus,
+            super::migration::anchor_grid(network, timing_policy),
         ) {
             desired_references.insert((run_id.clone(), checkpoint_height));
         }
@@ -5436,6 +5474,18 @@ fn finalize_presigned_migration_children(
     if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
         return Ok(0);
     }
+    let next_height = u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+        .map_err(|_| "Migration chain tip exceeds u32".to_string())?
+        .saturating_add(1);
+    let legacy_count =
+        super::migration::legacy_expiry_signed_child_count(db_path, network, run_id, next_height)?;
+    if legacy_count > 0 {
+        let message = format!(
+            "{legacy_count} migration transaction(s) were signed by an earlier version of Vizor with an outdated expiry. Review and approve a fresh schedule for the remaining Orchard balance."
+        );
+        super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
+        return Err(message);
+    }
     // Keystone persists one bounded QR batch at a time while the run remains
     // ready_to_migrate. Do not promote the first batch and move the run to
     // broadcast_scheduled before every remaining batch has been signed.
@@ -5886,8 +5936,8 @@ async fn broadcast_pending_denomination_stages(
             ),
         }));
     }
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
+    let live_chain_tip_height = match live_chain_tip_height(lightwalletd_url).await {
+        Ok(height) => height,
         Err(e) => {
             return Ok(Some(CreatedBroadcastResult {
                 broadcast_failure_kind: None,
@@ -5895,27 +5945,10 @@ async fn broadcast_pending_denomination_stages(
                 status: CreatedBroadcastResult::PENDING_BROADCAST,
                 broadcasted_count: 0,
                 total_count,
-                message: Some(format!("Denomination split broadcast could not start: {e}")),
+                message: Some(e),
             }));
         }
     };
-    let live_chain_tip_height =
-        match crate::wallet::sync_engine::get_latest_block(&mut client).await {
-            Ok(tip) => u32::try_from(tip.height)
-                .map_err(|_| "Live migration chain tip exceeds u32".to_string())?,
-            Err(e) => {
-                return Ok(Some(CreatedBroadcastResult {
-                    broadcast_failure_kind: None,
-                    txids,
-                    status: CreatedBroadcastResult::PENDING_BROADCAST,
-                    broadcasted_count: 0,
-                    total_count,
-                    message: Some(format!(
-                        "Denomination split broadcast could not refresh the chain tip: {e}"
-                    )),
-                }));
-            }
-        };
     let chain_tip_height = known_chain_tip_height.max(live_chain_tip_height);
     let expired_at_live_tip = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -5926,6 +5959,21 @@ async fn broadcast_pending_denomination_stages(
             &txids,
             stage_count,
         )));
+    }
+    if super::migration::network_upgrade_holds_broadcasts(
+        db_path,
+        network,
+        run_id,
+        chain_tip_height,
+    )? {
+        return Ok(Some(CreatedBroadcastResult {
+            broadcast_failure_kind: None,
+            txids,
+            status: CreatedBroadcastResult::PENDING_BROADCAST,
+            broadcasted_count: 0,
+            total_count,
+            message: Some(network_upgrade::MIGRATION_HOLD_MESSAGE.to_string()),
+        }));
     }
     let due = pending
         .iter()
@@ -6111,6 +6159,42 @@ async fn broadcast_due_scheduled_migration_txs(
         ));
     }
 
+    // Before expiry and broadcast-height recovery: parts the upgrade holds
+    // wait for its stop rather than new signatures. After sleep the wallet's
+    // tip can trail the server's by more than the hold window, so hold on
+    // whichever is later, and send nothing while the server's is unknown.
+    let hold_tip_height = match live_chain_tip_height(lightwalletd_url).await {
+        Ok(live) => chain_tip_height.max(live),
+        Err(e) => {
+            let status = super::migration::run_phase(db_path, run_id)?;
+            return Ok(MigrationBroadcastAdvance::without_acceptance(
+                migration_result_from_pending_totals(
+                    totals_before,
+                    &status,
+                    Some(e),
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
+                ),
+            ));
+        }
+    };
+    if super::migration::network_upgrade_holds_broadcasts(
+        db_path,
+        network,
+        run_id,
+        hold_tip_height,
+    )? {
+        let status = super::migration::run_phase(db_path, run_id)?;
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals_before,
+                &status,
+                Some(network_upgrade::MIGRATION_HOLD_MESSAGE.to_string()),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
+        ));
+    }
     let expired_count =
         super::migration::expired_unconfirmed_pending_count(db_path, run_id, chain_tip_height)?;
     if expired_count > 0 {
@@ -6211,6 +6295,25 @@ async fn broadcast_due_scheduled_migration_txs(
                 pending.txid_hex
             );
             if migration_broadcast_failure_requires_rebuild(&e) {
+                if network_upgrade_stopped_run_after_rejection(
+                    db_path,
+                    lightwalletd_url,
+                    network,
+                    run_id,
+                )
+                .await?
+                {
+                    let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+                    return Ok(MigrationBroadcastAdvance::without_acceptance(
+                        migration_result_from_pending_totals(
+                            totals,
+                            super::migration::PHASE_STOPPED_BY_UPGRADE,
+                            Some(network_upgrade::MIGRATION_STOP_MESSAGE.to_string()),
+                            fallback_total_count,
+                            fallback_migrated_zatoshi,
+                        ),
+                    ));
+                }
                 let rebuild_message = format!(
                     "Migration transaction {} was rejected by the network. Review and approve a fresh schedule for the remaining Orchard balance. Error: {e}",
                     pending.txid_hex
@@ -6367,6 +6470,52 @@ fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {
     error.starts_with("Broadcast rejected:")
 }
 
+/// Whether the upgrade holds a transaction for `signed_target_height`, judged
+/// just before sending at the later of the wallet's and the server's tip.
+/// Fails closed while the server's tip cannot be read.
+async fn upgrade_holds_transaction_at_live_tip(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    signed_target_height: u32,
+) -> Result<bool, String> {
+    let server_tip_height = live_chain_tip_height(lightwalletd_url).await?;
+    super::migration::network_upgrade_holds_transaction_at(
+        db_path,
+        network,
+        signed_target_height,
+        server_tip_height,
+    )
+}
+
+/// The server's tip, read fresh for an upgrade hold: a cached tip can predate
+/// a sleep, which is when a desktop most often wakes near an upgrade.
+async fn live_chain_tip_height(lightwalletd_url: &str) -> Result<u32, String> {
+    let refresh_failed = |e: &dyn std::fmt::Display| {
+        format!("Migration broadcast could not refresh the chain tip: {e}")
+    };
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| refresh_failed(&e))?;
+    let tip = crate::wallet::sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| refresh_failed(&e))?;
+    u32::try_from(tip.height).map_err(|_| "Live migration chain tip exceeds u32".to_string())
+}
+
+/// Whether a rejected part shows the upgrade ended its run, judged at the
+/// later of the wallet's and the server's tip. While neither can be read the
+/// run stays as it is, rather than failing for a rejection the upgrade caused.
+async fn network_upgrade_stopped_run_after_rejection(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    run_id: &str,
+) -> Result<bool, String> {
+    let live_tip = live_chain_tip_height(lightwalletd_url).await?;
+    super::migration::stop_run_if_network_upgrade_invalidated(db_path, network, run_id, live_tip)
+}
+
 fn decrypt_and_store_migration_tx(
     db_path: &str,
     network: WalletNetwork,
@@ -6396,6 +6545,12 @@ fn reconcile_orchard_migration_outbox_receipt(
         run_id,
         txid_hex,
     )?;
+    // The upgrade already ended this run. Stored accepted bytes that were
+    // never mined would keep their input spent until expiry; a mined part
+    // reaches the wallet through the scan instead.
+    if state.run_phase == super::migration::PHASE_STOPPED_BY_UPGRADE {
+        return Ok(());
+    }
     match outcome {
         "accepted" | "acceptedEquivalent" => {
             if state.run_phase == super::migration::PHASE_FAILED_TERMINAL
@@ -6449,6 +6604,14 @@ fn reconcile_orchard_migration_outbox_receipt(
             if state.run_phase == super::migration::PHASE_FAILED_TERMINAL {
                 return Ok(());
             }
+            if super::migration::stop_run_if_network_upgrade_invalidated(
+                db_path,
+                network,
+                run_id,
+                remote_height,
+            )? {
+                return Ok(());
+            }
             let message = response_message
                 .filter(|message| !message.is_empty())
                 .map(|message| {
@@ -6495,8 +6658,10 @@ fn reconcile_orchard_migration_outbox_receipt(
             if !schedule_updates.is_empty() {
                 return Err("Migration outbox re-sign receipt cannot update schedules".to_string());
             }
-            let canonical_expiry =
-                super::migration::zip318_canonical_migration_expiry_height(remote_height)?;
+            let canonical_expiry = super::migration::zip318_canonical_migration_expiry_height(
+                &network,
+                remote_height,
+            )?;
             if state.expiry_height == canonical_expiry {
                 return Err(
                     "Migration outbox re-sign receipt still has canonical expiry at the broadcast height"

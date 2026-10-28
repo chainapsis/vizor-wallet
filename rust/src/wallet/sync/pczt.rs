@@ -3456,6 +3456,7 @@ mod tests {
             assert_eq!(
                 u32::from(pczt_parts.expiry_height),
                 crate::wallet::sync::migration::zip318_canonical_migration_expiry_height(
+                    &Nu6_3Network,
                     10_000_000
                 )
                 .unwrap()

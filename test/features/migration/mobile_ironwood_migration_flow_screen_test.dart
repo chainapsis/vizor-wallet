@@ -550,6 +550,7 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
           i == plannedBatchCount - 1 ? 3_220_000_000 : 1_000_000_000,
         ),
         blockOffset: i == 0 ? 0 : i * 144 + blockOffsetAdjustment,
+        blocksPerReferenceBlock: 1,
       ),
   ],
 );

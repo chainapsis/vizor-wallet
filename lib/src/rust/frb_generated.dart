@@ -14589,8 +14589,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationOutboxItem dco_decode_migration_outbox_item(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return MigrationOutboxItem(
       itemId: dco_decode_String(arr[0]),
       partIndex: dco_decode_u_32(arr[1]),
@@ -14600,6 +14600,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduledHeight: dco_decode_u_32(arr[5]),
       scheduleStartHeight: dco_decode_u_32(arr[6]),
       expiryHeight: dco_decode_u_32(arr[7]),
+      targetHeight: dco_decode_u_32(arr[8]),
     );
   }
 
@@ -14724,12 +14725,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return MigrationScheduledTransfer(
       partIndex: dco_decode_u_32(arr[0]),
       valueZatoshi: dco_decode_u_64(arr[1]),
       blockOffset: dco_decode_u_32(arr[2]),
+      blocksPerReferenceBlock: dco_decode_u_32(arr[3]),
     );
   }
 
@@ -19537,6 +19539,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_scheduledHeight = sse_decode_u_32(deserializer);
     var var_scheduleStartHeight = sse_decode_u_32(deserializer);
     var var_expiryHeight = sse_decode_u_32(deserializer);
+    var var_targetHeight = sse_decode_u_32(deserializer);
     return MigrationOutboxItem(
       itemId: var_itemId,
       partIndex: var_partIndex,
@@ -19546,6 +19549,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduledHeight: var_scheduledHeight,
       scheduleStartHeight: var_scheduleStartHeight,
       expiryHeight: var_expiryHeight,
+      targetHeight: var_targetHeight,
     );
   }
 
@@ -19714,10 +19718,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_partIndex = sse_decode_u_32(deserializer);
     var var_valueZatoshi = sse_decode_u_64(deserializer);
     var var_blockOffset = sse_decode_u_32(deserializer);
+    var var_blocksPerReferenceBlock = sse_decode_u_32(deserializer);
     return MigrationScheduledTransfer(
       partIndex: var_partIndex,
       valueZatoshi: var_valueZatoshi,
       blockOffset: var_blockOffset,
+      blocksPerReferenceBlock: var_blocksPerReferenceBlock,
     );
   }
 
@@ -24693,6 +24699,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.scheduledHeight, serializer);
     sse_encode_u_32(self.scheduleStartHeight, serializer);
     sse_encode_u_32(self.expiryHeight, serializer);
+    sse_encode_u_32(self.targetHeight, serializer);
   }
 
   @protected
@@ -24812,6 +24819,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.partIndex, serializer);
     sse_encode_u_64(self.valueZatoshi, serializer);
     sse_encode_u_32(self.blockOffset, serializer);
+    sse_encode_u_32(self.blocksPerReferenceBlock, serializer);
   }
 
   @protected

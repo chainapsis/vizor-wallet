@@ -178,13 +178,16 @@ enum BackgroundMigrationOutboxRunner {
             observedHeight: remoteHeight,
             delay: BackgroundMigrationOutboxCadence.nextCheckDelay(
               remoteHeight: remoteHeight,
-              nextScheduledHeight: nextHeight
+              nextScheduledHeight: nextHeight,
+              nu7ActivationHeight: snapshot.network(endpoint: endpoint).flatMap(
+                BackgroundMigrationOutboxCadence.nu7ActivationHeight(network:)
+              )
             )
           )
         } else {
           transport = .noWork
         }
-        return BackgroundMigrationOutboxRunResult(
+        var result = BackgroundMigrationOutboxRunResult(
           transport: transport,
           proofReady: proofReady,
           broadcastComplete: broadcastComplete,
@@ -192,6 +195,11 @@ enum BackgroundMigrationOutboxRunner {
             snapshot.nextActionAccountUuid(endpoint: endpoint, height: $0)
           }
         )
+        result.heldForUpgradeTxids = snapshot.dueTxidsHeldForUpgrade(
+          remoteHeight: remoteHeight,
+          endpoint: endpoint
+        )
+        return result
       }
       selection = selected
     } catch BackgroundMigrationOutboxError.invalidSchedule {
@@ -275,7 +283,10 @@ enum BackgroundMigrationOutboxRunner {
               observedHeight: remoteHeight,
               delay: BackgroundMigrationOutboxCadence.nextCheckDelay(
                 remoteHeight: remoteHeight,
-                nextScheduledHeight: nextHeight
+                nextScheduledHeight: nextHeight,
+                nu7ActivationHeight: snapshot.network(endpoint: endpoint).flatMap(
+                  BackgroundMigrationOutboxCadence.nu7ActivationHeight(network:)
+                )
               )
             ),
             proofReady: proofReady,

@@ -173,11 +173,13 @@ fn draftless_denomination_request_replays_approved_targets() {
             part_index: Some(1),
             value_zatoshi: 5_000,
             block_offset: 4,
+            blocks_per_reference_block: 1,
         },
         migration::MigrationScheduleEntry {
             part_index: Some(0),
             value_zatoshi: 5_000,
             block_offset: 8,
+            blocks_per_reference_block: 1,
         },
     ];
 
@@ -200,21 +202,25 @@ fn draft_replay_uses_persisted_targets_instead_of_legacy_schedule_order() {
             part_index: None,
             value_zatoshi: 2_000,
             block_offset: 4,
+            blocks_per_reference_block: 1,
         },
         migration::MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 5_000,
             block_offset: 8,
+            blocks_per_reference_block: 1,
         },
         migration::MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 2_000,
             block_offset: 12,
+            blocks_per_reference_block: 1,
         },
         migration::MigrationScheduleEntry {
             part_index: None,
             value_zatoshi: 1_000,
             block_offset: 16,
+            blocks_per_reference_block: 1,
         },
     ];
 
@@ -439,20 +445,28 @@ fn send_checks_by_tip_around_the_upgrade() {
 }
 
 #[test]
-fn upgrade_hold_heights_match_the_send_refusal() {
+fn upgrade_hold_heights_match_the_send_and_migration_refusals() {
     let network = WalletNetwork::Test;
     let activation = network
         .activation_height(consensus::NetworkUpgrade::Nu7)
         .map(u32::from)
         .unwrap();
     for tip in activation - 30..activation + 5 {
-        let held = network_upgrade::hold_heights(&network, tip).is_some_and(|heights| {
-            tip >= heights.send_hold_from_tip && tip + 1 < heights.next_activation_height
-        });
+        let heights = network_upgrade::hold_heights(&network, tip);
+        let before_upgrade = |from: fn(&network_upgrade::HoldHeights) -> u32| {
+            heights.is_some_and(|heights| {
+                tip >= from(&heights) && tip + 1 < heights.next_activation_height
+            })
+        };
         assert_eq!(
-            held,
+            before_upgrade(|heights| heights.send_hold_from_tip),
             ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(tip + 1)).is_err(),
             "send hold at tip {tip}"
+        );
+        assert_eq!(
+            before_upgrade(|heights| heights.migration_hold_from_tip),
+            network_upgrade::holds_transaction(&network, tip + 1, tip),
+            "migration hold at tip {tip}"
         );
     }
     assert_eq!(
@@ -488,14 +502,17 @@ fn immediate_migration_lock_matches_zip318_transaction_expiry() {
     for target_height in [0, 3_428_143, 3_455_999, 3_456_000] {
         let target_height = BlockHeight::from_u32(target_height);
         assert_eq!(
-            immediate_migration_lock_expiry(target_height).unwrap(),
+            immediate_migration_lock_expiry(WalletNetwork::Main, target_height).unwrap(),
             BlockHeight::from_u32(
-                migration::zip318_canonical_migration_expiry_height(u32::from(target_height))
-                    .unwrap()
+                migration::zip318_canonical_migration_expiry_height(
+                    &WalletNetwork::Main,
+                    u32::from(target_height)
+                )
+                .unwrap()
             )
         );
         assert!(
-            immediate_migration_lock_expiry(target_height).unwrap()
+            immediate_migration_lock_expiry(WalletNetwork::Main, target_height).unwrap()
                 > target_height
                     + zcash_primitives::transaction::builder::PRE_NU7_DEFAULT_TX_EXPIRY_DELTA
         );
@@ -583,7 +600,13 @@ fn migration_anchor_uses_latest_checkpoint_before_an_empty_bucket_boundary() {
 fn pre_scan_retention_covers_exact_and_empty_bucket_boundaries() {
     let checkpoints = [100_000, 100_007, 100_009, 100_020, 100_031, 100_032];
 
-    let retained = checkpoint_representatives_for_scan(&checkpoints, 100_000, 100_000, 100_033, 12);
+    let retained = checkpoint_representatives_for_scan(
+        &checkpoints,
+        100_000,
+        100_000,
+        100_033,
+        uniform_grid(12),
+    );
 
     assert_eq!(retained, BTreeSet::from([100_007, 100_020, 100_032]));
 }
@@ -593,7 +616,13 @@ fn pre_scan_retention_ignores_boundaries_at_or_before_activation() {
     let checkpoints = [99_996, 100_008];
 
     assert_eq!(
-        checkpoint_representatives_for_scan(&checkpoints, 100_000, 99_990, 100_009, 12,),
+        checkpoint_representatives_for_scan(
+            &checkpoints,
+            100_000,
+            99_990,
+            100_009,
+            uniform_grid(12)
+        ),
         BTreeSet::from([100_008]),
     );
 }
@@ -603,7 +632,13 @@ fn pre_scan_retention_includes_a_new_frontier_checkpoint() {
     let checkpoints = [100_006, 100_008, 100_020];
 
     assert_eq!(
-        checkpoint_representatives_for_scan(&checkpoints, 100_000, 100_008, 100_021, 12),
+        checkpoint_representatives_for_scan(
+            &checkpoints,
+            100_000,
+            100_008,
+            100_021,
+            uniform_grid(12)
+        ),
         BTreeSet::from([100_008, 100_020]),
     );
 }
@@ -723,7 +758,7 @@ fn pre_scan_retention_survives_deep_sqlite_checkpoint_pruning() {
             activation_height,
             frontier_height,
             100_010,
-            12,
+            uniform_grid(12),
         ),
         BTreeSet::from([100_007]),
     );
@@ -931,6 +966,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 StoredImmediateMigrationPczt {
                     account_uuid: account_uuid.to_string(),
                     network: WalletNetwork::Test,
+                    target_height: 0,
                     message_id: format!("{request_id}-transaction"),
                     state: KeystoneMigrationRequestState::ProofReady,
                     proof_error: None,
@@ -1055,6 +1091,73 @@ fn private_plan_timing_accounts_for_spaced_preparation_transactions() {
 
     assert_eq!(immediate, (144, Some(1154)));
     assert_eq!(spaced, (288, Some(1298)));
+    // The upgrade gate takes every preparation delay at its maximum.
+    let latest = plan_proof_timing_for_spacing(
+        WalletNetwork::Main,
+        1008,
+        1006,
+        1,
+        &[],
+        migration::latest_preparation_spacing_delay_blocks(
+            WalletNetwork::Main,
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            5,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(latest.1 > spaced.1);
+}
+
+#[test]
+fn a_private_plan_whose_first_part_would_meet_the_upgrade_hold_is_refused() {
+    let network = WalletNetwork::Test;
+    let activation = network
+        .activation_height(consensus::NetworkUpgrade::Nu7)
+        .map(u32::from)
+        .unwrap();
+    let plan =
+        |target_height: u32, latest_proof_ready_height: Option<u32>| OrchardMigrationPrivatePlan {
+            target_values_zatoshi: vec![100_000],
+            total_input_zatoshi: 0,
+            total_migratable_zatoshi: 0,
+            orchard_change_zatoshi: None,
+            denomination_split_fee_zatoshi: 0,
+            migration_fee_zatoshi: 0,
+            estimated_total_fee_zatoshi: 0,
+            planned_batch_count: 1,
+            denomination_split_stage_count: 0,
+            denomination_split_layer_count: 0,
+            signing_batch_limit: 1,
+            schedule_mean_delay_blocks: 0,
+            schedule_max_delay_blocks: 0,
+            proof_readiness_delay_blocks: 0,
+            estimated_proof_ready_height: latest_proof_ready_height,
+            latest_proof_ready_height,
+            scheduled_transfers: Vec::new(),
+            target_height,
+        };
+    let schedule = [migration::MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100_000,
+        block_offset: 5,
+        blocks_per_reference_block: 1,
+    }];
+    let refused = |plan: OrchardMigrationPrivatePlan| {
+        plan.ensure_first_part_precedes_upgrade_hold(network, &schedule)
+            .is_err()
+    };
+
+    assert!(!refused(plan(activation - 100, None)));
+    // The first part leaves once its proofs are ready: at A − 12 it still
+    // goes before the hold, from A − 11 it would be held and stopped.
+    assert!(!refused(plan(activation - 100, Some(activation - 12))));
+    assert!(refused(plan(activation - 100, Some(activation - 11))));
+    // Its scheduled height alone can reach the hold too.
+    assert!(!refused(plan(activation - 16, None)));
+    assert!(refused(plan(activation - 15, None)));
+    // Planned on the new branch, nothing is held.
+    assert!(!refused(plan(activation, Some(activation + 500))));
 }
 
 #[test]
@@ -2158,6 +2261,51 @@ fn unbroadcast_recovery_rejects_a_transaction_marked_as_broadcasted() {
             "20".repeat(32)
         )
     );
+}
+
+#[test]
+fn rejected_outbox_receipt_after_the_upgrade_stops_run() {
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
+    let last_pre_nu7_height = 4_465_025;
+
+    reconcile_orchard_migration_outbox_receipt(
+        &db_path,
+        WalletNetwork::Test,
+        MIGRATION_TEST_ACCOUNT,
+        &run_id,
+        &pending_txid,
+        "rejected",
+        last_pre_nu7_height,
+        Some("bad-tx-consensus-branch-id"),
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let phase: String = conn
+        .query_row(
+            "SELECT phase FROM vizor_migration_runs WHERE run_id = ?1",
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, migration::PHASE_STOPPED_BY_UPGRADE);
+
+    // Later receipts for the stopped run are acknowledged without storing.
+    reconcile_orchard_migration_outbox_receipt(
+        &db_path,
+        WalletNetwork::Test,
+        MIGRATION_TEST_ACCOUNT,
+        &run_id,
+        &pending_txid,
+        "accepted",
+        last_pre_nu7_height,
+        None,
+        Vec::new(),
+        Some(vec![1, 2, 3]),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -4804,4 +4952,31 @@ fn gift_card_batch_ledger_rejects_fifth_recipient_before_signing() {
     // The device review budget does not constrain software or Keystone accounts.
     validate_batch(&proposal, None).unwrap();
     validate_batch(&proposal, Some(HardwareSignerKind::Keystone)).unwrap();
+}
+
+fn uniform_grid(interval: u32) -> zcash_protocol::zip318::AnchorGrid {
+    zcash_protocol::zip318::AnchorGrid::new(
+        zcash_protocol::zip318::AnchorBucketInterval::custom(
+            std::num::NonZeroU32::new(interval).unwrap(),
+        ),
+        zcash_protocol::zip318::BlockSpacing::UNIFORM,
+    )
+}
+
+#[test]
+fn checkpoint_representatives_follow_the_nu7_grid() {
+    // Testnet NU7 activates at 4,465,026: the last boundary before it is a
+    // multiple of 144, the boundaries after it are multiples of 432.
+    let checkpoints = [4_465_008, 4_465_152, 4_465_296, 4_465_584];
+    let retained = checkpoint_representatives_for_scan(
+        &checkpoints,
+        4_134_000,
+        4_465_000,
+        4_465_600,
+        migration::anchor_grid(
+            WalletNetwork::Test,
+            migration::MigrationTimingPolicy::Standard90Minutes,
+        ),
+    );
+    assert_eq!(retained, BTreeSet::from([4_465_008, 4_465_152, 4_465_584]));
 }
