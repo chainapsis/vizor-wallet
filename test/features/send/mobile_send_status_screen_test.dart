@@ -10,8 +10,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
+import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -47,14 +50,22 @@ MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
 Widget _app({
   required MobileSendBroadcastRunner broadcastRunner,
   KeystoneBroadcastArgs? keystone,
+  SendReviewArgs? args,
+  _ContactsRepo? contacts,
 }) {
   return ProviderScope(
-    overrides: [syncProvider.overrideWith(FakeSyncNotifier.new)],
+    overrides: [
+      syncProvider.overrideWith(FakeSyncNotifier.new),
+      if (contacts != null) ...[
+        addressBookRepositoryProvider.overrideWithValue(contacts),
+        ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      ],
+    ],
     child: MaterialApp(
       home: AppTheme(
         data: AppThemeData.light,
         child: MobileSendStatusScreen(
-          args: _args,
+          args: args ?? _args,
           keystone: keystone,
           broadcastRunner: broadcastRunner,
         ),
@@ -303,6 +314,50 @@ void main() {
 
     expect(capturedLedger?.operationId, 'send:account-1:flow-1');
     expect(find.text('Sent!'), findsOneWidget);
+  });
+
+  testWidgets('a send to a Zcash name offers to add the contact', (
+    tester,
+  ) async {
+    final contacts = _ContactsRepo();
+    final args = SendReviewArgs(
+      proposalId: BigInt.from(1),
+      sendFlowId: 'flow-1',
+      proposalAccountUuid: 'account-1',
+      address: _address,
+      addressType: 'unified',
+      amountZatoshi: BigInt.from(12312000000),
+      feeZatoshi: BigInt.from(15000),
+      needsSaplingParams: false,
+      recipientZnsName: 'alice.zcash',
+    );
+    await tester.pumpWidget(
+      _app(
+        broadcastRunner: _runner(
+          Future.value(
+            const SendBroadcastOutcome(
+              phase: SendBroadcastPhase.succeeded,
+              proposalConsumed: true,
+              txid: 'txid-1',
+            ),
+          ),
+        ),
+        args: args,
+        contacts: contacts,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Add to contacts'), findsOneWidget);
+    await tester.tap(find.text('Add to contacts'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(contacts.saved.single.address, _address);
+    expect(contacts.saved.single.znsName, 'alice.zcash');
+    expect(find.text('Add to contacts'), findsNothing);
   });
 
   testWidgets('broadcast success shows the complete state with custom haptic', (
@@ -857,4 +912,16 @@ void main() {
 
     expect(find.text('home-screen'), findsOneWidget);
   });
+}
+
+class _ContactsRepo implements AddressBookRepository {
+  var saved = <AddressBookContact>[];
+
+  @override
+  Future<List<AddressBookContact>> loadContacts() async => saved;
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {
+    saved = [...contacts];
+  }
 }

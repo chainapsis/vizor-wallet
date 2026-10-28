@@ -9,7 +9,12 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart';
+import '../../../../providers/account_models.dart';
+import '../../../address_book/models/address_book_contact.dart';
+import '../../../address_book/providers/address_book_provider.dart';
 import '../../services/send_flow.dart';
+import '../../services/zns_contact_offer.dart';
+import '../../widgets/send_recipient_resolver.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
 
 enum _MobileSendStatusPhase { sending, pendingBroadcast, succeeded, failed }
@@ -279,8 +284,35 @@ class _MobileSendStatusScreenState
     };
   }
 
+  bool _savingZnsContact = false;
+
+  Future<void> _addZnsContact(String znsName) async {
+    setState(() => _savingZnsContact = true);
+    await addZnsRecipientToContacts(
+      context,
+      ref,
+      znsName: znsName,
+      address: widget.args.address,
+    );
+    if (mounted) setState(() => _savingZnsContact = false);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final znsName = widget.args.recipientZnsName;
+    final offerZnsContact =
+        _phase == _MobileSendStatusPhase.succeeded &&
+        znsName != null &&
+        shouldOfferZnsContact(
+          znsName: znsName,
+          address: widget.args.address,
+          contacts:
+              ref.watch(addressBookProvider).value?.contacts ??
+              const <AddressBookContact>[],
+          ownAccounts:
+              ref.watch(ownAccountAddressesProvider).value ??
+              const <String, AccountInfo>{},
+        );
     return MobileSidebarExitScope(
       canNavigate: _routePopAllowed,
       canSwitchAccount: _routePopAllowed,
@@ -306,8 +338,16 @@ class _MobileSendStatusScreenState
             : _canRetryBroadcast
             ? () => unawaited(_startBroadcast())
             : _handleBack,
-        secondaryActionLabel: _canRetryBroadcast ? 'Return home' : null,
-        onSecondaryAction: _canRetryBroadcast ? _handleBack : null,
+        secondaryActionLabel: _canRetryBroadcast
+            ? 'Return home'
+            : offerZnsContact
+            ? 'Add to contacts'
+            : null,
+        onSecondaryAction: _canRetryBroadcast
+            ? _handleBack
+            : offerZnsContact && !_savingZnsContact
+            ? () => unawaited(_addZnsContact(znsName))
+            : null,
       ),
     );
   }
