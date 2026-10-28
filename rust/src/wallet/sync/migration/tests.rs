@@ -11558,6 +11558,17 @@ fn stopped_run_is_reported_while_orchard_funds_remain() {
     assert_eq!(status.active_run_id, None);
     assert!(!status.can_abandon);
     assert_eq!(status.total_count, 1);
+    // The unsent part stays scheduled in the run, but the receipt has no due work.
+    let stored: String = rusqlite::Connection::open(&db_path)
+        .unwrap()
+        .query_row(
+            &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE run_id = 'upgrade-run'"),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, "scheduled");
+    assert!(status.scheduled_broadcasts.is_empty());
 
     assert_eq!(status_with_orchard(0).phase, PHASE_NO_ORCHARD_FUNDS);
 }
