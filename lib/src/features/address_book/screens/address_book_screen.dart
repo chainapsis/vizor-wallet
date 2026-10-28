@@ -9,6 +9,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../../../core/naming/zns_name_resolver.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
@@ -24,6 +25,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../send/models/send_prefill_args.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../models/address_book_contact.dart';
+import '../models/contact_zns_lookup.dart';
 import '../models/address_format_validator.dart';
 import '../providers/address_book_provider.dart';
 import '../widgets/address_book_network_icon.dart';
@@ -58,8 +60,29 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   AddressBookContact? _removingContact;
   String? _submitError;
 
+  /// Resolves a Zcash name typed into the open contact form.
+  ContactZnsLookup? _zns;
+
+  ContactZnsLookup _newZnsLookup({String? savedName}) {
+    _zns?.dispose();
+    return ContactZnsLookup(
+      savedName: savedName,
+      readResolver: () => ref.read(znsNameResolverProvider),
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _zns?.dispose();
+    super.dispose();
+  }
+
   void _openAddContact() {
     setState(() {
+      _zns = _newZnsLookup();
       _modal = _AddressBookModalKind.addContact;
       _draft = _ContactDraft.empty();
       _editingContact = null;
@@ -70,6 +93,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
 
   void _openEditContact(AddressBookContact contact) {
     setState(() {
+      _zns = _newZnsLookup(savedName: contact.znsName);
       _modal = _AddressBookModalKind.editContact;
       _draft = _ContactDraft.fromContact(contact);
       _editingContact = contact;
@@ -112,7 +136,9 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   }
 
   void _closeModal() {
+    _zns?.dispose();
     setState(() {
+      _zns = null;
       _modal = null;
       _draft = null;
       _editingContact = null;
@@ -122,8 +148,16 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   }
 
   void _updateDraft(_ContactDraft draft) {
+    final previous = _draft;
     setState(() => _draft = draft);
+    if (previous?.address != draft.address ||
+        previous?.network != draft.network) {
+      _zns?.update(address: draft.address, network: draft.network);
+    }
   }
+
+  bool _canSubmit(_ContactDraft draft) =>
+      draft.isValid && (_zns?.canSave(draft.address, draft.network) ?? true);
 
   void _selectAvatar(String profilePictureId) {
     final draft = _draft;
@@ -139,8 +173,8 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   void _selectNetwork(AddressBookNetwork network) {
     final draft = _draft;
     if (draft == null) return;
+    _updateDraft(draft.copyWith(network: network));
     setState(() {
-      _draft = draft.copyWith(network: network);
       _modal = _editingContact == null
           ? _AddressBookModalKind.addContact
           : _AddressBookModalKind.editContact;
@@ -159,8 +193,8 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
       _returnToDraftForm();
       return;
     }
+    _updateDraft(draft.copyWith(address: scanned));
     setState(() {
-      _draft = draft.copyWith(address: scanned);
       _modal = _editingContact == null
           ? _AddressBookModalKind.addContact
           : _AddressBookModalKind.editContact;
@@ -170,8 +204,10 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
 
   Future<void> _submitDraft() async {
     final draft = _draft;
-    if (draft == null || !draft.isValid) return;
+    if (draft == null || !_canSubmit(draft)) return;
     setState(() => _submitError = null);
+    final address = _zns?.addressToSave(draft.address) ?? draft.address;
+    final znsName = _zns?.nameToSave(draft.address, draft.network);
 
     try {
       final notifier = ref.read(addressBookProvider.notifier);
@@ -180,16 +216,18 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
         await notifier.addContact(
           label: draft.label,
           network: draft.network,
-          address: draft.address,
+          address: address,
           profilePictureId: draft.profilePictureId,
+          znsName: znsName,
         );
       } else {
         await notifier.updateContact(
           editing.id,
           label: draft.label,
           network: draft.network,
-          address: draft.address,
+          address: address,
           profilePictureId: draft.profilePictureId,
+          znsName: znsName,
         );
       }
       if (!mounted) return;
@@ -295,9 +333,14 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     switch (modal) {
       case _AddressBookModalKind.addContact:
       case _AddressBookModalKind.editContact:
+        final formDraft = draft ?? _ContactDraft.empty();
         return _ContactFormModal(
-          draft: draft ?? _ContactDraft.empty(),
+          draft: formDraft,
           editing: _editingContact != null,
+          canSubmit: _canSubmit(formDraft),
+          addressIsName:
+              _zns?.isName(formDraft.address, formDraft.network) ?? false,
+          znsMessage: _zns?.message(formDraft.address),
           submitError: _submitError,
           onChanged: _updateDraft,
           onAvatarPressed: _openAvatarPicker,
@@ -711,7 +754,7 @@ class _ContactRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  contact.addressPreview,
+                  contact.previewWithName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelMedium.copyWith(
@@ -1055,6 +1098,9 @@ class _ContactFormModal extends StatefulWidget {
   const _ContactFormModal({
     required this.draft,
     required this.editing,
+    required this.canSubmit,
+    required this.addressIsName,
+    required this.znsMessage,
     required this.submitError,
     required this.onChanged,
     required this.onAvatarPressed,
@@ -1066,6 +1112,11 @@ class _ContactFormModal extends StatefulWidget {
 
   final _ContactDraft draft;
   final bool editing;
+  final bool canSubmit;
+
+  /// The address field holds a Zcash name, not an address to format-check.
+  final bool addressIsName;
+  final ContactZnsMessage? znsMessage;
   final String? submitError;
   final ValueChanged<_ContactDraft> onChanged;
   final VoidCallback onAvatarPressed;
@@ -1134,15 +1185,16 @@ class _ContactFormModalState extends State<_ContactFormModal> {
     // Soft check: surface a chain format finding without blocking save.
     // Error severity (cannot be valid) renders destructive; warning severity
     // (valid but unusual, e.g. a bare NEAR top-level name) renders neutral.
-    final addressFormatFinding = addressFormatCheck(
-      widget.draft.network,
-      widget.draft.address,
-    );
+    final addressFormatFinding = widget.addressIsName
+        ? null
+        : addressFormatCheck(widget.draft.network, widget.draft.address);
+    final znsMessage = widget.znsMessage;
     final addressMessage = showAddressError
         ? addressError
-        : addressFormatFinding?.message;
+        : znsMessage?.text ?? addressFormatFinding?.message;
     final addressHasError =
         showAddressError ||
+        (znsMessage?.isError ?? false) ||
         addressFormatFinding?.severity == AddressFormatSeverity.error;
 
     return AppModalCard(
@@ -1192,7 +1244,9 @@ class _ContactFormModalState extends State<_ContactFormModal> {
               label: 'Address',
               showLabel: false,
               controller: _addressController,
-              hintText: 'Add address',
+              hintText: widget.draft.network == AddressBookNetwork.zcash
+                  ? 'Add address or Zcash name'
+                  : 'Add address',
               trailing: AppTappable(
                 semanticsLabel: 'Scan address QR',
                 onTap: widget.onScanAddress,
@@ -1214,7 +1268,7 @@ class _ContactFormModalState extends State<_ContactFormModal> {
             actionKey: const ValueKey('address_book_contact_submit_button'),
             onCancel: widget.onCancel,
             actionLabel: widget.editing ? 'Update' : 'Add contact',
-            onAction: widget.draft.isValid
+            onAction: widget.canSubmit
                 ? () => unawaited(widget.onSubmit())
                 : null,
           ),
