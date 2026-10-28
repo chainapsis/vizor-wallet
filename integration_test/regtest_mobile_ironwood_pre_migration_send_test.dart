@@ -77,24 +77,6 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
-        ),
-        description: 'mobile Ironwood migration announcement',
-      );
-      await tapWidget(
-        tester,
-        const ValueKey('mobile_ironwood_announcement_close_button'),
-      );
-      await pumpUntil(
-        tester,
-        () => !tester.any(
-          find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
-        ),
-        description: 'migration announcement dismissal before sending',
-      );
-      await pumpUntil(
-        tester,
-        () => tester.any(
           find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
         ),
         description: 'mobile Ironwood migration CTA',

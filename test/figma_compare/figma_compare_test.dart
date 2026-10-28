@@ -31,7 +31,6 @@ void main() {
         'mobile-home-default',
         'mobile-home-importing',
         'mobile-home-no-balance',
-        'ironwood-migration-announcement-modal',
       ]),
     );
   });
