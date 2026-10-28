@@ -1251,10 +1251,14 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     return nil
   }
 
-  /// Whether any batch still holds an unsent part signed for a branch an
-  /// upgrade ends, at any tip, so the stop alert may still apply.
-  var holdsPartsStoppedByUpgrade: Bool {
-    batches.contains { !Self.branchEndingActivations($0).isEmpty }
+  /// Whether any batch still holds an unsent part signed for the branch the
+  /// upgrade in `upgradeStopKey` ended, so that stop alert still applies.
+  func holdsPartsStopped(byUpgrade upgradeStopKey: String) -> Bool {
+    batches.contains { batch in
+      Self.branchEndingActivations(batch).contains {
+        "\(batch.network):\($0)" == upgradeStopKey
+      }
+    }
   }
 
   /// Activations that end the branch an unsent part of `batch` was signed for.
