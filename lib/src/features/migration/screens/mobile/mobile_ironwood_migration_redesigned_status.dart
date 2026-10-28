@@ -903,6 +903,21 @@ class _MobileMigrationRedesignedStatusState
       );
     }
 
+    if (widget.status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
+      return _MigrationUpgradeStoppedView(
+        stop: IronwoodMigrationUpgradeStop(
+          migratedAmountText: _migratedAmountText(widget.status),
+          remainingAmountText: leftToMigrateText,
+          completedParts: _completedParts(widget.status),
+          totalParts: _totalParts(widget.status),
+        ),
+        completedSegments: _completedRingSegments(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
+        onMoveRemaining: () => context.go('/migration/options'),
+        onBack: () => context.go('/home'),
+      );
+    }
+
     if (widget.status.phase == kIronwoodMigrationCompletePhase) {
       return _MigrationCompleteSurface(
         status: widget.status,

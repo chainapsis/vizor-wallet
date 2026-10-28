@@ -350,9 +350,13 @@ class _IronwoodMigrationAttentionHostState
     if (!mounted || _showing || _resumeRefreshInProgress) return;
     if (GoRouterState.of(context).uri.path != '/home') return;
     final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
-    if (cta.mode != IronwoodHomeMigrationCtaMode.resume) return;
+    final stopped = cta.mode == IronwoodHomeMigrationCtaMode.stopped;
+    if (cta.mode != IronwoodHomeMigrationCtaMode.resume && !stopped) return;
     final accountUuid = cta.accountUuid;
-    final runId = cta.status?.activeRunId;
+    // A stopped run has no active run id; one sheet per account is enough.
+    final runId = stopped
+        ? kIronwoodMigrationStoppedByUpgradePhase
+        : cta.status?.activeRunId;
     final sync = ref.read(syncProvider).value;
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(
@@ -429,10 +433,16 @@ class _IronwoodMigrationAttentionHostState
       );
       if (!mounted) return;
       if (action == _IronwoodAttentionAction.openMigration) {
-        context.push(
-          '/migration/private/status',
-          extra: const MobileIronwoodMigrationStatusEntry(),
-        );
+        // The stopped sheet's button says "Move remaining balance".
+        if (attention.kind ==
+            MobileIronwoodMigrationAttentionKind.upgradeStopped) {
+          context.push('/migration/options');
+        } else {
+          context.push(
+            '/migration/private/status',
+            extra: const MobileIronwoodMigrationStatusEntry(),
+          );
+        }
       }
     } finally {
       _showing = false;
@@ -1242,7 +1252,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               onIronwoodMigrationTap: () {
                 final target = switch (widget.ironwoodMigrationCta.mode) {
                   IronwoodHomeMigrationCtaMode.start => '/migration/intro',
-                  IronwoodHomeMigrationCtaMode.resume =>
+                  IronwoodHomeMigrationCtaMode.resume ||
+                  IronwoodHomeMigrationCtaMode.stopped =>
                     '/migration/private/status',
                   IronwoodHomeMigrationCtaMode.hidden => null,
                 };

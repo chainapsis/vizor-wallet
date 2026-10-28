@@ -713,6 +713,47 @@ void main() {
     },
   );
 
+  testWidgets('home desktop CTA flags a migration stopped by the upgrade', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.stopped(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(kIronwoodMigrationStoppedByUpgradePhase),
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(340_000_000),
+          ironwoodBalance: BigInt.from(210_000_000),
+          spendableBalance: BigInt.from(210_000_000),
+          totalBalance: BigInt.from(550_000_000),
+        ),
+      ),
+    );
+    await tester.pump();
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_cta_button')),
+    );
+
+    expect(find.text('Migration stopped by upgrade'), findsOneWidget);
+    expect(find.textContaining('still migrating'), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey('home_desktop_ironwood_migration_stopped_icon'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_background')),
+      findsNothing,
+    );
+  });
+
   testWidgets('home keeps completed Ironwood visible during migration sync', (
     tester,
   ) async {

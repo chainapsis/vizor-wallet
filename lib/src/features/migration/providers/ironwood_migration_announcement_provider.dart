@@ -452,7 +452,7 @@ class IronwoodMigrationAnnouncementState {
   final rust_sync.MigrationStatus? status;
 }
 
-enum IronwoodHomeMigrationCtaMode { hidden, start, resume }
+enum IronwoodHomeMigrationCtaMode { hidden, start, resume, stopped }
 
 class IronwoodHomeMigrationCtaState {
   const IronwoodHomeMigrationCtaState._({
@@ -487,6 +487,19 @@ class IronwoodHomeMigrationCtaState {
          status: status,
        );
 
+  /// The network upgrade stopped the last run. Orchard funds remain, so the
+  /// home keeps the migration surfaces without the in-progress send gate.
+  const IronwoodHomeMigrationCtaState.stopped({
+    required String network,
+    required String accountUuid,
+    required rust_sync.MigrationStatus status,
+  }) : this._(
+         mode: IronwoodHomeMigrationCtaMode.stopped,
+         network: network,
+         accountUuid: accountUuid,
+         status: status,
+       );
+
   final IronwoodHomeMigrationCtaMode mode;
   final String? network;
   final String? accountUuid;
@@ -497,6 +510,7 @@ class IronwoodHomeMigrationCtaState {
   String get buttonLabel => switch (mode) {
     IronwoodHomeMigrationCtaMode.start => 'Migrate to Ironwood Pool',
     IronwoodHomeMigrationCtaMode.resume => 'Continue migration',
+    IronwoodHomeMigrationCtaMode.stopped => 'Migration stopped by upgrade',
     IronwoodHomeMigrationCtaMode.hidden => '',
   };
 }
@@ -999,6 +1013,16 @@ final ironwoodMigrationRouteCtaProvider =
         );
       }
 
+      // Rust reports the stopped run only while Orchard funds remain, so it
+      // is durable state like a resume, not a requirement read mid-sync.
+      if (inputs.hasAccountScopedData && _isStoppedByUpgrade(status)) {
+        return IronwoodHomeMigrationCtaState.stopped(
+          network: inputs.network,
+          accountUuid: accountUuid,
+          status: status,
+        );
+      }
+
       if (inputs.isSyncing || inputs.isBackgroundMode) {
         return const IronwoodHomeMigrationCtaState.hidden();
       }
@@ -1061,6 +1085,14 @@ IronwoodHomeMigrationCtaState _homeMigrationCtaForPostMigrationState(
   }
 
   if (postMigrationState.mode == IronwoodPostMigrationMode.required) {
+    final status = postMigrationState.status;
+    if (status != null && _isStoppedByUpgrade(status)) {
+      return IronwoodHomeMigrationCtaState.stopped(
+        network: network,
+        accountUuid: accountUuid,
+        status: status,
+      );
+    }
     return IronwoodHomeMigrationCtaState.start(
       network: network,
       accountUuid: accountUuid,
@@ -1192,6 +1224,16 @@ IronwoodPostMigrationState _postMigrationStateForStatus({
     );
   }
 
+  // A stopped run is durable Rust state, so it survives sync like a resume;
+  // the first sync after activation is when users most need to see it.
+  if (_isStoppedByUpgrade(status)) {
+    return IronwoodPostMigrationState.required(
+      network: inputs.network,
+      accountUuid: accountUuid,
+      status: status,
+    );
+  }
+
   // A rewind/rescan can temporarily make already-spent Orchard notes look
   // spendable. Only derive a new migration requirement from settled balances.
   if (inputs.isSyncing || inputs.isBackgroundMode) {
@@ -1231,8 +1273,16 @@ IronwoodPostMigrationState _postMigrationStateForStatus({
   );
 }
 
+/// A run stopped by the upgrade leaves Orchard funds to move with a new run,
+/// so it counts as startable; the CTA shows it as stopped.
 bool _shouldStartIronwoodMigration(String phase) {
-  return kIronwoodMigrationStartPhases.contains(phase);
+  return kIronwoodMigrationStartPhases.contains(phase) ||
+      phase == kIronwoodMigrationStoppedByUpgradePhase;
+}
+
+bool _isStoppedByUpgrade(rust_sync.MigrationStatus status) {
+  return status.activeRunId == null &&
+      status.phase == kIronwoodMigrationStoppedByUpgradePhase;
 }
 
 bool _shouldResumeIronwoodMigration(rust_sync.MigrationStatus status) {

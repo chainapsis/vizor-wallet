@@ -2788,6 +2788,28 @@ Widget buildDesktopHomeIronwoodMigrationInProgressUseCase(
   );
 }
 
+Widget buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase(
+  BuildContext context,
+) {
+  final status = _previewMigrationStatus(
+    kIronwoodMigrationStoppedByUpgradePhase,
+  );
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(340_000_000),
+      ironwoodBalance: BigInt.from(210_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3)],
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.stopped(
+      network: 'main',
+      accountUuid: _accountsDesignState.activeAccountUuid!,
+      status: status,
+    ),
+    zecUsdPrice: 1200.12 / 40.11,
+  );
+}
+
 Widget buildDesktopHomeSidebarCompactBalancesUseCase(BuildContext context) {
   final status = _previewMigrationStatus(
     kIronwoodMigrationBroadcastScheduledPhase,
@@ -2995,6 +3017,18 @@ Widget buildIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
     initialLocation: '/migration/private/review',
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+  );
+}
+
+Widget buildIronwoodMigrationUpgradeStoppedUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareStatus(
+      phase: kIronwoodMigrationStoppedByUpgradePhase,
+      parts: _previewPostPrepareParts(completedNoteCount: 1),
+    ),
   );
 }
 
@@ -3438,6 +3472,28 @@ Widget buildMobileIronwoodMigrationHomeAttentionModalUseCase(
 ) {
   return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
     MobileIronwoodMigrationPreviewSurface.homeAttentionModal,
+  );
+}
+
+Widget buildMobileIronwoodMigrationUpgradeStoppedUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationUpgradeStopped,
+  );
+}
+
+Widget buildMobileIronwoodMigrationHomeUpgradeStoppedUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStopped,
+  );
+}
+
+Widget buildMobileIronwoodMigrationHomeUpgradeStoppedModalUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStoppedModal,
   );
 }
 

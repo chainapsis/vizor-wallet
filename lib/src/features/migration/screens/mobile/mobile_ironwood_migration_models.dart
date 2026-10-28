@@ -33,6 +33,9 @@ enum MobileIronwoodMigrationPreviewSurface {
   homeAttention,
   homeAttentionModal,
   keystoneScanHelp,
+  migrationUpgradeStopped,
+  homeAttentionUpgradeStopped,
+  homeAttentionUpgradeStoppedModal,
 }
 
 const _migrationProgress = 60 / 196;

@@ -11,6 +11,9 @@ enum MobileIronwoodMigrationAttentionKind {
   continueMigration,
   proof,
   lateBroadcast,
+
+  /// The NU7 upgrade stopped the run; the remaining balance moves again.
+  upgradeStopped,
 }
 
 int mobileIronwoodSafelyObservedHeight({
@@ -49,6 +52,12 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
   required bool isKeystone,
 }) {
   if (status == null) return null;
+  if (status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
+    return const MobileIronwoodMigrationAttention(
+      kind: MobileIronwoodMigrationAttentionKind.upgradeStopped,
+      count: 1,
+    );
+  }
   final needsInputCount = status.parts
       .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
       .length;
@@ -138,6 +147,8 @@ String mobileIronwoodMigrationAttentionFingerprint({
           .map((item) => '${item.txidHex}@${item.scheduledHeight}')
           .toList()
         ..sort(),
+    // The run id and phase already identify a stopped run.
+    MobileIronwoodMigrationAttentionKind.upgradeStopped => const [],
   };
   return '$accountUuid:$runId:${status.phase}:'
       '${attention.kind.name}:${attention.count}:$actionIdentity';

@@ -49,6 +49,10 @@ const kIronwoodMigrationPausedPhase = 'paused';
 const kIronwoodMigrationFailedRecoverablePhase = 'failed_recoverable';
 const kIronwoodMigrationFailedTerminalPhase = 'failed_terminal';
 const kIronwoodMigrationAbandonedPhase = 'abandoned';
+
+/// The run ended because parts signed for the old branch can't be sent after
+/// a network upgrade. Funds stay put; the user moves the remainder again.
+const kIronwoodMigrationStoppedByUpgradePhase = 'stopped_by_upgrade';
 const kIronwoodMigrationReleaseNotesUrl =
     'https://tachyon.z.cash/blog/auditing-orchard-supply/';
 const kIronwoodMigrationLateGraceBlocks = 96;

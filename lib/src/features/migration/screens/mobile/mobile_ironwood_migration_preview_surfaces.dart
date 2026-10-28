@@ -102,6 +102,23 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
         const _MigrationHomeAttentionPreview(showModal: true),
       MobileIronwoodMigrationPreviewSurface.keystoneScanHelp =>
         const _MigrationKeystoneHelpPreview(),
+      MobileIronwoodMigrationPreviewSurface.migrationUpgradeStopped =>
+        const _MigrationUpgradeStoppedView(
+          stop: _previewUpgradeStop,
+          onMoveRemaining: _noopMigrationPreviewAction,
+          onBack: _noopMigrationPreviewAction,
+        ),
+      MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStopped =>
+        const _MigrationHomeAttentionPreview(
+          kind: MobileIronwoodMigrationAttentionKind.upgradeStopped,
+          count: 1,
+        ),
+      MobileIronwoodMigrationPreviewSurface.homeAttentionUpgradeStoppedModal =>
+        const _MigrationHomeAttentionPreview(
+          kind: MobileIronwoodMigrationAttentionKind.upgradeStopped,
+          count: 1,
+          showModal: true,
+        ),
     };
   }
 }
@@ -2335,6 +2352,137 @@ class _MigrationCompleteSurfaceState
   }
 }
 
+const _previewUpgradeStop = IronwoodMigrationUpgradeStop(
+  migratedAmountText: '2.10 ZEC',
+  remainingAmountText: '3.40 ZEC',
+  completedParts: 7,
+  totalParts: 20,
+);
+
+/// Result for a run the network upgrade stopped; the live status uses it too.
+class _MigrationUpgradeStoppedView extends StatelessWidget {
+  const _MigrationUpgradeStoppedView({
+    required this.stop,
+    this.completedSegments,
+    this.segmentValuesZatoshi,
+    this.onMoveRemaining,
+    this.onBack,
+  });
+
+  final IronwoodMigrationUpgradeStop stop;
+  final Set<int>? completedSegments;
+  final List<BigInt>? segmentValuesZatoshi;
+  final VoidCallback? onMoveRemaining;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final segments = math.max(1, stop.totalParts);
+    return _MigrationPreviewPage(
+      navTitle: 'Ironwood Migration',
+      onBack: onBack,
+      contentGap: AppSpacing.md,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            kIronwoodUpgradeStopBody,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            key: const ValueKey('mobile_ironwood_upgrade_stop_move_remaining'),
+            expand: true,
+            height: 50,
+            onPressed: onMoveRemaining,
+            child: Text(stop.moveRemainingLabel),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // The ring shrinks on short screens so the page never scrolls.
+          Flexible(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final dimension = math.min(
+                  256.0,
+                  math.min(constraints.maxHeight, constraints.maxWidth),
+                );
+                return SizedBox.square(
+                  dimension: dimension,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      _AnimatedMigrationAttentionRing(
+                        dimension: dimension,
+                        segmentWeights: _normalizedMigrationRingWeights(
+                          segments: segments,
+                          valuesZatoshi: segmentValuesZatoshi,
+                        ),
+                        completedSegments:
+                            completedSegments ??
+                            {
+                              for (
+                                var index = 0;
+                                index < stop.completedParts.clamp(0, segments);
+                                index++
+                              )
+                                index,
+                            },
+                        awaitingSegments: const {},
+                        highlightedSegments: const {},
+                      ),
+                      Semantics(
+                        liveRegion: true,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AppIcon(
+                              AppIcons.warning,
+                              size: 20,
+                              color: colors.icon.warning,
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              kIronwoodUpgradeStopRingMessage,
+                              textAlign: TextAlign.center,
+                              style: AppTypography.bodyMediumStrong.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _MigrationSummaryRows(
+            first: _MigrationValueRow(
+              label: 'Moved to Ironwood',
+              value: stop.migratedAmountText,
+            ),
+            second: _MigrationValueRow(
+              label: 'Still in Orchard',
+              value: stop.remainingAmountText,
+              accented: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MigrationCompletePreview extends StatelessWidget {
   const _MigrationCompletePreview({required this.amountText, this.onDone});
 
@@ -2409,9 +2557,15 @@ class _MigrationCompletePreview extends StatelessWidget {
 }
 
 class _MigrationHomeAttentionPreview extends StatelessWidget {
-  const _MigrationHomeAttentionPreview({this.showModal = false});
+  const _MigrationHomeAttentionPreview({
+    this.showModal = false,
+    this.kind = MobileIronwoodMigrationAttentionKind.signature,
+    this.count = 2,
+  });
 
   final bool showModal;
+  final MobileIronwoodMigrationAttentionKind kind;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
@@ -2449,8 +2603,8 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           MobileIronwoodMigrationBanner(
             inProgress: false,
-            attentionKind: MobileIronwoodMigrationAttentionKind.signature,
-            actionNeededCount: 2,
+            attentionKind: kind,
+            actionNeededCount: count,
             remainingText: null,
             onTap: () {},
           ),
@@ -2478,8 +2632,8 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
     return _MigrationModalPreview(
       background: background,
       child: MobileIronwoodMigrationAttentionSheetBody(
-        kind: MobileIronwoodMigrationAttentionKind.signature,
-        count: 2,
+        kind: kind,
+        count: count,
         onOpenMigration: () {},
         onLater: () {},
       ),

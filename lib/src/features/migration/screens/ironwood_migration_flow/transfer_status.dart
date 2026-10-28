@@ -317,6 +317,144 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
   }
 }
 
+/// A run the network upgrade stopped: what moved, what is left, one action.
+class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
+  const _MigrationUpgradeStoppedStatusContent({
+    required this.status,
+    required this.onMoveRemaining,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final VoidCallback onMoveRemaining;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final parts = orderedMigrationParts(_displayMigrationParts(status));
+    var values = parts.isNotEmpty
+        ? [for (final part in parts) part.valueZatoshi]
+        : [for (final value in status.targetValuesZatoshi) value];
+    if (values.isEmpty) values = [BigInt.zero];
+    final runStatuses = parts.isNotEmpty
+        ? [for (final part in parts) _migrationBatchStatus(part.state)]
+        : _legacyMigrationBatchStatuses(status, values.length);
+    // Unconfirmed parts were never accepted, so they read as not started.
+    final statuses = [
+      for (final partStatus in runStatuses)
+        partStatus == _MigrationBatchStatus.complete
+            ? _MigrationBatchStatus.complete
+            : _MigrationBatchStatus.none,
+    ];
+    final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
+    final moved = _migrationCompletedAmount(values, statuses);
+    final remaining = total > moved ? total - moved : BigInt.zero;
+    return SizedBox(
+      key: const ValueKey('ironwood_migration_status_stopped_by_upgrade'),
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 12,
+            top: 16,
+            width: 396,
+            child: Text(
+              'Ironwood Migration',
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineSmall.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 82,
+            top: 72,
+            width: 256,
+            height: 256,
+            child: _MigrationMorphingRing(
+              preparing: false,
+              preparationColor: colors.text.accent.withValues(alpha: 0.20),
+              palette: _migrationRingPalette(colors),
+              values: values,
+              totalZatoshi: total,
+              statuses: statuses,
+              child: Semantics(
+                liveRegion: true,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(
+                      AppIcons.warning,
+                      size: 20,
+                      color: colors.icon.warning,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      kIronwoodUpgradeStopRingMessage,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 354,
+            width: 396,
+            child: Column(
+              children: [
+                _MigrationSummaryMetric(
+                  label: 'Moved to Ironwood',
+                  value: '${_formatZecAmountCompact(moved)} ZEC',
+                  secondary: true,
+                ),
+                const SizedBox(height: 16),
+                _MigrationSummaryMetric(
+                  label: 'Still in Orchard',
+                  value: '${_formatZecAmountCompact(remaining)} ZEC',
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 45,
+            top: 446,
+            width: 330,
+            child: Text(
+              kIronwoodUpgradeStopBody,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 95,
+            top: 584,
+            width: 230,
+            child: Center(
+              child: AppButton(
+                key: const ValueKey('ironwood_upgrade_stop_move_remaining'),
+                onPressed: onMoveRemaining,
+                height: 44,
+                minWidth: 230,
+                expand: true,
+                child: Text(
+                  'Move remaining ${_formatZecAmountCompact(remaining)} ZEC',
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MigrationLiveStatusContent extends ConsumerWidget {
   const _MigrationLiveStatusContent({
     super.key,

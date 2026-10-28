@@ -36,6 +36,13 @@ class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
         'Your next migration batch is ready',
       MobileIronwoodMigrationAttentionKind.lateBroadcast =>
         'A migration transaction needs attention',
+      MobileIronwoodMigrationAttentionKind.upgradeStopped =>
+        'Migration stopped by network upgrade',
+    };
+    final caution = switch (kind) {
+      MobileIronwoodMigrationAttentionKind.lateBroadcast ||
+      MobileIronwoodMigrationAttentionKind.upgradeStopped => true,
+      _ => false,
     };
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -48,7 +55,11 @@ class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppIcon(AppIcons.checkCircle, size: 48, color: colors.icon.success),
+          AppIcon(
+            caution ? AppIcons.warningCircle : AppIcons.checkCircle,
+            size: 48,
+            color: caution ? colors.icon.warning : colors.icon.success,
+          ),
           const SizedBox(height: AppSpacing.s),
           Text(
             title,
@@ -60,7 +71,11 @@ class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
             expand: true,
             height: 50,
             onPressed: onOpenMigration,
-            child: const Text('Go to migration page'),
+            child: Text(
+              kind == MobileIronwoodMigrationAttentionKind.upgradeStopped
+                  ? 'Move remaining balance'
+                  : 'Go to migration page',
+            ),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -168,6 +183,8 @@ class _MobileIronwoodMigrationBannerState
               'Next migration batch is ready',
             MobileIronwoodMigrationAttentionKind.lateBroadcast =>
               'Migration needs attention',
+            MobileIronwoodMigrationAttentionKind.upgradeStopped =>
+              'Migration stopped by upgrade',
           }
         : widget.inProgress
         ? widget.preparing
@@ -179,6 +196,9 @@ class _MobileIronwoodMigrationBannerState
               : '${widget.remainingText} ZEC still migrating'
         : 'Migrate to Ironwood';
     final contentColor = colors.text.homeCard;
+    final stopped =
+        widget.attentionKind ==
+        MobileIronwoodMigrationAttentionKind.upgradeStopped;
     return Semantics(
       button: true,
       label: label,
@@ -190,7 +210,7 @@ class _MobileIronwoodMigrationBannerState
           height: 52,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: widget.actionNeeded
+            color: widget.actionNeeded && !stopped
                 ? const Color(0xFF00A460)
                 : colors.background.homeCard,
             borderRadius: BorderRadius.circular(AppRadii.medium),
@@ -225,6 +245,17 @@ class _MobileIronwoodMigrationBannerState
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
+                    if (stopped) ...[
+                      AppIcon(
+                        AppIcons.warning,
+                        key: const ValueKey(
+                          'mobile_home_ironwood_migration_stopped_icon',
+                        ),
+                        size: 20,
+                        color: colors.icon.warning,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                    ],
                     if (!widget.actionNeeded) ...[
                       if (widget.inProgress)
                         AppIcon(
