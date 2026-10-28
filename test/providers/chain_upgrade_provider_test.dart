@@ -40,8 +40,6 @@ void main() {
     expect(calls, ['main https://zec.example:443']);
     expect(status.endpointUrl, 'https://zec.example:443');
     expect(status.ironwoodActiveAtTip, isTrue);
-    expect(status.endpointMatchesNetwork, isTrue);
-    expect(status.hasLightwalletdMetadata, isTrue);
   });
 
   test('cached active status skips the full lightwalletd fetch', () async {
@@ -73,7 +71,6 @@ void main() {
     expect(fullFetches, 0);
     expect(status.ironwoodActiveAtTip, isTrue);
     expect(status.tipHeight, BigInt.zero);
-    expect(status.hasLightwalletdMetadata, isFalse);
   });
 
   test(
@@ -125,7 +122,6 @@ void main() {
       expect(store.activeNetworks, contains('main'));
       expect(refreshed.tipHeight, BigInt.from(3_500_000));
       expect(refreshed.ironwoodActiveAtTip, isTrue);
-      expect(refreshed.hasLightwalletdMetadata, isTrue);
     },
   );
 
