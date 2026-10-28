@@ -3352,7 +3352,9 @@ Future<bool> _defaultRecordVerifiedProofReadiness({
 }
 
 bool _isTerminalCredentialCleanupPhase(String phase) =>
-    phase == 'complete' || phase == 'abandoned';
+    phase == 'complete' ||
+    phase == 'abandoned' ||
+    phase == kIronwoodMigrationStoppedByUpgradePhase;
 
 class _MigrationCredentialContext {
   const _MigrationCredentialContext({
