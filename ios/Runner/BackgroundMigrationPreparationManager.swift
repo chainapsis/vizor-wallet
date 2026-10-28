@@ -416,11 +416,54 @@ func migrationPreparationConfirmationProgress(
   )
 }
 
+/// Consecutive passes an upgrade-dropped transaction must stay unknown before
+/// the wave goes to the foreground; a transaction sent moments ago can be too.
+let migrationPreparationUpgradeDroppedPassLimit = 2
+
+struct MigrationPreparationUpgradeDropTracking: Equatable {
+  /// Transactions seen broadcast while the next block was on the old branch.
+  /// The hold sends nothing new before the upgrade, so they target that branch.
+  var oldBranchTransactionIds: Set<String> = []
+  /// Consecutive passes each of those has been unknown to the server.
+  var missedPasses: [String: Int] = [:]
+  /// The longest streak, so one transaction must be missing on every pass.
+  var passes: Int { missedPasses.values.max() ?? 0 }
+}
+
+/// Counts consecutive passes, past the upgrade, in which the server does not
+/// know a transaction signed for the old branch. Nodes clear those from the
+/// mempool at activation (ZIP 200), so one that missed the branch is never
+/// found again.
+func migrationPreparationUpgradeDropTracking(
+  _ previous: MigrationPreparationUpgradeDropTracking,
+  transactionIds: [String],
+  observations: [NativeLightwalletdTransactionObservation],
+  chainTipHeight: UInt64,
+  upgradeActivationHeight: UInt64
+) -> MigrationPreparationUpgradeDropTracking {
+  guard upgradeActivationHeight > 0 else {
+    return MigrationPreparationUpgradeDropTracking()
+  }
+  var next = previous
+  guard chainTipHeight >= upgradeActivationHeight - 1 else {
+    next.oldBranchTransactionIds.formUnion(transactionIds)
+    next.missedPasses = [:]
+    return next
+  }
+  next.missedPasses = [:]
+  for (id, observation) in zip(transactionIds, observations)
+  where observation == .notFound && previous.oldBranchTransactionIds.contains(id) {
+    next.missedPasses[id] = (previous.missedPasses[id] ?? 0) + 1
+  }
+  return next
+}
+
 func migrationPreparationConfirmationDisposition(
   observations: [NativeLightwalletdTransactionObservation],
   chainTipHeight: UInt64,
   confirmationTarget: UInt64,
-  totalStageCount: UInt32 = 0
+  totalStageCount: UInt32 = 0,
+  upgradeDroppedPasses: Int = 0
 ) -> MigrationPreparationScopeTrackingDisposition {
   if observations.contains(where: {
     if case .forked = $0 { return true }
@@ -429,6 +472,13 @@ func migrationPreparationConfirmationDisposition(
     return .needsForegroundRecovery(
       fingerprint: "forked-transaction",
       taskFailed: true
+    )
+  }
+  // The transaction can never confirm; only the foreground can stop the run.
+  if upgradeDroppedPasses >= migrationPreparationUpgradeDroppedPassLimit {
+    return .needsForegroundRecovery(
+      fingerprint: "dropped-at-upgrade",
+      taskFailed: false
     )
   }
   let progress = migrationPreparationConfirmationProgress(
@@ -913,6 +963,10 @@ final class BackgroundMigrationPreparationManager {
   /// foreground commit still in flight.
   private static let emptyObservationPassLimit = 2
   private var emptyObservationPassesByScope: [String: Int] = [:]
+  /// Kept across tasks in this process: a task re-armed after the upgrade
+  /// still knows which transactions it saw before it.
+  private var upgradeDropTrackingByScope:
+    [String: MigrationPreparationUpgradeDropTracking] = [:]
 
   private static let schedulingTraceFileName =
     "ironwood-preparation-scheduling-trace.jsonl"
@@ -1965,11 +2019,23 @@ final class BackgroundMigrationPreparationManager {
         )
         continue
       }
+      let upgradeDropTracking = migrationPreparationUpgradeDropTracking(
+        upgradeDropTrackingByScope[scope]
+          ?? MigrationPreparationUpgradeDropTracking(),
+        transactionIds: transactionIds,
+        observations: observations,
+        chainTipHeight: tip,
+        upgradeActivationHeight: manifest.network.withCString {
+          zcash_nu7_activation_height($0)
+        }
+      )
+      upgradeDropTrackingByScope[scope] = upgradeDropTracking
       let disposition = migrationPreparationConfirmationDisposition(
         observations: observations,
         chainTipHeight: tip,
         confirmationTarget: Self.confirmationTarget,
-        totalStageCount: preparation.total_stage_count
+        totalStageCount: preparation.total_stage_count,
+        upgradeDroppedPasses: upgradeDropTracking.passes
       )
       results.append(
         MigrationPreparationScopeTrackingResult(

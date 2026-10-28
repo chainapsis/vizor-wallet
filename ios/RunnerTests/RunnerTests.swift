@@ -1318,6 +1318,100 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testUpgradeDropTrackingCountsOnlyOldBranchTransactionsPastTheUpgrade() {
+    let old = "aa"
+    let new = "bb"
+    func track(
+      _ previous: MigrationPreparationUpgradeDropTracking,
+      _ ids: [String],
+      _ observations: [NativeLightwalletdTransactionObservation],
+      tip: UInt64,
+      activation: UInt64 = 600
+    ) -> MigrationPreparationUpgradeDropTracking {
+      migrationPreparationUpgradeDropTracking(
+        previous,
+        transactionIds: ids,
+        observations: observations,
+        chainTipHeight: tip,
+        upgradeActivationHeight: activation
+      )
+    }
+
+    // Seen while block 599 could still take it: signed for the old branch.
+    let seen = track(.init(), [old], [.mempool], tip: 598)
+    XCTAssertEqual(seen.oldBranchTransactionIds, [old])
+    XCTAssertEqual(seen.passes, 0)
+    let once = track(seen, [old], [.notFound], tip: 600)
+    XCTAssertEqual(once.passes, 1)
+    XCTAssertEqual(track(once, [old], [.notFound], tip: 601).passes, 2)
+    // Still held or mined resets the count.
+    XCTAssertEqual(track(once, [old], [.mempool], tip: 601).passes, 0)
+    XCTAssertEqual(track(once, [old], [.mined(height: 599)], tip: 601).passes, 0)
+    // Each transaction keeps its own streak.
+    let both = track(.init(), [old, new], [.mempool, .mempool], tip: 598)
+    let first = track(both, [old, new], [.notFound, .mined(height: 599)], tip: 600)
+    XCTAssertEqual(
+      track(first, [old, new], [.mined(height: 599), .notFound], tip: 601).passes,
+      1
+    )
+    // A transaction first seen from tip 599 may target the new branch.
+    let later = track(.init(), [new], [.notFound], tip: 599)
+    XCTAssertEqual(later, MigrationPreparationUpgradeDropTracking())
+    XCTAssertEqual(track(once, [new], [.notFound], tip: 601).passes, 0)
+    // No scheduled upgrade.
+    XCTAssertEqual(
+      track(once, [old], [.notFound], tip: 601, activation: 0),
+      MigrationPreparationUpgradeDropTracking()
+    )
+  }
+
+  func testTransactionDroppedAtTheUpgradeHandsTheWaveToTheForeground() {
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.mined(height: 590), .notFound],
+      chainTipHeight: 610,
+      confirmationTarget: 3,
+      upgradeDroppedPasses: migrationPreparationUpgradeDroppedPassLimit
+    )
+
+    XCTAssertEqual(
+      disposition,
+      .needsForegroundRecovery(
+        fingerprint: "dropped-at-upgrade",
+        taskFailed: false
+      )
+    )
+  }
+
+  func testOneUnknownPassPastTheUpgradeKeepsTracking() {
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.mined(height: 590), .notFound],
+      chainTipHeight: 610,
+      confirmationTarget: 3,
+      upgradeDroppedPasses: migrationPreparationUpgradeDroppedPassLimit - 1
+    )
+
+    guard case .progress = disposition else {
+      return XCTFail("expected progress, got \(disposition)")
+    }
+  }
+
+  func testForkedTransactionTakesPrecedenceOverAnUpgradeDroppedOne() {
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.notFound, .forked],
+      chainTipHeight: 610,
+      confirmationTarget: 3,
+      upgradeDroppedPasses: migrationPreparationUpgradeDroppedPassLimit
+    )
+
+    XCTAssertEqual(
+      disposition,
+      .needsForegroundRecovery(
+        fingerprint: "forked-transaction",
+        taskFailed: true
+      )
+    )
+  }
+
   func testTxidInspectionFailureRequiresForegroundRecoveryAndFailsTheTask() {
     XCTAssertEqual(
       migrationPreparationTxidInspectionFailureDisposition(),
