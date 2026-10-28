@@ -11,24 +11,29 @@ const _address =
     'rl5ue3vce7c3jnu5808kw9lsr890kfetrg524q4pgcn4zcnp84na85453pz67cjfy4sx7y6z'
     '6zc9t7666utasw5mehe9r2dwwcrgzp94ah';
 
-final _now = DateTime.utc(2026, 10, 28);
+const _registryKey = 'uview1registry';
 
 Map<String, Object?> _record({
   String name = 'alice',
   Object? address = _address,
   Object? lastAction = 'claim',
-  Object? expiresAt = '1824002006',
 }) => {
   'name': name,
   'address': address,
   'txid': 'ed98bed2e92ac46f16b27db5c55597539abc714fb259f1bc2b2fa5dfb586e266',
   'height': 3523662,
   'last_action': lastAction,
-  'expires_at': expiresAt,
+  'expires_at': '1824002006',
 };
 
 List<int> _reply(Object? result) =>
     utf8.encode(jsonEncode({'jsonrpc': '2.0', 'id': 1, 'result': result}));
+
+List<int> _status([String viewingKey = _registryKey]) => _reply({
+  'synced_height': 3533383,
+  'synced': true,
+  'viewing_key': viewingKey,
+});
 
 ZnsResolution? _parse(
   Object? result, {
@@ -38,7 +43,6 @@ ZnsResolution? _parse(
   statusCode: statusCode,
   body: _reply(result),
   requestedName: requestedName,
-  now: _now,
 );
 
 void main() {
@@ -67,25 +71,22 @@ void main() {
   });
 
   group('parseZnsResolveResponse', () {
-    test('reads a live registration', () {
+    test('reads a registration', () {
       final resolution = _parse(_record());
       expect(resolution, const ZnsResolution(name: 'alice', address: _address));
       expect(resolution!.displayName, 'alice.zcash');
+      expect(_parse(_record(lastAction: 'update')), isNotNull);
     });
 
-    test('accepts an update and a name that never expires', () {
-      expect(
-        _parse(_record(lastAction: 'update', expiresAt: 'none')),
-        isNotNull,
-      );
+    test('leaves expiry to the Mint', () {
+      final pastExpiry = _record()..['expires_at'] = '1';
+      expect(_parse(pastExpiry), isNotNull);
+      expect(_parse(_record()..remove('expires_at')), isNotNull);
     });
 
-    test('a missing, released, or expired name resolves to nothing', () {
+    test('a missing or released name resolves to nothing', () {
       expect(_parse(null), isNull);
       expect(_parse(_record(lastAction: 'release')), isNull);
-      final expiredAt = _now.millisecondsSinceEpoch ~/ 1000;
-      expect(_parse(_record(expiresAt: '$expiredAt')), isNull);
-      expect(_parse(_record(expiresAt: '${expiredAt + 1}')), isNotNull);
     });
 
     test('an HTTP or JSON-RPC failure is an error, not a missing name', () {
@@ -104,7 +105,6 @@ void main() {
             }),
           ),
           requestedName: 'alice',
-          now: _now,
         ),
         throwsA(isA<ZnsLookupException>()),
       );
@@ -113,7 +113,6 @@ void main() {
           statusCode: 200,
           body: utf8.encode('<html>'),
           requestedName: 'alice',
-          now: _now,
         ),
         throwsA(isA<ZnsLookupException>()),
       );
@@ -125,8 +124,6 @@ void main() {
         _record(address: null),
         _record(address: '  '),
         _record(lastAction: 'transfer'),
-        _record(expiresAt: null),
-        _record(expiresAt: 'soon'),
       ]) {
         expect(
           () => _parse(record),
@@ -135,6 +132,28 @@ void main() {
         );
       }
     });
+  });
+
+  test('parseZnsStatusViewingKey reads the registry key', () {
+    expect(
+      parseZnsStatusViewingKey(statusCode: 200, body: _status()),
+      _registryKey,
+    );
+    expect(
+      () => parseZnsStatusViewingKey(statusCode: 200, body: _reply({})),
+      throwsA(isA<ZnsLookupException>()),
+    );
+  });
+
+  test('the published keys are well-formed', () {
+    expect(kZnsMainnetRegistryViewingKey, startsWith('uview1'));
+    expect(kZnsTestnetRegistryViewingKey, startsWith('uviewtest1'));
+    for (final key in [
+      kZnsMainnetRegistryViewingKey,
+      kZnsTestnetRegistryViewingKey,
+    ]) {
+      expect(key, matches(RegExp(r'^[a-z0-9]+$')));
+    }
   });
 
   group('ZnsJsonRpcNameResolver', () {
@@ -150,24 +169,42 @@ void main() {
       addTearDown(client.close);
       return ZnsJsonRpcNameResolver(
         endpoints: [primary, fallback],
+        registryViewingKey: _registryKey,
         networkClient: client,
-        now: () => _now,
       );
     }
 
-    test('posts one JSON-RPC resolve call on the Tor route', () async {
+    test('checks the registry once, then resolves on the Tor route', () async {
       final bridge = _ScriptedTorBridge({primary: _reply(_record())});
+      final resolver = resolverOver(bridge);
 
-      final resolution = await resolverOver(bridge).resolve('alice');
+      expect((await resolver.resolve('alice'))?.address, _address);
+      expect(await resolver.resolve('alice'), isNotNull);
 
-      expect(resolution?.address, _address);
-      expect(bridge.posted, [primary]);
-      expect(jsonDecode(utf8.decode(bridge.bodies.single)), {
+      expect(bridge.calls, [
+        (primary, 'status'),
+        (primary, 'resolve'),
+        (primary, 'resolve'),
+      ]);
+      expect(jsonDecode(utf8.decode(bridge.bodies.last)), {
         'jsonrpc': '2.0',
         'id': 1,
         'method': 'resolve',
         'params': {'query': 'alice'},
       });
+    });
+
+    test('refuses a host that serves another registry', () async {
+      final bridge = _ScriptedTorBridge(
+        {primary: _reply(_record()), fallback: _reply(_record())},
+        status: {primary: _status('uview1other')},
+      );
+
+      await expectLater(
+        resolverOver(bridge).resolve('alice'),
+        throwsA(isA<ZnsLookupException>()),
+      );
+      expect(bridge.calls, [(primary, 'status')]);
     });
 
     test('uses the fallback only when the primary is unreachable', () async {
@@ -179,7 +216,11 @@ void main() {
       final resolution = await resolverOver(bridge).resolve('alice');
 
       expect(resolution?.name, 'alice');
-      expect(bridge.posted, [primary, fallback]);
+      expect(bridge.calls, [
+        (primary, 'status'),
+        (fallback, 'status'),
+        (fallback, 'resolve'),
+      ]);
     });
 
     test('an answer from the primary is final', () async {
@@ -189,7 +230,7 @@ void main() {
       });
 
       expect(await resolverOver(bridge).resolve('alice'), isNull);
-      expect(bridge.posted, [primary]);
+      expect(bridge.calls.map((call) => call.$1).toSet(), {primary});
     });
 
     test('throws when no resolver can be reached', () async {
@@ -207,12 +248,16 @@ void main() {
 }
 
 /// Answers each POST from a per-endpoint script: a reply body, or an error to
-/// throw as the transport failure.
+/// throw as the transport failure. `status` calls read [status], which
+/// defaults to the expected registry key; a scripted transport error applies
+/// to both methods.
 class _ScriptedTorBridge implements TorHttpBridge {
-  _ScriptedTorBridge(this.script);
+  _ScriptedTorBridge(this.resolve, {Map<Uri, Object>? status})
+    : status = status ?? const {};
 
-  final Map<Uri, Object> script;
-  final posted = <Uri>[];
+  final Map<Uri, Object> resolve;
+  final Map<Uri, Object> status;
+  final calls = <(Uri, String)>[];
   final bodies = <List<int>>[];
 
   @override
@@ -224,10 +269,14 @@ class _ScriptedTorBridge implements TorHttpBridge {
     Future<void>? cancelSignal,
     int? maxBodyBytes,
   }) async {
-    posted.add(uri);
+    final method =
+        (jsonDecode(utf8.decode(bodyBytes)) as Map<String, dynamic>)['method']
+            as String;
+    calls.add((uri, method));
     bodies.add(bodyBytes);
-    final entry = script[uri];
-    if (entry is Exception) throw entry;
+    final scripted = resolve[uri];
+    if (scripted is Exception) throw scripted;
+    final entry = method == 'status' ? status[uri] ?? _status() : scripted;
     return NetworkHttpResponse(
       statusCode: 200,
       bodyBytes: Uint8List.fromList(entry! as List<int>),

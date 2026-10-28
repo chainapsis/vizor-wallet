@@ -5,9 +5,15 @@
 /// request goes through [NetworkHttpClient], so a lookup takes the Tor route
 /// whenever the user turned Tor on and fails closed while Tor is unavailable.
 ///
-/// The resolver's answer is trusted as is. The current resolver publishes no
-/// signature or inclusion proof for a registration, so the send flow keeps
-/// the resolved address visible on review and in the verify-address step.
+/// Before its first lookup on a host, the client checks that the host serves
+/// the published registry: its `status` viewing key must match. Past that,
+/// the resolver's answer is trusted. The resolver publishes no signature or
+/// inclusion proof for a registration, so the send flow keeps the resolved
+/// address visible on review and in the verify-address step.
+///
+/// Expiry is the ZNS Mint's job: it releases an expired name on chain, and
+/// the resolver then drops it. The ZNS wallet guide tells wallets not to
+/// judge expiry themselves, so this client does not.
 library;
 
 import 'dart:convert';
@@ -29,6 +35,28 @@ const kZnsMainnetResolverUrls = <String>[
 
 const kZnsTestnetResolverUrls = <String>['https://light.zcash.me/zns-testnet'];
 
+/// Registry viewing keys as the ZNS TypeScript SDK publishes them
+/// (`ZNS_NETWORKS` in zcashme/zns-resolver `sdk/typescript/src/zns.ts`).
+const kZnsMainnetRegistryViewingKey =
+    'uview1209ld9y4fr2sel9q87kfjg7xm2sy53e3qf7dvcw3w8jwhhjpldl8z0vk0a6hve'
+    'g4jk7xcn0rc9mr8yg77djfpc0uxrm5pqzt8q7ul4w0nvs3x5q9vmk9nm2crywtqaeale'
+    'k4mp47ur7ywu7g4g4xcdlwv6gnqzvu5panv5je2ps6rxmx4856unlt5wde8fpz8uhrqc'
+    'hmwhn2j252h3cyx5phad877xezerm6ex8l5kcfjw02ll7m0nspfufamh3ae9ea48395e'
+    'lptspnv6vvc70j2gcjrdze9syt8kpr2kc67flvg8687thdkpha7lpt9r4p9wjty90q2v'
+    '2yjanqsr2zrecrqs7lfx9cpkmshf7jyh2vvwfqnyzwtpuy7p72hm2mjhperdafvm9u5r'
+    'wa6s6urcy0uw30f687e3jnmas45qfqtwyz39kf6kxklfrdn7t4hkz56jegmlr8s8hwmt'
+    '9wa8vz8zlmm76lrmzyj82nzpeqfu572njq';
+
+const kZnsTestnetRegistryViewingKey =
+    'uviewtest1gkq78nsemsvs4qekadrv6qlqdmvcv2cct8k3c8cwycedpk90p8rtkx24qe'
+    '8q73gg2ark8crqmmaavrerf7cxu0sp50an54crmeaalfxl72aetxnr89ksad4lvxzmnk'
+    'yejhhwn65euzamt9wsukgfemeayhcesreasarmq600lfeju3qenh05e5e5cz6nhhsw3c'
+    'fdcd3d08d0nxswxmkkxl2fq0hzv6t5dm3ftnz4y76236a49v3us4uq2tlsewf86tjtfw'
+    'm6kue348me04rm7dw6uawv8myw7t5tyx2t453clhjz5f55lvh7hnvr8g8zt8lf4sy5rz'
+    'q23ntp7g5ly6kyz2nkwfek06llhjtuz2fft9rg6cuuwg4n7299vajnmq6swg3sf563r0'
+    'jjzuwuvfpjhmfmydar9dcu3fkuawt6u8qu08vhg5mthrcggrjuhht6f0perh0tqmdfrt'
+    'gzvhjymay7h9ymvfxgd4r56uz6zrsf5gnvw5jy';
+
 /// Suffix the wallet shows after a resolved name.
 const kZnsDisplaySuffix = '.zcash';
 
@@ -37,8 +65,8 @@ const _znsInputSuffixes = <String>['.zcash', '.zec'];
 /// The registry accepts 1-63 lowercase ASCII letters or digits.
 final _znsNamePattern = RegExp(r'^[a-z0-9]{1,63}$');
 
-/// A `resolve` reply holds one small JSON record.
-const _maxResolveResponseBytes = 64 * 1024;
+/// A `status` or `resolve` reply holds one small JSON object.
+const _maxReplyBytes = 64 * 1024;
 
 /// Returns the bare registry name for recipient [input] (`Alice.ZEC` gives
 /// `alice`), or null when the input is not a ZNS name.
@@ -85,8 +113,8 @@ class ZnsLookupException implements Exception {
 }
 
 abstract interface class ZnsNameResolver {
-  /// Returns the live registration for bare [name], or null when the name is
-  /// not registered, was released, or has expired.
+  /// Returns the registration for bare [name], or null when the name is not
+  /// registered.
   ///
   /// Throws [ZnsLookupException] when no resolver answered usefully.
   Future<ZnsResolution?> resolve(String name);
@@ -95,48 +123,35 @@ abstract interface class ZnsNameResolver {
 class ZnsJsonRpcNameResolver implements ZnsNameResolver {
   ZnsJsonRpcNameResolver({
     required List<Uri> endpoints,
+    required this.registryViewingKey,
     NetworkHttpClient? networkClient,
     this.timeout = const Duration(seconds: 20),
-    DateTime Function()? now,
   }) : assert(endpoints.isNotEmpty),
        _endpoints = List.unmodifiable(endpoints),
-       _client = networkClient ?? NetworkHttpClient(),
-       _now = now ?? DateTime.now;
+       _client = networkClient ?? NetworkHttpClient();
 
   final List<Uri> _endpoints;
   final NetworkHttpClient _client;
-  final DateTime Function() _now;
   final Duration timeout;
+
+  /// The viewing key every host must report in `status`.
+  final String registryViewingKey;
+
+  /// Hosts that already proved they serve [registryViewingKey].
+  final _verifiedEndpoints = <Uri>{};
 
   @override
   Future<ZnsResolution?> resolve(String name) async {
-    final body = utf8.encode(
-      jsonEncode({
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'resolve',
-        'params': {'query': name},
-      }),
-    );
     for (final endpoint in _endpoints) {
       final NetworkHttpResponse response;
       try {
-        response = await _client.request(
-          'POST',
-          endpoint,
-          headers: {
-            HttpHeaders.acceptHeader: 'application/json',
-            HttpHeaders.contentTypeHeader: ContentType.json.mimeType,
-          },
-          bodyBytes: body,
-          timeout: timeout,
-          maxBodyBytes: _maxResolveResponseBytes,
-          // A redirect could hand the lookup to a host nobody chose.
-          maxRedirects: 0,
-        );
+        await _verifyRegistry(endpoint);
+        response = await _call(endpoint, 'resolve', {'query': name});
+      } on ZnsLookupException {
+        rethrow;
       } catch (e) {
         // Unreachable: try the next resolver. A resolver that answered is
-        // final, so an HTTP or JSON-RPC error below is never retried.
+        // final, so an HTTP, JSON-RPC, or registry error is never retried.
         log('ZNS: resolver ${endpoint.host} unreachable: $e');
         continue;
       }
@@ -144,24 +159,60 @@ class ZnsJsonRpcNameResolver implements ZnsNameResolver {
         statusCode: response.statusCode,
         body: response.bodyBytes,
         requestedName: name,
-        now: _now(),
       );
     }
     throw const ZnsLookupException('No ZNS resolver could be reached');
   }
+
+  /// Checks once per host that it serves the published registry. A host that
+  /// reports another viewing key could map names anywhere, so its answers
+  /// are refused.
+  Future<void> _verifyRegistry(Uri endpoint) async {
+    if (_verifiedEndpoints.contains(endpoint)) return;
+    final response = await _call(endpoint, 'status', const {});
+    final viewingKey = parseZnsStatusViewingKey(
+      statusCode: response.statusCode,
+      body: response.bodyBytes,
+    );
+    if (viewingKey != registryViewingKey) {
+      throw ZnsLookupException(
+        'ZNS resolver ${endpoint.host} serves another registry',
+      );
+    }
+    _verifiedEndpoints.add(endpoint);
+  }
+
+  Future<NetworkHttpResponse> _call(
+    Uri endpoint,
+    String method,
+    Map<String, Object?> params,
+  ) {
+    return _client.request(
+      'POST',
+      endpoint,
+      headers: {
+        HttpHeaders.acceptHeader: 'application/json',
+        HttpHeaders.contentTypeHeader: ContentType.json.mimeType,
+      },
+      bodyBytes: utf8.encode(
+        jsonEncode({
+          'jsonrpc': '2.0',
+          'id': 1,
+          'method': method,
+          'params': params,
+        }),
+      ),
+      timeout: timeout,
+      maxBodyBytes: _maxReplyBytes,
+      // A redirect could hand the lookup to a host nobody chose.
+      maxRedirects: 0,
+    );
+  }
 }
 
-/// Reads one `resolve` reply for [requestedName].
-///
-/// Returns null for no registration, a `release` record, or an `expires_at`
-/// at or before [now]. Throws [ZnsLookupException] for any reply that is not
-/// a well-formed record for the requested name.
-ZnsResolution? parseZnsResolveResponse({
-  required int statusCode,
-  required List<int> body,
-  required String requestedName,
-  required DateTime now,
-}) {
+/// The `result` of one JSON-RPC reply. Throws [ZnsLookupException] for an
+/// HTTP failure, a reply that is not JSON-RPC, or a JSON-RPC error.
+Object? _rpcResult(int statusCode, List<int> body) {
   if (statusCode < 200 || statusCode >= 300) {
     throw ZnsLookupException('ZNS resolver returned HTTP $statusCode');
   }
@@ -179,7 +230,36 @@ ZnsResolution? parseZnsResolveResponse({
     final message = error is Map ? error['message'] : null;
     throw ZnsLookupException('ZNS resolver error: ${message ?? error}');
   }
-  final result = decoded['result'];
+  return decoded['result'];
+}
+
+/// Reads the registry viewing key from one `status` reply.
+String parseZnsStatusViewingKey({
+  required int statusCode,
+  required List<int> body,
+}) {
+  final result = _rpcResult(statusCode, body);
+  final viewingKey = result is Map<String, dynamic>
+      ? result['viewing_key']
+      : null;
+  if (viewingKey is! String || viewingKey.isEmpty) {
+    throw const ZnsLookupException('ZNS resolver status has no viewing key');
+  }
+  return viewingKey;
+}
+
+/// Reads one `resolve` reply for [requestedName].
+///
+/// Returns null for no registration. The resolver deletes a released name,
+/// so a `release` record should never arrive; one that does reads as no
+/// registration. Throws [ZnsLookupException] for any reply that is not a
+/// well-formed record for the requested name.
+ZnsResolution? parseZnsResolveResponse({
+  required int statusCode,
+  required List<int> body,
+  required String requestedName,
+}) {
+  final result = _rpcResult(statusCode, body);
   if (result == null) return null;
   if (result is! Map<String, dynamic>) {
     throw const ZnsLookupException('ZNS resolver record is not an object');
@@ -188,7 +268,6 @@ ZnsResolution? parseZnsResolveResponse({
   final name = result['name'];
   final address = result['address'];
   final lastAction = result['last_action'];
-  final expiresAt = result['expires_at'];
   if (name != requestedName) {
     throw const ZnsLookupException('ZNS resolver answered for another name');
   }
@@ -199,16 +278,6 @@ ZnsResolution? parseZnsResolveResponse({
   if (lastAction != 'claim' && lastAction != 'update') {
     throw ZnsLookupException('ZNS resolver record has action $lastAction');
   }
-  if (expiresAt is! String) {
-    throw const ZnsLookupException('ZNS resolver record has no expiry');
-  }
-  if (expiresAt != 'none') {
-    final expiresAtSeconds = int.tryParse(expiresAt);
-    if (expiresAtSeconds == null) {
-      throw ZnsLookupException('ZNS resolver expiry $expiresAt is unreadable');
-    }
-    if (expiresAtSeconds * 1000 <= now.millisecondsSinceEpoch) return null;
-  }
   return ZnsResolution(name: name as String, address: address.trim());
 }
 
@@ -218,16 +287,23 @@ final znsNameResolverProvider = Provider<ZnsNameResolver?>((ref) {
   final network = ref.watch(
     rpcEndpointProvider.select((config) => config.network),
   );
-  final urls = switch (network) {
-    ZcashNetwork.mainnet => kZnsMainnetResolverUrls,
-    ZcashNetwork.testnet => kZnsTestnetResolverUrls,
+  final registry = switch (network) {
+    ZcashNetwork.mainnet => (
+      urls: kZnsMainnetResolverUrls,
+      viewingKey: kZnsMainnetRegistryViewingKey,
+    ),
+    ZcashNetwork.testnet => (
+      urls: kZnsTestnetResolverUrls,
+      viewingKey: kZnsTestnetRegistryViewingKey,
+    ),
     ZcashNetwork.regtest => null,
   };
-  if (urls == null) return null;
+  if (registry == null) return null;
   final client = NetworkHttpClient();
   ref.onDispose(client.close);
   return ZnsJsonRpcNameResolver(
-    endpoints: [for (final url in urls) Uri.parse(url)],
+    endpoints: [for (final url in registry.urls) Uri.parse(url)],
+    registryViewingKey: registry.viewingKey,
     networkClient: client,
   );
 });
