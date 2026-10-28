@@ -34,9 +34,8 @@ Widget _modal({
           child: SwapSlippageModal(
             slippageBps: slippageBps,
             confidential: false,
-            onConfidentialChanged: (_) {},
             paymentMode: paymentMode,
-            onSubmitted: (_) {},
+            onSubmitted: (_, _) {},
             onCancel: () {},
           ),
         ),

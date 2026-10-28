@@ -108,9 +108,8 @@ class _DesktopSlippageCapture extends StatelessWidget {
     final modal = SwapSlippageModal(
       slippageBps: slippageBps,
       confidential: false,
-      onConfidentialChanged: (_) {},
       paymentMode: paymentMode,
-      onSubmitted: _ignoreBps,
+      onSubmitted: _ignoreSettings,
       onCancel: _noop,
     );
     final scale = modalTextScale;
@@ -143,9 +142,8 @@ class _MobileSlippageCapture extends StatelessWidget {
                 child: MobileSwapSlippageStepperModal(
                   slippageBps: slippageBps,
                   confidential: false,
-                  onConfidentialChanged: (_) {},
                   paymentMode: paymentMode,
-                  onSubmitted: _ignoreBps,
+                  onSubmitted: _ignoreSettings,
                   onCancel: _noop,
                 ),
               ),
@@ -157,6 +155,6 @@ class _MobileSlippageCapture extends StatelessWidget {
   }
 }
 
-void _ignoreBps(int _) {}
+void _ignoreSettings(int _, bool _) {}
 
 void _noop() {}

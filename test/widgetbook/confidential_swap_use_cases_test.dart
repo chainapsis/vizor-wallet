@@ -17,6 +17,7 @@ const _mobile = kAppFormFactor == AppFormFactor.mobile;
 final _settings = find.byKey(const ValueKey('confidential_preview_settings'));
 final _switch = find.byKey(const ValueKey('swap_confidential_switch'));
 final _cancel = find.byKey(const ValueKey('swap_slippage_cancel_button'));
+final _update = find.byKey(const ValueKey('swap_slippage_update_button'));
 
 /// The composer shows the mode only as the mark on the settings button.
 bool _confidential(WidgetTester tester) => find
@@ -73,13 +74,21 @@ void main() {
       findsOneWidget,
     );
     expect(_switchOn(tester), isFalse);
-    // Like the Settings privacy toggles, it applies as it is switched.
+    // Nothing applies until Update, and Cancel drops the choice.
     await tester.tap(_switch);
     await tester.pumpAndSettle();
     expect(_switchOn(tester), isTrue);
-    expect(_confidential(tester), isTrue);
-    // Cancel only drops a slippage choice; confidential stays on.
-    await tester.tap(find.byKey(const ValueKey('swap_slippage_cancel_button')));
+    expect(_confidential(tester), isFalse);
+    await tester.tap(_cancel);
+    await tester.pumpAndSettle();
+    expect(find.text('Swap settings'), findsNothing);
+    expect(_confidential(tester), isFalse);
+    await tester.tap(_settings);
+    await tester.pumpAndSettle();
+    expect(_switchOn(tester), isFalse);
+    await tester.tap(_switch);
+    await tester.pumpAndSettle();
+    await tester.tap(_update);
     await tester.pumpAndSettle();
     expect(find.text('Swap settings'), findsNothing);
     expect(_confidential(tester), isTrue);
@@ -189,7 +198,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       // Held while the settings cover the ticket.
       expect(seamMark, findsNothing);
-      await tester.tap(_cancel);
+      await tester.tap(_update);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
     }
@@ -199,7 +208,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(seamMark, findsNothing);
     expect(_confidential(tester), isTrue);
-    // Turning it off again plays nothing, nor does on-then-off.
+    // Turning it off again plays nothing, nor does off-then-on, which leaves
+    // nothing to update.
     for (final flips in [1, 2]) {
       await tester.tap(_settings);
       await tester.pumpAndSettle();
@@ -207,7 +217,7 @@ void main() {
         await tester.tap(_switch);
         await tester.pumpAndSettle();
       }
-      await tester.tap(_cancel);
+      await tester.tap(flips == 1 ? _update : _cancel);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(seamMark, findsNothing, reason: '$flips flips');
@@ -357,7 +367,8 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pumpAndSettle();
     expect(_switchOn(tester), isTrue);
-    expect(_confidential(tester), isTrue);
+    // The flip waits for Update, like a slippage choice.
+    expect(_confidential(tester), isFalse);
   });
 
   testWidgets('loading prevents mode changes and review', (tester) async {

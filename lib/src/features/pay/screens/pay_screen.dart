@@ -575,14 +575,14 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                     _PayModalSurface.slippage => SwapSlippageModal(
                       slippageBps: swapState.slippageBps,
                       confidential: swapState.confidential,
-                      onConfidentialChanged: ref
-                          .read(swapStateProvider.notifier)
-                          .selectConfidential,
                       paymentMode: true,
-                      onSubmitted: (bps) {
+                      onSubmitted: (slippageBps, confidential) {
                         ref
                             .read(swapStateProvider.notifier)
-                            .updateSlippageBps(bps);
+                            .updateQuoteSettings(
+                              slippageBps: slippageBps,
+                              confidential: confidential,
+                            );
                         _closePayModal();
                       },
                       onCancel: _closePayModal,

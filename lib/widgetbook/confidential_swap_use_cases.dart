@@ -17,8 +17,7 @@ Widget buildConfidentialSwapSettingsContentUseCase(BuildContext context) =>
         child: _ConfidentialSettingsPreview(
           slippageBps: 50,
           confidential: false,
-          onConfidentialChanged: (_) {},
-          onSave: (_) {},
+          onSave: (_, _) {},
           onCancel: () {},
         ),
       ),
@@ -696,10 +695,10 @@ class _ConfidentialSwapPreviewState extends State<_ConfidentialSwapPreview> {
                       slippageBps: _slippageBps,
                       confidential: _confidential,
                       onCancel: _closeSettings,
-                      // Confidential applies as it is switched, as in the
-                      // app; Save carries slippage only.
-                      onConfidentialChanged: _setMode,
-                      onSave: (bps) {
+                      // Update applies slippage and confidential together, as
+                      // in the app.
+                      onSave: (bps, confidential) {
+                        _setMode(confidential);
                         setState(() {
                           _slippageBps = bps;
                           _composer = _composer.copyWith(slippageBps: bps);
@@ -729,14 +728,12 @@ class _ConfidentialSettingsPreview extends StatelessWidget {
   const _ConfidentialSettingsPreview({
     required this.slippageBps,
     required this.confidential,
-    required this.onConfidentialChanged,
     required this.onSave,
     required this.onCancel,
   });
   final int slippageBps;
   final bool confidential;
-  final ValueChanged<bool> onConfidentialChanged;
-  final ValueChanged<int> onSave;
+  final void Function(int slippageBps, bool confidential) onSave;
   final VoidCallback onCancel;
 
   /// The app's own settings surface per form factor: the desktop modal, or
@@ -747,7 +744,6 @@ class _ConfidentialSettingsPreview extends StatelessWidget {
           child: MobileSwapSlippageStepperModal(
             slippageBps: slippageBps,
             confidential: confidential,
-            onConfidentialChanged: onConfidentialChanged,
             onSubmitted: onSave,
             onCancel: onCancel,
           ),
@@ -755,7 +751,6 @@ class _ConfidentialSettingsPreview extends StatelessWidget {
       : SwapSlippageModal(
           slippageBps: slippageBps,
           confidential: confidential,
-          onConfidentialChanged: onConfidentialChanged,
           onSubmitted: onSave,
           onCancel: onCancel,
         );

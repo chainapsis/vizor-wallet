@@ -12,13 +12,11 @@ import 'swap_confidential_ui.dart';
 import 'swap_slippage_guidance.dart';
 
 /// Quote settings for swap and Pay: the confidential route, then slippage.
-/// Confidential applies as soon as it is switched, as the Settings privacy
-/// toggles do; Update and Cancel concern slippage only.
+/// Update applies both together; Cancel leaves both as they were.
 class SwapSlippageModal extends StatefulWidget {
   const SwapSlippageModal({
     required this.slippageBps,
     required this.confidential,
-    required this.onConfidentialChanged,
     required this.onSubmitted,
     required this.onCancel,
     this.initialCustomText,
@@ -28,8 +26,7 @@ class SwapSlippageModal extends StatefulWidget {
 
   final int slippageBps;
   final bool confidential;
-  final ValueChanged<bool> onConfidentialChanged;
-  final ValueChanged<int> onSubmitted;
+  final void Function(int slippageBps, bool confidential) onSubmitted;
   final VoidCallback onCancel;
   final String? initialCustomText;
   final bool paymentMode;
@@ -177,10 +174,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
                 children: [
                   SwapConfidentialSetting(
                     confidential: _confidential,
-                    onChanged: (value) {
-                      setState(() => _confidential = value);
-                      widget.onConfidentialChanged(value);
-                    },
+                    onChanged: (value) => setState(() => _confidential = value),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Container(height: 1, color: colors.border.regular),
@@ -230,7 +224,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
                 ? () {
                     final value = _selectedBps;
                     if (value == null) return;
-                    widget.onSubmitted(value);
+                    widget.onSubmitted(value, _confidential);
                   }
                 : null,
             onCancel: widget.onCancel,

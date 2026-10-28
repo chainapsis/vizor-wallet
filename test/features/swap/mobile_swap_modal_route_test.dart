@@ -218,8 +218,7 @@ void main() {
             child: MobileSwapSlippageStepperModal(
               slippageBps: 100,
               confidential: false,
-              onConfidentialChanged: (_) {},
-              onSubmitted: (_) {},
+              onSubmitted: (_, _) {},
               onCancel: () {},
             ),
           ),
@@ -260,8 +259,7 @@ void main() {
             child: MobileSwapSlippageStepperModal(
               slippageBps: 200,
               confidential: false,
-              onConfidentialChanged: (_) {},
-              onSubmitted: (_) {},
+              onSubmitted: (_, _) {},
               onCancel: () {},
             ),
           ),
@@ -312,8 +310,7 @@ void main() {
               child: MobileSwapSlippageStepperModal(
                 slippageBps: 100,
                 confidential: false,
-                onConfidentialChanged: (_) {},
-                onSubmitted: (value) => submittedBps = value,
+                onSubmitted: (value, _) => submittedBps = value,
                 onCancel: () {},
               ),
             ),
@@ -379,8 +376,7 @@ void main() {
             child: MobileSwapSlippageStepperModal(
               slippageBps: 100,
               confidential: false,
-              onConfidentialChanged: (_) {},
-              onSubmitted: (value) => submittedBps = value,
+              onSubmitted: (value, _) => submittedBps = value,
               onCancel: () {},
             ),
           ),
@@ -448,11 +444,11 @@ void main() {
       expect(update().onPressed, isNull);
       await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
       await tester.pumpAndSettle();
-      // It applies as it is switched; Update stays for slippage alone.
-      expect(mark, findsOneWidget);
-      expect(update().onPressed, isNull);
+      // The flip enables Update and waits for it.
+      expect(mark, findsNothing);
+      expect(update().onPressed, isNotNull);
       await tester.tap(
-        find.byKey(const ValueKey('swap_slippage_cancel_button')),
+        find.byKey(const ValueKey('swap_slippage_update_button')),
       );
       await tester.pumpAndSettle();
       expect(find.byType(MobileSwapSlippageStepperModal), findsNothing);

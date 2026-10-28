@@ -246,9 +246,11 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 MobileSwapSlippageStepperModal(
                   slippageBps: swapState.slippageBps,
                   confidential: swapState.confidential,
-                  onConfidentialChanged: swapNotifier.selectConfidential,
-                  onSubmitted: (value) {
-                    swapNotifier.updateSlippageBps(value);
+                  onSubmitted: (slippageBps, confidential) {
+                    swapNotifier.updateQuoteSettings(
+                      slippageBps: slippageBps,
+                      confidential: confidential,
+                    );
                     _closeSwapModal();
                   },
                   onCancel: _closeSwapModal,

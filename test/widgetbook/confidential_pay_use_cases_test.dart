@@ -35,8 +35,8 @@ void main() {
     expect(find.text('Payment settings'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
     await tester.pump();
-    // It applied as it was switched; closing keeps it.
-    await tester.tap(find.byKey(const ValueKey('swap_slippage_cancel_button')));
+    // Update applies it with the slippage choice.
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_update_button')));
     await tester.pumpAndSettle();
     expect(find.text('Payment settings'), findsNothing);
     expect(_confidential(tester), isTrue);

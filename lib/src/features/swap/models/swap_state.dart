@@ -35,28 +35,51 @@ class SwapComposerPreferences {
   final SwapAsset externalAsset;
 }
 
-class SwapSlippageSessions {
-  const SwapSlippageSessions({
+/// The quote settings a Swap or Pay composer session keeps: slippage and the
+/// confidential route, each chosen per swap and never saved.
+class SwapQuoteSettingsSessions {
+  const SwapQuoteSettingsSessions({
     this.swapBps = defaultSwapSlippageBps,
     this.payBps = defaultSwapSlippageBps,
+    this.swapConfidential = false,
+    this.payConfidential = false,
   });
 
   final int swapBps;
   final int payBps;
+  final bool swapConfidential;
+  final bool payConfidential;
 
-  int forMode({required bool payMode}) => payMode ? payBps : swapBps;
+  int slippageFor({required bool payMode}) => payMode ? payBps : swapBps;
 
-  SwapSlippageSessions update({
+  bool confidentialFor({required bool payMode}) =>
+      payMode ? payConfidential : swapConfidential;
+
+  SwapQuoteSettingsSessions update({
     required bool payMode,
-    required int slippageBps,
+    int? slippageBps,
+    bool? confidential,
   }) {
     return payMode
-        ? SwapSlippageSessions(swapBps: swapBps, payBps: slippageBps)
-        : SwapSlippageSessions(swapBps: slippageBps, payBps: payBps);
+        ? SwapQuoteSettingsSessions(
+            swapBps: swapBps,
+            payBps: slippageBps ?? payBps,
+            swapConfidential: swapConfidential,
+            payConfidential: confidential ?? payConfidential,
+          )
+        : SwapQuoteSettingsSessions(
+            swapBps: slippageBps ?? swapBps,
+            payBps: payBps,
+            swapConfidential: confidential ?? swapConfidential,
+            payConfidential: payConfidential,
+          );
   }
 
-  SwapSlippageSessions reset({required bool payMode}) =>
-      update(payMode: payMode, slippageBps: defaultSwapSlippageBps);
+  SwapQuoteSettingsSessions reset({required bool payMode}) => update(
+    payMode: payMode,
+    slippageBps: defaultSwapSlippageBps,
+    confidential: false,
+  );
 }
 
 class SwapState {

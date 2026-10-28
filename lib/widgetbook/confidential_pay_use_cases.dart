@@ -147,16 +147,15 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
     _confidentialReveal.settingsClosed(confidential: _confidential);
   });
 
-  /// Confidential applies as it is switched, as in the app.
-  void _setConfidential(bool value) => setState(() {
-    if (value && !_confidential) {
-      _confidentialReveal.turnedOn(settingsOpen: _settingsOpen);
-    }
-    _confidential = value;
-  });
-
-  void _saveSlippage(int bps) {
-    setState(() => _slippageBps = bps);
+  /// Update applies slippage and confidential together, as in the app.
+  void _saveSettings(int bps, bool confidential) {
+    setState(() {
+      if (confidential && !_confidential) {
+        _confidentialReveal.turnedOn(settingsOpen: _settingsOpen);
+      }
+      _confidential = confidential;
+      _slippageBps = bps;
+    });
     _closeSettings();
   }
 
@@ -217,8 +216,7 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
                       slippageBps: _slippageBps,
                       confidential: _confidential,
                       paymentMode: true,
-                      onConfidentialChanged: _setConfidential,
-                      onSubmitted: _saveSlippage,
+                      onSubmitted: _saveSettings,
                       onCancel: _closeSettings,
                     ),
                   )
@@ -228,8 +226,7 @@ class _ConfidentialPayPreviewState extends State<_ConfidentialPayPreview> {
                       slippageBps: _slippageBps,
                       confidential: _confidential,
                       paymentMode: true,
-                      onConfidentialChanged: _setConfidential,
-                      onSubmitted: _saveSlippage,
+                      onSubmitted: _saveSettings,
                       onCancel: _closeSettings,
                     ),
                   ),

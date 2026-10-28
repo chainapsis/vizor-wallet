@@ -3674,7 +3674,7 @@ void main() {
     },
   );
 
-  testWidgets('pay persists its asset and keeps slippage session separate', (
+  testWidgets('pay persists its asset and keeps its quote settings separate', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -3704,7 +3704,7 @@ void main() {
     final notifier = container.read(swapStateProvider.notifier);
     final savesBeforePay = sessionStore.savePreferencesCount;
 
-    notifier.updateSlippageBps(150);
+    notifier.updateQuoteSettings(slippageBps: 150, confidential: true);
 
     notifier.preparePayFromShieldedZec();
     notifier.selectPayExternalAsset(SwapAsset.sol);
@@ -3715,7 +3715,8 @@ void main() {
     expect(sessionStore.savePreferencesCount, savesBeforePay);
 
     expect(container.read(swapStateProvider).slippageBps, 200);
-    notifier.updateSlippageBps(125);
+    expect(container.read(swapStateProvider).confidential, isFalse);
+    notifier.updateQuoteSettings(slippageBps: 125, confidential: false);
     await tester.pump();
 
     // Pay slippage is session-only and must not rewrite the swap preference.
@@ -3728,11 +3729,13 @@ void main() {
     expect(restored.payMode, isFalse);
     expect(restored.externalAsset, SwapAsset.dai);
     expect(restored.slippageBps, 150);
+    expect(restored.confidential, isTrue);
 
     notifier.preparePayFromShieldedZec();
     expect(container.read(swapStateProvider).slippageBps, 125);
+    expect(container.read(swapStateProvider).confidential, isFalse);
 
-    notifier.resetComposerSlippageSessions();
+    notifier.resetComposerQuoteSettings();
     expect(
       container.read(swapStateProvider).slippageBps,
       defaultSwapSlippageBps,
@@ -3742,6 +3745,7 @@ void main() {
       container.read(swapStateProvider).slippageBps,
       defaultSwapSlippageBps,
     );
+    expect(container.read(swapStateProvider).confidential, isFalse);
   });
 
   testWidgets('pay restores its saved payout asset on startup', (tester) async {
@@ -4898,9 +4902,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
     await tester.pumpAndSettle();
-    // It applies as it is switched, as the Settings privacy toggles do.
-    expect(mark, findsOneWidget);
+    // Nothing applies until Update, and Cancel drops the choice.
+    expect(mark, findsNothing);
     await tester.tap(find.byKey(const ValueKey('swap_slippage_cancel_button')));
+    await tester.pumpAndSettle();
+    expect(mark, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_confidential_switch')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_slippage_update_button')));
     await tester.pumpAndSettle();
     expect(mark, findsOneWidget);
 

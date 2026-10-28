@@ -659,7 +659,7 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     scheduleMicrotask(() {
       if (!ref.mounted) return;
       final notifier = ref.read(swapStateProvider.notifier);
-      if (ended) notifier.resetComposerSlippageSessions();
+      if (ended) notifier.resetComposerQuoteSettings();
       // Mobile keeps its tab widget mounted while Pay covers it. Returning
       // therefore has no new initState to restore the Swap session.
       if (path == '/swap' &&

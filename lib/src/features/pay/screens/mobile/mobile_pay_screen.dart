@@ -250,10 +250,12 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
               _PayModalSurface.slippage => MobileSwapSlippageStepperModal(
                 slippageBps: swapState.slippageBps,
                 confidential: swapState.confidential,
-                onConfidentialChanged: swapNotifier.selectConfidential,
                 paymentMode: true,
-                onSubmitted: (value) {
-                  swapNotifier.updateSlippageBps(value);
+                onSubmitted: (slippageBps, confidential) {
+                  swapNotifier.updateQuoteSettings(
+                    slippageBps: slippageBps,
+                    confidential: confidential,
+                  );
                   _closePayModal();
                 },
                 onCancel: _closePayModal,

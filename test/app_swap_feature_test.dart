@@ -63,13 +63,13 @@ void main() {
       );
       final notifier = container.read(swapStateProvider.notifier);
       final router = GoRouter.of(tester.element(find.byType(MobileSwapScreen)));
-      notifier.updateSlippageBps(125);
+      notifier.updateQuoteSettings(slippageBps: 125, confidential: false);
 
       unawaited(router.push('/pay'));
       await _pumpUntilPresent(tester, find.byType(MobilePayScreen));
       await tester.pump(const Duration(milliseconds: 500));
       expect(container.read(swapStateProvider).slippageBps, 200);
-      notifier.updateSlippageBps(300);
+      notifier.updateQuoteSettings(slippageBps: 300, confidential: false);
 
       router.pop();
       await _pumpUntilPresent(tester, find.byType(MobileSwapScreen));

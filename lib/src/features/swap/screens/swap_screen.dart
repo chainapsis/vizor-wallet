@@ -418,9 +418,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                       _SwapModalSurface.slippageSettings => SwapSlippageModal(
                         slippageBps: swapState.slippageBps,
                         confidential: swapState.confidential,
-                        onConfidentialChanged: swapNotifier.selectConfidential,
-                        onSubmitted: (value) {
-                          swapNotifier.updateSlippageBps(value);
+                        onSubmitted: (slippageBps, confidential) {
+                          swapNotifier.updateQuoteSettings(
+                            slippageBps: slippageBps,
+                            confidential: confidential,
+                          );
                           _closeSwapModal();
                         },
                         onCancel: _closeSwapModal,

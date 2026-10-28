@@ -16,13 +16,12 @@ import '../swap_slippage_guidance.dart';
 /// places. Out-of-range input turns the value and a "Slippage must be 0.1 - 5%"
 /// message destructive and disables Update. Guidance and input scroll together
 /// when large text or the keyboard limits the available space.
-/// The confidential route sits above slippage and applies as soon as it is
-/// switched, as in the desktop [SwapSlippageModal].
+/// The confidential route sits above slippage, and Update applies both, as
+/// in the desktop [SwapSlippageModal].
 class MobileSwapSlippageStepperModal extends StatefulWidget {
   const MobileSwapSlippageStepperModal({
     required this.slippageBps,
     required this.confidential,
-    required this.onConfidentialChanged,
     required this.onSubmitted,
     required this.onCancel,
     this.paymentMode = false,
@@ -31,8 +30,7 @@ class MobileSwapSlippageStepperModal extends StatefulWidget {
 
   final int slippageBps;
   final bool confidential;
-  final ValueChanged<bool> onConfidentialChanged;
-  final ValueChanged<int> onSubmitted;
+  final void Function(int slippageBps, bool confidential) onSubmitted;
   final VoidCallback onCancel;
 
   /// Pay flow variant — mirrors [SwapSlippageModal.paymentMode] with the
@@ -114,7 +112,9 @@ class _MobileSwapSlippageStepperModalState
   }
 
   bool get _inRange => _bps != null && _bps! >= _minBps && _bps! <= _maxBps;
-  bool get _canUpdate => _inRange && _bps != widget.slippageBps;
+  bool get _canUpdate =>
+      _inRange &&
+      (_bps != widget.slippageBps || _confidential != widget.confidential);
 
   void _onChanged(String text) {
     final value = double.tryParse(text.trim());
@@ -179,10 +179,8 @@ class _MobileSwapSlippageStepperModalState
                   children: [
                     SwapConfidentialSetting(
                       confidential: _confidential,
-                      onChanged: (value) {
-                        setState(() => _confidential = value);
-                        widget.onConfidentialChanged(value);
-                      },
+                      onChanged: (value) =>
+                          setState(() => _confidential = value),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Container(height: 1, color: colors.border.regular),
@@ -270,7 +268,9 @@ class _MobileSwapSlippageStepperModalState
           AppButton(
             key: const ValueKey('swap_slippage_update_button'),
             expand: true,
-            onPressed: _canUpdate ? () => widget.onSubmitted(_bps!) : null,
+            onPressed: _canUpdate
+                ? () => widget.onSubmitted(_bps!, _confidential)
+                : null,
             child: const Text('Update'),
           ),
           const SizedBox(height: AppSpacing.s),
