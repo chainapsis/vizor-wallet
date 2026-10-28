@@ -1556,6 +1556,84 @@ fn children_an_earlier_build_signed_for_the_new_branch_are_counted_for_rebuild()
 }
 
 #[test]
+fn transactions_outside_a_run_expire_once_the_scan_passes_their_branch() {
+    use zcash_primitives::transaction::{Authorized, TransactionData};
+
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB NOT NULL UNIQUE, mined_height INTEGER,
+             expiry_height INTEGER, raw BLOB
+         );",
+    )
+    .unwrap();
+    let network = WalletNetwork::Test;
+    let activation = TEST_NU7_ACTIVATION_HEIGHT;
+    let zip318_expiry = activation + 50_000;
+    // A transaction carries the branch it was signed for in its header.
+    let signed_at = |height: u32| {
+        let tx = TransactionData::<Authorized>::from_parts(
+            TxVersion::V5,
+            BranchId::for_height(&network, BlockHeight::from_u32(height)),
+            0,
+            BlockHeight::from_u32(zip318_expiry),
+            None,
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .unwrap();
+        let mut raw = Vec::new();
+        tx.write(&mut raw).unwrap();
+        raw
+    };
+    for (tag, raw, mined_height, expiry_height) in [
+        // An Immediate migration for the old branch, never mined.
+        (1u8, Some(signed_at(activation - 12)), None, zip318_expiry),
+        // Mined before the upgrade.
+        (
+            2,
+            Some(signed_at(activation - 12)),
+            Some(activation - 11),
+            zip318_expiry,
+        ),
+        // Signed for the new branch.
+        (3, Some(signed_at(activation + 5)), None, zip318_expiry),
+        // A send whose expiry already ends with the branch.
+        (4, Some(signed_at(activation - 12)), None, activation - 1),
+        // No stored transaction to read the branch from.
+        (5, None, None, zip318_expiry),
+    ] {
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height, expiry_height, raw)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![vec![tag; 32], mined_height, expiry_height, raw],
+        )
+        .unwrap();
+    }
+    let expiry = |tag: u8| -> u32 {
+        conn.query_row(
+            "SELECT expiry_height FROM transactions WHERE txid = ?1",
+            params![vec![tag; 32]],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+
+    // The last old-branch block is not scanned yet, so it may still be mined.
+    expire_unminable_transactions_at(&conn, network, activation - 1).unwrap();
+    assert_eq!(expiry(1), zip318_expiry);
+
+    expire_unminable_transactions_at(&conn, network, activation).unwrap();
+    assert_eq!(expiry(1), activation - 1);
+    for tag in [2, 3, 5] {
+        assert_eq!(expiry(tag), zip318_expiry, "transaction {tag}");
+    }
+    assert_eq!(expiry(4), activation - 1);
+}
+
+#[test]
 fn the_upgrade_stop_expires_old_branch_transactions_the_network_cannot_mine() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");

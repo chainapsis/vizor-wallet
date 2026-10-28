@@ -18,7 +18,8 @@ use crate::wallet::db::{
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::network_upgrade;
 use crate::wallet::secret_payload;
-use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
+use zcash_primitives::transaction::{Transaction, TxVersion};
+use zcash_protocol::consensus::{BlockHeight, BranchId, NetworkUpgrade, Parameters};
 use zcash_protocol::zip318::{AnchorBucketInterval, AnchorGrid, BlockSpacing};
 
 use super::READ_DB_BUSY_TIMEOUT;
@@ -1233,6 +1234,7 @@ pub(crate) fn reconcile_wallet_locks_after_sync(
 
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
+    expire_unminable_transactions_outside_runs(&conn, db_path, network)?;
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT run_id
@@ -5231,16 +5233,118 @@ fn expire_unminable_run_transactions(
             };
             let branch_end = u32::from(next_activation).saturating_sub(1);
             for txid in txid_blob_variants(&txid_hex)? {
-                conn.execute(
-                    "UPDATE transactions SET expiry_height = ?1
-                     WHERE txid = ?2 AND mined_height IS NULL
-                       AND (expiry_height IS NULL OR expiry_height = 0 OR expiry_height > ?1)",
-                    params![branch_end, txid],
-                )
-                .map_err(|e| format!("Expire unminable migration transaction: {e}"))?;
+                expire_unmined_transaction(conn, &txid, branch_end)?;
             }
         }
     }
+    Ok(())
+}
+
+/// Like [`expire_unminable_run_transactions`] for transactions outside a run,
+/// such as an Immediate migration, once the scan has passed their branch.
+fn expire_unminable_transactions_outside_runs(
+    conn: &rusqlite::Connection,
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    use zcash_client_backend::data_api::WalletRead;
+
+    if !table_exists(conn, "transactions")? {
+        return Ok(());
+    }
+    // The tip settles it for almost every sync, before the wallet is opened.
+    let Some(chain_tip_height) = wallet_tip(conn)? else {
+        return Ok(());
+    };
+    let tip_next = chain_tip_height.saturating_add(1);
+    if !unmined_transaction_branches(conn, chain_tip_height)?
+        .iter()
+        .any(|(_, branch)| ended_branch_end(&network, *branch, tip_next).is_some())
+    {
+        return Ok(());
+    }
+    // Wait for the scan so a transaction mined before the upgrade is seen first.
+    let fully_scanned = super::open_wallet_db_for_read(db_path, network)?
+        .block_fully_scanned()
+        .map_err(|e| format!("Read fully scanned height for unminable transactions: {e}"))?;
+    let Some(block) = fully_scanned else {
+        return Ok(());
+    };
+    expire_unminable_transactions_at(
+        conn,
+        network,
+        u32::from(block.block_height()).saturating_add(1),
+    )
+}
+
+/// Expires each unmined transaction signed for a branch that ended before
+/// `next_height`, at that branch's last block.
+fn expire_unminable_transactions_at(
+    conn: &rusqlite::Connection,
+    network: WalletNetwork,
+    next_height: u32,
+) -> Result<(), String> {
+    for (txid, branch) in unmined_transaction_branches(conn, next_height.saturating_sub(1))? {
+        if let Some(branch_end) = ended_branch_end(&network, branch, next_height) {
+            expire_unmined_transaction(conn, &txid, branch_end)?;
+        }
+    }
+    Ok(())
+}
+
+/// The last block of `branch` when it ended before `next_height`.
+fn ended_branch_end(network: &WalletNetwork, branch: BranchId, next_height: u32) -> Option<u32> {
+    let (_, end) = branch.height_bounds(network)?;
+    let end = u32::from(end?);
+    (next_height >= end).then(|| end - 1)
+}
+
+/// Unmined transactions whose wallet expiry lies past `height`, with the
+/// branch each was signed for. The wallet does not record a target height for
+/// every transaction, so the branch comes from the stored v5 or v6 header;
+/// earlier versions do not carry one and are skipped.
+fn unmined_transaction_branches(
+    conn: &rusqlite::Connection,
+    height: u32,
+) -> Result<Vec<(Vec<u8>, BranchId)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT txid, raw FROM transactions
+             WHERE mined_height IS NULL AND raw IS NOT NULL
+               AND (expiry_height IS NULL OR expiry_height = 0 OR expiry_height > ?1)",
+        )
+        .map_err(|e| format!("Prepare unmined transaction query: {e}"))?;
+    let rows = stmt
+        .query_map(params![height], |row| {
+            Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(|e| format!("Query unmined transactions: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read unmined transaction: {e}"))?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(txid, raw)| {
+            let tx = Transaction::read(&raw[..], BranchId::Sapling).ok()?;
+            matches!(tx.version(), TxVersion::V5 | TxVersion::V6)
+                .then(|| (txid, tx.consensus_branch_id()))
+        })
+        .collect())
+}
+
+/// Sets an unmined transaction's wallet expiry to `branch_end` when it would
+/// otherwise outlive the branch, which returns its inputs.
+fn expire_unmined_transaction(
+    conn: &rusqlite::Connection,
+    txid: &[u8],
+    branch_end: u32,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE transactions SET expiry_height = ?1
+         WHERE txid = ?2 AND mined_height IS NULL
+           AND (expiry_height IS NULL OR expiry_height = 0 OR expiry_height > ?1)",
+        params![branch_end, txid],
+    )
+    .map_err(|e| format!("Expire unminable transaction: {e}"))?;
     Ok(())
 }
 

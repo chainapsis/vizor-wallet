@@ -426,6 +426,77 @@ fn an_immediate_migration_is_held_at_the_upgrade_and_sent_after_it() {
     );
 }
 
+/// An Immediate migration the network never mines before NU7 cannot be mined
+/// after it. Once the wallet scans the last old-branch block, its inputs return
+/// and a new Immediate migration moves them under NU7.
+#[test]
+#[ignore = "requires the Dockerized NU7 regtest stack (scripts/nu7-regtest)"]
+fn a_missed_immediate_migration_returns_its_inputs_after_the_upgrade() {
+    let (nu6_3, nu7) = activation_heights(IMMEDIATE_NU7_GAP);
+    simple_api::configure_regtest_ironwood_activation_height(nu6_3 as u32)
+        .expect("configure wallet NU6.3 activation");
+    simple_api::configure_regtest_nu7_activation_height(nu7 as u32)
+        .expect("configure wallet NU7 activation");
+    run_harness("up.sh", &[]);
+    run_harness("mine.sh", &["1"]);
+
+    let migrator_dir = tempfile::tempdir().expect("migrator tempdir");
+    let migrator_db = path_string(&migrator_dir.path().join("zcash_wallet.db"));
+    let migrator = wallet_api::import_wallet(
+        MIGRATION_MNEMONIC.to_string(),
+        String::new(),
+        Some(latest_height()),
+        NETWORK.to_string(),
+        migrator_db.clone(),
+        Some("NU7 missed immediate".to_string()),
+    )
+    .expect("import migration wallet");
+    run_harness("fund.sh", &[&migrator.unified_address, "2"]);
+    mine(COINBASE_MATURITY + 10);
+    mine_to(nu6_3 + 1);
+    mine_to(nu7 - 12);
+    sync(&migrator_db);
+    let funded = orchard_total(&balance(&migrator_db, &migrator.account_uuid));
+
+    let sent = migrate_immediately(&migrator_db, &migrator.account_uuid, MIGRATION_MNEMONIC)
+        .expect("an Immediate migration one block before the hold is sent");
+    let txid = sent
+        .txids
+        .split(',')
+        .next()
+        .expect("immediate txid")
+        .to_string();
+    // The node forgets it, and the chain moves past NU7 before the wallet looks again.
+    run_harness("drop-mempool.sh", &[]);
+    mine_to(nu7 + 1);
+    sync(&migrator_db);
+
+    assert_eq!(
+        wallet_expiry_height(&migrator_db, &txid),
+        Some(nu7 - 1),
+        "the wallet expires the unminable migration at the last pre-NU7 block"
+    );
+    let released = balance(&migrator_db, &migrator.account_uuid);
+    assert_eq!(
+        orchard_total(&released),
+        funded,
+        "its inputs are back in the Orchard balance: {}",
+        describe(&released)
+    );
+    let moved = migrate_immediately(&migrator_db, &migrator.account_uuid, MIGRATION_MNEMONIC)
+        .expect("the returned inputs move under NU7");
+    let txid = moved.txids.split(',').next().expect("immediate txid");
+    assert!(expiry_height(txid) > nu7, "signed for the NU7 branch");
+    mine(1);
+    sync(&migrator_db);
+    let migrated = balance(&migrator_db, &migrator.account_uuid);
+    assert!(
+        migrated.ironwood + migrated.ironwood_pending > 0,
+        "mined after NU7: {}",
+        describe(&migrated)
+    );
+}
+
 fn migrate_immediately(
     db_path: &str,
     account_uuid: &str,
