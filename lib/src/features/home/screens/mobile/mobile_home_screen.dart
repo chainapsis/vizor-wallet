@@ -31,6 +31,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
@@ -366,6 +367,7 @@ class _IronwoodMigrationAttentionHostState
       isKeystone: ref
           .read(accountProvider.notifier)
           .isKeystoneAccount(accountUuid),
+      blockSpacing: ref.read(blockSpacingProvider),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -1133,6 +1135,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           ref
               .read(accountProvider.notifier)
               .isKeystoneAccount(activeAccountUuid),
+      blockSpacing: ref.watch(blockSpacingProvider),
     );
 
     final uuid = activeAccountUuid;

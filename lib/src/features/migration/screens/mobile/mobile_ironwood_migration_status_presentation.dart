@@ -42,6 +42,7 @@ _mobileMigrationPartPresentations({
     final lateScheduledTxids = _mobileLateScheduledTxids(
       status!,
       currentHeight: currentHeight,
+      blockSpacing: blockTimes.spacing,
     );
     final plannedTransferByPart = {
       for (final transfer in previewPlan?.scheduledTransfers ?? const [])
@@ -186,6 +187,7 @@ MobileIronwoodMigrationPartStatus _mobileMigrationPartStatus(
 Set<String> _mobileLateScheduledTxids(
   rust_sync.MigrationStatus status, {
   required int? currentHeight,
+  required BlockSpacing blockSpacing,
 }) {
   if (currentHeight == null || currentHeight <= 0) return const {};
   return {
@@ -193,7 +195,10 @@ Set<String> _mobileLateScheduledTxids(
       if (broadcast.status.toLowerCase() == 'scheduled' &&
           broadcast.scheduledHeight > 0 &&
           currentHeight >=
-              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks)
+              ironwoodMigrationLateHeight(
+                broadcast.scheduledHeight,
+                blockSpacing,
+              ))
         broadcast.txidHex.toLowerCase(),
   };
 }

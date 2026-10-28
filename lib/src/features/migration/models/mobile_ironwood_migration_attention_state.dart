@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/zcash/block_spacing.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'ironwood_migration_phases.dart';
 import 'ironwood_migration_presentation.dart';
@@ -50,6 +51,7 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
   required int currentHeight,
   required int broadcastHeight,
   required bool isKeystone,
+  required BlockSpacing blockSpacing,
 }) {
   if (status == null) return null;
   if (status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
@@ -105,7 +107,7 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
         item.status.toLowerCase() == 'scheduled' &&
         item.scheduledHeight > 0 &&
         broadcastHeight >=
-            item.scheduledHeight + kIronwoodMigrationLateGraceBlocks,
+            ironwoodMigrationLateHeight(item.scheduledHeight, blockSpacing),
   );
   return hasLateBroadcast
       ? const MobileIronwoodMigrationAttention(

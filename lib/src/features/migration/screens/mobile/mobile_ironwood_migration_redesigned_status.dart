@@ -1071,7 +1071,10 @@ class _MobileMigrationRedesignedStatusState
       if (broadcast.status.toLowerCase() != 'scheduled' ||
           broadcast.scheduledHeight <= 0 ||
           currentHeight <
-              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks) {
+              ironwoodMigrationLateHeight(
+                broadcast.scheduledHeight,
+                ref.read(blockSpacingProvider),
+              )) {
         continue;
       }
       if (earliest == null || broadcast.scheduledHeight < earliest) {
@@ -1309,6 +1312,7 @@ class _MobileMigrationRedesignedStatusState
       currentHeight: _currentHeight(),
       broadcastHeight: _currentBroadcastHeight(),
       isKeystone: widget.isHardware,
+      blockSpacing: ref.read(blockSpacingProvider),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -1430,7 +1434,10 @@ class _MobileMigrationRedesignedStatusState
         if (broadcast.status.toLowerCase() != 'scheduled' ||
             broadcast.scheduledHeight <= 0 ||
             currentHeight <
-                broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks) {
+                ironwoodMigrationLateHeight(
+                  broadcast.scheduledHeight,
+                  ref.read(blockSpacingProvider),
+                )) {
           continue;
         }
         for (final part in ordered) {
