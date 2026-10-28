@@ -550,6 +550,11 @@ fn migration_status_with_projection_height(
             // A receipt until the user moves the rest, like a completed run.
             status.active_run_id = None;
             status.can_abandon = false;
+            // Its unsent parts are never broadcast; listed as scheduled, they
+            // read as due work, and the iOS outbox recovery fails on them.
+            status.scheduled_broadcasts.retain(|broadcast| {
+                !matches!(broadcast.status.as_str(), "scheduled" | "needs_resign")
+            });
             return Ok(status);
         }
     }
