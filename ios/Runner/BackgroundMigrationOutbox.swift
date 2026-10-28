@@ -1246,7 +1246,8 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         let activation = BackgroundMigrationOutboxCadence.nu7ActivationHeight(
           network: batch.network
         ),
-        remoteHeight + 1 >= activation,
+        // A server can report any tip, so this must not add to it.
+        remoteHeight >= activation - 1,
         batch.items.contains(where: {
           ($0.status == .armed || $0.status == .needsResignAwaitingReconciliation)
             && ($0.targetHeight ?? activation) < activation

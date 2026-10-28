@@ -865,6 +865,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(try key(activation - 100, at: activation - 2))
     XCTAssertEqual(try key(activation - 100, at: activation - 1), "test:\(activation)")
     XCTAssertEqual(try key(activation - 100, at: activation + 5), "test:\(activation)")
+    XCTAssertEqual(try key(activation - 100, at: UInt64.max), "test:\(activation)")
     // Signed for the new branch, or saved by an older build with no target.
     XCTAssertNil(try key(activation, at: activation + 5))
     XCTAssertNil(try key(nil, at: activation + 5))

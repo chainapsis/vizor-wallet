@@ -328,7 +328,7 @@ private enum BackgroundMigrationNotification {
       [proofReadyIdentifier(batchId: $0), broadcastCompleteIdentifier(batchId: $0)]
     }
     if includeNeedsAction {
-      identifiers.append(needsActionIdentifier)
+      identifiers.append(contentsOf: [needsActionIdentifier, upgradeStopIdentifier])
     }
     guard !identifiers.isEmpty else { return }
     let center = UNUserNotificationCenter.current()
