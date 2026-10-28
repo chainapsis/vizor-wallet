@@ -50,10 +50,6 @@ void main() {
       );
 
       expect(
-        find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
-        findsNothing,
-      );
-      expect(
         find.byKey(
           const ValueKey('home_desktop_ironwood_migration_cta_button'),
         ),
@@ -98,35 +94,17 @@ void main() {
       final cachedMigration = await providerContainer.read(
         ironwoodMigrationStatusProvider(request).future,
       );
-      final announcement = await providerContainer.read(
-        ironwoodMigrationAnnouncementProvider.future,
-      );
-      e2eLog(
-        'provider state: cachedPhase=${cachedMigration.phase}, '
-        'announcementVisible=${announcement.visible}',
-      );
+      e2eLog('provider state: cachedPhase=${cachedMigration.phase}');
 
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
+          find.byKey(
+            const ValueKey('home_desktop_ironwood_migration_cta_button'),
+          ),
         ),
-        description: 'Ironwood announcement after activation',
+        description: 'migration CTA after activation',
         timeout: const Duration(minutes: 5),
-      );
-
-      final announcementOverlay = find.byKey(
-        const ValueKey('ironwood_migration_announcement_overlay'),
-      );
-      final overlayOrigin = tester.getTopLeft(announcementOverlay);
-      await tester.tapAt(overlayOrigin + const Offset(16, 16));
-      await tester.pump(const Duration(milliseconds: 250));
-      await pumpUntil(
-        tester,
-        () => !tester.any(
-          find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
-        ),
-        description: 'dismissed announcement to disappear',
       );
       await openPrivateMigrationReview(tester);
       final approvedPlan = await providerContainer.read(

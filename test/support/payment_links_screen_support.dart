@@ -195,9 +195,6 @@ Future<void> pumpPaymentLinksScreen(
         ironwoodPostMigrationStateProvider.overrideWith((ref) async {
           return const IronwoodPostMigrationState.unavailable();
         }),
-        ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
-          return const IronwoodMigrationAnnouncementState.hidden();
-        }),
         ironwoodMigrationCoordinatorProvider.overrideWith(
           FakeMigrationCoordinator.new,
         ),
