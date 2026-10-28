@@ -84,7 +84,12 @@ final ironwoodMigrationFlowDataProvider =
 
       final cta = ref.watch(ironwoodHomeMigrationPresentationProvider);
       final status = cta.accountUuid == inputs.accountUuid ? cta.status : null;
-      final targetTotal = _sumTargetValues(status);
+      // A stopped run's targets include what it already moved; moving the
+      // rest starts from the balance.
+      final targetTotal =
+          status?.phase == kIronwoodMigrationStoppedByUpgradePhase
+          ? BigInt.zero
+          : _sumTargetValues(status);
       final amount = targetTotal > BigInt.zero
           ? targetTotal
           : inputs.orchardBalance + inputs.orchardPendingBalance;

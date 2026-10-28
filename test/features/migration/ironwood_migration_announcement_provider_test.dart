@@ -521,6 +521,36 @@ void main() {
     expect(routeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
   });
 
+  test(
+    'moving the rest of a stopped run shows the remaining balance',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationStoppedByUpgradePhase,
+        migrationTargetValues: const [5_000_000],
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_543_500,
+          chainTipHeight: 3_543_500,
+          orchardBalance: BigInt.from(3_000_000),
+          spendableBalance: BigInt.from(3_000_000),
+          totalBalance: BigInt.from(3_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodHomeMigrationCtaProvider.future);
+
+      expect(
+        container.read(ironwoodMigrationFlowDataProvider)?.amountZatoshi,
+        BigInt.from(3_000_000),
+      );
+    },
+  );
+
   test('active migration keeps migrated Ironwood funds usable', () async {
     final container = _container(
       ironwoodActiveAtTip: true,
