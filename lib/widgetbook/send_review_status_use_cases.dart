@@ -4,6 +4,8 @@
 import 'package:flutter/widgets.dart';
 
 import '../src/core/theme/app_theme.dart';
+import '../src/core/widgets/app_button.dart';
+import '../src/core/widgets/app_icon.dart';
 import '../src/features/send/widgets/send_review_content_view.dart';
 import '../src/features/send/widgets/send_review_layout.dart';
 import '../src/features/send/widgets/send_status_content_view.dart';
@@ -146,6 +148,34 @@ Widget buildSendStatusInProgressUseCase(BuildContext context) {
       onExpandMemo: () {},
       onOpenExplorer: () {},
       onFeeHelp: () {},
+    ),
+  );
+}
+
+/// Send status — completed send to a Zcash name, offering to add the
+/// recipient to contacts.
+Widget buildSendStatusZnsContactUseCase(BuildContext context) {
+  return _SendReviewStatusFrame(
+    child: SendStatusContentView(
+      phase: SendStatusPhase.completed,
+      amountText: '123.12 ZEC',
+      fiatText: r'$250.12',
+      recipient: _znsNameRecipient,
+      timestampText: '25 May, 13:30',
+      txIdText: '0123123124512512',
+      feeText: '0.012 ZEC',
+      onShowFullAddress: () {},
+      onExpandMemo: () {},
+      onOpenExplorer: () {},
+      onFeeHelp: () {},
+      footer: Center(
+        child: AppButton(
+          variant: AppButtonVariant.ghost,
+          leading: const AppIcon(AppIcons.users),
+          onPressed: () {},
+          child: const Text('Add to contacts'),
+        ),
+      ),
     ),
   );
 }

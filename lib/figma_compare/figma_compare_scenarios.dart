@@ -3371,6 +3371,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildZnsDesktopSendNotRegisteredUseCase,
   ),
   FigmaCompareScenario(
+    id: 'send-status-zns-contact',
+    description: 'Desktop send status offering to add a Zcash name contact',
+    builder: buildSendStatusZnsContactUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'send-review-zns-name',
     description: 'Desktop send review with a Zcash name recipient',
     builder: buildSendReviewZnsNameUseCase,

@@ -1957,6 +1957,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSendReviewZnsNameUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Status, Zcash name',
+                      builder: buildSendStatusZnsContactUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Payment request, contact',
                       builder: buildSendReviewPaymentRequestContactUseCase,
                     ),
