@@ -45,7 +45,7 @@ import '../models/send_scan_result.dart';
 import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
 import '../services/send_proving_key_warmup.dart';
-import '../services/zns_recipient_lookup.dart';
+import '../../../core/naming/zns_recipient_lookup.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 

@@ -1,5 +1,5 @@
-import '../../../../main.dart' show log;
-import '../../../core/naming/zns_name_resolver.dart';
+import '../../../main.dart' show log;
+import 'zns_name_resolver.dart';
 
 /// Why a Zcash name in the send recipient field has no usable address yet.
 ///

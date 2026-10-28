@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
-import 'package:zcash_wallet/src/features/send/services/zns_recipient_lookup.dart';
+import 'package:zcash_wallet/src/core/naming/zns_recipient_lookup.dart';
 
 import '../../fakes/fake_zns_name_resolver.dart';
 
