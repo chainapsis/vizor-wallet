@@ -12,7 +12,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../main.dart' show log;
 import '../../../app_bootstrap.dart';
@@ -27,7 +26,6 @@ import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
@@ -48,7 +46,6 @@ import '../../activity/screens/activity_transaction_status_screen.dart';
 import '../../activity/swap_activity_row_items_provider.dart';
 import '../../activity/swap_activity_row_mapper.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
-import '../../migration/widgets/ironwood_migration_announcement_modal.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
@@ -86,8 +83,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   HardwareSignerKind? _shieldHardwareSignerKind;
   String? _shieldBalanceError;
   String? _shieldBalanceErrorDetail;
-  IronwoodMigrationAnnouncementState? _visibleIronwoodAnnouncement;
-  String? _suppressedIronwoodAnnouncementScope;
   String? _dismissedNu7Network;
 
   @override
@@ -195,43 +190,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  String? _ironwoodAnnouncementScope(
-    IronwoodMigrationAnnouncementState announcement,
-  ) {
-    final network = announcement.network;
-    final accountUuid = announcement.accountUuid;
-    if (network == null || accountUuid == null) return null;
-    return '$network|$accountUuid';
-  }
-
-  void _clearVisibleIronwoodAnnouncement(
-    IronwoodMigrationAnnouncementState announcement,
-  ) {
-    final scope = _ironwoodAnnouncementScope(announcement);
-    setState(() {
-      _visibleIronwoodAnnouncement = null;
-      _suppressedIronwoodAnnouncementScope = scope;
-    });
-  }
-
-  Future<void> _markIronwoodAnnouncementSeen(
-    IronwoodMigrationAnnouncementState announcement,
-  ) async {
-    final network = announcement.network;
-    final accountUuid = announcement.accountUuid;
-    if (network == null || accountUuid == null) return;
-    try {
-      await ref
-          .read(ironwoodMigrationAnnouncementStoreProvider)
-          .markSeen(network: network, accountUuid: accountUuid);
-    } catch (e) {
-      log('HomeScreen: failed to store Ironwood announcement state: $e');
-      return;
-    }
-    if (!mounted) return;
-    ref.invalidate(ironwoodMigrationAnnouncementProvider);
-  }
-
   Future<void> _dismissNu7Announcement(String network) async {
     setState(() => _dismissedNu7Network = network);
     try {
@@ -242,37 +200,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     if (!mounted) return;
     ref.invalidate(nu7AnnouncementProvider);
-  }
-
-  void _dismissIronwoodAnnouncement(
-    IronwoodMigrationAnnouncementState announcement,
-  ) {
-    _clearVisibleIronwoodAnnouncement(announcement);
-    unawaited(_markIronwoodAnnouncementSeen(announcement));
-  }
-
-  Future<void> _openIronwoodMigration(
-    IronwoodMigrationAnnouncementState announcement,
-  ) async {
-    try {
-      _clearVisibleIronwoodAnnouncement(announcement);
-      context.go('/migration/prepare');
-      await _markIronwoodAnnouncementSeen(announcement);
-    } catch (e) {
-      log('HomeScreen: migration route is not available yet: $e');
-    }
-  }
-
-  Future<void> _openIronwoodReleaseNotes() async {
-    final uri = Uri.parse(kIronwoodMigrationReleaseNotesUrl);
-    try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened) {
-        log('HomeScreen: failed to open Ironwood release notes: $uri');
-      }
-    } catch (e) {
-      log('HomeScreen: failed to open Ironwood release notes: $e');
-    }
   }
 
   Future<void> _openIronwoodMigrationFromHomeCta(
@@ -339,46 +266,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? 'assets/illustrations/home_importing_background.webp'
         : 'assets/illustrations/desktop/'
               'home_default_background_${isDark ? 'dark' : 'light'}.webp';
-    final ironwoodAnnouncementAsync = ref.watch(
-      ironwoodMigrationAnnouncementProvider,
-    );
-    final ironwoodAnnouncement = ironwoodAnnouncementAsync.value;
-    final latestVisibleIronwoodAnnouncement =
-        (ironwoodAnnouncement?.visible ?? false) &&
-            ironwoodAnnouncement?.accountUuid == activeAccountUuid
-        ? ironwoodAnnouncement
-        : null;
-    if (_visibleIronwoodAnnouncement?.accountUuid != null &&
-        _visibleIronwoodAnnouncement?.accountUuid != activeAccountUuid) {
-      _visibleIronwoodAnnouncement = null;
-    }
-    final latestIronwoodScope = latestVisibleIronwoodAnnouncement == null
-        ? null
-        : _ironwoodAnnouncementScope(latestVisibleIronwoodAnnouncement);
-    if (latestVisibleIronwoodAnnouncement != null &&
-        latestIronwoodScope != _suppressedIronwoodAnnouncementScope) {
-      _visibleIronwoodAnnouncement = latestVisibleIronwoodAnnouncement;
-    }
-    final announcementResolvedHidden = switch (ironwoodAnnouncementAsync) {
-      AsyncData(:final value) => !value.visible,
-      _ => false,
-    };
-    final preserveAnnouncementDuringRefresh =
-        !sync.hasAccountScopedData ||
-        sync.isSyncing ||
-        sync.isBackgroundMode ||
-        sync.failure != null ||
-        sync.error != null;
-    if (announcementResolvedHidden && !preserveAnnouncementDuringRefresh) {
-      _visibleIronwoodAnnouncement = null;
-    }
-    final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
-    // Never stack it on an open Ironwood modal or hardware signing.
+    // Never stack it on hardware signing.
     final nu7Network = ref.watch(nu7AnnouncementProvider).value?.network;
     final visibleNu7Network =
-        visibleIronwoodAnnouncement == null &&
-            _shieldHardwareSignerKind == null &&
-            nu7Network != _dismissedNu7Network
+        _shieldHardwareSignerKind == null && nu7Network != _dismissedNu7Network
         ? nu7Network
         : null;
     return AppDesktopBackdropShell(
@@ -442,20 +333,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             LedgerShieldSigningOverlay(
               onCancel: _closeHardwareShieldSigning,
               onComplete: _closeHardwareShieldSigning,
-            ),
-          if (visibleIronwoodAnnouncement != null)
-            AppPaneModalOverlay(
-              key: const ValueKey('ironwood_migration_announcement_overlay'),
-              alignment: const Alignment(0, -0.08),
-              onDismiss: () =>
-                  _dismissIronwoodAnnouncement(visibleIronwoodAnnouncement),
-              child: IronwoodMigrationAnnouncementModal(
-                onStartMigration: () => unawaited(
-                  _openIronwoodMigration(visibleIronwoodAnnouncement),
-                ),
-                onOpenReleaseNotes: () =>
-                    unawaited(_openIronwoodReleaseNotes()),
-              ),
             ),
           if (visibleNu7Network != null)
             Nu7AnnouncementOverlay(

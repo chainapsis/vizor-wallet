@@ -667,10 +667,6 @@ class WidgetbookApp extends StatelessWidget {
                           buildMobileHomeIronwoodMigrationInProgressUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Home - Announcement modal',
-                      builder: buildMobileHomeIronwoodAnnouncementUseCase,
-                    ),
-                    WidgetbookUseCase(
                       name: 'About Ironwood',
                       builder: buildMobileIronwoodMigrationIntroUseCase,
                     ),
