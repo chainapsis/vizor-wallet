@@ -3376,6 +3376,24 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSendReviewZnsNameUseCase,
   ),
   FigmaCompareScenario(
+    id: 'zns-desktop-contacts',
+    description: 'Desktop contacts, for the ZNS contact capture test',
+    builder: buildZnsDesktopContactsUseCase,
+    allowPointer: true,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-mobile-contacts',
+    description: 'Mobile contacts, for the ZNS contact capture test',
+    builder: buildZnsMobileContactsUseCase,
+    allowPointer: true,
+    allowFocus: true,
+    // The add sheet opens on the harness's own navigator, inside capture.
+    outsideScaffold: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'zns-mobile-send-resolved',
     description: 'Mobile recipient step with a Zcash name resolved',
     builder: buildZnsMobileSendResolvedUseCase,

@@ -14,6 +14,8 @@ import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/naming/zns_name_resolver.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
+import '../src/features/address_book/screens/address_book_screen.dart';
+import '../src/features/address_book/screens/mobile/mobile_address_book_screen.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/send/models/send_prefill_args.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
@@ -54,6 +56,14 @@ Widget buildZnsMobileSendAmountUseCase(BuildContext context) =>
 
 Widget buildZnsMobileSendReviewUseCase(BuildContext context) =>
     const _MobileZnsSendHarness(recipient: _znsAddress, step: _Step.review);
+
+/// The contacts screen with no contacts. The ZNS contact capture test opens
+/// its add form and types a name.
+Widget buildZnsDesktopContactsUseCase(BuildContext context) =>
+    const _ContactsHarness(mobile: false);
+
+Widget buildZnsMobileContactsUseCase(BuildContext context) =>
+    const _ContactsHarness(mobile: true);
 
 enum _Step { recipient, amount, review }
 
@@ -203,6 +213,41 @@ class _DesktopZnsSendHarnessState extends State<_DesktopZnsSendHarness> {
       resolver: widget.resolver,
       child: Router.withConfig(config: _router),
     );
+  }
+}
+
+class _ContactsHarness extends StatefulWidget {
+  const _ContactsHarness({required this.mobile});
+
+  final bool mobile;
+
+  @override
+  State<_ContactsHarness> createState() => _ContactsHarnessState();
+}
+
+class _ContactsHarnessState extends State<_ContactsHarness> {
+  late final GoRouter _router = GoRouter(
+    initialLocation: '/contacts',
+    routes: [
+      GoRoute(path: '/', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(
+        path: '/contacts',
+        builder: (_, _) => widget.mobile
+            ? const MobileAddressBookScreen()
+            : const AddressBookScreen(),
+      ),
+    ],
+  );
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _captureScope(child: Router.withConfig(config: _router));
   }
 }
 
