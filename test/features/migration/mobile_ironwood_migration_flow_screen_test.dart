@@ -2168,6 +2168,50 @@ void main() {
     );
   });
 
+  testWidgets('moving the rest of an upgrade-stopped run names it on options', (
+    tester,
+  ) async {
+    final stopped = _status(
+      phase: kIronwoodMigrationStoppedByUpgradePhase,
+      activeRunId: null,
+    );
+    final cta = IronwoodHomeMigrationCtaState.stopped(
+      network: 'main',
+      accountUuid: 'account-1',
+      status: stopped,
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(),
+        status: stopped,
+        ctaBuilder: () => cta,
+        extraOverrides: [
+          ironwoodHomeMigrationPresentationProvider.overrideWithValue(cta),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('How to Move the Rest'), findsOneWidget);
+    expect(
+      find.text(
+        '142.23 ZEC is still in Orchard. Choose between more privacy over '
+        'time or a faster migration.',
+      ),
+      findsOneWidget,
+    );
+    // Back returns to the stopped run rather than the first-run explainer.
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_upgrade_stop_move_remaining')),
+      findsOneWidget,
+    );
+    expect(find.text('Move remaining balance'), findsOneWidget);
+  });
+
   testWidgets('shows the migration type choice and preview selection', (
     tester,
   ) async {

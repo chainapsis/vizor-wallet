@@ -109,8 +109,17 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
+        data: data,
         privateEnabled: privateMigrationEnabled,
         privateUnavailableForLedger: ledgerAccount,
+        // A stopped run's remainder starts here; say so and lead back.
+        movingRest:
+            !previewMode &&
+            ref.watch(
+              ironwoodHomeMigrationPresentationProvider.select(
+                (cta) => cta.mode == IronwoodHomeMigrationCtaMode.stopped,
+              ),
+            ),
       ),
       MobileIronwoodMigrationStep.notifications =>
         _MobileMigrationNotificationPermissionScreen(

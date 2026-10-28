@@ -907,7 +907,9 @@ class _MobileMigrationRedesignedStatusState
       return _MigrationUpgradeStoppedView(
         stop: IronwoodMigrationUpgradeStop(
           migratedAmountText: _migratedAmountText(widget.status),
-          remainingAmountText: leftToMigrateText,
+          // What the next run moves; the options and review start from it.
+          remainingAmountText:
+              '${ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText} ZEC',
           completedParts: _completedParts(widget.status),
           totalParts: _totalParts(widget.status),
         ),

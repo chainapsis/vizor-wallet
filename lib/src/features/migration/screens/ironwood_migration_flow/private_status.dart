@@ -91,6 +91,9 @@ class _IronwoodMigrationPrivateStatusContentState
     if (status.phase == kIronwoodMigrationStoppedByUpgradePhase) {
       return _MigrationUpgradeStoppedStatusContent(
         status: status,
+        orchardBalanceZatoshi: ref
+            .watch(ironwoodMigrationFlowDataProvider)
+            ?.amountZatoshi,
         onMoveRemaining: () => context.go('/migration/options'),
       );
     }

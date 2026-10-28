@@ -2468,7 +2468,10 @@ class _MigrationUpgradeStoppedView extends StatelessWidget {
             growWithContent: true,
             constrainContent: true,
             onPressed: onMoveRemaining,
-            child: Text(stop.moveRemainingLabel, textAlign: TextAlign.center),
+            child: const Text(
+              kIronwoodUpgradeStopMoveRemainingLabel,
+              textAlign: TextAlign.center,
+            ),
           ),
         ],
       ),

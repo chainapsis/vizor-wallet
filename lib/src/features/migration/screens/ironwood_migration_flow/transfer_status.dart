@@ -322,10 +322,14 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
   const _MigrationUpgradeStoppedStatusContent({
     required this.status,
     required this.onMoveRemaining,
+    this.orchardBalanceZatoshi,
   });
 
   final rust_sync.MigrationStatus status;
   final VoidCallback onMoveRemaining;
+
+  /// What the next run moves; the options and review start from it too.
+  final BigInt? orchardBalanceZatoshi;
 
   @override
   Widget build(BuildContext context) {
@@ -347,7 +351,8 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
     ];
     final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
     final moved = _migrationCompletedAmount(values, statuses);
-    final remaining = total > moved ? total - moved : BigInt.zero;
+    final remaining =
+        orchardBalanceZatoshi ?? (total > moved ? total - moved : BigInt.zero);
     final usesLargeText = MediaQuery.textScalerOf(context).scale(1) > 1;
     final message = Semantics(
       liveRegion: true,
@@ -395,8 +400,8 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
         minWidth: 230,
         growWithContent: true,
         constrainContent: true,
-        child: Text(
-          'Move remaining ${_formatZecAmountCompact(remaining)} ZEC',
+        child: const Text(
+          kIronwoodUpgradeStopMoveRemainingLabel,
           textAlign: TextAlign.center,
         ),
       ),

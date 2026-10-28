@@ -1532,6 +1532,54 @@ void main() {
     expect(find.text('Amount to migrate'), findsOneWidget);
   });
 
+  testWidgets('moving the rest of an upgrade-stopped run names it on options', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final stopped = _stoppedByUpgradeStatus();
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/status',
+        statusRoutePreview: stopped,
+        presentationCta: IronwoodHomeMigrationCtaState.stopped(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: stopped,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Move remaining balance'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_upgrade_stop_move_remaining')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('How to move the rest'), findsOneWidget);
+    expect(
+      find.text(
+        '0.1 ZEC is still in Orchard. Choose between more privacy over time '
+        'or a faster migration.',
+      ),
+      findsOneWidget,
+    );
+    // Back returns to the stopped run rather than the first-run intro.
+    await tester.tap(find.text('Ironwood Migration'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_status_stopped_by_upgrade'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('private status shows resume progress state', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
@@ -5598,6 +5646,8 @@ Widget _migrationOptionsHarness({
   List<String> previewCombinedSigningUrParts = const [],
   rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
   LedgerImmediateMigrationService? ledgerImmediateMigrationService,
+  IronwoodHomeMigrationCtaState? presentationCta,
+  rust_sync.MigrationStatus? statusRoutePreview,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -5665,7 +5715,9 @@ Widget _migrationOptionsHarness({
         path: '/migration/private/status',
         builder: (_, _) => realStatusRoute
             ? const IronwoodMigrationPrivateStatusScreen()
-            : IronwoodMigrationPrivateStatusScreen(previewStatus: _status()),
+            : IronwoodMigrationPrivateStatusScreen(
+                previewStatus: statusRoutePreview ?? _status(),
+              ),
       ),
       GoRoute(
         path: '/migration/private/keystone/sign',
@@ -5775,6 +5827,10 @@ Widget _migrationOptionsHarness({
       if (ledgerImmediateMigrationService != null)
         ledgerImmediateMigrationServiceProvider.overrideWithValue(
           ledgerImmediateMigrationService,
+        ),
+      if (presentationCta != null)
+        ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+          presentationCta,
         ),
     ],
     child: MaterialApp.router(
@@ -6845,6 +6901,32 @@ rust_sync.MigrationStatus _status() {
     signingBatchLimit: 40,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    scheduledBroadcasts: const [],
+    parts: const [],
+  );
+}
+
+rust_sync.MigrationStatus _stoppedByUpgradeStatus() {
+  final status = _status();
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationStoppedByUpgradePhase,
+    activeRunId: null,
+    targetValuesZatoshi: status.targetValuesZatoshi,
+    preparedNoteCount: status.preparedNoteCount,
+    denominationConfirmationCount: status.denominationConfirmationCount,
+    denominationConfirmationTarget: status.denominationConfirmationTarget,
+    denominationSplitCompletedCount: status.denominationSplitCompletedCount,
+    denominationSplitTotalCount: status.denominationSplitTotalCount,
+    pendingTxCount: 0,
+    broadcastedTxCount: 0,
+    confirmedTxCount: 0,
+    totalCount: status.totalCount,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: status.signingBatchLimit,
+    scheduleMeanDelayBlocks: status.scheduleMeanDelayBlocks,
+    scheduleMaxDelayBlocks: status.scheduleMaxDelayBlocks,
     scheduledBroadcasts: const [],
     parts: const [],
   );
