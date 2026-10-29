@@ -4,24 +4,22 @@ import 'package:flutter/services.dart';
 
 import '../../layout/app_form_factor.dart';
 
-/// Adds a native dismiss action to every focused iOS numeric keyboard, including
+/// Adds a native dismiss action to every focused iOS system keyboard, including
 /// fields inside routes and sheets. Custom passcode keypads do not open an
 /// EditableText connection and are unaffected.
-class MobileNumericKeyboardToolbar extends StatefulWidget {
-  const MobileNumericKeyboardToolbar({required this.child, super.key});
+class MobileKeyboardToolbar extends StatefulWidget {
+  const MobileKeyboardToolbar({required this.child, super.key});
 
   final Widget child;
 
   @override
-  State<MobileNumericKeyboardToolbar> createState() =>
-      _MobileNumericKeyboardToolbarState();
+  State<MobileKeyboardToolbar> createState() => _MobileKeyboardToolbarState();
 }
 
-class _MobileNumericKeyboardToolbarState
-    extends State<MobileNumericKeyboardToolbar>
+class _MobileKeyboardToolbarState extends State<MobileKeyboardToolbar>
     with WidgetsBindingObserver {
   bool _updateScheduled = false;
-  static const _channel = MethodChannel('com.zcash.wallet/numeric_keyboard');
+  static const _channel = MethodChannel('com.zcash.wallet/keyboard_toolbar');
   bool? _nativeVisible;
   bool? _nativeDark;
   bool get _usesNative => defaultTargetPlatform == TargetPlatform.iOS;
@@ -79,12 +77,11 @@ class _MobileNumericKeyboardToolbarState
     final editable = focus?.context
         ?.findAncestorStateOfType<EditableTextState>()
         ?.widget;
-    final numeric =
+    final hasKeyboard =
         editable != null &&
         !editable.readOnly &&
-        (editable.keyboardType.index == TextInputType.number.index ||
-            editable.keyboardType == TextInputType.phone);
-    final visible = numeric && media.viewInsets.bottom > 0;
+        editable.keyboardType != TextInputType.none;
+    final visible = hasKeyboard && media.viewInsets.bottom > 0;
     final dark = Theme.of(context).brightness == Brightness.dark;
     if (_nativeVisible != visible || _nativeDark != dark) {
       _nativeVisible = visible;

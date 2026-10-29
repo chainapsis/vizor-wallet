@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -386,7 +387,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                         onReceiveAmountFiatChanged:
                             swapNotifier.updateReceiveAmountFiat,
                         onToggleFiatInputMode: swapNotifier.toggleFiatInputMode,
-                        onToggleDirection: swapNotifier.toggleDirection,
+                        onToggleDirection: () {
+                          unawaited(AppHaptics.selection());
+                          swapNotifier.toggleDirection();
+                        },
                         onOpenExternalAssetPicker: () =>
                             _openModal(_SwapModalSurface.assetSelector),
                         onOpenDestinationAddress: _openAddressEditor,

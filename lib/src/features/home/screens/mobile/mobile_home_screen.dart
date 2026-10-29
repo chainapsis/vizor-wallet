@@ -1052,6 +1052,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     );
     if (!prepared) return;
     _expectReviewVisit('/pay');
+    unawaited(AppHaptics.action());
     router.push(
       '/pay',
       extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
@@ -1274,7 +1275,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       constrainContent: true,
                       onPressed: sendDisabled
                           ? null
-                          : () => _pushUsedScreen('/send'),
+                          : () {
+                              unawaited(AppHaptics.action());
+                              _pushUsedScreen('/send');
+                            },
                       leading: const _ButtonIcon(AppIcons.plane),
                       height: _mobileHomeActionButtonHeight,
                       child: const Text(
@@ -1291,7 +1295,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       expand: true,
                       constrainContent: true,
                       variant: AppButtonVariant.secondary,
-                      onPressed: () => _pushUsedScreen('/receive'),
+                      onPressed: () {
+                        unawaited(AppHaptics.action());
+                        _pushUsedScreen('/receive');
+                      },
                       leading: const _ButtonIcon(AppIcons.arrowDownCircle),
                       height: _mobileHomeActionButtonHeight,
                       child: const Text(
@@ -1334,7 +1341,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 key: const ValueKey('mobile_home_receive'),
                 expand: true,
                 constrainContent: true,
-                onPressed: () => _pushUsedScreen('/receive'),
+                onPressed: () {
+                  unawaited(AppHaptics.action());
+                  _pushUsedScreen('/receive');
+                },
                 leading: const _ButtonIcon(AppIcons.addNew),
                 height: _mobileHomeActionButtonHeight,
                 child: const Text(

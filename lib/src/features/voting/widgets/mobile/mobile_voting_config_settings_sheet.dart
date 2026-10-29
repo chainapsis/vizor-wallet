@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -51,11 +54,18 @@ class _MobileVotingConfigSettingsSheetState
 
   Future<void> _selectSource({required String url, required bool isDefault}) {
     return _runMutation(() async {
+      final previous = ref.read(votingConfigSourceProvider).value;
       if (isDefault) {
         await ref.read(votingConfigSourceProvider.notifier).resetDefault();
       } else {
         await _validateSource(url);
         await ref.read(votingConfigSourceProvider.notifier).setCustom(url);
+      }
+      final next = ref.read(votingConfigSourceProvider).value;
+      if (next != null &&
+          (previous?.sourceUrl != next.sourceUrl ||
+              previous?.isDefault != next.isDefault)) {
+        unawaited(AppHaptics.selection());
       }
       await _refreshVoting();
       if (mounted) Navigator.of(context).pop();
@@ -117,6 +127,7 @@ class _MobileVotingConfigSettingsSheetState
       await ref
           .read(showTestVotingRoundsProvider.notifier)
           .setShowTestRounds(!enabled);
+      unawaited(AppHaptics.selection());
       await ref.read(votingRoundsProvider.notifier).reload();
     });
   }

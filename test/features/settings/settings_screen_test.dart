@@ -92,23 +92,23 @@ void main() {
     await tester.pumpWidget(_settingsHarness());
     await tester.pump();
 
-    expect(_rowBackgroundColor(tester, 'Password'), isNull);
+    expect(_rowBackgroundColor(tester, 'Change password'), isNull);
     expect(find.text('Explorer'), findsOneWidget);
     expect(find.text('ZecBlock'), findsOneWidget);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
     await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(find.text('Password')));
+    await mouse.moveTo(tester.getCenter(find.text('Change password')));
     await tester.pump();
 
     expect(
-      _rowBackgroundColor(tester, 'Password'),
+      _rowBackgroundColor(tester, 'Change password'),
       AppThemeData.light.colors.background.base,
     );
 
     final detectorFinder = find.ancestor(
-      of: find.text('Password'),
+      of: find.text('Change password'),
       matching: find.byType(FocusableActionDetector),
     );
     expect(detectorFinder, findsOneWidget);
