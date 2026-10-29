@@ -1326,19 +1326,21 @@ class RunnerTests: XCTestCase {
       _ ids: [String],
       _ observations: [NativeLightwalletdTransactionObservation],
       tip: UInt64,
-      activation: UInt64 = 600
+      later: UInt64 = 0
     ) -> MigrationPreparationUpgradeDropTracking {
+      // The upgrade at 600 is next until it activates, then `later`.
       migrationPreparationUpgradeDropTracking(
         previous,
         transactionIds: ids,
         observations: observations,
         chainTipHeight: tip,
-        upgradeActivationHeight: activation
+        nextUpgradeActivationHeight: tip < 600 ? 600 : later
       )
     }
 
     // Seen while block 599 could still take it: signed for the old branch.
     let seen = track(.init(), [old], [.mempool], tip: 598)
+    XCTAssertEqual(seen.upgradeActivationHeight, 600)
     XCTAssertEqual(seen.oldBranchTransactionIds, [old])
     XCTAssertEqual(seen.passes, 0)
     let once = track(seen, [old], [.notFound], tip: 600)
@@ -1358,9 +1360,22 @@ class RunnerTests: XCTestCase {
     let later = track(.init(), [new], [.notFound], tip: 599)
     XCTAssertEqual(later, MigrationPreparationUpgradeDropTracking())
     XCTAssertEqual(track(once, [new], [.notFound], tip: 601).passes, 0)
+    XCTAssertEqual(track(once, [old, new], [.notFound, .notFound], tip: 601).passes, 2)
+    // A later upgrade does not end the count for the one just crossed.
+    XCTAssertEqual(track(once, [old], [.notFound], tip: 601, later: 900).passes, 2)
+    // The next wave is recorded for that later upgrade instead.
+    let nextWave = track(once, [new], [.mempool], tip: 650, later: 900)
+    XCTAssertEqual(nextWave.upgradeActivationHeight, 900)
+    XCTAssertEqual(nextWave.oldBranchTransactionIds, [new])
     // No scheduled upgrade.
     XCTAssertEqual(
-      track(once, [old], [.notFound], tip: 601, activation: 0),
+      migrationPreparationUpgradeDropTracking(
+        .init(),
+        transactionIds: [old],
+        observations: [.mempool],
+        chainTipHeight: 598,
+        nextUpgradeActivationHeight: 0
+      ),
       MigrationPreparationUpgradeDropTracking()
     )
   }

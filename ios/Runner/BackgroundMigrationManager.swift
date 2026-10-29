@@ -662,7 +662,7 @@ final class BackgroundMigrationManager {
         batchIds: batchIds,
         includeNeedsAction: !hasRemainingWork,
         // Another account's run may still be stopped by the upgrade.
-        includeUpgradeStop: !hasRemainingWork && !self.holdsPartsStoppedByUpgrade()
+        includeUpgradeStop: !hasRemainingWork && !self.holdsPartsStoppedByAlertedUpgrade()
       )
       return revoked
     } completion: { completion($0) }
@@ -1080,9 +1080,13 @@ final class BackgroundMigrationManager {
     }
   }
 
-  private func holdsPartsStoppedByUpgrade() -> Bool {
+  private func holdsPartsStoppedByAlertedUpgrade() -> Bool {
+    guard let key = UserDefaults.standard.string(forKey: Self.upgradeStopAlertedKey) else {
+      return false
+    }
     // Keeps the alert when the outbox can't be read, like hasRunnableOutboxWork.
-    (try? BackgroundMigrationOutboxStore.shared.read())?.holdsPartsStoppedByUpgrade ?? true
+    return (try? BackgroundMigrationOutboxStore.shared.read())?.holdsPartsStopped(byUpgrade: key)
+      ?? true
   }
 
   private func hasResumablePreparationWork() -> Bool {

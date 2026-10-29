@@ -1241,43 +1241,42 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
   /// left for an unsent part on `endpoint` signed for the branch it ended. The
   /// foreground stops that part's run on its next sync.
   func upgradeStopKey(remoteHeight: UInt64, endpoint: String) -> String? {
-    for batch in batches where batch.lightwalletdUrl == endpoint {
-      guard
-        let activation = BackgroundMigrationOutboxCadence.nu7ActivationHeight(
-          network: batch.network
-        ),
-        // A server can report any tip, so this must not add to it.
-        remoteHeight >= activation - 1,
-        Self.holdsOldBranchPart(batch, activation: activation)
-      else { continue }
-      return "\(batch.network):\(activation)"
+    let crossed = batches.filter { $0.lightwalletdUrl == endpoint }.flatMap { batch in
+      // A server can report any tip, so this must not add to it.
+      Self.branchEndingActivations(batch).filter { remoteHeight >= $0 - 1 }
+        .map { (network: batch.network, activation: $0) }
     }
-    return nil
+    // The latest, so an earlier stop left unreconciled can't hide this alert.
+    return crossed.max { $0.activation < $1.activation }
+      .map { "\($0.network):\($0.activation)" }
   }
 
   /// Whether any batch still holds an unsent part signed for the branch the
-  /// upgrade ends, at any tip, so the stop alert may still apply.
-  var holdsPartsStoppedByUpgrade: Bool {
+  /// upgrade in `upgradeStopKey` ended, so that stop alert still applies.
+  func holdsPartsStopped(byUpgrade upgradeStopKey: String) -> Bool {
     batches.contains { batch in
-      guard
-        let activation = BackgroundMigrationOutboxCadence.nu7ActivationHeight(
-          network: batch.network
-        )
-      else { return false }
-      return Self.holdsOldBranchPart(batch, activation: activation)
+      Self.branchEndingActivations(batch).contains {
+        "\(batch.network):\($0)" == upgradeStopKey
+      }
     }
   }
 
-  private static func holdsOldBranchPart(
-    _ batch: BackgroundMigrationOutboxBatch,
-    activation: UInt64
-  ) -> Bool {
-    // A part sent before may already be mined; only the foreground knows.
-    batch.items.contains(where: {
-      ($0.status == .armed || $0.status == .needsResignAwaitingReconciliation)
-        && $0.attemptCount == 0
-        && ($0.targetHeight ?? activation) < activation
-    })
+  /// Activations that end the branch an unsent part of `batch` was signed for.
+  /// Parts saved by an older build have no target and are left out.
+  private static func branchEndingActivations(
+    _ batch: BackgroundMigrationOutboxBatch
+  ) -> [UInt64] {
+    batch.items.compactMap { item in
+      // A part sent before may already be mined; only the foreground knows.
+      guard item.status == .armed || item.status == .needsResignAwaitingReconciliation,
+        item.attemptCount == 0,
+        let targetHeight = item.targetHeight
+      else { return nil }
+      return BackgroundMigrationOutboxCadence.nextUpgradeActivationHeight(
+        network: batch.network,
+        after: targetHeight
+      )
+    }
   }
 
   /// Txids of due parts on `endpoint` that wait for the network upgrade.
@@ -1353,6 +1352,14 @@ enum BackgroundMigrationOutboxCadence {
   static func nu7ActivationHeight(network: String) -> UInt64? {
     let height = network.withCString { zcash_nu7_activation_height($0) }
     return height == 0 ? nil : height
+  }
+
+  /// The first upgrade activation after `height`, from Rust's schedule.
+  static func nextUpgradeActivationHeight(network: String, after height: UInt64) -> UInt64? {
+    let activation = network.withCString {
+      zcash_next_upgrade_activation_height($0, height)
+    }
+    return activation == 0 ? nil : activation
   }
 
   /// Whether a part signed for `targetHeight` waits for a network upgrade at

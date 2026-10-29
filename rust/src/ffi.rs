@@ -672,6 +672,28 @@ pub extern "C" fn zcash_nu7_activation_height(network: *const c_char) -> u64 {
     .unwrap_or(0)
 }
 
+/// The first upgrade activation after `height` on `network`, or 0 when none
+/// is scheduled or the network is unknown. The iOS background lanes find the
+/// upgrade that ends a transaction's branch with it.
+#[no_mangle]
+pub extern "C" fn zcash_next_upgrade_activation_height(network: *const c_char, height: u64) -> u64 {
+    std::panic::catch_unwind(|| {
+        let Some(network) = unsafe { c_str_to_str(network) }.and_then(WalletNetwork::from_str)
+        else {
+            return 0;
+        };
+        let Ok(height) = u32::try_from(height) else {
+            return 0;
+        };
+        crate::wallet::network_upgrade::next_activation_after(
+            &network,
+            zcash_protocol::consensus::BlockHeight::from_u32(height),
+        )
+        .map_or(0, |activation| u64::from(u32::from(activation)))
+    })
+    .unwrap_or(0)
+}
+
 /// Whether the iOS outbox holds a migration part signed for `target_height`
 /// at `remote_height` on `network`, as the foreground judges it. A part saved
 /// by an older build has no target (0) and is held by the tip alone, which
@@ -807,6 +829,25 @@ mod tests {
         assert_eq!(zcash_nu7_activation_height(main.as_ptr()), 3_543_405);
         assert_eq!(zcash_nu7_activation_height(unknown.as_ptr()), 0);
         assert_eq!(zcash_nu7_activation_height(std::ptr::null()), 0);
+    }
+
+    #[test]
+    fn next_upgrade_activation_height_follows_the_branch_at_the_height() {
+        let main = std::ffi::CString::new("main").unwrap();
+        let unknown = std::ffi::CString::new("mainnet").unwrap();
+        let nu7: u64 = 3_543_405;
+        assert_eq!(
+            zcash_next_upgrade_activation_height(main.as_ptr(), nu7 - 1),
+            nu7
+        );
+        // Nothing is scheduled after NU7.
+        assert_eq!(zcash_next_upgrade_activation_height(main.as_ptr(), nu7), 0);
+        assert_eq!(
+            zcash_next_upgrade_activation_height(main.as_ptr(), u64::MAX),
+            0
+        );
+        assert_eq!(zcash_next_upgrade_activation_height(unknown.as_ptr(), 1), 0);
+        assert_eq!(zcash_next_upgrade_activation_height(std::ptr::null(), 1), 0);
     }
 
     #[test]

@@ -878,19 +878,40 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(try key(activation - 100, at: activation + 5, attempts: 1))
   }
 
-  func testHoldsPartsStoppedByUpgradeOnlyForUnsentOldBranchParts() throws {
+  func testUpgradeStopKeyNamesTheLatestCrossedUpgrade() throws {
     let activation = try testnetNu7ActivationHeight()
+    let batch = try makeBatchBeforeNu7(targetHeight: activation - 100)
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    try snapshot.armBatch(batchId: batch.batchId, expectedDigests: digests(batch), at: now)
+    // A part an earlier upgrade stopped that the foreground never reconciled.
+    var earlier = snapshot.batches[0].items[0]
+    earlier.targetHeight = 1
+    snapshot.batches[0].items.insert(earlier, at: 0)
+
+    XCTAssertEqual(
+      snapshot.upgradeStopKey(remoteHeight: activation, endpoint: batch.lightwalletdUrl),
+      "test:\(activation)"
+    )
+  }
+
+  func testStopAlertCoversOnlyUnsentPartsItsUpgradeStopped() throws {
+    let activation = try testnetNu7ActivationHeight()
+    let key = "test:\(activation)"
     let stopped = try makeBatchBeforeNu7(targetHeight: activation - 100)
     var snapshot = BackgroundMigrationOutboxSnapshot()
     try snapshot.stage(stopped)
     try snapshot.armBatch(batchId: stopped.batchId, expectedDigests: digests(stopped), at: now)
     // From A the part waits for a new signature and no longer counts as work.
     snapshot.batches[0].items[0].status = .needsResignAwaitingReconciliation
-    XCTAssertTrue(snapshot.holdsPartsStoppedByUpgrade)
+    XCTAssertTrue(snapshot.holdsPartsStopped(byUpgrade: key))
+    // An alert for another upgrade or network does not cover it.
+    XCTAssertFalse(snapshot.holdsPartsStopped(byUpgrade: "test:\(activation + 1)"))
+    XCTAssertFalse(snapshot.holdsPartsStopped(byUpgrade: "main:\(activation)"))
 
     snapshot.batches[0].items[0].attemptCount = 1
-    XCTAssertFalse(snapshot.holdsPartsStoppedByUpgrade)
-    XCTAssertFalse(BackgroundMigrationOutboxSnapshot().holdsPartsStoppedByUpgrade)
+    XCTAssertFalse(snapshot.holdsPartsStopped(byUpgrade: key))
+    XCTAssertFalse(BackgroundMigrationOutboxSnapshot().holdsPartsStopped(byUpgrade: key))
   }
 
   func testRunnerReportsTheUpgradeThatStoppedAPart() throws {
