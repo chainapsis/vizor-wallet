@@ -458,15 +458,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           if (visibleNu7Network != null)
-            AppPaneModalOverlay(
-              key: const ValueKey('nu7_announcement_overlay'),
-              alignment: const Alignment(0, -0.08),
-              onDismiss: () =>
+            Nu7AnnouncementOverlay(
+              onClose: () =>
                   unawaited(_dismissNu7Announcement(visibleNu7Network)),
-              child: Nu7AnnouncementModal(
-                onClose: () =>
-                    unawaited(_dismissNu7Announcement(visibleNu7Network)),
-              ),
             ),
         ],
       ),

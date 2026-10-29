@@ -462,6 +462,44 @@ void main() {
     expect(store.seen, {'main'});
   });
 
+  testWidgets('the NU7 announcement fades in unless motion is reduced', (
+    tester,
+  ) async {
+    final overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
+    double opacity() => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(of: overlay, matching: find.byType(FadeTransition))
+              .first,
+        )
+        .opacity
+        .value;
+    Future<void> showAnnouncement() async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        ),
+      );
+      for (var frame = 0; frame < 10 && overlay.evaluate().isEmpty; frame++) {
+        await tester.pump();
+      }
+      expect(overlay, findsOneWidget);
+    }
+
+    await showAnnouncement();
+    expect(opacity(), lessThan(1));
+    await tester.pumpAndSettle();
+    expect(opacity(), 1);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(const SizedBox());
+    await showAnnouncement();
+    expect(opacity(), 1);
+  });
+
   testWidgets('home does not stack the NU7 announcement on the Ironwood one', (
     tester,
   ) async {
