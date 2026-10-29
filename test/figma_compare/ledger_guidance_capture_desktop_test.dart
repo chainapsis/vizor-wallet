@@ -15,6 +15,7 @@ void main() {
     'ledger-onboarding-access-preparing',
     'ledger-onboarding-access-restricted',
     'ledger-onboarding-usb-error',
+    'ledger-onboarding-viewing-key-approval',
     'ledger-pairing-invalid',
     'ledger-signing-processing',
     'ledger-signing-processing-nano',

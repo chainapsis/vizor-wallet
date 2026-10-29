@@ -200,6 +200,16 @@ final ledgerStaticCapabilityProvider = Provider<LedgerCapability>((ref) {
   return ledgerStaticCapability(platform: platform, networkName: networkName);
 });
 
+/// The number the app at `appVersion` shows for `accountIndex` when sharing a
+/// viewing key: 3.10.0 numbers accounts from 1. Null for an unknown version.
+int? ledgerDeviceAccountNumber(int accountIndex, String? appVersion) {
+  final version = appVersion == null ? null : _parseVersion(appVersion);
+  if (version == null) return null;
+  final fromOne =
+      _compareVersion(version, _parseVersion(kLedgerNu7AppVersion)!) >= 0;
+  return fromOne ? accountIndex + 1 : accountIndex;
+}
+
 bool _atLeast(String version, String minimum) {
   final parsed = _parseVersion(version);
   return parsed != null &&
