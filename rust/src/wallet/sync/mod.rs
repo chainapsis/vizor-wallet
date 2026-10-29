@@ -32,6 +32,7 @@ mod pczt;
 pub(crate) use pczt::{check_orchard_spend_auth_signatures, SpendAuthSignatureError};
 pub(crate) mod proposal_locks;
 mod send;
+pub(crate) use send::fee_policy_target;
 mod transactions;
 pub(crate) use transactions::has_recovered_status_work;
 #[cfg(test)]

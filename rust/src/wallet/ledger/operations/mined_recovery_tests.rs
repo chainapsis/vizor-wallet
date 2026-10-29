@@ -345,6 +345,8 @@ impl Wallet {
 #[derive(Clone)]
 struct Lightwalletd {
     tip: u64,
+    /// Tips served before [`Self::tip`], one per request.
+    next_tips: Arc<Mutex<Vec<u64>>>,
     tip_unavailable: Arc<Mutex<bool>>,
     responses: Arc<Mutex<Vec<i32>>>,
     calls: Arc<Mutex<Vec<&'static str>>>,
@@ -381,8 +383,16 @@ impl tower_service::Service<http::Request<tonic::body::Body>> for Lightwalletd {
                         .body(tonic::body::Body::empty())
                         .unwrap());
                 }
+                let height = {
+                    let mut next_tips = this.next_tips.lock().unwrap();
+                    if next_tips.is_empty() {
+                        this.tip
+                    } else {
+                        next_tips.remove(0)
+                    }
+                };
                 zcash_client_backend::proto::service::BlockId {
-                    height: this.tip,
+                    height,
                     hash: vec![1; 32],
                 }
                 .encode_to_vec()
@@ -450,6 +460,7 @@ async fn server(
     let url = format!("http://{}", listener.local_addr().unwrap());
     let service = Lightwalletd {
         tip,
+        next_tips: Default::default(),
         tip_unavailable: Default::default(),
         responses: Arc::new(Mutex::new(vec![response])),
         calls: Default::default(),
@@ -644,6 +655,24 @@ async fn an_unobserved_transaction_still_expires_normally() {
         ("expired", 0)
     );
     assert_eq!(*service.calls.lock().unwrap(), ["tip"]);
+    handle.abort();
+}
+
+#[tokio::test]
+async fn a_transaction_that_expires_while_waiting_to_submit_is_not_sent() {
+    let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+    crate::network_privacy::disable_tor();
+    let wallet = Wallet::funded(false);
+    let (url, service, handle) = server(1_000, 0).await;
+    // The first check passes; the fresh tip read at submission is past expiry.
+    *service.next_tips.lock().unwrap() = vec![205];
+    let result = wallet.recover(&url).await.unwrap();
+    assert_eq!(
+        (result.status.as_str(), result.broadcasted_count),
+        ("expired", 0)
+    );
+    assert_eq!(*service.calls.lock().unwrap(), ["tip", "tip"]);
+    assert!(service.submitted.lock().unwrap().is_empty());
     handle.abort();
 }
 
@@ -875,7 +904,11 @@ async fn partial_storage_failure_retains_real_inputs_after_acknowledgement() {
             .unwrap();
             assert_eq!(result.status, "partial_broadcast");
             assert!(result.requires_ack);
-            assert_eq!(*service.calls.lock().unwrap(), ["tip", "send", "send"]);
+            // The first submission reads a fresh tip before it is sent.
+            assert_eq!(
+                *service.calls.lock().unwrap(),
+                ["tip", "tip", "send", "send"]
+            );
             let storage_failure = result
                 .message
                 .as_deref()

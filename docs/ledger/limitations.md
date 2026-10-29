@@ -18,10 +18,10 @@ those 4 outputs. A payment to the account's own external address still counts.
 | 32 Orchard actions | Orchard bundle | `ledger/limits.rs`, serializer and Gift Card planner |
 | 32 Ironwood actions | Ironwood bundle | `ledger/limits.rs`, serializer and Gift Card planner |
 | 4 external shielded outputs | Orchard + Ironwood combined; exclude internal change | Gift Card planner and UI; firmware checks every transaction |
-| 1 shielded change output | Per transaction | Ledger input selection uses `SplitPolicy::single_output`; firmware verifies change belongs to the signing account |
+| 1 shielded change output | Per transaction | Ledger input selection uses `SplitPolicy::single_output`; firmware verifies change belongs to the signing account. 3.10.0 accepts up to five change notes beside one recipient and four when shielding, which Vizor does not use yet |
 | 1,024 bytes of retained memo text | Both shielded pools combined | Firmware switches subsequent memo display to hashes when the review budget is exhausted |
 | No Sapling spends or outputs | Per transaction | PCZT parser and proposal preparation |
-| No automatic Orchard-to-Ironwood recovery | Product flows | Explicit release/capability gate; only the developer canary bypasses it |
+| No Orchard spend into Ironwood before 3.10.0 | Per transaction | Serializer refuses it for an older app with update copy; 3.9.4 rejects it on the device |
 | Mainnet only | Production account APIs | Network gate; testnet/regtest firmware is a separate test build |
 
 The memo preflight handles the single memo-bearing output built by current
@@ -32,18 +32,32 @@ classification of arbitrary PCZT outputs.
 
 ## Supported app versions
 
-| Device app | Existing-account signing | New account import | Memo shown as a hash |
-| --- | --- | --- | --- |
-| Below 3.9.3 | Refused | Refused | Not applicable |
-| 3.9.3 | Allowed within these limits | Refused | Refused; the app has a memo-hasher defect |
-| 3.9.4 | Allowed within these limits | Allowed | Allowed |
+| Device app | Existing-account signing | New account import | Memo shown as a hash | NU7, Orchard into Ironwood |
+| --- | --- | --- | --- | --- |
+| Below 3.9.3 | Refused | Refused | Not applicable | Not applicable |
+| 3.9.3 | Allowed within these limits | Refused | Refused; the app has a memo-hasher defect | Refused |
+| 3.9.4 | Allowed within these limits | Allowed | Allowed | Refused |
+| 3.10.0 | Allowed within these limits | Allowed | Allowed | Allowed |
 
-Both supported versions have the same record and review limits. There is no
+The supported versions have the same record and review limits. There is no
 3.9.2 compatibility branch. Higher versions pass the existing minimum-version
 policy; that does **not** remove these bounds or prove that recovery works.
 
+Apps before 3.10.0 cannot parse the NU7 consensus branch and answer the PCZT
+header with a generic `IncorrectData`. The serializer refuses an NU7
+transaction for them before any PCZT packet is sent, with update copy that
+names the device as well as the app: Ledger Wallet offers 3.10.0 only on each
+device's latest firmware. It refuses an Orchard spend into Ironwood the same
+way: 3.9.4 rejects one at the Ironwood bundle, on NU6.3 as well, and 3.10.0
+signs it.
+
+3.10.0 also refuses some shapes that 3.9.4 accepted: a signing path that does
+not have the shape of its key, more than six retained shielded outputs
+(change included), and a transparent change output beside a shielded one.
+Current proposals stay within them.
+
 The firmware reference is
-[`LedgerHQ/app-zcash` 3.9.4, `1a0f649`](https://github.com/LedgerHQ/app-zcash/tree/1a0f6495458ecb77abf97c8cff25b0a1a344daaa):
+[`LedgerHQ/app-zcash` 3.10.0, `2db9d5a`](https://github.com/LedgerHQ/app-zcash/tree/2db9d5a900f27074ba19b90a7217dcc4318a5f24):
 `src/consts.rs`, `src/parser/pczt.rs`, and its Orchard/Ironwood parsers.
 Host constants live in [`limits.rs`](../../rust/src/wallet/ledger/limits.rs).
 The Flutter review-count policy lives alongside app-version capabilities in
@@ -71,8 +85,8 @@ Returned signatures are still cryptographically verified.
    firmware PR or a host-crate version is not a deployed device capability.
 2. Update the relevant Rust enforcement, Flutter policy, and this table together.
    Test the boundary and an adjacent software/Keystone path.
-3. Run the affected [Speculos scenario](speculos.md). For recovery, run the
-   Orchard-to-Ironwood canary before removing the release gate. Speculos proves
+3. Run the affected [Speculos scenario](speculos.md), and the
+   Orchard-to-Ironwood canary when that path changes. Speculos proves
    firmware/APDU behavior, not physical USB/Bluetooth or production broadcast.
 
 `pczt-ledger` is a comparison/reference implementation; Vizor does not add it as

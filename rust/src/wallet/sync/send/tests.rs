@@ -267,18 +267,45 @@ fn stored_migration_transaction_holds_inputs_only_while_unexpired() {
     assert!(!holds(false, false, 200, Some(100)));
 }
 
+/// Every upgrade through NU6.3 active from height 1; NU7 at `nu7`, if any.
+#[derive(Clone, Copy, Debug)]
+struct ExpiryTestNetwork {
+    nu7: Option<u32>,
+}
+
+impl Parameters for ExpiryTestNetwork {
+    fn network_type(&self) -> zcash_protocol::consensus::NetworkType {
+        zcash_protocol::consensus::NetworkType::Test
+    }
+
+    fn activation_height(
+        &self,
+        nu: zcash_protocol::consensus::NetworkUpgrade,
+    ) -> Option<BlockHeight> {
+        match nu {
+            zcash_protocol::consensus::NetworkUpgrade::Nu7 => self.nu7.map(BlockHeight::from_u32),
+            _ => Some(BlockHeight::from_u32(1)),
+        }
+    }
+}
+
+const PRE_NU7: ExpiryTestNetwork = ExpiryTestNetwork { nu7: None };
+
 #[test]
 fn send_proposal_expires_at_its_lock_boundary() {
     let min_target = BlockHeight::from_u32(1_000);
     assert!(!send_proposal_is_expired(
+        &PRE_NU7,
         min_target,
         BlockHeight::from_u32(1_039)
     ));
     assert!(send_proposal_is_expired(
+        &PRE_NU7,
         min_target,
         BlockHeight::from_u32(1_040)
     ));
     assert!(send_proposal_is_expired(
+        &PRE_NU7,
         min_target,
         BlockHeight::from_u32(1_041)
     ));
@@ -288,12 +315,172 @@ fn send_proposal_expires_at_its_lock_boundary() {
 fn live_tip_extends_expiry_without_reviving_expired_proposal() {
     let min_target = BlockHeight::from_u32(100);
     assert_eq!(
-        send_expiry_height_for_live_tip(min_target, 110).unwrap(),
+        send_expiry_height_for_live_tip(&PRE_NU7, min_target, 110).unwrap(),
         BlockHeight::from_u32(151),
     );
-    assert!(send_expiry_height_for_live_tip(min_target, 139)
+    assert!(send_expiry_height_for_live_tip(&PRE_NU7, min_target, 139)
         .unwrap_err()
         .contains("expired against the live chain tip"));
+}
+
+#[test]
+fn nu7_triples_the_default_expiry_delta() {
+    let network = ExpiryTestNetwork { nu7: Some(1_000) };
+    assert_eq!(
+        send_expiry_height_for_target(&network, BlockHeight::from_u32(1_000)),
+        BlockHeight::from_u32(1_120),
+    );
+    assert!(!send_proposal_is_expired(
+        &network,
+        BlockHeight::from_u32(1_000),
+        BlockHeight::from_u32(1_119)
+    ));
+    assert_eq!(
+        send_expiry_height_for_live_tip(&network, BlockHeight::from_u32(1_000), 1_100).unwrap(),
+        BlockHeight::from_u32(1_221),
+    );
+    assert_eq!(
+        shielding_expiry_for_proposal(&network, BlockHeight::from_u32(1_000), 1_100).unwrap(),
+        BlockHeight::from_u32(1_221),
+    );
+}
+
+#[test]
+fn pre_activation_expiry_stops_before_the_next_upgrade() {
+    let network = ExpiryTestNetwork { nu7: Some(1_020) };
+    // A transaction signed for the pre-NU7 branch cannot be mined from 1,020.
+    assert_eq!(
+        send_expiry_height_for_target(&network, BlockHeight::from_u32(1_000)),
+        BlockHeight::from_u32(1_019),
+    );
+    assert_eq!(
+        send_expiry_height_for_target(&network, BlockHeight::from_u32(1_019)),
+        BlockHeight::from_u32(1_019),
+    );
+    // Far enough before activation the default delta applies unchanged.
+    assert_eq!(
+        send_expiry_height_for_target(&network, BlockHeight::from_u32(900)),
+        BlockHeight::from_u32(940),
+    );
+    // A proposal made before activation cannot be revived after it.
+    assert!(send_proposal_is_expired(
+        &network,
+        BlockHeight::from_u32(1_000),
+        BlockHeight::from_u32(1_020)
+    ));
+    assert!(
+        send_expiry_height_for_live_tip(&network, BlockHeight::from_u32(1_000), 1_019)
+            .unwrap_err()
+            .contains("expired against the live chain tip")
+    );
+    // Cut short by the upgrade: a new proposal would be held as well.
+    assert_eq!(
+        send_expiry_height_for_live_tip(&network, BlockHeight::from_u32(1_000), 1_018).unwrap_err(),
+        network_upgrade::SEND_HOLD_MESSAGE
+    );
+}
+
+#[test]
+fn sends_nodes_would_reject_as_expiring_soon_are_refused_before_the_upgrade() {
+    let network = ExpiryTestNetwork { nu7: Some(1_020) };
+    // Expiry 1,019 leaves the three blocks nodes require from 1,016.
+    assert!(ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(1_016)).is_ok());
+    for target in [1_017, 1_019] {
+        assert_eq!(
+            ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(target)).unwrap_err(),
+            network_upgrade::SEND_HOLD_MESSAGE
+        );
+    }
+    assert!(ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(1_020)).is_ok());
+    assert_eq!(
+        send_expiry_height_for_live_tip(&network, BlockHeight::from_u32(1_000), 1_016).unwrap_err(),
+        network_upgrade::SEND_HOLD_MESSAGE
+    );
+}
+
+/// Every send check at each tip around an upgrade at 1,020.
+#[test]
+fn send_checks_by_tip_around_the_upgrade() {
+    let network = ExpiryTestNetwork { nu7: Some(1_020) };
+    let hold = network_upgrade::SEND_HOLD_MESSAGE;
+    // A proposal reviewed at tip 1,014 and executed at each later tip.
+    let reviewed_target = BlockHeight::from_u32(1_015);
+    for (tip, new_send, execute, shield) in [
+        (1_014, Ok(()), Ok(1_019), Ok(1_019)),
+        (1_015, Ok(()), Ok(1_019), Ok(1_019)),
+        (1_016, Err(hold), Err(hold), Err(hold)),
+        (1_017, Err(hold), Err(hold), Err(hold)),
+        (1_018, Err(hold), Err(hold), Err(hold)),
+        // The next block is NU7: new sends target it, old proposals expired.
+        (1_019, Ok(()), Err("expired"), Err(hold)),
+        (1_020, Ok(()), Err("expired"), Ok(1_141)),
+    ] {
+        let target = BlockHeight::from_u32(tip + 1);
+        assert_eq!(
+            ensure_send_outside_upgrade_edge(&network, target).map_err(|e| e.contains(hold)),
+            new_send.map_err(|_| true),
+            "new send at tip {tip}"
+        );
+        let executed = send_expiry_height_for_live_tip(&network, reviewed_target, tip);
+        match execute {
+            Ok(expiry) => assert_eq!(executed, Ok(BlockHeight::from_u32(expiry)), "tip {tip}"),
+            Err(expected) => assert!(
+                executed.as_ref().unwrap_err().contains(expected),
+                "execute at tip {tip}: {executed:?}"
+            ),
+        }
+        // The wallet trails the live tip by a block.
+        let shielded = shielding_expiry_for_proposal(&network, BlockHeight::from_u32(tip), tip);
+        match shield {
+            Ok(expiry) => assert_eq!(shielded, Ok(BlockHeight::from_u32(expiry)), "tip {tip}"),
+            Err(expected) => assert_eq!(shielded.unwrap_err(), expected, "shield at tip {tip}"),
+        }
+    }
+}
+
+#[test]
+fn upgrade_hold_heights_match_the_send_refusal() {
+    let network = WalletNetwork::Test;
+    let activation = network
+        .activation_height(consensus::NetworkUpgrade::Nu7)
+        .map(u32::from)
+        .unwrap();
+    for tip in activation - 30..activation + 5 {
+        let held = network_upgrade::hold_heights(&network, tip).is_some_and(|heights| {
+            tip >= heights.send_hold_from_tip && tip + 1 < heights.next_activation_height
+        });
+        assert_eq!(
+            held,
+            ensure_send_outside_upgrade_edge(&network, BlockHeight::from_u32(tip + 1)).is_err(),
+            "send hold at tip {tip}"
+        );
+    }
+    assert_eq!(
+        network_upgrade::hold_heights(&network, activation - 1).map(|h| h.next_activation_height),
+        Some(activation)
+    );
+    assert!(network_upgrade::hold_heights(&network, activation).is_none());
+}
+
+#[test]
+fn shielding_is_refused_when_the_live_tip_reaches_the_upgrade_edge() {
+    let network = ExpiryTestNetwork { nu7: Some(1_020) };
+    // The wallet trails the live tip by a block in each case.
+    assert_eq!(
+        shielding_expiry_for_proposal(&network, BlockHeight::from_u32(1_015), 1_015).unwrap(),
+        BlockHeight::from_u32(1_019)
+    );
+    for (wallet_target, live_tip) in [(1_016, 1_016), (1_019, 1_019)] {
+        assert_eq!(
+            shielding_expiry_for_proposal(&network, BlockHeight::from_u32(wallet_target), live_tip)
+                .unwrap_err(),
+            network_upgrade::SEND_HOLD_MESSAGE
+        );
+    }
+    assert_eq!(
+        shielding_expiry_for_proposal(&network, BlockHeight::from_u32(1_100), 1_100).unwrap(),
+        BlockHeight::from_u32(1_221)
+    );
 }
 
 #[test]
@@ -309,7 +496,8 @@ fn immediate_migration_lock_matches_zip318_transaction_expiry() {
         );
         assert!(
             immediate_migration_lock_expiry(target_height).unwrap()
-                > target_height + SEND_PROPOSAL_LOCK_BLOCKS
+                > target_height
+                    + zcash_primitives::transaction::builder::PRE_NU7_DEFAULT_TX_EXPIRY_DELTA
         );
     }
 }
@@ -2247,7 +2435,10 @@ fn fabricated_shielded_spend_proposal(
         recipient,
         None,
         ReceivedNotes::new(sapling_notes, orchard_notes, vec![]),
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
     )
     .expect("fabricated proposal should build")
 }
@@ -2325,7 +2516,10 @@ fn fabricated_proposal_with_payment_pool(payment_pool: PoolType) -> Proposal<Wal
         Some(shielded_inputs),
         BlockHeight::from_u32(900),
         balance,
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
         TargetHeight::from(BlockHeight::from_u32(1_000)),
         ConfirmationsPolicy::default(),
         false,
@@ -2567,7 +2761,7 @@ fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result = create_shield_transparent_pczt_with_expiry(
+    let result = create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         &account_uuid,
@@ -2647,7 +2841,7 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result = create_shield_transparent_pczt_with_expiry(
+    let result = create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         &account_uuid,
@@ -2674,7 +2868,7 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     assert_eq!(reserved.inputs.len(), 1);
     assert_eq!(*reserved.inputs[0].txid().as_ref(), [42; 32]);
     assert!(
-        create_shield_transparent_pczt_with_expiry(
+        create_shield_transparent_pczt_for_live_tip(
             db_path,
             network,
             &account_uuid,
@@ -2691,7 +2885,7 @@ fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     assert!(super::super::discard_proposal(result.proposal_id, "wrong-flow").is_err());
     super::super::discard_proposal(result.proposal_id, "shield-test").unwrap();
     super::super::discard_proposal(result.proposal_id, "shield-test").unwrap();
-    let retry = create_shield_transparent_pczt_with_expiry(
+    let retry = create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         &account_uuid,
@@ -3163,19 +3357,75 @@ fn migration_child_bundle_shape_and_fee_are_two_plus_one() {
     assert_eq!(orchard_actions, MIGRATION_ORCHARD_ACTION_COUNT);
     assert_eq!(ironwood_actions, MIGRATION_IRONWOOD_ACTION_COUNT);
 
-    let fee = ConservativeZip317FeeRule
-        .fee_required(
-            &WalletNetwork::Regtest,
-            BlockHeight::from_u32(120),
-            std::iter::empty::<TransparentInputSize>(),
-            std::iter::empty::<usize>(),
-            0,
-            0,
-            orchard_actions,
-            ironwood_actions,
-        )
-        .unwrap();
+    let fee = ConservativeZip317FeeRule::for_target(
+        &crate::wallet::network::WalletNetwork::Regtest,
+        zcash_protocol::consensus::BlockHeight::from_u32(120),
+    )
+    .fee_required(
+        &WalletNetwork::Regtest,
+        BlockHeight::from_u32(120),
+        std::iter::empty::<TransparentInputSize>(),
+        std::iter::empty::<usize>(),
+        0,
+        0,
+        orchard_actions,
+        ironwood_actions,
+    )
+    .unwrap();
     assert_eq!(u64::from(fee), 15_000);
+}
+
+#[test]
+fn wallet_fee_switches_at_each_network_nu7_target_height() {
+    for (network, activation) in [
+        (WalletNetwork::Main, 3_543_405),
+        (WalletNetwork::Test, 4_465_026),
+    ] {
+        assert_eq!(
+            network
+                .activation_height(consensus::NetworkUpgrade::Nu7)
+                .map(u32::from),
+            Some(activation)
+        );
+        for height in [
+            activation - 1,
+            activation,
+            activation + 1,
+            3_589_999,
+            3_590_000,
+        ] {
+            let rate = if height < activation { 5_000 } else { 1_000 };
+            let rule =
+                ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(height));
+            assert_eq!(u64::from(rule.marginal_fee()), rate);
+            assert_eq!(rule.grace_actions(), 2);
+            for actions in [1usize, 2, 3, 16] {
+                let fee = rule
+                    .fee_required(
+                        &network,
+                        BlockHeight::from_u32(height),
+                        std::iter::empty::<TransparentInputSize>(),
+                        std::iter::empty::<usize>(),
+                        0,
+                        0,
+                        actions,
+                        0,
+                    )
+                    .unwrap();
+                assert_eq!(u64::from(fee), rate * actions.max(2) as u64);
+            }
+        }
+    }
+    assert_eq!(
+        u64::from(
+            ConservativeZip317FeeRule::for_target(
+                &WalletNetwork::Regtest,
+                BlockHeight::from_u32(9_000_000)
+            )
+            .marginal_fee()
+        ),
+        5_000
+    );
 }
 
 #[test]
@@ -3193,19 +3443,23 @@ fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() 
         TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE),
     ];
 
-    let conservative_fee = ConservativeZip317FeeRule
-        .fee_required(
-            &network,
-            height,
-            undersized_inputs.clone(),
-            std::iter::empty::<usize>(),
-            0,
-            0,
-            0,
-            0,
-        )
-        .unwrap();
-    let standard_p2pkh_fee = StandardFeeRule::Zip317
+    let conservative_fee = ConservativeZip317FeeRule::for_target(
+        &crate::wallet::network::WalletNetwork::Regtest,
+        zcash_protocol::consensus::BlockHeight::from_u32(120),
+    )
+    .fee_required(
+        &network,
+        height,
+        undersized_inputs.clone(),
+        std::iter::empty::<usize>(),
+        0,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
+    let standard_p2pkh_fee = ConservativeZip317FeeRule::for_target(&network, height)
+        .primitive()
         .fee_required(
             &network,
             height,
@@ -3217,7 +3471,8 @@ fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() 
             0,
         )
         .unwrap();
-    let standard_undersized_fee = StandardFeeRule::Zip317
+    let standard_undersized_fee = ConservativeZip317FeeRule::for_target(&network, height)
+        .primitive()
         .fee_required(
             &network,
             height,
@@ -3252,7 +3507,10 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
     let internal_ovk = Some(fvk.to_ovk(recipient_scope));
     let memo = MemoBytes::empty();
     let output_value = 100_000;
-    let fee_rule = ConservativeZip317FeeRule;
+    let fee_rule = ConservativeZip317FeeRule::for_target(
+        &crate::wallet::network::WalletNetwork::Regtest,
+        zcash_protocol::consensus::BlockHeight::from_u32(120),
+    );
 
     let build_builder = |input_value| {
         let rho = orchard::note::Rho::from_bytes(&[1; 32]).unwrap();
@@ -3312,8 +3570,14 @@ fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
 
 fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
-    let network = WalletNetwork::Regtest;
-    let target_height = 120;
+    built_padded_v6_split_pczt_at(WalletNetwork::Regtest, 120, 80_000)
+}
+
+fn built_padded_v6_split_pczt_at(
+    network: WalletNetwork,
+    target_height: u32,
+    expected_fee: u64,
+) -> (BuiltPczt, UnifiedSpendingKey) {
     let expiry_height = 69_120;
     let usk = UnifiedSpendingKey::from_seed(&network, &[9; 32], zip32::AccountId::ZERO).unwrap();
     let fvk = orchard::keys::FullViewingKey::from(usk.orchard());
@@ -3322,7 +3586,8 @@ fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
     let internal_ovk = Some(fvk.to_ovk(recipient_scope));
     let memo = MemoBytes::empty();
     let outputs = vec![100_000u64; 10];
-    let fee_rule = ConservativeZip317FeeRule;
+    let fee_rule =
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(target_height));
     let bundle_padding = BundlePadding {
         bundle_required: false,
         pad_to_minimum: Some(16),
@@ -3363,7 +3628,7 @@ fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
         .unwrap()
         .get_fee(&fee_rule)
         .unwrap();
-    assert_eq!(u64::from(fee), 80_000);
+    assert_eq!(u64::from(fee), expected_fee);
     let input_value = outputs.iter().sum::<u64>() + u64::from(fee);
     let build_result = build_builder(input_value)
         .unwrap()
@@ -3504,7 +3769,10 @@ fn transparent_recipient_send_max_proposal_spends_shielded_notes() {
         recipient,
         None,
         ReceivedNotes::new(vec![received_note], vec![], vec![]),
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
     )
     .expect("transparent-recipient send-max should build from shielded notes");
 
@@ -3557,7 +3825,10 @@ fn transparent_recipient_send_max_supports_ironwood_only_inputs() {
         transparent_recipient,
         None,
         ReceivedNotes::new(vec![], vec![], vec![received_note]),
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
     )
     .expect("transparent-recipient send-max should build from Ironwood notes");
 
@@ -3959,7 +4230,7 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
             .can_shield
     );
     assert!(
-        create_shield_transparent_pczt_with_expiry(path, network, &uuid, "shield-test", None)
+        create_shield_transparent_pczt_for_live_tip(path, network, &uuid, "shield-test", None)
             .err()
             .unwrap()
             .message
@@ -4006,7 +4277,11 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
         },
     )
     .unwrap();
-    crate::wallet::ledger::build_pczt_full_signing_plan(&bytes, false).unwrap();
+    crate::wallet::ledger::build_pczt_full_signing_plan(
+        &bytes,
+        crate::wallet::ledger::LedgerAppSupport::OLDEST,
+    )
+    .unwrap();
     // Simulate the first round's inputs becoming spent, then select the remainder.
     // The persistent signed-operation pipeline already owns real broadcast recovery.
     let conn = Connection::open(path).unwrap();
@@ -4347,7 +4622,10 @@ fn fabricated_batch_step(
         Some(shielded_inputs),
         BlockHeight::from_u32(900),
         balance,
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
         TargetHeight::from(BlockHeight::from_u32(1_000)),
         ConfirmationsPolicy::default(),
         false,
@@ -4400,7 +4678,10 @@ fn gift_card_batch_rejects_more_than_one_funding_transaction_for_every_signer() 
     let first = fabricated_batch_step(2, batch_orchard_inputs(1), 1);
     let second = fabricated_batch_step(2, batch_orchard_inputs(1), 2);
     let two_steps = Proposal::multi_step(
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
         TargetHeight::from(BlockHeight::from_u32(1_000)),
         ConfirmationsPolicy::default(),
         nonempty::NonEmpty::from((
@@ -4612,4 +4893,55 @@ fn gift_card_batch_ledger_rejects_fifth_recipient_before_signing() {
     // The device review budget does not constrain software or Keystone accounts.
     validate_batch(&proposal, None).unwrap();
     validate_batch(&proposal, Some(HardwareSignerKind::Keystone)).unwrap();
+}
+
+#[test]
+fn nu7_padded_split_pczt_uses_reduced_fees_on_both_networks() {
+    for (network, target) in [
+        (WalletNetwork::Main, 3_543_405),
+        (WalletNetwork::Test, 4_465_026),
+    ] {
+        let (pczt, _) = built_padded_v6_split_pczt_at(network, target, 16_000);
+        crate::wallet::sync::pczt::redact_pczt_for_signer(&pczt.bytes).unwrap();
+        let fee_rule =
+            ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(target));
+        let fee = fee_rule
+            .fee_required(
+                &network,
+                BlockHeight::from_u32(target),
+                vec![TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE - 50); 3],
+                std::iter::empty::<usize>(),
+                0,
+                0,
+                0,
+                0,
+            )
+            .unwrap();
+        assert_eq!(u64::from(fee), 3_000);
+    }
+}
+
+#[test]
+fn stored_legacy_migration_fees_remain_supported_without_changing_new_fees() {
+    for (network, activation) in [
+        (WalletNetwork::Main, 3_543_405),
+        (WalletNetwork::Test, 4_465_026),
+    ] {
+        for target in [activation - 1, activation, activation + 1] {
+            let canonical = if target < activation { 15_000 } else { 3_000 };
+            assert_eq!(
+                canonical_migration_fee_zatoshi(network, target).unwrap(),
+                canonical
+            );
+            assert!(stored_migration_fee_is_supported(network, target, 15_000).unwrap());
+            assert!(stored_migration_fee_is_supported(network, target, canonical).unwrap());
+            assert_eq!(
+                stored_migration_fee_is_supported(network, target, 3_000).unwrap(),
+                target >= activation
+            );
+            for invalid in [0, 1_000, 4_000, 20_000] {
+                assert!(!stored_migration_fee_is_supported(network, target, invalid).unwrap());
+            }
+        }
+    }
 }

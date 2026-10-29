@@ -8,9 +8,10 @@ use zcash_client_backend::{
     data_api::{TransactionDataRequest, TransactionsInvolvingAddress},
     proto::service::RawTransaction,
 };
-use zcash_primitives::transaction::builder::PRE_NU7_DEFAULT_TX_EXPIRY_DELTA;
+use zcash_primitives::transaction::builder::default_tx_expiry_delta;
 
 use super::SyncError;
+use crate::wallet::network::WalletNetwork;
 
 const MAX_ADDRESS_STREAMS: usize = 4;
 type HistoryStream = BoxStream<'static, Result<RawTransaction, SyncError>>;
@@ -19,9 +20,12 @@ pub(super) type OpenHistory = Box<
 >;
 
 /// Preserve request semantics. Only overlapping/adjacent ranges with identical
-/// filters and scheduling constraints can share a response.
+/// filters and scheduling constraints can share a response. Long ranges are
+/// split into pieces as long as the backend's own requests: the default expiry
+/// delta at the next height, plus one.
 pub(super) fn plan(
     requests: &[TransactionDataRequest],
+    network: WalletNetwork,
 ) -> VecDeque<VecDeque<TransactionsInvolvingAddress>> {
     let mut addresses = BTreeMap::new();
     for request in requests {
@@ -77,7 +81,8 @@ pub(super) fn plan(
                 let end = req.block_range_end().unwrap();
                 while start < end {
                     let remaining = u32::from(end) - u32::from(start);
-                    let next = start + remaining.min(PRE_NU7_DEFAULT_TX_EXPIRY_DELTA + 1);
+                    let max = default_tx_expiry_delta(&network, start + 1) + 1;
+                    let next = start + remaining.min(max);
                     chunks.push(with_range(&req, start, next));
                     start = next;
                 }
@@ -189,7 +194,10 @@ mod tests {
     };
     use transparent::address::TransparentAddress;
     use zcash_client_backend::data_api::{OutputStatusFilter, TransactionStatusFilter};
-    use zcash_protocol::consensus::BlockHeight;
+    use zcash_primitives::transaction::builder::{
+        NU7_DEFAULT_TX_EXPIRY_DELTA, PRE_NU7_DEFAULT_TX_EXPIRY_DELTA,
+    };
+    use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
     fn request(address: u8, start: u32, end: u32) -> TransactionDataRequest {
         TransactionDataRequest::transactions_involving_address(
@@ -215,14 +223,17 @@ mod tests {
 
     #[test]
     fn address_history_merges_duplicates_overlaps_and_adjacent_ranges() {
-        let plans = plan(&[
-            request(1, 100, 110),
-            request(1, 100, 110),
-            request(1, 105, 115),
-            request(1, 115, 120),
-            request(1, 130, 135),
-            request(2, 100, 110),
-        ]);
+        let plans = plan(
+            &[
+                request(1, 100, 110),
+                request(1, 100, 110),
+                request(1, 105, 115),
+                request(1, 115, 120),
+                request(1, 130, 135),
+                request(2, 100, 110),
+            ],
+            WalletNetwork::Main,
+        );
         assert_eq!(plans.len(), 2);
         assert_eq!(ranges(&plans[0]), vec![(100, 120), (130, 135)]);
         assert_eq!(ranges(&plans[1]), vec![(100, 110)]);
@@ -244,10 +255,10 @@ mod tests {
                 );
             *req = other;
         }
-        let plans = plan(&[request(1, 100, 110), filtered]);
+        let plans = plan(&[request(1, 100, 110), filtered], WalletNetwork::Main);
         assert_eq!(plans[0].len(), 2);
         let max = PRE_NU7_DEFAULT_TX_EXPIRY_DELTA + 1;
-        let plans = plan(&[request(1, 1, 1 + 3 * max)]);
+        let plans = plan(&[request(1, 1, 1 + 3 * max)], WalletNetwork::Main);
         assert_eq!(
             ranges(&plans[0]),
             vec![
@@ -256,8 +267,33 @@ mod tests {
                 (1 + 2 * max, 1 + 3 * max)
             ]
         );
-        let plans = plan(&[request(1, 8, 8), request(1, 9, 8)]);
+        let plans = plan(&[request(1, 8, 8), request(1, 9, 8)], WalletNetwork::Main);
         assert!(plans.is_empty());
+    }
+
+    // Masquerade builds schedule no NU7 on the mainnet name.
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn address_history_pieces_follow_the_nu7_expiry_delta() {
+        let nu7 = u32::from(
+            WalletNetwork::Main
+                .activation_height(NetworkUpgrade::Nu7)
+                .unwrap(),
+        );
+        let pre = PRE_NU7_DEFAULT_TX_EXPIRY_DELTA + 1;
+        let post = NU7_DEFAULT_TX_EXPIRY_DELTA + 1;
+        // The piece whose next height is the activation block is already an NU7 one.
+        let start = nu7 - 1 - pre;
+        let end = start + pre + 2 * post;
+        let plans = plan(&[request(1, start, end)], WalletNetwork::Main);
+        assert_eq!(
+            ranges(&plans[0]),
+            vec![
+                (start, start + pre),
+                (start + pre, start + pre + post),
+                (start + pre + post, end)
+            ]
+        );
     }
 
     struct Live(Arc<AtomicUsize>);
@@ -291,7 +327,7 @@ mod tests {
             }
         });
         let requests: Vec<_> = (0..10).map(|i| request(i, 100, 110)).collect();
-        let mut reads = HistoryReads::new(plan(&requests), open);
+        let mut reads = HistoryReads::new(plan(&requests, WalletNetwork::Main), open);
         assert!(futures::poll!(Box::pin(reads.next())).is_pending());
         assert_eq!(opened.load(Ordering::SeqCst), 4);
         assert_eq!(live.load(Ordering::SeqCst), 4);
@@ -318,7 +354,7 @@ mod tests {
             request(1, 120, 130),
             request(2, 100, 110),
         ];
-        let mut reads = HistoryReads::new(plan(&requests), open);
+        let mut reads = HistoryReads::new(plan(&requests, WalletNetwork::Main), open);
         let mut acknowledged = 0;
         while let Some((mut read, result)) = reads.next().await {
             assert!(!opened
@@ -340,7 +376,10 @@ mod tests {
         assert_eq!(acknowledged, 1);
         assert_eq!(opened.lock().unwrap().len(), 2);
         // The original durable requests remain eligible for retry from their start.
-        assert_eq!(ranges(&plan(&requests)[0]), vec![(100, 110), (120, 130)]);
+        assert_eq!(
+            ranges(&plan(&requests, WalletNetwork::Main)[0]),
+            vec![(100, 110), (120, 130)]
+        );
     }
 
     #[tokio::test]
@@ -355,7 +394,10 @@ mod tests {
             }
         });
         let mut reads = HistoryReads::new(
-            plan(&(0..10).map(|i| request(i, 100, 110)).collect::<Vec<_>>()),
+            plan(
+                &(0..10).map(|i| request(i, 100, 110)).collect::<Vec<_>>(),
+                WalletNetwork::Main,
+            ),
             open,
         );
         let mut messages = 0;
@@ -388,8 +430,13 @@ mod tests {
             }
             .boxed()
         });
-        let mut reads =
-            HistoryReads::new(plan(&[request(1, 100, 110), request(1, 120, 130)]), open);
+        let mut reads = HistoryReads::new(
+            plan(
+                &[request(1, 100, 110), request(1, 120, 130)],
+                WalletNetwork::Main,
+            ),
+            open,
+        );
         let (read, result) = reads.next().await.unwrap();
         assert!(result.unwrap().is_some());
         reads.resume(read);
@@ -411,8 +458,13 @@ mod tests {
                 async { Ok(futures::stream::empty().boxed()) }.boxed()
             }
         });
-        let mut reads =
-            HistoryReads::new(plan(&[request(1, 100, 110), request(1, 120, 130)]), open);
+        let mut reads = HistoryReads::new(
+            plan(
+                &[request(1, 100, 110), request(1, 120, 130)],
+                WalletNetwork::Main,
+            ),
+            open,
+        );
         let (mut read, result) = reads.next().await.unwrap();
         assert!(result.unwrap().is_none());
         assert_eq!(opened.load(Ordering::SeqCst), 1);

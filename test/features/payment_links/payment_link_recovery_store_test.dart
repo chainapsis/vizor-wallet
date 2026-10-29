@@ -1138,6 +1138,94 @@ void main() {
       expect(await store.countUnsharedFundedForAccount('source-account'), 1);
     });
 
+    test('a draft Rust refused after its marker can be removed', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      await store.saveDraft(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        link: link,
+        sourceAccountUuid: 'source-account',
+      );
+      await store.markSubmissionStarted(
+        address: link.address,
+        chainHeight: _submissionHeight,
+      );
+
+      await store.removeUnsubmittedDraft(
+        address: link.address,
+        refusedAfterMarker: true,
+      );
+      expect(await PaymentLinkRecoveryStore(storage).load(), isEmpty);
+    });
+
+    test('a refusal never removes a draft with a funding txid', () async {
+      final store = PaymentLinkRecoveryStore(_FakePaymentLinkRecoveryStorage());
+      final link = _link();
+      await store.saveDraft(
+        claimFeeReserveZatoshi: BigInt.from(10000),
+        link: link,
+        sourceAccountUuid: 'source-account',
+      );
+      await store.markSubmissionStarted(
+        address: link.address,
+        chainHeight: _submissionHeight,
+      );
+      await store.markSubmitted(address: link.address, fundingTxids: 'txid');
+
+      await expectLater(
+        store.removeUnsubmittedDraft(
+          address: link.address,
+          refusedAfterMarker: true,
+        ),
+        throwsStateError,
+      );
+      expect(await store.load(), hasLength(1));
+    });
+
+    test('a batch Rust refused after its marker can be removed', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+      VizorPaymentLink member(String suffix) => VizorPaymentLink(
+        network: link.network,
+        address: '${link.address}$suffix',
+        amountZatoshi: link.amountZatoshi,
+        mnemonic: link.mnemonic,
+        birthdayHeight: link.birthdayHeight,
+        label: link.label,
+        createdAt: link.createdAt,
+      );
+      for (final batchId in ['refused', 'submitted']) {
+        await store.saveBatchDrafts(
+          batchId: batchId,
+          links: [member('${batchId}1'), member('${batchId}2')],
+          sourceAccountUuid: 'source-account',
+          claimFeeReserveZatoshi: BigInt.from(10000),
+        );
+        await store.markBatchSubmissionStarted(
+          batchId: batchId,
+          chainHeight: _submissionHeight,
+        );
+      }
+      await store.markBatchSubmitted(
+        batchId: 'submitted',
+        fundingTxids: 'one-funding-txid',
+      );
+
+      await store.removeUnsubmittedBatch('refused', refusedAfterMarker: true);
+      await expectLater(
+        store.removeUnsubmittedBatch('submitted', refusedAfterMarker: true),
+        throwsStateError,
+      );
+      expect(
+        (await PaymentLinkRecoveryStore(
+          storage,
+        ).load()).map((record) => record.batchId),
+        ['submitted', 'submitted'],
+      );
+    });
+
     test(
       'automatic draft removal preserves an ambiguous submission and its secret',
       () async {

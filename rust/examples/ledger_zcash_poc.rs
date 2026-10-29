@@ -36,7 +36,16 @@ fn run() -> Result<(), String> {
                 .ok_or("Usage: ledger_zcash_poc sign <pczt-file>")?;
             let pczt = fs::read(&path).map_err(|e| format!("Read {path}: {e}"))?;
             // Real hardware: keep the memo guard, as 3.9.3 resets on hashed memos.
-            let signatures = ledger::sign_pczt(&pczt, false, None)?;
+            // An older app refuses NU7 and Orchard-to-Ironwood transactions itself.
+            let signatures = ledger::sign_pczt(
+                &pczt,
+                ledger::LedgerAppSupport {
+                    memo_hash: false,
+                    nu7_branch: true,
+                    orchard_to_ironwood: true,
+                },
+                None,
+            )?;
             for signature in signatures {
                 let pool = match signature.value_pool() {
                     orchard::ValuePool::Orchard => "orchard",

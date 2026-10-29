@@ -700,6 +700,13 @@ Swift BackgroundMigrationPreparationManager
   `com.keplr.vizor.sync` is cancelled once at launch as a tombstone for requests
   submitted by older builds; no handler is registered for it.
 
+### Network Upgrades
+
+Read [docs/network-upgrades.md](docs/network-upgrades.md) before changing send
+expiry or block-time and wait-time estimates. It covers what the wallet refuses
+around an upgrade, where those rules live
+(`rust/src/wallet/network_upgrade.rs`), and NU7's block spacing.
+
 ### Tor and the network route
 
 Tor covers the app's foreground traffic only. The desired route lives in Rust
@@ -803,8 +810,9 @@ Before changing a Ledger send, Gift Card, shielding, swap, or voting flow, read
 `docs/ledger/limitations.md`. **32 actions per pool does not mean 32 recipients:**
 the device can review only **4 external shielded outputs across both pools**;
 internal change is excluded. Numeric limits live in `rust/src/wallet/ledger/limits.rs`.
-Keep account-key verification before PCZT transmission and retain the
-Orchard-to-Ironwood gate until the actual supported app passes its canary.
+Keep account-key verification before PCZT transmission. Apps before 3.10.0
+reject the NU7 branch and an Orchard spend into Ironwood; `LedgerAppSupport`
+carries what the connected app can sign, and the serializer refuses the rest.
 
 ### Signing Cancellation
 
@@ -983,8 +991,12 @@ the setting off restores public discovery from height 0.
 `create_wallet()` fetches chain tip from lightwalletd as birthday height before creating the account. This prevents new wallets from doing a full chain scan. Birthday fetch failure blocks wallet creation (network required).
 
 On mainnet, the wallet API (`rust/src/api/wallet.rs`, `restored_birthday`)
-stores every restored birthday rounded down to one past a 10,000-block grid
-point (`tree_states::restore_birthday`), so lightwalletd learns only the bucket.
+stores every restored birthday rounded down to one past a grid point
+(`tree_states::restore_birthday`), so lightwalletd learns only the bucket. The
+grid is every 10,000 blocks before NU7 and every 30,000 from it, about 8.7 days
+in both eras, and the bucket containing the activation starts at the last grid
+point before it. It is a height grid, not a calendar, so every app version
+draws the same buckets.
 When the grid point is a compiled checkpoint (`rust/src/wallet/tree_states.rs`)
 the first scan batch reads its state locally instead of sending
 `GetTreeState`; a restore newer than the table fetches the grid point's state.

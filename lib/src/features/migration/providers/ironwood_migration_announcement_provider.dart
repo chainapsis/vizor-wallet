@@ -8,6 +8,7 @@ import '../../../core/profile_pictures.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../ledger/ledger_capability.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/chain_upgrade_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -777,6 +778,10 @@ final ironwoodMigrationCompletionProvider =
 
 final ironwoodMigrationAnnouncementProvider =
     FutureProvider<IronwoodMigrationAnnouncementState>((ref) async {
+      // Home announces only the latest upgrade; from NU7 that is NU7's.
+      if (ref.watch(nu7ActiveAtWalletTipProvider)) {
+        return const IronwoodMigrationAnnouncementState.hidden();
+      }
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
       if (!inputs.ironwoodActiveAtTip) {
         return const IronwoodMigrationAnnouncementState.hidden();

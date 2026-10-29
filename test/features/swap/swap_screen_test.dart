@@ -71,6 +71,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'support/swap_activity_fixture_intents.dart';
 
 import '../../support/leading_decimal_input.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
+import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 
 part 'support/swap_screen_test_fakes.dart';
 
@@ -9291,6 +9293,54 @@ void main() {
     expect(find.textContaining('Could not send ZEC deposit'), findsNothing);
   });
 
+  testWidgets('a ZEC deposit held for the network upgrade opens no swap', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider();
+    final depositSender = _FakeSwapDepositSender();
+    final sessionStore = _FakeSwapPersistenceStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        sessionStore: sessionStore,
+        upgradeWindow: const NetworkUpgradeWindowState(
+          nextActivationHeight: 3543405,
+          holdsTransactions: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.002',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+
+    expect(depositSender.preflightRequests, isEmpty);
+    expect(swapProvider.startedQuotes, isEmpty);
+    expect(sessionStore.savedIntents, isEmpty);
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+  });
+
   testWidgets('ZEC deposit preflight failure does not start a swap intent', (
     tester,
   ) async {
@@ -10403,6 +10453,7 @@ Widget _routerHarness(
   Future<List<int>> Function(List<int> pcztBytes)? ledgerSigner,
   LedgerOperationCanceller? ledgerCanceller,
   LedgerSignedOperationService? ledgerOperationService,
+  NetworkUpgradeWindowState? upgradeWindow,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -10412,6 +10463,8 @@ Widget _routerHarness(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      if (upgradeWindow != null)
+        networkUpgradeWindowProvider.overrideWithValue(upgradeWindow),
       networkPrivacyProvider.overrideWith(
         () => _FakeNetworkPrivacyNotifier(networkPrivacyState),
       ),

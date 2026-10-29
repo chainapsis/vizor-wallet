@@ -68,7 +68,7 @@ log stream --level info --predicate 'subsystem == "frb_user" AND eventMessage CO
 
 Import the Ledger account and approve viewing-key export. The device is no longer
 needed for discovery. Check the logged account/scope/index, `used`, gap count and
-completion against known Ledger Live history. Restart during recovery to check
+completion against known Ledger Wallet history. Restart during recovery to check
 resume, then sync again after completion: there should be no new history requests
 for that completed account. Keys, UFVKs and addresses are not logged by discovery.
 Actual device signing and broadcasting remain a separate user-operated check;

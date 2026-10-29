@@ -69,7 +69,7 @@ use zcash_client_backend::{
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
-        DustOutputPolicy, SplitPolicy, StandardFeeRule, TransactionBalance,
+        DustOutputPolicy, SplitPolicy, TransactionBalance,
     },
     proposal::{Proposal, ProposalError, ShieldedInputs},
     wallet::{LockOwner, Note, OutputRef, OvkPolicy, ReceivedNote, WalletTransparentOutput},
@@ -82,10 +82,13 @@ use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::TxVersion;
 use zcash_primitives::transaction::{
-    builder::{BuildConfig, Builder, BundlePadding},
+    builder::{default_tx_expiry_delta, BuildConfig, Builder, BundlePadding},
     fees::{
         transparent::InputSize as TransparentInputSize,
-        zip317::{P2PKH_STANDARD_INPUT_SIZE, P2PKH_STANDARD_OUTPUT_SIZE},
+        zip317::{
+            FeeRule as PrimitiveZip317FeeRule, GRACE_ACTIONS, P2PKH_STANDARD_INPUT_SIZE,
+            P2PKH_STANDARD_OUTPUT_SIZE,
+        },
         FeeRule,
     },
     TxId,
@@ -105,6 +108,7 @@ use crate::wallet::db::{
 use crate::wallet::failure::{FailureCode, WalletFailure};
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::network_upgrade;
 use crate::wallet::sync_engine;
 use crate::wallet::sync_engine::enhancement::private_queries_active;
 use crate::wallet::{confirmations_policy, payment_link_claim_confirmations_policy};
@@ -145,17 +149,57 @@ impl SendPurpose {
 }
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
-const SEND_PROPOSAL_LOCK_BLOCKS: u32 = 40;
 
-fn send_proposal_lock_expiry(min_target_height: BlockHeight) -> BlockHeight {
-    min_target_height + SEND_PROPOSAL_LOCK_BLOCKS
+/// Default expiry and input-lock window for a transaction targeting
+/// `target_height`, capped at the end of its consensus branch.
+fn send_expiry_height_for_target<P: Parameters>(
+    network: &P,
+    target_height: BlockHeight,
+) -> BlockHeight {
+    let delta = default_tx_expiry_delta(network, target_height);
+    let expiry = BlockHeight::from_u32(u32::from(target_height).saturating_add(delta));
+    network_upgrade::cap_expiry_at_branch_end(network, target_height, expiry)
 }
 
-fn send_proposal_is_expired(
+/// Refuses a transaction whose expiry the next upgrade cuts so short that
+/// nodes would reject it as expiring soon.
+fn ensure_send_outside_upgrade_edge<P: Parameters>(
+    network: &P,
+    target_height: BlockHeight,
+) -> Result<(), String> {
+    if send_expiry_height_for_target(network, target_height)
+        < target_height + network_upgrade::TX_EXPIRING_SOON_BLOCKS
+    {
+        return Err(network_upgrade::SEND_HOLD_MESSAGE.to_string());
+    }
+    Ok(())
+}
+
+/// `error` for a proposal that expired by `current_target`, or the upgrade
+/// hold when a new proposal would be refused there too.
+fn expired_send_proposal_error<P: Parameters>(
+    network: &P,
+    current_target: BlockHeight,
+    error: &str,
+) -> String {
+    ensure_send_outside_upgrade_edge(network, current_target)
+        .err()
+        .unwrap_or_else(|| error.to_string())
+}
+
+fn send_proposal_lock_expiry<P: Parameters>(
+    network: &P,
+    min_target_height: BlockHeight,
+) -> BlockHeight {
+    send_expiry_height_for_target(network, min_target_height)
+}
+
+fn send_proposal_is_expired<P: Parameters>(
+    network: &P,
     min_target_height: BlockHeight,
     current_target_height: BlockHeight,
 ) -> bool {
-    current_target_height >= send_proposal_lock_expiry(min_target_height)
+    current_target_height >= send_proposal_lock_expiry(network, min_target_height)
 }
 
 pub(super) async fn live_send_expiry_height(
@@ -167,28 +211,55 @@ pub(super) async fn live_send_expiry_height(
         .await
         .map_err(|e| format!("Read live chain tip before transaction construction: {e}"))?;
     let tip = u32::try_from(tip.height).map_err(|_| "Live chain tip exceeds u32")?;
-    send_expiry_height_for_live_tip(min_target_height, tip)
+    send_expiry_height_for_live_tip(&network, min_target_height, tip)
 }
 
-fn send_expiry_height_for_live_tip(
+fn send_expiry_height_for_live_tip<P: Parameters>(
+    network: &P,
     min_target_height: BlockHeight,
     live_tip: u32,
 ) -> Result<BlockHeight, String> {
     let live_target = live_tip
         .checked_add(1)
         .ok_or("Live transaction target height overflow")?;
-    let original_expiry = u32::from(send_proposal_lock_expiry(min_target_height));
+    let original_expiry = u32::from(send_proposal_lock_expiry(network, min_target_height));
     if live_target >= original_expiry {
-        return Err(
-            "Send proposal expired against the live chain tip; review the payment and create a new proposal"
-                .to_string(),
-        );
+        return Err(expired_send_proposal_error(
+            network,
+            BlockHeight::from_u32(live_target),
+            "Send proposal expired against the live chain tip; review the payment and create a new proposal",
+        ));
     }
-    live_target
-        .max(u32::from(min_target_height))
-        .checked_add(SEND_PROPOSAL_LOCK_BLOCKS)
-        .map(BlockHeight::from_u32)
-        .ok_or_else(|| "Live transaction expiry height overflow".to_string())
+    let target_height = BlockHeight::from_u32(live_target).max(min_target_height);
+    ensure_send_outside_upgrade_edge(network, target_height)?;
+    Ok(send_expiry_height_for_target(network, target_height))
+}
+
+/// Expiry for a shielding proposal targeting `min_target_height`, built
+/// against the live tip, which the wallet's target can trail. Refused when the
+/// live tip has passed the proposal's branch or nodes would reject it as
+/// expiring soon.
+fn shielding_expiry_for_proposal<P: Parameters>(
+    network: &P,
+    min_target_height: BlockHeight,
+    live_tip: u32,
+) -> Result<BlockHeight, String> {
+    let live_target = BlockHeight::from_u32(
+        live_tip
+            .checked_add(1)
+            .ok_or("Shielding target height overflow")?,
+    )
+    .max(min_target_height);
+    if network_upgrade::crosses(
+        network,
+        u32::from(min_target_height),
+        u32::from(live_target),
+    ) {
+        return Err(network_upgrade::SEND_HOLD_MESSAGE.to_string());
+    }
+    ensure_send_outside_upgrade_edge(network, live_target)?;
+    Ok(send_expiry_height_for_target(network, live_target)
+        .max(send_proposal_lock_expiry(network, min_target_height)))
 }
 
 fn immediate_migration_lock_expiry(target_height: BlockHeight) -> Result<BlockHeight, String> {
@@ -649,16 +720,42 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
     }
 }
 
-/// Wallet-local ZIP-317 rule that preserves standard fee parameters but
-/// prevents exact transparent-input serialization from shrinking below
-/// ZIP-317's P2PKH size bound between proposal and transaction build.
+/// The fee is fixed when the proposal is created. Input selection, change and
+/// transaction building must all use that same policy snapshot.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(in crate::wallet) struct ConservativeZip317FeeRule;
+pub(in crate::wallet) struct ConservativeZip317FeeRule {
+    marginal_fee: u64,
+}
+
+impl ConservativeZip317FeeRule {
+    pub(in crate::wallet) fn for_target<P: Parameters>(network: &P, target: BlockHeight) -> Self {
+        Self {
+            marginal_fee: crate::wallet::fees::marginal_fee(network, target),
+        }
+    }
+
+    fn primitive(self) -> PrimitiveZip317FeeRule {
+        PrimitiveZip317FeeRule::non_standard(
+            Zatoshis::const_from_u64(self.marginal_fee),
+            GRACE_ACTIONS,
+            P2PKH_STANDARD_INPUT_SIZE,
+            P2PKH_STANDARD_OUTPUT_SIZE,
+        )
+        .expect("ZIP-317 standard input and output sizes are nonzero")
+    }
+}
+
+pub(crate) fn fee_policy_target(db_path: &str, network: WalletNetwork) -> Result<u32, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    wallet_target_height(&db)?
+        .map(|height| u32::from(BlockHeight::from(height)))
+        .ok_or_else(|| "Wallet must sync before estimating fees".to_string())
+}
 
 pub(in crate::wallet) type WalletFeeRule = ConservativeZip317FeeRule;
 
 impl FeeRule for ConservativeZip317FeeRule {
-    type Error = <StandardFeeRule as FeeRule>::Error;
+    type Error = <PrimitiveZip317FeeRule as FeeRule>::Error;
 
     #[allow(clippy::too_many_arguments)]
     fn fee_required<P: consensus::Parameters>(
@@ -679,7 +776,7 @@ impl FeeRule for ConservativeZip317FeeRule {
             TransparentInputSize::Unknown(outpoint) => TransparentInputSize::Unknown(outpoint),
         });
 
-        StandardFeeRule::Zip317.fee_required(
+        self.primitive().fee_required(
             params,
             target_height,
             transparent_input_sizes,
@@ -694,19 +791,19 @@ impl FeeRule for ConservativeZip317FeeRule {
 
 impl Zip317FeeRule for ConservativeZip317FeeRule {
     fn marginal_fee(&self) -> Zatoshis {
-        StandardFeeRule::Zip317.marginal_fee()
+        self.primitive().marginal_fee()
     }
 
     fn grace_actions(&self) -> usize {
-        StandardFeeRule::Zip317.grace_actions()
+        self.primitive().grace_actions()
     }
 }
 
-fn canonical_migration_fee_zatoshi(
+pub(super) fn canonical_migration_fee_zatoshi(
     network: WalletNetwork,
     target_height: u32,
 ) -> Result<u64, String> {
-    ConservativeZip317FeeRule
+    ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(target_height))
         .fee_required(
             &network,
             BlockHeight::from_u32(target_height),
@@ -721,20 +818,39 @@ fn canonical_migration_fee_zatoshi(
         .map_err(|e| format!("Calculate canonical migration fee: {e}"))
 }
 
+/// Prior releases signed the same three-action migration shape at 5,000
+/// zatoshis/action even on NU7. Preserve those signatures; only new construction
+/// must use the current canonical fee. Other fee amounts remain invalid.
+pub(super) fn stored_migration_fee_is_supported(
+    network: WalletNetwork,
+    target_height: u32,
+    fee_zatoshi: u64,
+) -> Result<bool, String> {
+    let canonical = canonical_migration_fee_zatoshi(network, target_height)?;
+    let legacy = (MIGRATION_ORCHARD_ACTION_COUNT + MIGRATION_IRONWOOD_ACTION_COUNT) as u64
+        * crate::wallet::fees::LEGACY_MARGINAL_FEE;
+    Ok(fee_zatoshi == canonical || fee_zatoshi == legacy)
+}
+
 fn pending_migration_policy_rebuild_message(
     db_path: &str,
     network: WalletNetwork,
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<Option<String>, String> {
-    let canonical_fee = canonical_migration_fee_zatoshi(
-        network,
-        chain_tip_height
-            .checked_add(1)
-            .ok_or("Migration target height overflow")?,
-    )?;
+    // Signed parts keep the policy of their own target, even after the tip moves.
     let stale_fee_count =
-        super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, canonical_fee)?;
+        super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, network)?;
+    let stale_fee_count = if stale_fee_count == 0 {
+        super::migration::resigning_parts_with_changed_fee_count(
+            db_path,
+            run_id,
+            network,
+            chain_tip_height,
+        )?
+    } else {
+        stale_fee_count
+    };
     if stale_fee_count > 0 {
         return Ok(Some(format!(
             "{stale_fee_count} migration transaction(s) use an outdated canonical fee. Review and approve a fresh schedule for the remaining Orchard balance."
@@ -891,9 +1007,13 @@ fn propose_send_with_request(
             .map(|step| u64::from(step.balance().fee_required()))
             .sum();
 
+        ensure_send_outside_upgrade_edge(
+            &network,
+            BlockHeight::from(proposal.min_target_height()),
+        )?;
         let input_refs = proposal_input_refs(&proposal);
         let lock_expiry_height =
-            send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()));
+            send_proposal_lock_expiry(&network, BlockHeight::from(proposal.min_target_height()));
         let (id, _) = super::reserve_proposal_inputs(
             &mut db,
             db_path,
@@ -1240,30 +1360,27 @@ pub(crate) async fn create_shield_transparent_pczt(
     account_uuid: &str,
     send_flow_id: &str,
 ) -> Result<ShieldTransparentPcztResult, WalletFailure> {
-    let live_expiry_height = {
+    let live_tip = {
         let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
             .await
             .map_err(|e| format!("Read live chain tip before shielding PCZT: {e}"))?;
-        let tip = u32::try_from(tip.height).map_err(|_| "Shielding PCZT chain tip exceeds u32")?;
-        tip.checked_add(1 + SEND_PROPOSAL_LOCK_BLOCKS)
-            .map(BlockHeight::from_u32)
-            .ok_or("Shielding PCZT expiry height overflow")?
+        u32::try_from(tip.height).map_err(|_| "Shielding PCZT chain tip exceeds u32")?
     };
-    create_shield_transparent_pczt_with_expiry(
+    create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         account_uuid,
         send_flow_id,
-        Some(live_expiry_height),
+        Some(live_tip),
     )
 }
 
-fn create_shield_transparent_pczt_with_expiry(
+fn create_shield_transparent_pczt_for_live_tip(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     send_flow_id: &str,
-    expiry_height: Option<BlockHeight>,
+    live_tip: Option<u32>,
 ) -> Result<ShieldTransparentPcztResult, WalletFailure> {
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
@@ -1295,13 +1412,17 @@ fn create_shield_transparent_pczt_with_expiry(
         // The transaction version rides on the proposal. Expiry is raised to
         // at least the live-tip policy computed before entering the DB lock.
         let proposal = proposal.with_proposed_version(proposed_tx_version);
-        let expiry_height = expiry_height.map(|height| {
-            height.max(send_proposal_lock_expiry(BlockHeight::from(
-                proposal.min_target_height(),
-            )))
-        });
+        let expiry_height = live_tip
+            .map(|tip| {
+                shielding_expiry_for_proposal(
+                    &network,
+                    BlockHeight::from(proposal.min_target_height()),
+                    tip,
+                )
+            })
+            .transpose()?;
         let lock_expiry = expiry_height.unwrap_or_else(|| {
-            send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()))
+            send_proposal_lock_expiry(&network, BlockHeight::from(proposal.min_target_height()))
         });
         let inputs = proposal
             .steps()
@@ -1371,14 +1492,11 @@ pub(crate) async fn shield_transparent_balance(
     seed: SecretVec<u8>,
 ) -> Result<ShieldTransparentResult, WalletFailure> {
     let shielding_threshold = shielding_threshold()?;
-    let live_expiry_height = {
+    let live_tip = {
         let tip = sync_engine::latest_block_for_transaction(lightwalletd_url, network)
             .await
             .map_err(|e| format!("Read live chain tip before shielding: {e}"))?;
-        let tip = u32::try_from(tip.height).map_err(|_| "Shielding chain tip exceeds u32")?;
-        tip.checked_add(1 + SEND_PROPOSAL_LOCK_BLOCKS)
-            .map(BlockHeight::from_u32)
-            .ok_or("Shielding expiry height overflow")?
+        u32::try_from(tip.height).map_err(|_| "Shielding chain tip exceeds u32")?
     };
 
     let (txids, fee_zatoshi, shielded_zatoshi) = with_wallet_db_write_lock(
@@ -1412,9 +1530,11 @@ pub(crate) async fn shield_transparent_balance(
 
             let spend_prover = NoOpSpendProver;
             let output_prover = NoOpOutputProver;
-            let expiry_height = live_expiry_height.max(send_proposal_lock_expiry(
+            let expiry_height = shielding_expiry_for_proposal(
+                &network,
                 BlockHeight::from(proposal.min_target_height()),
-            ));
+                live_tip,
+            )?;
             let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
                 &mut db,
                 &network,
@@ -1577,11 +1697,12 @@ async fn execute_stored_proposal(
                 .map_err(|e| format!("Read wallet target height before send: {e}"))?
                 .ok_or("Wallet must sync before executing a send proposal")?;
             let current_target_height = BlockHeight::from(target_height);
-            if send_proposal_is_expired(min_target_height, current_target_height) {
-                return Err(
-                    "Send proposal expired; review the payment and create a new proposal"
-                        .to_string(),
-                );
+            if send_proposal_is_expired(&network, min_target_height, current_target_height) {
+                return Err(expired_send_proposal_error(
+                    &network,
+                    current_target_height,
+                    "Send proposal expired; review the payment and create a new proposal",
+                ));
             }
             // Reassert ownership while holding the process-wide write lock.
             // If another flow acquired these inputs after this proposal's lock
@@ -2043,7 +2164,8 @@ fn build_orchard_migration_immediate_pczt(
             .collect::<Vec<_>>();
         let (orchard_anchor, orchard_inputs) =
             migration_orchard_witnesses(&mut db, network, anchor_height, &orchard_notes)?;
-        let fee_rule = ConservativeZip317FeeRule;
+        let fee_rule =
+            ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
         let make_builder = |amount: Zatoshis| {
             let mut builder = migration_child_builder(
                 network,
@@ -3900,7 +4022,11 @@ fn build_shielding_proposal(
         )?);
     }
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, false);
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(
+        ConservativeZip317FeeRule::for_target(&network, chain_height + 1),
+        None,
+        false,
+    );
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -3982,8 +4108,11 @@ fn build_ledger_shielding_round(
         migration_locks: &BTreeSet::new(),
         transparent_allowlist: Some(&allowed),
     };
-    let (change_strategy, selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, true);
+    let (change_strategy, selector) = zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target)),
+        None,
+        true,
+    );
     let proposal = selector
         .propose_shielding(
             &network,
@@ -4191,8 +4320,11 @@ fn propose_send_with_reserved_notes(
         .ok_or("Account not found")?;
     let is_ledger = crate::wallet::keys::hardware_signer_kind(account.source())
         == Some(crate::wallet::keys::HardwareSignerKind::Ledger);
-    let (change_strategy, input_selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger);
+    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height)),
+        None,
+        is_ledger,
+    );
 
     input_selector
         .propose_transaction(
@@ -4611,7 +4743,10 @@ fn build_send_max_proposal(
         }
         None => None,
     };
-    let fee_rule = ConservativeZip317FeeRule;
+    let target_height =
+        wallet_target_height(db)?.ok_or("Wallet must sync before estimating send-max")?;
+    let fee_rule =
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
 
     if matches!(recipient_address, Address::Transparent(_)) {
         return build_transparent_recipient_send_max_proposal(
@@ -7128,6 +7263,7 @@ fn order_resubmittable_transactions(
 /// (single change output for Ledger, minimum 0.1 ZEC output split otherwise) in one
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
+    fee_rule: WalletFeeRule,
     change_memo: Option<MemoBytes>,
     is_ledger: bool,
 ) -> (
@@ -7135,7 +7271,7 @@ fn zip317_helper<DbT: InputSource>(
     GreedyInputSelector<DbT>,
 ) {
     let change_strategy = MultiOutputChangeStrategy::new(
-        ConservativeZip317FeeRule,
+        fee_rule,
         change_memo,
         ShieldedPool::Orchard,
         DustOutputPolicy::default(),

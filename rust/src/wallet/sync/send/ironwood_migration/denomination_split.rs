@@ -248,7 +248,6 @@ fn create_padded_orchard_denomination_pczts(
     target_values_zatoshi: Option<&[u64]>,
 ) -> Result<Option<CreatedPaddedDenominationPczts>, String> {
     let mut db = open_wallet_db(db_path, network)?;
-    let fee_rule = ConservativeZip317FeeRule;
     let account_id = parse_account_uuid(account_uuid)?;
     let account = db
         .get_account(account_id)
@@ -269,6 +268,7 @@ fn create_padded_orchard_denomination_pczts(
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before preparing denominations")?;
+    let fee_rule = ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
     let mut orchard_notes =
         select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
     orchard_notes.sort_by_key(|note| (format!("{}", note.txid()), note.output_index()));

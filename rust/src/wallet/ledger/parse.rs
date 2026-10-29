@@ -607,6 +607,12 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
 pub(super) const LEDGER_MEMO_HASH_UNSUPPORTED: &str =
     "Update the Ledger Zcash app to sign non-English memos";
 
+/// Apps before 3.10.0 reject the NU7 branch and an Orchard spend into Ironwood.
+/// Keep this identical to `ledgerAppUpdateRequiredError` in
+/// `lib/src/features/ledger/ledger_capability.dart`.
+pub(super) const LEDGER_APP_UPDATE_REQUIRED: &str =
+    "Update your Ledger and its Zcash app to 3.10.0 or newer in Ledger Wallet.";
+
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
 /// text. Apps before 3.9.4 reset the device on that path, so `serialize_pczt`
 /// refuses such a memo for them. Mirrors `memo_display` and
@@ -651,6 +657,7 @@ fn map_orchard_error(pool: &str, error: OrchardError<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::ledger::LedgerAppSupport;
 
     fn memo_pczt(version: BundleVersion, memo: &[u8], value: u64, with_ovk: bool) -> Vec<u8> {
         use orchard::{
@@ -779,15 +786,27 @@ mod tests {
             ] {
                 for value in [0, 90_000] {
                     let pczt = memo_pczt(version, memo, value, true);
-                    assert!(super::super::build_pczt_full_signing_plan(&pczt, false)
-                        .unwrap_err()
-                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
-                    assert!(super::super::build_pczt_signing_plan(&pczt, false)
-                        .unwrap_err()
-                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                    assert!(super::super::build_pczt_full_signing_plan(
+                        &pczt,
+                        LedgerAppSupport::OLDEST
+                    )
+                    .unwrap_err()
+                    .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                    assert!(
+                        super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::OLDEST)
+                            .unwrap_err()
+                            .contains(LEDGER_MEMO_HASH_UNSUPPORTED)
+                    );
                     // An app that can show the memo hash signs the same PCZT.
-                    assert!(super::super::build_pczt_full_signing_plan(&pczt, true).is_ok());
-                    assert!(super::super::build_pczt_signing_plan(&pczt, true).is_ok());
+                    assert!(super::super::build_pczt_full_signing_plan(
+                        &pczt,
+                        LedgerAppSupport::NEWEST
+                    )
+                    .is_ok());
+                    assert!(
+                        super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::NEWEST)
+                            .is_ok()
+                    );
                 }
             }
         }
@@ -823,7 +842,11 @@ mod tests {
                 &[b'x'; 512],
             ] {
                 let pczt = memo_pczt(version, memo, 90_000, true);
-                assert!(super::super::build_pczt_full_signing_plan(&pczt, false).is_ok());
+                assert!(super::super::build_pczt_full_signing_plan(
+                    &pczt,
+                    LedgerAppSupport::OLDEST
+                )
+                .is_ok());
             }
         }
     }

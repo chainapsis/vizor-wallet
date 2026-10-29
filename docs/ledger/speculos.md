@@ -42,8 +42,8 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 
 ## Environment and results
 
-- App: Zcash 3.9.4, `LedgerHQ/app-zcash` commit
-  `1a0f6495458ecb77abf97c8cff25b0a1a344daaa`.
+- App: Zcash 3.10.0, `LedgerHQ/app-zcash` commit
+  `2db9d5a900f27074ba19b90a7217dcc4318a5f24`, the build Ledger deployed.
 - Official builder and Speculos image digests are pinned in
   [`ledger-speculos-docker.sh`](../../scripts/e2e/ledger-speculos-docker.sh).
   Overrides: `VIZOR_LEDGER_BUILDER_IMAGE`, `VIZOR_LEDGER_SPECULOS_IMAGE`.
@@ -73,15 +73,18 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 - The synthetic DB includes a transparent UTXO and completed external/change
   discovery checkpoints (`complete=2`). Preparation checks the production
   shielding-progress API for one shieldable input; it does not run live discovery.
+  Its tip sits after NU7, so shielding builds an NU7 transaction, and its trees
+  are checkpointed one block below the tip, where anchors are read.
 - The desktop Gift Card scenario uses a separate DB with a synthetic Ironwood
-  note scanned through the SDK. The real Dart service and Rust proposal reject
+  note scanned through the SDK after NU6.3 and before NU7. The real Dart service and Rust proposal reject
   five cards before saving secrets or signing. The UI clamps the count to four,
   then uses production fee estimation, PCZT creation, proof generation, Ledger
   approval, signed-outbox broadcast, and recovery storage to create four cards
   with one transaction. Wallet-path resolution and secure storage are isolated;
   a loopback lightwalletd stub accepts the transaction without chain mining.
-- `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary.
-  Zcash 3.9.4 has not been run against it; retain the production compatibility guard.
+- `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary,
+  a V6 transaction on the NU7 branch. On 2026-10-29 Zcash 3.10.0 signed it on
+  both NU6.3 and NU7, and 3.9.4 rejected it on both.
 - Voting builds two real SDK `PreparedDelegationBundle::keystone_request`
   requests from synthetic eligible Ironwood notes. It verifies the zero-value
   foreign-hotkey output, then signs the SDK-redacted bytes through the production
@@ -106,10 +109,13 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 ### Desktop voting through final tally
 
 Run `scripts/e2e/ledger-speculos-docker.sh voting-tally` with Docker and the
-regtest voting prerequisites available. This lane builds the pinned app with
-`--features testnet` and changes its install paths to `44'/1'` and `32'/1'` in a
-disposable checkout. `VIZOR_LEDGER_SPECULOS_TESTNET_ELF` can reuse that build;
-the mainnet `VIZOR_LEDGER_SPECULOS_ELF` is not used by this lane.
+regtest voting prerequisites available. This lane builds Zcash 3.9.4
+(`1a0f6495458ecb77abf97c8cff25b0a1a344daaa`) with `--features testnet` and
+changes its install paths to `44'/1'` and `32'/1'` in a disposable checkout.
+3.10.0 replaces that feature with a `variant_testnet` build named "Zcash Test",
+which Vizor does not open; voting needs only NU6.3.
+`VIZOR_LEDGER_SPECULOS_TESTNET_ELF` can reuse that build; the mainnet
+`VIZOR_LEDGER_SPECULOS_ELF` is not used by this lane.
 
 The distributed Zcash app uses coin type 133. Its source has a testnet feature
 for coin type 1, but the install paths do not change automatically. Vizor's

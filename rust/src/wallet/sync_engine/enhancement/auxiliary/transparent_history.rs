@@ -40,7 +40,7 @@ impl HistoryPass {
         gate: &TransparentLookupGate,
         should_exit: &impl Fn() -> bool,
     ) -> Result<bool, SyncError> {
-        let mut planned = super::super::super::address_history::plan(requests);
+        let mut planned = super::super::super::address_history::plan(requests, network);
         planned.retain(|group| !self.failed_addresses.contains(&group[0].address()));
         let actionable = !planned.is_empty();
         if !actionable {

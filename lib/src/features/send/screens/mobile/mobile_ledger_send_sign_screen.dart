@@ -13,7 +13,6 @@ import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
-import '../../../ledger/ledger_capability.dart';
 import '../../../ledger/services/ledger_signed_operation_service.dart';
 import '../../../ledger/services/ledger_signing_service.dart';
 import '../../../ledger/services/ledger_device_selection.dart';
@@ -23,6 +22,7 @@ import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
+import '../../../../core/zcash/network_upgrade_hold.dart';
 
 enum _LedgerSendRecoveryAction {
   retrySigning,
@@ -420,7 +420,17 @@ class _MobileLedgerSendSignScreenState
     late final LedgerSigningFailurePresentation presentation;
     late final _LedgerSendRecoveryAction? action;
 
-    if (lower.contains('proposal not found') ||
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) {
+      // Nothing to do here until the upgrade; the sheet only closes.
+      presentation = LedgerSigningFailurePresentation(
+        title: kNetworkUpgradeHoldActionLabel,
+        statusLabel: 'Action needed',
+        message: upgradeHold,
+        showDeviceAppPrompt: false,
+      );
+      action = null;
+    } else if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       presentation = const LedgerSigningFailurePresentation(
         title: 'Transaction expired',
@@ -431,14 +441,6 @@ class _MobileLedgerSendSignScreenState
         actionLabel: 'Create new transaction',
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
-    } else if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
-      presentation = const LedgerSigningFailurePresentation(
-        title: 'Ledger app update required',
-        statusLabel: 'Recovery unavailable',
-        message: kLedgerLegacyOrchardRecoveryUnavailableMessage,
-        showDeviceAppPrompt: false,
-      );
-      action = null;
     } else if (lower.contains('sapling')) {
       presentation = const LedgerSigningFailurePresentation(
         title: 'Ledger signing unavailable',

@@ -53,7 +53,6 @@ Widget buildMobileShieldLedger(BuildContext context) => const MobileShieldScene(
       failed: false,
       stage: LedgerSigningStage.reviewing,
       readiness: LedgerAppReadinessPhase.ready,
-      deviceModel: 'stax',
       saving: false,
       finishing: false,
       broadcasting: false,

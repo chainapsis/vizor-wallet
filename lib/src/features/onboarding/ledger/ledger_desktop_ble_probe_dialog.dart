@@ -8,6 +8,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../ledger/ledger_onboarding_policy.dart';
 import '../../ledger/ledger_device_label.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../../ledger/services/ledger_app_readiness_service.dart';
@@ -514,7 +515,10 @@ class _LedgerDesktopConnectModalState
                   'Approve viewing key',
                   message: _declinedStep == 2
                       ? _error
-                      : 'Approve sharing your viewing key with Vizor.',
+                      : ledgerViewingKeyApprovalMessage(
+                          widget.accountIndex,
+                          readiness.version,
+                        ),
                   busy: current == 2 && !failed,
                   requiresDeviceAction: !failed,
                 ),

@@ -62,6 +62,8 @@ import '../src/features/activity/gift_card_activity_index.dart';
 import '../src/features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../src/features/home/screens/home_screen.dart';
 import '../src/features/home/screens/mobile/mobile_home_screen.dart';
+import '../src/features/home/providers/nu7_announcement_provider.dart';
+import '../src/features/home/widgets/nu7_announcement.dart';
 import '../src/features/home/services/transparent_shielding_service.dart';
 import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -2467,7 +2469,23 @@ Widget buildMobileHomeIronwoodAnnouncementUseCase(BuildContext context) {
     ),
     marketData: const ZecMarketData(usdPrice: 8.397, change24hPct: 13.12),
     swapEnabled: false,
-    showStaticIronwoodAnnouncement: true,
+    staticAnnouncement: MobileIronwoodMigrationAnnouncementSheet(
+      onStartMigration: () {},
+      onOpenReleaseNotes: () {},
+    ),
+  );
+}
+
+Widget buildMobileHomeNu7AnnouncementUseCase(BuildContext context) {
+  return _buildMobileHomeUseCase(
+    accountState: _ironwoodMobileHomeAccountState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_292_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    marketData: const ZecMarketData(usdPrice: 8.397, change24hPct: 13.12),
+    swapEnabled: false,
+    staticAnnouncement: Nu7AnnouncementContent(onClose: () {}),
   );
 }
 
@@ -2925,6 +2943,18 @@ Widget buildDesktopHomeIronwoodMigrationAnnouncementUseCase(
       accountUuid: accountUuid,
       status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
     ),
+  );
+}
+
+Widget buildDesktopHomeNu7AnnouncementUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(14_223_000_000),
+      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
+    nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
   );
 }
 
@@ -3626,7 +3656,7 @@ Widget _buildMobileHomeUseCase({
     change24hPct: 13.12,
   ),
   bool swapEnabled = true,
-  bool showStaticIronwoodAnnouncement = false,
+  Widget? staticAnnouncement,
   bool constrainToPreviewFrame = true,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
@@ -3635,7 +3665,7 @@ Widget _buildMobileHomeUseCase({
     adaptive: adaptive,
     initialLocation: initialLocation,
     openAccountsSheet: openAccountsSheet,
-    showStaticIronwoodAnnouncement: showStaticIronwoodAnnouncement,
+    staticAnnouncement: staticAnnouncement,
     shieldFlow: shieldFlow,
     keystoneShieldPreview: keystoneShieldPreview,
     ledgerShieldPreview: ledgerShieldPreview,
@@ -3770,6 +3800,7 @@ Widget _buildDesktopHomeUseCase({
   required IronwoodHomeMigrationCtaState migrationCta,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
+  Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
   double zecUsdPrice = 1.20012,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
   NetworkPrivacyState? networkPrivacyState,
@@ -3845,6 +3876,7 @@ Widget _buildDesktopHomeUseCase({
       ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
         return announcement;
       }),
+      nu7AnnouncementProvider.overrideWith((ref) async => nu7Announcement),
     ],
     child:
         previewChild ??
@@ -4437,7 +4469,7 @@ class _MobileHomeHarness extends StatefulWidget {
     this.adaptive = false,
     this.initialLocation = '/home',
     required this.openAccountsSheet,
-    required this.showStaticIronwoodAnnouncement,
+    this.staticAnnouncement,
     this.shieldFlow = false,
     this.keystoneShieldPreview = false,
     this.ledgerShieldPreview = false,
@@ -4446,7 +4478,7 @@ class _MobileHomeHarness extends StatefulWidget {
   final String initialLocation;
   final bool openAccountsSheet;
   final bool adaptive;
-  final bool showStaticIronwoodAnnouncement;
+  final Widget? staticAnnouncement;
   final bool shieldFlow;
   final bool keystoneShieldPreview;
   final bool ledgerShieldPreview;
@@ -4628,7 +4660,8 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
   @override
   Widget build(BuildContext context) {
     final router = Router.withConfig(config: _router);
-    if (!widget.showStaticIronwoodAnnouncement) {
+    final staticAnnouncement = widget.staticAnnouncement;
+    if (staticAnnouncement == null) {
       return router;
     }
 
@@ -4640,12 +4673,7 @@ class _MobileHomeHarnessState extends State<_MobileHomeHarness> {
           color: context.colors.background.neutralScrim,
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: MobileModalCard(
-              child: MobileIronwoodMigrationAnnouncementSheet(
-                onStartMigration: () {},
-                onOpenReleaseNotes: () {},
-              ),
-            ),
+            child: MobileModalCard(child: staticAnnouncement),
           ),
         ),
       ],

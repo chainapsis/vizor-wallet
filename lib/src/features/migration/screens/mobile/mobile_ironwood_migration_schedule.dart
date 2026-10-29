@@ -185,12 +185,18 @@ class _MobileMigrationScheduleLoaderState
                     ? _MobilePreparationScheduleContent(
                         status: status,
                         currentHeight: currentHeight,
+                        blockTimes: ref
+                            .watch(blockSpacingProvider)
+                            .fromTip(currentHeight),
                         onReturn: returnToStatus,
                         onManage: onManage,
                       )
                     : _MobileMigrationScheduleContent(
                         status: status,
                         currentHeight: currentHeight,
+                        blockTimes: ref
+                            .watch(blockSpacingProvider)
+                            .fromTip(currentHeight),
                         onReturn: returnToStatus,
                         onManage: onManage,
                       ),
@@ -207,12 +213,14 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
   const _MobileMigrationScheduleContent({
     required this.status,
     required this.currentHeight,
+    required this.blockTimes,
     required this.onReturn,
     this.onManage,
   });
 
   final rust_sync.MigrationStatus status;
   final int currentHeight;
+  final BlockTimeEstimate blockTimes;
   final VoidCallback onReturn;
   final VoidCallback? onManage;
 
@@ -244,6 +252,7 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
         ? 'Calculating'
         : migrationHeightRemainingDurationLabel(
             estimatedCompletionHeight,
+            blockTimes: blockTimes,
             currentHeight: currentHeight,
           );
 
@@ -412,12 +421,14 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
   const _MobilePreparationScheduleContent({
     required this.status,
     required this.currentHeight,
+    required this.blockTimes,
     required this.onReturn,
     this.onManage,
   });
 
   final rust_sync.MigrationStatus status;
   final int currentHeight;
+  final BlockTimeEstimate blockTimes;
   final VoidCallback onReturn;
   final VoidCallback? onManage;
 
@@ -435,6 +446,7 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
         ? 'Calculating'
         : migrationHeightRemainingDurationLabel(
             finalHeight,
+            blockTimes: blockTimes,
             currentHeight: currentHeight,
           );
 

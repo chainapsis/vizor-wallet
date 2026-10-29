@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
+import '../../../rust/wallet/ledger.dart' show LedgerAppSupport;
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_connection_service.dart';
@@ -18,7 +19,6 @@ export 'ledger_signing_status_gate.dart';
 
 typedef LedgerPcztSigner =
     Future<List<int>> Function(String accountUuid, List<int> pcztBytes);
-typedef LedgerPcztSupportValidator = Future<void> Function(List<int> pcztBytes);
 typedef LedgerVotingPcztSigner =
     Future<List<LedgerVotingSignature>> Function(
       String accountUuid,
@@ -93,16 +93,9 @@ final ledgerOperationCancellerProvider = Provider<LedgerOperationCanceller>((
 String? _readyAppVersion(Ref ref) =>
     ref.read(ledgerAppReadinessStateProvider).version;
 
-final ledgerPcztSupportValidatorProvider = Provider<LedgerPcztSupportValidator>(
-  (_) =>
-      (pcztBytes) =>
-          rust_ledger.ledgerValidateSupportedPczt(pcztBytes: pcztBytes),
-);
-
-/// Raw transport signer retained for the opt-in Orchard-to-Ironwood canary.
-/// Product flows must use [ledgerPcztSignerProvider], which applies the release
-/// support gate before opening a transport session.
-final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
+/// Full PCZT signing. Rust refuses what the connected app cannot sign before
+/// sending it, from the version readiness reads.
+final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
   final capability = ref.watch(ledgerStaticCapabilityProvider);
   final loadWalletDbPath = ref.watch(ledgerWalletDbPathProvider);
   final networkName = ref.watch(
@@ -144,9 +137,7 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
                       accountUuid: accountUuid,
                       pcztBytes: pcztBytes,
                       network: networkName,
-                      memoHashSupported: ledgerSupportsMemoHash(
-                        _readyAppVersion(ref),
-                      ),
+                      appSupport: ledgerAppSupport(_readyAppVersion(ref)),
                     );
                 check();
                 final responses = await exchangeLedgerSigningPlan(
@@ -167,21 +158,6 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
             );
           },
         );
-  };
-});
-
-final ledgerPcztSignerProvider = Provider<LedgerPcztSigner>((ref) {
-  final validate = ref.watch(ledgerPcztSupportValidatorProvider);
-  final sign = ref.watch(ledgerPcztTransportSignerProvider);
-  return (accountUuid, pcztBytes) async {
-    final check = ref.read(ledgerDeviceRequestsProvider).capture();
-    ref
-        .read(ledgerAppReadinessStateProvider.notifier)
-        .update(const LedgerAppReadinessState.idle());
-    ref.read(ledgerSigningProgressProvider.notifier).begin(accountUuid);
-    await validate(pcztBytes);
-    check();
-    return sign(accountUuid, pcztBytes);
   };
 });
 
@@ -230,9 +206,7 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
                   accountUuid: accountUuid,
                   pcztBytes: pcztBytes,
                   networkName: networkName,
-                  memoHashSupported: ledgerSupportsMemoHash(
-                    _readyAppVersion(ref),
-                  ),
+                  appSupport: ledgerAppSupport(_readyAppVersion(ref)),
                 ),
               ),
         );
@@ -262,7 +236,7 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
   required String accountUuid,
   required List<int> pcztBytes,
   required String networkName,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
 }) async {
   check();
   final plan = await rust_ledger.ledgerBuildPcztSigningApduPlan(
@@ -270,7 +244,7 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     accountUuid: accountUuid,
     pcztBytes: pcztBytes,
     network: networkName,
-    memoHashSupported: memoHashSupported,
+    appSupport: appSupport,
   );
   check();
   final responses = await exchangeLedgerSigningPlan(
@@ -305,7 +279,7 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
     pcztBytes: pcztBytes,
     network: network,
     compact: compact,
-    memoHashSupported: ledgerSupportsMemoHash(appVersion),
+    appSupport: ledgerAppSupport(appVersion),
     // USB signing opens a new session; Rust holds it to this version.
     appVersion: appVersion,
   )) {

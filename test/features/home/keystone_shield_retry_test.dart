@@ -14,6 +14,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_shielding_service.dart';
 import 'package:zcash_wallet/src/features/home/widgets/keystone_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -97,6 +98,22 @@ void main() {
       container.read(pendingActivityEvidenceProvider).observedAt.keys,
       contains(('account-1', 'ab')),
     );
+  });
+
+  testWidgets('an upgrade hold before signing shows the upgrade copy', (
+    tester,
+  ) async {
+    api.createError = StateError(
+      "Transactions can't be sent this close to the network upgrade. "
+      'Try again after it activates.',
+    );
+    await tester.pumpWidget(_app(onComplete: () {}));
+    await _settle(tester);
+
+    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text('Shield balance failed. Please try again.'), findsNothing);
+    expect(find.text('Get Signature'), findsNothing);
+    expect(api.broadcasts, isEmpty);
   });
 
   testWidgets('a final refusal offers no retry', (tester) async {
@@ -210,11 +227,13 @@ class _ShieldApi extends RustLibApi {
 
   final broadcasts = <List<int>>[];
   List<ApiWalletError> refusals = [];
+  Object? createError;
   int scans = 0;
 
   void reset() {
     broadcasts.clear();
     refusals = [];
+    createError = null;
     scans = 0;
   }
 
@@ -225,13 +244,16 @@ class _ShieldApi extends RustLibApi {
     required String network,
     required String accountUuid,
     required String sendFlowId,
-  }) async => ShieldTransparentPcztResult(
-    proposalId: BigInt.from(77),
-    pcztBytes: Uint8List.fromList([1]),
-    feeZatoshi: BigInt.from(10000),
-    shieldedZatoshi: BigInt.from(90000),
-    needsSaplingParams: false,
-  );
+  }) async {
+    if (createError case final error?) throw error;
+    return ShieldTransparentPcztResult(
+      proposalId: BigInt.from(77),
+      pcztBytes: Uint8List.fromList([1]),
+      feeZatoshi: BigInt.from(10000),
+      shieldedZatoshi: BigInt.from(90000),
+      needsSaplingParams: false,
+    );
+  }
 
   @override
   Future<Uint8List> crateApiSyncAddProofsToPczt({

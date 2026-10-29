@@ -217,10 +217,8 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       setState(() => _batchQuote = const _BatchQuoteWaitingForSync());
       return;
     }
-    final minimum =
-        BigInt.from(_batchCount) *
-        (amount + BigInt.from(kPaymentLinkClaimFeeReserveZatoshi));
-    if (sync!.spendableBalance < minimum) {
+    final minimum = BigInt.from(_batchCount) * amount;
+    if (sync!.spendableBalance <= minimum) {
       setState(
         () => _batchQuote = const _BatchQuoteFailed(_kBatchOverBalanceText),
       );
@@ -313,6 +311,10 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     if (quote is! _BatchQuoteReady || quote.problem != null || _batchLocked) {
       return;
     }
+    if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
+      _showError(kNetworkUpgradeHoldMessage);
+      return;
+    }
     final draft = quote.draft;
     final hardware = ref
         .read(accountProvider.notifier)
@@ -331,8 +333,11 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       _applyBatchFundingResult(result);
     } on PaymentLinkBatchQuoteChanged {
       _requoteBatch(_kBatchFeeChangedText);
-    } on PaymentLinkBatchPreSubmissionFailure {
-      _requoteBatch('No cards were funded. Review the amount and try again.');
+    } on PaymentLinkBatchPreSubmissionFailure catch (failure) {
+      _requoteBatch(
+        failure.message ??
+            'No cards were funded. Review the amount and try again.',
+      );
     } on PaymentLinkBatchRejected catch (rejected) {
       // Rejected while proposing: nothing reached the network.
       if (!mounted) return;

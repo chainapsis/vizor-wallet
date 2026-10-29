@@ -1,3 +1,5 @@
+import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -40,6 +42,7 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import '../fakes/fake_gift_link_rust_api.dart';
 import '../fakes/fake_sync_notifier.dart';
 import '../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 
 /// Harness shared by the desktop and mobile Gift Card screen suites, which are
 /// separate files because only the mobile one runs in the mobile token lane.
@@ -80,6 +83,8 @@ Future<void> pumpPaymentLinksScreen(
   Map<String, GiftCardUsage>? giftCardUsages,
   Size logicalSize = const Size(1080, 720),
   GlobalKey? captureBoundaryKey,
+  NetworkUpgradeWindowState? upgradeWindow,
+  BlockSpacing? feeSchedule,
 }) async {
   if (!RustLib.instance.initialized) {
     RustLib.initMock(api: FakeGiftLinkRustApi());
@@ -96,6 +101,10 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (feeSchedule != null)
+          blockSpacingProvider.overrideWithValue(feeSchedule),
+        if (upgradeWindow != null)
+          networkUpgradeWindowProvider.overrideWithValue(upgradeWindow),
         if (privacyNotifier != null)
           privacyModeProvider.overrideWith(() => privacyNotifier),
         // These tests exercise funding and navigation with fake operations.
@@ -625,6 +634,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
@@ -1064,6 +1074,7 @@ class FakePaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
