@@ -850,7 +850,17 @@ fn pending_migration_policy_rebuild_message(
     // Signed parts keep the policy of their own target, even after the tip moves.
     let stale_fee_count =
         super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, network)?;
-    let stale_fee_count = if stale_fee_count == 0 {
+    // Old-branch parts held for an upgrade wait for the stop, even when they
+    // already need signatures. Repricing them first would retire the run as a
+    // generic fee failure before the scan can report stopped_by_upgrade.
+    let stale_fee_count = if stale_fee_count == 0
+        && !super::migration::network_upgrade_holds_broadcasts(
+            db_path,
+            network,
+            run_id,
+            chain_tip_height,
+        )?
+    {
         super::migration::resigning_parts_with_changed_fee_count(
             db_path,
             run_id,

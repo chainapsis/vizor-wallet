@@ -5120,3 +5120,64 @@ fn stored_legacy_migration_fees_remain_supported_without_changing_new_fees() {
         }
     }
 }
+
+#[test]
+fn fee_rebuild_waits_for_upgrade_stop_but_reprices_new_branch_replacements() {
+    let activation = 4_465_026;
+    for (signed_target, held) in [(activation - 500, true), (activation, false)] {
+        let (_temp_dir, db_path, run_id, txid) = create_outbox_receipt_test_run(69_120);
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute(
+            "UPDATE vizor_migration_denomination_stages
+             SET status = 'confirmed', confirmed_mined_height = 90,
+                 confirmed_block_hash = zeroblob(32)
+             WHERE run_id = ?1",
+            params![run_id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE vizor_migration_pending_txs
+             SET target_height = ?1, scheduled_height = ?1, expiry_height = ?2,
+                 fee_zatoshi = 15000, status = 'needs_resign'
+             WHERE run_id = ?3 AND txid_hex = ?4",
+            params![
+                signed_target,
+                migration::zip318_canonical_migration_expiry_height(
+                    &WalletNetwork::Test,
+                    signed_target
+                )
+                .unwrap(),
+                run_id,
+                txid
+            ],
+        )
+        .unwrap();
+        drop(conn);
+        // The tip can reach NU7 before scanning has stopped the old-branch run.
+        assert_eq!(
+            migration::network_upgrade_holds_broadcasts(
+                &db_path,
+                WalletNetwork::Test,
+                &run_id,
+                activation - 1
+            )
+            .unwrap(),
+            held
+        );
+        let rebuild = pending_migration_policy_rebuild_message(
+            &db_path,
+            WalletNetwork::Test,
+            &run_id,
+            activation - 1,
+        )
+        .unwrap();
+        if held {
+            assert!(
+                rebuild.is_none(),
+                "An upgrade-held run must wait for its stop: {rebuild:?}"
+            );
+        } else {
+            assert!(rebuild.unwrap().contains("outdated canonical fee"));
+        }
+    }
+}
