@@ -196,18 +196,23 @@ Future<rust_sync.MigrationStatus> _prepareSchedule(
       'schedule prep: phase=${status.phase} proofReady=${status.proofReady} '
       'proofWindow=${status.nextProofWindowHeight} tip=$tip',
     );
+    final proofWindow = status.nextProofWindowHeight;
+    if (!preparing(status) && proofWindow != null && proofWindow > tip) {
+      if (mineBelow != null && proofWindow >= mineBelow) {
+        fail(
+          'Proof window $proofWindow reaches the upgrade hold at $mineBelow.',
+        );
+      }
+      await _mine(proofWindow - tip);
+      await _waitForScan(tester, container, proofWindow);
+      continue;
+    }
     // A proof needs the prepared notes deep enough to anchor it.
     if (preparing(status) ||
         (status.phase == kIronwoodMigrationReadyToMigratePhase &&
             status.proofReady != true)) {
       await _mine(1);
       await _waitForScan(tester, container, tip + 1);
-      continue;
-    }
-    final proofWindow = status.nextProofWindowHeight;
-    if (proofWindow != null && proofWindow > tip) {
-      await _mine(proofWindow - tip);
-      await _waitForScan(tester, container, proofWindow);
       continue;
     }
     // Returns as soon as the next preparation layer needs blocks again.
