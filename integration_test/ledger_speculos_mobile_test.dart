@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_ledger_shield_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_device_label.dart';
@@ -436,13 +437,17 @@ Future<void> _runMobileShieldScenario(WidgetTester tester) async {
     findsOneWidget,
   );
   expect(await approval, isTrue);
+  // Complete appears as it fades in and accepts a tap only once it has.
+  final complete = find.byKey(const ValueKey('mobile_shield_complete'));
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('mobile_shield_complete'))),
+    () =>
+        tester.any(complete) &&
+        tester.widget<AppButton>(complete).onPressed != null,
     description: 'mobile shielding result',
     timeout: const Duration(minutes: 2),
   );
-  await tester.tap(find.byKey(const ValueKey('mobile_shield_complete')));
+  await tester.tap(complete);
   await _pumpUntil(
     tester,
     () =>
