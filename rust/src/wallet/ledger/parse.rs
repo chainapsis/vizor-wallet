@@ -422,6 +422,14 @@ fn required_shielded_derivation(
     }
 }
 
+/// A zero-valued spend still awaiting its signature. Since NU6.3 the builder
+/// pairs Orchard change with one under the account key; padding dummies arrive
+/// already signed.
+fn needs_zero_value_signature(action: &orchard::pczt::Action) -> bool {
+    let spend = action.spend();
+    spend.value().map(|value| value.inner()) == Some(0) && spend.spend_auth_sig().is_none()
+}
+
 fn convert_shielded_bundle(
     bundle: &orchard::pczt::Bundle,
     branch: BranchId,
@@ -433,6 +441,9 @@ fn convert_shielded_bundle(
     }
 
     let bundle_version = bundle_version_for(branch, pool)?;
+    if pool == ValuePool::Orchard && bundle.actions().iter().any(needs_zero_value_signature) {
+        return Err(LEDGER_ORCHARD_CHANGE_UNSUPPORTED.into());
+    }
     let actions = bundle
         .actions()
         .iter()
@@ -606,6 +617,13 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
 /// recognises this error by matching on it.
 pub(super) const LEDGER_MEMO_HASH_UNSUPPORTED: &str =
     "Update the Ledger Zcash app to sign non-English memos";
+
+/// The app treats every zero-valued spend as padding and refuses to sign it, so
+/// it cannot sign the one paired with Orchard change. Keep this identical to
+/// `ledgerOrchardChangeUnsupportedError` in
+/// `lib/src/features/ledger/ledger_capability.dart`.
+pub(super) const LEDGER_ORCHARD_CHANGE_UNSUPPORTED: &str =
+    "Ledger can't sign a transaction that keeps change in Orchard. Send your whole Orchard balance, or migrate it to Ironwood first.";
 
 /// Apps before 3.10.0 reject the NU7 branch and an Orchard spend into Ironwood.
 /// Keep this identical to `ledgerAppUpdateRequiredError` in
@@ -797,6 +815,22 @@ mod tests {
         assert_eq!(
             parse_pczt(&batch_view).err().as_deref(),
             Some("Shielded spend is missing alpha")
+        );
+    }
+
+    #[test]
+    fn orchard_change_is_refused_before_the_device_sees_it() {
+        // Orchard change brings a zero-valued spend the app will not sign.
+        let pczt = pczt_with_bundle_type(
+            BundleVersion::orchard_v3(),
+            b"",
+            90_000,
+            true,
+            orchard::builder::BundleType::UNPADDED,
+        );
+        assert_eq!(
+            parse_pczt(&pczt).err().as_deref(),
+            Some(LEDGER_ORCHARD_CHANGE_UNSUPPORTED)
         );
     }
 

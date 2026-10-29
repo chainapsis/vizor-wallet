@@ -60,6 +60,12 @@ LedgerFailureGuidance? ledgerFailureGuidance(
   if (isLedgerAppUpdateRequired(error)) {
     return const LedgerFailureGuidance(ledgerAppUpdateRequiredError);
   }
+  if (isLedgerOrchardChangeUnsupported(error)) {
+    return const LedgerFailureGuidance(
+      ledgerOrchardChangeUnsupportedError,
+      retryable: false,
+    );
+  }
   if (error.toString().contains(ledgerAppChangedError)) {
     return const LedgerFailureGuidance(ledgerAppChangedError);
   }
