@@ -24,8 +24,10 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -520,25 +522,106 @@ void main() {
     expect(find.text('keystone-immediate-sign-route:9990000'), findsOneWidget);
   });
 
-  testWidgets('Ledger cannot enter the migration flow', (tester) async {
+  testWidgets('Ledger offers only Immediate migration and signs with Ledger', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final signature = Completer<List<LedgerVotingSignature>>();
     await tester.pumpWidget(
       _migrationOptionsHarness(
         activeAccountIsHardware: true,
         activeHardwareSignerKind: HardwareSignerKind.ledger,
+        ledgerImmediateMigrationService: _ledgerImmediateMigrationService(
+          signature: signature.future,
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('home'), findsOneWidget);
+    final privateOption = find.byKey(
+      const ValueKey('ironwood_migration_private_option'),
+    );
+    final privateGesture = find.descendant(
+      of: privateOption,
+      matching: find.byType(GestureDetector),
+    );
+    expect(tester.widget<GestureDetector>(privateGesture).onTap, isNull);
+    expect(find.text('Not available for Ledger accounts.'), findsOneWidget);
+
+    await tester.tap(find.text('Select & review'));
+    await tester.pumpAndSettle();
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Back'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Private migration is not available for Ledger accounts.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
+    await tester.pump();
+
     expect(
       find.byKey(const ValueKey('ledger_immediate_migration_signing_overlay')),
-      findsNothing,
+      findsOneWidget,
     );
+    expect(find.textContaining('keystone-immediate-sign-route'), findsNothing);
+
+    signature.complete(const [
+      LedgerVotingSignature(
+        pool: 0,
+        actionIndex: 0,
+        signature: _ledgerMigrationSignature,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('Ledger Immediate migration asks an older app for an update', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final discarded = <String>[];
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        activeAccountIsHardware: true,
+        activeHardwareSignerKind: HardwareSignerKind.ledger,
+        ledgerImmediateMigrationService: _ledgerImmediateMigrationService(
+          signature: Future.value(const [
+            LedgerVotingSignature(
+              pool: 0,
+              actionIndex: 0,
+              signature: _ledgerMigrationSignature,
+            ),
+          ]),
+          firstSigningError: StateError(ledgerAppUpdateRequiredError),
+          discardedRequests: discarded,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Select & review'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
+    expect(discarded, ['ledger-immediate-request']);
+
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text('home'), findsOneWidget);
   });
 
   testWidgets('Immediate review reports an unavailable plan', (tester) async {
@@ -1454,7 +1537,9 @@ void main() {
     expect(find.text('keystone-combined-sign-route:1:144'), findsOneWidget);
   });
 
-  testWidgets('Ledger private migration route is quarantined', (tester) async {
+  testWidgets('Ledger private migration never enters Keystone signing', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.resetPhysicalSize);
@@ -1469,7 +1554,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('home'), findsOneWidget);
+    await _openShuffleReview(tester);
+    await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ledger private migration is excluded because the current flow requires batched signing.',
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('keystone-combined-sign-route'), findsNothing);
     expect(
       find.textContaining('keystone-denomination-sign-route'),
@@ -6692,12 +6786,12 @@ rust_sync.OrchardMigrationImmediatePlan _immediatePlan() {
   );
 }
 
-// Preserved with the quarantined signer so a future capability enablement can
-// restore the end-to-end widget test without rebuilding its Ledger fixture.
-// ignore: unused_element
 LedgerImmediateMigrationService _ledgerImmediateMigrationService({
   required Future<List<LedgerVotingSignature>> signature,
+  Object? firstSigningError,
+  List<String>? discardedRequests,
 }) {
+  var signings = 0;
   return LedgerImmediateMigrationService(
     prepare: ({required accountUuid, required approvedPlan}) async {
       return rust_sync.KeystoneMigrationSigningRequest(
@@ -6712,7 +6806,10 @@ LedgerImmediateMigrationService _ledgerImmediateMigrationService({
         signingBatchLimit: 1,
       );
     },
-    signPczt: (_, _) => signature,
+    signPczt: (_, _) async {
+      if (signings++ == 0 && firstSigningError != null) throw firstSigningError;
+      return signature;
+    },
     loadProofStatus: ({required requestId}) async {
       return const rust_sync.KeystoneMigrationProofStatus(
         readyCount: 1,
@@ -6736,11 +6833,12 @@ LedgerImmediateMigrationService _ledgerImmediateMigrationService({
             migratedZatoshi: BigInt.from(9_990_000),
           );
         },
-    discard: ({required accountUuid, required requestId}) async {},
+    discard: ({required accountUuid, required requestId}) async {
+      discardedRequests?.add(requestId);
+    },
   );
 }
 
-// ignore: unused_element
 const _ledgerMigrationSignature = <int>[
   1,
   1,

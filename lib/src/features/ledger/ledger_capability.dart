@@ -78,16 +78,6 @@ LedgerAppSupport ledgerAppSupport(String? appVersion) {
   );
 }
 
-/// A Ledger account can recover legacy Orchard funds when the same seed was
-/// previously used through another wallet or Ledger Zcash app build.
-///
-/// Keep this as an explicit capability boundary so the preserved migration
-/// signer can be re-enabled deliberately after a future Ledger app is verified
-/// against the migration canary.
-const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
-  'Automatic Orchard migration is not available for Ledger accounts.',
-);
-
 bool isLedgerMemoHashUnsupported(Object error) =>
     error.toString().contains(ledgerMemoHashUnsupportedError);
 

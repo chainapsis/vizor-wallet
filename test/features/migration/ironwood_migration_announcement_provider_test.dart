@@ -316,54 +316,49 @@ void main() {
     expect(await visibleWith(3_500_000), isFalse);
   });
 
-  test('shows no migration UI for Ledger with Orchard funds', () async {
-    final migrationStatusCalls = <String>[];
-    final orchardBalance = BigInt.from(100_000_000);
-    final orchardPendingBalance = BigInt.from(10_000_000);
-    final container = _container(
-      ironwoodActiveAtTip: true,
-      isLedgerAccount: true,
-      migrationStatusCalls: migrationStatusCalls,
-      syncState: SyncState(
-        accountUuid: _accountUuid,
-        hasAccountScopedData: true,
-        isSyncComplete: true,
-        scannedHeight: 3_500_000,
-        chainTipHeight: 3_500_000,
-        orchardBalance: orchardBalance,
-        orchardPendingBalance: orchardPendingBalance,
-        spendableBalance: orchardBalance,
-        totalBalance: orchardBalance + orchardPendingBalance,
-      ),
-    );
-    addTearDown(container.dispose);
+  test('shows Ledger the same migration UI as a software account', () async {
+    Future<List<Object?>> migrationUi({required bool isLedgerAccount}) async {
+      final migrationStatusCalls = <String>[];
+      final orchardBalance = BigInt.from(100_000_000);
+      final orchardPendingBalance = BigInt.from(10_000_000);
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        isLedgerAccount: isLedgerAccount,
+        migrationStatusCalls: migrationStatusCalls,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: orchardBalance,
+          orchardPendingBalance: orchardPendingBalance,
+          spendableBalance: orchardBalance,
+          totalBalance: orchardBalance + orchardPendingBalance,
+        ),
+      );
+      addTearDown(container.dispose);
 
-    await _settleCoreProviders(container);
-    await container.read(ironwoodPostMigrationStateProvider.future);
+      await _settleCoreProviders(container);
+      await container.read(ironwoodPostMigrationStateProvider.future);
 
-    expect(
-      (await container.read(
-        ironwoodMigrationAnnouncementProvider.future,
-      )).visible,
-      isFalse,
-    );
-    expect(
-      (await container.read(ironwoodHomeMigrationCtaProvider.future)).visible,
-      isFalse,
-    );
-    expect(
-      (await container.read(ironwoodMigrationRouteCtaProvider.future)).visible,
-      isFalse,
-    );
-    expect(
-      container.read(ironwoodHomeMigrationPresentationProvider).visible,
-      isFalse,
-    );
-    expect(
-      container.read(ironwoodHomeBalancePresentationProvider),
-      IronwoodHomeBalancePresentationMode.allShielded,
-    );
-    expect(migrationStatusCalls, isEmpty);
+      return [
+        (await container.read(
+          ironwoodMigrationAnnouncementProvider.future,
+        )).visible,
+        (await container.read(ironwoodHomeMigrationCtaProvider.future)).visible,
+        (await container.read(
+          ironwoodMigrationRouteCtaProvider.future,
+        )).visible,
+        container.read(ironwoodHomeMigrationPresentationProvider).visible,
+        container.read(ironwoodHomeBalancePresentationProvider),
+        migrationStatusCalls.isNotEmpty,
+      ];
+    }
+
+    final ledger = await migrationUi(isLedgerAccount: true);
+    expect(ledger, await migrationUi(isLedgerAccount: false));
+    expect(ledger.first, isTrue);
   });
 
   test('stays hidden when the migration state is not ready', () async {
