@@ -25,6 +25,7 @@ use zcash_client_backend::data_api::enhance_pir::{
 };
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::zip318::BlockSpacing;
 /// The Enhance PIR endpoint: the selected wallet PIR server.
 ///
 /// With no server selected the endpoint is empty. Private Enhance stays
@@ -35,6 +36,7 @@ fn enhance_endpoint() -> String {
     client_origin(PirProduct::Enhance).unwrap_or_default()
 }
 
+/// The rediscovery cover size in 75-second blocks, about two hours.
 const REDISCOVERY_COVER_BLOCKS: u32 = 100;
 fn routing_is_current_or_newer(current: &Manifest, candidate: &Manifest) -> bool {
     current_or_newer_routing_revision(
@@ -60,26 +62,32 @@ fn is_stale_routing_status(status: u16) -> bool {
     matches!(status, 409 | 410)
 }
 
-/// A cover range of up to [`REDISCOVERY_COVER_BLOCKS`] blocks containing `height`.
-/// `offset` (drawn uniformly below the cover size) shifts the window past the target
-/// so it is not always the range endpoint; `tip` caps the end at known chain state.
+/// A cover range of up to [`REDISCOVERY_COVER_BLOCKS`] reference blocks containing
+/// `height`. `draw_offset(cover)` (uniform below the cover size) shifts the window past
+/// the target so it is not always the range endpoint; `tip` caps the end at known chain
+/// state. The size follows the tip's spacing, not the target's, so a window that spans
+/// NU7 activation does not tell on which side of it the target lies.
 pub(super) fn rediscovery_cover_range(
+    network: WalletNetwork,
     height: BlockHeight,
     tip: Option<BlockHeight>,
-    offset: u32,
+    draw_offset: impl FnOnce(u32) -> u32,
 ) -> (BlockHeight, BlockHeight) {
     let height = u32::from(height);
     let tip = tip.map_or(height, |tip| u32::from(tip).max(height));
+    let cover = REDISCOVERY_COVER_BLOCKS
+        * BlockSpacing::for_network(&network)
+            .blocks_per_reference_block(BlockHeight::from_u32(tip));
     let end = height
-        .saturating_add(offset.min(REDISCOVERY_COVER_BLOCKS - 1))
+        .saturating_add(draw_offset(cover).min(cover - 1))
         .min(tip);
-    let start = end.saturating_sub(REDISCOVERY_COVER_BLOCKS - 1);
+    let start = end.saturating_sub(cover - 1);
     (BlockHeight::from_u32(start), BlockHeight::from_u32(end))
 }
 
-pub(super) fn random_rediscovery_offset() -> u32 {
+pub(super) fn random_rediscovery_offset(cover: u32) -> u32 {
     use rand::Rng;
-    rand::thread_rng().gen_range(0..REDISCOVERY_COVER_BLOCKS)
+    rand::thread_rng().gen_range(0..cover)
 }
 
 pub(in crate::wallet::sync_engine) struct RoutedPayloadEnhancement {
@@ -659,51 +667,102 @@ mod tests {
         assert!(!RoutedPayloadEnhancement::new(WalletNetwork::Regtest, true, "test").enabled());
     }
 
+    #[cfg(not(ironwood_masquerade))]
+    const NU7_ACTIVATION: u32 = 3_543_405;
+
+    fn cover_range(
+        network: WalletNetwork,
+        height: u32,
+        tip: Option<u32>,
+        offset: u32,
+    ) -> (u32, u32) {
+        let (start, end) = rediscovery_cover_range(
+            network,
+            BlockHeight::from_u32(height),
+            tip.map(BlockHeight::from_u32),
+            |_| offset,
+        );
+        (u32::from(start), u32::from(end))
+    }
+
+    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn rediscovery_cover_range_hides_the_target_position() {
-        let h = BlockHeight::from_u32(1_000);
-        let tip = Some(BlockHeight::from_u32(2_000));
-        let mut target_positions = std::collections::HashSet::new();
-        for offset in 0..REDISCOVERY_COVER_BLOCKS {
-            let (start, end) = rediscovery_cover_range(h, tip, offset);
-            assert!(start <= h && h <= end, "offset {offset}");
+        // About two hours of blocks in either era.
+        for (h, tip, cover) in [
+            (1_000, 2_000, REDISCOVERY_COVER_BLOCKS),
+            (
+                NU7_ACTIVATION + 1_000,
+                NU7_ACTIVATION + 2_000,
+                3 * REDISCOVERY_COVER_BLOCKS,
+            ),
+        ] {
+            let mut target_positions = std::collections::HashSet::new();
+            for offset in 0..cover {
+                let (start, end) = cover_range(WalletNetwork::Main, h, Some(tip), offset);
+                assert!(start <= h && h <= end, "offset {offset}");
+                assert_eq!(end - start, cover - 1);
+                assert!(start >= h - (cover - 1));
+                target_positions.insert(end - h);
+            }
+            assert_eq!(target_positions.len(), cover as usize);
+            // Out-of-range offsets are clamped to the cover size.
             assert_eq!(
-                u32::from(end) - u32::from(start),
-                REDISCOVERY_COVER_BLOCKS - 1
+                cover_range(WalletNetwork::Main, h, Some(tip), u32::MAX),
+                (h, h + cover - 1),
             );
-            assert!(u32::from(start) >= 1_000 - (REDISCOVERY_COVER_BLOCKS - 1));
-            target_positions.insert(u32::from(end) - 1_000);
         }
-        assert_eq!(target_positions.len(), REDISCOVERY_COVER_BLOCKS as usize);
-        // Out-of-range offsets are clamped to the cover size.
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn rediscovery_cover_size_follows_the_tip_spacing() {
+        let sizes = |h, tip| {
+            let mut covers = Vec::new();
+            rediscovery_cover_range(
+                WalletNetwork::Main,
+                BlockHeight::from_u32(h),
+                Some(BlockHeight::from_u32(tip)),
+                |cover| {
+                    covers.push(cover);
+                    0
+                },
+            );
+            covers
+        };
+        // A target before activation with a later tip gets the wider window, the
+        // same as a target just after it, so a window across activation does not
+        // tell the two apart.
+        assert_eq!(sizes(NU7_ACTIVATION - 10, NU7_ACTIVATION - 1), vec![100]);
+        assert_eq!(sizes(NU7_ACTIVATION - 10, NU7_ACTIVATION + 500), vec![300]);
+        assert_eq!(sizes(NU7_ACTIVATION + 10, NU7_ACTIVATION + 500), vec![300]);
         assert_eq!(
-            rediscovery_cover_range(h, tip, u32::MAX),
-            (h, BlockHeight::from_u32(1_099)),
+            cover_range(
+                WalletNetwork::Main,
+                NU7_ACTIVATION + 10,
+                Some(NU7_ACTIVATION + 500),
+                0
+            ),
+            (NU7_ACTIVATION - 289, NU7_ACTIVATION + 10),
         );
+        // Regtest leaves NU7 unscheduled.
+        assert_eq!(
+            cover_range(WalletNetwork::Regtest, 1_000, Some(2_000), 0),
+            (901, 1_000)
+        );
+        for cover in [100, 300] {
+            assert!(random_rediscovery_offset(cover) < cover);
+        }
     }
 
     #[test]
     fn rediscovery_cover_range_never_passes_the_known_tip() {
-        let h = BlockHeight::from_u32(1_000);
-        assert_eq!(
-            rediscovery_cover_range(h, Some(BlockHeight::from_u32(1_010)), 50),
-            (BlockHeight::from_u32(911), BlockHeight::from_u32(1_010)),
-        );
-        assert_eq!(
-            rediscovery_cover_range(h, None, 50),
-            (BlockHeight::from_u32(901), h),
-        );
+        let network = WalletNetwork::Regtest;
+        assert_eq!(cover_range(network, 1_000, Some(1_010), 50), (911, 1_010));
+        assert_eq!(cover_range(network, 1_000, None, 50), (901, 1_000));
         // A tip below the target (stale chain state) never excludes the target.
-        assert_eq!(
-            rediscovery_cover_range(h, Some(BlockHeight::from_u32(900)), 50),
-            (BlockHeight::from_u32(901), h),
-        );
-        assert_eq!(
-            rediscovery_cover_range(BlockHeight::from_u32(50), None, 0),
-            (BlockHeight::from_u32(0), BlockHeight::from_u32(50)),
-        );
-        let offset = random_rediscovery_offset();
-        assert!(offset < REDISCOVERY_COVER_BLOCKS);
+        assert_eq!(cover_range(network, 1_000, Some(900), 50), (901, 1_000));
+        assert_eq!(cover_range(network, 50, None, 0), (0, 50));
     }
 
     #[test]
