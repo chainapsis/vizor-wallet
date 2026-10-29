@@ -1110,6 +1110,108 @@ fn private_plan_timing_accounts_for_spaced_preparation_transactions() {
 }
 
 #[test]
+fn private_plan_timing_advances_across_nu7_on_mainnet_and_testnet() {
+    for network in [WalletNetwork::Main, WalletNetwork::Test] {
+        let activation = u32::from(
+            network
+                .activation_height(consensus::NetworkUpgrade::Nu7)
+                .unwrap(),
+        );
+        for (target, reference_blocks, mined_height, spacing_blocks) in [
+            (activation - 20, 10, activation - 10, 10),
+            (activation - 10, 10, activation, 10),
+            (activation - 4, 10, activation + 18, 22),
+            // Cross an anchor bucket too: a short span can round both the
+            // correct and incorrect mined heights to the same proof window.
+            (activation - 4, 200, activation + 588, 592),
+            (activation, 10, activation + 30, 30),
+            (activation + 4, 10, activation + 34, 30),
+            (activation - 4, 0, activation - 4, 0),
+        ] {
+            assert_private_plan_timing(
+                network,
+                target,
+                1,
+                reference_blocks,
+                mined_height,
+                spacing_blocks,
+            );
+        }
+        assert_eq!(
+            plan_proof_timing_for_spacing(network, activation, activation - 2, 0, &[], 0).unwrap(),
+            (0, None)
+        );
+    }
+}
+
+#[test]
+fn private_plan_timing_includes_layer_confirmations_at_nu7() {
+    for network in [WalletNetwork::Main, WalletNetwork::Test] {
+        let activation = u32::from(
+            network
+                .activation_height(consensus::NetworkUpgrade::Nu7)
+                .unwrap(),
+        );
+        let confirmations = migration::denomination_confirmations_required();
+        // Layer confirmations reach activation before the remaining spacing.
+        assert_private_plan_timing(
+            network,
+            activation - confirmations,
+            2,
+            432,
+            activation + 1296,
+            1296,
+        );
+    }
+}
+
+#[test]
+fn private_plan_timing_advances_mean_and_maximum_preparation_estimates() {
+    for network in [WalletNetwork::Main, WalletNetwork::Test] {
+        let activation = u32::from(
+            network
+                .activation_height(consensus::NetworkUpgrade::Nu7)
+                .unwrap(),
+        );
+        let policy = migration::PreparationTimingPolicy::Zip318Spaced;
+        let mean =
+            migration::estimated_preparation_spacing_delay_blocks(network, policy, 5).unwrap();
+        let maximum =
+            migration::latest_preparation_spacing_delay_blocks(network, policy, 5).unwrap();
+        assert!(maximum > mean && mean > 4);
+        for reference_blocks in [mean, maximum] {
+            let mined_height = activation + 3 * (reference_blocks - 4);
+            assert_private_plan_timing(
+                network,
+                activation - 4,
+                1,
+                reference_blocks,
+                mined_height,
+                4 + 3 * (reference_blocks - 4),
+            );
+        }
+    }
+}
+
+fn assert_private_plan_timing(
+    network: WalletNetwork,
+    target: u32,
+    layers: u32,
+    reference_blocks: u32,
+    mined_height: u32,
+    spacing_blocks: u32,
+) {
+    let ready_height = migration::estimated_proof_ready_height(network, mined_height).unwrap();
+    let confirmation_lag = migration::denomination_confirmations_required().saturating_sub(1);
+    let anchor_wait = ready_height.saturating_sub(mined_height + confirmation_lag);
+    assert_eq!(
+        plan_proof_timing_for_spacing(network, target, target - 2, layers, &[], reference_blocks).unwrap(),
+        (spacing_blocks + anchor_wait, Some(ready_height)),
+        "network={network:?}, target={target}, layers={layers}, reference_blocks={reference_blocks}"
+    );
+}
+
+#[test]
 fn a_private_plan_whose_first_part_would_meet_the_upgrade_hold_is_refused() {
     let network = WalletNetwork::Test;
     let activation = network

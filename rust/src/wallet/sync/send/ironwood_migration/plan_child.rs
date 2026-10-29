@@ -262,9 +262,22 @@ fn plan_proof_timing_for_spacing(
     direct_note_mined_heights: &[u32],
     spacing_reference_blocks: u32,
 ) -> Result<(u32, Option<u32>), String> {
-    let spacing_delay =
-        super::migration::zip318_blocks_at(network, target_height, spacing_reference_blocks);
-    let confirmation_lag = super::migration::denomination_confirmations_required().saturating_sub(1);
+    // Account for layer confirmations before advancing the reference-block
+    // span. This also keeps the maximum estimate conservative if those
+    // confirmations themselves cross the spacing change.
+    let spacing_start_height = target_height
+        .checked_add(
+            layer_count
+                .saturating_sub(1)
+                .checked_mul(super::migration::denomination_confirmations_required())
+                .ok_or("Migration preparation height overflow")?,
+        )
+        .ok_or("Migration preparation height overflow")?;
+    let final_mined_height =
+        super::migration::zip318_advance(network, spacing_start_height, spacing_reference_blocks)?;
+    let spacing_delay = final_mined_height - spacing_start_height;
+    let confirmation_lag =
+        super::migration::denomination_confirmations_required().saturating_sub(1);
 
     let mut final_ready_height = direct_note_mined_heights
         .iter()
@@ -275,21 +288,11 @@ fn plan_proof_timing_for_spacing(
     let readiness_baseline = if layer_count == 0 {
         trusted_height
     } else {
-        let final_mined_height = target_height
-            .checked_add(
-                layer_count
-                    .saturating_sub(1)
-                    .checked_mul(super::migration::denomination_confirmations_required())
-                    .ok_or("Migration preparation height overflow")?,
-            )
-            .and_then(|height| height.checked_add(spacing_delay))
-            .ok_or("Migration preparation height overflow")?;
         let generated_ready_height =
             super::migration::estimated_proof_ready_height(network, final_mined_height)?;
-        final_ready_height = Some(
-            final_ready_height
-                .map_or(generated_ready_height, |height| height.max(generated_ready_height)),
-        );
+        final_ready_height = Some(final_ready_height.map_or(generated_ready_height, |height| {
+            height.max(generated_ready_height)
+        }));
         final_mined_height
             .checked_add(confirmation_lag)
             .ok_or("Migration preparation trusted height overflow")?
