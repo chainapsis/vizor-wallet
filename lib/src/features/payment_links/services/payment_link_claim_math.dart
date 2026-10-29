@@ -19,9 +19,9 @@ const kPaymentLinkFreshCardGraceBlocks = 6;
 const kPaymentLinkReceiptConfirmationTarget = 1;
 const kPaymentLinkClaimRecoveryConfirmationTarget = 6;
 
-/// The ZIP-317 fee for the payment link's expected one-input, one-output
-/// shielded claim transaction.
-const kPaymentLinkClaimFeeReserveZatoshi = 10000;
+/// Two logical actions at the wallet's temporary 1,000-zatoshi marginal fee
+/// (`WALLET_MARGINAL_FEE_ZATOSHI` in Rust).
+const kPaymentLinkClaimFeeReserveZatoshi = 2000;
 
 @visibleForTesting
 Future<T> runPaymentLinkFundingSubmission<T>(

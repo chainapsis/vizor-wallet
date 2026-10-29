@@ -69,7 +69,7 @@ use zcash_client_backend::{
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
-        DustOutputPolicy, SplitPolicy, StandardFeeRule, TransactionBalance,
+        DustOutputPolicy, SplitPolicy, TransactionBalance,
     },
     proposal::{Proposal, ProposalError, ShieldedInputs},
     wallet::{LockOwner, Note, OutputRef, OvkPolicy, ReceivedNote, WalletTransparentOutput},
@@ -85,7 +85,10 @@ use zcash_primitives::transaction::{
     builder::{default_tx_expiry_delta, BuildConfig, Builder, BundlePadding},
     fees::{
         transparent::InputSize as TransparentInputSize,
-        zip317::{P2PKH_STANDARD_INPUT_SIZE, P2PKH_STANDARD_OUTPUT_SIZE},
+        zip317::{
+            FeeRule as PrimitiveZip317FeeRule, GRACE_ACTIONS, P2PKH_STANDARD_INPUT_SIZE,
+            P2PKH_STANDARD_OUTPUT_SIZE,
+        },
         FeeRule,
     },
     TxId,
@@ -717,7 +720,21 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
     }
 }
 
-/// Wallet-local ZIP-317 rule that preserves standard fee parameters but
+// Temporary fee policy for testing: applies immediately on every network,
+// without waiting for NU7 or ZIP 2009's coordinated mainnet switch height.
+pub(in crate::wallet) const WALLET_MARGINAL_FEE_ZATOSHI: u64 = 1_000;
+
+fn wallet_zip317_fee_rule() -> PrimitiveZip317FeeRule {
+    PrimitiveZip317FeeRule::non_standard(
+        Zatoshis::const_from_u64(WALLET_MARGINAL_FEE_ZATOSHI),
+        GRACE_ACTIONS,
+        P2PKH_STANDARD_INPUT_SIZE,
+        P2PKH_STANDARD_OUTPUT_SIZE,
+    )
+    .expect("ZIP-317 standard input and output sizes are nonzero")
+}
+
+/// Wallet-local ZIP-317 rule that uses the temporary marginal fee and
 /// prevents exact transparent-input serialization from shrinking below
 /// ZIP-317's P2PKH size bound between proposal and transaction build.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -726,7 +743,7 @@ pub(in crate::wallet) struct ConservativeZip317FeeRule;
 pub(in crate::wallet) type WalletFeeRule = ConservativeZip317FeeRule;
 
 impl FeeRule for ConservativeZip317FeeRule {
-    type Error = <StandardFeeRule as FeeRule>::Error;
+    type Error = <PrimitiveZip317FeeRule as FeeRule>::Error;
 
     #[allow(clippy::too_many_arguments)]
     fn fee_required<P: consensus::Parameters>(
@@ -747,7 +764,7 @@ impl FeeRule for ConservativeZip317FeeRule {
             TransparentInputSize::Unknown(outpoint) => TransparentInputSize::Unknown(outpoint),
         });
 
-        StandardFeeRule::Zip317.fee_required(
+        wallet_zip317_fee_rule().fee_required(
             params,
             target_height,
             transparent_input_sizes,
@@ -762,11 +779,11 @@ impl FeeRule for ConservativeZip317FeeRule {
 
 impl Zip317FeeRule for ConservativeZip317FeeRule {
     fn marginal_fee(&self) -> Zatoshis {
-        StandardFeeRule::Zip317.marginal_fee()
+        wallet_zip317_fee_rule().marginal_fee()
     }
 
     fn grace_actions(&self) -> usize {
-        StandardFeeRule::Zip317.grace_actions()
+        wallet_zip317_fee_rule().grace_actions()
     }
 }
 

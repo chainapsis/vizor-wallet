@@ -1314,7 +1314,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Card amount'), findsOneWidget);
     expect(find.text('Card fee (deposit + redeem)'), findsOneWidget);
-    expect(find.text('1.2502 ZEC'), findsOneWidget);
+    expect(find.text('1.25012 ZEC'), findsOneWidget);
     expect(find.text(r'$125.00'), findsOneWidget);
     expect(
       tester
@@ -3898,7 +3898,7 @@ void main() {
       find.byKey(const ValueKey('payment_link_bulk_available')),
       findsOneWidget,
     );
-    expect(find.text('0.2005 ZEC'), findsOneWidget);
+    expect(find.text('0.20034 ZEC'), findsOneWidget);
     await tester.tap(find.text('Review 2 cards'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Create 2 cards'));

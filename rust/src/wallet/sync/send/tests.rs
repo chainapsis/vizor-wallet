@@ -3363,7 +3363,42 @@ fn migration_child_bundle_shape_and_fee_are_two_plus_one() {
             ironwood_actions,
         )
         .unwrap();
-    assert_eq!(u64::from(fee), 15_000);
+    assert_eq!(u64::from(fee), 3_000);
+}
+
+#[test]
+fn wallet_fee_is_1000_per_action_without_a_network_or_height_gate() {
+    assert_eq!(
+        ConservativeZip317FeeRule.marginal_fee(),
+        Zatoshis::const_from_u64(1_000)
+    );
+    assert_eq!(ConservativeZip317FeeRule.grace_actions(), 2);
+    for (network, activation) in [
+        (WalletNetwork::Main, 3_543_405),
+        (WalletNetwork::Test, 4_465_026),
+    ] {
+        for height in [activation - 1, activation, 3_589_999, 3_590_000] {
+            for (actions, expected_fee) in [(1, 2_000), (2, 2_000), (3, 3_000), (16, 16_000)] {
+                let fee = ConservativeZip317FeeRule
+                    .fee_required(
+                        &network,
+                        BlockHeight::from_u32(height),
+                        std::iter::empty::<TransparentInputSize>(),
+                        std::iter::empty::<usize>(),
+                        0,
+                        0,
+                        actions,
+                        0,
+                    )
+                    .unwrap();
+                assert_eq!(
+                    u64::from(fee),
+                    expected_fee,
+                    "{network:?} at {height}, {actions} actions"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -3393,7 +3428,7 @@ fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() 
             0,
         )
         .unwrap();
-    let standard_p2pkh_fee = StandardFeeRule::Zip317
+    let standard_p2pkh_fee = wallet_zip317_fee_rule()
         .fee_required(
             &network,
             height,
@@ -3405,7 +3440,7 @@ fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() 
             0,
         )
         .unwrap();
-    let standard_undersized_fee = StandardFeeRule::Zip317
+    let standard_undersized_fee = wallet_zip317_fee_rule()
         .fee_required(
             &network,
             height,
@@ -3419,8 +3454,8 @@ fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() 
         .unwrap();
 
     assert_eq!(conservative_fee, standard_p2pkh_fee);
-    assert_eq!(u64::from(conservative_fee), 15_000);
-    assert_eq!(u64::from(standard_undersized_fee), 10_000);
+    assert_eq!(u64::from(conservative_fee), 3_000);
+    assert_eq!(u64::from(standard_undersized_fee), 2_000);
 }
 
 /// Builds a real IO-finalized v6 Orchard split PCZT, shared by the version and
@@ -3551,7 +3586,7 @@ fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
         .unwrap()
         .get_fee(&fee_rule)
         .unwrap();
-    assert_eq!(u64::from(fee), 80_000);
+    assert_eq!(u64::from(fee), 16_000);
     let input_value = outputs.iter().sum::<u64>() + u64::from(fee);
     let build_result = build_builder(input_value)
         .unwrap()

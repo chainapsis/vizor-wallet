@@ -6,6 +6,15 @@ block the network rejects it. Vizor's rules for the blocks around an upgrade
 follow from that, and they apply to any upgrade Common schedules. NU7 also
 changes the block spacing, which only NU7 code handles.
 
+## Temporary fee policy
+
+For immediate testing, this branch uses 1,000 zatoshis per logical action on
+every network and at every height, with the existing two-action minimum
+(2,000 zatoshis). This is unconditional: it does not wait for NU7 or ZIP 2009's
+coordinated mainnet height of 3,590,000. The logical-action calculation and the
+conservative transparent-input size bound are unchanged. Gift Card claim
+reserves and migration fee estimates use the same reduced fee.
+
 ## Where the rules live
 
 `rust/src/wallet/network_upgrade.rs` holds the rules that do not read the

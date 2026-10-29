@@ -2089,7 +2089,7 @@ void main() {
 
     expect(
       paymentLinkFundingAmountZatoshi(recipientAmount),
-      BigInt.from(100010000),
+      BigInt.from(100002000),
     );
     expect(
       () => paymentLinkFundingAmountZatoshi(BigInt.zero),
@@ -2120,9 +2120,9 @@ void main() {
       fundingFeeZatoshi: BigInt.from(15000),
     );
 
-    expect(quote.recipientAmountZatoshi, BigInt.from(99990000));
+    expect(quote.recipientAmountZatoshi, BigInt.from(99998000));
     expect(quote.fundingFeeZatoshi, BigInt.from(15000));
-    expect(quote.claimFeeReserveZatoshi, BigInt.from(10000));
+    expect(quote.claimFeeReserveZatoshi, BigInt.from(2000));
     expect(quote.totalDeductedZatoshi, BigInt.from(100015000));
     expect(
       quote.totalDeductedZatoshi,
@@ -2131,7 +2131,7 @@ void main() {
     expect(
       () => paymentLinkMaxFundingQuote(
         sourceAccountUuid: 'account-1',
-        maxSpendAmountZatoshi: BigInt.from(10000),
+        maxSpendAmountZatoshi: BigInt.from(2000),
         fundingFeeZatoshi: BigInt.from(15000),
       ),
       throwsStateError,
