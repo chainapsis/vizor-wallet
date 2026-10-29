@@ -9,7 +9,6 @@ import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/zcash/network_upgrade_hold.dart';
-import '../../ledger/ledger_capability.dart';
 import '../../ledger/services/ledger_signing_service.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/widgets/ledger_signing_modal.dart';
@@ -211,8 +210,6 @@ class _PaymentLinkLedgerSigningOverlayState
               _deviceGuidance?.retryable == false;
           _error = error is LedgerGiftFundingTerminalException
               ? error.userMessage
-              : isLedgerLegacyOrchardRecoveryUnsupported(error)
-              ? kLedgerLegacyOrchardRecoveryUnavailableMessage
               : _checkpointed
               ? 'Gift card funding is saved for recovery. Try again to check its status and finish saving.'
               : networkUpgradeHoldMessage(error) ??
@@ -311,10 +308,8 @@ class _PaymentLinkLedgerSigningOverlayState
 
   @override
   Widget build(BuildContext context) {
-    final unavailable =
-        _error == kLedgerLegacyOrchardRecoveryUnavailableMessage;
     final upgradeHold = _error == kNetworkUpgradeHoldMessage;
-    final canRetry = !unavailable && !_terminal && !_requestNeedsRebuilding;
+    final canRetry = !_terminal && !_requestNeedsRebuilding;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
       cancelling: _cancelled,
@@ -333,9 +328,7 @@ class _PaymentLinkLedgerSigningOverlayState
                   !_checkpointed &&
                   !_terminal &&
                   (_deviceGuidance?.bluetoothRecovery ?? false),
-              title: unavailable
-                  ? 'Ledger app update required'
-                  : upgradeHold
+              title: upgradeHold
                   ? kNetworkUpgradeHoldActionLabel
                   : 'Gift card funding needs attention',
               statusLabel: _requestNeedsRebuilding
@@ -344,7 +337,6 @@ class _PaymentLinkLedgerSigningOverlayState
               message: _error!,
               showDeviceAppPrompt:
                   !_checkpointed &&
-                  !unavailable &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
               showConnectionPicker: !upgradeHold,
               actionLabel: canRetry ? 'Try again' : null,

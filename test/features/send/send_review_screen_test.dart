@@ -1339,36 +1339,6 @@ void main() {
   );
 
   testWidgets(
-    'Ledger legacy Orchard recovery requires an app update without retrying',
-    (tester) async {
-      await _setDesktopViewport(tester);
-      await tester.pumpWidget(
-        _harness(
-          _reviewArgs(addressType: 'unified'),
-          bootstrap: _bootstrap(
-            isHardware: true,
-            hardwareSignerKind: HardwareSignerKind.ledger,
-          ),
-          ledgerSigner: (_) async => throw StateError(
-            '$kLedgerLegacyOrchardRecoveryErrorCode: test fixture',
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Confirm with Ledger'));
-      await _flushRealAsync(tester);
-
-      expect(find.text('Ledger app update required'), findsOneWidget);
-      expect(
-        find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
-        findsOneWidget,
-      );
-      expect(find.text('Try again'), findsNothing);
-    },
-  );
-
-  testWidgets(
     'Ledger memo refused by an older app asks for an update and a retry',
     (tester) async {
       var signerCalls = 0;
@@ -1395,6 +1365,38 @@ void main() {
       expect(find.text(ledgerMemoHashUnsupportedError), findsOneWidget);
 
       // After updating the app, a retry reads the new version.
+      await tester.tap(find.text('Try again'));
+      await _flushRealAsync(tester);
+      expect(signerCalls, 2);
+    },
+  );
+
+  testWidgets(
+    'Ledger transaction an older app cannot sign asks for an update and a retry',
+    (tester) async {
+      var signerCalls = 0;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async {
+            signerCalls++;
+            throw StateError(ledgerAppUpdateRequiredError);
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Ledger app update required'), findsOneWidget);
+      expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
+
       await tester.tap(find.text('Try again'));
       await _flushRealAsync(tester);
       expect(signerCalls, 2);

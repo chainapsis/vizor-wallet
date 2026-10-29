@@ -31,6 +31,7 @@ import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/wire.dart';
 import 'wallet/gift_card_tracking.dart';
 import 'wallet/keystone.dart';
+import 'wallet/ledger.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustLibApiImplPlatform({
@@ -344,6 +345,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ImmediateShareKey dco_decode_box_autoadd_immediate_share_key(dynamic raw);
 
   @protected
+  LedgerAppSupport dco_decode_box_autoadd_ledger_app_support(dynamic raw);
+
+  @protected
   MigrationOutboxBatch dco_decode_box_autoadd_migration_outbox_batch(
     dynamic raw,
   );
@@ -616,6 +620,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LedgerApduCommand dco_decode_ledger_apdu_command(dynamic raw);
+
+  @protected
+  LedgerAppSupport dco_decode_ledger_app_support(dynamic raw);
 
   @protected
   LedgerDeviceApp dco_decode_ledger_device_app(dynamic raw);
@@ -1846,6 +1853,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LedgerAppSupport sse_decode_box_autoadd_ledger_app_support(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
     SseDeserializer deserializer,
   );
@@ -2196,6 +2208,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LedgerApduCommand sse_decode_ledger_apdu_command(
     SseDeserializer deserializer,
   );
+
+  @protected
+  LedgerAppSupport sse_decode_ledger_app_support(SseDeserializer deserializer);
 
   @protected
   LedgerDeviceApp sse_decode_ledger_device_app(SseDeserializer deserializer);
@@ -3743,6 +3758,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_ledger_app_support(
+    LedgerAppSupport self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch self,
     SseSerializer serializer,
@@ -4165,6 +4186,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_ledger_apdu_command(
     LedgerApduCommand self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ledger_app_support(
+    LedgerAppSupport self,
     SseSerializer serializer,
   );
 

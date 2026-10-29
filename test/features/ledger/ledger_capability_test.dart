@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
+import 'package:zcash_wallet/src/rust/wallet/ledger.dart' show LedgerAppSupport;
 
 void main() {
   test('desktop USB and mobile BLE are mainnet only', () {
@@ -89,6 +90,42 @@ void main() {
       expect(ledgerSupportsMemoHash(version), isFalse, reason: '$version');
     }
   });
+
+  test(
+    'the NU7 branch and Orchard to Ironwood are supported from app 3.10.0',
+    () {
+      for (final version in ['3.10.0', '3.10.1', '3.11.0', '4.0.0']) {
+        expect(ledgerSupportsNu7Branch(version), isTrue, reason: version);
+      }
+      for (final version in ['3.9.4', '3.9.10', '3.9.3', 'unknown', '', null]) {
+        expect(ledgerSupportsNu7Branch(version), isFalse, reason: '$version');
+      }
+      expect(
+        ledgerAppSupport('3.10.0'),
+        const LedgerAppSupport(
+          memoHash: true,
+          nu7Branch: true,
+          orchardToIronwood: true,
+        ),
+      );
+      expect(
+        ledgerAppSupport('3.9.4'),
+        const LedgerAppSupport(
+          memoHash: true,
+          nu7Branch: false,
+          orchardToIronwood: false,
+        ),
+      );
+      expect(
+        ledgerAppSupport(null),
+        const LedgerAppSupport(
+          memoHash: false,
+          nu7Branch: false,
+          orchardToIronwood: false,
+        ),
+      );
+    },
+  );
 
   test('quarantines legacy Orchard migration for Ledger', () {
     expect(ledgerAutomaticOrchardMigrationCapability.supported, isFalse);

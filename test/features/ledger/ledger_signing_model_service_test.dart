@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart';
+import 'package:zcash_wallet/src/rust/wallet/ledger.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
@@ -42,7 +43,7 @@ void main() {
           if (compact) {
             await c.read(ledgerActionPcztSignerProvider)('account', [1]);
           } else {
-            await c.read(ledgerPcztTransportSignerProvider)('account', [1]);
+            await c.read(ledgerPcztSignerProvider)('account', [1]);
           }
         }
 
@@ -73,9 +74,13 @@ void main() {
   }
 
   for (final compact in [false, true]) {
-    for (final (version, supported) in [('3.9.3', false), ('3.9.4', true)]) {
-      test('USB ${compact ? "action" : "full"} signer tells Rust whether '
-          'app $version can show a memo hash', () async {
+    for (final (version, memoHash, nu7Branch) in [
+      ('3.9.3', false, false),
+      ('3.9.4', true, false),
+      ('3.10.0', true, true),
+    ]) {
+      test('USB ${compact ? "action" : "full"} signer tells Rust what '
+          'app $version can sign', () async {
         final c = ProviderContainer(
           overrides: [
             appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -91,14 +96,21 @@ void main() {
           ],
         );
         addTearDown(c.dispose);
-        api.memoHashSupported = null;
+        api.appSupport = null;
         api.appVersion = null;
         if (compact) {
           await c.read(ledgerActionPcztSignerProvider)('account', [1]);
         } else {
-          await c.read(ledgerPcztTransportSignerProvider)('account', [1]);
+          await c.read(ledgerPcztSignerProvider)('account', [1]);
         }
-        expect(api.memoHashSupported, supported);
+        expect(
+          api.appSupport,
+          LedgerAppSupport(
+            memoHash: memoHash,
+            nu7Branch: nu7Branch,
+            orchardToIronwood: nu7Branch,
+          ),
+        );
         // The signing session is held to the app readiness verified.
         expect(api.appVersion, version);
       });
@@ -143,7 +155,7 @@ class _UsbConnection extends LedgerConnectionService {
 class _Api extends RustLibApi {
   String? model;
   bool? compact;
-  bool? memoHashSupported;
+  LedgerAppSupport? appSupport;
   String? appVersion;
 
   @override
@@ -153,11 +165,11 @@ class _Api extends RustLibApi {
     required List<int> pcztBytes,
     required String network,
     required bool compact,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
     String? appVersion,
   }) {
     this.compact = compact;
-    this.memoHashSupported = memoHashSupported;
+    this.appSupport = appSupport;
     this.appVersion = appVersion;
     return Stream.fromIterable([
       LedgerSigningEvent(

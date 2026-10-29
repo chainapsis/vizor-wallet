@@ -142,6 +142,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
+    id: 'ledger-onboarding-viewing-key-approval',
+    description: 'Ledger onboarding: viewing-key approval names the account',
+    builder: buildLedgerOnboardingViewingKeyApproval,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-onboarding-usb-error',
     description: 'Ledger onboarding: USB account export recovery',
     builder: buildLedgerOnboardingUsbError,
@@ -1278,6 +1284,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-signing-memo-hash-update',
     description: 'Ledger signing: memo needs a newer Zcash app',
     builder: _buildLedgerSigningMemoHashUpdate,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-app-update',
+    description: 'Ledger signing: transaction needs Zcash app 3.10.0',
+    builder: _buildLedgerSigningAppUpdate,
   ),
   FigmaCompareScenario(
     id: 'ledger-signing-voting-processing',
@@ -3898,6 +3909,12 @@ Widget _buildLedgerSigningMemoHashUpdate(BuildContext context) =>
     buildLedgerSigningPreview(
       phase: LedgerSigningModalPhase.failed,
       failureMode: LedgerSigningPlaygroundFailure.memoHashUpdate,
+    );
+
+Widget _buildLedgerSigningAppUpdate(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureMode: LedgerSigningPlaygroundFailure.appUpdate,
     );
 
 Widget _buildLedgerVotingProcessing(BuildContext context) =>

@@ -109,6 +109,9 @@ heights and need no change. Check the rest:
 - **Hardware signing.** Check
   `orchard_circuit_version_for_consensus_branch` in `pczt.rs`: it keys on the
   branch's Orchard protocol revision. Also check whether Keystone and Ledger
-  firmware accept the new branch.
+  firmware accept the new branch. Ledger apps before 3.10.0 reject NU7, so
+  the serializer refuses an NU7 PCZT unless `LedgerAppSupport.nu7_branch`
+  says the connected app accepts it; a new branch needs its own flag and
+  minimum version in `ledger_capability.dart`.
 - **Announcement.** `nu7AnnouncementProvider` keys on NU7; a new upgrade
   needs its own copy and seen key.

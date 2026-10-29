@@ -55,9 +55,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    final instruction = find.text(
-      'Ledger is preparing to sign. It may seem unresponsive for about 30 seconds.',
-    );
+    final instruction = find.text(kLedgerSigningWaitInstruction);
     expect(instruction, findsOneWidget);
     expect(tester.widget<Text>(instruction).maxLines, isNull);
     await tester.ensureVisible(find.text('Keep Ledger connected.'));

@@ -534,16 +534,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         actionLabel: 'Create new transaction',
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
-    } else if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
-      failure = const LedgerSigningFailurePresentation(
-        title: 'Ledger app update required',
-        statusLabel: 'Recovery unavailable',
-        message: kLedgerLegacyOrchardRecoveryUnavailableMessage,
-        showDeviceAppPrompt: false,
-      );
-      action = null;
     } else if (isLedgerMemoHashUnsupported(error)) {
       failure = ledgerMemoHashUpdateFailure;
+      action = _LedgerSendRecoveryAction.retrySigning;
+    } else if (isLedgerAppUpdateRequired(error)) {
+      failure = ledgerAppUpdateFailure;
       action = _LedgerSendRecoveryAction.retrySigning;
     } else if (lower.contains('sapling')) {
       failure = const LedgerSigningFailurePresentation(

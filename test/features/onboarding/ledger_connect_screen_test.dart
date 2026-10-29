@@ -907,7 +907,7 @@ void main() {
       procedure = tester.widget<LedgerProcedure>(find.byType(LedgerProcedure));
       expect(procedure.currentStep, 2);
       expect(
-        find.text('Approve sharing your viewing key with Vizor.'),
+        find.text('Approve sharing the viewing key for Account #0.'),
         findsOneWidget,
       );
       expect(calls, 2);
@@ -1433,7 +1433,7 @@ void main() {
                     : scene == 'opening-declined'
                     ? 'Opening Zcash was declined on Ledger. Try again when you’re ready.'
                     : scene == 'approval'
-                    ? 'Approve sharing your viewing key with Vizor.'
+                    ? 'Approve sharing the viewing key for Account #0.'
                     : 'Confirm opening Zcash on Ledger.',
               ),
               findsOneWidget,

@@ -223,7 +223,7 @@ void main() {
     expect(exported!.ufvk, fixture.ufvk);
     expect(exported.seedFingerprint, fixture.seedFingerprint);
     expect(exported.accountIndex, fixture.accountIndex);
-    expect(exported.appVersion, '3.9.4');
+    expect(exported.appVersion, '3.10.0');
     expect(firstAccountImport.name, 'Speculos Ledger');
     expect(firstAccountImport.birthdayHeight, 2500000);
     expect(security.preparedPassword, 'LedgerE2e1!');
@@ -759,7 +759,7 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
 
   final unsigned = fixture.orchardToIronwoodV6Pczt;
   final approval = approveNextSpeculosReview(fixture.signingApiUrl);
-  final signed = container.read(ledgerPcztTransportSignerProvider)(
+  final signed = container.read(ledgerPcztSignerProvider)(
     fixture.accountUuid,
     unsigned,
   );

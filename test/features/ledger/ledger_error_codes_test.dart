@@ -150,7 +150,7 @@ void main() {
         'ledger_status_6807: The Zcash app is not installed on this Ledger';
     const readiness = LedgerAppReadinessException(
       LedgerAppReadinessFailure.unavailable,
-      'Install the Zcash app on your Ledger with Ledger Live, then try again.',
+      'Install the Zcash app on your Ledger with Ledger Wallet, then try again.',
       cause: notInstalled,
     );
     expect(classifyLedgerError(readiness), LedgerFailureKind.appNotInstalled);

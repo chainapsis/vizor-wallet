@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1549807155;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1598909909;
 
 // Section: executor
 
@@ -5794,7 +5794,8 @@ fn wire__crate__api__ledger__ledger_build_pczt_full_signing_apdu_plan_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -5803,7 +5804,7 @@ fn wire__crate__api__ledger__ledger_build_pczt_full_signing_apdu_plan_impl(
                         api_account_uuid,
                         api_pczt_bytes,
                         api_network,
-                        api_memo_hash_supported,
+                        api_app_support,
                     )?;
                     Ok(output_ok)
                 })())
@@ -5837,7 +5838,8 @@ fn wire__crate__api__ledger__ledger_build_pczt_signing_apdu_plan_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -5846,7 +5848,7 @@ fn wire__crate__api__ledger__ledger_build_pczt_signing_apdu_plan_impl(
                         api_account_uuid,
                         api_pczt_bytes,
                         api_network,
-                        api_memo_hash_supported,
+                        api_app_support,
                     )?;
                     Ok(output_ok)
                 })())
@@ -6345,7 +6347,8 @@ fn wire__crate__api__ledger__ledger_sign_pczt_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -6355,7 +6358,7 @@ fn wire__crate__api__ledger__ledger_sign_pczt_impl(
                         api_account_uuid,
                         api_pczt_bytes,
                         api_network,
-                        api_memo_hash_supported,
+                        api_app_support,
                         api_app_version,
                     )?;
                     Ok(output_ok)
@@ -6390,7 +6393,8 @@ fn wire__crate__api__ledger__ledger_sign_pczt_full_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -6400,7 +6404,7 @@ fn wire__crate__api__ledger__ledger_sign_pczt_full_impl(
                         api_account_uuid,
                         api_pczt_bytes,
                         api_network,
-                        api_memo_hash_supported,
+                        api_app_support,
                         api_app_version,
                     )?;
                     Ok(output_ok)
@@ -6436,7 +6440,8 @@ fn wire__crate__api__ledger__ledger_sign_with_progress_impl(
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_compact = <bool>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
                 crate::api::ledger::LedgerSigningEvent,
@@ -6452,7 +6457,7 @@ fn wire__crate__api__ledger__ledger_sign_with_progress_impl(
                             api_pczt_bytes,
                             api_network,
                             api_compact,
-                            api_memo_hash_supported,
+                            api_app_support,
                             api_app_version,
                             api_sink,
                         );
@@ -6494,40 +6499,6 @@ fn wire__crate__api__ledger__ledger_validate_device_account_response_impl(
                         api_expected_public_key,
                         api_response,
                     )?;
-                    Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
-fn wire__crate__api__ledger__ledger_validate_supported_pczt_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ledger_validate_supported_pczt",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::ledger::ledger_validate_supported_pczt(api_pczt_bytes)?;
                     Ok(output_ok)
                 })())
             }
@@ -12444,6 +12415,20 @@ impl SseDecode for crate::api::ledger::LedgerApduCommand {
     }
 }
 
+impl SseDecode for crate::wallet::ledger::LedgerAppSupport {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_memoHash = <bool>::sse_decode(deserializer);
+        let mut var_nu7Branch = <bool>::sse_decode(deserializer);
+        let mut var_orchardToIronwood = <bool>::sse_decode(deserializer);
+        return crate::wallet::ledger::LedgerAppSupport {
+            memo_hash: var_memoHash,
+            nu7_branch: var_nu7Branch,
+            orchard_to_ironwood: var_orchardToIronwood,
+        };
+    }
+}
+
 impl SseDecode for crate::api::ledger::LedgerDeviceApp {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -16181,79 +16166,78 @@ fn pde_ffi_dispatcher_primary_impl(
 161 => wire__crate__api__ledger__ledger_sign_pczt_full_impl(port, ptr, rust_vec_len, data_len),
 162 => wire__crate__api__ledger__ledger_sign_with_progress_impl(port, ptr, rust_vec_len, data_len),
 163 => wire__crate__api__ledger__ledger_validate_device_account_response_impl(port, ptr, rust_vec_len, data_len),
-164 => wire__crate__api__ledger__ledger_validate_supported_pczt_impl(port, ptr, rust_vec_len, data_len),
-165 => wire__crate__api__wallet__list_accounts_impl(port, ptr, rust_vec_len, data_len),
-166 => wire__crate__api__gift_card_tracking__list_gift_card_observers_impl(port, ptr, rust_vec_len, data_len),
-167 => wire__crate__api__voting__list_pending_share_rounds_impl(port, ptr, rust_vec_len, data_len),
-168 => wire__crate__api__balance_cache__load_balance_cache_impl(port, ptr, rust_vec_len, data_len),
-169 => wire__crate__api__sync__migrate_orchard_to_ironwood_impl(port, ptr, rust_vec_len, data_len),
-170 => wire__crate__api__sync__migrate_orchard_to_ironwood_immediately_impl(port, ptr, rust_vec_len, data_len),
-171 => wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-175 => wire__crate__api__keystone__pczt_spend_nullifiers_impl(port, ptr, rust_vec_len, data_len),
-176 => wire__crate__api__voting__precompute_delegation_proof_impl(port, ptr, rust_vec_len, data_len),
-177 => wire__crate__api__voting__precompute_snapshot_bundles_impl(port, ptr, rust_vec_len, data_len),
-178 => wire__crate__api__sync__prepare_orchard_migration_batch_pczt_impl(port, ptr, rust_vec_len, data_len),
-179 => wire__crate__api__sync__prepare_orchard_migration_denominations_pczt_impl(port, ptr, rust_vec_len, data_len),
-180 => wire__crate__api__sync__prepare_orchard_migration_immediate_pczt_impl(port, ptr, rust_vec_len, data_len),
-181 => wire__crate__api__sync__prepare_orchard_migration_outbox_impl(port, ptr, rust_vec_len, data_len),
-182 => wire__crate__api__sync__prepare_orchard_migration_single_qr_pczt_impl(port, ptr, rust_vec_len, data_len),
-183 => wire__crate__api__sync__prepare_pczt_for_keystone_batch_impl(port, ptr, rust_vec_len, data_len),
-184 => wire__crate__api__voting__prepare_voting_participation_impl(port, ptr, rust_vec_len, data_len),
-185 => wire__crate__api__wallet__preview_software_account_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
-187 => wire__crate__api__wallet__probe_lightwalletd_endpoint_impl(port, ptr, rust_vec_len, data_len),
-188 => wire__crate__api__sync__propose_payment_link_batch_impl(port, ptr, rust_vec_len, data_len),
-189 => wire__crate__api__sync__propose_payment_link_claim_impl(port, ptr, rust_vec_len, data_len),
-190 => wire__crate__api__sync__propose_send_impl(port, ptr, rust_vec_len, data_len),
-192 => wire__crate__api__sync__put_subtree_roots_impl(port, ptr, rust_vec_len, data_len),
-193 => wire__crate__api__network_privacy__quiesce_network_privacy_direct_requests_impl(port, ptr, rust_vec_len, data_len),
-194 => wire__crate__api__sync__read_transparent_policy_impl(port, ptr, rust_vec_len, data_len),
-195 => wire__crate__api__sync__reconcile_orchard_migration_outbox_receipt_impl(port, ptr, rust_vec_len, data_len),
-196 => wire__crate__api__sync__reconcile_transparent_policy_impl(port, ptr, rust_vec_len, data_len),
-197 => wire__crate__api__sync__redact_pczt_for_signer_impl(port, ptr, rust_vec_len, data_len),
-198 => wire__crate__api__gift_card_tracking__register_gift_card_observer_impl(port, ptr, rust_vec_len, data_len),
-199 => wire__crate__api__gift_card_tracking__remove_gift_card_observer_impl(port, ptr, rust_vec_len, data_len),
-201 => wire__crate__api__voting__reset_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-202 => wire__crate__api__voting__reset_voting_session_state_impl(port, ptr, rust_vec_len, data_len),
-203 => wire__crate__api__voting__resolve_pir_snapshot_endpoint_impl(port, ptr, rust_vec_len, data_len),
-204 => wire__crate__api__voting__resolve_static_voting_config_impl(port, ptr, rust_vec_len, data_len),
-205 => wire__crate__api__voting__resolve_voting_config_from_attempts_impl(port, ptr, rust_vec_len, data_len),
-209 => wire__crate__api__sync__retain_proposal_lock_until_expiry_impl(port, ptr, rust_vec_len, data_len),
-210 => wire__crate__api__sync__retire_unbroadcast_orchard_migration_impl(port, ptr, rust_vec_len, data_len),
-211 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
-212 => wire__zcash_voting__wire__round_work_tally_view_default_impl(port, ptr, rust_vec_len, data_len),
-213 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
-214 => wire__crate__api__sync__run_payment_link_claim_check_impl(port, ptr, rust_vec_len, data_len),
-215 => wire__crate__api__sync__run_payment_link_claim_sync_impl(port, ptr, rust_vec_len, data_len),
-217 => wire__crate__api__balance_cache__save_balance_cache_impl(port, ptr, rust_vec_len, data_len),
-218 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
-226 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
-227 => wire__crate__api__voting__set_voting_observability_sink_impl(port, ptr, rust_vec_len, data_len),
-228 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
-229 => wire__zcash_voting__wire__share_tracking_pass_report_view_default_impl(port, ptr, rust_vec_len, data_len),
-230 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
-231 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-232 => wire__crate__api__sync__shutdown_signing_reservations_impl(port, ptr, rust_vec_len, data_len),
-233 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
-234 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
-235 => wire__crate__api__network_privacy__start_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
-237 => wire__crate__api__network_privacy__stop_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
-238 => wire__crate__api__sync__store_and_broadcast_pczts_with_keystone_signatures_for_proposal_impl(port, ptr, rust_vec_len, data_len),
-239 => wire__crate__api__sync__store_and_broadcast_signed_pczts_for_proposal_impl(port, ptr, rust_vec_len, data_len),
-240 => wire__crate__api__voting__store_keystone_signatures_batch_impl(port, ptr, rust_vec_len, data_len),
-241 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
-242 => wire__crate__api__gift_card_tracking__sync_gift_card_observers_impl(port, ptr, rust_vec_len, data_len),
-243 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
-246 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
-247 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
-248 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
-249 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
-250 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
-251 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-252 => wire__crate__api__wallet__validate_gift_address_impl(port, ptr, rust_vec_len, data_len),
-254 => wire__crate__api__voting__voting_proposal_id_range_impl(port, ptr, rust_vec_len, data_len),
-258 => wire__crate__api__voting__warm_pir_proof_cache_impl(port, ptr, rust_vec_len, data_len),
-260 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
-261 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
+164 => wire__crate__api__wallet__list_accounts_impl(port, ptr, rust_vec_len, data_len),
+165 => wire__crate__api__gift_card_tracking__list_gift_card_observers_impl(port, ptr, rust_vec_len, data_len),
+166 => wire__crate__api__voting__list_pending_share_rounds_impl(port, ptr, rust_vec_len, data_len),
+167 => wire__crate__api__balance_cache__load_balance_cache_impl(port, ptr, rust_vec_len, data_len),
+168 => wire__crate__api__sync__migrate_orchard_to_ironwood_impl(port, ptr, rust_vec_len, data_len),
+169 => wire__crate__api__sync__migrate_orchard_to_ironwood_immediately_impl(port, ptr, rust_vec_len, data_len),
+170 => wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+174 => wire__crate__api__keystone__pczt_spend_nullifiers_impl(port, ptr, rust_vec_len, data_len),
+175 => wire__crate__api__voting__precompute_delegation_proof_impl(port, ptr, rust_vec_len, data_len),
+176 => wire__crate__api__voting__precompute_snapshot_bundles_impl(port, ptr, rust_vec_len, data_len),
+177 => wire__crate__api__sync__prepare_orchard_migration_batch_pczt_impl(port, ptr, rust_vec_len, data_len),
+178 => wire__crate__api__sync__prepare_orchard_migration_denominations_pczt_impl(port, ptr, rust_vec_len, data_len),
+179 => wire__crate__api__sync__prepare_orchard_migration_immediate_pczt_impl(port, ptr, rust_vec_len, data_len),
+180 => wire__crate__api__sync__prepare_orchard_migration_outbox_impl(port, ptr, rust_vec_len, data_len),
+181 => wire__crate__api__sync__prepare_orchard_migration_single_qr_pczt_impl(port, ptr, rust_vec_len, data_len),
+182 => wire__crate__api__sync__prepare_pczt_for_keystone_batch_impl(port, ptr, rust_vec_len, data_len),
+183 => wire__crate__api__voting__prepare_voting_participation_impl(port, ptr, rust_vec_len, data_len),
+184 => wire__crate__api__wallet__preview_software_account_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
+186 => wire__crate__api__wallet__probe_lightwalletd_endpoint_impl(port, ptr, rust_vec_len, data_len),
+187 => wire__crate__api__sync__propose_payment_link_batch_impl(port, ptr, rust_vec_len, data_len),
+188 => wire__crate__api__sync__propose_payment_link_claim_impl(port, ptr, rust_vec_len, data_len),
+189 => wire__crate__api__sync__propose_send_impl(port, ptr, rust_vec_len, data_len),
+191 => wire__crate__api__sync__put_subtree_roots_impl(port, ptr, rust_vec_len, data_len),
+192 => wire__crate__api__network_privacy__quiesce_network_privacy_direct_requests_impl(port, ptr, rust_vec_len, data_len),
+193 => wire__crate__api__sync__read_transparent_policy_impl(port, ptr, rust_vec_len, data_len),
+194 => wire__crate__api__sync__reconcile_orchard_migration_outbox_receipt_impl(port, ptr, rust_vec_len, data_len),
+195 => wire__crate__api__sync__reconcile_transparent_policy_impl(port, ptr, rust_vec_len, data_len),
+196 => wire__crate__api__sync__redact_pczt_for_signer_impl(port, ptr, rust_vec_len, data_len),
+197 => wire__crate__api__gift_card_tracking__register_gift_card_observer_impl(port, ptr, rust_vec_len, data_len),
+198 => wire__crate__api__gift_card_tracking__remove_gift_card_observer_impl(port, ptr, rust_vec_len, data_len),
+200 => wire__crate__api__voting__reset_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+201 => wire__crate__api__voting__reset_voting_session_state_impl(port, ptr, rust_vec_len, data_len),
+202 => wire__crate__api__voting__resolve_pir_snapshot_endpoint_impl(port, ptr, rust_vec_len, data_len),
+203 => wire__crate__api__voting__resolve_static_voting_config_impl(port, ptr, rust_vec_len, data_len),
+204 => wire__crate__api__voting__resolve_voting_config_from_attempts_impl(port, ptr, rust_vec_len, data_len),
+208 => wire__crate__api__sync__retain_proposal_lock_until_expiry_impl(port, ptr, rust_vec_len, data_len),
+209 => wire__crate__api__sync__retire_unbroadcast_orchard_migration_impl(port, ptr, rust_vec_len, data_len),
+210 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
+211 => wire__zcash_voting__wire__round_work_tally_view_default_impl(port, ptr, rust_vec_len, data_len),
+212 => wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len),
+213 => wire__crate__api__sync__run_payment_link_claim_check_impl(port, ptr, rust_vec_len, data_len),
+214 => wire__crate__api__sync__run_payment_link_claim_sync_impl(port, ptr, rust_vec_len, data_len),
+216 => wire__crate__api__balance_cache__save_balance_cache_impl(port, ptr, rust_vec_len, data_len),
+217 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
+225 => wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len),
+226 => wire__crate__api__voting__set_voting_observability_sink_impl(port, ptr, rust_vec_len, data_len),
+227 => wire__crate__api__voting__setup_delegation_bundles_impl(port, ptr, rust_vec_len, data_len),
+228 => wire__zcash_voting__wire__share_tracking_pass_report_view_default_impl(port, ptr, rust_vec_len, data_len),
+229 => wire__crate__api__sync__shield_transparent_balance_impl(port, ptr, rust_vec_len, data_len),
+230 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+231 => wire__crate__api__sync__shutdown_signing_reservations_impl(port, ptr, rust_vec_len, data_len),
+232 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
+233 => wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len),
+234 => wire__crate__api__network_privacy__start_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
+236 => wire__crate__api__network_privacy__stop_tor_update_relay_impl(port, ptr, rust_vec_len, data_len),
+237 => wire__crate__api__sync__store_and_broadcast_pczts_with_keystone_signatures_for_proposal_impl(port, ptr, rust_vec_len, data_len),
+238 => wire__crate__api__sync__store_and_broadcast_signed_pczts_for_proposal_impl(port, ptr, rust_vec_len, data_len),
+239 => wire__crate__api__voting__store_keystone_signatures_batch_impl(port, ptr, rust_vec_len, data_len),
+240 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
+241 => wire__crate__api__gift_card_tracking__sync_gift_card_observers_impl(port, ptr, rust_vec_len, data_len),
+242 => wire__crate__api__voting__sync_vote_tree_impl(port, ptr, rust_vec_len, data_len),
+245 => wire__crate__api__network_privacy__tor_http_download_impl(port, ptr, rust_vec_len, data_len),
+246 => wire__crate__api__network_privacy__tor_http_get_impl(port, ptr, rust_vec_len, data_len),
+247 => wire__crate__api__network_privacy__tor_http_post_impl(port, ptr, rust_vec_len, data_len),
+248 => wire__crate__api__voting__trusted_voting_round_params_from_config_impl(port, ptr, rust_vec_len, data_len),
+249 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
+250 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
+251 => wire__crate__api__wallet__validate_gift_address_impl(port, ptr, rust_vec_len, data_len),
+253 => wire__crate__api__voting__voting_proposal_id_range_impl(port, ptr, rust_vec_len, data_len),
+257 => wire__crate__api__voting__warm_pir_proof_cache_impl(port, ptr, rust_vec_len, data_len),
+259 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+260 => wire__crate__api__keystone__zcash_sign_batch_round_message_counts_impl(port, ptr, rust_vec_len, data_len),
                         _ => unreachable!(),
                     }
 }
@@ -16337,83 +16321,83 @@ fn pde_ffi_dispatcher_sync_impl(
             wire__crate__api__voting__last_moment_buffer_seconds_impl(ptr, rust_vec_len, data_len)
         }
         149 => wire__crate__api__ledger__ledger_cancel_operation_impl(ptr, rust_vec_len, data_len),
-        172 => wire__crate__api__wallet__mnemonic_word_list_impl(ptr, rust_vec_len, data_len),
-        173 => wire__crate__api__pir_config__normalize_wallet_pir_server_base_impl(
+        171 => wire__crate__api__wallet__mnemonic_word_list_impl(ptr, rust_vec_len, data_len),
+        172 => wire__crate__api__pir_config__normalize_wallet_pir_server_base_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        174 => wire__crate__api__voting_session__open_voting_round_session_impl(
+        173 => wire__crate__api__voting_session__open_voting_round_session_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        186 => {
+        185 => {
             wire__crate__api__sync__prioritize_transparent_details_impl(ptr, rust_vec_len, data_len)
         }
-        191 => {
+        190 => {
             wire__crate__api__sync__public_transaction_load_epoch_impl(ptr, rust_vec_len, data_len)
         }
-        200 => wire__crate__api__keystone__reset_ur_session_impl(ptr, rust_vec_len, data_len),
-        206 => wire__crate__api__pir_config__resolve_wallet_pir_config_impl(
+        199 => wire__crate__api__keystone__reset_ur_session_impl(ptr, rust_vec_len, data_len),
+        205 => wire__crate__api__pir_config__resolve_wallet_pir_config_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        207 => wire__crate__api__pir_config__resolve_wallet_pir_config_snapshot_impl(
+        206 => wire__crate__api__pir_config__resolve_wallet_pir_config_snapshot_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        208 => wire__crate__api__pir_config__resolve_wallet_pir_static_config_impl(
+        207 => wire__crate__api__pir_config__resolve_wallet_pir_static_config_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        216 => wire__crate__api__wallet__same_orchard_receiver_impl(ptr, rust_vec_len, data_len),
-        219 => {
+        215 => wire__crate__api__wallet__same_orchard_receiver_impl(ptr, rust_vec_len, data_len),
+        218 => {
             wire__crate__api__pir_config__select_wallet_pir_server_impl(ptr, rust_vec_len, data_len)
         }
-        220 => wire__crate__api__pir_config__selected_wallet_pir_server_impl(
+        219 => wire__crate__api__pir_config__selected_wallet_pir_server_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        221 => wire__crate__api__sync__set_active_sync_account_impl(ptr, rust_vec_len, data_len),
-        222 => wire__crate__api__sync__set_enhance_pir_enabled_impl(ptr, rust_vec_len, data_len),
-        223 => wire__crate__api__sync__set_enhance_pir_preference_confirmed_impl(
+        220 => wire__crate__api__sync__set_active_sync_account_impl(ptr, rust_vec_len, data_len),
+        221 => wire__crate__api__sync__set_enhance_pir_enabled_impl(ptr, rust_vec_len, data_len),
+        222 => wire__crate__api__sync__set_enhance_pir_preference_confirmed_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        224 => wire__crate__api__network_privacy__set_network_privacy_dormant_impl(
+        223 => wire__crate__api__network_privacy__set_network_privacy_dormant_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        225 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
-        236 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
-        244 => wire__crate__api__network_privacy__tor_http_begin_request_impl(
+        224 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
+        235 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
+        243 => wire__crate__api__network_privacy__tor_http_begin_request_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        245 => wire__crate__api__network_privacy__tor_http_cancel_request_impl(
+        244 => wire__crate__api__network_privacy__tor_http_cancel_request_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        253 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        255 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
-        256 => wire__crate__api__pir_config__wallet_pir_server_ping_url_impl(
+        252 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        254 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        255 => wire__crate__api__pir_config__wallet_pir_server_ping_url_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        257 => {
+        256 => {
             wire__crate__api__sync__warm_orchard_proving_key_cache_impl(ptr, rust_vec_len, data_len)
         }
-        259 => {
+        258 => {
             wire__crate__api__voting__warm_voting_proving_caches_impl(ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -18652,6 +18636,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::ledger::LedgerApduCommand>
     for crate::api::ledger::LedgerApduCommand
 {
     fn into_into_dart(self) -> crate::api::ledger::LedgerApduCommand {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::wallet::ledger::LedgerAppSupport {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.memo_hash.into_into_dart().into_dart(),
+            self.nu7_branch.into_into_dart().into_dart(),
+            self.orchard_to_ironwood.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::wallet::ledger::LedgerAppSupport
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::wallet::ledger::LedgerAppSupport>
+    for crate::wallet::ledger::LedgerAppSupport
+{
+    fn into_into_dart(self) -> crate::wallet::ledger::LedgerAppSupport {
         self
     }
 }
@@ -22643,6 +22649,15 @@ impl SseEncode for crate::api::ledger::LedgerApduCommand {
         <u8>::sse_encode(self.p1, serializer);
         <u8>::sse_encode(self.p2, serializer);
         <Vec<u8>>::sse_encode(self.data, serializer);
+    }
+}
+
+impl SseEncode for crate::wallet::ledger::LedgerAppSupport {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.memo_hash, serializer);
+        <bool>::sse_encode(self.nu7_branch, serializer);
+        <bool>::sse_encode(self.orchard_to_ironwood, serializer);
     }
 }
 

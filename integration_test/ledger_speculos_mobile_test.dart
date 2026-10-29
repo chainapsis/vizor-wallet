@@ -19,6 +19,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_ledger_shield_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_device_label.dart';
@@ -149,7 +150,7 @@ Future<void> _runMobilePostIronwoodOrchardSigningScenario(
   await container.read(accountProvider.future);
 
   final unsigned = fixture.orchardToIronwoodV6Pczt;
-  final signed = container.read(ledgerPcztTransportSignerProvider)(
+  final signed = container.read(ledgerPcztSignerProvider)(
     fixture.accountUuid,
     unsigned,
   );
@@ -339,7 +340,7 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   expect(exported!.ufvk, fixture.ufvk);
   expect(exported.seedFingerprint, fixture.seedFingerprint);
   expect(exported.accountIndex, fixture.accountIndex);
-  expect(exported.appVersion, '3.9.4');
+  expect(exported.appVersion, '3.10.0');
   expect(exported.transport, LedgerConnectionTransport.bluetooth);
   expect(exported.device?.id, 'speculos');
   expect(firstAccountImport.name, 'Speculos Ledger');
@@ -436,13 +437,17 @@ Future<void> _runMobileShieldScenario(WidgetTester tester) async {
     findsOneWidget,
   );
   expect(await approval, isTrue);
+  // Complete appears as it fades in and accepts a tap only once it has.
+  final complete = find.byKey(const ValueKey('mobile_shield_complete'));
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('mobile_shield_complete'))),
+    () =>
+        tester.any(complete) &&
+        tester.widget<AppButton>(complete).onPressed != null,
     description: 'mobile shielding result',
     timeout: const Duration(minutes: 2),
   );
-  await tester.tap(find.byKey(const ValueKey('mobile_shield_complete')));
+  await tester.tap(complete);
   await _pumpUntil(
     tester,
     () =>
@@ -639,7 +644,11 @@ Future<void> _runMobileRecoveredOrchardBlockScenario(
       loadWalletDbPath: () async => dbPath,
     ),
   );
-  final ble = _SpeculosLedgerMobileBleService(fixture.signingApiUrl);
+  // 3.10.0 signs this crossing; an older app must be stopped before it.
+  final ble = _SpeculosLedgerMobileBleService(
+    fixture.signingApiUrl,
+    reportedAppVersion: '3.9.4',
+  );
   final args = SendReviewArgs(
     proposalId: BigInt.one,
     sendFlowId: 'ledger-mobile-recovered-orchard',
@@ -695,18 +704,39 @@ Future<void> _runMobileRecoveredOrchardBlockScenario(
   await _pumpUntil(
     tester,
     () => tester.any(find.text('Ledger app update required')),
-    description: 'mobile recovered Orchard compatibility message',
+    description: 'mobile recovered Orchard app update message',
     timeout: const Duration(minutes: 2),
   );
 
-  expect(
-    find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
-    findsOneWidget,
-  );
-  expect(find.text('Try again'), findsNothing);
-  expect(ble.connectedDeviceId, isNull);
+  expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
+  expect(find.text('Try again'), findsOneWidget);
+  expect(ble.signingExchanges, 0);
   expect(operationService.checkpointCount, 0);
   expect(operationService.broadcastCount, 0);
+
+  // After the update the retry reaches the device, and its signatures verify
+  // before the checkpoint. The synthetic crossing is not meant to broadcast.
+  ble.reportedAppVersion = null;
+  await tester.tap(find.text('Try again'));
+  await tester.pump();
+  await _pumpUntil(
+    tester,
+    () => tester.any(_ledgerPendingApproval()),
+    description: 'mobile recovered Orchard retry approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(
+    await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
+    isTrue,
+  );
+  await _pumpUntil(
+    tester,
+    () => operationService.checkpointCount > 0,
+    description: 'mobile recovered Orchard signed checkpoint',
+    timeout: const Duration(minutes: 1),
+  );
+  expect(ble.signingExchanges, greaterThan(0));
+  expect(find.text(ledgerAppUpdateRequiredError), findsNothing);
 }
 
 Future<void> _runMobileTexSendScenario(
@@ -725,7 +755,6 @@ Future<void> _runMobileTexSendScenario(
       loadWalletDbPath: () async => dbPath,
     ),
   );
-  final ble = _SpeculosLedgerMobileBleService(fixture.signingApiUrl);
   final args = SendReviewArgs(
     proposalId: BigInt.two,
     sendFlowId: 'ledger-mobile-speculos-tex-send',
@@ -740,21 +769,34 @@ Future<void> _runMobileTexSendScenario(
   String? requestedNetwork;
   BigInt? requestedProposalId;
   String? requestedSendFlowId;
-  var creates = 0, proves = 0, validations = 0;
-  final secondValidation = Completer<void>();
-  final releaseValidation = Completer<void>();
+  var creates = 0, proves = 0, appChecks = 0;
+  final secondAppCheck = Completer<void>();
+  final releaseAppCheck = Completer<void>();
   final requests = LedgerDeviceRequests();
-  void releaseCancelledValidation() {
-    if (!releaseValidation.isCompleted) releaseValidation.complete();
+  void releaseCancelledAppCheck() {
+    if (!releaseAppCheck.isCompleted) releaseAppCheck.complete();
   }
 
   if (failProofAfterFirstApproval) {
-    requests.addCancellationListener(releaseCancelledValidation);
+    requests.addCancellationListener(releaseCancelledAppCheck);
     addTearDown(() {
-      releaseCancelledValidation();
-      requests.removeCancellationListener(releaseCancelledValidation);
+      releaseCancelledAppCheck();
+      requests.removeCancellationListener(releaseCancelledAppCheck);
     });
   }
+  // Readiness checks the app once per signing request, after the request has
+  // claimed its connection.
+  final ble = _SpeculosLedgerMobileBleService(
+    fixture.signingApiUrl,
+    onCurrentApp: failProofAfterFirstApproval
+        ? () async {
+            if (++appChecks == 2) {
+              secondAppCheck.complete();
+              await releaseAppCheck.future;
+            }
+          }
+        : null,
+  );
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
@@ -795,7 +837,7 @@ Future<void> _runMobileTexSendScenario(
                 if (++proves == 2 && failProofAfterFirstApproval) {
                   // Fail after the first real firmware signature, while the
                   // next public signer has captured its connection guard.
-                  await secondValidation.future;
+                  await secondAppCheck.future;
                   throw StateError('Injected second TEX proof failure.');
                 }
                 return rust_sync.addProofsToPczt(
@@ -834,13 +876,6 @@ Future<void> _runMobileTexSendScenario(
       extraOverrides: [
         if (failProofAfterFirstApproval) ...[
           ledgerDeviceRequestsProvider.overrideWithValue(requests),
-          ledgerPcztSupportValidatorProvider.overrideWithValue((pczt) async {
-            await rust_ledger.ledgerValidateSupportedPczt(pcztBytes: pczt);
-            if (++validations == 2) {
-              secondValidation.complete();
-              await releaseValidation.future;
-            }
-          }),
         ],
       ],
     ),
@@ -867,7 +902,7 @@ Future<void> _runMobileTexSendScenario(
       description: 'TEX proof failure drains the pending second signer',
       timeout: const Duration(minutes: 2),
     );
-    expect(validations, 2);
+    expect(appChecks, 2);
     expect(operationService.checkpointCount, 0);
     expect(lightwalletd.sendTransactionCount, 0);
     await tester.tap(find.text('Try again'));
@@ -913,7 +948,7 @@ Future<void> _runMobileTexSendScenario(
   expect(proves, failProofAfterFirstApproval ? 4 : 2);
   if (failProofAfterFirstApproval) {
     expect(
-      validations,
+      appChecks,
       3,
       reason: 'Retry must retain the first signed TEX transaction.',
     );
@@ -1907,7 +1942,11 @@ class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
 }
 
 class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
-  _SpeculosLedgerMobileBleService(this.apiUrl);
+  _SpeculosLedgerMobileBleService(
+    this.apiUrl, {
+    this.reportedAppVersion,
+    this.onCurrentApp,
+  });
 
   static const device = LedgerBleDevice(
     id: 'speculos',
@@ -1916,6 +1955,13 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
   );
 
   final String apiUrl;
+
+  /// Reports this version instead of the emulated app's own.
+  String? reportedAppVersion;
+
+  /// Runs before each app check, which readiness makes once per request.
+  final Future<void> Function()? onCurrentApp;
+  var signingExchanges = 0;
 
   @override
   String? connectedDeviceId;
@@ -1931,6 +1977,7 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
     _requireConnected();
+    await onCurrentApp?.call();
     final response = await _exchangeRaw(
       rust_ledger.LedgerApduCommand(
         cla: 0xb0,
@@ -1969,7 +2016,12 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
       return value;
     }
 
-    return LedgerMobileAppInfo(name: readString(), version: readString());
+    final name = readString();
+    final version = readString();
+    return LedgerMobileAppInfo(
+      name: name,
+      version: reportedAppVersion ?? version,
+    );
   }
 
   @override
@@ -1987,6 +2039,7 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
     List<rust_ledger.LedgerApduCommand> commands,
   ) async {
     _requireConnected();
+    signingExchanges++;
     final responses = <Uint8List>[];
     for (final command in commands) {
       final response = await _exchangeRaw(command);

@@ -1,11 +1,24 @@
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 
 void main() {
+  test('an NU7 transaction refused for an older app asks for an update', () {
+    final error = StateError(ledgerAppUpdateRequiredError);
+    final guidance = ledgerFailureGuidance(error);
+    expect(guidance?.message, ledgerAppUpdateRequiredError);
+    // After the update a retry reads the new version.
+    expect(guidance?.retryable, isTrue);
+    expect(
+      LedgerRequestFailure.fromError(error),
+      LedgerRequestFailure.appUpdateRequired,
+    );
+  });
+
   test('a Ledger swapped during a USB request asks for one Ledger', () {
     final guidance = ledgerFailureGuidance(StateError(ledgerAppChangedError));
     expect(guidance?.message, ledgerAppChangedError);
@@ -321,7 +334,7 @@ void main() {
         'ledger_status_6901: Ledger display is busy starting a review; retry shortly':
             'Your Ledger is busy. Try again in a moment.',
         'ledger_status_6807: The Zcash app is not installed on this Ledger':
-            'Install the Zcash app with Ledger Live.',
+            'Install the Zcash app with Ledger Wallet.',
         'ledger_status_5502: Ledger device PIN is not set':
             'Set up a PIN on your Ledger, then try again.',
         'ledger_status_5515: Ledger device is locked; unlock it and reopen the Zcash app':
