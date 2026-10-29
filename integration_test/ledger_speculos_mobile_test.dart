@@ -708,6 +708,30 @@ Future<void> _runMobileRecoveredOrchardBlockScenario(
   expect(ble.signingExchanges, 0);
   expect(operationService.checkpointCount, 0);
   expect(operationService.broadcastCount, 0);
+
+  // After the update the retry reaches the device, and its signatures verify
+  // before the checkpoint. The synthetic crossing is not meant to broadcast.
+  ble.reportedAppVersion = null;
+  await tester.tap(find.text('Try again'));
+  await tester.pump();
+  await _pumpUntil(
+    tester,
+    () => tester.any(_ledgerPendingApproval()),
+    description: 'mobile recovered Orchard retry approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(
+    await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
+    isTrue,
+  );
+  await _pumpUntil(
+    tester,
+    () => operationService.checkpointCount > 0,
+    description: 'mobile recovered Orchard signed checkpoint',
+    timeout: const Duration(minutes: 1),
+  );
+  expect(ble.signingExchanges, greaterThan(0));
+  expect(find.text(ledgerAppUpdateRequiredError), findsNothing);
 }
 
 Future<void> _runMobileTexSendScenario(
@@ -1928,7 +1952,7 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
   final String apiUrl;
 
   /// Reports this version instead of the emulated app's own.
-  final String? reportedAppVersion;
+  String? reportedAppVersion;
 
   /// Runs before each app check, which readiness makes once per request.
   final Future<void> Function()? onCurrentApp;
