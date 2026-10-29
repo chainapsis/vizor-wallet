@@ -37,14 +37,6 @@ class MobileAccountsSheet extends ConsumerStatefulWidget {
       _MobileAccountsSheetState();
 }
 
-const _accountsSheetLabelMStyle = TextStyle(
-  fontFamily: 'Geist',
-  fontWeight: FontWeight.w500,
-  fontSize: 14,
-  height: 16 / 14,
-  letterSpacing: -0.06,
-);
-
 const _accountsSheetCurrentNameStyle = TextStyle(
   fontFamily: 'Geist',
   fontWeight: FontWeight.w500,
@@ -202,7 +194,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
           if (others.isNotEmpty) ...[
             Text(
               'Other accounts',
-              style: _accountsSheetLabelMStyle.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
               ),
             ),
@@ -245,7 +237,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                         return MobileListRow(
                           key: ValueKey('account_row_${account.uuid}'),
                           minRowHeight: _accountsSheetRowHeight,
-                          textStyle: _accountsSheetLabelMStyle,
+                          textStyle: AppTypography.labelLarge,
                           leading: MobileAccountAvatar(
                             profilePictureId: account.profilePictureId,
                             size: AppProfilePictureSize.navLarge,
@@ -281,7 +273,6 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                   height: AppButtonSizing.largeHeight,
                   child: const Text(
                     'Manage accounts',
-                    style: _accountsSheetLabelMStyle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

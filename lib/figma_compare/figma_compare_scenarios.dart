@@ -3686,6 +3686,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-receive-transparent',
+    description: 'Mobile receive screen on the transparent pool',
+    builder: buildReceiveMobileTransparentUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-wide',
     description:
         'Adaptive receive with safe pane geometry and a deterministic wallet',
