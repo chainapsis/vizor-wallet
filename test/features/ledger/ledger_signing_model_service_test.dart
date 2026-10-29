@@ -43,7 +43,7 @@ void main() {
           if (compact) {
             await c.read(ledgerActionPcztSignerProvider)('account', [1]);
           } else {
-            await c.read(ledgerPcztTransportSignerProvider)('account', [1]);
+            await c.read(ledgerPcztSignerProvider)('account', [1]);
           }
         }
 
@@ -101,11 +101,15 @@ void main() {
         if (compact) {
           await c.read(ledgerActionPcztSignerProvider)('account', [1]);
         } else {
-          await c.read(ledgerPcztTransportSignerProvider)('account', [1]);
+          await c.read(ledgerPcztSignerProvider)('account', [1]);
         }
         expect(
           api.appSupport,
-          LedgerAppSupport(memoHash: memoHash, nu7Branch: nu7Branch),
+          LedgerAppSupport(
+            memoHash: memoHash,
+            nu7Branch: nu7Branch,
+            orchardToIronwood: nu7Branch,
+          ),
         );
         // The signing session is held to the app readiness verified.
         expect(api.appVersion, version);

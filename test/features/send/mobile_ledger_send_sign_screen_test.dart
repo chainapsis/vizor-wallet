@@ -724,128 +724,114 @@ void main() {
     },
   );
 
-  for (final blockedStage in ['validation', 'transport preparation']) {
-    testWidgets(
-      'proof cancellation during $blockedStage reselects on the first retry and preserves the TEX signature',
-      (tester) async {
-        final proof = Completer<List<int>>();
-        final preparation = Completer<void>();
-        final requests = LedgerDeviceRequests();
-        final ble = _RetryBle();
-        final service = _FakeOperationService();
-        final events = <String>[];
-        late ProviderContainer container;
-        var proves = 0, validations = 0, transportCalls = 0, approvals = 0;
-        final ui =
-            _app(
-                  usePublicSigner: true,
-                  args: _texArgs,
-                  operationService: service,
-                  events: events,
-                  proofAdder:
-                      ({
-                        required pcztBytes,
-                        spendParamsPath,
-                        outputParamsPath,
-                      }) => ++proves == 2
-                      ? proof.future
-                      : Future.value([pcztBytes.single + 2]),
-                  canceller: () async => requests.cancel(),
-                  signer: (_) async {
-                    final call = ++transportCalls;
-                    final check = requests.capture();
-                    final scope = LedgerConnectionScope.current!;
-                    if (call == 1) {
-                      scope.selected = LedgerSelectedConnection(
-                        'account-1',
-                        _retryDevice,
-                        requests.capture(),
+  testWidgets(
+    'proof cancellation during transport preparation reselects on the first retry and preserves the TEX signature',
+    (tester) async {
+      final proof = Completer<List<int>>();
+      final preparation = Completer<void>();
+      final requests = LedgerDeviceRequests();
+      final ble = _RetryBle();
+      final service = _FakeOperationService();
+      final events = <String>[];
+      late ProviderContainer container;
+      var proves = 0, transportCalls = 0, approvals = 0;
+      final ui =
+          _app(
+                args: _texArgs,
+                operationService: service,
+                events: events,
+                proofAdder:
+                    ({required pcztBytes, spendParamsPath, outputParamsPath}) =>
+                        ++proves == 2
+                        ? proof.future
+                        : Future.value([pcztBytes.single + 2]),
+                canceller: () async => requests.cancel(),
+                signer: (_) async {
+                  final call = ++transportCalls;
+                  final check = requests.capture();
+                  final scope = LedgerConnectionScope.current!;
+                  if (call == 1) {
+                    scope.selected = LedgerSelectedConnection(
+                      'account-1',
+                      _retryDevice,
+                      requests.capture(),
+                    );
+                  }
+                  if (call == 2) {
+                    await preparation.future;
+                  }
+                  check();
+                  Future<List<int>> approve() async => [
+                    ++approvals == 1 ? 4 : 8,
+                  ];
+                  return container
+                      .read(ledgerConnectionServiceProvider)
+                      .run(
+                        accountUuid: 'account-1',
+                        usb: approve,
+                        bluetooth: (_) => approve(),
                       );
-                    }
-                    if (blockedStage == 'transport preparation' && call == 2) {
-                      await preparation.future;
-                    }
-                    check();
-                    Future<List<int>> approve() async => [
-                      ++approvals == 1 ? 4 : 8,
-                    ];
-                    return container
-                        .read(ledgerConnectionServiceProvider)
-                        .run(
-                          accountUuid: 'account-1',
-                          usb: approve,
-                          bluetooth: (_) => approve(),
-                        );
-                  },
-                )
-                as ProviderScope;
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              ...ui.overrides,
-              accountProvider.overrideWith(_RetryAccount.new),
-              ledgerPcztSupportValidatorProvider.overrideWithValue((_) async {
-                if (++validations == 2 && blockedStage == 'validation') {
-                  await preparation.future;
-                }
-              }),
-              ledgerTargetPlatformProvider.overrideWithValue(
-                TargetPlatform.iOS,
-              ),
-              ledgerDeviceRequestsProvider.overrideWithValue(requests),
-              ledgerMobileBleServiceProvider.overrideWithValue(ble),
-              ledgerAppReadinessDeviceForTransportProvider(
-                LedgerConnectionTransport.bluetooth,
-              ).overrideWithValue(_RetryReadyDevice()),
-            ],
-            child: ui.child,
-          ),
-        );
-        container = ProviderScope.containerOf(
-          tester.element(find.text('Open signing')),
-        );
-        await tester.tap(find.text('Open signing'));
-        await tester.pump();
-        await tester.pump();
-        await tester.pump();
-        expect(validations, 2);
-        expect(approvals, 1);
-        proof.completeError(StateError('second proof failed'));
-        await tester.pump();
-        expect(find.text('Cancelling request'), findsOneWidget);
-        expect(find.text('Try again'), findsNothing);
-        preparation.complete();
-        await tester.pumpAndSettle();
-        expect(find.text('Could not finish transaction'), findsOneWidget);
-        await tester.tap(find.text('Try again'));
-        await tester.pumpAndSettle();
-        final selection = container.read(ledgerDeviceSelectionProvider);
-        expect(
-          selection,
-          isNotNull,
-          reason:
-              'The first retry must discard the cancelled connection guard.',
-        );
-        expect(find.text('Ledger signing failed'), findsNothing);
-        expect(approvals, 1);
-        // Use the production selection and verification boundary to continue.
-        await selection!.select(_retryDevice, () {}, () {});
-        await tester.pumpAndSettle();
-        expect(approvals, 2);
-        expect(service.batchCheckpointCalls, 1);
-        expect(service.batchSignatures, [
-          [4],
-          [8],
-        ]);
-        expect(service.batchProofs, [
-          [3],
-          [7],
-        ]);
-        expect(events.where((event) => event == 'create-tex'), hasLength(1));
-        expect(tester.takeException(), isNull);
-      },
-    );
-  }
+                },
+              )
+              as ProviderScope;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            ...ui.overrides,
+            accountProvider.overrideWith(_RetryAccount.new),
+            ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
+            ledgerDeviceRequestsProvider.overrideWithValue(requests),
+            ledgerMobileBleServiceProvider.overrideWithValue(ble),
+            ledgerAppReadinessDeviceForTransportProvider(
+              LedgerConnectionTransport.bluetooth,
+            ).overrideWithValue(_RetryReadyDevice()),
+          ],
+          child: ui.child,
+        ),
+      );
+      container = ProviderScope.containerOf(
+        tester.element(find.text('Open signing')),
+      );
+      await tester.tap(find.text('Open signing'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(transportCalls, 2);
+      expect(approvals, 1);
+      proof.completeError(StateError('second proof failed'));
+      await tester.pump();
+      expect(find.text('Cancelling request'), findsOneWidget);
+      expect(find.text('Try again'), findsNothing);
+      preparation.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Could not finish transaction'), findsOneWidget);
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      final selection = container.read(ledgerDeviceSelectionProvider);
+      expect(
+        selection,
+        isNotNull,
+        reason: 'The first retry must discard the cancelled connection guard.',
+      );
+      expect(find.text('Ledger signing failed'), findsNothing);
+      expect(approvals, 1);
+      // Use the production selection and verification boundary to continue.
+      await selection!.select(_retryDevice, () {}, () {});
+      await tester.pumpAndSettle();
+      expect(approvals, 2);
+      expect(service.batchCheckpointCalls, 1);
+      expect(service.batchSignatures, [
+        [4],
+        [8],
+      ]);
+      expect(service.batchProofs, [
+        [3],
+        [7],
+      ]);
+      expect(events.where((event) => event == 'create-tex'), hasLength(1));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('cancellation ignores late proofs and stops further TEX rounds', (
     tester,
@@ -1254,25 +1240,20 @@ void main() {
   });
 
   testWidgets(
-    'legacy Orchard recovery requires an app update without retrying',
+    'an app too old for the transaction asks for an update and a retry',
     (tester) async {
       await tester.pumpWidget(
         _app(
           operationService: _FakeOperationService(),
-          signer: (_) async => throw StateError(
-            '$kLedgerLegacyOrchardRecoveryErrorCode: test fixture',
-          ),
+          signer: (_) async => throw StateError(ledgerAppUpdateRequiredError),
         ),
       );
       await tester.tap(find.text('Open signing'));
       await tester.pumpAndSettle();
 
       expect(find.text('Ledger app update required'), findsOneWidget);
-      expect(
-        find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
-        findsOneWidget,
-      );
-      expect(find.text('Try again'), findsNothing);
+      expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
     },
   );
 
@@ -1420,7 +1401,6 @@ Widget _app({
   _Route? route,
   Future<SaplingParamsStatus> Function()? paramsLoader,
   MobileLedgerSendProofAdder? proofAdder,
-  bool usePublicSigner = false,
   void Function(String)? onCreate,
 }) {
   final router = GoRouter(
@@ -1495,14 +1475,9 @@ Widget _app({
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
       if (route != null) rpcEndpointFailoverProvider.overrideWith(() => route),
-      if (usePublicSigner)
-        ledgerPcztTransportSignerProvider.overrideWithValue(
-          (_, pcztBytes) => signer(pcztBytes),
-        )
-      else
-        ledgerPcztSignerProvider.overrideWithValue(
-          (_, pcztBytes) => signer(pcztBytes),
-        ),
+      ledgerPcztSignerProvider.overrideWithValue(
+        (_, pcztBytes) => signer(pcztBytes),
+      ),
       ledgerOperationCancellerProvider.overrideWithValue(
         canceller ?? () async {},
       ),

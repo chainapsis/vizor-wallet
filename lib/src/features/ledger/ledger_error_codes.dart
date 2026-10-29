@@ -132,7 +132,7 @@ LedgerFailureKind classifyLedgerError(Object error) {
 
   final raw = error.toString();
   if (raw.contains('ledger_cancelled:')) return LedgerFailureKind.cancelled;
-  if (isLedgerNu7AppUpdateRequired(error)) {
+  if (isLedgerAppUpdateRequired(error)) {
     return LedgerFailureKind.appUpdateRequired;
   }
   if (raw.contains('ledger_capacity:')) {

@@ -13,7 +13,6 @@ import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
-import '../../../ledger/ledger_capability.dart';
 import '../../../ledger/services/ledger_signed_operation_service.dart';
 import '../../../ledger/services/ledger_signing_service.dart';
 import '../../../ledger/services/ledger_device_selection.dart';
@@ -442,14 +441,6 @@ class _MobileLedgerSendSignScreenState
         actionLabel: 'Create new transaction',
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
-    } else if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
-      presentation = const LedgerSigningFailurePresentation(
-        title: 'Ledger app update required',
-        statusLabel: 'Recovery unavailable',
-        message: kLedgerLegacyOrchardRecoveryUnavailableMessage,
-        showDeviceAppPrompt: false,
-      );
-      action = null;
     } else if (lower.contains('sapling')) {
       presentation = const LedgerSigningFailurePresentation(
         title: 'Ledger signing unavailable',

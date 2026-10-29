@@ -1280,9 +1280,9 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: _buildLedgerSigningMemoHashUpdate,
   ),
   FigmaCompareScenario(
-    id: 'ledger-signing-nu7-update',
-    description: 'Ledger signing: NU7 transaction needs Zcash app 3.10.0',
-    builder: _buildLedgerSigningNu7Update,
+    id: 'ledger-signing-app-update',
+    description: 'Ledger signing: transaction needs Zcash app 3.10.0',
+    builder: _buildLedgerSigningAppUpdate,
   ),
   FigmaCompareScenario(
     id: 'ledger-signing-voting-processing',
@@ -3905,10 +3905,10 @@ Widget _buildLedgerSigningMemoHashUpdate(BuildContext context) =>
       failureMode: LedgerSigningPlaygroundFailure.memoHashUpdate,
     );
 
-Widget _buildLedgerSigningNu7Update(BuildContext context) =>
+Widget _buildLedgerSigningAppUpdate(BuildContext context) =>
     buildLedgerSigningPreview(
       phase: LedgerSigningModalPhase.failed,
-      failureMode: LedgerSigningPlaygroundFailure.nu7Update,
+      failureMode: LedgerSigningPlaygroundFailure.appUpdate,
     );
 
 Widget _buildLedgerVotingProcessing(BuildContext context) =>

@@ -8,9 +8,9 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_serv
 
 void main() {
   test('an NU7 transaction refused for an older app asks for an update', () {
-    final error = StateError(ledgerNu7AppUpdateRequiredError);
+    final error = StateError(ledgerAppUpdateRequiredError);
     final guidance = ledgerFailureGuidance(error);
-    expect(guidance?.message, ledgerNu7AppUpdateRequiredError);
+    expect(guidance?.message, ledgerAppUpdateRequiredError);
     // After the update a retry reads the new version.
     expect(guidance?.retryable, isTrue);
     expect(

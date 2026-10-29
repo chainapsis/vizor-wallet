@@ -59,6 +59,8 @@ pub struct LedgerAppSupport {
     pub memo_hash: bool,
     /// The NU7 consensus branch (3.10.0).
     pub nu7_branch: bool,
+    /// An Orchard spend paying into Ironwood (3.10.0).
+    pub orchard_to_ironwood: bool,
 }
 
 impl LedgerAppSupport {
@@ -66,19 +68,19 @@ impl LedgerAppSupport {
     pub(crate) const NEWEST: Self = Self {
         memo_hash: true,
         nu7_branch: true,
+        orchard_to_ironwood: true,
     };
     /// 3.9.3, the oldest app Vizor signs with.
     #[cfg(test)]
     pub(crate) const OLDEST: Self = Self {
         memo_hash: false,
         nu7_branch: false,
+        orchard_to_ironwood: false,
     };
 }
 
 const ZCASH_APP_NAME: &str = "Zcash";
 const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
-const LEGACY_ORCHARD_RECOVERY_UNSUPPORTED: &str =
-    "ledger_legacy_orchard_recovery_unsupported: The current Ledger Zcash app cannot sign a transaction that spends legacy Orchard funds into Ironwood.";
 /// Leads errors where the device's signatures verify against keys other than
 /// this account's, so the UI can ask for the Ledger that holds the account.
 const SIGNATURE_MISMATCH_PREFIX: &str = "ledger_signature_mismatch: ";
@@ -345,36 +347,6 @@ pub(crate) fn build_pczt_full_signing_plan(
     app_support: LedgerAppSupport,
 ) -> Result<Vec<ApduCommand>, String> {
     build_signing_plan(pczt_bytes, true, app_support).map(|(commands, _)| commands)
-}
-
-/// Blocks the unverified Orchard-to-Ironwood path in supported Ledger apps
-/// without weakening or changing the transaction that Vizor prepared.
-///
-/// Keep the transport signer independent from this release gate so the opt-in
-/// Speculos canary can verify a future app build before Vizor raises its
-/// minimum supported version and removes this guard.
-pub(crate) fn validate_pczt_release_support(pczt_bytes: &[u8]) -> Result<(), String> {
-    let parsed = parse_pczt(pczt_bytes)?;
-    let has_orchard_spend = parsed
-        .orchard_bundle
-        .as_ref()
-        .is_some_and(|bundle| bundle.actions.iter().any(|action| action.spend_value != 0));
-    let has_ironwood_output = parsed
-        .ironwood_bundle
-        .as_ref()
-        .is_some_and(|bundle| bundle.actions.iter().any(|action| action.action.value != 0));
-    require_legacy_orchard_recovery_support(has_orchard_spend, has_ironwood_output)
-}
-
-fn require_legacy_orchard_recovery_support(
-    has_orchard_spend: bool,
-    has_ironwood_output: bool,
-) -> Result<(), String> {
-    if has_orchard_spend && has_ironwood_output {
-        Err(LEGACY_ORCHARD_RECOVERY_UNSUPPORTED.into())
-    } else {
-        Ok(())
-    }
 }
 
 /// Validates raw status-bearing responses and returns compact shielded signatures.
@@ -1312,19 +1284,6 @@ mod tests {
         assert!(classify_operation_state(true, true)
             .unwrap_err()
             .contains("cancelled"));
-    }
-
-    #[test]
-    fn release_gate_blocks_only_legacy_orchard_to_ironwood_recovery() {
-        assert!(require_legacy_orchard_recovery_support(true, true)
-            .unwrap_err()
-            .contains("ledger_legacy_orchard_recovery_unsupported"));
-        assert_eq!(require_legacy_orchard_recovery_support(true, false), Ok(()));
-        assert_eq!(require_legacy_orchard_recovery_support(false, true), Ok(()));
-        assert_eq!(
-            require_legacy_orchard_recovery_support(false, false),
-            Ok(())
-        );
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]

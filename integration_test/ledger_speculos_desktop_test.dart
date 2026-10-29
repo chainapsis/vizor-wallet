@@ -759,7 +759,7 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
 
   final unsigned = fixture.orchardToIronwoodV6Pczt;
   final approval = approveNextSpeculosReview(fixture.signingApiUrl);
-  final signed = container.read(ledgerPcztTransportSignerProvider)(
+  final signed = container.read(ledgerPcztSignerProvider)(
     fixture.accountUuid,
     unsigned,
   );

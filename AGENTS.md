@@ -810,8 +810,9 @@ Before changing a Ledger send, Gift Card, shielding, swap, or voting flow, read
 `docs/ledger/limitations.md`. **32 actions per pool does not mean 32 recipients:**
 the device can review only **4 external shielded outputs across both pools**;
 internal change is excluded. Numeric limits live in `rust/src/wallet/ledger/limits.rs`.
-Keep account-key verification before PCZT transmission and retain the
-Orchard-to-Ironwood gate until the actual supported app passes its canary.
+Keep account-key verification before PCZT transmission. Apps before 3.10.0
+reject the NU7 branch and an Orchard spend into Ironwood; `LedgerAppSupport`
+carries what the connected app can sign, and the serializer refuses the rest.
 
 ### Signing Cancellation
 

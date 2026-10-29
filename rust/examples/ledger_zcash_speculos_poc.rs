@@ -73,6 +73,7 @@ const MINIMUM_ZCASH_APP_VERSION: (u64, u64, u64) = (3, 9, 3);
 const CANARY_APP_SUPPORT: LedgerAppSupport = LedgerAppSupport {
     memo_hash: true,
     nu7_branch: true,
+    orchard_to_ironwood: true,
 };
 /// The fixture wallet's only transparent UTXO, held at external index 0. The
 /// shielding, swap, pay, and TEX step 1 fixtures all spend it: each scenario

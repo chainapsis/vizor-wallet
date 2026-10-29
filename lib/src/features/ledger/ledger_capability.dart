@@ -9,12 +9,12 @@ import '../../rust/wallet/ledger.dart' show LedgerAppSupport;
 /// Transaction budgets are enforced by Rust `ledger/limits.rs`;
 /// see `docs/ledger/limitations.md` for the full support/enforcement map.
 ///
-/// | Version   | New account | Signing | Memo shown as a hash | NU7 branch |
-/// |-----------|-------------|---------|----------------------|------------|
-/// | < 3.9.3   | refused     | refused | —                    | —          |
-/// | 3.9.3     | refused     | yes     | refused              | refused    |
-/// | 3.9.4     | yes         | yes     | yes                  | refused    |
-/// | >= 3.10.0 | yes         | yes     | yes                  | yes        |
+/// | Version   | New account | Signing | Memo shown as a hash | NU7 branch, Orchard to Ironwood |
+/// |-----------|-------------|---------|----------------------|---------------------------------|
+/// | < 3.9.3   | refused     | refused | —                    | —                               |
+/// | 3.9.3     | refused     | yes     | refused              | refused                         |
+/// | 3.9.4     | yes         | yes     | yes                  | refused                         |
+/// | >= 3.10.0 | yes         | yes     | yes                  | yes                             |
 ///
 /// The app shows a memo as text only when every byte is printable ASCII, and
 /// as a hash otherwise.
@@ -34,14 +34,14 @@ const kLedgerMemoHashAppVersion = '3.9.4';
 const ledgerMemoHashUnsupportedError =
     'Update the Ledger Zcash app to sign non-English memos';
 
-/// Before this version the app rejects the NU7 consensus branch, and Ledger
-/// Wallet offers it only on each device's latest firmware.
+/// Before this version the app rejects the NU7 consensus branch and an Orchard
+/// spend into Ironwood, and Ledger Wallet offers it only on each device's
+/// latest firmware.
 const kLedgerNu7AppVersion = '3.10.0';
 
-/// Shown when Rust refuses an NU7 transaction for an older app. Keep this
-/// identical to `LEDGER_NU7_APP_UPDATE_REQUIRED` in
-/// `rust/src/wallet/ledger/parse.rs`.
-const ledgerNu7AppUpdateRequiredError =
+/// Shown when Rust refuses either for an older app. Keep this identical to
+/// `LEDGER_APP_UPDATE_REQUIRED` in `rust/src/wallet/ledger/parse.rs`.
+const ledgerAppUpdateRequiredError =
     'Update your Ledger and its Zcash app to $kLedgerNu7AppVersion or newer '
     'in Ledger Wallet.';
 
@@ -69,16 +69,14 @@ bool ledgerSupportsNu7Branch(String? appVersion) =>
     appVersion != null && _atLeast(appVersion, kLedgerNu7AppVersion);
 
 /// What the Rust signing entry points may send to the app at `appVersion`.
-LedgerAppSupport ledgerAppSupport(String? appVersion) => LedgerAppSupport(
-  memoHash: ledgerSupportsMemoHash(appVersion),
-  nu7Branch: ledgerSupportsNu7Branch(appVersion),
-);
-
-const kLedgerLegacyOrchardRecoveryErrorCode =
-    'ledger_legacy_orchard_recovery_unsupported';
-const kLedgerLegacyOrchardRecoveryUnavailableMessage =
-    'This Ledger Zcash app cannot move recovered Orchard funds into Ironwood. '
-    'Update the Ledger Zcash app when a compatible version is available.';
+LedgerAppSupport ledgerAppSupport(String? appVersion) {
+  final fromNu7App = ledgerSupportsNu7Branch(appVersion);
+  return LedgerAppSupport(
+    memoHash: ledgerSupportsMemoHash(appVersion),
+    nu7Branch: fromNu7App,
+    orchardToIronwood: fromNu7App,
+  );
+}
 
 /// A Ledger account can recover legacy Orchard funds when the same seed was
 /// previously used through another wallet or Ledger Zcash app build.
@@ -93,13 +91,8 @@ const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
 bool isLedgerMemoHashUnsupported(Object error) =>
     error.toString().contains(ledgerMemoHashUnsupportedError);
 
-bool isLedgerNu7AppUpdateRequired(Object error) =>
-    error.toString().contains(ledgerNu7AppUpdateRequiredError);
-
-bool isLedgerLegacyOrchardRecoveryUnsupported(Object error) => error
-    .toString()
-    .toLowerCase()
-    .contains(kLedgerLegacyOrchardRecoveryErrorCode);
+bool isLedgerAppUpdateRequired(Object error) =>
+    error.toString().contains(ledgerAppUpdateRequiredError);
 
 enum LedgerBluetoothCapability { supported, unsupported, unknown }
 

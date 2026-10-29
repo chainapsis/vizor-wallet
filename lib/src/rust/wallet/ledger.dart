@@ -16,10 +16,18 @@ class LedgerAppSupport {
   /// The NU7 consensus branch (3.10.0).
   final bool nu7Branch;
 
-  const LedgerAppSupport({required this.memoHash, required this.nu7Branch});
+  /// An Orchard spend paying into Ironwood (3.10.0).
+  final bool orchardToIronwood;
+
+  const LedgerAppSupport({
+    required this.memoHash,
+    required this.nu7Branch,
+    required this.orchardToIronwood,
+  });
 
   @override
-  int get hashCode => memoHash.hashCode ^ nu7Branch.hashCode;
+  int get hashCode =>
+      memoHash.hashCode ^ nu7Branch.hashCode ^ orchardToIronwood.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -27,5 +35,6 @@ class LedgerAppSupport {
       other is LedgerAppSupport &&
           runtimeType == other.runtimeType &&
           memoHash == other.memoHash &&
-          nu7Branch == other.nu7Branch;
+          nu7Branch == other.nu7Branch &&
+          orchardToIronwood == other.orchardToIronwood;
 }

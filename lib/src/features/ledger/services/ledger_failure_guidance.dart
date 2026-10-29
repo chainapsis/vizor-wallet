@@ -57,8 +57,8 @@ LedgerFailureGuidance? ledgerFailureGuidance(
   if (isLedgerMemoHashUnsupported(error)) {
     return const LedgerFailureGuidance(ledgerMemoHashUnsupportedError);
   }
-  if (isLedgerNu7AppUpdateRequired(error)) {
-    return const LedgerFailureGuidance(ledgerNu7AppUpdateRequiredError);
+  if (isLedgerAppUpdateRequired(error)) {
+    return const LedgerFailureGuidance(ledgerAppUpdateRequiredError);
   }
   if (error.toString().contains(ledgerAppChangedError)) {
     return const LedgerFailureGuidance(ledgerAppChangedError);

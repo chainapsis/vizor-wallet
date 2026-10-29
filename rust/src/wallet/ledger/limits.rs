@@ -7,7 +7,7 @@
 //!
 //! Source: LedgerHQ/app-zcash 3.10.0, `2db9d5a900f27074ba19b90a7217dcc4318a5f24`,
 //! `src/consts.rs` and `src/parser/pczt.rs`. A version bump is not evidence
-//! that these limits or the Orchard-to-Ironwood restriction have changed.
+//! that these limits have changed.
 
 pub(crate) const MAX_TRANSPARENT_INPUTS: usize = 32;
 pub(crate) const MAX_TRANSPARENT_OUTPUTS: usize = 10;

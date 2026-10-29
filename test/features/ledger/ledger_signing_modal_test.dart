@@ -249,7 +249,7 @@ void main() {
           requestFailure: LedgerRequestFailure.appUpdateRequired,
           title: 'Ledger signing failed',
           statusLabel: 'Action needed',
-          message: ledgerNu7AppUpdateRequiredError,
+          message: ledgerAppUpdateRequiredError,
           showDeviceAppPrompt: false,
           actionLabel: 'Try again',
         ),
@@ -258,7 +258,7 @@ void main() {
 
     expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
     expect(find.text('Ledger signing failed'), findsNothing);
-    expect(find.text(ledgerNu7AppUpdateRequiredError), findsOneWidget);
+    expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
   });
 
   testWidgets('explains automatic reconnect while opening Zcash', (

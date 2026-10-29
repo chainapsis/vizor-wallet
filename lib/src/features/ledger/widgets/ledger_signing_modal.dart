@@ -68,12 +68,13 @@ const ledgerMemoHashUpdateFailure = LedgerSigningFailurePresentation(
   actionLabel: 'Try again',
 );
 
-/// An NU7 transaction was refused because the app predates
-/// [kLedgerNu7AppVersion]; retrying after an update reads the new version.
-const ledgerNu7AppUpdateFailure = LedgerSigningFailurePresentation(
+/// An NU7 or Orchard-to-Ironwood transaction was refused because the app
+/// predates [kLedgerNu7AppVersion]; retrying after an update reads the new
+/// version.
+const ledgerAppUpdateFailure = LedgerSigningFailurePresentation(
   title: kLedgerAppUpdateRequiredTitle,
   statusLabel: 'Action needed',
-  message: ledgerNu7AppUpdateRequiredError,
+  message: ledgerAppUpdateRequiredError,
   showDeviceAppPrompt: false,
   actionLabel: 'Try again',
 );

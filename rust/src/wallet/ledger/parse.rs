@@ -607,9 +607,10 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
 pub(super) const LEDGER_MEMO_HASH_UNSUPPORTED: &str =
     "Update the Ledger Zcash app to sign non-English memos";
 
-/// Apps before 3.10.0 reject the NU7 branch. Keep this identical to
-/// `ledgerNu7AppUpdateRequiredError` in `lib/src/features/ledger/ledger_capability.dart`.
-pub(super) const LEDGER_NU7_APP_UPDATE_REQUIRED: &str =
+/// Apps before 3.10.0 reject the NU7 branch and an Orchard spend into Ironwood.
+/// Keep this identical to `ledgerAppUpdateRequiredError` in
+/// `lib/src/features/ledger/ledger_capability.dart`.
+pub(super) const LEDGER_APP_UPDATE_REQUIRED: &str =
     "Update your Ledger and its Zcash app to 3.10.0 or newer in Ledger Wallet.";
 
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
