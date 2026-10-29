@@ -109,10 +109,13 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 ### Desktop voting through final tally
 
 Run `scripts/e2e/ledger-speculos-docker.sh voting-tally` with Docker and the
-regtest voting prerequisites available. This lane builds the pinned app with
-`--features testnet` and changes its install paths to `44'/1'` and `32'/1'` in a
-disposable checkout. `VIZOR_LEDGER_SPECULOS_TESTNET_ELF` can reuse that build;
-the mainnet `VIZOR_LEDGER_SPECULOS_ELF` is not used by this lane.
+regtest voting prerequisites available. This lane builds Zcash 3.9.4
+(`1a0f6495458ecb77abf97c8cff25b0a1a344daaa`) with `--features testnet` and
+changes its install paths to `44'/1'` and `32'/1'` in a disposable checkout.
+3.10.0 replaces that feature with a `variant_testnet` build named "Zcash Test",
+which Vizor does not open; voting needs only NU6.3.
+`VIZOR_LEDGER_SPECULOS_TESTNET_ELF` can reuse that build; the mainnet
+`VIZOR_LEDGER_SPECULOS_ELF` is not used by this lane.
 
 The distributed Zcash app uses coin type 133. Its source has a testnet feature
 for coin type 1, but the install paths do not change automatically. Vizor's
