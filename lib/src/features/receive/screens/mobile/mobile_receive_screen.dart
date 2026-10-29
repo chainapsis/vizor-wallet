@@ -154,43 +154,16 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   void _selectType(ReceiveAddressType type) {
     if (_selectedType == type) return;
     setState(() => _selectedType = type);
-    if (!_pageController.hasClients) return;
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _pageController.jumpToPage(type.index);
-    } else {
+    if (_pageController.hasClients) {
       unawaited(
         _pageController.animateToPage(
           type.index,
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeInOutCubic,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
         ),
       );
     }
   }
-
-  double get _page {
-    final attached = _pageController.hasClients;
-    return attached && _pageController.position.haveDimensions
-        ? _pageController.page!
-        : _selectedType.index.toDouble();
-  }
-
-  // The chip follows the pager, so a swipe moves both together.
-  Widget _buildTabs({required double width}) => AnimatedBuilder(
-    animation: _pageController,
-    builder: (context, _) => ReceiveTabs(
-      width: width,
-      height: _MobileReceiveMetrics.tabsHeight,
-      iconSize: _MobileReceiveMetrics.tabsIconSize,
-      iconGap: AppSpacing.xs,
-      labelStyle: AppTypography.labelLarge,
-      labelFontWeight: FontWeight.w500,
-      alwaysDarkSelected: true,
-      selectedType: _selectedType,
-      position: _page,
-      onChanged: _selectType,
-    ),
-  );
 
   void _handlePageChanged(int page) {
     final type = ReceiveAddressType.values[page];
@@ -292,7 +265,17 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                   children: [
                     const SizedBox(height: _MobileReceiveMetrics.topGap),
                     Center(
-                      child: _buildTabs(width: _MobileReceiveMetrics.tabsWidth),
+                      child: ReceiveTabs(
+                        width: _MobileReceiveMetrics.tabsWidth,
+                        height: _MobileReceiveMetrics.tabsHeight,
+                        iconSize: _MobileReceiveMetrics.tabsIconSize,
+                        iconGap: AppSpacing.xs,
+                        labelStyle: AppTypography.labelLarge,
+                        labelFontWeight: FontWeight.w500,
+                        alwaysDarkSelected: true,
+                        selectedType: _selectedType,
+                        onChanged: _selectType,
+                      ),
                     ),
                     const SizedBox(height: _MobileReceiveMetrics.tabsToQrGap),
                     Center(
@@ -317,53 +300,37 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                         width: _MobileReceiveMetrics.buttonStackWidth,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            AppButton(
-                              key: const ValueKey('mobile_receive_copy'),
-                              expand: true,
-                              constrainContent: true,
-                              height: _MobileReceiveMetrics.buttonHeight,
-                              variant: _isShielded
-                                  ? AppButtonVariant.primary
-                                  : AppButtonVariant.secondary,
-                              onPressed: _selectedAddress.isEmpty
-                                  ? null
-                                  : () => unawaited(_copyAddress()),
-                              leading: const AppIcon(
-                                AppIcons.copy,
-                                size: _MobileReceiveMetrics.buttonIconSize,
-                              ),
-                              child: Text('Copy $poolLabel address'),
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
                             Row(
                               children: [
                                 Expanded(
                                   child: AppButton(
-                                    key: const ValueKey(
-                                      'mobile_receive_request',
-                                    ),
+                                    key: const ValueKey('mobile_receive_copy'),
                                     expand: true,
                                     constrainContent: true,
                                     height: _MobileReceiveMetrics.buttonHeight,
-                                    variant: AppButtonVariant.secondary,
+                                    variant: _isShielded
+                                        ? AppButtonVariant.primary
+                                        : AppButtonVariant.secondary,
                                     onPressed: _selectedAddress.isEmpty
                                         ? null
-                                        : _openRequest,
+                                        : () => unawaited(_copyAddress()),
                                     leading: const AppIcon(
-                                      AppIcons.request,
+                                      AppIcons.copy,
                                       size:
                                           _MobileReceiveMetrics.buttonIconSize,
                                     ),
                                     child: Text(
-                                      'Request $kZcashDefaultCurrencyTicker',
+                                      'Copy $poolLabel address',
+                                      style: AppTypography.labelMedium.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.xs),
                                 // Sharing is familiar as an icon; the request
-                                // beside it keeps a visible label.
+                                // gets its own visible label on the row below.
                                 SizedBox(
                                   width: _MobileReceiveMetrics.buttonHeight,
                                   height: _MobileReceiveMetrics.buttonHeight,
@@ -393,6 +360,13 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                 ),
                               ],
                             ),
+                            const SizedBox(height: AppSpacing.s),
+                            _RequestTextButton(
+                              key: const ValueKey('mobile_receive_request'),
+                              label: 'Request $kZcashDefaultCurrencyTicker',
+                              enabled: _selectedAddress.isNotEmpty,
+                              onTap: _openRequest,
+                            ),
                           ],
                         ),
                       ),
@@ -407,42 +381,23 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     );
   }
 
-  /// Outside a split pane the pager spans the content width and leaves its
-  /// cards unclipped, so they slide apart with a gap and leave at the screen
-  /// edge. A split pane has no such edge, so its column clips and fades them.
-  Widget _buildQrPager({
-    required bool scanOptimizedQr,
-    bool contained = false,
-  }) => SizedBox(
+  Widget _buildQrPager({required bool scanOptimizedQr}) => SizedBox(
     key: _qrPagerKey,
-    width: contained ? _MobileReceiveMetrics.qrWrapWidth : double.infinity,
+    width: _MobileReceiveMetrics.qrWrapWidth,
     height: _MobileReceiveMetrics.qrCodeHeight,
     child: PageView(
       key: const ValueKey('mobile_receive_qr_pager'),
       controller: _pageController,
-      // Builds the other pool's code ahead so a switch never waits on it.
-      allowImplicitScrolling: true,
-      clipBehavior: contained ? Clip.hardEdge : Clip.none,
       onPageChanged: _handlePageChanged,
       children: [
         for (final type in ReceiveAddressType.values)
-          AnimatedBuilder(
-            animation: _pageController,
-            builder: (context, child) {
-              if (!contained) return child!;
-              final distance = (_page - type.index).abs().clamp(0.0, 1.0);
-              return Opacity(opacity: 1 - distance, child: child);
-            },
-            child: Center(
-              child: _ReceiveQrPage(
-                key: ValueKey('mobile_receive_qr_${type.name}'),
-                type: type,
-                address: _addressFor(type),
-                renewing: _renewing,
-                scanOptimizedQr: scanOptimizedQr,
-                onRenew: () => unawaited(_renewShieldedAddress()),
-              ),
-            ),
+          _ReceiveQrPage(
+            key: ValueKey('mobile_receive_qr_${type.name}'),
+            type: type,
+            address: _addressFor(type),
+            renewing: _renewing,
+            scanOptimizedQr: scanOptimizedQr,
+            onRenew: () => unawaited(_renewShieldedAddress()),
           ),
       ],
     ),
@@ -468,10 +423,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                 (constraints.maxWidth - _MobileReceiveMetrics.qrWrapWidth) / 2,
               ),
             );
-            final qr = _buildQrPager(
-              scanOptimizedQr: scanOptimizedQr,
-              contained: split,
-            );
+            final qr = _buildQrPager(scanOptimizedQr: scanOptimizedQr);
             final details = Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -505,11 +457,19 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     onBack: () => context.pop(),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  _buildTabs(
+                  ReceiveTabs(
                     width: math.min(
                       _MobileReceiveMetrics.tabsWidth,
                       constraints.maxWidth - horizontalPadding * 2,
                     ),
+                    height: _MobileReceiveMetrics.tabsHeight,
+                    iconSize: _MobileReceiveMetrics.tabsIconSize,
+                    iconGap: AppSpacing.xs,
+                    labelStyle: AppTypography.labelLarge,
+                    labelFontWeight: FontWeight.w500,
+                    alwaysDarkSelected: true,
+                    selectedType: _selectedType,
+                    onChanged: _selectType,
                   ),
                   const SizedBox(height: AppSpacing.md),
                   if (split)
@@ -545,6 +505,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   Widget _buildWideActions() {
     final poolLabel = _isShielded ? 'shielded' : 'transparent';
     final enabled = _selectedAddress.isNotEmpty;
+    final labelStyle = AppTypography.labelMedium.copyWith(
+      fontWeight: FontWeight.w500,
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -567,6 +530,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
             'Copy address',
             semanticsLabel: 'Copy $poolLabel address',
             textAlign: TextAlign.center,
+            style: labelStyle,
           ),
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -586,6 +550,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
             'Share address',
             semanticsLabel: 'Share $poolLabel address',
             textAlign: TextAlign.center,
+            style: labelStyle,
           ),
         ),
         const SizedBox(height: AppSpacing.s),
@@ -597,13 +562,10 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
           height: _MobileReceiveMetrics.buttonHeight,
           variant: AppButtonVariant.ghost,
           onPressed: enabled ? _openRequest : null,
-          leading: const AppIcon(
-            AppIcons.request,
-            size: _MobileReceiveMetrics.buttonIconSize,
-          ),
           child: Text(
             'Request $kZcashDefaultCurrencyTicker',
             textAlign: TextAlign.center,
+            style: labelStyle,
           ),
         ),
       ],
@@ -755,6 +717,54 @@ class _ReceiveAddressSummary extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RequestTextButton extends StatelessWidget {
+  const _RequestTextButton({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = enabled ? colors.text.accent : colors.text.disabled;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? onTap : null,
+        child: SizedBox(
+          width: _MobileReceiveMetrics.buttonStackWidth,
+          height: _MobileReceiveMetrics.buttonHeight,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

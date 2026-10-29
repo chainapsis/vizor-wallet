@@ -165,12 +165,6 @@ void main() {
               findsOneWidget,
             );
             expect(tester.takeException(), isNull);
-            // A split pane clips its sliding cards; other layouts let them
-            // leave at the screen edge.
-            expect(
-              tester.widget<PageView>(find.byType(PageView)).clipBehavior,
-              entry.value.split ? Clip.hardEdge : Clip.none,
-            );
             final surface = tester.widget<ReceiveQrSurface>(
               find.byType(ReceiveQrSurface),
             );
@@ -247,37 +241,6 @@ void main() {
       );
     },
   );
-
-  testWidgets('a split pane fades the outgoing code as it slides', (
-    tester,
-  ) async {
-    await _view(tester, const Size(951, 669));
-    await tester.pumpWidget(_app(native: _duoNative));
-    await _settle(tester);
-
-    await tester.tap(find.text('Transparent'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 210));
-
-    double opacity(String pool) => tester
-        .widget<Opacity>(
-          find
-              .ancestor(
-                of: find.byKey(
-                  ValueKey('mobile_receive_qr_$pool'),
-                  skipOffstage: false,
-                ),
-                matching: find.byType(Opacity, skipOffstage: false),
-              )
-              .first,
-        )
-        .opacity;
-    expect(opacity('shielded'), inExclusiveRange(0, 1));
-    expect(opacity('transparent'), inExclusiveRange(0, 1));
-
-    await _settle(tester);
-    expect(opacity('transparent'), 1);
-  });
 
   testWidgets('narrow wide copy and request work after scrolling', (
     tester,
