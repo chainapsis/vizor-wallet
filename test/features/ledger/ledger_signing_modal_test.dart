@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_modal_content.dart';
@@ -235,6 +236,29 @@ void main() {
     expect(find.text(ledgerMemoHashUnsupportedError), findsOneWidget);
     await tester.tap(find.text('Try again'));
     expect(retryCount, 1);
+  });
+
+  testWidgets('names a required app update the same way in every flow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        phase: LedgerSigningModalPhase.failed,
+        // Shielding and other overlays keep their own generic title.
+        failure: const LedgerSigningFailurePresentation(
+          requestFailure: LedgerRequestFailure.appUpdateRequired,
+          title: 'Ledger signing failed',
+          statusLabel: 'Action needed',
+          message: ledgerNu7AppUpdateRequiredError,
+          showDeviceAppPrompt: false,
+          actionLabel: 'Try again',
+        ),
+      ),
+    );
+
+    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text('Ledger signing failed'), findsNothing);
+    expect(find.text(ledgerNu7AppUpdateRequiredError), findsOneWidget);
   });
 
   testWidgets('explains automatic reconnect while opening Zcash', (

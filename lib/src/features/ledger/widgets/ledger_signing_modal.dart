@@ -55,11 +55,13 @@ class LedgerSigningFailurePresentation {
   final LedgerRequestFailure? requestFailure;
 }
 
+const kLedgerAppUpdateRequiredTitle = 'Ledger app update required';
+
 /// A memo the connected app would show as a hash was refused because the app
 /// predates [kLedgerMemoHashAppVersion]. Retrying after an update reads the new
 /// version, so the action stays a retry.
 const ledgerMemoHashUpdateFailure = LedgerSigningFailurePresentation(
-  title: 'Ledger app update required',
+  title: kLedgerAppUpdateRequiredTitle,
   statusLabel: 'Action needed',
   message: ledgerMemoHashUnsupportedError,
   showDeviceAppPrompt: false,
@@ -69,7 +71,7 @@ const ledgerMemoHashUpdateFailure = LedgerSigningFailurePresentation(
 /// An NU7 transaction was refused because the app predates
 /// [kLedgerNu7AppVersion]; retrying after an update reads the new version.
 const ledgerNu7AppUpdateFailure = LedgerSigningFailurePresentation(
-  title: 'Ledger app update required',
+  title: kLedgerAppUpdateRequiredTitle,
   statusLabel: 'Action needed',
   message: ledgerNu7AppUpdateRequiredError,
   showDeviceAppPrompt: false,
@@ -178,7 +180,7 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.broadcasting => LedgerSigningStage.finishing,
       LedgerSigningModalPhase.failed => LedgerSigningStage.preparing,
     };
-    var title = failed ? failure!.title : stage.title;
+    var title = failed ? _failureTitle(failure!) : stage.title;
     var message = failed
         ? failure!.message
         : stage.messageForDevice(
@@ -294,3 +296,9 @@ class LedgerSigningModal extends ConsumerWidget {
     return null;
   }
 }
+
+// Every flow names a required app update the same way.
+String _failureTitle(LedgerSigningFailurePresentation failure) =>
+    failure.requestFailure == LedgerRequestFailure.appUpdateRequired
+    ? kLedgerAppUpdateRequiredTitle
+    : failure.title;
