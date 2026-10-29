@@ -768,6 +768,16 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
   final signedBytes = await signed;
   expect(signedBytes, isNotEmpty);
   expect(signedBytes, isNot(equals(unsigned)));
+
+  // Immediate migration signs the same crossing with the compact signer.
+  final compactApproval = approveNextSpeculosReview(fixture.signingApiUrl);
+  final compact = container.read(ledgerActionPcztSignerProvider)(
+    fixture.accountUuid,
+    unsigned,
+  );
+  await _chooseUsbForHeadlessSigning(container);
+  expect(await compactApproval, isTrue);
+  expect((await compact).map((signature) => signature.pool).toSet(), {0});
 }
 
 Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
