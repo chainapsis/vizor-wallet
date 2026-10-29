@@ -1187,9 +1187,9 @@ async fn discover_software_account_at_index(
 }
 
 /// Birthday stored for a restored account. On mainnet it is rounded down to
-/// just past a 10,000-block grid point (see
-/// [`crate::wallet::tree_states::restore_birthday`]), so lightwalletd learns
-/// only the bucket and never the exact requested height.
+/// just past a grid point, every 10,000 blocks before NU7 and 30,000 from it
+/// (see [`crate::wallet::tree_states::restore_birthday`]), so lightwalletd
+/// learns only the bucket and never the exact requested height.
 fn restored_birthday(network: WalletNetwork, birthday_height: Option<u64>) -> Option<u64> {
     birthday_height.map(|height| crate::wallet::tree_states::restore_birthday(network, height))
 }
