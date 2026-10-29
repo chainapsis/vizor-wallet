@@ -19,9 +19,10 @@ const kPaymentLinkFreshCardGraceBlocks = 6;
 const kPaymentLinkReceiptConfirmationTarget = 1;
 const kPaymentLinkClaimRecoveryConfirmationTarget = 6;
 
-/// The ZIP-317 fee for the payment link's expected one-input, one-output
-/// shielded claim transaction.
+/// Legacy reserve for persisted cards and preview-only callers. New funding
+/// passes the minimum fee from Rust's target-height policy explicitly.
 const kPaymentLinkClaimFeeReserveZatoshi = 10000;
+const kPaymentLinkNu7ClaimFeeReserveZatoshi = 2000;
 
 @visibleForTesting
 Future<T> runPaymentLinkFundingSubmission<T>(
@@ -44,7 +45,10 @@ Future<T> runPaymentLinkFundingSubmission<T>(
   }
 }
 
-BigInt paymentLinkFundingAmountZatoshi(BigInt recipientAmountZatoshi) {
+BigInt paymentLinkFundingAmountZatoshi(
+  BigInt recipientAmountZatoshi, {
+  BigInt? claimFeeReserveZatoshi,
+}) {
   if (recipientAmountZatoshi <= BigInt.zero) {
     throw ArgumentError.value(
       recipientAmountZatoshi,
@@ -53,7 +57,8 @@ BigInt paymentLinkFundingAmountZatoshi(BigInt recipientAmountZatoshi) {
     );
   }
   return recipientAmountZatoshi +
-      BigInt.from(kPaymentLinkClaimFeeReserveZatoshi);
+      (claimFeeReserveZatoshi ??
+          BigInt.from(kPaymentLinkClaimFeeReserveZatoshi));
 }
 
 @visibleForTesting
@@ -87,7 +92,11 @@ int paymentLinkFundingConfirmationCountForClaim({
   for (final transaction in transactions) {
     if (transaction.expiredUnmined ||
         transaction.txKind != 'received' ||
-        BigInt.from(transaction.accountBalanceDelta) != expectedFunding) {
+        ![
+          expectedFunding,
+          recipientAmountZatoshi +
+              BigInt.from(kPaymentLinkNu7ClaimFeeReserveZatoshi),
+        ].contains(BigInt.from(transaction.accountBalanceDelta))) {
       continue;
     }
     confirmationCount = max(
@@ -132,7 +141,11 @@ DateTime? paymentLinkFundingCreatedAt({
   for (final transaction in transactions) {
     if (transaction.expiredUnmined ||
         transaction.txKind != 'received' ||
-        BigInt.from(transaction.accountBalanceDelta) != expectedFunding ||
+        ![
+          expectedFunding,
+          recipientAmountZatoshi +
+              BigInt.from(kPaymentLinkNu7ClaimFeeReserveZatoshi),
+        ].contains(BigInt.from(transaction.accountBalanceDelta)) ||
         transaction.blockTime <= BigInt.zero) {
       continue;
     }
@@ -158,10 +171,11 @@ bool paymentLinkShouldWaitForFunding({
   if (fundingConfirmationCount >= kPaymentLinkClaimConfirmationTarget) {
     return false;
   }
-  final expectedFunding = paymentLinkFundingAmountZatoshi(
-    recipientAmountZatoshi,
-  );
-  if (totalZatoshi >= expectedFunding) return true;
+  if (totalZatoshi >=
+      recipientAmountZatoshi +
+          BigInt.from(kPaymentLinkNu7ClaimFeeReserveZatoshi)) {
+    return true;
+  }
   return currentTipHeight - birthdayHeight < kPaymentLinkFreshCardGraceBlocks;
 }
 

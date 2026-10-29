@@ -97,6 +97,7 @@ tendermint-light-client-verifier = "0.40.4"
 [dependencies.zcash_primitives]
 package = "zakura-primitives"
 version = "=4.0.0"
+features = ["non-standard-fees"]
 
 [dependencies.zcash_address]
 package = "zakura-address"

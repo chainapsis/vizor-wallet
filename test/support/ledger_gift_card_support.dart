@@ -123,6 +123,7 @@ class LedgerGiftHardware implements PaymentLinkHardwareSigningService {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     await store.saveDraft(
       link: ledgerGiftLink,

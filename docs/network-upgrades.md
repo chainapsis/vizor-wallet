@@ -6,6 +6,29 @@ block the network rejects it. Vizor's rules for the blocks around an upgrade
 follow from that, and they apply to any upgrade Common schedules. NU7 also
 changes the block spacing, which only NU7 code handles.
 
+## Fee policy
+
+New transactions use 5,000 zatoshis per logical action before NU7 and 1,000
+from NU7 at their target height (mainnet 3,543,405; testnet 4,465,026).
+The two-action minimum is 10,000 / 2,000 zatoshis. A tip at activation minus
+one already targets the activation block. There is no separate switch at
+3,590,000. Networks without scheduled NU7 keep the legacy fee.
+
+The fee rule snapshots its marginal fee when the proposal is created, so input
+selection, change and building use the same rate. Signed transactions keep their
+fee; the upgrade's existing branch/expiry checks still apply. Migration estimates
+use the same target-height policy. Gift Card quotes snapshot their claim reserve,
+persist it with the draft and compare the reviewed quote before signing. Recovery
+uses the stored reserve; external cards recognize both legacy and NU7 funding.
+Fee changes received during card funding/signing are deferred until an idle,
+unsubmitted flow can requote; accepted funding keeps its original save/recovery
+path. A direct quote-mismatch error also forces a fresh quote.
+
+Persisted, still-valid three-action migration signatures at the prior 15,000
+zatoshi fee remain supported after NU7; new parts use 3,000. When expiry recovery
+requires a new signature with a different fee/value, the run requests a freshly
+approved schedule. Mining and accepted-but-not-stored checks still run first.
+
 ## Where the rules live
 
 `rust/src/wallet/network_upgrade.rs` holds the rules that do not read the
