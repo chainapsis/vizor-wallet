@@ -4,11 +4,21 @@ import UIKit
 /// A UIKit control above the system keyboard; Flutter owns editable-field focus.
 final class KeyboardToolbarHandler {
   private let channel: FlutterMethodChannel
+  private let notificationCenter: NotificationCenter
+  private let hostViewProvider: () -> UIView?
   private weak var host: UIView?
   private var button: UIButton?
   private var observers: [NSObjectProtocol] = []
+  private var requestedVisible = false
+  private var requestedDark = false
 
-  init(messenger: FlutterBinaryMessenger) {
+  init(
+    messenger: FlutterBinaryMessenger,
+    notificationCenter: NotificationCenter = .default,
+    hostViewProvider: (() -> UIView?)? = nil
+  ) {
+    self.notificationCenter = notificationCenter
+    self.hostViewProvider = hostViewProvider ?? Self.foregroundHostView
     channel = FlutterMethodChannel(
       name: "com.zcash.wallet/keyboard_toolbar", binaryMessenger: messenger
     )
@@ -27,30 +37,38 @@ final class KeyboardToolbarHandler {
     }
     for name in [UIResponder.keyboardWillHideNotification,
                  UIApplication.willResignActiveNotification] {
-      observers.append(NotificationCenter.default.addObserver(
+      observers.append(notificationCenter.addObserver(
         forName: name, object: nil, queue: .main
       ) { [weak self] _ in
         self?.button?.isHidden = true
       })
     }
+    observers.append(notificationCenter.addObserver(
+      forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      // Keyboard replacement can hide the control while Flutter's insets and
+      // cached visibility stay unchanged. Restore its last requested state.
+      self?.applyRequestedState()
+    })
   }
 
   deinit {
-    observers.forEach(NotificationCenter.default.removeObserver)
+    observers.forEach(notificationCenter.removeObserver)
     button?.removeFromSuperview()
   }
 
   private func update(visible: Bool, dark: Bool) {
-    guard visible else {
+    requestedVisible = visible
+    requestedDark = dark
+    applyRequestedState()
+  }
+
+  private func applyRequestedState() {
+    guard requestedVisible else {
       button?.isHidden = true
       return
     }
-    guard let window = UIApplication.shared.connectedScenes
-      .compactMap({ $0 as? UIWindowScene })
-      .filter({ $0.activationState == .foregroundActive })
-      .flatMap({ $0.windows }).first(where: { $0.isKeyWindow }),
-      let view = window.rootViewController?.view
-    else { return }
+    guard let view = hostViewProvider() else { return }
 
     if host !== view {
       button?.removeFromSuperview()
@@ -85,14 +103,23 @@ final class KeyboardToolbarHandler {
       host = view
       button = control
     }
-    button?.overrideUserInterfaceStyle = dark ? .dark : .light
+    button?.overrideUserInterfaceStyle = requestedDark ? .dark : .light
     button?.isHidden = false
     if let button { view.bringSubviewToFront(button) }
   }
 
   @objc private func dismissKeyboard() {
+    requestedVisible = false
     button?.isHidden = true
     host?.endEditing(true)
     channel.invokeMethod("dismiss", arguments: nil)
+  }
+
+  private static func foregroundHostView() -> UIView? {
+    UIApplication.shared.connectedScenes
+      .compactMap({ $0 as? UIWindowScene })
+      .filter({ $0.activationState == .foregroundActive })
+      .flatMap({ $0.windows }).first(where: { $0.isKeyWindow })?
+      .rootViewController?.view
   }
 }
