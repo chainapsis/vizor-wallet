@@ -209,6 +209,9 @@ class _LedgerImmediateMigrationSigningOverlayState
         children: [
           AppPaneModalOverlay(
             key: const ValueKey('ledger_immediate_migration_signing_overlay'),
+            // The modal replaces the review inside the migration card, so a
+            // scrim would only dim an empty card.
+            scrimColor: const Color(0x00000000),
             onDismiss: _canLeave ? () => unawaited(_cancel()) : () {},
             child: modal,
           ),
