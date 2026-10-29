@@ -51,6 +51,13 @@ device's latest firmware. It refuses an Orchard spend into Ironwood the same
 way: 3.9.4 rejects one at the Ironwood bundle, on NU6.3 as well, and 3.10.0
 signs it.
 
+Ledger accounts can therefore move Orchard funds with the Immediate migration,
+signed through the compact signer; an older app gets the same update copy.
+Private migration stays unavailable for Ledger: it signs in batches across
+several waves, which only Keystone supports. Immediate spends every Orchard
+note in one transaction, so more than 32 notes exceed the Orchard action limit
+and are refused as too large; the planner does not split them yet.
+
 3.10.0 also refuses some shapes that 3.9.4 accepted: a signing path that does
 not have the shape of its key, more than six retained shielded outputs
 (change included), and a transparent change output beside a shielded one.

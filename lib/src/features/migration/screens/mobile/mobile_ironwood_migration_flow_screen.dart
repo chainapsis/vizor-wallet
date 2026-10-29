@@ -34,7 +34,6 @@ import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../models/ironwood_migration_presentation.dart';
 import '../../models/ironwood_migration_upgrade_stop.dart';
-import '../../../ledger/ledger_capability.dart';
 import '../../models/mobile_ironwood_migration_attention_state.dart';
 import '../../models/mobile_ironwood_migration_status_entry.dart';
 import '../../providers/ironwood_migration_announcement_provider.dart';

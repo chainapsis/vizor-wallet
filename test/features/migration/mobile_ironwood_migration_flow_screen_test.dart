@@ -40,8 +40,10 @@ import 'package:zcash_wallet/src/features/migration/widgets/mobile/mobile_ironwo
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -1294,12 +1296,12 @@ IronwoodMigrationService _migrationService({
   );
 }
 
-// Preserved with the quarantined signer so a future capability enablement can
-// restore the end-to-end widget test without rebuilding its Ledger fixture.
-// ignore: unused_element
 LedgerImmediateMigrationService _ledgerImmediateMigrationService({
   required Future<List<LedgerVotingSignature>> signature,
+  Object? firstSigningError,
+  List<String>? discardedRequests,
 }) {
+  var signings = 0;
   return LedgerImmediateMigrationService(
     prepare: ({required accountUuid, required approvedPlan}) async {
       return rust_sync.KeystoneMigrationSigningRequest(
@@ -1314,7 +1316,10 @@ LedgerImmediateMigrationService _ledgerImmediateMigrationService({
         signingBatchLimit: 1,
       );
     },
-    signPczt: (_, _) => signature,
+    signPczt: (_, _) async {
+      if (signings++ == 0 && firstSigningError != null) throw firstSigningError;
+      return signature;
+    },
     loadProofStatus: ({required requestId}) async {
       return const rust_sync.KeystoneMigrationProofStatus(
         readyCount: 1,
@@ -1329,11 +1334,12 @@ LedgerImmediateMigrationService _ledgerImmediateMigrationService({
           required requestId,
           required signedMessages,
         }) async => _migrationResult(),
-    discard: ({required accountUuid, required requestId}) async {},
+    discard: ({required accountUuid, required requestId}) async {
+      discardedRequests?.add(requestId);
+    },
   );
 }
 
-// ignore: unused_element
 const _ledgerMigrationSignature = <int>[
   1,
   1,
@@ -8999,22 +9005,102 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
-  testWidgets('Ledger cannot enter the mobile migration flow', (tester) async {
+  testWidgets('Ledger Immediate migration asks an older app for an update', (
+    tester,
+  ) async {
+    final discarded = <String>[];
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/options',
         hardware: true,
         hardwareSignerKind: HardwareSignerKind.ledger,
         migrationService: _migrationService(),
+        extraOverrides: [
+          ledgerImmediateMigrationServiceProvider.overrideWithValue(
+            _ledgerImmediateMigrationService(
+              signature: Future.value(const [
+                LedgerVotingSignature(
+                  pool: 0,
+                  actionIndex: 0,
+                  signature: _ledgerMigrationSignature,
+                ),
+              ]),
+              firstSigningError: StateError(ledgerAppUpdateRequiredError),
+              discardedRequests: discarded,
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_broadcast_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(kLedgerAppUpdateRequiredTitle), findsOneWidget);
+    expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
+    expect(discarded, ['ledger-immediate-request']);
+
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text('Migration submitted'), findsOneWidget);
+  });
+
+  testWidgets('Ledger disables Private and completes Immediate migration', (
+    tester,
+  ) async {
+    final signature = Completer<List<LedgerVotingSignature>>();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        hardware: true,
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        migrationService: _migrationService(),
+        extraOverrides: [
+          ledgerImmediateMigrationServiceProvider.overrideWithValue(
+            _ledgerImmediateMigrationService(signature: signature.future),
+          ),
+        ],
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('home route'), findsOneWidget);
+    expect(find.text('Not available for Ledger accounts.'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Back'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Private migration is not available for Ledger accounts.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_broadcast_button')),
+    );
+    await tester.pump();
     expect(
       find.byKey(const ValueKey('mobile_ledger_immediate_migration_signing')),
-      findsNothing,
+      findsOneWidget,
     );
+    signature.complete(const [
+      LedgerVotingSignature(
+        pool: 0,
+        actionIndex: 0,
+        signature: _ledgerMigrationSignature,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.text('Migration submitted'), findsOneWidget);
   });
 
   testWidgets('immediate migration keeps the broadcast result message', (
