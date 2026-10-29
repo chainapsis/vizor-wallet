@@ -227,6 +227,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   bool _messageEditorRevealed = false;
   @override
   bool _operationInProgress = false;
+  bool _feeQuoteRefreshPending = false;
+  bool _feeQuoteRefreshScheduled = false;
   final Set<String> _copyingLinkAddresses = {};
   final Set<String> _savingQrAddresses = {};
   final Set<String> _sharingQrAddresses = {};
@@ -1266,14 +1268,31 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     WalletFeePolicyEpoch next,
   ) {
     if (previous == null || previous == next) return;
+    if (_page != PaymentLinksLocalPage.amount &&
+        _page != PaymentLinksLocalPage.message &&
+        _page != PaymentLinksLocalPage.review &&
+        _page != PaymentLinksLocalPage.bulk) {
+      return;
+    }
+    _feeQuoteRefreshPending = true;
+    _schedulePendingFeeQuoteRefresh();
+  }
+
+  /// Coalesce policy changes while funding or signing. Completion/cancellation
+  /// drains this once; it never starts another funding operation.
+  void _schedulePendingFeeQuoteRefresh() {
+    if (!_feeQuoteRefreshPending || _feeQuoteRefreshScheduled) return;
+    _feeQuoteRefreshScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _feeQuoteRefreshScheduled = false;
       if (!mounted ||
-          ref.read(walletFeePolicyEpochProvider) != next ||
+          !_feeQuoteRefreshPending ||
           _operationInProgress ||
           _hardwareFundingRequest != null ||
           _pendingFundingMetadata != null) {
         return;
       }
+      _feeQuoteRefreshPending = false;
       if (_page == PaymentLinksLocalPage.bulk) {
         _requoteBatchForAccount();
         return;
@@ -1830,6 +1849,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _page = PaymentLinksLocalPage.ready;
       });
       _confirmCardCreated(broadcastAccepted: funding.broadcastAccepted);
+    } on PaymentLinkBatchQuoteChanged {
+      if (mounted) {
+        // Rust can observe the new tip before the display's epoch changes.
+        _feeQuoteRefreshPending = true;
+        _showError(_kBatchFeeChangedText);
+      }
     } catch (error) {
       if (mounted) {
         _showError(
@@ -1851,6 +1876,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
             ref.read(accountProvider).value?.activeAccountUuid,
           );
         }
+        _schedulePendingFeeQuoteRefresh();
         unawaited(_refreshFundingProgress());
       }
     }
@@ -1892,6 +1918,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     } finally {
       if (mounted) {
         setState(() => _operationInProgress = false);
+        _schedulePendingFeeQuoteRefresh();
         unawaited(_refreshFundingProgress());
       }
     }
@@ -1966,6 +1993,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _operationInProgress = false;
     });
     if (quote == null) _showError(_amountSupportingText!);
+    _schedulePendingFeeQuoteRefresh();
     unawaited(_loadMaxFundingQuote());
     unawaited(_loadRecoveries(showError: false));
   }
@@ -2018,6 +2046,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _readyShowsBack = false;
       _page = PaymentLinksLocalPage.ready;
     });
+    _schedulePendingFeeQuoteRefresh();
     _confirmCardCreated(
       broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
     );

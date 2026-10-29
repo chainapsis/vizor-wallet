@@ -49,6 +49,133 @@ import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart'
 void main() {
   registerGiftCardEntryChecks(mobile: false);
   registerGiftCardLocalGroupChecks(mobile: false);
+  for (final notifyDisplay in [true, false]) {
+    testWidgets(
+      'stale single card quote recovers after funding fails (epoch=$notifyDisplay)',
+      (tester) async {
+        SyncState at(int tip) => SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          chainTipHeight: tip,
+          scannedHeight: tip,
+          spendableBalance: BigInt.from(14223000000),
+        );
+        final sync = FakeSyncNotifier(at(998));
+        final operations = _FeeTransitionCardOperations();
+        await pumpPaymentLinksScreen(
+          tester,
+          operations: operations,
+          syncNotifier: sync,
+          feeSchedule: const BlockSpacing(
+            preNu7BlockSeconds: 75,
+            nu7BlockSeconds: 25,
+            nu7ActivationHeight: 1000,
+          ),
+        );
+        await _reviewSingleCardForFeeTransition(tester);
+        final oldQuotes = operations.quotedAccounts.length;
+        await tester.tap(find.text('Create card'));
+        await tester.pump();
+        expect(operations.attempts, 1);
+        operations.nu7 = true;
+        if (notifyDisplay) sync.emit(at(999));
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(operations.quotedAccounts.length, oldQuotes);
+        operations.firstFunding.complete();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('payment_link_amount_editor')),
+          findsOneWidget,
+        );
+        expect(operations.quotedAccounts.length, oldQuotes + 1);
+        expect(operations.createdAmounts, isEmpty);
+        expect(operations.attempts, 1); // Requoting never sends automatically.
+        final amount = tester.widget<EditableText>(
+          find.byKey(const ValueKey('payment_link_amount_editor')),
+        );
+        expect(amount.controller.text, '1');
+        await tester.tap(
+          find.byKey(const ValueKey('payment_link_amount_continue_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<TextField>(
+                find.byKey(const ValueKey('payment_link_message_editor')),
+              )
+              .controller!
+              .text,
+          'Keep this message',
+        );
+        await tester.tap(find.text('Review & confirm'));
+        await tester.pumpAndSettle();
+        expect(find.text('1.00004 ZEC'), findsOneWidget);
+        await tester.tap(find.text('Create card'));
+        await tester.pumpAndSettle();
+        expect(operations.attempts, 2);
+        expect(operations.createdAmounts, [BigInt.from(100000000)]);
+        expect(
+          operations.acceptedQuote!.claimFeeReserveZatoshi,
+          BigInt.from(2000),
+        );
+      },
+    );
+  }
+
+  testWidgets(
+    'fee change while accepted funding metadata is unsaved keeps save retry',
+    (tester) async {
+      SyncState at(int tip) => SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        chainTipHeight: tip,
+        scannedHeight: tip,
+        spendableBalance: BigInt.from(14223000000),
+      );
+      final sync = FakeSyncNotifier(at(998));
+      final gate = Completer<void>();
+      final operations = FakePaymentLinkOperations(
+        createFundedLinkGate: gate,
+        fundingMetadataSavedOnCreate: false,
+      );
+      await pumpPaymentLinksScreen(
+        tester,
+        operations: operations,
+        syncNotifier: sync,
+        feeSchedule: const BlockSpacing(
+          preNu7BlockSeconds: 75,
+          nu7BlockSeconds: 25,
+          nu7ActivationHeight: 1000,
+        ),
+      );
+      await _reviewSingleCardForFeeTransition(tester);
+      final quotes = operations.quotedAccounts.length;
+      await tester.tap(find.text('Create card'));
+      await tester.pump();
+      sync.emit(at(999));
+      await tester.pump();
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(operations.quotedAccounts.length, quotes);
+      expect(operations.createdAmounts.length, 1);
+      expect(
+        find.byKey(const ValueKey('payment_link_amount_editor')),
+        findsNothing,
+      );
+      // The review action retries metadata only, not funding or a new quote.
+      await tester.tap(find.text('Try saving again'));
+      await tester.pumpAndSettle();
+      expect(operations.fundingMetadataRetries, 1);
+      expect(operations.createdAmounts.length, 1);
+      expect(operations.quotedAccounts.length, quotes);
+    },
+  );
+
   testWidgets('NU7 target boundary refreshes single and Max card quotes', (
     tester,
   ) async {
@@ -4473,5 +4600,76 @@ class _RefreshingCardPrice implements ZecMarketDataSource {
     final request = Completer<ZecMarketData?>();
     requests.add(request);
     return request.future;
+  }
+}
+
+Future<void> _reviewSingleCardForFeeTransition(WidgetTester tester) async {
+  await tester.tap(find.text('Create new card'));
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.byKey(const ValueKey('payment_link_amount_editor')),
+    '1',
+  );
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.byKey(const ValueKey('payment_link_amount_continue_button')),
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Start typing…'));
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.byKey(const ValueKey('payment_link_message_editor')),
+    'Keep this message',
+  );
+  await tester.pump();
+  await tester.tap(find.text('Review & confirm'));
+  await tester.pumpAndSettle();
+}
+
+class _FeeTransitionCardOperations extends FakePaymentLinkOperations {
+  final firstFunding = Completer<void>();
+  bool nu7 = false;
+  int attempts = 0;
+  PaymentLinkFundingQuote? acceptedQuote;
+
+  @override
+  Future<PaymentLinkFundingQuote> quoteFunding({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+  }) async {
+    await super.quoteFunding(
+      amountZatoshi: amountZatoshi,
+      sourceAccountUuid: sourceAccountUuid,
+    );
+    final fee = BigInt.from(nu7 ? 2000 : 10000);
+    return PaymentLinkFundingQuote(
+      sourceAccountUuid: sourceAccountUuid,
+      recipientAmountZatoshi: amountZatoshi,
+      fundingFeeZatoshi: fee,
+      claimFeeReserveZatoshi: fee,
+    );
+  }
+
+  @override
+  Future<PaymentLinkFundingResult> createFundedLink({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+    PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
+  }) async {
+    attempts++;
+    if (attempts == 1) await firstFunding.future;
+    if (expectedQuote!.claimFeeReserveZatoshi !=
+        BigInt.from(nu7 ? 2000 : 10000)) {
+      throw const PaymentLinkBatchQuoteChanged();
+    }
+    acceptedQuote = expectedQuote;
+    return super.createFundedLink(
+      amountZatoshi: amountZatoshi,
+      sourceAccountUuid: sourceAccountUuid,
+      presentation: presentation,
+      expectedQuote: expectedQuote,
+    );
   }
 }
