@@ -1,13 +1,14 @@
 use std::{
+    collections::HashMap,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        Mutex, MutexGuard, OnceLock, TryLockError,
+        LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, TryLockError,
     },
     time::{Duration, Instant},
 };
 
 use voting_crypto_deps::rand::rngs::OsRng;
-use zcash_client_sqlite::{util::SystemClock, WalletDb};
+use zcash_client_sqlite::{util::SystemClock, EnhancePirSession, WalletDb};
 
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for;
@@ -163,15 +164,38 @@ pub(crate) fn open_wallet_db_readonly_with_timeout(
     Ok(wallet_db(conn, db_path, network))
 }
 
+/// Each wallet's Enhance PIR content-failure allowance, by path, for the life
+/// of the process.
+static ENHANCE_PIR_SESSIONS: LazyLock<Mutex<HashMap<String, EnhancePirSession>>> =
+    LazyLock::new(Default::default);
+
+/// The Enhance PIR session every handle of the wallet at `db_path` shares.
+///
+/// The library counts content failures (rejected or unreadable Enhance
+/// records) per position in this session and suspends a position on the
+/// third, so a service corrupting chosen rows cannot keep them queried. The
+/// counts live in memory: the three-strike bound holds per app session, and a
+/// restart restores the full allowance, which the service sees only as the app
+/// opening.
+fn enhance_pir_session(db_path: &str) -> EnhancePirSession {
+    ENHANCE_PIR_SESSIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .entry(db_path.to_owned())
+        .or_default()
+        .clone()
+}
+
 /// Every wallet handle selects its transparent ledger mode explicitly; the
 /// library rejects transparent selection, stores, and history on an
 /// unconfigured handle. A wallet that durably requires private recovery keeps
 /// it even when this build selects a weaker mode: the library resolves every
 /// read under the durable policy, including one applied after the handle
-/// opened.
+/// opened. Every handle shares the wallet's [`enhance_pir_session`].
 fn wallet_db(conn: rusqlite::Connection, db_path: &str, network: WalletNetwork) -> WalletDatabase {
     WalletDb::from_connection(conn, network, SystemClock, OsRng)
         .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network))
+        .with_enhance_pir_session(enhance_pir_session(db_path))
 }
 
 /// A configured wallet handle over a connection the caller already holds, so

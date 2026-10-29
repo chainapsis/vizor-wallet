@@ -15,7 +15,9 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use transparent::address::TransparentAddress;
-use zakura_pir_transparent::{testing, Outcome, Progress, RecoveryBatch, WithdrawnCause};
+use zakura_pir_transparent::{
+    testing, FailedEntries, Outcome, Progress, RecoveryBatch, WithdrawnCause,
+};
 use zcash_client_backend::data_api::transparent_ledger::{
     AddressRange, ChainPoint, PageRequest, PublicationAnchor, ReceiveEvent, RecoveryRevision,
     SpendEvent, TransparentLedgerCommit,
@@ -63,6 +65,9 @@ struct State {
     withdrawn: HashMap<AccountUuid, WithdrawnCause>,
     /// Replaces the outcome of every `Ready` answer.
     next: Option<Outcome>,
+    /// Reported with every `Ready` answer, as directory entries whose replies
+    /// failed on content.
+    failed_entries: FailedEntries,
     trusted: bool,
     /// Every `Ready` answer resolves retired revisions until one is
     /// acknowledged as reconciled, as the adapter's do.
@@ -99,6 +104,7 @@ impl FixtureSource {
                 pending: None,
                 withdrawn: HashMap::new(),
                 next: None,
+                failed_entries: FailedEntries::default(),
                 trusted: false,
                 retiring: false,
                 hooks: VecDeque::new(),
@@ -201,6 +207,12 @@ impl FixtureSource {
     /// Replaces the outcome of every `Ready` answer, until cleared.
     pub(crate) fn next(&self, outcome: Option<Outcome>) -> &Self {
         self.with(|state| state.next = outcome)
+    }
+
+    /// Reports `failed` with every `Ready` answer, until reset: entries whose
+    /// private replies failed on content, as the adapter counts them.
+    pub(crate) fn failed_entries(&self, failed: FailedEntries) -> &Self {
+        self.with(|state| state.failed_entries = failed)
     }
 
     /// Makes the source trusted: under `PrivateRequired` the coordinator
@@ -390,6 +402,7 @@ fn report(state: BatchState, progress: Progress) -> PassReport {
         commits: 0,
         retired: 0,
         publication_changed: false,
+        failed_entries: FailedEntries::default(),
     }
 }
 
@@ -540,6 +553,7 @@ impl State {
         let ready = PassReport {
             commits: commits.len(),
             retired: retired.len(),
+            failed_entries: self.failed_entries,
             ..report(BatchState::Ready, progress)
         };
         self.unacknowledged.insert(

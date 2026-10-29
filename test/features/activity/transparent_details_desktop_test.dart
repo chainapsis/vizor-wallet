@@ -234,6 +234,38 @@ void main() {
     await _close(tester);
   });
 
+  testWidgets('desktop receipt shows a given-up lookup as unavailable and '
+      'stops following it', (tester) async {
+    final details = ScriptedDetails([
+      transparentDetail(rust_sync.TransparentDetailsState.unavailable),
+      transparentDetail(rust_sync.TransparentDetailsState.gaveUp),
+    ]);
+    final prioritized = await _pump(tester, details);
+    expect(details.calls, 1);
+    await tester.pump(kTransparentDetailsPollInterval);
+    await tester.pump();
+    expect(details.calls, 2);
+    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    await tester.pump(kTransparentDetailsPollInterval * 4);
+    expect(details.calls, 2, reason: 'a given-up lookup is final');
+    expect(prioritized, [transparentDetailsTxid], reason: 'asked only once');
+    await _close(tester);
+  });
+
+  testWidgets('desktop receipt opened on a given-up lookup asks nothing', (
+    tester,
+  ) async {
+    final details = ScriptedDetails([
+      transparentDetail(rust_sync.TransparentDetailsState.gaveUp),
+    ]);
+    final prioritized = await _pump(tester, details);
+    expect(find.text(kTransparentDetailsUnavailableText), findsOneWidget);
+    expect(prioritized, isEmpty);
+    await tester.pump(kTransparentDetailsPollInterval * 3);
+    expect(details.calls, 1);
+    await _close(tester);
+  });
+
   testWidgets('desktop receipt has no private lookup diagnostic button', (
     tester,
   ) async {

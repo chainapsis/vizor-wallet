@@ -11,7 +11,7 @@ use http_body_util::Full;
 use sha2::{Digest, Sha256};
 use std::{
     cell::{Cell, RefCell},
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     rc::Rc,
     time::Duration,
 };
@@ -187,6 +187,12 @@ struct Wallet {
     transparent_at: Option<u64>,
     /// Cancellation requested while a record is being applied.
     cancel_on_apply: Option<Rc<Cell<bool>>>,
+    /// Records whose content the wallet rejects at these positions.
+    reject_at: Vec<u64>,
+    /// Each `record_unreadable` call, in order.
+    unreadable: Vec<Vec<EnhancePirRequest>>,
+    /// Content failures per request, as the wallet session counts them.
+    failures: BTreeMap<EnhancePirRequest, u32>,
 }
 impl Wallet {
     fn new(positions: &[u64]) -> Self {
@@ -199,6 +205,22 @@ impl Wallet {
             refreshed_anchor: Anchor::Accepted,
             transparent_at: None,
             cancel_on_apply: None,
+            reject_at: vec![],
+            unreadable: vec![],
+            failures: BTreeMap::new(),
+        }
+    }
+
+    /// Counts a content failure of `request`, suspending it on the third as
+    /// the wallet session does.
+    fn count_failure(&mut self, request: EnhancePirRequest) {
+        let failures = self.failures.entry(request).or_default();
+        *failures += 1;
+        if *failures == 3 {
+            self.pending.retain(|pending| *pending != request);
+            self.other.push(EnhancePirWork::Suspended(
+                EnhancePirSuspension::Rejected(request),
+            ));
         }
     }
 }
@@ -258,6 +280,10 @@ impl RecoveryWallet for Wallet {
         if let Some(cancel) = &self.cancel_on_apply {
             cancel.set(true);
         }
+        if self.reject_at.contains(&u64::from(request.position())) {
+            self.count_failure(request);
+            return Ok(EnhancePirStoreResult::Rejected);
+        }
         self.applied.push(u64::from(request.position()));
         if self.transparent_at == Some(u64::from(request.position())) {
             // The whole transaction atomically moves to ordinary enhancement.
@@ -268,6 +294,18 @@ impl RecoveryWallet for Wallet {
         }
         self.pending.retain(|r| *r != request);
         Ok(EnhancePirStoreResult::Stored)
+    }
+    fn record_unreadable(
+        &mut self,
+        requests: &[EnhancePirRequest],
+    ) -> Result<(), EnhancePirRunError> {
+        self.unreadable.push(requests.to_vec());
+        for request in requests {
+            if self.pending.contains(request) {
+                self.count_failure(*request);
+            }
+        }
+        Ok(())
     }
 }
 fn sync() -> RoutedPayloadEnhancement {

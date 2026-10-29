@@ -3020,6 +3020,11 @@ pub enum TransparentDetailsState {
     /// Private mode cannot look the transaction up: the private publication
     /// does not cover it.
     NotCovered,
+    /// Private lookups gave up after three replies failed on content, and
+    /// are not tried again unless the transaction is mined at another height.
+    /// Present it as `Unavailable`, but stop re-reading and prioritising it:
+    /// that is final until the chain changes.
+    GaveUp,
 }
 
 /// One transparent output of a transaction.
@@ -3215,6 +3220,7 @@ pub fn get_transaction_detail(
                 wallet_sync::TransparentDetailsView::NotCovered => {
                     TransparentDetailsState::NotCovered
                 }
+                wallet_sync::TransparentDetailsView::GaveUp => TransparentDetailsState::GaveUp,
             }),
             transparent_output_count: match &detail.transparent_details {
                 Some(wallet_sync::TransparentDetailsView::Available { output_count, .. }) => {

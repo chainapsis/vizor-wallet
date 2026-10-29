@@ -1481,25 +1481,33 @@ async fn unreconciled_retirements_acknowledge_nothing_and_hold_the_account() {
 }
 
 #[tokio::test]
-async fn a_lagging_source_that_catches_up_within_the_cap_restores_authority() {
+async fn a_lagging_source_catches_up_at_a_run_after_its_delay() {
     let mut wallet = wallet();
     let _mode = activate(&mut wallet).await;
-    // Paused time lets the run spend its wait at once. Activation's drain
-    // must not see it.
+    // Paused time measures the delay the source asked for. Activation's
+    // drain must not see it.
     tokio::time::pause();
-    let source = Arc::new(funded_source(&wallet));
+    let source = funded_source(&wallet);
     source.published_through(Some(TIP - 10));
-    let catching_up = source.clone();
-    source.on_call(|| {}).on_call(move || {
-        catching_up.published_through(None);
-    });
 
+    // One pass: the publication is behind, so the run ends without waiting
+    // and the account is not asked again until the delay passes.
     let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
         panic!("recovery finishes");
     };
-    assert_eq!(source.calls(), 2);
-    assert_eq!(stats.publication_wait, Duration::from_secs(10));
-    assert_eq!((stats.qualified, stats.promoted), (2, 1));
+    assert_eq!((source.calls(), stats.accounts, stats.deferred), (1, 1, 0));
+    source.published_through(None);
+    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!((source.calls(), stats.accounts, stats.deferred), (1, 0, 1));
+
+    tokio::time::advance(Duration::from_secs(10)).await;
+    let RunOutcome::Finished(stats) = run_required(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!((source.calls(), stats.deferred), (2, 0));
+    assert_eq!((stats.qualified, stats.promoted), (1, 1));
     let current = balance(&wallet, &wallet.uuid);
     assert_eq!(
         current.transparent_authority,
@@ -1509,12 +1517,13 @@ async fn a_lagging_source_that_catches_up_within_the_cap_restores_authority() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn publication_waits_stop_at_the_cap() {
+async fn an_overloaded_service_defers_only_that_account_and_never_waits() {
     let mut wallet = private_wallet();
     let (_, other) = add_account(&wallet);
     let source = FixtureSource::new(main_hash);
-    // A capacity refusal waits thirty seconds.
+    // A capacity refusal asks for thirty seconds.
     source.next(Some(Outcome::Overloaded));
+    let started = tokio::time::Instant::now();
 
     let outcome = run(
         &mut wallet.db,
@@ -1531,18 +1540,27 @@ async fn publication_waits_stop_at_the_cap() {
     let RunOutcome::Finished(stats) = outcome else {
         panic!("recovery finishes");
     };
-    // Three waits reach the cap; the first account's fourth pass and the
-    // other account's only pass have none left.
-    assert_eq!(stats.publication_wait, PUBLICATION_WAIT_CAP);
-    assert_eq!(source.calls_for(wallet.account), 4);
+    // One pass each, and no time spent waiting.
+    assert_eq!(source.calls_for(wallet.account), 1);
     assert_eq!(source.calls_for(other), 1);
     assert_eq!(stats.accounts, 2);
+    assert_eq!(tokio::time::Instant::now(), started);
 
-    // The cap is per run.
+    // Before the delay both accounts are skipped without traffic.
+    source.next(None);
     let RunOutcome::Finished(stats) = recover(&mut wallet, &source).await else {
         panic!("recovery finishes");
     };
-    assert_eq!(stats.publication_wait, PUBLICATION_WAIT_CAP);
+    assert_eq!((stats.accounts, stats.deferred), (0, 2));
+    assert_eq!(source.calls(), 2);
+
+    // After it, each is asked again once.
+    tokio::time::advance(Duration::from_secs(30)).await;
+    let RunOutcome::Finished(stats) = recover(&mut wallet, &source).await else {
+        panic!("recovery finishes");
+    };
+    assert_eq!((stats.accounts, stats.deferred), (2, 0));
+    assert_eq!(source.calls(), 4);
 }
 
 #[tokio::test]
@@ -1659,6 +1677,8 @@ async fn three_stalled_runs_hold_the_account() {
     ] {
         source.next(Some(next));
         recover(&mut lagging, &source).await;
+        // Past the delay an overloaded pass asks for.
+        tokio::time::advance(Duration::from_secs(60)).await;
     }
     assert_eq!(
         recovery_hold(&lagging.path, lagging.account),

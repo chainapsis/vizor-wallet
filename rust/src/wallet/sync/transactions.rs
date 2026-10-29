@@ -402,7 +402,9 @@ fn transparent_stop_reason(
         return Some(match cause {
             HoldCause::Withdrawn(_) | HoldCause::Unreconciled => TransparentStopReason::Withdrawn,
             HoldCause::LegacyDiscrepancy => TransparentStopReason::LegacyDiscrepancy,
-            HoldCause::Stalled => TransparentStopReason::Stalled,
+            // Both leave recovery stopped until something outside it
+            // changes; the existing stalled reason says so without new copy.
+            HoldCause::Stalled | HoldCause::FailedEntries => TransparentStopReason::Stalled,
         });
     }
     opt_out_unfinished.then_some(TransparentStopReason::OptOutUnfinished)
@@ -657,6 +659,9 @@ pub(crate) enum TransparentDetailsView {
     Unavailable,
     /// The private publication does not cover the transaction.
     NotCovered,
+    /// Private lookups gave up after three replies failed on content. Shown
+    /// as [`Self::Unavailable`], but final: nothing polls or prioritises it.
+    GaveUp,
 }
 
 pub(crate) struct TransparentRecipientRow {
@@ -1557,6 +1562,7 @@ fn transparent_details_view(view: TransparentDisplayView) -> TransparentDetailsV
         TransparentDisplayView::Pending => TransparentDetailsView::Pending,
         TransparentDisplayView::Unavailable => TransparentDetailsView::Unavailable,
         TransparentDisplayView::NotCovered => TransparentDetailsView::NotCovered,
+        TransparentDisplayView::GaveUp => TransparentDetailsView::GaveUp,
     }
 }
 

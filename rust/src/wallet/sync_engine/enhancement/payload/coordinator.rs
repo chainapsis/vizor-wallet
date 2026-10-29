@@ -77,11 +77,19 @@ pub(in crate::wallet::sync_engine) trait RecoveryWallet {
         network: WalletNetwork,
         manifest: &Manifest,
     ) -> Result<Acceptance, EnhancePirRunError>;
+    /// Stores one record. A `Rejected` record is counted against its
+    /// position's allowance in the wallet's Enhance PIR session.
     fn apply(
         &mut self,
         request: EnhancePirRequest,
         record: &zakura_pir_enhance::EnhanceRecord,
     ) -> Result<EnhancePirStoreResult, EnhancePirRunError>;
+    /// Counts one `(txid, row)` batch whose reply arrived but failed to
+    /// decode against the same allowance: the third failure at a position
+    /// suspends it. Never for a request failure (an HTTP refusal, a transport
+    /// error, a timeout), which says nothing about the content.
+    fn record_unreadable(&mut self, requests: &[EnhancePirRequest])
+        -> Result<(), EnhancePirRunError>;
 }
 
 impl RecoveryWallet for WalletDatabase {
@@ -113,6 +121,15 @@ impl RecoveryWallet for WalletDatabase {
             self.apply_ironwood_enhance_record(request, record)
         })
         .map_err(|e| SyncError::db(e.to_string()))?)
+    }
+    fn record_unreadable(
+        &mut self,
+        requests: &[EnhancePirRequest],
+    ) -> Result<(), EnhancePirRunError> {
+        with_wallet_db_write_lock("enhance_pir.record_unreadable", || {
+            self.record_ironwood_enhance_unreadable(requests)
+        })
+        .map_err(|e| SyncError::db(e.to_string()).into())
     }
 }
 

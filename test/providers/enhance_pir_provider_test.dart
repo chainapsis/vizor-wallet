@@ -1493,80 +1493,69 @@ void main() {
       expect(g.shouldRestart(3), isTrue);
     });
 
-    test('progress restores the base interval', () {
-      final g = gate();
-      expect(g.shouldRestart(3), isTrue);
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(3), isTrue); // stalled: now waiting 60s
-      clock = clock.add(const Duration(seconds: 60));
-      expect(g.shouldRestart(2), isTrue); // progressed
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(2), isTrue); // base interval again
-    });
-
-    test('newly discovered work also restores the base interval', () {
-      final g = gate();
-      expect(g.shouldRestart(3), isTrue);
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(3), isTrue); // stalled: now waiting 60s
-      clock = clock.add(const Duration(seconds: 60));
-      expect(g.shouldRestart(5), isTrue);
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(5), isTrue);
-    });
-
-    test(
-      'a count change inside a long backoff returns to the base interval',
-      () {
+    test('the restart schedule is the same whether the counts move or not', () {
+      List<bool> run(List<int> counts) {
+        clock = DateTime.utc(2026);
         final g = gate();
-        // Stall until the backoff is capped at ten minutes.
-        for (var i = 0; i < 20; i++) {
-          clock = clock.add(kRecoveryRestartMaxBackoff);
-          expect(g.shouldRestart(3), isTrue);
+        final decisions = <bool>[];
+        for (var i = 0; i < 400; i++) {
+          decisions.add(g.shouldRestart(counts[i % counts.length]));
+          clock = clock.add(const Duration(seconds: 10));
         }
-        // A tip-driven sync completes one obligation shortly after.
-        clock = clock.add(const Duration(seconds: 5));
-        expect(g.shouldRestart(2), isFalse, reason: 'that sync ran recovery');
-        clock = clock.add(
-          kRecoveryRestartInitialBackoff - const Duration(seconds: 1),
-        );
-        expect(g.shouldRestart(2), isFalse);
-        clock = clock.add(const Duration(seconds: 1));
-        expect(
-          g.shouldRestart(2),
-          isTrue,
-          reason: 'not the ten minutes left on the stale deadline',
-        );
-      },
-    );
+        return decisions;
+      }
 
-    test('an unchanged count inside the window keeps the backoff', () {
-      final g = gate();
-      expect(g.shouldRestart(3), isTrue);
-      clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(3), isTrue); // stalled: now waiting 60s
-      clock = clock.add(const Duration(seconds: 45));
-      expect(g.shouldRestart(3), isFalse);
-      clock = clock.add(const Duration(seconds: 15));
-      expect(g.shouldRestart(3), isTrue);
+      final unchanged = run([3]);
+      // Work completing, work discovered, and both in turn: a service that
+      // changed replies sees the same restarts as one that did not.
+      expect(run([3, 2, 1]), unchanged);
+      expect(run([3, 5, 8]), unchanged);
+      expect(run([3, 2, 4, 1]), unchanged);
+      // The waits double: 30s, 60s, 120s, ... capped at ten minutes.
+      final restarts = [
+        for (var i = 0; i < unchanged.length; i++)
+          if (unchanged[i]) i * 10,
+      ];
+      expect(restarts.take(5), [0, 30, 90, 210, 450]);
+      expect(restarts.last - restarts[restarts.length - 2], 600);
     });
 
-    test('a rebase never pushes an earlier deadline later', () {
+    test('a count change inside the window restarts nothing', () {
       final g = gate();
       expect(g.shouldRestart(3), isTrue); // deadline in 30s
       clock = clock.add(const Duration(seconds: 20));
-      expect(g.shouldRestart(4), isFalse);
+      expect(g.shouldRestart(2), isFalse);
+      expect(g.shouldRestart(5), isFalse);
       clock = clock.add(const Duration(seconds: 10));
-      expect(g.shouldRestart(4), isTrue, reason: 'the original 30s deadline');
+      expect(g.shouldRestart(5), isTrue, reason: 'the original 30s deadline');
+      // That restart doubled the wait, as an unchanged count would.
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(1), isFalse);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(1), isTrue);
     });
 
-    test('draining the queue clears the backoff for the next obligation', () {
+    test('a drained queue keeps the schedule for the next obligation', () {
       final g = gate();
       expect(g.shouldRestart(3), isTrue);
       clock = clock.add(kRecoveryRestartInitialBackoff);
-      expect(g.shouldRestart(3), isTrue);
+      expect(g.shouldRestart(3), isTrue); // now waiting 60s
       expect(g.shouldRestart(0), isFalse);
+      expect(g.shouldRestart(1), isFalse, reason: 'still inside 60s');
+      clock = clock.add(const Duration(seconds: 60));
       expect(g.shouldRestart(1), isTrue);
+    });
+
+    test('only a reset, on a public event, restores the base interval', () {
+      final g = gate();
+      for (var i = 0; i < 20; i++) {
+        clock = clock.add(kRecoveryRestartMaxBackoff);
+        expect(g.shouldRestart(3), isTrue);
+      }
+      g.reset();
+      expect(g.shouldRestart(3), isTrue);
+      clock = clock.add(kRecoveryRestartInitialBackoff);
+      expect(g.shouldRestart(3), isTrue);
     });
   });
   test('a failed preference write can be retried', () async {

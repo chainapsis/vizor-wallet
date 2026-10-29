@@ -163,6 +163,7 @@ fn detail_line(d: &TransactionDetail, names: &Names) -> String {
         Some(TransparentDetailsView::Pending) => "pending".to_owned(),
         Some(TransparentDetailsView::Unavailable) => "unavailable".to_owned(),
         Some(TransparentDetailsView::NotCovered) => "not-covered".to_owned(),
+        Some(TransparentDetailsView::GaveUp) => "gave-up".to_owned(),
     };
     format!(
         "{} to={} from={} src={} acct={} memo={:?} complete={} prov={} settled={} delta={} \
