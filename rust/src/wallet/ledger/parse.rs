@@ -623,7 +623,7 @@ pub(super) const LEDGER_MEMO_HASH_UNSUPPORTED: &str =
 /// `ledgerOrchardChangeUnsupportedError` in
 /// `lib/src/features/ledger/ledger_capability.dart`.
 pub(super) const LEDGER_ORCHARD_CHANGE_UNSUPPORTED: &str =
-    "Ledger can't sign a transaction that keeps change in Orchard. Send your whole Orchard balance, or migrate it to Ironwood first.";
+    "Ledger can't sign a transaction that keeps change in Orchard. Migrate your Orchard balance to Ironwood first.";
 
 /// Apps before 3.10.0 reject the NU7 branch and an Orchard spend into Ironwood.
 /// Keep this identical to `ledgerAppUpdateRequiredError` in

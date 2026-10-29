@@ -50,8 +50,8 @@ const ledgerAppUpdateRequiredError =
 /// identical to `LEDGER_ORCHARD_CHANGE_UNSUPPORTED` in
 /// `rust/src/wallet/ledger/parse.rs`.
 const ledgerOrchardChangeUnsupportedError =
-    "Ledger can't sign a transaction that keeps change in Orchard. Send your "
-    'whole Orchard balance, or migrate it to Ironwood first.';
+    "Ledger can't sign a transaction that keeps change in Orchard. Migrate "
+    'your Orchard balance to Ironwood first.';
 
 /// Accounts connected from now on start without the 3.9.3 memo limit; those
 /// connected earlier keep signing from [kMinimumLedgerZcashAppVersion].
