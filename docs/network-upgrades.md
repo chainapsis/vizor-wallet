@@ -20,6 +20,14 @@ fee; the upgrade's existing branch/expiry checks still apply. Migration estimate
 use the same target-height policy. Gift Card quotes snapshot their claim reserve,
 persist it with the draft and compare the reviewed quote before signing. Recovery
 uses the stored reserve; external cards recognize both legacy and NU7 funding.
+Fee changes received during card funding/signing are deferred until an idle,
+unsubmitted flow can requote; accepted funding keeps its original save/recovery
+path. A direct quote-mismatch error also forces a fresh quote.
+
+Persisted, still-valid three-action migration signatures at the prior 15,000
+zatoshi fee remain supported after NU7; new parts use 3,000. When expiry recovery
+requires a new signature with a different fee/value, the run requests a freshly
+approved schedule. Mining and accepted-but-not-stored checks still run first.
 
 ## Where the rules live
 

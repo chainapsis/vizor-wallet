@@ -4920,3 +4920,28 @@ fn nu7_padded_split_pczt_uses_reduced_fees_on_both_networks() {
         assert_eq!(u64::from(fee), 3_000);
     }
 }
+
+#[test]
+fn stored_legacy_migration_fees_remain_supported_without_changing_new_fees() {
+    for (network, activation) in [
+        (WalletNetwork::Main, 3_543_405),
+        (WalletNetwork::Test, 4_465_026),
+    ] {
+        for target in [activation - 1, activation, activation + 1] {
+            let canonical = if target < activation { 15_000 } else { 3_000 };
+            assert_eq!(
+                canonical_migration_fee_zatoshi(network, target).unwrap(),
+                canonical
+            );
+            assert!(stored_migration_fee_is_supported(network, target, 15_000).unwrap());
+            assert!(stored_migration_fee_is_supported(network, target, canonical).unwrap());
+            assert_eq!(
+                stored_migration_fee_is_supported(network, target, 3_000).unwrap(),
+                target >= activation
+            );
+            for invalid in [0, 1_000, 4_000, 20_000] {
+                assert!(!stored_migration_fee_is_supported(network, target, invalid).unwrap());
+            }
+        }
+    }
+}

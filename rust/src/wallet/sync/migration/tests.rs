@@ -6829,6 +6829,16 @@ fn pending_policy_checks_detect_fee_drift_and_only_mined_input_spends() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES ('run-1', 'account-1', 'main', ?1, ?2, 1, 1, '[100000]')"
+        ),
+        params![db_path, PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
     conn.execute_batch(
         "CREATE TABLE transactions (
              id_tx INTEGER PRIMARY KEY,
@@ -6911,8 +6921,79 @@ fn pending_policy_checks_detect_fee_drift_and_only_mined_input_spends() {
         noncanonical_unconfirmed_fee_count(&db_path, "run-1", WalletNetwork::Test).unwrap(),
         0
     );
+    for (network, target) in [
+        (WalletNetwork::Main, 3_543_405),
+        (WalletNetwork::Test, 4_465_026),
+    ] {
+        for status in ["scheduled", "broadcasted", "needs_resign"] {
+            conn.execute(&format!("UPDATE {PENDING_TXS_TABLE} SET target_height = ?1, expiry_height = ?1 + 100, fee_zatoshi = 15000, status = ?2"), params![target, status]).unwrap();
+            let before: (String, u64, u64, String) = conn.query_row(&format!("SELECT encrypted_raw_tx, fee_zatoshi, value_zatoshi, txid_hex FROM {PENDING_TXS_TABLE} WHERE run_id = 'run-1'"), [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))).unwrap();
+            assert_eq!(
+                noncanonical_unconfirmed_fee_count(&db_path, "run-1", network).unwrap(),
+                0
+            );
+
+            let after = conn.query_row(&format!("SELECT encrypted_raw_tx, fee_zatoshi, value_zatoshi, txid_hex FROM {PENDING_TXS_TABLE} WHERE run_id = 'run-1'"), [], |row| Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?, row.get::<_, u64>(2)?, row.get::<_, String>(3)?))).unwrap();
+            assert_eq!(
+                resigning_parts_with_changed_fee_count(&db_path, "run-1", network, target + 5)
+                    .unwrap(),
+                if status == "needs_resign" { 1 } else { 0 }
+            );
+            assert_eq!(
+                resigning_parts_with_changed_fee_count(&db_path, "run-1", network, target + 100)
+                    .unwrap(),
+                if status == "broadcasted" { 0 } else { 1 }
+            );
+            assert_eq!(before, after);
+        }
+    }
+    // A broadcast with stored bytes can be replaced only while still unmined.
+    conn.execute("ALTER TABLE transactions ADD COLUMN raw BLOB", [])
+        .unwrap();
+    conn.execute_batch("CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);")
+        .unwrap();
     conn.execute(
-        &format!("UPDATE {PENDING_TXS_TABLE} SET target_height = 90, fee_zatoshi = 15000"),
+        "INSERT INTO transactions (id_tx, txid, raw) VALUES (10, ?1, ?2)",
+        params![hex::decode("51".repeat(32)).unwrap(), vec![1u8, 2, 3]],
+    )
+    .unwrap();
+    conn.execute(&format!("UPDATE {PENDING_TXS_TABLE} SET target_height = 3543405, expiry_height = 3543505, fee_zatoshi = 15000, status = 'broadcasted'"), []).unwrap();
+    assert_eq!(
+        resigning_parts_with_changed_fee_count(&db_path, "run-1", WalletNetwork::Main, 3_543_505)
+            .unwrap(),
+        1
+    );
+    conn.execute(
+        "INSERT INTO blocks (height, hash) VALUES (3543504, ?1)",
+        params![vec![0xabu8; 32]],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE transactions SET mined_height = 3543504 WHERE id_tx = 10",
+        [],
+    )
+    .unwrap();
+    for status in ["broadcasted", "needs_resign"] {
+        conn.execute(
+            &format!("UPDATE {PENDING_TXS_TABLE} SET status = ?1"),
+            params![status],
+        )
+        .unwrap();
+        assert_eq!(
+            resigning_parts_with_changed_fee_count(
+                &db_path,
+                "run-1",
+                WalletNetwork::Main,
+                3_543_505
+            )
+            .unwrap(),
+            0
+        );
+    }
+    conn.execute("DELETE FROM transactions WHERE id_tx = 10", [])
+        .unwrap();
+    conn.execute(
+        &format!("UPDATE {PENDING_TXS_TABLE} SET target_height = 90, expiry_height = 200, fee_zatoshi = 15000, status = 'scheduled'"),
         [],
     )
     .unwrap();

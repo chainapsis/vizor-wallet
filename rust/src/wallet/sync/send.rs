@@ -818,15 +818,39 @@ pub(super) fn canonical_migration_fee_zatoshi(
         .map_err(|e| format!("Calculate canonical migration fee: {e}"))
 }
 
+/// Prior releases signed the same three-action migration shape at 5,000
+/// zatoshis/action even on NU7. Preserve those signatures; only new construction
+/// must use the current canonical fee. Other fee amounts remain invalid.
+pub(super) fn stored_migration_fee_is_supported(
+    network: WalletNetwork,
+    target_height: u32,
+    fee_zatoshi: u64,
+) -> Result<bool, String> {
+    let canonical = canonical_migration_fee_zatoshi(network, target_height)?;
+    let legacy = (MIGRATION_ORCHARD_ACTION_COUNT + MIGRATION_IRONWOOD_ACTION_COUNT) as u64
+        * crate::wallet::fees::LEGACY_MARGINAL_FEE;
+    Ok(fee_zatoshi == canonical || fee_zatoshi == legacy)
+}
+
 fn pending_migration_policy_rebuild_message(
     db_path: &str,
     network: WalletNetwork,
     run_id: &str,
-    _chain_tip_height: u32,
+    chain_tip_height: u32,
 ) -> Result<Option<String>, String> {
     // Signed parts keep the policy of their own target, even after the tip moves.
     let stale_fee_count =
         super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, network)?;
+    let stale_fee_count = if stale_fee_count == 0 {
+        super::migration::resigning_parts_with_changed_fee_count(
+            db_path,
+            run_id,
+            network,
+            chain_tip_height,
+        )?
+    } else {
+        stale_fee_count
+    };
     if stale_fee_count > 0 {
         return Ok(Some(format!(
             "{stale_fee_count} migration transaction(s) use an outdated canonical fee. Review and approve a fresh schedule for the remaining Orchard balance."
