@@ -1314,6 +1314,7 @@ pub fn delete_account(
 pub fn evict_wallet_summary_cache(db_path: String) {
     crate::wallet::wallet_summary_cache::evict_db(&db_path);
     crate::wallet::sync::history_pages::evict_db(&db_path);
+    crate::wallet::sync_engine::scanning_keys::evict_db(&db_path);
 }
 
 /// Current and legacy receive representations owned by a local account.

@@ -38,7 +38,7 @@ use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
 use sapling_crypto::note_encryption::SaplingDomain;
 use secrecy::SecretVec;
 use zcash_client_backend::data_api::{
-    chain::{scan_cached_blocks, ChainState},
+    chain::{scan_cached_blocks_with_cache, ChainState},
     WalletRead, WalletWrite,
 };
 use zcash_client_backend::proto::compact_formats::{
@@ -51,6 +51,7 @@ use zcash_protocol::consensus::BlockHeight;
 
 use super::block_source::MemoryBlockSource;
 use super::enhancement::queue_stored_transactions;
+use super::scanning_keys;
 use super::BATCH_SIZE_FOREGROUND;
 use crate::wallet::db::{
     open_wallet_db_with_timeout, with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT,
@@ -534,14 +535,17 @@ fn scan_session(
             stats.queue += t.elapsed();
 
             let t = Instant::now();
-            let summary = scan_cached_blocks(
-                &NETWORK,
-                &source,
-                &mut db,
-                BlockHeight::from_u32(config.start + start),
-                from_state,
-                (end - start) as usize,
-            )
+            let summary = scanning_keys::with_cache(db_path, |keys| {
+                scan_cached_blocks_with_cache(
+                    &NETWORK,
+                    &source,
+                    &mut db,
+                    BlockHeight::from_u32(config.start + start),
+                    from_state,
+                    (end - start) as usize,
+                    keys,
+                )
+            })
             .expect("scan synthetic blocks");
             let elapsed = t.elapsed();
             stats.scan += elapsed;
