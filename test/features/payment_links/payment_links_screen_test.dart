@@ -1,3 +1,4 @@
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'dart:async';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_check_progress_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -48,6 +49,90 @@ import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart'
 void main() {
   registerGiftCardEntryChecks(mobile: false);
   registerGiftCardLocalGroupChecks(mobile: false);
+  testWidgets('NU7 target boundary refreshes single and Max card quotes', (
+    tester,
+  ) async {
+    SyncState at(int tip) => SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      chainTipHeight: tip,
+      scannedHeight: tip,
+      spendableBalance: BigInt.from(14223000000),
+    );
+    final sync = FakeSyncNotifier(at(998));
+    final operations = FakePaymentLinkOperations();
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      syncNotifier: sync,
+      feeSchedule: const BlockSpacing(
+        preNu7BlockSeconds: 75,
+        nu7BlockSeconds: 25,
+        nu7ActivationHeight: 1000,
+      ),
+    );
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '1',
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    final quotes = operations.quotedAccounts.length;
+    final maxQuotes = operations.maxQuotedAccounts.length;
+    sync.emit(at(999));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(operations.quotedAccounts.length, quotes + 1);
+    expect(operations.maxQuotedAccounts.length, maxQuotes + 1);
+    sync.emit(at(1000));
+    await tester.pumpAndSettle();
+    expect(operations.quotedAccounts.length, quotes + 1);
+    sync.emit(at(998));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(operations.quotedAccounts.length, quotes + 2);
+  });
+
+  testWidgets('NU7 target boundary refreshes an unsubmitted group quote', (
+    tester,
+  ) async {
+    SyncState at(int tip) => SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      chainTipHeight: tip,
+      scannedHeight: tip,
+      spendableBalance: BigInt.from(14223000000),
+    );
+    final sync = FakeSyncNotifier(at(998));
+    final operations = FakePaymentLinkOperations();
+    final batch = _FakeDesktopBatchOperations(operations);
+    await pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      batchOperations: batch,
+      syncNotifier: sync,
+      feeSchedule: const BlockSpacing(
+        preNu7BlockSeconds: 75,
+        nu7BlockSeconds: 25,
+        nu7ActivationHeight: 1000,
+      ),
+    );
+    await _reviewTwoCards(tester);
+    final count = batch.preparedCounts.length;
+    sync.emit(at(999));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(batch.preparedCounts.length, count + 1);
+    expect(find.text('Review 2 cards'), findsOneWidget);
+  });
+
   testWidgets(
     'leaving a desktop preview prevents its interrupted check reopening',
     (tester) async {

@@ -1261,6 +1261,39 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         sync.error == null;
   }
 
+  void _handleFeePolicyChanged(
+    WalletFeePolicyEpoch? previous,
+    WalletFeePolicyEpoch next,
+  ) {
+    if (previous == null || previous == next) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          ref.read(walletFeePolicyEpochProvider) != next ||
+          _operationInProgress ||
+          _hardwareFundingRequest != null ||
+          _pendingFundingMetadata != null) {
+        return;
+      }
+      if (_page == PaymentLinksLocalPage.bulk) {
+        _requoteBatchForAccount();
+        return;
+      }
+      if (_page != PaymentLinksLocalPage.amount &&
+          _page != PaymentLinksLocalPage.message &&
+          _page != PaymentLinksLocalPage.review) {
+        return;
+      }
+      _maxFundingQuoteGeneration++;
+      setState(() {
+        _maxFundingQuote = null;
+        _maxFundingQuoteInProgress = false;
+        _page = PaymentLinksLocalPage.amount;
+      });
+      unawaited(_loadMaxFundingQuote());
+      _requoteAmount();
+    });
+  }
+
   void _handleFeeQuoteSyncGateChanged(
     ({String? accountUuid, bool ready})? previous,
     ({String? accountUuid, bool ready}) next,
@@ -2757,6 +2790,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       GiftCardTrackingScope(child: _buildContent(context));
 
   Widget _buildContent(BuildContext context) {
+    ref.listen(walletFeePolicyEpochProvider, _handleFeePolicyChanged);
     ref.listen(appSecurityProvider, (_, next) {
       if (next.requiresUnlock) _cardReadEpoch++;
     });
