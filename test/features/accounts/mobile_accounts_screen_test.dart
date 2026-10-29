@@ -1248,13 +1248,14 @@ void main() {
     expect(body.style?.fontSize, 14);
     expect(body.style?.height, 21 / 14);
     expect(body.style?.fontWeight, FontWeight.w400);
-    // Buttons use the mobile label token, not the desktop 14px one.
-    for (final label in ['Remove', 'Cancel']) {
-      final style = tester.widget<Text>(find.text(label)).style;
-      expect(style?.fontSize, AppTypography.labelLarge.fontSize);
-      expect(style?.height, AppTypography.labelLarge.height);
-      expect(style?.fontWeight, FontWeight.w500);
-    }
+    final remove = tester.widget<Text>(find.text('Remove'));
+    expect(remove.style?.fontSize, 14);
+    expect(remove.style?.height, 16 / 14);
+    expect(remove.style?.fontWeight, FontWeight.w500);
+    final cancel = tester.widget<Text>(find.text('Cancel'));
+    expect(cancel.style?.fontSize, 14);
+    expect(cancel.style?.height, 16 / 14);
+    expect(cancel.style?.fontWeight, FontWeight.w500);
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();

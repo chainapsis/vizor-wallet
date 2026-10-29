@@ -31,10 +31,10 @@ void main() {
       find.byType(Scrollable).first,
     );
     expect(scrollable.position.maxScrollExtent, 0);
-    // Request shares its row with the square share button: 300 - 8 - 50.
+    // Copy shares its row with the square share button: 300 - 8 - 50.
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
-      const Size(300, 50),
+      const Size(242, 50),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
@@ -42,7 +42,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
-      const Size(242, 50),
+      const Size(300, 50),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('receive_address_type_tabs'))),

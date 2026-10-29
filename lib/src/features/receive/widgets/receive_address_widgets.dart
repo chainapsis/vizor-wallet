@@ -34,7 +34,6 @@ class ReceiveTabs extends StatelessWidget {
     this.labelStyle,
     this.labelFontWeight = FontWeight.w400,
     this.alwaysDarkSelected = false,
-    this.position,
     super.key,
   });
 
@@ -55,28 +54,15 @@ class ReceiveTabs extends StatelessWidget {
   /// desktop pane lightens it on the transparent tab.
   final bool alwaysDarkSelected;
 
-  /// Pager page to track mid-swipe; see [AppSegmentedControl.position].
-  final double? position;
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // 0 is the dark shielded chip, 1 the light transparent one; a tracked
-    // position blends them mid-slide instead of flipping halfway.
-    final lightness = alwaysDarkSelected
-        ? 0.0
-        : position?.clamp(0.0, 1.0) ??
-              (selectedType == ReceiveAddressType.shielded ? 0.0 : 1.0);
-    final activeBg = Color.lerp(
-      colors.background.inverse,
-      colors.background.ground,
-      lightness,
-    )!;
-    final activeText = Color.lerp(
-      colors.text.inverse,
-      colors.text.accent,
-      lightness,
-    )!;
+    final shieldedActive = selectedType == ReceiveAddressType.shielded;
+    final darkSelected = alwaysDarkSelected || shieldedActive;
+    final activeBg = darkSelected
+        ? colors.background.inverse
+        : colors.background.ground;
+    final activeText = darkSelected ? colors.text.inverse : colors.text.accent;
 
     return AppSegmentedControl<ReceiveAddressType>(
       key: const ValueKey('receive_address_type_tabs'),
@@ -91,7 +77,6 @@ class ReceiveTabs extends StatelessWidget {
       iconGap: iconGap,
       labelStyle: labelStyle,
       labelFontWeight: labelFontWeight,
-      position: position,
       segments: const [
         AppSegment(
           value: ReceiveAddressType.shielded,
