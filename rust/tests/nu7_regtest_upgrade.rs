@@ -182,6 +182,29 @@ fn migration_and_sends_cross_nu7_activation() {
         .active_run_id
         .expect("second run is active");
     assert_ne!(second_run_id, first_run_id);
+    // Prepared notes include their signing fee. At NU7's lower fee, moving
+    // the remainder can need a new preparation wave before parts are scheduled.
+    let preparation_deadline = latest_height() + RUN_START_BEFORE_NU7 * 3;
+    loop {
+        let status = migration_status(&migrator_db, &migrator.account_uuid);
+        if status.phase == "broadcast_scheduled" {
+            break;
+        }
+        assert_eq!(
+            status.active_run_id.as_deref(),
+            Some(second_run_id.as_str())
+        );
+        assert!(
+            latest_height() < preparation_deadline,
+            "second run preparation is still {} at {}: {:?}",
+            status.phase,
+            latest_height(),
+            status.message
+        );
+        mine(1);
+        sync(&migrator_db);
+        advance(&migrator_db, &migrator.account_uuid);
+    }
     let second_parts = run_parts(&migrator_db, &second_run_id);
     assert!(!second_parts.is_empty(), "the second run schedules parts");
     for part in &second_parts {

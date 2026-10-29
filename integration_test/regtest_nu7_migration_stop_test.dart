@@ -136,14 +136,21 @@ void main() {
       const ValueKey('ironwood_migration_select_review_button'),
     );
     await startPrivateMigrationFromReview(tester);
-    final secondRun = await waitForDesktopRegtestMigrationStatus(
+    await waitForDesktopRegtestMigrationStatus(
       tester,
       accountUuid,
       (status) =>
           status.activeRunId != null &&
-          status.activeRunId != firstRun.activeRunId &&
-          status.scheduledBroadcasts.isNotEmpty,
-      description: 'second run scheduled under NU7',
+          status.activeRunId != firstRun.activeRunId,
+      description: 'second run under NU7',
+    );
+    await waitForDesktopActiveMigrationStatus(tester);
+    await leaveDesktopMigrationStatusForHome(tester);
+    // The lower NU7 fee can require fresh preparation of the remaining notes.
+    final secondRun = await prepareDesktopRegtestMigrationSchedule(
+      tester,
+      _driverUrl,
+      accountUuid,
     );
     for (final part in secondRun.scheduledBroadcasts) {
       final start = part.scheduleStartHeight;
@@ -154,9 +161,6 @@ void main() {
         reason: 'NU7 delays span whole 75-second reference blocks',
       );
     }
-    await waitForDesktopActiveMigrationStatus(tester);
-    await leaveDesktopMigrationStatusForHome(tester);
-
     await advanceDesktopRegtestMigrationSchedule(
       tester,
       _driverUrl,

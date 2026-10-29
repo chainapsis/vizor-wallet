@@ -128,9 +128,9 @@ void main() {
         description: 'second run under NU7',
       );
       expect(secondRun.activeRunId, isNot(firstRun.activeRunId));
-      // The rest reuses prepared notes and needs no preparation, so the start
-      // screen would only hand over to the status screen mid-broadcast. Open
-      // the status screen from home before advancing the schedule.
+      // A lower fee can require fresh preparation of the remaining notes.
+      final scheduled = await _prepareSchedule(tester, container, accountUuid);
+      // Reopen the settled status screen before advancing the schedule.
       await leaveMobilePrivateMigrationStatusForHome(tester);
       await tapWidget(
         tester,
@@ -148,7 +148,6 @@ void main() {
         timeout: const Duration(seconds: 30),
       );
 
-      final scheduled = await _prepareSchedule(tester, container, accountUuid);
       for (final part in scheduled.scheduledBroadcasts) {
         final start = part.scheduleStartHeight;
         if (start == null) continue;
