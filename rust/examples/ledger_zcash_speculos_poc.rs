@@ -3,6 +3,8 @@
 
 #[path = "ledger_zcash_speculos_poc/gift_card.rs"]
 mod gift_card;
+#[path = "ledger_zcash_speculos_poc/migration.rs"]
+mod migration;
 #[path = "ledger_zcash_speculos_poc/regtest.rs"]
 mod regtest;
 #[path = "ledger_zcash_speculos_poc/voting.rs"]
@@ -237,6 +239,18 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         .as_deref()
         .map(|path| gift_card::prepare_wallet(path, &export.ufvk, &export.seed_fingerprint))
         .transpose()?;
+    let migration_account = config
+        .migration_db_path
+        .as_deref()
+        .map(|path| {
+            migration::prepare_wallet(
+                path,
+                &export.ufvk,
+                &export.seed_fingerprint,
+                export.account_index,
+            )
+        })
+        .transpose()?;
     let metadata = json!({
         "accountUuid": account_uuid,
         "ufvk": export.ufvk,
@@ -254,6 +268,7 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         "votingBundle2ActionIndex": voting_bundle_2.action_index,
         "orchardToIronwoodV6PcztPath": orchard_to_ironwood_path,
         "giftCardAccountUuid": gift_card_account,
+        "migrationAccountUuid": migration_account,
     });
     fs::write(&metadata_path, metadata.to_string())
         .map_err(|error| format!("Write {}: {error}", metadata_path.display()))?;
@@ -978,6 +993,7 @@ struct Config {
     desktop_smoke: bool,
     prepare_fixture: bool,
     gift_card_db_path: Option<String>,
+    migration_db_path: Option<String>,
     smoke: bool,
     db_path: Option<String>,
     account_uuid: Option<String>,
@@ -1005,6 +1021,7 @@ impl Config {
         let mut desktop_smoke = false;
         let mut prepare_fixture = false;
         let mut gift_card_db_path = None;
+        let mut migration_db_path = None;
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
@@ -1019,6 +1036,7 @@ impl Config {
                 "--output" => output_path = Some(PathBuf::from(value(&mut args)?)),
                 "--metadata" => metadata_path = Some(PathBuf::from(value(&mut args)?)),
                 "--gift-card-db" => gift_card_db_path = Some(value(&mut args)?),
+                "--migration-db" => migration_db_path = Some(value(&mut args)?),
                 "--network" => network = value(&mut args)?,
                 "--api-url" => api_url = value(&mut args)?,
                 "--signing-api-url" => signing_api_url = Some(value(&mut args)?),
@@ -1044,6 +1062,7 @@ impl Config {
             desktop_smoke,
             prepare_fixture,
             gift_card_db_path,
+            migration_db_path,
             smoke,
             db_path,
             account_uuid,
@@ -1059,7 +1078,7 @@ impl Config {
 }
 
 fn usage() -> String {
-    let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--gift-card-db <isolated-gift-wallet-db>] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
+    let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--gift-card-db <isolated-gift-wallet-db>] [--migration-db <isolated-orchard-wallet-db>] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
     format!("{prepare}\n\n{}", format!(
         "Usage:\n  ledger_zcash_speculos_poc smoke --signing-api-url <speculos-api> [--api-url {DEFAULT_API_URL}] [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc \\\n  --db-path <wallet-db> --account-uuid <ledger-account-uuid> --pczt <unsigned-pczt> \\\n  [--output <signed-pczt>] [--network main] [--api-url {DEFAULT_API_URL}] [--manual-review]\n\n\
 Smoke mode exports account 0 from Speculos, imports it into a temporary mainnet DB,\n\

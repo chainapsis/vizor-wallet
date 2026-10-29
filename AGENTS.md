@@ -761,6 +761,14 @@ while an executed denomination preparation waits for confirmations.
 - `NotFound`, mempool height `0`, and fork height `UInt64.max` contribute zero
   confirmations. A normal mined height contributes
   `tip - minedHeight + 1`, capped at 3.
+- A preparation transaction the tracker saw broadcast while the next block
+  was still before a network upgrade, and that the server reports `NotFound`
+  on two consecutive passes once it is past, was dropped at activation (nodes
+  clear old-branch transactions, ZIP 200). The wave goes to the foreground
+  without failing the task, since only the foreground can stop the run.
+  Transactions first seen later may target the new branch and are not judged.
+  The check reads `zcash_next_upgrade_activation_height` and process memory,
+  not the wallet DB.
 - Reaching 3 confirmations finishes only the current observation wave. The
   manager stores a foreground-continuation token, posts an “Open Vizor”
   notification under its own `confirmedWaveReady` kind so healthy copy never

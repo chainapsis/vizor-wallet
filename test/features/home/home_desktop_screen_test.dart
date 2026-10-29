@@ -462,6 +462,44 @@ void main() {
     expect(store.seen, {'main'});
   });
 
+  testWidgets('the NU7 announcement fades in unless motion is reduced', (
+    tester,
+  ) async {
+    final overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
+    double opacity() => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(of: overlay, matching: find.byType(FadeTransition))
+              .first,
+        )
+        .opacity
+        .value;
+    Future<void> showAnnouncement() async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        ),
+      );
+      for (var frame = 0; frame < 10 && overlay.evaluate().isEmpty; frame++) {
+        await tester.pump();
+      }
+      expect(overlay, findsOneWidget);
+    }
+
+    await showAnnouncement();
+    expect(opacity(), lessThan(1));
+    await tester.pumpAndSettle();
+    expect(opacity(), 1);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(const SizedBox());
+    await showAnnouncement();
+    expect(opacity(), 1);
+  });
+
   testWidgets('home does not stack the NU7 announcement on the Ironwood one', (
     tester,
   ) async {
@@ -712,6 +750,47 @@ void main() {
       expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     },
   );
+
+  testWidgets('home desktop CTA flags a migration stopped by the upgrade', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.stopped(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(kIronwoodMigrationStoppedByUpgradePhase),
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(340_000_000),
+          ironwoodBalance: BigInt.from(210_000_000),
+          spendableBalance: BigInt.from(210_000_000),
+          totalBalance: BigInt.from(550_000_000),
+        ),
+      ),
+    );
+    await tester.pump();
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_cta_button')),
+    );
+
+    expect(find.text('Migration stopped by network upgrade'), findsOneWidget);
+    expect(find.textContaining('still migrating'), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey('home_desktop_ironwood_migration_stopped_icon'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_background')),
+      findsNothing,
+    );
+  });
 
   testWidgets('home keeps completed Ironwood visible during migration sync', (
     tester,

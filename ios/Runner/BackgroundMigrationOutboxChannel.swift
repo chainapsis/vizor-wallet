@@ -234,7 +234,8 @@ enum BackgroundMigrationOutboxChannel {
         anchorBoundaryHeight: try uint64(rawItem, "anchorBoundaryHeight"),
         scheduledHeight: try uint64(rawItem, "scheduledHeight"),
         scheduleStartHeight: try uint64(rawItem, "scheduleStartHeight"),
-        expiryHeight: try uint64(rawItem, "expiryHeight")
+        expiryHeight: try uint64(rawItem, "expiryHeight"),
+        targetHeight: try optionalUInt64(rawItem, "targetHeight")
       )
     }
     return BackgroundMigrationOutboxBatch(

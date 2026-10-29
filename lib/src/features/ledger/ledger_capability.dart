@@ -45,6 +45,14 @@ const ledgerAppUpdateRequiredError =
     'Update your Ledger and its Zcash app to $kLedgerNu7AppVersion or newer '
     'in Ledger Wallet.';
 
+/// Shown when Rust refuses a transaction that keeps change in Orchard: the app
+/// will not sign the zero-valued spend paired with that change. Keep this
+/// identical to `LEDGER_ORCHARD_CHANGE_UNSUPPORTED` in
+/// `rust/src/wallet/ledger/parse.rs`.
+const ledgerOrchardChangeUnsupportedError =
+    "Ledger can't sign a transaction that keeps change in Orchard. Migrate "
+    'your Orchard balance to Ironwood first.';
+
 /// Accounts connected from now on start without the 3.9.3 memo limit; those
 /// connected earlier keep signing from [kMinimumLedgerZcashAppVersion].
 const kMinimumLedgerZcashAppVersionForNewAccounts = kLedgerMemoHashAppVersion;
@@ -78,21 +86,14 @@ LedgerAppSupport ledgerAppSupport(String? appVersion) {
   );
 }
 
-/// A Ledger account can recover legacy Orchard funds when the same seed was
-/// previously used through another wallet or Ledger Zcash app build.
-///
-/// Keep this as an explicit capability boundary so the preserved migration
-/// signer can be re-enabled deliberately after a future Ledger app is verified
-/// against the migration canary.
-const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
-  'Automatic Orchard migration is not available for Ledger accounts.',
-);
-
 bool isLedgerMemoHashUnsupported(Object error) =>
     error.toString().contains(ledgerMemoHashUnsupportedError);
 
 bool isLedgerAppUpdateRequired(Object error) =>
     error.toString().contains(ledgerAppUpdateRequiredError);
+
+bool isLedgerOrchardChangeUnsupported(Object error) =>
+    error.toString().contains(ledgerOrchardChangeUnsupportedError);
 
 enum LedgerBluetoothCapability { supported, unsupported, unknown }
 

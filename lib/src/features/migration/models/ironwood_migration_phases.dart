@@ -1,3 +1,5 @@
+import '../../../core/zcash/block_spacing.dart';
+
 const kIronwoodMigrationReadyPhase = 'ready_to_prepare';
 const kIronwoodMigrationAwaitingPreparationPhase = 'awaiting_preparation';
 
@@ -49,9 +51,24 @@ const kIronwoodMigrationPausedPhase = 'paused';
 const kIronwoodMigrationFailedRecoverablePhase = 'failed_recoverable';
 const kIronwoodMigrationFailedTerminalPhase = 'failed_terminal';
 const kIronwoodMigrationAbandonedPhase = 'abandoned';
+
+/// The run ended because parts signed for the old branch can't be sent after
+/// a network upgrade. Funds stay put; the user moves the remainder again.
+const kIronwoodMigrationStoppedByUpgradePhase = 'stopped_by_upgrade';
 const kIronwoodMigrationReleaseNotesUrl =
     'https://tachyon.z.cash/blog/auditing-orchard-supply/';
 const kIronwoodMigrationLateGraceBlocks = 96;
+
+/// First height at which a part scheduled at [scheduledHeight] reads as late.
+/// The two-hour grace is in ZIP 318 reference blocks, so it spans 288 blocks
+/// from NU7 activation.
+int ironwoodMigrationLateHeight(
+  int scheduledHeight,
+  BlockSpacing blockSpacing,
+) =>
+    scheduledHeight +
+    kIronwoodMigrationLateGraceBlocks *
+        blockSpacing.blocksPerReferenceBlock(scheduledHeight);
 
 const kIronwoodMigrationStartPhases = {
   kIronwoodMigrationWaitingForSpendableOrchardPhase,

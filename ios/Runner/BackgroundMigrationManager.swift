@@ -304,6 +304,8 @@ private enum BackgroundMigrationNotification {
     "com.keplr.vizor.ironwood-"
   static let needsActionIdentifier =
     "com.keplr.vizor.ironwood-migration.needs-action"
+  static let upgradeStopIdentifier =
+    "com.keplr.vizor.ironwood-migration.upgrade-stop"
 
   static func proofReadyIdentifier(batchId: String) -> String {
     let digest = SHA256.hash(data: Data(batchId.utf8))
@@ -321,12 +323,15 @@ private enum BackgroundMigrationNotification {
     return "com.keplr.vizor.ironwood-migration.sent.\(digest)"
   }
 
-  static func remove(batchIds: [String], includeNeedsAction: Bool) {
+  static func remove(batchIds: [String], includeNeedsAction: Bool, includeUpgradeStop: Bool) {
     var identifiers = batchIds.flatMap {
       [proofReadyIdentifier(batchId: $0), broadcastCompleteIdentifier(batchId: $0)]
     }
     if includeNeedsAction {
       identifiers.append(needsActionIdentifier)
+    }
+    if includeUpgradeStop {
+      identifiers.append(upgradeStopIdentifier)
     }
     guard !identifiers.isEmpty else { return }
     let center = UNUserNotificationCenter.current()
@@ -655,7 +660,9 @@ final class BackgroundMigrationManager {
       let hasRemainingWork = self.hasRunnableOutboxWork()
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,
-        includeNeedsAction: !hasRemainingWork
+        includeNeedsAction: !hasRemainingWork,
+        // Another account's run may still be stopped by the upgrade.
+        includeUpgradeStop: !hasRemainingWork && !self.holdsPartsStoppedByAlertedUpgrade()
       )
       return revoked
     } completion: { completion($0) }
@@ -673,7 +680,8 @@ final class BackgroundMigrationManager {
       }
       BackgroundMigrationNotification.remove(
         batchIds: batchIds,
-        includeNeedsAction: true
+        includeNeedsAction: true,
+        includeUpgradeStop: true
       )
       return removed
     } completion: { completion($0) }
@@ -794,13 +802,11 @@ final class BackgroundMigrationManager {
           BackgroundMigrationPreparationManager.shared
             .notifyPreparationNeedsForeground()
         }
+        // Keep the rest of the result, such as an upgrade stop, as it is.
+        var announcedResult = runResult
+        announcedResult.proofReady = announced
         self.finishOutboxRun(
-          BackgroundMigrationOutboxRunResult(
-            transport: runResult.transport,
-            proofReady: announced,
-            broadcastComplete: runResult.broadcastComplete,
-            transportAccountUuid: runResult.transportAccountUuid
-          ),
+          announcedResult,
           task: task,
           preparationResult: preparationResult
         )
@@ -938,6 +944,7 @@ final class BackgroundMigrationManager {
       completion(true)
       return
     }
+    postUpgradeStopNotificationIfNeeded(runResult.upgradeStopKey)
     deliverBroadcastCompleteNotification(
       runResult.broadcastComplete
     ) { [weak self] broadcastCompleteAcknowledged in
@@ -958,6 +965,7 @@ final class BackgroundMigrationManager {
         }
         self.reschedule(
           after: runResult.transport,
+          stoppedByUpgrade: runResult.upgradeStopKey != nil,
           retryProofNotification: !proofReadyAcknowledged,
           retryBroadcastCompleteNotification: !broadcastCompleteAcknowledged,
           preparationResult: preparationResult,
@@ -969,6 +977,7 @@ final class BackgroundMigrationManager {
 
   private func reschedule(
     after transport: BackgroundMigrationTransportOutcome,
+    stoppedByUpgrade: Bool,
     retryProofNotification: Bool,
     retryBroadcastCompleteNotification: Bool,
     preparationResult: BackgroundMigrationPreparationPassResult,
@@ -978,7 +987,8 @@ final class BackgroundMigrationManager {
       completion(true)
       return
     }
-    if transport == .needsUserAction {
+    // The upgrade-stop alert already says what to do.
+    if transport == .needsUserAction && !stoppedByUpgrade {
       postNeedsUserActionNotification()
     }
 
@@ -1070,6 +1080,15 @@ final class BackgroundMigrationManager {
     }
   }
 
+  private func holdsPartsStoppedByAlertedUpgrade() -> Bool {
+    guard let key = UserDefaults.standard.string(forKey: Self.upgradeStopAlertedKey) else {
+      return false
+    }
+    // Keeps the alert when the outbox can't be read, like hasRunnableOutboxWork.
+    return (try? BackgroundMigrationOutboxStore.shared.read())?.holdsPartsStopped(byUpgrade: key)
+      ?? true
+  }
+
   private func hasResumablePreparationWork() -> Bool {
     guard #available(iOS 26.0, *) else { return false }
     return BackgroundMigrationPreparationManager.shared
@@ -1089,6 +1108,35 @@ final class BackgroundMigrationManager {
     endMutationQuiescence()
     if hasRunnableOutboxWork() || hasResumablePreparationWork() {
       schedule(earliestBeginDate: Date().addingTimeInterval(60)) { _ in }
+    }
+  }
+
+  private static let upgradeStopAlertedKey =
+    "com.keplr.vizor.ironwood-migration.upgrade-stop-alerted"
+
+  /// The foreground stops the run on its next sync and offers to move the rest.
+  private func postUpgradeStopNotificationIfNeeded(_ upgradeStopKey: String?) {
+    let defaults = UserDefaults.standard
+    guard !isNotificationWorkDisabled,
+      let key = backgroundMigrationUpgradeStopAlertKey(
+        upgradeStopKey,
+        alreadyAlerted: defaults.string(forKey: Self.upgradeStopAlertedKey)
+      )
+    else { return }
+    let content = UNMutableNotificationContent()
+    content.title = "Migration stopped by network upgrade"
+    content.body = "Open Vizor to move the rest of your balance."
+    content.sound = .default
+    addNotificationIfEnabled(
+      UNNotificationRequest(
+        identifier: BackgroundMigrationNotification.upgradeStopIdentifier,
+        content: content,
+        trigger: nil
+      )
+    ) { added in
+      if added && !self.isNotificationWorkDisabled {
+        defaults.set(key, forKey: Self.upgradeStopAlertedKey)
+      }
     }
   }
 

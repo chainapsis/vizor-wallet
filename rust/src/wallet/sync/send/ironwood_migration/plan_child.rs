@@ -122,6 +122,18 @@ fn get_orchard_migration_private_plan_for_targets(
             denomination_split_layer_count,
             &direct_note_mined_heights,
         )?;
+    let (_, latest_proof_ready_height) = plan_proof_timing_for_spacing(
+        network,
+        u32::from(target_height),
+        u32::from(anchor_height),
+        denomination_split_layer_count,
+        &direct_note_mined_heights,
+        super::migration::latest_preparation_spacing_delay_blocks(
+            network,
+            preparation_timing_policy,
+            denomination_split_stage_count,
+        )?,
+    )?;
     let migration_fee_zatoshi = u64::from(migration_fee_estimate)
         .checked_mul(u64::from(planned_batch_count))
         .ok_or("Migration fee estimate overflow")?;
@@ -130,9 +142,17 @@ fn get_orchard_migration_private_plan_for_targets(
         .split_fee_zatoshi
         .checked_add(migration_fee_zatoshi)
         .ok_or("Migration total fee estimate overflow")?;
+    let (schedule_mean_delay_blocks, schedule_max_delay_blocks) =
+        super::migration::schedule_delays_in_blocks(
+            network,
+            super::migration::configured_timing_policy(network),
+            planned_batch_count as usize,
+            u32::from(target_height),
+        );
     let scheduled_transfers = super::migration::planned_transfer_schedule(
         padded_plan.denominations.migration_outputs.iter().copied(),
         network,
+        u32::from(target_height),
         &mut OsRng,
     );
 
@@ -148,17 +168,65 @@ fn get_orchard_migration_private_plan_for_targets(
         denomination_split_stage_count,
         denomination_split_layer_count,
         signing_batch_limit: super::migration::MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
-        schedule_mean_delay_blocks:
-            super::migration::schedule_parameters_for_part_count(
-                network,
-                planned_batch_count as usize,
-            )
-            .0,
-        schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
+        schedule_mean_delay_blocks,
+        schedule_max_delay_blocks,
         proof_readiness_delay_blocks,
         estimated_proof_ready_height,
+        latest_proof_ready_height,
         scheduled_transfers,
+        target_height: u32::from(target_height),
     }))
+}
+
+impl OrchardMigrationPrivatePlan {
+    /// Refuses `schedule` when its first part could not leave before the next
+    /// upgrade's hold: signed for the current branch, the run would be held and
+    /// stopped after paying for its preparation.
+    pub(crate) fn ensure_first_part_precedes_upgrade_hold(
+        &self,
+        network: WalletNetwork,
+        schedule: &[super::migration::MigrationScheduleEntry],
+    ) -> Result<(), String> {
+        let Some(first_offset) = schedule.iter().map(|entry| entry.block_offset).min() else {
+            return Ok(());
+        };
+        // A part leaves once the tip reaches its scheduled height and its
+        // proofs are ready, at the latest the preparation could draw.
+        let first_broadcast_tip = self
+            .target_height
+            .saturating_sub(1)
+            .saturating_add(first_offset)
+            .max(self.latest_proof_ready_height.unwrap_or(0));
+        if network_upgrade::holds_transaction(&network, self.target_height, first_broadcast_tip) {
+            return Err(network_upgrade::START_HOLD_MESSAGE.to_string());
+        }
+        Ok(())
+    }
+}
+
+/// [`OrchardMigrationPrivatePlan::ensure_first_part_precedes_upgrade_hold`]
+/// for a run about to start from `schedule`.
+fn ensure_first_part_precedes_upgrade_hold(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    schedule: &[super::migration::MigrationScheduleEntry],
+) -> Result<(), String> {
+    if schedule.is_empty() {
+        return Ok(());
+    }
+    let target_values = super::migration::target_values_from_schedule(schedule)?;
+    match get_orchard_migration_private_plan_for_targets(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        Some(&target_values),
+    )? {
+        Some(plan) => plan.ensure_first_part_precedes_upgrade_hold(network, schedule),
+        None => Ok(()),
+    }
 }
 
 fn private_plan_proof_timing(
@@ -170,12 +238,46 @@ fn private_plan_proof_timing(
     layer_count: u32,
     direct_note_mined_heights: &[u32],
 ) -> Result<(u32, Option<u32>), String> {
-    let spacing_delay = super::migration::estimated_preparation_spacing_delay_blocks(
+    plan_proof_timing_for_spacing(
         network,
-        preparation_timing_policy,
-        stage_count,
-    )?;
-    let confirmation_lag = super::migration::denomination_confirmations_required().saturating_sub(1);
+        target_height,
+        trusted_height,
+        layer_count,
+        direct_note_mined_heights,
+        super::migration::estimated_preparation_spacing_delay_blocks(
+            network,
+            preparation_timing_policy,
+            stage_count,
+        )?,
+    )
+}
+
+/// Proof readiness when the preparation transactions span
+/// `spacing_reference_blocks`.
+fn plan_proof_timing_for_spacing(
+    network: WalletNetwork,
+    target_height: u32,
+    trusted_height: u32,
+    layer_count: u32,
+    direct_note_mined_heights: &[u32],
+    spacing_reference_blocks: u32,
+) -> Result<(u32, Option<u32>), String> {
+    // Account for layer confirmations before advancing the reference-block
+    // span. This also keeps the maximum estimate conservative if those
+    // confirmations themselves cross the spacing change.
+    let spacing_start_height = target_height
+        .checked_add(
+            layer_count
+                .saturating_sub(1)
+                .checked_mul(super::migration::denomination_confirmations_required())
+                .ok_or("Migration preparation height overflow")?,
+        )
+        .ok_or("Migration preparation height overflow")?;
+    let final_mined_height =
+        super::migration::zip318_advance(network, spacing_start_height, spacing_reference_blocks)?;
+    let spacing_delay = final_mined_height - spacing_start_height;
+    let confirmation_lag =
+        super::migration::denomination_confirmations_required().saturating_sub(1);
 
     let mut final_ready_height = direct_note_mined_heights
         .iter()
@@ -186,21 +288,11 @@ fn private_plan_proof_timing(
     let readiness_baseline = if layer_count == 0 {
         trusted_height
     } else {
-        let final_mined_height = target_height
-            .checked_add(
-                layer_count
-                    .saturating_sub(1)
-                    .checked_mul(super::migration::denomination_confirmations_required())
-                    .ok_or("Migration preparation height overflow")?,
-            )
-            .and_then(|height| height.checked_add(spacing_delay))
-            .ok_or("Migration preparation height overflow")?;
         let generated_ready_height =
             super::migration::estimated_proof_ready_height(network, final_mined_height)?;
-        final_ready_height = Some(
-            final_ready_height
-                .map_or(generated_ready_height, |height| height.max(generated_ready_height)),
-        );
+        final_ready_height = Some(final_ready_height.map_or(generated_ready_height, |height| {
+            height.max(generated_ready_height)
+        }));
         final_mined_height
             .checked_add(confirmation_lag)
             .ok_or("Migration preparation trusted height overflow")?
@@ -301,7 +393,7 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
 ) -> Result<Builder<P, ()>, String> {
     let scheduled_height_u32: u32 = scheduled_height.into();
     let expiry_height =
-        super::migration::zip318_canonical_migration_expiry_height(scheduled_height_u32)?;
+        super::migration::zip318_canonical_migration_expiry_height(&network, scheduled_height_u32)?;
 
     Ok(Builder::new(
         network,

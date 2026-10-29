@@ -31,6 +31,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
@@ -350,9 +351,10 @@ class _IronwoodMigrationAttentionHostState
     if (!mounted || _showing || _resumeRefreshInProgress) return;
     if (GoRouterState.of(context).uri.path != '/home') return;
     final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
-    if (cta.mode != IronwoodHomeMigrationCtaMode.resume) return;
+    final stopped = cta.mode == IronwoodHomeMigrationCtaMode.stopped;
+    if (cta.mode != IronwoodHomeMigrationCtaMode.resume && !stopped) return;
     final accountUuid = cta.accountUuid;
-    final runId = cta.status?.activeRunId;
+    final runId = mobileIronwoodMigrationAttentionRunId(cta.status);
     final sync = ref.read(syncProvider).value;
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(
@@ -362,6 +364,7 @@ class _IronwoodMigrationAttentionHostState
       isKeystone: ref
           .read(accountProvider.notifier)
           .isKeystoneAccount(accountUuid),
+      blockSpacing: ref.read(blockSpacingProvider),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -429,10 +432,16 @@ class _IronwoodMigrationAttentionHostState
       );
       if (!mounted) return;
       if (action == _IronwoodAttentionAction.openMigration) {
-        context.push(
-          '/migration/private/status',
-          extra: const MobileIronwoodMigrationStatusEntry(),
-        );
+        // The stopped sheet's button says "Move remaining balance".
+        if (attention.kind ==
+            MobileIronwoodMigrationAttentionKind.upgradeStopped) {
+          context.push('/migration/options');
+        } else {
+          context.push(
+            '/migration/private/status',
+            extra: const MobileIronwoodMigrationStatusEntry(),
+          );
+        }
       }
     } finally {
       _showing = false;
@@ -1123,6 +1132,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           ref
               .read(accountProvider.notifier)
               .isKeystoneAccount(activeAccountUuid),
+      blockSpacing: ref.watch(blockSpacingProvider),
     );
 
     final uuid = activeAccountUuid;
@@ -1242,7 +1252,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               onIronwoodMigrationTap: () {
                 final target = switch (widget.ironwoodMigrationCta.mode) {
                   IronwoodHomeMigrationCtaMode.start => '/migration/intro',
-                  IronwoodHomeMigrationCtaMode.resume =>
+                  IronwoodHomeMigrationCtaMode.resume ||
+                  IronwoodHomeMigrationCtaMode.stopped =>
                     '/migration/private/status',
                   IronwoodHomeMigrationCtaMode.hidden => null,
                 };

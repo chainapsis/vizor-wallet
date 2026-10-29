@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
+import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_phases.dart';
 
 void main() {
   const spacing = BlockSpacing(
@@ -31,5 +32,8 @@ void main() {
     expect(spacing.blocksPerReferenceBlock(1_009), 1);
     expect(spacing.blocksPerReferenceBlock(1_010), 3);
     expect(BlockSpacing.preNu7.blocksPerReferenceBlock(1_010), 1);
+    // The two-hour late grace stays two hours either side of activation.
+    expect(ironwoodMigrationLateHeight(900, spacing), 900 + 96);
+    expect(ironwoodMigrationLateHeight(1_010, spacing), 1_010 + 288);
   });
 }

@@ -19,6 +19,15 @@ void main() {
     );
   });
 
+  test('a transaction keeping Orchard change says why it cannot be signed', () {
+    final guidance = ledgerFailureGuidance(
+      StateError(ledgerOrchardChangeUnsupportedError),
+    );
+    expect(guidance?.message, ledgerOrchardChangeUnsupportedError);
+    // The same transaction fails again; the user has to change it.
+    expect(guidance?.retryable, isFalse);
+  });
+
   test('a Ledger swapped during a USB request asks for one Ledger', () {
     final guidance = ledgerFailureGuidance(StateError(ledgerAppChangedError));
     expect(guidance?.message, ledgerAppChangedError);

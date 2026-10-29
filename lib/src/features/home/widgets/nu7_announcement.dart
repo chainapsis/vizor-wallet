@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/liquid_metal.dart';
 import '../providers/nu7_announcement_provider.dart';
 
@@ -120,6 +121,77 @@ class Nu7AnnouncementModal extends StatelessWidget {
         ],
       ),
       child: Nu7AnnouncementContent(onClose: onClose, compact: true),
+    );
+  }
+}
+
+/// The desktop NU7 announcement over home. It appears without the user
+/// asking, so it fades in with a slight scale unless motion is reduced.
+class Nu7AnnouncementOverlay extends StatefulWidget {
+  const Nu7AnnouncementOverlay({required this.onClose, super.key});
+
+  static const entranceDuration = Duration(milliseconds: 220);
+
+  final VoidCallback onClose;
+
+  @override
+  State<Nu7AnnouncementOverlay> createState() => _Nu7AnnouncementOverlayState();
+}
+
+class _Nu7AnnouncementOverlayState extends State<Nu7AnnouncementOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrance = AnimationController(
+    vsync: this,
+    duration: Nu7AnnouncementOverlay.entranceDuration,
+  );
+  late final Animation<double> _progress = CurvedAnimation(
+    parent: _entrance,
+    curve: Curves.easeOutCubic,
+  );
+  late final Animation<double> _scale = Tween<double>(
+    begin: 0.96,
+    end: 1,
+  ).animate(_progress);
+  var _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      _entrance.value = 1;
+    } else {
+      _entrance.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: FadeTransition(
+        opacity: _progress,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            AppPaneModalOverlay(
+              key: const ValueKey('nu7_announcement_overlay'),
+              alignment: const Alignment(0, -0.08),
+              onDismiss: widget.onClose,
+              child: ScaleTransition(
+                scale: _scale,
+                child: Nu7AnnouncementModal(onClose: widget.onClose),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -82,9 +82,14 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
   approval, signed-outbox broadcast, and recovery storage to create four cards
   with one transaction. Wallet-path resolution and secure storage are isolated;
   a loopback lightwalletd stub accepts the transaction without chain mining.
-- `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary,
-  a V6 transaction on the NU7 branch. On 2026-10-29 Zcash 3.10.0 signed it on
-  both NU6.3 and NU7, and 3.9.4 rejected it on both.
+- The compatibility canary runs by default; `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=false`
+  skips it. It first signs a synthetic V6 transaction on the NU7 branch with the
+  full signer. On 2026-10-29 Zcash 3.10.0 signed it on both NU6.3 and NU7, and
+  3.9.4 rejected it on both. It then runs Immediate migration through the real
+  Dart service on a separate DB, with an Orchard note scanned through the SDK
+  before NU6.3. The plan, the Rust PCZT and its Ledger signer view, the compact
+  signature, proofs and broadcast are production code; a loopback lightwalletd
+  stub accepts the transaction.
 - Voting builds two real SDK `PreparedDelegationBundle::keystone_request`
   requests from synthetic eligible Ironwood notes. It verifies the zero-value
   foreign-hotkey output, then signs the SDK-redacted bytes through the production

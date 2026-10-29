@@ -34,22 +34,35 @@ approved schedule. Mining and accepted-but-not-stored checks still run first.
 `rust/src/wallet/network_upgrade.rs` holds the rules that do not read the
 wallet:
 
-- `TX_EXPIRING_SOON_BLOCKS` (3).
+- `BROADCAST_HOLD_BLOCKS` (10) and `TX_EXPIRING_SOON_BLOCKS` (3).
 - `next_activation_after`, `crosses` and `cap_expiry_at_branch_end`, all
   derived from `BranchId::height_bounds`.
-- `hold_heights`, the tip from which sends are refused before the next
-  upgrade.
-- `SEND_HOLD_MESSAGE`.
+- `holds_transaction` and `ensure_migration_can_start` for migrations.
+- `hold_heights`, the tips from which migrations and transactions are refused
+  before the next upgrade.
+- `START_HOLD_MESSAGE` and `SEND_HOLD_MESSAGE`.
 
-Dart reads these rules rather than restating them:
+Other layers read these rules rather than restating them:
 
 - `get_network_upgrade_window` exposes `hold_heights`.
   `networkUpgradeWindowProvider` applies it to the wallet's tip so swaps and
   Gift Cards stop before side effects Rust cannot undo.
 - `networkUpgradeHoldMessage` in `lib/src/core/zcash/network_upgrade_hold.dart`
   turns the Rust message into user copy.
-- `upgrade_hold_heights_match_the_send_refusal` checks `hold_heights` against
-  the send refusal tip by tip.
+- The iOS outbox asks `zcash_migration_broadcast_held` whether a part is
+  held, and takes ZIP 318 expiry and spacing from
+  `zcash_zip318_canonical_expiry_height` and
+  `zcash_zip318_blocks_per_reference_block`, so it carries no window or
+  modulus of its own.
+- Once no old-branch block is left for an unsent part, the iOS outbox posts
+  one "Migration stopped by network upgrade" alert per upgrade, when
+  notifications are on, in place of its generic needs-attention alert.
+- The iOS preparation tracker hands a wave to the foreground when a
+  transaction it saw before the upgrade stays unknown to the server after it.
+- Both find the upgrade with `zcash_next_upgrade_activation_height`, so they
+  follow any upgrade Common schedules.
+- `upgrade_hold_heights_match_the_send_and_migration_refusals` checks
+  `hold_heights` against the refusals tip by tip.
 
 ## What happens at each tip
 
@@ -57,9 +70,11 @@ Dart reads these rules rather than restating them:
 
 | Tip | Effect |
 | --- | --- |
-| up to `A − 5` | Normal. |
-| `A − 4` to `A − 2` | Sends, send-max, shielding, swap deposits and Gift Cards are refused: their expiry, capped at `A − 1`, is too close for nodes to accept. Swaps that send ZEC and Gift Card creation stop before they start. |
-| `A − 1` | New transactions target the new branch and are accepted again. |
+| up to `A − 12` | Normal. |
+| `A − 11` to `A − 2` | Migration parts and preparation stages are not broadcast. New Private and Immediate migrations, Keystone prepares and Keystone batch signing are refused. A Private run whose first part would land here is refused earlier. |
+| `A − 4` to `A − 2` | Sends, send-max, shielding, swap deposits and Gift Cards are also refused: their expiry, capped at `A − 1`, is too close for nodes to accept. Swaps that send ZEC and Gift Card creation stop before they start. |
+| `A − 1` | New transactions target the new branch and are accepted again. Old-branch migration parts stay held, in the foreground and in the iOS outbox: a node that missed the upgrade stops here and would still accept them. |
+| once `A − 1` is scanned | Runs whose transactions are still unmined on the old branch end as `stopped_by_upgrade`. |
 
 ## Sends
 
@@ -102,6 +117,83 @@ shows the same copy. Rust raises it before building the funding transaction,
 so a Gift Card whose submission marker was already written is not locked as
 possibly sent, and a held claim stays ready to claim.
 
+## Migrations
+
+**Unmined transactions.** The hold and the stop both look at a run's
+transactions that are not mined yet:
+
+- scheduled, `needs_resign` and broadcast parts;
+- signed children not yet promoted to parts;
+- stages awaiting inputs or broadcast;
+- parts a later Keystone batch will sign for the run's schedule origin.
+
+**Hold.** `network_upgrade_holds_broadcasts` keeps parts and stages unsent
+from `A − 11`. Every first broadcast, Immediate ones included, judges the hold
+at the later of the wallet's tip and the server's, read fresh
+(`live_chain_tip_height`): a desktop that wakes near the upgrade can broadcast
+before sync catches up, and a cached tip can predate the sleep. While the
+server's tip cannot be read, nothing is sent. While a run is held, the
+foreground does not mark its parts for new signatures, so a wallet catching up
+after activation leaves them for the stop.
+
+The iOS outbox holds each part by the height it was signed for, as the
+foreground does; a part saved by an older build has none and is held by the
+tip until `A`. It reports a held part to Dart, which waits rather than
+treating it as a failed broadcast. From NU7's activation the expiry modulus
+changes, so the outbox finds old-branch parts' expiry no longer canonical and
+marks them for new signatures instead of sending them; the foreground stops
+the run once it scans `A − 1`.
+
+**Stop.** `stopped_by_upgrade` is terminal. A run stops at either of two
+points:
+
+- when a broadcast is rejected after activation
+  (`stop_run_if_network_upgrade_invalidated`), judged at the later of the
+  wallet's and the server's tip; while the tip cannot be read the run waits
+  instead of failing;
+- after a sync whose fully scanned height reaches `A − 1`
+  (`network_upgrade_stops_run`). Waiting for that scan lets parts mined before
+  the upgrade confirm first, so the receipt reports them as moved.
+
+Stopping releases the run's note locks. It also expires, in the wallet, the
+run's unmined transactions for the ended branch at that branch's last block:
+the network can no longer mine them, so their inputs return at once instead of
+at the ZIP 318 expiry, weeks later. A reorg that mines one restores it when the
+wallet scans the block. Migration status keeps the run as a receipt while
+Orchard funds remain, so the rest can move in a new run under the new branch.
+Writers that move a run forward skip a stopped one, so a part saved during the
+stop cannot undo it.
+
+**Start.** Software starts, Keystone prepares and batch signing, draft creation
+and Immediate builds call `ensure_migration_can_start`. A Private run is also
+refused when its first part might not leave before the hold, counting the
+longest wait for its proofs the preparation could draw
+(`ensure_first_part_precedes_upgrade_hold`): it would be held and stopped after
+paying for its preparation.
+
+A new run refuses a schedule drawn before the upgrade
+(`validate_new_run_schedule`): a plan reviewed before NU7 and started after it
+would pass its delays in a third of the time. Each schedule entry records the
+blocks per reference block it was drawn at; one saved by an earlier build
+counts as drawn at one. A saved draft resumed after the upgrade takes the
+schedule approved then, or a fresh draw when it is resumed without a new
+review, and a Keystone run that has signed nothing redraws before its first
+batch. A wallet without a scanned tip is not held: it has no target yet.
+
+**ZIP 318 durations.** ZIP 318 states delays, the anchor bucket interval and
+the expiry modulus in 75-second reference blocks. From NU7 each one spans three
+blocks:
+
+- The expiry modulus becomes 103,680 and anchor boundaries fall every 432
+  blocks. Vizor takes these from Common's `zip318` helpers.
+- `schedule_delays_in_blocks` reports schedule gaps in blocks at the wallet's
+  next height.
+
+A schedule drawn before activation keeps one block per reference block. Its
+parts past activation are held and stopped, so ZIP 318's rule to sign them
+for both branches is not implemented. The iOS outbox redraws overdue parts
+with the spacing at each part's start, and Rust checks receipts the same way.
+
 ## NU7 block spacing
 
 Block spacing drops from 75 to 25 seconds at NU7. Every estimate splits each
@@ -112,6 +204,7 @@ span at activation:
 - `BlockSpacing` and `blockSpacingProvider` in Dart for wait-time text. They
   read `get_block_spacing_schedule`, which takes the 25-second value from
   Common's spacing ratio.
+- The iOS outbox check cadence.
 
 If the schedule cannot be read, Dart falls back to 75-second spacing, which
 only affects estimates.
@@ -124,11 +217,13 @@ with no account born before activation skip it.
 
 ## When the next upgrade is scheduled
 
-The expiry cap, the send refusal and their copy follow from Common's activation
-heights and need no change. Check the rest:
+The hold, stop, expiry cap and copy follow from Common's activation heights
+and need no change. Check the rest:
 
-- **Block spacing.** If it changes again, update `block_times.rs` and Dart
-  `BlockSpacing`.
+- **Block spacing or ZIP 318 parameters.** If they change again, update
+  `block_times.rs`, Dart `BlockSpacing` and the iOS outbox cadence, which
+  restates the 75- and 25-second spacing in Swift for its check estimates.
+  The outbox's expiry and schedule spacing come from Rust.
 - **Hardware signing.** Check
   `orchard_circuit_version_for_consensus_branch` in `pczt.rs`: it keys on the
   branch's Orchard protocol revision. Also check whether Keystone and Ledger
