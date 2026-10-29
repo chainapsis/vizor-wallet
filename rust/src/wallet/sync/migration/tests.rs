@@ -5,14 +5,22 @@ use rand::{rngs::StdRng, SeedableRng};
 use std::cell::Cell;
 
 fn init_fee_status_fixture(db_path: &str) {
+    init_fee_status_fixture_at(db_path, 120);
+}
+
+fn init_fee_status_fixture_at(db_path: &str, target_height: u32) {
     crate::wallet::keys::ensure_db_initialized(db_path, WalletNetwork::Test).unwrap();
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     // The library derives its known tip from scan ranges. An account-free
     // fixture has no birthday, so update_chain_tip alone creates no range.
-    conn.execute("INSERT INTO scan_queue (block_range_start, block_range_end, priority) VALUES (119, 120, 0)", []).unwrap();
+    conn.execute(
+        "INSERT INTO scan_queue (block_range_start, block_range_end, priority) VALUES (?1, ?2, 0)",
+        params![target_height - 1, target_height],
+    )
+    .unwrap();
     assert_eq!(
         super::super::send::fee_policy_target(db_path, WalletNetwork::Test).unwrap(),
-        120
+        target_height
     );
 }
 
@@ -11673,7 +11681,18 @@ fn post_sync_keeps_runs_whose_tip_is_before_the_upgrade() {
 
 #[test]
 fn stopped_run_is_reported_while_orchard_funds_remain() {
-    let (_temp_dir, db_path) = upgrade_test_db(Some(TEST_NU7_ACTIVATION_HEIGHT - 500));
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    // Status now reads the SDK wallet target to select its fee. Initialize the
+    // real schema before inserting the upgrade run, rather than minimal tables.
+    init_fee_status_fixture_at(&db_path, TEST_NU7_ACTIVATION_HEIGHT + 1);
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    insert_upgrade_test_run(&conn, Some(TEST_NU7_ACTIVATION_HEIGHT - 500));
+    drop(conn);
     stop_run_if_network_upgrade_invalidated(
         &db_path,
         WalletNetwork::Test,
@@ -11713,6 +11732,21 @@ fn stopped_run_is_reported_while_orchard_funds_remain() {
         .unwrap();
     assert_eq!(stored, "scheduled");
     assert!(status.scheduled_broadcasts.is_empty());
+
+    // Preserve the stop receipt even for a balance that becomes migratable
+    // only after NU7 lowers fees; a legacy-rate status check loses this receipt.
+    let newly_migratable = ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI + 19_000;
+    assert!(!orchard_balance_can_create_migration_output(
+        newly_migratable,
+        WalletNetwork::Test,
+        TEST_NU7_ACTIVATION_HEIGHT - 1
+    )
+    .unwrap());
+    let small_balance_status = status_with_orchard(newly_migratable);
+    assert_eq!(small_balance_status.phase, PHASE_STOPPED_BY_UPGRADE);
+    assert_eq!(small_balance_status.active_run_id, None);
+    assert!(!small_balance_status.can_abandon);
+    assert!(small_balance_status.scheduled_broadcasts.is_empty());
 
     assert_eq!(status_with_orchard(0).phase, PHASE_NO_ORCHARD_FUNDS);
 }
