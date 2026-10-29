@@ -287,18 +287,23 @@ fn prepare_fixture_wallet(
     let mut db = WalletDb::for_path(db_path, WalletNetwork::Main, SystemClock, OsRng)
         .map_err(|error| format!("Open fixture wallet DB: {error}"))?
         .with_transparent_ledger_mode(TransparentLedgerMode::Public);
-    let chain_tip = BlockHeight::from_u32(3_000_000);
+    // After NU7, so the PCZTs the app builds from this wallet carry its branch.
+    let chain_tip = BlockHeight::from_u32(3_600_000);
     db.update_chain_tip(chain_tip)
         .map_err(|error| format!("Set fixture chain tip: {error}"))?;
-    let sapling_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
-        db.with_sapling_tree_mut(|tree| tree.checkpoint(chain_tip));
-    sapling_checkpoint.map_err(|error| format!("Checkpoint fixture Sapling tree: {error}"))?;
-    let orchard_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
-        db.with_orchard_tree_mut(|tree| tree.checkpoint(chain_tip));
-    orchard_checkpoint.map_err(|error| format!("Checkpoint fixture Orchard tree: {error}"))?;
-    let ironwood_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
-        db.with_ironwood_tree_mut(|tree| tree.checkpoint(chain_tip));
-    ironwood_checkpoint.map_err(|error| format!("Checkpoint fixture Ironwood tree: {error}"))?;
+    // Anchors sit at least one block behind the tip, so checkpoint the block below it too.
+    for height in [chain_tip - 1, chain_tip] {
+        let sapling_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+            db.with_sapling_tree_mut(|tree| tree.checkpoint(height));
+        sapling_checkpoint.map_err(|error| format!("Checkpoint fixture Sapling tree: {error}"))?;
+        let orchard_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+            db.with_orchard_tree_mut(|tree| tree.checkpoint(height));
+        orchard_checkpoint.map_err(|error| format!("Checkpoint fixture Orchard tree: {error}"))?;
+        let ironwood_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+            db.with_ironwood_tree_mut(|tree| tree.checkpoint(height));
+        ironwood_checkpoint
+            .map_err(|error| format!("Checkpoint fixture Ironwood tree: {error}"))?;
+    }
     let transparent_utxo = WalletTransparentOutput::from_parts(
         OutPoint::new(FIXTURE_UTXO_TXID, 0),
         TxOut::new(

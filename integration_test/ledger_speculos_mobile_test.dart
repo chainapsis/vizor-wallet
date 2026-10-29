@@ -339,7 +339,7 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   expect(exported!.ufvk, fixture.ufvk);
   expect(exported.seedFingerprint, fixture.seedFingerprint);
   expect(exported.accountIndex, fixture.accountIndex);
-  expect(exported.appVersion, '3.9.4');
+  expect(exported.appVersion, '3.10.0');
   expect(exported.transport, LedgerConnectionTransport.bluetooth);
   expect(exported.device?.id, 'speculos');
   expect(firstAccountImport.name, 'Speculos Ledger');
