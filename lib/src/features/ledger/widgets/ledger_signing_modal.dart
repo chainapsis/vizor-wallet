@@ -182,11 +182,7 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.failed => LedgerSigningStage.preparing,
     };
     var title = failed ? _failureTitle(failure!) : stage.title;
-    var message = failed
-        ? failure!.message
-        : stage.messageForDevice(
-            progress?.accountUuid == accountUuid ? progress?.deviceModel : null,
-          );
+    var message = failed ? failure!.message : stage.message;
     var statusLabel = failed ? failure!.statusLabel : stage.status;
     if (phase == LedgerSigningModalPhase.finishing) {
       title = 'Finishing transaction';
@@ -236,9 +232,6 @@ class LedgerSigningModal extends ConsumerWidget {
         onAction: onFailureAction,
         stage: stage,
         readiness: readiness.phase,
-        deviceModel: progress?.accountUuid == accountUuid
-            ? progress?.deviceModel
-            : null,
         saving: phase == LedgerSigningModalPhase.saving,
         finishing: phase == LedgerSigningModalPhase.finishing,
         broadcasting: phase == LedgerSigningModalPhase.broadcasting,
@@ -281,7 +274,6 @@ class LedgerSigningModal extends ConsumerWidget {
       cancelLabel: cancelLabel,
       onChangeConnection: canChangeConnection ? changeConnection : null,
       identity: '$identity · ${bluetooth ? 'Bluetooth' : 'USB'}',
-      deviceModel: model,
       roundNumber: roundNumber,
       roundCount: roundCount,
       roundFeeNotice: roundFeeNotice,

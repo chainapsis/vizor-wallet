@@ -102,7 +102,7 @@ class _LedgerShieldMotionPreviewState extends State<LedgerShieldMotionPreview> {
                 title: stage == LedgerSigningStage.reviewing
                     ? 'Confirm on your Ledger'
                     : stage.title,
-                message: stage.messageForDevice('stax'),
+                message: stage.message,
                 status: stage == LedgerSigningStage.reviewing
                     ? 'Waiting for your approval'
                     : stage.status,
@@ -110,7 +110,6 @@ class _LedgerShieldMotionPreviewState extends State<LedgerShieldMotionPreview> {
                 failed: false,
                 stage: stage,
                 readiness: LedgerAppReadinessPhase.ready,
-                deviceModel: 'stax',
                 saving: _stage == _Stage.saving,
                 finishing: false,
                 broadcasting: false,

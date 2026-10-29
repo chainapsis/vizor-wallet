@@ -31,46 +31,13 @@ void main() {
     );
   });
 
-  test(
-    'only recognized Stax and Flex models get the short sending guidance',
-    () {
-      for (final model in [
-        'stax',
-        'Ledger Stax',
-        'FLEX',
-        'Ledger Flex / Stax',
-        'Stax/Flex',
-        'europa',
-      ]) {
-        expect(
-          LedgerSigningStage.sending.messageForDevice(model),
-          contains('about 10 seconds'),
-        );
-      }
-      for (final model in [
-        null,
-        '',
-        'nanoX',
-        'Ledger Nano S Plus',
-        'apex',
-        'Ledger Nano Gen5',
-        'My Flex',
-        'future',
-      ]) {
-        expect(
-          LedgerSigningStage.sending.messageForDevice(model),
-          contains('about 30 seconds'),
-        );
-      }
-      for (final stage in [
-        LedgerSigningStage.preparing,
-        LedgerSigningStage.reviewing,
-        LedgerSigningStage.finishing,
-      ]) {
-        expect(stage.messageForDevice('flex'), stage.messageForDevice(null));
-      }
-    },
-  );
+  test('sending guidance names no duration that depends on the model', () {
+    expect(
+      LedgerSigningStage.sending.message,
+      '$kLedgerSigningWaitInstruction Keep your Ledger connected.',
+    );
+    expect(kLedgerSigningWaitInstruction, contains('a few seconds'));
+  });
 
   test(
     'progress is monotonic within an attempt and resets for the next round',

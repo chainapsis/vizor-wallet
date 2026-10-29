@@ -40,7 +40,6 @@ Widget _content(LedgerSigningStage stage, VoidCallback close) =>
         failed: false,
         stage: stage,
         readiness: LedgerAppReadinessPhase.ready,
-        deviceModel: 'stax',
         saving: false,
         finishing: false,
         broadcasting: false,

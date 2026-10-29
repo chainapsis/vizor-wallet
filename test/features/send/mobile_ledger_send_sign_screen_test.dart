@@ -696,7 +696,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(
         find.text(
-          'Ledger is preparing to sign. It may seem unresponsive for about 10 seconds.',
+          'Ledger is preparing to sign. It may seem unresponsive for a few seconds.',
         ),
         findsOneWidget,
       );
