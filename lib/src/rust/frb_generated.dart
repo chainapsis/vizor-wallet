@@ -1176,6 +1176,7 @@ abstract class RustLibApi extends BaseApi {
     required BigInt approvedFeeZatoshi,
     required BigInt approvedMigratedZatoshi,
     required int approvedInputNoteCount,
+    required bool keystoneBatch,
   });
 
   Future<IronwoodMigrationResult> crateApiSyncPrepareOrchardMigrationOutbox({
@@ -8860,6 +8861,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required BigInt approvedFeeZatoshi,
     required BigInt approvedMigratedZatoshi,
     required int approvedInputNoteCount,
+    required bool keystoneBatch,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -8872,6 +8874,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(approvedFeeZatoshi, serializer);
           sse_encode_u_64(approvedMigratedZatoshi, serializer);
           sse_encode_u_32(approvedInputNoteCount, serializer);
+          sse_encode_bool(keystoneBatch, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -8892,6 +8895,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           approvedFeeZatoshi,
           approvedMigratedZatoshi,
           approvedInputNoteCount,
+          keystoneBatch,
         ],
         apiImpl: this,
       ),
@@ -8910,6 +8914,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "approvedFeeZatoshi",
           "approvedMigratedZatoshi",
           "approvedInputNoteCount",
+          "keystoneBatch",
         ],
       );
 

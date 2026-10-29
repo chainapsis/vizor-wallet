@@ -440,6 +440,7 @@ typedef IronwoodMigrationKeystoneImmediatePreparer =
       required BigInt approvedFeeZatoshi,
       required BigInt approvedMigratedZatoshi,
       required int approvedInputNoteCount,
+      required bool keystoneBatch,
     });
 typedef IronwoodMigrationKeystoneImmediateCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
@@ -2064,19 +2065,33 @@ class IronwoodMigrationService {
   prepareKeystoneImmediateMigrationRequest({
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
-  }) => prepareHardwareImmediateMigrationRequest(
+  }) => _prepareHardwareImmediateMigrationRequest(
     accountUuid: accountUuid,
     approvedPlan: approvedPlan,
+    keystoneBatch: true,
+  );
+
+  /// Ledger signs the standard signer view: Keystone's batch view drops the
+  /// `alpha` of preauthorized padding spends, which Ledger needs.
+  Future<rust_sync.KeystoneMigrationSigningRequest>
+  prepareLedgerImmediateMigrationRequest({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) => _prepareHardwareImmediateMigrationRequest(
+    accountUuid: accountUuid,
+    approvedPlan: approvedPlan,
+    keystoneBatch: false,
   );
 
   /// Prepares the single Immediate-migration PCZT for an external signer.
   ///
-  /// The Rust bridge still uses the historical `Keystone*` wire structs, but
-  /// the payload is signer-neutral and is also consumed by Ledger accounts.
+  /// The Rust bridge still uses the historical `Keystone*` wire structs for
+  /// both hardware signers.
   Future<rust_sync.KeystoneMigrationSigningRequest>
-  prepareHardwareImmediateMigrationRequest({
+  _prepareHardwareImmediateMigrationRequest({
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+    required bool keystoneBatch,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -2091,6 +2106,7 @@ class IronwoodMigrationService {
         approvedFeeZatoshi: approvedPlan.feeZatoshi,
         approvedMigratedZatoshi: approvedPlan.migratedZatoshi,
         approvedInputNoteCount: approvedPlan.inputNoteCount,
+        keystoneBatch: keystoneBatch,
       ),
     );
   }

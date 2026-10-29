@@ -1830,6 +1830,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
     approved_fee_zatoshi: u64,
     approved_migrated_zatoshi: u64,
     approved_input_note_count: u32,
+    keystone_batch: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1843,6 +1844,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
                 migrated_zatoshi: approved_migrated_zatoshi,
                 input_note_count: approved_input_note_count,
             },
+            keystone_batch,
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,

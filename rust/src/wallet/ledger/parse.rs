@@ -660,8 +660,24 @@ mod tests {
     use crate::wallet::ledger::LedgerAppSupport;
 
     fn memo_pczt(version: BundleVersion, memo: &[u8], value: u64, with_ovk: bool) -> Vec<u8> {
+        pczt_with_bundle_type(
+            version,
+            memo,
+            value,
+            with_ovk,
+            orchard::builder::BundleType::UNPADDED,
+        )
+    }
+
+    fn pczt_with_bundle_type(
+        version: BundleVersion,
+        memo: &[u8],
+        value: u64,
+        with_ovk: bool,
+        bundle_type: orchard::builder::BundleType,
+    ) -> Vec<u8> {
         use orchard::{
-            builder::{Builder, BundleType},
+            builder::Builder,
             keys::{FullViewingKey, Scope, SpendingKey},
             note::RandomSeed,
             tree::{MerkleHashOrchard, MerklePath},
@@ -695,7 +711,7 @@ mod tests {
         let path =
             MerklePath::from_parts(0, [MerkleHashOrchard::from_bytes(&[0; 32]).unwrap(); 32]);
         let mut builder = Builder::new(
-            BundleType::UNPADDED,
+            bundle_type,
             version,
             version.default_flags(),
             path.root(note.commitment().into()),
@@ -760,6 +776,28 @@ mod tests {
             .unwrap()
             .serialize()
             .unwrap()
+    }
+
+    #[test]
+    fn ledger_needs_the_signer_view_not_the_keystone_batch_view() {
+        // The padding dummy is preauthorized; Keystone's batch view drops its
+        // alpha, which every action Ledger parses must carry.
+        let base = pczt_with_bundle_type(
+            BundleVersion::ironwood_v3(),
+            b"",
+            90_000,
+            true,
+            orchard::builder::BundleType::DEFAULT,
+        );
+        let signer_view = crate::wallet::sync::redact_pczt_for_signer(&base).unwrap();
+        assert!(parse_pczt(&signer_view).is_ok());
+        let batch_view = crate::wallet::sync::prepare_pczt_for_keystone_batch(&base)
+            .unwrap()
+            .redacted_pczt;
+        assert_eq!(
+            parse_pczt(&batch_view).err().as_deref(),
+            Some("Shielded spend is missing alpha")
+        );
     }
 
     #[test]

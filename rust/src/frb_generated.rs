@@ -7170,6 +7170,7 @@ fn wire__crate__api__sync__prepare_orchard_migration_immediate_pczt_impl(
             let api_approved_fee_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_approved_migrated_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_approved_input_note_count = <u32>::sse_decode(&mut deserializer);
+            let api_keystone_batch = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -7181,6 +7182,7 @@ fn wire__crate__api__sync__prepare_orchard_migration_immediate_pczt_impl(
                         api_approved_fee_zatoshi,
                         api_approved_migrated_zatoshi,
                         api_approved_input_note_count,
+                        api_keystone_batch,
                     )?;
                     Ok(output_ok)
                 })())

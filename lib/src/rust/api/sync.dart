@@ -529,6 +529,7 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationImmediatePczt({
   required BigInt approvedFeeZatoshi,
   required BigInt approvedMigratedZatoshi,
   required int approvedInputNoteCount,
+  required bool keystoneBatch,
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationImmediatePczt(
   dbPath: dbPath,
   network: network,
@@ -537,6 +538,7 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationImmediatePczt({
   approvedFeeZatoshi: approvedFeeZatoshi,
   approvedMigratedZatoshi: approvedMigratedZatoshi,
   approvedInputNoteCount: approvedInputNoteCount,
+  keystoneBatch: keystoneBatch,
 );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationImmediatePczt({

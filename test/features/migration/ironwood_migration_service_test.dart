@@ -3363,6 +3363,7 @@ void main() {
     BigInt? seenFee;
     BigInt? seenMigrated;
     int? seenNoteCount;
+    bool? seenKeystoneBatch;
     String? completedRequestId;
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
@@ -3389,11 +3390,13 @@ void main() {
             required approvedFeeZatoshi,
             required approvedMigratedZatoshi,
             required approvedInputNoteCount,
+            required keystoneBatch,
           }) async {
             seenAmount = approvedTotalInputZatoshi;
             seenFee = approvedFeeZatoshi;
             seenMigrated = approvedMigratedZatoshi;
             seenNoteCount = approvedInputNoteCount;
+            seenKeystoneBatch = keystoneBatch;
             return expectedRequest;
           },
       completeKeystoneImmediateMigration:
@@ -3432,7 +3435,15 @@ void main() {
     expect(seenFee, plan.feeZatoshi);
     expect(seenMigrated, plan.migratedZatoshi);
     expect(seenNoteCount, 2);
+    expect(seenKeystoneBatch, isTrue);
     expect(completedRequestId, expectedRequest.requestId);
+
+    await service.prepareLedgerImmediateMigrationRequest(
+      accountUuid: 'account-1',
+      approvedPlan: plan,
+    );
+    // Ledger needs every spend's alpha, which the batch view drops.
+    expect(seenKeystoneBatch, isFalse);
   });
 
   test(
