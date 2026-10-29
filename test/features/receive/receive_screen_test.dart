@@ -76,7 +76,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('receive_copy_shielded_address_button')),
       ),
-      const Size(230, 44),
+      const Size(298, 44),
     );
     expect(
       tester.getSize(_findRenewShieldedAddressButton()),
@@ -579,6 +579,110 @@ void main() {
     );
   });
 
+  testWidgets('slides the QR within the content column with the pool chip', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    final pagerFinder = find.byKey(const ValueKey('receive_qr_pager'));
+    final pager = tester.getRect(pagerFinder);
+    final tabs = find.byKey(const ValueKey('receive_address_type_tabs'));
+    expect(pager.width, 420);
+    expect(
+      pager.center.dx,
+      moreOrLessEquals(tester.getCenter(tabs).dx, epsilon: 1),
+    );
+    // Its edges feather rather than cut a sliding card.
+    expect(
+      find.ancestor(of: pagerFinder, matching: find.byType(ShaderMask)),
+      findsOneWidget,
+    );
+    final chip = find.byKey(
+      const ValueKey('receive_address_type_tabs_indicator'),
+    );
+    final chipStart = tester.getRect(chip).left;
+
+    await tester.tap(find.text('Transparent'));
+    await tester.pump();
+    // Halfway through the 420ms slide.
+    await tester.pump(const Duration(milliseconds: 210));
+
+    Rect card(String pool) => tester.getRect(
+      find.descendant(
+        of: find.byKey(ValueKey('receive_qr_$pool'), skipOffstage: false),
+        matching: find.byType(ReceiveQrSurface, skipOffstage: false),
+      ),
+    );
+    expect(card('transparent').left - card('shielded').right, greaterThan(24));
+    final chipMidway = tester.getRect(chip).left;
+
+    await tester.pump(const Duration(milliseconds: 210));
+    expect(chipMidway, greaterThan(chipStart + 1));
+    expect(chipMidway, lessThan(tester.getRect(chip).left - 1));
+    expect(
+      card('transparent').center.dx,
+      moreOrLessEquals(tester.getCenter(tabs).dx, epsilon: 1),
+    );
+  });
+
+  testWidgets('a swipe loads an uncached transparent address before it shows', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _UncachedDelayedTransparentReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        receiveAddressService: (ref) {
+          service = _UncachedDelayedTransparentReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(service.transparentReceiveLoads, 0);
+
+    // Short of the halfway point, so the page change has not fired yet.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('receive_qr_pager'))),
+    );
+    await gesture.moveBy(const Offset(-40, 0));
+    await gesture.moveBy(const Offset(-40, 0));
+    await tester.pump();
+
+    expect(service.transparentReceiveLoads, 1);
+    final transparentCard = find.byKey(
+      const ValueKey('receive_qr_transparent'),
+      skipOffstage: false,
+    );
+    expect(
+      find.descendant(
+        of: transparentCard,
+        matching: find.byType(CircularProgressIndicator, skipOffstage: false),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining("couldn't load your address"), findsNothing);
+
+    await gesture.moveBy(const Offset(-400, 0));
+    await gesture.up();
+    service.completeTransparentRefresh();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(service.transparentReceiveLoads, 1);
+  });
+
   testWidgets('explains transparent address rotation and shielding', (
     tester,
   ) async {
@@ -593,7 +697,8 @@ void main() {
 
     await tester.tap(find.text('Transparent'));
     await tester.pump();
-    await tester.pump();
+    // Let the shielded card, and its renew icon, slide out first.
+    await tester.pump(const Duration(milliseconds: 420));
     await tester.tap(_findAppIcon(AppIcons.help));
     await tester.pump(const Duration(milliseconds: 200));
 
@@ -763,8 +868,12 @@ void main() {
     expect(request, findsOneWidget);
     final share = find.byKey(const ValueKey('receive_share_button'));
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(tester.getSize(request), const Size(298, 44));
-    expect(tester.getSize(copy), const Size(230, 44));
+    expect(tester.getSize(copy), const Size(298, 44));
+    expect(tester.getSize(request), const Size(230, 44));
+    expect(
+      find.descendant(of: request, matching: _findAppIcon(AppIcons.request)),
+      findsOneWidget,
+    );
     expect(tester.getSize(share), const Size(60, 44));
     expect(
       tester
@@ -774,12 +883,13 @@ void main() {
           .message,
       'Share shielded address',
     );
+    // Request sits beside share under copy, all one 8px gap apart.
     expect(
       tester.getTopLeft(share).dy,
-      moreOrLessEquals(tester.getTopLeft(copy).dy, epsilon: 0.1),
+      moreOrLessEquals(tester.getTopLeft(request).dy, epsilon: 0.1),
     );
     expect(
-      tester.getTopLeft(share).dx - tester.getTopRight(copy).dx,
+      tester.getTopLeft(share).dx - tester.getTopRight(request).dx,
       moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
     );
     expect(
@@ -1634,6 +1744,14 @@ class _DelayedTransparentReceiveAddressService
   void completeTransparentRefresh() {
     _transparentRefresh.complete(_freshTransparentAddress);
   }
+}
+
+class _UncachedDelayedTransparentReceiveAddressService
+    extends _DelayedTransparentReceiveAddressService {
+  _UncachedDelayedTransparentReceiveAddressService(super.ref);
+
+  @override
+  String? getCachedTransparentAddress(String accountUuid) => null;
 }
 
 class _RacyReceiveAddressService extends ReceiveAddressService {
