@@ -52,6 +52,7 @@ import '../widgetbook/voting_use_cases.dart';
 import '../widgetbook/address_book_use_cases.dart';
 import '../widgetbook/address_verify_use_cases.dart';
 import 'zip321_prefill_use_cases.dart';
+import 'zns_send_use_cases.dart';
 import 'gift_card_usage_use_cases.dart';
 import 'mobile_method_selection_capture.dart';
 import 'mobile_hardware_selection_capture.dart';
@@ -3351,6 +3352,77 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'zip321-mobile-send-recipient-fallback',
     description: 'Mobile /send bounced back to the recipient step',
     builder: buildZip321MobileSendRecipientFallbackUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-desktop-send-resolved',
+    description: 'Desktop /send with a Zcash name resolved to its address',
+    builder: buildZnsDesktopSendResolvedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-desktop-send-resolving',
+    description: 'Desktop /send while a Zcash name lookup is in flight',
+    builder: buildZnsDesktopSendResolvingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-desktop-send-not-registered',
+    description: 'Desktop /send with a Zcash name that is not registered',
+    builder: buildZnsDesktopSendNotRegisteredUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'send-status-zns-contact',
+    description: 'Desktop send status offering to add a Zcash name contact',
+    builder: buildSendStatusZnsContactUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'send-review-zns-name',
+    description: 'Desktop send review with a Zcash name recipient',
+    builder: buildSendReviewZnsNameUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-desktop-contacts',
+    description: 'Desktop contacts, for the ZNS contact capture test',
+    builder: buildZnsDesktopContactsUseCase,
+    allowPointer: true,
+    allowFocus: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-mobile-contacts',
+    description: 'Mobile contacts, for the ZNS contact capture test',
+    builder: buildZnsMobileContactsUseCase,
+    allowPointer: true,
+    allowFocus: true,
+    // The add sheet opens on the harness's own navigator, inside capture.
+    outsideScaffold: true,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-mobile-send-resolved',
+    description: 'Mobile recipient step with a Zcash name resolved',
+    builder: buildZnsMobileSendResolvedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-mobile-send-not-registered',
+    description: 'Mobile recipient step with an unregistered Zcash name',
+    builder: buildZnsMobileSendNotRegisteredUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-mobile-send-amount',
+    description: 'Mobile amount step for a Zcash name recipient',
+    builder: buildZnsMobileSendAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'zns-mobile-send-review',
+    description: 'Mobile review step for a Zcash name recipient',
+    builder: buildZnsMobileSendReviewUseCase,
     desktop: false,
     mobile: true,
   ),

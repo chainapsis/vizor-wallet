@@ -263,7 +263,10 @@ class ReceivedReceiptView extends StatelessWidget {
 
   Widget _fromRow(BuildContext context, SendReviewRecipient recipient) {
     return switch (recipient) {
-      SendReviewAddressRecipient(:final address) => ReviewInfoRow(
+      // A sender is never named through ZNS; a name variant reads as the
+      // plain address it carries.
+      SendReviewAddressRecipient(:final address) ||
+      SendReviewNameRecipient(:final address) => ReviewInfoRow(
         label: 'From',
         value: truncatedAddress(address),
         leading: const ReviewInfoIconCircle(iconName: AppIcons.wallet),

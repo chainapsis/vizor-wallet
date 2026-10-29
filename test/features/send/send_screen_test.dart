@@ -9,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/formatting/address_display.dart';
+import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
@@ -20,6 +22,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
+import 'package:zcash_wallet/src/core/naming/zns_recipient_lookup.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
@@ -33,6 +36,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import '../../fakes/fake_zns_name_resolver.dart';
 import '../../support/leading_decimal_input.dart';
 
 void main() {
@@ -1690,6 +1694,201 @@ void main() {
   // `_activePaymentRequest` decides whether the review screen says "Requested
   // by <label>", and the label is attacker-controlled: it must not survive
   // being pointed at a recipient the request never named.
+  group('a Zcash name in the address field', () {
+    Future<void> enterRecipient(WidgetTester tester, String text) async {
+      await tester.enterText(_editableIn('send_address_field'), text);
+      await tester.pump(kZnsLookupDebounce);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('resolves, shows the address, and proposes to it', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      final resolver = FakeZnsNameResolver({'alice': _shieldedAddress});
+      SendReviewArgs? reviewArgs;
+      await tester.pumpWidget(
+        _sendHarness(
+          znsResolver: () => resolver,
+          onReviewArgs: (args) => reviewArgs = args,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterRecipient(tester, 'Alice.ZEC');
+
+      expect(resolver.lookups, ['alice']);
+      expect(
+        find.text('Resolves to ${truncatedAddress(_shieldedAddress)}'),
+        findsOneWidget,
+      );
+
+      await tester.enterText(_editableIn('send_amount_field'), '0.5');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+
+      expect(rustApi.lastProposeToAddress, _shieldedAddress);
+      expect(reviewArgs?.address, _shieldedAddress);
+      expect(reviewArgs?.recipientZnsName, 'alice.zcash');
+    });
+
+    testWidgets('review names the recipient by the name', (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _sendHarness(
+          realReview: true,
+          addressBookRepository: _FakeAddressBookRepository([]),
+          znsResolver: () => FakeZnsNameResolver({'alice': _shieldedAddress}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterRecipient(tester, 'alice.zcash');
+      await tester.enterText(_editableIn('send_amount_field'), '0.5');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Review send'), findsOneWidget);
+      expect(find.text('alice.zcash'), findsOneWidget);
+      expect(
+        find.text(truncatedAddress(_shieldedAddress)),
+        findsOneWidget,
+        reason: 'a resolved name keeps its address beside it',
+      );
+    });
+
+    testWidgets('a saved contact for the address wins over the name', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _sendHarness(
+          addressBookRepository: _FakeAddressBookRepository([
+            _contact(
+              id: 'c1',
+              label: 'Alice from work',
+              network: AddressBookNetwork.zcash,
+              address: _shieldedAddress,
+            ),
+          ]),
+          znsResolver: () => FakeZnsNameResolver({'alice': _shieldedAddress}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterRecipient(tester, 'alice.zcash');
+
+      expect(find.text('Alice from work'), findsOneWidget);
+      expect(find.textContaining('Resolves to'), findsNothing);
+    });
+
+    for (final (description, resolver, status) in [
+      (
+        'an unregistered name',
+        () => FakeZnsNameResolver(),
+        ZnsLookupStatus.notRegistered,
+      ),
+      (
+        'a failed lookup',
+        () => FakeZnsNameResolver(
+          const {},
+          const ZnsLookupException('No ZNS resolver could be reached'),
+        ),
+        ZnsLookupStatus.failed,
+      ),
+      (
+        'a network without a registry',
+        () => null,
+        ZnsLookupStatus.unsupportedNetwork,
+      ),
+    ]) {
+      testWidgets('$description says so and blocks review', (tester) async {
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(_sendHarness(znsResolver: resolver));
+        await tester.pumpAndSettle();
+
+        await enterRecipient(tester, 'nobody.zcash');
+        await tester.enterText(_editableIn('send_amount_field'), '0.5');
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('send_review_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text(status.message), findsOneWidget);
+        expect(rustApi.proposeSendCalls, 0);
+      });
+    }
+
+    testWidgets('a name that points to an unusable address blocks review', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _sendHarness(
+          znsResolver: () => FakeZnsNameResolver({'bob': _malformedAddress}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterRecipient(tester, 'bob.zcash');
+
+      expect(
+        find.text(ZnsLookupStatus.unusableAddress.message),
+        findsOneWidget,
+      );
+      expect(find.text('Invalid address'), findsNothing);
+    });
+
+    testWidgets('a bare word or an address is never looked up', (tester) async {
+      await _setDesktopViewport(tester);
+      final resolver = FakeZnsNameResolver({'alice': _shieldedAddress});
+      await tester.pumpWidget(_sendHarness(znsResolver: () => resolver));
+      await tester.pumpAndSettle();
+
+      await enterRecipient(tester, 'alice');
+      await enterRecipient(tester, _shieldedAddress);
+
+      expect(resolver.lookups, isEmpty);
+    });
+
+    testWidgets('typing inside a name sends only the settled name', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      final resolver = FakeZnsNameResolver({'alice': _shieldedAddress});
+      await tester.pumpWidget(_sendHarness(znsResolver: () => resolver));
+      await tester.pumpAndSettle();
+
+      for (final text in ['a.zcash', 'al.zcash', 'ali.zcash', 'alice.zcash']) {
+        await tester.enterText(_editableIn('send_address_field'), text);
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.pump(kZnsLookupDebounce);
+      await tester.pumpAndSettle();
+
+      expect(resolver.lookups, ['alice']);
+    });
+
+    testWidgets('editing the name drops the resolved address', (tester) async {
+      await _setDesktopViewport(tester);
+      final resolver = FakeZnsNameResolver({'alice': _shieldedAddress});
+      await tester.pumpWidget(_sendHarness(znsResolver: () => resolver));
+      await tester.pumpAndSettle();
+
+      await enterRecipient(tester, 'alice.zcash');
+      await enterRecipient(tester, 'alicex.zcash');
+      await tester.enterText(_editableIn('send_amount_field'), '0.5');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('send_review_button')));
+      await tester.pumpAndSettle();
+
+      expect(resolver.lookups, ['alice', 'alicex']);
+      expect(find.text(ZnsLookupStatus.notRegistered.message), findsOneWidget);
+      expect(rustApi.proposeSendCalls, 0);
+    });
+  });
+
   group('payment-request framing on the desktop composer', () {
     Future<SendReviewArgs?> pumpAndReview(
       WidgetTester tester, {
@@ -1838,6 +2037,7 @@ Widget _sendHarness({
   void Function(SendReviewArgs?)? onReviewArgs,
   bool realReview = false,
   PaymentRequestPrecheck? precheck,
+  ZnsNameResolver? Function()? znsResolver,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -1892,6 +2092,8 @@ Widget _sendHarness({
         addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
       if (precheck != null)
         paymentRequestPrecheckProvider.overrideWithValue(precheck),
+      if (znsResolver != null)
+        znsNameResolverProvider.overrideWithValue(znsResolver()),
     ],
     child: MaterialApp.router(
       routerConfig: router,

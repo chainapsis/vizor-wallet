@@ -453,7 +453,7 @@ class _ContactPickerRowState extends State<_ContactPickerRow> {
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      widget.contact.addressPreview,
+                      widget.contact.previewWithName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelMedium.copyWith(

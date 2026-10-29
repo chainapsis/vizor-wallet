@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
+import '../../../../core/naming/zns_name_resolver.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
@@ -16,6 +17,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_context_menu.dart';
 import '../../../../core/widgets/app_copy_feedback.dart';
+import '../../../../core/widgets/app_field_status_line.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_icon_hover_button.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
@@ -29,9 +31,11 @@ import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../models/address_book_contact.dart';
+import '../../models/contact_zns_lookup.dart';
 import '../../models/address_format_validator.dart';
 import '../../providers/address_book_provider.dart';
 import '../../widgets/address_book_network_icon.dart';
+import '../../widgets/contact_zns_message_style.dart';
 
 /// Mobile Contacts screen — Figma `CONTACTS` mobile frames (node 5032:83888).
 ///
@@ -55,7 +59,10 @@ class MobileAddressBookScreen extends ConsumerWidget {
   }) async {
     final result = await showAppMobileSheet<_ContactDraft>(
       context: context,
-      builder: (_) => _ContactEditSheet(contact: contact),
+      builder: (_) => _ContactEditSheet(
+        contact: contact,
+        readZnsResolver: () => ref.read(znsNameResolverProvider),
+      ),
     );
     if (result == null || !context.mounted) return;
 
@@ -67,6 +74,7 @@ class MobileAddressBookScreen extends ConsumerWidget {
           network: result.network,
           address: result.address,
           profilePictureId: result.profilePictureId,
+          znsName: result.znsName,
         );
       } else {
         await notifier.updateContact(
@@ -75,6 +83,7 @@ class MobileAddressBookScreen extends ConsumerWidget {
           network: result.network,
           address: result.address,
           profilePictureId: result.profilePictureId,
+          znsName: result.znsName,
         );
       }
     } catch (e, st) {
@@ -514,7 +523,7 @@ class _ContactRow extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xxs / 2),
                 Text(
-                  contact.addressPreview,
+                  contact.previewWithName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   // Figma `Asset Sub Text`: Label M Regular (16) — mobile
@@ -953,18 +962,24 @@ class _ContactDraft {
     required this.network,
     required this.address,
     required this.profilePictureId,
+    this.znsName,
   });
 
   final String label;
   final AddressBookNetwork network;
   final String address;
   final String profilePictureId;
+  final String? znsName;
 }
 
 class _ContactEditSheet extends StatefulWidget {
-  const _ContactEditSheet({this.contact});
+  const _ContactEditSheet({required this.readZnsResolver, this.contact});
 
   final AddressBookContact? contact;
+
+  /// Reads the resolver for a Zcash name typed as the address; it gives null
+  /// where the network has no ZNS registry.
+  final ZnsNameResolver? Function() readZnsResolver;
 
   @override
   State<_ContactEditSheet> createState() => _ContactEditSheetState();
@@ -983,10 +998,18 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
       widget.contact?.profilePictureId ?? kDefaultProfilePictureId;
   final _labelFocus = FocusNode();
   final _addressFocus = FocusNode();
+  late final _zns = ContactZnsLookup(
+    savedName: widget.contact?.znsName,
+    readResolver: widget.readZnsResolver,
+    onChanged: _onFieldStateChanged,
+  );
+  late String _lastAddress;
 
   @override
   void initState() {
     super.initState();
+    _lastAddress = _addressController.text;
+    _addressController.addListener(_onAddressChanged);
     // The clear (×) affordances and the Add-contact button enablement react to
     // focus and text, so rebuild whenever either changes.
     _labelFocus.addListener(_onFieldStateChanged);
@@ -999,8 +1022,23 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
     if (mounted) setState(() {});
   }
 
+  /// The controller also notifies on selection moves; only a text change is
+  /// an edit of the address.
+  void _onAddressChanged() {
+    final text = _addressController.text;
+    if (text == _lastAddress) return;
+    _lastAddress = text;
+    _updateZns();
+  }
+
+  void _updateZns() {
+    _zns.update(address: _addressController.text, network: _network);
+  }
+
   @override
   void dispose() {
+    _zns.dispose();
+    _addressController.removeListener(_onAddressChanged);
     _labelController.dispose();
     _addressController.dispose();
     _labelFocus.dispose();
@@ -1009,19 +1047,28 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
   }
 
   /// Minimal validation: a label plus a non-empty address whose format is
-  /// plausible for the selected network (per [addressFormatIssue]).
+  /// plausible for the selected network (per [addressFormatIssue]), or a
+  /// Zcash name that resolved.
   bool get _canSave {
     if (_labelController.text.trim().isEmpty) return false;
     final address = _addressController.text.trim();
     if (address.isEmpty) return false;
+    if (_zns.isName(address, _network)) return _zns.canSave(address, _network);
     return addressFormatIssue(_network, address) == null;
   }
 
-  /// Live format error for the address field (null when empty or valid).
-  String? get _addressError {
+  /// Live line under the address field: a Zcash name's lookup state, or a
+  /// format error (null when empty or valid).
+  ContactZnsMessage? get _addressMessage {
     final address = _addressController.text.trim();
     if (address.isEmpty) return null;
-    return addressFormatIssue(_network, address);
+    final znsMessage = _zns.message(address);
+    if (znsMessage != null) return znsMessage;
+    if (_zns.isName(address, _network)) return null;
+    final issue = addressFormatIssue(_network, address);
+    return issue == null
+        ? null
+        : ContactZnsMessage(issue, ContactZnsMessageKind.error);
   }
 
   Future<void> _pickNetwork() async {
@@ -1029,8 +1076,11 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
       context: context,
       builder: (_) => _NetworkPickerSheet(selected: _network),
     );
-    if (picked == null || !mounted) return;
+    // Picking the same network again is not an edit, and must not drop the
+    // name a contact was saved from.
+    if (picked == null || picked == _network || !mounted) return;
     setState(() => _network = picked);
+    _updateZns();
   }
 
   Future<void> _pickAvatar() async {
@@ -1081,12 +1131,14 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
 
   void _save() {
     if (!_canSave) return;
+    final address = _addressController.text.trim();
     Navigator.of(context).pop(
       _ContactDraft(
         label: _labelController.text.trim(),
         network: _network,
-        address: _addressController.text.trim(),
+        address: _zns.addressToSave(address),
         profilePictureId: _profilePictureId,
+        znsName: _zns.nameToSave(address, _network),
       ),
     );
   }
@@ -1121,7 +1173,7 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
         (media.size.height - media.viewInsets.bottom - media.padding.top - 120)
             .clamp(240.0, 620.0)
             .toDouble();
-    final addressError = _addressError;
+    final addressMessage = _addressMessage;
 
     final nameClear = (_labelFocus.hasFocus && _labelController.text.isNotEmpty)
         ? _fieldIcon(
@@ -1257,7 +1309,9 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                 fieldKey: const ValueKey('mobile_address_book_address'),
                 controller: _addressController,
                 focusNode: _addressFocus,
-                hintText: 'Add an address',
+                hintText: _network == AddressBookNetwork.zcash
+                    ? 'Add an address or Zcash name'
+                    : 'Add an address',
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _save(),
                 trailing: Padding(
@@ -1279,13 +1333,14 @@ class _ContactEditSheetState extends State<_ContactEditSheet> {
                   ),
                 ),
               ),
-              if (addressError != null) ...[
+              if (addressMessage != null) ...[
                 const SizedBox(height: AppSpacing.xs),
-                Text(
-                  addressError,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.destructive,
-                  ),
+                AppFieldStatusLine(
+                  key: const ValueKey('mobile_address_book_address_message'),
+                  text: addressMessage.text,
+                  tone: contactZnsMessageTone(addressMessage.kind),
+                  icon: contactZnsMessageIcon(addressMessage.kind, colors),
+                  style: AppTypography.bodySmall,
                 ),
               ],
               const SizedBox(height: AppSpacing.md),

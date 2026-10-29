@@ -1036,6 +1036,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         requestedBy: previous.requestedBy,
         requestedAmountZatoshi: previous.requestedAmountZatoshi,
         flowKind: previous.flowKind,
+        recipientZnsName: previous.recipientZnsName,
       );
       if (!mounted) {
         await discardSendProposal(
@@ -1158,6 +1159,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       contacts: addressBookContacts,
       address: _reviewArgs.address,
       ownAccounts: ownAccounts,
+      znsName: _reviewArgs.recipientZnsName,
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = _reviewArgs.memo;

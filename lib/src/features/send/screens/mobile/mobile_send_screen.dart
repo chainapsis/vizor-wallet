@@ -14,12 +14,15 @@ import '../../../../../main.dart' show log;
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/naming/zns_name_resolver.dart';
 import '../../../../core/navigation/external_action_guard_provider.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/amount_price_loading_bar.dart';
 import '../../../../core/widgets/app_icon.dart';
+import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/app_field_status_line.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/comma_to_dot_input_formatter.dart';
@@ -45,6 +48,7 @@ import '../../models/send_scan_result.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
 import '../../services/send_proving_key_warmup.dart';
+import '../../../../core/naming/zns_recipient_lookup.dart';
 import '../../widgets/send_recipient_resolver.dart';
 import '../../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 import 'mobile_send_scan_screen.dart';
@@ -81,6 +85,7 @@ class _ReviewRecipientPresentation {
     required this.verifyTitle,
     this.profilePictureId,
     this.useZecIcon = false,
+    this.useNameIcon = false,
   });
 
   final String headline;
@@ -88,11 +93,16 @@ class _ReviewRecipientPresentation {
   final String? profilePictureId;
   final bool useZecIcon;
 
+  /// The headline is a Zcash name the user entered, not a saved contact.
+  final bool useNameIcon;
+
   Widget buildReviewLeading() {
     return KeyedSubtree(
       key: const ValueKey('mobile_send_review_recipient_picture'),
       child: useZecIcon
           ? const _ReviewWalletIcon()
+          : useNameIcon
+          ? const _ReviewNameIcon()
           : AppProfilePicture(
               profilePictureId: profilePictureId ?? '',
               size: AppProfilePictureSize.navLarge,
@@ -102,6 +112,7 @@ class _ReviewRecipientPresentation {
 
   Widget? buildVerifyLeading() {
     if (useZecIcon) return const _ReviewWalletIcon();
+    if (useNameIcon) return const _ReviewNameIcon();
     return AppProfilePicture(
       profilePictureId: profilePictureId ?? '',
       size: AppProfilePictureSize.large,
@@ -197,6 +208,7 @@ class MobileSendAmountArgs {
     this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
+    this.recipientZnsName,
     this.isPaymentRequest = false,
     this.requestedBy,
     this.requestedAmountZatoshi,
@@ -228,6 +240,9 @@ class MobileSendAmountArgs {
   final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
+
+  /// The Zcash name the recipient step resolved to [recipient], for display.
+  final String? recipientZnsName;
 
   /// Payment-request framing carried from the recipient step, already gated
   /// on the recipient still being the one the request named (see
@@ -275,6 +290,7 @@ class MobileSendReviewDraftArgs {
     this.preserveMemoWhitespace = false,
     this.contactLabel,
     this.contactPictureId,
+    this.recipientZnsName,
     this.isPaymentRequest = false,
     this.requestedBy,
     this.requestedAmountZatoshi,
@@ -307,6 +323,9 @@ class MobileSendReviewDraftArgs {
   final bool preserveMemoWhitespace;
   final String? contactLabel;
   final String? contactPictureId;
+
+  /// The Zcash name the recipient step resolved to [recipient], for display.
+  final String? recipientZnsName;
 }
 
 class MobileSendAmountScreen extends StatelessWidget {
@@ -329,6 +348,7 @@ class MobileSendAmountScreen extends StatelessWidget {
       preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      initialZnsName: args.recipientZnsName,
       isPaymentRequest: args.isPaymentRequest,
       paymentRequestLabel: args.requestedBy,
       requestedAmountZatoshi: args.requestedAmountZatoshi,
@@ -360,6 +380,7 @@ class MobileSendReviewScreen extends StatelessWidget {
       preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
       initialContactLabel: args.contactLabel,
       initialContactPictureId: args.contactPictureId,
+      initialZnsName: args.recipientZnsName,
       isPaymentRequest: args.isPaymentRequest,
       paymentRequestLabel: args.requestedBy,
       requestedAmountZatoshi: args.requestedAmountZatoshi,
@@ -432,6 +453,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.preserveInitialMemoWhitespace = false,
     this.initialContactLabel,
     this.initialContactPictureId,
+    this.initialZnsName,
     this.initialRecipientFocused = false,
     this.isPaymentRequest = false,
     this.paymentRequestLabel,
@@ -470,6 +492,10 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final String? initialContactLabel;
   final String? initialContactPictureId;
   final bool initialRecipientFocused;
+
+  /// The Zcash name an earlier step resolved to [initialRecipient]. Display
+  /// only; [initialRecipient] is already the address to pay.
+  final String? initialZnsName;
 
   /// This send answers a ZIP-321 payment request: the review step is retitled
   /// and its recipient row says who asked. Nothing about the proposal, the
@@ -546,6 +572,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   String? _contactLabel;
   String? _contactPictureId;
   int _addressSeq = 0;
+
+  /// The Zcash name state of the recipient, including a name an earlier step
+  /// resolved to [MobileSendScreen.initialRecipient].
+  late final _zns = ZnsRecipientState(carriedName: widget.initialZnsName);
 
   // Amount state. `_amountText` stays canonical ZEC text for Rust/review.
   String _amountText = '';
@@ -748,20 +778,51 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         setState(() {
           _addressType = '';
           _addressWrongNetwork = false;
+          _zns.clearLookup();
         });
       }
       return;
     }
+    // A Zcash name resolves first. The address it names then goes through
+    // the same validation as a typed one.
+    ZnsResolution? resolution;
+    final znsName = znsNameFromRecipientInput(address);
+    if (znsName != null) {
+      setState(() {
+        _addressType = '';
+        _addressWrongNetwork = false;
+        _zns.begin();
+      });
+      await Future<void>.delayed(kZnsLookupDebounce);
+      if (!mounted || seq != _addressSeq) return;
+      final lookup = await lookUpZnsRecipient(
+        ref.read(znsNameResolverProvider),
+        znsName,
+      );
+      if (!mounted || seq != _addressSeq) return;
+      switch (lookup) {
+        case ZnsRecipientMissing(:final status):
+          setState(() {
+            _addressType = status.addressType;
+            _zns.fail(status);
+            _maybeFallBackToRecipientStep();
+          });
+          return;
+        case ZnsRecipientFound(resolution: final found):
+          resolution = found;
+      }
+    }
     try {
       final result =
           await (widget.validateAddress ?? rust_sync.validateAddress)(
-            address: address,
+            address: resolution?.address ?? address,
             network: ref.read(rpcEndpointProvider).networkName,
           );
       if (!mounted || seq != _addressSeq) return;
       setState(() {
         _addressType = result.isValid ? result.addressType : 'invalid';
         _addressWrongNetwork = result.wrongNetwork;
+        _zns.settle(address, resolution, addressValid: result.isValid);
         _maybeFallBackToRecipientStep();
       });
     } catch (e) {
@@ -770,10 +831,17 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() {
         _addressType = 'error';
         _addressWrongNetwork = false;
+        _zns.clearLookup();
         _maybeFallBackToRecipientStep();
       });
     }
   }
+
+  /// The address this send pays: the resolved name's address, or the field.
+  String get _recipientAddress => _zns.paymentAddress(_addressController.text);
+
+  /// The Zcash name the recipient was entered as, for display.
+  String? get _recipientZnsName => _zns.displayName(_addressController.text);
 
   /// A ZIP-321 payment URI can jump straight to the amount step with the
   /// address + amount prefilled. If the prefilled address does not come back
@@ -817,6 +885,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _contactLabel = null;
         _contactPictureId = null;
       }
+      _zns.reset();
       _addressType = '';
       _addressWrongNetwork = false;
       _invalidateReviewFeeQuote();
@@ -972,7 +1041,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       '/send/amount',
       extra: MobileSendAmountArgs(
         sendFlowId: _sendFlowId,
-        recipient: _addressController.text.trim(),
+        recipient: _recipientAddress,
         addressType: _addressType,
         // A ZIP-321 deep link prefills the amount on this same screen and
         // can step back to the recipient in place (there is no amount page
@@ -985,6 +1054,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         preserveMemoWhitespace: _preserveMemoWhitespace,
         contactLabel: _contactLabel,
         contactPictureId: _contactPictureId,
+        recipientZnsName: _recipientZnsName,
         isPaymentRequest: _isAnsweringPaymentRequest,
         requestedBy: _activePaymentRequestLabel,
         requestedAmountZatoshi: _isAnsweringPaymentRequest
@@ -1150,7 +1220,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final quote = _maxQuote;
     if (quote == null) return false;
     return quote.accountUuid == _activeAccountUuid &&
-        quote.address == _addressController.text.trim() &&
+        quote.address == _recipientAddress &&
         quote.memo == _effectiveMemo &&
         parseZecAmount(_amountText.trim()) == quote.amountZatoshi &&
         _feeZatoshi == quote.feeZatoshi;
@@ -1166,7 +1236,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     _maxQuote = _MobileSendMaxQuote(
       accountUuid: accountUuid,
-      address: _addressController.text.trim(),
+      address: _recipientAddress,
       memo: _effectiveMemo,
       amountZatoshi: amountZatoshi,
       feeZatoshi: feeZatoshi,
@@ -1183,7 +1253,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     _reviewFeeQuote = _MobileSendFeeQuote(
       accountUuid: accountUuid,
-      address: _addressController.text.trim(),
+      address: _recipientAddress,
       memo: _effectiveMemo,
       amountZatoshi: amountZatoshi,
       feeZatoshi: feeZatoshi,
@@ -1205,7 +1275,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     if (quote == null || _isRefreshingReviewFee) return false;
     return quote.matches(
       accountUuid: _activeAccountUuid,
-      address: _addressController.text.trim(),
+      address: _recipientAddress,
       memo: _effectiveMemo,
       amountZatoshi: parseZecAmount(_amountText.trim()),
       feeZatoshi: _feeZatoshi,
@@ -1322,7 +1392,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     _validateSeq++;
     final seq = ++_maxSeq;
     final accountUuid = _activeAccountUuid;
-    final address = _addressController.text.trim();
+    final address = _recipientAddress;
     final memo = _effectiveMemo;
     final preconditionError = _maxEstimatePreconditionError();
     setState(() {
@@ -1431,7 +1501,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _isMaxMode &&
         seq == _maxSeq &&
         _activeAccountUuid == accountUuid &&
-        _addressController.text.trim() == address &&
+        _recipientAddress == address &&
         _effectiveMemo == memo;
   }
 
@@ -1490,7 +1560,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
-        toAddress: _addressController.text.trim(),
+        toAddress: _recipientAddress,
         amountZatoshi: zatoshi,
         memo: _effectiveMemo.isNotEmpty ? _effectiveMemo : null,
       );
@@ -1503,7 +1573,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           _feeZatoshi = fee;
           _reviewFeeQuote = _MobileSendFeeQuote(
             accountUuid: accountUuid,
-            address: _addressController.text.trim(),
+            address: _recipientAddress,
             memo: _effectiveMemo,
             amountZatoshi: zatoshi,
             feeZatoshi: fee,
@@ -1557,7 +1627,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           '/send/review',
           extra: MobileSendReviewDraftArgs(
             sendFlowId: _sendFlowId,
-            recipient: _addressController.text.trim(),
+            recipient: _recipientAddress,
             addressType: _addressType,
             amountText: _amountText,
             feeZatoshi: _feeZatoshi,
@@ -1566,6 +1636,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             preserveMemoWhitespace: _preserveMemoWhitespace,
             contactLabel: _contactLabel,
             contactPictureId: _contactPictureId,
+            recipientZnsName: _recipientZnsName,
             // The pushed review page decides the "Review Payment"
             // framing from these; without them it reads as an ordinary send.
             isPaymentRequest: _isAnsweringPaymentRequest,
@@ -1624,7 +1695,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     return mounted &&
         seq == _feeSeq &&
         accountUuid == _activeAccountUuid &&
-        address == _addressController.text.trim() &&
+        address == _recipientAddress &&
         memo == _effectiveMemo &&
         amountZatoshi == parseZecAmount(_amountText.trim());
   }
@@ -1633,7 +1704,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final seq = ++_feeSeq;
     final zatoshi = parseZecAmount(_amountText.trim());
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final address = _addressController.text.trim();
+    final address = _recipientAddress;
     final memo = _effectiveMemo;
     if (zatoshi == null || accountUuid == null) {
       if (mounted) {
@@ -1866,7 +1937,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final amountZatoshi = parseZecAmount(_amountText.trim());
     if (amountZatoshi == null || amountZatoshi <= BigInt.zero) return;
     final reviewedFeeZatoshi = _feeZatoshi!;
-    final address = _addressController.text.trim();
+    final address = _recipientAddress;
     final memo = _effectiveMemo;
 
     setState(() {
@@ -1885,6 +1956,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         addressType: _addressType,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
+        recipientZnsName: _recipientZnsName,
       );
     } catch (e) {
       log('MobileSend: propose error: $e');
@@ -2136,6 +2208,15 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         headline: rememberedContactLabel,
         verifyTitle: rememberedContactLabel,
         profilePictureId: _contactPictureId,
+      );
+    }
+
+    final znsName = _recipientZnsName;
+    if (znsName != null) {
+      return _ReviewRecipientPresentation(
+        headline: znsName,
+        verifyTitle: znsName,
+        useNameIcon: true,
       );
     }
 
@@ -2524,7 +2605,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       fieldKey: const ValueKey('mobile_send_address_input'),
       controller: _addressController,
       focusNode: _addressFocus,
-      hintText: 'Address or request link',
+      hintText: 'Address, name, or request link',
       leading: SizedBox(
         width: AppInputSizing.iconWrapWidth,
         height: AppInputSizing.height,
@@ -2582,9 +2663,24 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final showError = _addressType == 'invalid' || _addressType == 'error';
     // The reserved line shows the validation error, or — when the address is
     // valid and matches a saved contact / own account — the resolved name so
-    // the user knows the pasted/typed address is the intended one.
+    // the user knows the pasted/typed address is the intended one. A typed
+    // Zcash name shows its lookup state, then the address it resolved to.
+    final znsStatus = _zns.status;
+    final currentZns = _zns.resolutionFor(_addressController.text);
     Widget? line;
-    if (showError) {
+    if (znsStatus != null) {
+      line = AppFieldStatusLine(
+        key: const ValueKey('mobile_send_address_zns_status'),
+        text: znsStatus.message,
+        tone: znsStatus.isError
+            ? AppTextFieldTone.destructive
+            : AppTextFieldTone.neutral,
+        icon: znsStatus.isError
+            ? null
+            : AppIcon(AppIcons.globe, size: 16, color: colors.icon.muted),
+        style: AppTypography.labelLarge,
+      );
+    } else if (showError) {
       line = Text(
         _addressType == 'invalid'
             // A wrong-network address is well-formed, so "Invalid address"
@@ -2604,7 +2700,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         contacts:
             ref.watch(addressBookProvider).value?.contacts ??
             const <AddressBookContact>[],
-        address: _addressController.text.trim(),
+        address: _recipientAddress,
         ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
       );
       if (recipient is SendReviewContactRecipient) {
@@ -2615,6 +2711,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             color: colors.text.secondary,
           ),
           iconSize: 16,
+        );
+      } else if (currentZns != null) {
+        line = AppFieldStatusLine(
+          key: const ValueKey('mobile_send_address_zns_match'),
+          text: 'Resolves to ${_truncateAddress(currentZns.address)}',
+          tone: AppTextFieldTone.success,
+          style: AppTypography.labelLarge,
         );
       }
     }
@@ -2667,15 +2770,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       contacts:
           ref.watch(addressBookProvider).value?.contacts ??
           const <AddressBookContact>[],
-      address: _addressController.text.trim(),
+      address: _recipientAddress,
       ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
     );
     final recipientLabel = recipient is SendReviewContactRecipient
         ? recipient.name
-        : _contactLabel;
+        : _contactLabel ?? _recipientZnsName;
     final recipientPictureId = recipient is SendReviewContactRecipient
         ? recipient.profilePictureId
         : _contactPictureId;
+    final recipientIsZnsName =
+        recipient is! SendReviewContactRecipient &&
+        _contactLabel == null &&
+        _recipientZnsName != null;
     final zecUsdUnitPrice = ref.watch(zecLiveUsdUnitPriceProvider);
     final spendableText = ZecAmount.fromZatoshi(
       _spendable,
@@ -2752,13 +2859,21 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                               ),
                               child: Row(
                                 children: [
-                                  AppProfilePicture(
-                                    key: const ValueKey(
-                                      'mobile_send_amount_recipient_picture',
+                                  if (recipientIsZnsName)
+                                    const _ReviewNameIcon(
+                                      key: ValueKey(
+                                        'mobile_send_amount_recipient_zns_icon',
+                                      ),
+                                    )
+                                  else
+                                    AppProfilePicture(
+                                      key: const ValueKey(
+                                        'mobile_send_amount_recipient_picture',
+                                      ),
+                                      profilePictureId:
+                                          recipientPictureId ?? '',
+                                      size: AppProfilePictureSize.navLarge,
                                     ),
-                                    profilePictureId: recipientPictureId ?? '',
-                                    size: AppProfilePictureSize.navLarge,
-                                  ),
                                   const SizedBox(width: AppSpacing.s),
                                   Expanded(
                                     child: Column(
@@ -2770,7 +2885,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                           ? [
                                               _RecipientLineText(
                                                 _truncateAddress(
-                                                  _addressController.text,
+                                                  _recipientAddress,
                                                 ),
                                                 color: colors.text.accent,
                                               ),
@@ -2785,7 +2900,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                               ),
                                               _RecipientLineText(
                                                 _truncateAddress(
-                                                  _addressController.text,
+                                                  _recipientAddress,
                                                 ),
                                                 color: colors.text.secondary,
                                               ),
@@ -3213,7 +3328,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final feeText = _feeZatoshi == null
         ? '—'
         : ZecAmount.fromZatoshi(_feeZatoshi!).fee.toString();
-    final address = _addressController.text.trim();
+    final address = _recipientAddress;
     final addressBookContacts =
         ref.watch(addressBookProvider).value?.contacts ??
         const <AddressBookContact>[];
@@ -3384,7 +3499,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         ZecAmount.tryParse(_amountText)?.receipt.toString() ??
         '$_amountText ZEC';
     final toLabel =
-        _contactLabel ?? _truncateAddress(_addressController.text.trim());
+        _contactLabel ??
+        _recipientZnsName ??
+        _truncateAddress(_recipientAddress);
 
     return Padding(
       key: ValueKey('mobile_send_status_${_phase.name}'),
@@ -3727,6 +3844,23 @@ class _ReviewWalletIcon extends StatelessWidget {
     return MobileReviewIconBadge(
       child: AppIcon(
         AppIcons.wallet,
+        size: 18,
+        color: context.colors.icon.regular,
+      ),
+    );
+  }
+}
+
+class _ReviewNameIcon extends StatelessWidget {
+  const _ReviewNameIcon({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Same neutral badge as [_ReviewWalletIcon], with a globe: the recipient
+    // was entered as a Zcash name, which is not one of the user's records.
+    return MobileReviewIconBadge(
+      child: AppIcon(
+        AppIcons.globe,
         size: 18,
         color: context.colors.icon.regular,
       ),

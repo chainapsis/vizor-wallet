@@ -13,6 +13,9 @@ import '../../../core/widgets/review_list_row.dart';
 /// * [SendReviewAddressRecipient] — truncated UA headline + "Shielded" badge,
 /// * [SendReviewContactRecipient] — avatar + contact-name headline with the
 ///   truncated address as the sub-line.
+///
+/// A third variant, [SendReviewNameRecipient], names a recipient the user
+/// entered as a Zcash name.
 sealed class SendReviewRecipient {
   const SendReviewRecipient({required this.address});
 
@@ -38,6 +41,17 @@ final class SendReviewContactRecipient extends SendReviewRecipient {
 
   /// Avatar id resolved through `AppProfilePicture`.
   final String profilePictureId;
+}
+
+/// Recipient entered as a Zcash name (ZNS) and resolved to [address].
+///
+/// The name came from an outside resolver, not from the user's own records,
+/// so the row keeps the pool badge and the truncated address beside it.
+final class SendReviewNameRecipient extends SendReviewRecipient {
+  const SendReviewNameRecipient({required super.address, required this.name});
+
+  /// Display name with its suffix, for example `alice.zcash`.
+  final String name;
 }
 
 /// The shared "Review Info" block: Amount row, connector icon, and "To" row,
@@ -213,6 +227,22 @@ class SendReviewInfoSection extends StatelessWidget {
           trailingActionLabel: 'Show full address',
           onTrailingAction: onShowFullAddress,
         ),
+      SendReviewNameRecipient(:final name, :final address) => ReviewInfoRow(
+        key: rowKey,
+        label: rowLabel,
+        value: name,
+        leading: const ReviewInfoIconCircle(iconName: AppIcons.globe),
+        struckThrough: recipientStruckThrough,
+        bottomLeftIconName: _recipientBadgeIsShielded
+            ? AppIcons.shieldKeyhole
+            : AppIcons.transparentBalance,
+        bottomLeftIconColor: _recipientBadgeIsShielded
+            ? context.colors.text.brandCrimson
+            : null,
+        bottomLeftText: _contactRecipientBottomLeftText(address),
+        trailingActionLabel: 'Show full address',
+        onTrailingAction: onShowFullAddress,
+      ),
     };
   }
 }

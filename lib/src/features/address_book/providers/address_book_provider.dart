@@ -125,11 +125,14 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
     state = AsyncData(current.copyWith(query: query));
   }
 
+  /// Saves a new contact. [znsName] is the Zcash name the user entered, kept
+  /// as a label beside the [address] it resolved to.
   Future<AddressBookContact> addContact({
     required String label,
     required AddressBookNetwork network,
     required String address,
     required String profilePictureId,
+    String? znsName,
   }) async {
     final current = await _loadedState();
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -141,6 +144,7 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
       profilePictureId: resolveProfilePictureOption(profilePictureId).id,
       createdAtMs: now,
       updatedAtMs: now,
+      znsName: _cleanZnsName(network, znsName),
     );
     final contacts = _sortedContacts([...current.contacts, contact]);
     await _persist(contacts);
@@ -148,23 +152,29 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
     return contact;
   }
 
+  /// Replaces a contact's fields. A null [znsName] clears a saved name, so
+  /// an edited address never keeps the name of the old one.
   Future<void> updateContact(
     String id, {
     required String label,
     required AddressBookNetwork network,
     required String address,
     required String profilePictureId,
+    String? znsName,
   }) async {
     final current = await _loadedState();
     final contacts = _sortedContacts([
       for (final contact in current.contacts)
         if (contact.id == id)
-          contact.copyWith(
+          AddressBookContact(
+            id: contact.id,
             label: _cleanLabel(label),
             network: network,
             address: address.trim(),
             profilePictureId: resolveProfilePictureOption(profilePictureId).id,
+            createdAtMs: contact.createdAtMs,
             updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+            znsName: _cleanZnsName(network, znsName),
           )
         else
           contact,
@@ -214,6 +224,7 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
         ).id,
         createdAtMs: imported.createdAtMs > 0 ? imported.createdAtMs : now,
         updatedAtMs: imported.updatedAtMs > 0 ? imported.updatedAtMs : now,
+        znsName: _cleanZnsName(imported.network, imported.znsName),
       );
       contacts.add(contact);
       existingIds.add(nextId);
@@ -260,6 +271,12 @@ class AddressBookNotifier extends AsyncNotifier<AddressBookState> {
   static String _cleanLabel(String label) {
     final trimmed = label.trim();
     return trimmed.length <= 20 ? trimmed : trimmed.substring(0, 20);
+  }
+
+  /// Only a Zcash contact carries a ZNS name.
+  static String? _cleanZnsName(AddressBookNetwork network, String? znsName) {
+    if (network != AddressBookNetwork.zcash) return null;
+    return normalizeContactZnsName(znsName);
   }
 
   static List<AddressBookContact> _sortedContacts(

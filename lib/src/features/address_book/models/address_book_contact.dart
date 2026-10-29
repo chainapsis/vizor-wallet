@@ -1,3 +1,4 @@
+import '../../../core/naming/zns_name_resolver.dart';
 import '../../../core/profile_pictures.dart';
 
 enum AddressBookNetwork {
@@ -101,6 +102,7 @@ class AddressBookContact {
     required this.profilePictureId,
     required this.createdAtMs,
     required this.updatedAtMs,
+    this.znsName,
   });
 
   final String id;
@@ -111,7 +113,18 @@ class AddressBookContact {
   final int createdAtMs;
   final int updatedAtMs;
 
+  /// The Zcash name (display form, such as `alice.zcash`) the user entered
+  /// when saving this contact. [address] holds what it resolved to then;
+  /// the name is a label and is never resolved again.
+  final String? znsName;
+
   String get addressPreview => previewAddress(address);
+
+  /// [addressPreview], led by [znsName] when the contact was saved by name.
+  String get previewWithName {
+    final name = znsName;
+    return name == null ? addressPreview : '$name · $addressPreview';
+  }
 
   AddressBookContact copyWith({
     String? label,
@@ -128,6 +141,7 @@ class AddressBookContact {
       profilePictureId: profilePictureId ?? this.profilePictureId,
       createdAtMs: createdAtMs,
       updatedAtMs: updatedAtMs ?? this.updatedAtMs,
+      znsName: znsName,
     );
   }
 
@@ -140,6 +154,9 @@ class AddressBookContact {
       'profilePictureId': profilePictureId,
       'createdAtMs': createdAtMs,
       'updatedAtMs': updatedAtMs,
+      // Written only when present, so contacts saved by address keep their
+      // stored form.
+      'znsName': ?znsName,
     };
   }
 
@@ -160,8 +177,19 @@ class AddressBookContact {
       ),
       createdAtMs: (json['createdAtMs'] as num?)?.toInt() ?? 0,
       updatedAtMs: (json['updatedAtMs'] as num?)?.toInt() ?? 0,
+      znsName: network == AddressBookNetwork.zcash
+          ? normalizeContactZnsName(json['znsName'])
+          : null,
     );
   }
+}
+
+/// The stored ZNS name in display form, or null when [raw] is not a valid
+/// name. Guards against a hand-edited or imported contact list.
+String? normalizeContactZnsName(Object? raw) {
+  if (raw is! String) return null;
+  final name = znsNameFromRecipientInput(raw);
+  return name == null ? null : '$name$kZnsDisplaySuffix';
 }
 
 List<AddressBookContact> filterAddressBookContacts(

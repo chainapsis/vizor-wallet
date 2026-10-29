@@ -91,6 +91,54 @@ void main() {
     expect(_sendStatusTerminal(tester), isTrue);
   });
 
+  testWidgets('a send to a Zcash name offers to add the contact', (
+    tester,
+  ) async {
+    rustApi.executeResult = _executeResult(status: 'broadcasted');
+    final addressBook = _FakeAddressBookRepository();
+    final addContact = find.byKey(
+      const ValueKey('send_status_add_zns_contact'),
+    );
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(recipientZnsName: 'alice.zcash'),
+        addressBook: addressBook,
+      ),
+    );
+    await tester.pump();
+    expect(addContact, findsNothing, reason: 'only after the send succeeds');
+    await _flushBroadcast(tester);
+
+    expect(find.text('alice.zcash'), findsOneWidget);
+    await tester.tap(addContact);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final saved = addressBook.contacts.single;
+    expect(saved.address, _address);
+    expect(saved.label, 'alice');
+    expect(saved.znsName, 'alice.zcash');
+    expect(addContact, findsNothing, reason: 'the address is now a contact');
+    expect(find.text('alice'), findsOneWidget);
+  });
+
+  testWidgets('a send to a plain address offers no contact', (tester) async {
+    rustApi.executeResult = _executeResult(status: 'broadcasted');
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_harness(_reviewArgs()));
+    await tester.pump();
+    await _flushBroadcast(tester);
+
+    expect(find.text('Sent successfully'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('send_status_add_zns_contact')),
+      findsNothing,
+    );
+  });
+
   testWidgets('a whitespace-only memo keeps its Message row on the receipt', (
     tester,
   ) async {
@@ -1196,6 +1244,7 @@ Widget _harness(
   bool isHardware = false,
   SendStatusBroadcastRunner? broadcastRunner,
   LedgerSignedOperationService? ledgerOperationService,
+  _FakeAddressBookRepository? addressBook,
 }) {
   final router = GoRouter(
     initialLocation: '/send/status',
@@ -1222,7 +1271,7 @@ Widget _harness(
       ),
       zecMarketDataCacheProvider.overrideWithValue(FakeZecMarketDataCache()),
       addressBookRepositoryProvider.overrideWithValue(
-        _FakeAddressBookRepository(),
+        addressBook ?? _FakeAddressBookRepository(),
       ),
       accountProvider.overrideWith(_FakeAccountNotifier.new),
       appSecurityProvider.overrideWith(_FakeAppSecurityNotifier.new),
@@ -1310,6 +1359,7 @@ SendReviewArgs _reviewArgs({
   String? memo,
   bool needsSaplingParams = false,
   SendFlowKind flowKind = SendFlowKind.send,
+  String? recipientZnsName,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,
@@ -1322,6 +1372,7 @@ SendReviewArgs _reviewArgs({
     needsSaplingParams: needsSaplingParams,
     memo: memo,
     flowKind: flowKind,
+    recipientZnsName: recipientZnsName,
   );
 }
 
@@ -1360,11 +1411,15 @@ class _FailingPathProviderPlatform extends Fake
 }
 
 class _FakeAddressBookRepository implements AddressBookRepository {
-  @override
-  Future<List<AddressBookContact>> loadContacts() async => const [];
+  var contacts = <AddressBookContact>[];
 
   @override
-  Future<void> saveContacts(List<AddressBookContact> contacts) async {}
+  Future<List<AddressBookContact>> loadContacts() async => contacts;
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {
+    this.contacts = [...contacts];
+  }
 }
 
 class _FakeAppSecurityNotifier extends AppSecurityNotifier {
