@@ -334,7 +334,7 @@ void main() {
         'ledger_status_6901: Ledger display is busy starting a review; retry shortly':
             'Your Ledger is busy. Try again in a moment.',
         'ledger_status_6807: The Zcash app is not installed on this Ledger':
-            'Install the Zcash app with Ledger Live.',
+            'Install the Zcash app with Ledger Wallet.',
         'ledger_status_5502: Ledger device PIN is not set':
             'Set up a PIN on your Ledger, then try again.',
         'ledger_status_5515: Ledger device is locked; unlock it and reopen the Zcash app':

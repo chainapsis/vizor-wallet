@@ -20,7 +20,7 @@ import '../../rust/wallet/ledger.dart' show LedgerAppSupport;
 /// as a hash otherwise.
 ///
 /// Signing starts at 3.9.3 because Vizor builds transactions to that app's
-/// limits. Ledger Live still installs older versions on older firmware.
+/// limits. Ledger Wallet still installs older versions on older firmware.
 const kMinimumLedgerZcashAppVersion = '3.9.3';
 
 /// Before this version the app crashed while hashing a memo for display, so
