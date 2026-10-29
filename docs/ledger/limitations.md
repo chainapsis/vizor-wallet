@@ -32,18 +32,30 @@ classification of arbitrary PCZT outputs.
 
 ## Supported app versions
 
-| Device app | Existing-account signing | New account import | Memo shown as a hash |
-| --- | --- | --- | --- |
-| Below 3.9.3 | Refused | Refused | Not applicable |
-| 3.9.3 | Allowed within these limits | Refused | Refused; the app has a memo-hasher defect |
-| 3.9.4 | Allowed within these limits | Allowed | Allowed |
+| Device app | Existing-account signing | New account import | Memo shown as a hash | NU7 transactions |
+| --- | --- | --- | --- | --- |
+| Below 3.9.3 | Refused | Refused | Not applicable | Not applicable |
+| 3.9.3 | Allowed within these limits | Refused | Refused; the app has a memo-hasher defect | Refused |
+| 3.9.4 | Allowed within these limits | Allowed | Allowed | Refused |
+| 3.10.0 | Allowed within these limits | Allowed | Allowed | Allowed |
 
-Both supported versions have the same record and review limits. There is no
+The supported versions have the same record and review limits. There is no
 3.9.2 compatibility branch. Higher versions pass the existing minimum-version
 policy; that does **not** remove these bounds or prove that recovery works.
 
+Apps before 3.10.0 cannot parse the NU7 consensus branch and answer the PCZT
+header with a generic `IncorrectData`. The serializer refuses an NU7
+transaction for them before any PCZT packet is sent, with update copy that
+names the device as well as the app: Ledger Wallet offers 3.10.0 only on each
+device's latest firmware.
+
+3.10.0 also refuses some shapes that 3.9.4 accepted: a signing path that does
+not have the shape of its key, more than six retained shielded outputs
+(change included), and a transparent change output beside a shielded one.
+Current proposals stay within them.
+
 The firmware reference is
-[`LedgerHQ/app-zcash` 3.9.4, `1a0f649`](https://github.com/LedgerHQ/app-zcash/tree/1a0f6495458ecb77abf97c8cff25b0a1a344daaa):
+[`LedgerHQ/app-zcash` 3.10.0, `2db9d5a`](https://github.com/LedgerHQ/app-zcash/tree/2db9d5a900f27074ba19b90a7217dcc4318a5f24):
 `src/consts.rs`, `src/parser/pczt.rs`, and its Orchard/Ironwood parsers.
 Host constants live in [`limits.rs`](../../rust/src/wallet/ledger/limits.rs).
 The Flutter review-count policy lives alongside app-version capabilities in

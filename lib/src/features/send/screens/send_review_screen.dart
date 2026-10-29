@@ -545,6 +545,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     } else if (isLedgerMemoHashUnsupported(error)) {
       failure = ledgerMemoHashUpdateFailure;
       action = _LedgerSendRecoveryAction.retrySigning;
+    } else if (isLedgerNu7AppUpdateRequired(error)) {
+      failure = ledgerNu7AppUpdateFailure;
+      action = _LedgerSendRecoveryAction.retrySigning;
     } else if (lower.contains('sapling')) {
       failure = const LedgerSigningFailurePresentation(
         title: 'Ledger signing unavailable',

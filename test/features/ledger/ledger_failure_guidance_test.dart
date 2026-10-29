@@ -1,11 +1,24 @@
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_connection_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 
 void main() {
+  test('an NU7 transaction refused for an older app asks for an update', () {
+    final error = StateError(ledgerNu7AppUpdateRequiredError);
+    final guidance = ledgerFailureGuidance(error);
+    expect(guidance?.message, ledgerNu7AppUpdateRequiredError);
+    // After the update a retry reads the new version.
+    expect(guidance?.retryable, isTrue);
+    expect(
+      LedgerRequestFailure.fromError(error),
+      LedgerRequestFailure.appUpdateRequired,
+    );
+  });
+
   test('a Ledger swapped during a USB request asks for one Ledger', () {
     final guidance = ledgerFailureGuidance(StateError(ledgerAppChangedError));
     expect(guidance?.message, ledgerAppChangedError);

@@ -32,6 +32,7 @@ import 'third_party/zcash_voting/share_policy.dart';
 import 'third_party/zcash_voting/wire.dart';
 import 'wallet/gift_card_tracking.dart';
 import 'wallet/keystone.dart';
+import 'wallet/ledger.dart';
 
 /// Main entrypoint of the Rust API
 class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
@@ -943,7 +944,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
   });
 
   Future<LedgerPcztApduPlan> crateApiLedgerLedgerBuildPcztSigningApduPlan({
@@ -951,7 +952,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
   });
 
   Future<LedgerUfvkApduPlan> crateApiLedgerLedgerBuildUfvkApduPlan({
@@ -1031,7 +1032,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
     String? appVersion,
   });
 
@@ -1040,7 +1041,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
     String? appVersion,
   });
 
@@ -1050,7 +1051,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> pcztBytes,
     required String network,
     required bool compact,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
     String? appVersion,
   });
 
@@ -7368,7 +7369,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -7378,7 +7379,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
-          sse_encode_bool(memoHashSupported, serializer);
+          sse_encode_box_autoadd_ledger_app_support(appSupport, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -7391,7 +7392,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerBuildPcztFullSigningApduPlanConstMeta,
-        argValues: [dbPath, accountUuid, pcztBytes, network, memoHashSupported],
+        argValues: [dbPath, accountUuid, pcztBytes, network, appSupport],
         apiImpl: this,
       ),
     );
@@ -7406,7 +7407,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "pcztBytes",
           "network",
-          "memoHashSupported",
+          "appSupport",
         ],
       );
 
@@ -7416,7 +7417,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -7426,7 +7427,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
-          sse_encode_bool(memoHashSupported, serializer);
+          sse_encode_box_autoadd_ledger_app_support(appSupport, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -7439,7 +7440,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiLedgerLedgerBuildPcztSigningApduPlanConstMeta,
-        argValues: [dbPath, accountUuid, pcztBytes, network, memoHashSupported],
+        argValues: [dbPath, accountUuid, pcztBytes, network, appSupport],
         apiImpl: this,
       ),
     );
@@ -7453,7 +7454,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "pcztBytes",
           "network",
-          "memoHashSupported",
+          "appSupport",
         ],
       );
 
@@ -7949,7 +7950,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
     String? appVersion,
   }) {
     return handler.executeNormal(
@@ -7960,7 +7961,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
-          sse_encode_bool(memoHashSupported, serializer);
+          sse_encode_box_autoadd_ledger_app_support(appSupport, serializer);
           sse_encode_opt_String(appVersion, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -7979,7 +7980,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           accountUuid,
           pcztBytes,
           network,
-          memoHashSupported,
+          appSupport,
           appVersion,
         ],
         apiImpl: this,
@@ -7995,7 +7996,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "pcztBytes",
           "network",
-          "memoHashSupported",
+          "appSupport",
           "appVersion",
         ],
       );
@@ -8006,7 +8007,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required List<int> pcztBytes,
     required String network,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
     String? appVersion,
   }) {
     return handler.executeNormal(
@@ -8017,7 +8018,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
           sse_encode_String(network, serializer);
-          sse_encode_bool(memoHashSupported, serializer);
+          sse_encode_box_autoadd_ledger_app_support(appSupport, serializer);
           sse_encode_opt_String(appVersion, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -8036,7 +8037,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           accountUuid,
           pcztBytes,
           network,
-          memoHashSupported,
+          appSupport,
           appVersion,
         ],
         apiImpl: this,
@@ -8052,7 +8053,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "pcztBytes",
           "network",
-          "memoHashSupported",
+          "appSupport",
           "appVersion",
         ],
       );
@@ -8064,7 +8065,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<int> pcztBytes,
     required String network,
     required bool compact,
-    required bool memoHashSupported,
+    required LedgerAppSupport appSupport,
     String? appVersion,
   }) {
     final sink = RustStreamSink<LedgerSigningEvent>();
@@ -8078,7 +8079,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
             sse_encode_String(network, serializer);
             sse_encode_bool(compact, serializer);
-            sse_encode_bool(memoHashSupported, serializer);
+            sse_encode_box_autoadd_ledger_app_support(appSupport, serializer);
             sse_encode_opt_String(appVersion, serializer);
             sse_encode_StreamSink_ledger_signing_event_Sse(sink, serializer);
             pdeCallFfi(
@@ -8099,7 +8100,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pcztBytes,
             network,
             compact,
-            memoHashSupported,
+            appSupport,
             appVersion,
             sink,
           ],
@@ -8119,7 +8120,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "pcztBytes",
           "network",
           "compact",
-          "memoHashSupported",
+          "appSupport",
           "appVersion",
           "sink",
         ],
@@ -13151,6 +13152,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LedgerAppSupport dco_decode_box_autoadd_ledger_app_support(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_ledger_app_support(raw);
+  }
+
+  @protected
   MigrationOutboxBatch dco_decode_box_autoadd_migration_outbox_batch(
     dynamic raw,
   ) {
@@ -13917,6 +13924,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       p1: dco_decode_u_8(arr[2]),
       p2: dco_decode_u_8(arr[3]),
       data: dco_decode_list_prim_u_8_strict(arr[4]),
+    );
+  }
+
+  @protected
+  LedgerAppSupport dco_decode_ledger_app_support(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LedgerAppSupport(
+      memoHash: dco_decode_bool(arr[0]),
+      nu7Branch: dco_decode_bool(arr[1]),
     );
   }
 
@@ -17566,6 +17585,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LedgerAppSupport sse_decode_box_autoadd_ledger_app_support(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_ledger_app_support(deserializer));
+  }
+
+  @protected
   MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
     SseDeserializer deserializer,
   ) {
@@ -18462,6 +18489,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       p2: var_p2,
       data: var_data,
     );
+  }
+
+  @protected
+  LedgerAppSupport sse_decode_ledger_app_support(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_memoHash = sse_decode_bool(deserializer);
+    var var_nu7Branch = sse_decode_bool(deserializer);
+    return LedgerAppSupport(memoHash: var_memoHash, nu7Branch: var_nu7Branch);
   }
 
   @protected
@@ -22988,6 +23023,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_ledger_app_support(
+    LedgerAppSupport self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_ledger_app_support(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch self,
     SseSerializer serializer,
@@ -23749,6 +23793,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_8(self.p1, serializer);
     sse_encode_u_8(self.p2, serializer);
     sse_encode_list_prim_u_8_strict(self.data, serializer);
+  }
+
+  @protected
+  void sse_encode_ledger_app_support(
+    LedgerAppSupport self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.memoHash, serializer);
+    sse_encode_bool(self.nu7Branch, serializer);
   }
 
   @protected

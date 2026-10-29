@@ -1,6 +1,7 @@
 //! Flutter Rust Bridge surface for the experimental Ledger integration.
 
 use crate::wallet::ledger;
+pub use crate::wallet::ledger::LedgerAppSupport;
 use sha2::{Digest, Sha256};
 
 /// Public account material approved by the user on the Ledger device.
@@ -150,21 +151,21 @@ pub fn ledger_parse_mobile_ufvk_responses(
 }
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
-/// `memo_hash_supported` comes from the connected app's version; see
-/// `ledgerSupportsMemoHash` in `lib/src/features/ledger/ledger_capability.dart`.
+/// `app_support` comes from the connected app's version; see
+/// `ledgerAppSupport` in `lib/src/features/ledger/ledger_capability.dart`.
 pub fn ledger_build_pczt_signing_apdu_plan(
     db_path: String,
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
 ) -> Result<LedgerPcztApduPlan, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
     Ok(LedgerPcztApduPlan {
         device_account_key_request: to_apdu_command(expected.device_key().request()?),
         expected_device_public_key: expected.device_public_key.to_vec(),
-        commands: ledger::build_pczt_signing_plan(&pczt_bytes, memo_hash_supported)?
+        commands: ledger::build_pczt_signing_plan(&pczt_bytes, app_support)?
             .into_iter()
             .map(to_apdu_command)
             .collect(),
@@ -177,14 +178,14 @@ pub fn ledger_build_pczt_full_signing_apdu_plan(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
 ) -> Result<LedgerPcztApduPlan, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
     ledger::validate_pczt_account(&pczt_bytes, expected)?;
     Ok(LedgerPcztApduPlan {
         device_account_key_request: to_apdu_command(expected.device_key().request()?),
         expected_device_public_key: expected.device_public_key.to_vec(),
-        commands: ledger::build_pczt_full_signing_plan(&pczt_bytes, memo_hash_supported)?
+        commands: ledger::build_pczt_full_signing_plan(&pczt_bytes, app_support)?
             .into_iter()
             .map(to_apdu_command)
             .collect(),
@@ -256,7 +257,7 @@ pub fn ledger_sign_pczt(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     app_version: Option<String>,
 ) -> Result<Vec<LedgerActionSig>, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
@@ -264,7 +265,7 @@ pub fn ledger_sign_pczt(
     to_action_sigs(ledger::sign_pczt_for_account_with_progress(
         &pczt_bytes,
         &|_, _| {},
-        memo_hash_supported,
+        app_support,
         app_version.as_deref(),
         &expected.device_key(),
     )?)
@@ -298,7 +299,7 @@ pub fn ledger_sign_pczt_full(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     network: String,
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     app_version: Option<String>,
 ) -> Result<Vec<u8>, String> {
     let expected = expected_ledger_account(&db_path, &network, &account_uuid)?;
@@ -306,7 +307,7 @@ pub fn ledger_sign_pczt_full(
     ledger::sign_pczt_full_for_account_with_progress(
         &pczt_bytes,
         &|_, _| {},
-        memo_hash_supported,
+        app_support,
         app_version.as_deref(),
         &expected.device_key(),
     )
@@ -517,7 +518,7 @@ pub fn ledger_sign_with_progress(
     pczt_bytes: Vec<u8>,
     network: String,
     compact: bool,
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     app_version: Option<String>,
     sink: crate::frb_generated::StreamSink<LedgerSigningEvent>,
 ) {
@@ -539,7 +540,7 @@ pub fn ledger_sign_with_progress(
                 to_action_sigs(ledger::sign_pczt_for_account_with_progress(
                     &pczt_bytes,
                     &progress,
-                    memo_hash_supported,
+                    app_support,
                     app_version.as_deref(),
                     &expected.device_key(),
                 )?)?,
@@ -549,7 +550,7 @@ pub fn ledger_sign_with_progress(
                 Some(ledger::sign_pczt_full_for_account_with_progress(
                     &pczt_bytes,
                     &progress,
-                    memo_hash_supported,
+                    app_support,
                     app_version.as_deref(),
                     &expected.device_key(),
                 )?),

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/ledger.dart' as rust_ledger;
+import '../../../rust/wallet/ledger.dart' show LedgerAppSupport;
 import '../ledger_capability.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_connection_service.dart';
@@ -144,9 +145,7 @@ final ledgerPcztTransportSignerProvider = Provider<LedgerPcztSigner>((ref) {
                       accountUuid: accountUuid,
                       pcztBytes: pcztBytes,
                       network: networkName,
-                      memoHashSupported: ledgerSupportsMemoHash(
-                        _readyAppVersion(ref),
-                      ),
+                      appSupport: ledgerAppSupport(_readyAppVersion(ref)),
                     );
                 check();
                 final responses = await exchangeLedgerSigningPlan(
@@ -230,9 +229,7 @@ final ledgerActionPcztSignerProvider = Provider<LedgerVotingPcztSigner>((ref) {
                   accountUuid: accountUuid,
                   pcztBytes: pcztBytes,
                   networkName: networkName,
-                  memoHashSupported: ledgerSupportsMemoHash(
-                    _readyAppVersion(ref),
-                  ),
+                  appSupport: ledgerAppSupport(_readyAppVersion(ref)),
                 ),
               ),
         );
@@ -262,7 +259,7 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
   required String accountUuid,
   required List<int> pcztBytes,
   required String networkName,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
 }) async {
   check();
   final plan = await rust_ledger.ledgerBuildPcztSigningApduPlan(
@@ -270,7 +267,7 @@ Future<List<rust_ledger.LedgerActionSig>> _signMobileVotingPczt({
     accountUuid: accountUuid,
     pcztBytes: pcztBytes,
     network: networkName,
-    memoHashSupported: memoHashSupported,
+    appSupport: appSupport,
   );
   check();
   final responses = await exchangeLedgerSigningPlan(
@@ -305,7 +302,7 @@ Future<rust_ledger.LedgerSigningEvent> _signUsbWithProgress({
     pcztBytes: pcztBytes,
     network: network,
     compact: compact,
-    memoHashSupported: ledgerSupportsMemoHash(appVersion),
+    appSupport: ledgerAppSupport(appVersion),
     // USB signing opens a new session; Rust holds it to this version.
     appVersion: appVersion,
   )) {

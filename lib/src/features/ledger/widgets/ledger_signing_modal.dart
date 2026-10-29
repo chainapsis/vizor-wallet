@@ -66,6 +66,16 @@ const ledgerMemoHashUpdateFailure = LedgerSigningFailurePresentation(
   actionLabel: 'Try again',
 );
 
+/// An NU7 transaction was refused because the app predates
+/// [kLedgerNu7AppVersion]; retrying after an update reads the new version.
+const ledgerNu7AppUpdateFailure = LedgerSigningFailurePresentation(
+  title: 'Ledger app update required',
+  statusLabel: 'Action needed',
+  message: ledgerNu7AppUpdateRequiredError,
+  showDeviceAppPrompt: false,
+  actionLabel: 'Try again',
+);
+
 class LedgerSigningModal extends ConsumerWidget {
   const LedgerSigningModal({
     required this.phase,

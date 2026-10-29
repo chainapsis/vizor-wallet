@@ -3,16 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/rpc_endpoint_provider.dart';
 import '../../core/config/network_config.dart';
+import '../../rust/wallet/ledger.dart' show LedgerAppSupport;
 
 /// What Vizor may ask a connected Ledger Zcash app to do, by app version.
 /// Transaction budgets are enforced by Rust `ledger/limits.rs`;
 /// see `docs/ledger/limitations.md` for the full support/enforcement map.
 ///
-/// | Version  | New account | Signing | Memo shown as a hash |
-/// |----------|-------------|---------|----------------------|
-/// | < 3.9.3  | refused     | refused | —                    |
-/// | 3.9.3    | refused     | yes     | refused              |
-/// | >= 3.9.4 | yes         | yes     | yes                  |
+/// | Version   | New account | Signing | Memo shown as a hash | NU7 branch |
+/// |-----------|-------------|---------|----------------------|------------|
+/// | < 3.9.3   | refused     | refused | —                    | —          |
+/// | 3.9.3     | refused     | yes     | refused              | refused    |
+/// | 3.9.4     | yes         | yes     | yes                  | refused    |
+/// | >= 3.10.0 | yes         | yes     | yes                  | yes        |
 ///
 /// The app shows a memo as text only when every byte is printable ASCII, and
 /// as a hash otherwise.
@@ -32,11 +34,22 @@ const kLedgerMemoHashAppVersion = '3.9.4';
 const ledgerMemoHashUnsupportedError =
     'Update the Ledger Zcash app to sign non-English memos';
 
+/// Before this version the app rejects the NU7 consensus branch, and Ledger
+/// Wallet offers it only on each device's latest firmware.
+const kLedgerNu7AppVersion = '3.10.0';
+
+/// Shown when Rust refuses an NU7 transaction for an older app. Keep this
+/// identical to `LEDGER_NU7_APP_UPDATE_REQUIRED` in
+/// `rust/src/wallet/ledger/parse.rs`.
+const ledgerNu7AppUpdateRequiredError =
+    'Update your Ledger and its Zcash app to $kLedgerNu7AppVersion or newer '
+    'in Ledger Wallet.';
+
 /// Accounts connected from now on start without the 3.9.3 memo limit; those
 /// connected earlier keep signing from [kMinimumLedgerZcashAppVersion].
 const kMinimumLedgerZcashAppVersionForNewAccounts = kLedgerMemoHashAppVersion;
 
-/// Ledger's device-review budget, shared by the supported 3.9.3/3.9.4 apps.
+/// Ledger's device-review budget, shared by the supported 3.9.3 to 3.10.0 apps.
 /// This is independent of the 32-action budget per shielded pool: internal
 /// change is excluded, external Orchard and Ironwood outputs are combined.
 /// Rust enforces it when preparing a Gift Card batch. See
@@ -51,6 +64,15 @@ bool ledgerAppVersionAllowsNewAccounts(String appVersion) =>
 /// version fails closed.
 bool ledgerSupportsMemoHash(String? appVersion) =>
     appVersion != null && _atLeast(appVersion, kLedgerMemoHashAppVersion);
+
+bool ledgerSupportsNu7Branch(String? appVersion) =>
+    appVersion != null && _atLeast(appVersion, kLedgerNu7AppVersion);
+
+/// What the Rust signing entry points may send to the app at `appVersion`.
+LedgerAppSupport ledgerAppSupport(String? appVersion) => LedgerAppSupport(
+  memoHash: ledgerSupportsMemoHash(appVersion),
+  nu7Branch: ledgerSupportsNu7Branch(appVersion),
+);
 
 const kLedgerLegacyOrchardRecoveryErrorCode =
     'ledger_legacy_orchard_recovery_unsupported';
@@ -70,6 +92,9 @@ const ledgerAutomaticOrchardMigrationCapability = LedgerCapability.unsupported(
 
 bool isLedgerMemoHashUnsupported(Object error) =>
     error.toString().contains(ledgerMemoHashUnsupportedError);
+
+bool isLedgerNu7AppUpdateRequired(Object error) =>
+    error.toString().contains(ledgerNu7AppUpdateRequiredError);
 
 bool isLedgerLegacyOrchardRecoveryUnsupported(Object error) => error
     .toString()

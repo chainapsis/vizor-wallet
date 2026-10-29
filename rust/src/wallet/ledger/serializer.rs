@@ -1,10 +1,14 @@
 //! Byte-exact serializer for the Ledger Zcash app's compact PCZT APDU subset.
 
+use zcash_protocol::consensus::BranchId;
+
 use super::limits::ensure_count;
 use super::parse::{
     Bip32Derivation, Global, IronwoodBundle, ParsedPczt, ShieldedAction, ShieldedBundle,
     TransparentInput, TransparentOutput, LEDGER_MEMO_HASH_UNSUPPORTED,
+    LEDGER_NU7_APP_UPDATE_REQUIRED,
 };
+use super::LedgerAppSupport;
 
 pub(super) const MAX_PACKET_SIZE: usize = 255;
 
@@ -17,10 +21,14 @@ pub(super) struct CommandPackets {
 
 pub(super) fn serialize_pczt(
     pczt: &ParsedPczt,
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
 ) -> Result<Vec<CommandPackets>, String> {
-    if !memo_hash_supported && pczt.memo_reaches_hash_path {
+    if !app_support.memo_hash && pczt.memo_reaches_hash_path {
         return Err(LEDGER_MEMO_HASH_UNSUPPORTED.into());
+    }
+    // Older apps answer the branch with a generic IncorrectData; name the update instead.
+    if !app_support.nu7_branch && pczt.global.consensus_branch_id == u32::from(BranchId::Nu7) {
+        return Err(LEDGER_NU7_APP_UPDATE_REQUIRED.into());
     }
     let is_v6 = pczt.global.tx_version >= 6;
     let mut commands = vec![
@@ -486,7 +494,7 @@ mod tests {
                     anchor: [0; 32],
                 }),
             },
-            true
+            LedgerAppSupport::NEWEST
         )
         .is_ok());
     }
@@ -510,7 +518,7 @@ mod tests {
                 ironwood_bundle: None,
                 memo_reaches_hash_path: false,
             },
-            true,
+            LedgerAppSupport::NEWEST,
         )
         .unwrap();
 
@@ -523,6 +531,32 @@ mod tests {
         );
         assert_eq!(commands.last().unwrap().packets, vec![vec![0]]);
         assert!(commands.last().unwrap().finishes_pczt);
+    }
+
+    #[test]
+    fn nu7_branch_needs_an_app_that_accepts_it() {
+        let pczt = |branch: BranchId| ParsedPczt {
+            global: Global {
+                consensus_branch_id: branch.into(),
+                ..global(6)
+            },
+            transparent_inputs: vec![],
+            transparent_outputs: vec![],
+            orchard_bundle: None,
+            ironwood_bundle: None,
+            memo_reaches_hash_path: false,
+        };
+        let before_3_10 = LedgerAppSupport {
+            memo_hash: true,
+            nu7_branch: false,
+        };
+
+        assert_eq!(
+            serialize_pczt(&pczt(BranchId::Nu7), before_3_10).unwrap_err(),
+            LEDGER_NU7_APP_UPDATE_REQUIRED
+        );
+        assert!(serialize_pczt(&pczt(BranchId::Nu6_3), before_3_10).is_ok());
+        assert!(serialize_pczt(&pczt(BranchId::Nu7), LedgerAppSupport::NEWEST).is_ok());
     }
 
     #[test]

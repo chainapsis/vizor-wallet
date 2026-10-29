@@ -5,6 +5,8 @@
 
 import '../frb_generated.dart';
 
+import '../wallet/ledger.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'sync.dart';
@@ -76,20 +78,20 @@ Future<LedgerAccountExport> ledgerParseMobileUfvkResponses({
 );
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
-/// `memo_hash_supported` comes from the connected app's version; see
-/// `ledgerSupportsMemoHash` in `lib/src/features/ledger/ledger_capability.dart`.
+/// `app_support` comes from the connected app's version; see
+/// `ledgerAppSupport` in `lib/src/features/ledger/ledger_capability.dart`.
 Future<LedgerPcztApduPlan> ledgerBuildPcztSigningApduPlan({
   required String dbPath,
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
 }) => RustLib.instance.api.crateApiLedgerLedgerBuildPcztSigningApduPlan(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
 );
 
 /// Build the transport-neutral full PCZT signing exchange.
@@ -98,13 +100,13 @@ Future<LedgerPcztApduPlan> ledgerBuildPcztFullSigningApduPlan({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
 }) => RustLib.instance.api.crateApiLedgerLedgerBuildPcztFullSigningApduPlan(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
 );
 
 /// Refuse a different seed/account before the mobile transport sends PCZT bytes.
@@ -155,14 +157,14 @@ Future<List<LedgerActionSig>> ledgerSignPczt({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
   String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPczt(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
   appVersion: appVersion,
 );
 
@@ -173,14 +175,14 @@ Future<Uint8List> ledgerSignPcztFull({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
   String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPcztFull(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
   appVersion: appVersion,
 );
 
@@ -273,7 +275,7 @@ Stream<LedgerSigningEvent> ledgerSignWithProgress({
   required List<int> pcztBytes,
   required String network,
   required bool compact,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
   String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignWithProgress(
   dbPath: dbPath,
@@ -281,7 +283,7 @@ Stream<LedgerSigningEvent> ledgerSignWithProgress({
   pcztBytes: pcztBytes,
   network: network,
   compact: compact,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
   appVersion: appVersion,
 );
 

@@ -5794,7 +5794,8 @@ fn wire__crate__api__ledger__ledger_build_pczt_full_signing_apdu_plan_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -5803,7 +5804,7 @@ fn wire__crate__api__ledger__ledger_build_pczt_full_signing_apdu_plan_impl(
                         api_account_uuid,
                         api_pczt_bytes,
                         api_network,
-                        api_memo_hash_supported,
+                        api_app_support,
                     )?;
                     Ok(output_ok)
                 })())
@@ -5837,7 +5838,8 @@ fn wire__crate__api__ledger__ledger_build_pczt_signing_apdu_plan_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -5846,7 +5848,7 @@ fn wire__crate__api__ledger__ledger_build_pczt_signing_apdu_plan_impl(
                         api_account_uuid,
                         api_pczt_bytes,
                         api_network,
-                        api_memo_hash_supported,
+                        api_app_support,
                     )?;
                     Ok(output_ok)
                 })())
@@ -6345,7 +6347,8 @@ fn wire__crate__api__ledger__ledger_sign_pczt_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -6355,7 +6358,7 @@ fn wire__crate__api__ledger__ledger_sign_pczt_impl(
                         api_account_uuid,
                         api_pczt_bytes,
                         api_network,
-                        api_memo_hash_supported,
+                        api_app_support,
                         api_app_version,
                     )?;
                     Ok(output_ok)
@@ -6390,7 +6393,8 @@ fn wire__crate__api__ledger__ledger_sign_pczt_full_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -6400,7 +6404,7 @@ fn wire__crate__api__ledger__ledger_sign_pczt_full_impl(
                         api_account_uuid,
                         api_pczt_bytes,
                         api_network,
-                        api_memo_hash_supported,
+                        api_app_support,
                         api_app_version,
                     )?;
                     Ok(output_ok)
@@ -6436,7 +6440,8 @@ fn wire__crate__api__ledger__ledger_sign_with_progress_impl(
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_compact = <bool>::sse_decode(&mut deserializer);
-            let api_memo_hash_supported = <bool>::sse_decode(&mut deserializer);
+            let api_app_support =
+                <crate::wallet::ledger::LedgerAppSupport>::sse_decode(&mut deserializer);
             let api_app_version = <Option<String>>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
                 crate::api::ledger::LedgerSigningEvent,
@@ -6452,7 +6457,7 @@ fn wire__crate__api__ledger__ledger_sign_with_progress_impl(
                             api_pczt_bytes,
                             api_network,
                             api_compact,
-                            api_memo_hash_supported,
+                            api_app_support,
                             api_app_version,
                             api_sink,
                         );
@@ -12440,6 +12445,18 @@ impl SseDecode for crate::api::ledger::LedgerApduCommand {
             p1: var_p1,
             p2: var_p2,
             data: var_data,
+        };
+    }
+}
+
+impl SseDecode for crate::wallet::ledger::LedgerAppSupport {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_memoHash = <bool>::sse_decode(deserializer);
+        let mut var_nu7Branch = <bool>::sse_decode(deserializer);
+        return crate::wallet::ledger::LedgerAppSupport {
+            memo_hash: var_memoHash,
+            nu7_branch: var_nu7Branch,
         };
     }
 }
@@ -18656,6 +18673,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::ledger::LedgerApduCommand>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::wallet::ledger::LedgerAppSupport {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.memo_hash.into_into_dart().into_dart(),
+            self.nu7_branch.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::wallet::ledger::LedgerAppSupport
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::wallet::ledger::LedgerAppSupport>
+    for crate::wallet::ledger::LedgerAppSupport
+{
+    fn into_into_dart(self) -> crate::wallet::ledger::LedgerAppSupport {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::ledger::LedgerDeviceApp {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -22643,6 +22681,14 @@ impl SseEncode for crate::api::ledger::LedgerApduCommand {
         <u8>::sse_encode(self.p1, serializer);
         <u8>::sse_encode(self.p2, serializer);
         <Vec<u8>>::sse_encode(self.data, serializer);
+    }
+}
+
+impl SseEncode for crate::wallet::ledger::LedgerAppSupport {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.memo_hash, serializer);
+        <bool>::sse_encode(self.nu7_branch, serializer);
     }
 }
 

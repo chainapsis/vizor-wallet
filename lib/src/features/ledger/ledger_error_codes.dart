@@ -1,3 +1,4 @@
+import 'ledger_capability.dart';
 import 'services/ledger_app_readiness_service.dart';
 import 'services/ledger_connection_service.dart';
 import 'services/ledger_mobile_ble_service.dart';
@@ -131,6 +132,9 @@ LedgerFailureKind classifyLedgerError(Object error) {
 
   final raw = error.toString();
   if (raw.contains('ledger_cancelled:')) return LedgerFailureKind.cancelled;
+  if (isLedgerNu7AppUpdateRequired(error)) {
+    return LedgerFailureKind.appUpdateRequired;
+  }
   if (raw.contains('ledger_capacity:')) {
     return LedgerFailureKind.capacityExceeded;
   }
