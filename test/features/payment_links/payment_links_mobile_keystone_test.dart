@@ -459,6 +459,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     throw StateError('Keystone payment links require the hardware flow.');
@@ -564,6 +565,7 @@ class _FakePaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);

@@ -227,6 +227,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   bool _messageEditorRevealed = false;
   @override
   bool _operationInProgress = false;
+  bool _feeQuoteRefreshPending = false;
+  bool _feeQuoteRefreshScheduled = false;
   final Set<String> _copyingLinkAddresses = {};
   final Set<String> _savingQrAddresses = {};
   final Set<String> _sharingQrAddresses = {};
@@ -1261,6 +1263,56 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         sync.error == null;
   }
 
+  void _handleFeePolicyChanged(
+    WalletFeePolicyEpoch? previous,
+    WalletFeePolicyEpoch next,
+  ) {
+    if (previous == null || previous == next) return;
+    if (_page != PaymentLinksLocalPage.amount &&
+        _page != PaymentLinksLocalPage.message &&
+        _page != PaymentLinksLocalPage.review &&
+        _page != PaymentLinksLocalPage.bulk) {
+      return;
+    }
+    _feeQuoteRefreshPending = true;
+    _schedulePendingFeeQuoteRefresh();
+  }
+
+  /// Coalesce policy changes while funding or signing. Completion/cancellation
+  /// drains this once; it never starts another funding operation.
+  void _schedulePendingFeeQuoteRefresh() {
+    if (!_feeQuoteRefreshPending || _feeQuoteRefreshScheduled) return;
+    _feeQuoteRefreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _feeQuoteRefreshScheduled = false;
+      if (!mounted ||
+          !_feeQuoteRefreshPending ||
+          _operationInProgress ||
+          _hardwareFundingRequest != null ||
+          _pendingFundingMetadata != null) {
+        return;
+      }
+      _feeQuoteRefreshPending = false;
+      if (_page == PaymentLinksLocalPage.bulk) {
+        _requoteBatchForAccount();
+        return;
+      }
+      if (_page != PaymentLinksLocalPage.amount &&
+          _page != PaymentLinksLocalPage.message &&
+          _page != PaymentLinksLocalPage.review) {
+        return;
+      }
+      _maxFundingQuoteGeneration++;
+      setState(() {
+        _maxFundingQuote = null;
+        _maxFundingQuoteInProgress = false;
+        _page = PaymentLinksLocalPage.amount;
+      });
+      unawaited(_loadMaxFundingQuote());
+      _requoteAmount();
+    });
+  }
+
   void _handleFeeQuoteSyncGateChanged(
     ({String? accountUuid, bool ready})? previous,
     ({String? accountUuid, bool ready}) next,
@@ -1386,9 +1438,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       });
       return;
     }
-    final minimumFunding = paymentLinkFundingAmountZatoshi(amount);
+    final minimumFunding = amount;
     if (readySync.hasBalanceData &&
-        readySync.spendableBalance < minimumFunding) {
+        readySync.spendableBalance <= minimumFunding) {
       setState(() {
         _amountSupportingText = 'Above your maximum ZEC';
         _amountSupportingTextIsError = true;
@@ -1736,6 +1788,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       setState(() {
         _operationInProgress = true;
         _hardwareFundingRequest = _PaymentLinkHardwareFundingRequest(
+          expectedQuote: quote,
           signerKind: _signerFor(sourceAccountUuid),
           amountZatoshi: amount,
           sourceAccountUuid: sourceAccountUuid,
@@ -1753,6 +1806,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       final funding = await ref
           .read(paymentLinkOperationsProvider)
           .createFundedLink(
+            expectedQuote: quote,
             amountZatoshi: amount,
             sourceAccountUuid: sourceAccountUuid,
             presentation: presentation,
@@ -1795,6 +1849,12 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         _page = PaymentLinksLocalPage.ready;
       });
       _confirmCardCreated(broadcastAccepted: funding.broadcastAccepted);
+    } on PaymentLinkBatchQuoteChanged {
+      if (mounted) {
+        // Rust can observe the new tip before the display's epoch changes.
+        _feeQuoteRefreshPending = true;
+        _showError(_kBatchFeeChangedText);
+      }
     } catch (error) {
       if (mounted) {
         _showError(
@@ -1816,6 +1876,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
             ref.read(accountProvider).value?.activeAccountUuid,
           );
         }
+        _schedulePendingFeeQuoteRefresh();
         unawaited(_refreshFundingProgress());
       }
     }
@@ -1857,6 +1918,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     } finally {
       if (mounted) {
         setState(() => _operationInProgress = false);
+        _schedulePendingFeeQuoteRefresh();
         unawaited(_refreshFundingProgress());
       }
     }
@@ -1867,11 +1929,14 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   ) {
     if (request.signerKind == HardwareSignerKind.ledger) {
       return PaymentLinkLedgerSigningOverlay(
+        expectedQuote: request.expectedQuote,
         key: ObjectKey(request),
         amountZatoshi: request.amountZatoshi,
         sourceAccountUuid: request.sourceAccountUuid,
         presentation: request.presentation,
         onCancel: _cancelHardwareFunding,
+        onBatchRefused: (refusal) =>
+            _handleHardwareFundingRefused(request, refusal),
         onFundingBroadcast: (link, result) async {
           // Persistence is already complete; an old account must not replace
           // a newly opened wizard after a background completion.
@@ -1881,14 +1946,32 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       );
     }
     return PaymentLinkKeystoneSigningOverlay(
+      expectedQuote: request.expectedQuote,
       key: ObjectKey(request),
       amountZatoshi: request.amountZatoshi,
       sourceAccountUuid: request.sourceAccountUuid,
       presentation: request.presentation,
       onCancel: _cancelHardwareFunding,
+      onBatchRefused: (refusal) =>
+          _handleHardwareFundingRefused(request, refusal),
       onFundingBroadcast: (link, result) =>
           _completeHardwareFunding(request, link, result),
     );
+  }
+
+  Future<void> _handleHardwareFundingRefused(
+    _PaymentLinkHardwareFundingRequest request,
+    Object refusal,
+  ) async {
+    // Overlays report refusals only before creating a signing draft. A late
+    // result from an old account/request must not replace the current flow.
+    if (!mounted || _hardwareFundingRequest != request) return;
+    if (refusal is PaymentLinkBatchQuoteChanged) {
+      _showError(_kBatchFeeChangedText);
+    } else if (refusal is PaymentLinkBatchRejected) {
+      _showError(refusal.message);
+    }
+    await _cancelHardwareFunding();
   }
 
   Future<void> _cancelHardwareFunding() async {
@@ -1929,6 +2012,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _operationInProgress = false;
     });
     if (quote == null) _showError(_amountSupportingText!);
+    _schedulePendingFeeQuoteRefresh();
     unawaited(_loadMaxFundingQuote());
     unawaited(_loadRecoveries(showError: false));
   }
@@ -1981,6 +2065,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       _readyShowsBack = false;
       _page = PaymentLinksLocalPage.ready;
     });
+    _schedulePendingFeeQuoteRefresh();
     _confirmCardCreated(
       broadcastAccepted: isPaymentLinkFundingBroadcastAccepted(result.status),
     );
@@ -2753,6 +2838,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       GiftCardTrackingScope(child: _buildContent(context));
 
   Widget _buildContent(BuildContext context) {
+    ref.listen(walletFeePolicyEpochProvider, _handleFeePolicyChanged);
     ref.listen(appSecurityProvider, (_, next) {
       if (next.requiresUnlock) _cardReadEpoch++;
     });
@@ -4151,9 +4237,11 @@ class _PaymentLinkHardwareFundingRequest {
     required this.sourceAccountUuid,
     required this.presentation,
     required this.signerKind,
+    this.expectedQuote,
   });
 
   final HardwareSignerKind? signerKind;
+  final PaymentLinkFundingQuote? expectedQuote;
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation presentation;

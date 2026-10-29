@@ -53,3 +53,27 @@ final nu7ActiveAtWalletTipProvider = Provider<bool>((ref) {
   );
   return tipHeight >= activation;
 });
+
+/// UI invalidation key only. Transaction fees themselves are quoted by Rust
+/// from the wallet DB's authoritative target, not from this display snapshot.
+typedef WalletFeePolicyEpoch = ({String network, bool nu7});
+final walletFeePolicyEpochProvider = Provider<WalletFeePolicyEpoch>((ref) {
+  final network = ref.watch(
+    rpcEndpointFailoverProvider.select((state) => state.current.networkName),
+  );
+  final activation = ref.watch(
+    blockSpacingProvider.select((spacing) => spacing.nu7ActivationHeight),
+  );
+  final tip = ref.watch(
+    syncProvider.select((state) {
+      final sync = state.value;
+      return sync == null
+          ? 0
+          : math.max(sync.chainTipHeight, sync.scannedHeight);
+    }),
+  );
+  return (
+    network: network,
+    nu7: activation != null && tip > 0 && tip + 1 >= activation,
+  );
+});

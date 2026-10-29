@@ -217,10 +217,8 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       setState(() => _batchQuote = const _BatchQuoteWaitingForSync());
       return;
     }
-    final minimum =
-        BigInt.from(_batchCount) *
-        (amount + BigInt.from(kPaymentLinkClaimFeeReserveZatoshi));
-    if (sync!.spendableBalance < minimum) {
+    final minimum = BigInt.from(_batchCount) * amount;
+    if (sync!.spendableBalance <= minimum) {
       setState(
         () => _batchQuote = const _BatchQuoteFailed(_kBatchOverBalanceText),
       );

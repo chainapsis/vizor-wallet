@@ -29,6 +29,7 @@ class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
     required this.onCancel,
     required this.onFundingBroadcast,
     this.presentation,
+    this.expectedQuote,
     this.batch,
     this.onBatchRefused,
     super.key,
@@ -36,6 +37,7 @@ class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
+  final PaymentLinkFundingQuote? expectedQuote;
   final PaymentLinkBatchDraft? batch;
 
   /// A group whose proposal no longer matches its quote, or that its signer
@@ -126,6 +128,7 @@ class _PaymentLinkLedgerSigningOverlayState
               accountUuid: widget.sourceAccountUuid,
               amountZatoshi: widget.amountZatoshi,
               presentation: widget.presentation,
+              expectedQuote: widget.expectedQuote,
             )
           : await _service.prepareBatch(widget.batch!);
       if (!_active) return;

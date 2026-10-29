@@ -15,16 +15,12 @@ import 'api/sync.dart';
 import 'api/voting.dart';
 import 'api/voting_session.dart';
 import 'api/wallet.dart';
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
-
 import 'frb_generated.dart';
 import 'network_privacy.dart';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
-
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
 import 'third_party/zcash_voting/share_policy.dart';
@@ -1443,6 +1439,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   WalletCreationResult dco_decode_wallet_creation_result(dynamic raw);
+
+  @protected
+  WalletFeePolicy dco_decode_wallet_fee_policy(dynamic raw);
 
   @protected
   WalletImportResult dco_decode_wallet_import_result(dynamic raw);
@@ -3257,6 +3256,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WalletCreationResult sse_decode_wallet_creation_result(
     SseDeserializer deserializer,
   );
+
+  @protected
+  WalletFeePolicy sse_decode_wallet_fee_policy(SseDeserializer deserializer);
 
   @protected
   WalletImportResult sse_decode_wallet_import_result(
@@ -5443,6 +5445,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_wallet_creation_result(
     WalletCreationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_wallet_fee_policy(
+    WalletFeePolicy self,
     SseSerializer serializer,
   );
 

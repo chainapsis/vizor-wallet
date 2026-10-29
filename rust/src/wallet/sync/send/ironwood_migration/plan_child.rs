@@ -21,7 +21,6 @@ fn get_orchard_migration_private_plan_for_targets(
     target_values_zatoshi: Option<&[u64]>,
 ) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
-    let fee_rule = ConservativeZip317FeeRule;
     let account_id = parse_account_uuid(account_uuid)?;
     let account = db
         .get_account(account_id)
@@ -34,6 +33,7 @@ fn get_orchard_migration_private_plan_for_targets(
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before estimating migration plan")?;
+    let fee_rule = ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
     let mut orchard_notes =
         select_spendable_orchard_v2_notes(&db, account_id, anchor_height)?;
     orchard_notes.sort_by_key(|note| (format!("{}", note.txid()), note.output_index()));
@@ -325,7 +325,7 @@ fn immediate_migration_plan_for_values(
             .ok_or_else(|| "Immediate migration input overflow".to_string())
     })?;
     let fee_zatoshi = u64::from(
-        ConservativeZip317FeeRule
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height))
             .fee_required(
                 &network,
                 target_height,
@@ -452,7 +452,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         let cmx: orchard::note::ExtractedNoteCommitment = predicted.note.commitment().into();
         dummy_witness.root(cmx)
     };
-    let fee_rule = ConservativeZip317FeeRule;
+    let fee_rule = ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
             migration_child_builder(
@@ -916,7 +916,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         return Ok(None);
     };
     let orchard_inputs = [(orchard_note, orchard_witness)];
-    let fee_rule = ConservativeZip317FeeRule;
+    let fee_rule = ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
             migration_child_builder(

@@ -613,6 +613,22 @@ void main() {
       await supportDirectory.delete(recursive: true);
     });
 
+    test(
+      'new card reserves follow Rust and an old quote is rejected',
+      () async {
+        api.feePolicyRate = 5000;
+        expect(await service.claimFeeReserve(), BigInt.from(10000));
+        api.feePolicyRate = 1000;
+        expect(await service.claimFeeReserve(), BigInt.from(2000));
+        await expectLater(
+          service.validateFundingReserve(BigInt.from(10000)),
+          throwsA(isA<PaymentLinkBatchQuoteChanged>()),
+        );
+        await service.validateFundingReserve(BigInt.from(2000));
+        api.feePolicyRate = 5000;
+      },
+    );
+
     test('an upgrade hold while proposing a group drops its drafts', () async {
       accounts.select('account-1', 'u1account-1address');
       api.proposeBatchError = StateError(_sendHoldRefusal);
@@ -2113,6 +2129,33 @@ void main() {
     },
   );
 
+  test('NU7 funding quotes reserve 2000 per card and keep the snapshot', () {
+    final reserve = BigInt.from(2000);
+    expect(
+      paymentLinkFundingAmountZatoshi(
+        BigInt.from(100000000),
+        claimFeeReserveZatoshi: reserve,
+      ),
+      BigInt.from(100002000),
+    );
+    final quote = paymentLinkMaxFundingQuote(
+      sourceAccountUuid: 'a',
+      maxSpendAmountZatoshi: BigInt.from(100000000),
+      fundingFeeZatoshi: reserve,
+      claimFeeReserveZatoshi: reserve,
+    );
+    expect(quote.recipientAmountZatoshi, BigInt.from(99998000));
+    final batch = PaymentLinkBatchQuote(
+      sourceAccountUuid: 'a',
+      count: 2,
+      recipientAmountZatoshi: BigInt.from(100000),
+      fundingFeeZatoshi: BigInt.from(3000),
+      perCardClaimFeeReserveZatoshi: reserve,
+    );
+    expect(batch.claimFeeReserveZatoshi, BigInt.from(4000));
+    expect(batch.totalDeductedZatoshi, BigInt.from(207000));
+  });
+
   test('max funding quote reserves deposit and redeem fees', () {
     final quote = paymentLinkMaxFundingQuote(
       sourceAccountUuid: 'account-1',
@@ -2197,6 +2240,25 @@ void main() {
       0,
     );
   });
+
+  for (final reserve in [2000, 10000]) {
+    test('external card with $reserve reserve remains recognizable', () {
+      final tx = _transaction(
+        txid: 'funding',
+        txKind: 'received',
+        minedHeight: 100,
+        accountBalanceDelta: 100000 + reserve,
+      );
+      expect(
+        paymentLinkFundingConfirmationCountForClaim(
+          recipientAmountZatoshi: BigInt.from(100000),
+          transactions: [tx],
+          chainTipHeight: BigInt.from(101),
+        ),
+        2,
+      );
+    });
+  }
 
   test('claim confirmation count follows the matching funding receive', () {
     final expectedFunding = paymentLinkFundingAmountZatoshi(
@@ -3245,6 +3307,17 @@ rust_sync.TransactionInfo _transaction({
 class _DestinationValidated implements Exception {}
 
 class _ClaimDestinationRustApi implements RustLibApi {
+  int feePolicyRate = 5000;
+  @override
+  Future<rust_sync.WalletFeePolicy> crateApiSyncGetWalletFeePolicy({
+    required String dbPath,
+    required String network,
+  }) async => rust_sync.WalletFeePolicy(
+    targetHeight: 3500001,
+    marginalFeeZatoshi: BigInt.from(feePolicyRate),
+    minimumFeeZatoshi: BigInt.from(2 * feePolicyRate),
+  );
+
   final requestedAccounts = <String>[];
   Object? proposeBatchError;
   final validatedAddresses = <String>[];

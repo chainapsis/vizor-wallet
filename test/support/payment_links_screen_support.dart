@@ -1,3 +1,5 @@
+import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -82,6 +84,7 @@ Future<void> pumpPaymentLinksScreen(
   Size logicalSize = const Size(1080, 720),
   GlobalKey? captureBoundaryKey,
   NetworkUpgradeWindowState? upgradeWindow,
+  BlockSpacing? feeSchedule,
 }) async {
   if (!RustLib.instance.initialized) {
     RustLib.initMock(api: FakeGiftLinkRustApi());
@@ -98,6 +101,8 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (feeSchedule != null)
+          blockSpacingProvider.overrideWithValue(feeSchedule),
         if (upgradeWindow != null)
           networkUpgradeWindowProvider.overrideWithValue(upgradeWindow),
         if (privacyNotifier != null)
@@ -629,6 +634,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
@@ -1068,6 +1074,7 @@ class FakePaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);

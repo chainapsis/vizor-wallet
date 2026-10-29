@@ -2624,7 +2624,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
 
     expect(
-      find.text('NU7 update is live.\nWhat does this mean for you?'),
+      find.text('NU7 Update is live.\nWhat does this mean?'),
       findsOneWidget,
     );
 

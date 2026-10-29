@@ -35,7 +35,7 @@ class Nu7AnnouncementContent extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Text(
-            'NU7 update is live.\nWhat does this mean for you?',
+            'NU7 Update is live.\nWhat does this mean?',
             textAlign: TextAlign.center,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
@@ -49,17 +49,17 @@ class Nu7AnnouncementContent extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Nu7AnnouncementPoint(
-                title: '~3× faster confirmations',
+                title: '~3× faster blocks',
                 body:
                     'Average wait for first confirmation drops from ~75s '
                     'to ~25s.',
               ),
               SizedBox(height: AppSpacing.xs),
               _Nu7AnnouncementPoint(
-                title: 'Improved wallet protection',
+                title: 'Higher shielded throughput',
                 body:
-                    'New limits on shielded activity reduce spam risk and '
-                    'keep syncing lighter.',
+                    'Network can handle 2.3x more shielded transactions '
+                    'per block.',
               ),
             ],
           ),
