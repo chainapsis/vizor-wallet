@@ -333,6 +333,9 @@ class _MobileViewingKeyScreenState
       _handleTargetAccountChanged();
       return;
     }
+    if (viewingKeys != null && revealError == null) {
+      unawaited(AppHaptics.accessGranted());
+    }
     setState(() {
       _viewingKeys = viewingKeys;
       _revealError = revealError;

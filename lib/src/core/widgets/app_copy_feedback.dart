@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../feedback/app_haptics.dart';
 import 'app_toast.dart';
 
 void copyTextWithToast(
@@ -25,6 +26,7 @@ Future<void> _copyTextWithToast(
   } catch (_) {
     return;
   }
+  unawaited(AppHaptics.copy());
   if (!context.mounted) return;
   showAppToast(context, toastMessage);
 }

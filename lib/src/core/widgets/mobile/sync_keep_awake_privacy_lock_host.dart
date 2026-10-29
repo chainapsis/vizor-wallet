@@ -347,6 +347,7 @@ class _SyncKeepAwakePrivacyLockScreenState
 
     if (confirmed) {
       ref.read(syncKeepAwakePrivacyLockProvider.notifier).unlock();
+      unawaited(AppHaptics.accessGranted());
       return;
     }
 

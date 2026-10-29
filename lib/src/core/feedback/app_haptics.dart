@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../layout/app_form_factor.dart';
+
 /// Haptic vocabulary for passcode surfaces, mobile navigation, and
 /// privacy controls.
 ///
@@ -8,6 +10,29 @@ import 'package:flutter/services.dart';
 /// platform round trip never delays input handling.
 abstract final class AppHaptics {
   static const _channel = MethodChannel('com.zcash.wallet/haptics');
+
+  /// One accepted change to a mobile selection or switch.
+  static Future<void> selection() => kAppFormFactor == AppFormFactor.mobile
+      ? HapticFeedback.selectionClick()
+      : Future<void>.value();
+
+  /// Entering a primary mobile action.
+  static Future<void> action() => kAppFormFactor == AppFormFactor.mobile
+      ? HapticFeedback.lightImpact()
+      : Future<void>.value();
+
+  /// Wallet or secret access has actually opened, after authentication succeeds.
+  static Future<void> accessGranted() async {
+    if (kAppFormFactor != AppFormFactor.mobile) return;
+    try {
+      if (await _channel.invokeMethod<bool>('success') == true) return;
+    } on PlatformException {
+      // Use a light confirmation if native notification feedback is unavailable.
+    } on MissingPluginException {
+      // Hosts without the native channel use Flutter's standard feedback.
+    }
+    await HapticFeedback.lightImpact();
+  }
 
   /// A passcode digit key press — a short, light tap (iOS
   /// UIImpactFeedbackGenerator(.light)).
@@ -22,8 +47,8 @@ abstract final class AppHaptics {
   /// UIImpactFeedbackGenerator(.medium)).
   static Future<void> privacyToggle() => HapticFeedback.mediumImpact();
 
-  /// Copying sensitive values — a light confirmation tap.
-  static Future<void> copy() => HapticFeedback.lightImpact();
+  /// A completed mobile clipboard write — a light confirmation tap.
+  static Future<void> copy() => action();
 
   /// Completing the last unanswered ballot item — one light confirmation tap.
   static Future<void> votingAnswersComplete() => HapticFeedback.lightImpact();

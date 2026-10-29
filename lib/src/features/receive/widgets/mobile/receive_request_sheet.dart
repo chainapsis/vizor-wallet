@@ -13,6 +13,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -153,6 +154,7 @@ class _ReceiveRequestSheetState extends ConsumerState<ReceiveRequestSheet> {
   Future<void> _copyLink(String uri) async {
     try {
       await Clipboard.setData(ClipboardData(text: uri));
+      unawaited(AppHaptics.copy());
     } catch (e) {
       log('ReceiveRequest: ERROR copying request link: $e');
       if (!mounted) return;

@@ -2000,6 +2000,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       final uri = await preparePaymentLinkShareUri(link);
       if (!mounted || epoch != _mobileNavigationEpoch) return;
       await ref.read(paymentLinkClipboardProvider).copySecret(uri.toString());
+      unawaited(AppHaptics.copy());
       try {
         await ref
             .read(paymentLinkOperationsProvider)

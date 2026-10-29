@@ -1,8 +1,8 @@
 import Flutter
 import UIKit
 
-/// A UIKit control above the system keyboard; Flutter owns numeric-field focus.
-final class NumericKeyboardHandler {
+/// A UIKit control above the system keyboard; Flutter owns editable-field focus.
+final class KeyboardToolbarHandler {
   private let channel: FlutterMethodChannel
   private weak var host: UIView?
   private var button: UIButton?
@@ -10,7 +10,7 @@ final class NumericKeyboardHandler {
 
   init(messenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(
-      name: "com.zcash.wallet/numeric_keyboard", binaryMessenger: messenger
+      name: "com.zcash.wallet/keyboard_toolbar", binaryMessenger: messenger
     )
     channel.setMethodCallHandler { [weak self] call, result in
       guard call.method == "update",
@@ -72,7 +72,7 @@ final class NumericKeyboardHandler {
       )?.withTintColor(checkColor, renderingMode: .alwaysOriginal)
       control.configuration = configuration
       control.accessibilityLabel = "Done"
-      control.accessibilityIdentifier = "mobile_numeric_keyboard_toolbar"
+      control.accessibilityIdentifier = "mobile_keyboard_toolbar"
       control.translatesAutoresizingMaskIntoConstraints = false
       control.addTarget(self, action: #selector(dismissKeyboard), for: .touchUpInside)
       view.addSubview(control)

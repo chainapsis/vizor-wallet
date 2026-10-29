@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -61,7 +64,13 @@ Future<void> togglePrivateQueries(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   // A second confirmation may finish after the first has applied its change.
   // Apply the choice the user confirmed, regardless of the current state.
+  final previous = ref.read(privateQueriesControlEnabledProvider);
   await ref.read(enhancePirProvider.notifier).set(enabled);
+  if (context.mounted &&
+      previous != enabled &&
+      ref.read(privateQueriesControlEnabledProvider) == enabled) {
+    unawaited(AppHaptics.selection());
+  }
 }
 
 Future<bool> _confirmTurnOff(BuildContext context, WidgetRef ref) async {

@@ -106,6 +106,7 @@ class MainActivity : FlutterFragmentActivity() {
             HAPTICS_CHANNEL
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "success" -> result.success(performSendSuccessHaptic())
                 "error" -> result.success(performErrorHaptic())
                 "sendSuccess" -> result.success(performSendSuccessHaptic())
                 "sendFailure" -> result.success(performSendFailureHaptic())

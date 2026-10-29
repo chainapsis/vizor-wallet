@@ -689,6 +689,26 @@ class _DeferredVotingStore implements VotingHomeCacheStore {
 }
 
 void main() {
+  List<Object?> recordHaptics(WidgetTester tester) {
+    final feedback = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          feedback.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    return feedback;
+  }
+
   testWidgets('Home displays ETA in place of the pool subtitle', (
     tester,
   ) async {
@@ -1791,6 +1811,7 @@ void main() {
   testWidgets('keeps wallet actions available while migration is required', (
     tester,
   ) async {
+    final feedback = recordHaptics(tester);
     const requiredCta = IronwoodHomeMigrationCtaState.start(
       network: 'main',
       accountUuid: 'account-1',
@@ -1815,6 +1836,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_home_send')));
     await tester.pumpAndSettle();
     expect(find.text('send route'), findsOneWidget);
+    expect(feedback, ['HapticFeedbackType.lightImpact']);
   });
 
   testWidgets('shows total balance and remaining amount while migrating', (
@@ -3022,6 +3044,7 @@ void main() {
   });
 
   testWidgets('zero balance offers the first-receive action', (tester) async {
+    final feedback = recordHaptics(tester);
     await tester.pumpWidget(_app(_syncedState()));
     await tester.pump();
 
@@ -3031,9 +3054,11 @@ void main() {
     await tester.tap(find.text('Receive your first ZEC'));
     await tester.pumpAndSettle();
     expect(find.text('receive route'), findsOneWidget);
+    expect(feedback, ['HapticFeedbackType.lightImpact']);
   });
 
   testWidgets('pay action opens exact-output pay route', (tester) async {
+    final feedback = recordHaptics(tester);
     await tester.pumpWidget(
       _app(_syncedState(orchardBalance: BigInt.from(14312000000))),
     );
@@ -3044,6 +3069,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('pay route zecToExternal exactOutput'), findsOneWidget);
+    expect(feedback, ['HapticFeedbackType.lightImpact']);
   });
 
   testWidgets('hides the pay entry when swap is disabled', (tester) async {

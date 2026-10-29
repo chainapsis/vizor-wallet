@@ -48,7 +48,7 @@ void main() {
   });
 
   testWidgets('settings → change passcode → back to settings keeps the '
-      'Password row reachable for a second round', (tester) async {
+      'Change passcode row reachable for a second round', (tester) async {
     final router = GoRouter(
       initialLocation: '/settings',
       routes: [
@@ -92,7 +92,7 @@ void main() {
     }
 
     Future<void> changePasscode(String current, String next) async {
-      await tester.tap(find.text('Password'));
+      await tester.tap(find.text('Change passcode'));
       await tester.pumpAndSettle();
       expect(find.text('Enter Passcode'), findsOneWidget);
       await enterPasscode(current);

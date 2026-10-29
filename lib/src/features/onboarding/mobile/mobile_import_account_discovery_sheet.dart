@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
@@ -159,6 +160,7 @@ class _MobileImportAccountDiscoverySheetState
   }
 
   void _toggle(int accountIndex) {
+    unawaited(AppHaptics.selection());
     setState(() {
       if (!_selectedAccountIndices.add(accountIndex)) {
         _selectedAccountIndices.remove(accountIndex);

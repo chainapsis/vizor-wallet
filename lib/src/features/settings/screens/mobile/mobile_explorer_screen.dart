@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show Scaffold, TextInputType;
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -282,7 +285,12 @@ class _ExplorerOptionCard extends StatelessWidget {
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: onTap == null
+            ? null
+            : () {
+                if (!selected) unawaited(AppHaptics.selection());
+                onTap!();
+              },
         child: Container(
           height: 64,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),

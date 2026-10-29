@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/network_config.dart';
 import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/sync_status_label.dart';

@@ -7,7 +7,7 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mobileNavigationGeometryHandler: MobileNavigationGeometryHandler?
-  private var numericKeyboardHandler: NumericKeyboardHandler?
+  private var keyboardToolbarHandler: KeyboardToolbarHandler?
   private var customHapticEngine: CHHapticEngine?
   private var ledgerMobileHandler: LedgerMobileHandler?
 
@@ -66,7 +66,7 @@ import UIKit
     }
     FlutterMethodChannel(name: "com.zcash.wallet/app_review", binaryMessenger: messenger)
       .setMethodCallHandler { call, result in appReviewHandler.handle(call, result: result) }
-    numericKeyboardHandler = NumericKeyboardHandler(messenger: messenger)
+    keyboardToolbarHandler = KeyboardToolbarHandler(messenger: messenger)
 
     let modalCorners = ModalCornerHandler()
     FlutterMethodChannel(name: "com.zcash.wallet/modal_corners", binaryMessenger: messenger)
@@ -489,6 +489,10 @@ import UIKit
     )
     hapticsChannel.setMethodCallHandler { (call, result) in
       switch call.method {
+      case "success":
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        result(true)
       case "error":
         // The system's error notification haptic — the triple knock
         // users know from failed Face ID / wrong system passcode.

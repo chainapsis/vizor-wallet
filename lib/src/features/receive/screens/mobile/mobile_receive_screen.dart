@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -195,6 +196,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     final address = _selectedAddress;
     if (address.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: address));
+    unawaited(AppHaptics.copy());
     if (!mounted) return;
     showAppToast(context, 'Address copied');
   }
