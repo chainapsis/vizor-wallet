@@ -9,7 +9,7 @@ use rusqlite::{params, OptionalExtension};
 use shardtree::error::{InsertionError, QueryError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::{
-    chain::{self, error::Error as ChainError, scan_cached_blocks},
+    chain::{self, error::Error as ChainError, scan_cached_blocks, scan_cached_blocks_with_cache},
     ll::LowLevelWalletWrite,
     scanning::{ScanPriority, ScanRange},
     wallet::ConfirmationsPolicy,
@@ -62,6 +62,7 @@ mod private_recovery_reorg_tests;
 mod retry_progress;
 #[cfg(test)]
 mod scan_bench;
+pub(crate) mod scanning_keys;
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
@@ -3033,14 +3034,17 @@ async fn run_payment_link_claim_sync_once(
             return Ok(());
         }
 
-        let scan_result = scan_cached_blocks(
-            &network,
-            &block_source,
-            &mut db,
-            start,
-            &from_state,
-            batch_blocks as usize,
-        );
+        let scan_result = scanning_keys::with_cache(db_data_path, |keys| {
+            scan_cached_blocks_with_cache(
+                &network,
+                &block_source,
+                &mut db,
+                start,
+                &from_state,
+                batch_blocks as usize,
+                keys,
+            )
+        });
         match scan_result {
             Ok(_) => {}
             Err(error) => {
@@ -4144,14 +4148,17 @@ async fn run_sync_impl(
                 );
             }
             voting_scan_end = Some(end);
-            scan_cached_blocks(
-                &network,
-                &block_source,
-                &mut db,
-                start,
-                &from_state,
-                batch_blocks as usize,
-            )
+            scanning_keys::with_cache(db_data_path, |keys| {
+                scan_cached_blocks_with_cache(
+                    &network,
+                    &block_source,
+                    &mut db,
+                    start,
+                    &from_state,
+                    batch_blocks as usize,
+                    keys,
+                )
+            })
             .map_err(|e| match e {
                 ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
                     let at_height = u32::from(scan_err.at_height()) as u64;
