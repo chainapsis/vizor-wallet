@@ -11,12 +11,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:grpc/grpc.dart' as grpc;
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
@@ -24,6 +26,7 @@ import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_ledger_shie
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_device_label.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
@@ -32,6 +35,7 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_access_content.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send_sign_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
@@ -62,6 +66,7 @@ import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import '../test/support/wallet_path_read_blocker.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -163,17 +168,85 @@ Future<void> _runMobilePostIronwoodOrchardSigningScenario(
   expect(signedBytes, isNotEmpty);
   expect(signedBytes, isNot(equals(unsigned)));
 
-  // Immediate migration signs the same crossing with the compact signer.
-  final compact = container.read(ledgerActionPcztSignerProvider)(
-    fixture.accountUuid,
-    unsigned,
+  // One app lifecycle: the gate keeps the next stream behind the device's
+  // status screen after these signatures.
+  await _migrateOrchardImmediately(
+    tester,
+    fixture,
+    ble,
+    container.read(ledgerMobileSigningStatusGateProvider),
   );
+}
+
+/// Immediate migration of a scanned Orchard note: the app builds the PCZT,
+/// Speculos signs it with the compact signer, and the transaction is sent.
+Future<void> _migrateOrchardImmediately(
+  WidgetTester tester,
+  _Fixture fixture,
+  _SpeculosLedgerMobileBleService ble,
+  LedgerMobileSigningStatusGate gate,
+) async {
+  const dbBase64 = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_MIGRATION_DB_GZIP_BASE64',
+  );
+  const accountUuid = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_MIGRATION_ACCOUNT_UUID',
+  );
+  expect(dbBase64, isNotEmpty);
+  expect(accountUuid, isNotEmpty);
+  final sandbox = await Directory.systemTemp.createTemp(
+    'vizor-ledger-immediate-e2e.',
+  );
+  addTearDown(() => sandbox.delete(recursive: true));
+  final dbPath = '${sandbox.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(base64Decode(dbBase64)), flush: true);
+  WalletPathReadBlocker().complete(sandbox.path);
+  FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: 'wallet.db'});
+  addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
+  final status = await rust_sync.getSyncStatus(dbPath: dbPath, network: 'main');
+  final lightwalletd = _AcceptingLightwalletd(
+    chainHeight: status.chainTipHeight.toInt(),
+  );
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _ledgerBootstrap(fixture, lightwalletd.url, accountUuid: accountUuid),
+      ),
+      networkPrivacyProvider.overrideWith(_DirectNetworkPrivacyNotifier.new),
+      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
+      ledgerMobileBleServiceProvider.overrideWithValue(ble),
+      ledgerMobileSigningStatusGateProvider.overrideWithValue(gate),
+      ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(accountProvider.future);
+
+  final plan = await container
+      .read(ironwoodMigrationServiceProvider)
+      .immediatePlan(network: 'main', accountUuid: accountUuid);
+  expect(plan, isNotNull);
+  final migration = container
+      .read(ledgerImmediateMigrationServiceProvider)
+      .migrate(
+        accountUuid: accountUuid,
+        approvedPlan: plan!,
+        cancellation: LedgerImmediateMigrationCancellation(),
+        onPhaseChanged: (_) {},
+      );
   await _selectDeviceForHeadlessSigning(container);
   expect(
     await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
     isTrue,
   );
-  expect((await compact).map((signature) => signature.pool).toSet(), {0});
+  final result = await migration;
+  expect(result.broadcastedCount, 1);
+  expect(result.migratedZatoshi, plan.migratedZatoshi);
+  expect(lightwalletd.sendTransactionCount, 1);
 }
 
 Future<void> _runMobileVotingSigningScenario(WidgetTester tester) async {
@@ -1201,13 +1274,17 @@ Widget _mobileLedgerHarness({
   );
 }
 
-AppBootstrapState _ledgerBootstrap(_Fixture fixture, String lightwalletdUrl) {
+AppBootstrapState _ledgerBootstrap(
+  _Fixture fixture,
+  String lightwalletdUrl, {
+  String? accountUuid,
+}) {
   return AppBootstrapState(
     initialLocation: '/home',
     initialAccountState: AccountState(
       accounts: [
         AccountInfo(
-          uuid: fixture.accountUuid,
+          uuid: accountUuid ?? fixture.accountUuid,
           name: 'Speculos Ledger',
           order: 0,
           isHardware: true,
@@ -1218,7 +1295,7 @@ AppBootstrapState _ledgerBootstrap(_Fixture fixture, String lightwalletdUrl) {
           ledgerDeviceModel: _SpeculosLedgerMobileBleService.device.model,
         ),
       ],
-      activeAccountUuid: fixture.accountUuid,
+      activeAccountUuid: accountUuid ?? fixture.accountUuid,
       activeAddress: fixture.transparentAddress,
     ),
     initialSyncSnapshot: AppSyncSnapshot.empty,
@@ -1911,6 +1988,9 @@ class _TrackingLedgerSignedOperationService
 }
 
 class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
+  _AcceptingLightwalletd({this.chainHeight = 1});
+
+  final int chainHeight;
   grpc.Server? _server;
   int sendTransactionCount = 0;
   List<int> lastRawTransaction = const [];
@@ -1936,7 +2016,7 @@ class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
     grpc.ServiceCall call,
     service.ChainSpec request,
   ) async {
-    return service.BlockID(height: Int64(1));
+    return service.BlockID(height: Int64(chainHeight));
   }
 
   @override

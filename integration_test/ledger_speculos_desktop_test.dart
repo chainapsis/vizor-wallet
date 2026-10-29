@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/home/widgets/ledger_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_access_recovery_modal.dart';
@@ -58,6 +59,7 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/screens/payment_links_screen.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
@@ -769,15 +771,74 @@ Future<void> _runPostIronwoodOrchardSigningScenario(WidgetTester tester) async {
   expect(signedBytes, isNotEmpty);
   expect(signedBytes, isNot(equals(unsigned)));
 
-  // Immediate migration signs the same crossing with the compact signer.
-  final compactApproval = approveNextSpeculosReview(fixture.signingApiUrl);
-  final compact = container.read(ledgerActionPcztSignerProvider)(
-    fixture.accountUuid,
-    unsigned,
+  await _migrateOrchardImmediately(fixture);
+}
+
+/// Immediate migration of a scanned Orchard note: the app builds the PCZT,
+/// Speculos signs it with the compact signer, and the transaction is sent.
+Future<void> _migrateOrchardImmediately(_Fixture fixture) async {
+  const dbBase64 = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_MIGRATION_DB_GZIP_BASE64',
   );
+  const accountUuid = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_MIGRATION_ACCOUNT_UUID',
+  );
+  expect(dbBase64, isNotEmpty);
+  expect(accountUuid, isNotEmpty);
+  final sandbox = await Directory.systemTemp.createTemp(
+    'vizor-ledger-immediate-e2e.',
+  );
+  addTearDown(() => sandbox.delete(recursive: true));
+  final dbPath = '${sandbox.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(base64Decode(dbBase64)), flush: true);
+  WalletPathReadBlocker().complete(sandbox.path);
+  FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: 'wallet.db'});
+  addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
+  final status = await rust_sync.getSyncStatus(dbPath: dbPath, network: 'main');
+  final lightwalletd = _AcceptingLightwalletd(
+    chainHeight: status.chainTipHeight.toInt(),
+  );
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _ledgerBootstrap(
+          fixture,
+          lightwalletd.url,
+          initialLocation: '/home',
+          accountUuid: accountUuid,
+        ),
+      ),
+      networkPrivacyProvider.overrideWith(_DirectNetworkPrivacyNotifier.new),
+      ledgerTargetPlatformProvider.overrideWithValue(defaultTargetPlatform),
+      ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(accountProvider.future);
+
+  final plan = await container
+      .read(ironwoodMigrationServiceProvider)
+      .immediatePlan(network: 'main', accountUuid: accountUuid);
+  expect(plan, isNotNull);
+  final approval = approveNextSpeculosReview(fixture.signingApiUrl);
+  final migration = container
+      .read(ledgerImmediateMigrationServiceProvider)
+      .migrate(
+        accountUuid: accountUuid,
+        approvedPlan: plan!,
+        cancellation: LedgerImmediateMigrationCancellation(),
+        onPhaseChanged: (_) {},
+      );
   await _chooseUsbForHeadlessSigning(container);
-  expect(await compactApproval, isTrue);
-  expect((await compact).map((signature) => signature.pool).toSet(), {0});
+  expect(await approval, isTrue);
+  final result = await migration;
+  expect(result.broadcastedCount, 1);
+  expect(result.migratedZatoshi, plan.migratedZatoshi);
+  expect(lightwalletd.sendTransactionCount, 1);
 }
 
 Future<void> _runLedgerVotingSigningScenario(WidgetTester tester) async {
