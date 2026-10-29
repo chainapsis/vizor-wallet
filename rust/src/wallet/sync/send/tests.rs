@@ -2435,7 +2435,10 @@ fn fabricated_shielded_spend_proposal(
         recipient,
         None,
         ReceivedNotes::new(sapling_notes, orchard_notes, vec![]),
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
     )
     .expect("fabricated proposal should build")
 }
@@ -2513,7 +2516,10 @@ fn fabricated_proposal_with_payment_pool(payment_pool: PoolType) -> Proposal<Wal
         Some(shielded_inputs),
         BlockHeight::from_u32(900),
         balance,
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
         TargetHeight::from(BlockHeight::from_u32(1_000)),
         ConfirmationsPolicy::default(),
         false,
@@ -3351,35 +3357,50 @@ fn migration_child_bundle_shape_and_fee_are_two_plus_one() {
     assert_eq!(orchard_actions, MIGRATION_ORCHARD_ACTION_COUNT);
     assert_eq!(ironwood_actions, MIGRATION_IRONWOOD_ACTION_COUNT);
 
-    let fee = ConservativeZip317FeeRule
-        .fee_required(
-            &WalletNetwork::Regtest,
-            BlockHeight::from_u32(120),
-            std::iter::empty::<TransparentInputSize>(),
-            std::iter::empty::<usize>(),
-            0,
-            0,
-            orchard_actions,
-            ironwood_actions,
-        )
-        .unwrap();
-    assert_eq!(u64::from(fee), 3_000);
+    let fee = ConservativeZip317FeeRule::for_target(
+        &crate::wallet::network::WalletNetwork::Regtest,
+        zcash_protocol::consensus::BlockHeight::from_u32(120),
+    )
+    .fee_required(
+        &WalletNetwork::Regtest,
+        BlockHeight::from_u32(120),
+        std::iter::empty::<TransparentInputSize>(),
+        std::iter::empty::<usize>(),
+        0,
+        0,
+        orchard_actions,
+        ironwood_actions,
+    )
+    .unwrap();
+    assert_eq!(u64::from(fee), 15_000);
 }
 
 #[test]
-fn wallet_fee_is_1000_per_action_without_a_network_or_height_gate() {
-    assert_eq!(
-        ConservativeZip317FeeRule.marginal_fee(),
-        Zatoshis::const_from_u64(1_000)
-    );
-    assert_eq!(ConservativeZip317FeeRule.grace_actions(), 2);
+fn wallet_fee_switches_at_each_network_nu7_target_height() {
     for (network, activation) in [
         (WalletNetwork::Main, 3_543_405),
         (WalletNetwork::Test, 4_465_026),
     ] {
-        for height in [activation - 1, activation, 3_589_999, 3_590_000] {
-            for (actions, expected_fee) in [(1, 2_000), (2, 2_000), (3, 3_000), (16, 16_000)] {
-                let fee = ConservativeZip317FeeRule
+        assert_eq!(
+            network
+                .activation_height(consensus::NetworkUpgrade::Nu7)
+                .map(u32::from),
+            Some(activation)
+        );
+        for height in [
+            activation - 1,
+            activation,
+            activation + 1,
+            3_589_999,
+            3_590_000,
+        ] {
+            let rate = if height < activation { 5_000 } else { 1_000 };
+            let rule =
+                ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(height));
+            assert_eq!(u64::from(rule.marginal_fee()), rate);
+            assert_eq!(rule.grace_actions(), 2);
+            for actions in [1usize, 2, 3, 16] {
+                let fee = rule
                     .fee_required(
                         &network,
                         BlockHeight::from_u32(height),
@@ -3391,14 +3412,20 @@ fn wallet_fee_is_1000_per_action_without_a_network_or_height_gate() {
                         0,
                     )
                     .unwrap();
-                assert_eq!(
-                    u64::from(fee),
-                    expected_fee,
-                    "{network:?} at {height}, {actions} actions"
-                );
+                assert_eq!(u64::from(fee), rate * actions.max(2) as u64);
             }
         }
     }
+    assert_eq!(
+        u64::from(
+            ConservativeZip317FeeRule::for_target(
+                &WalletNetwork::Regtest,
+                BlockHeight::from_u32(9_000_000)
+            )
+            .marginal_fee()
+        ),
+        5_000
+    );
 }
 
 #[test]
@@ -3416,19 +3443,23 @@ fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() 
         TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE),
     ];
 
-    let conservative_fee = ConservativeZip317FeeRule
-        .fee_required(
-            &network,
-            height,
-            undersized_inputs.clone(),
-            std::iter::empty::<usize>(),
-            0,
-            0,
-            0,
-            0,
-        )
-        .unwrap();
-    let standard_p2pkh_fee = wallet_zip317_fee_rule()
+    let conservative_fee = ConservativeZip317FeeRule::for_target(
+        &crate::wallet::network::WalletNetwork::Regtest,
+        zcash_protocol::consensus::BlockHeight::from_u32(120),
+    )
+    .fee_required(
+        &network,
+        height,
+        undersized_inputs.clone(),
+        std::iter::empty::<usize>(),
+        0,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
+    let standard_p2pkh_fee = ConservativeZip317FeeRule::for_target(&network, height)
+        .primitive()
         .fee_required(
             &network,
             height,
@@ -3440,7 +3471,8 @@ fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() 
             0,
         )
         .unwrap();
-    let standard_undersized_fee = wallet_zip317_fee_rule()
+    let standard_undersized_fee = ConservativeZip317FeeRule::for_target(&network, height)
+        .primitive()
         .fee_required(
             &network,
             height,
@@ -3454,8 +3486,8 @@ fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() 
         .unwrap();
 
     assert_eq!(conservative_fee, standard_p2pkh_fee);
-    assert_eq!(u64::from(conservative_fee), 3_000);
-    assert_eq!(u64::from(standard_undersized_fee), 2_000);
+    assert_eq!(u64::from(conservative_fee), 15_000);
+    assert_eq!(u64::from(standard_undersized_fee), 10_000);
 }
 
 /// Builds a real IO-finalized v6 Orchard split PCZT, shared by the version and
@@ -3475,7 +3507,10 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
     let internal_ovk = Some(fvk.to_ovk(recipient_scope));
     let memo = MemoBytes::empty();
     let output_value = 100_000;
-    let fee_rule = ConservativeZip317FeeRule;
+    let fee_rule = ConservativeZip317FeeRule::for_target(
+        &crate::wallet::network::WalletNetwork::Regtest,
+        zcash_protocol::consensus::BlockHeight::from_u32(120),
+    );
 
     let build_builder = |input_value| {
         let rho = orchard::note::Rho::from_bytes(&[1; 32]).unwrap();
@@ -3535,8 +3570,14 @@ fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
 
 fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
-    let network = WalletNetwork::Regtest;
-    let target_height = 120;
+    built_padded_v6_split_pczt_at(WalletNetwork::Regtest, 120, 80_000)
+}
+
+fn built_padded_v6_split_pczt_at(
+    network: WalletNetwork,
+    target_height: u32,
+    expected_fee: u64,
+) -> (BuiltPczt, UnifiedSpendingKey) {
     let expiry_height = 69_120;
     let usk = UnifiedSpendingKey::from_seed(&network, &[9; 32], zip32::AccountId::ZERO).unwrap();
     let fvk = orchard::keys::FullViewingKey::from(usk.orchard());
@@ -3545,7 +3586,8 @@ fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
     let internal_ovk = Some(fvk.to_ovk(recipient_scope));
     let memo = MemoBytes::empty();
     let outputs = vec![100_000u64; 10];
-    let fee_rule = ConservativeZip317FeeRule;
+    let fee_rule =
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(target_height));
     let bundle_padding = BundlePadding {
         bundle_required: false,
         pad_to_minimum: Some(16),
@@ -3586,7 +3628,7 @@ fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
         .unwrap()
         .get_fee(&fee_rule)
         .unwrap();
-    assert_eq!(u64::from(fee), 16_000);
+    assert_eq!(u64::from(fee), expected_fee);
     let input_value = outputs.iter().sum::<u64>() + u64::from(fee);
     let build_result = build_builder(input_value)
         .unwrap()
@@ -3727,7 +3769,10 @@ fn transparent_recipient_send_max_proposal_spends_shielded_notes() {
         recipient,
         None,
         ReceivedNotes::new(vec![received_note], vec![], vec![]),
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
     )
     .expect("transparent-recipient send-max should build from shielded notes");
 
@@ -3780,7 +3825,10 @@ fn transparent_recipient_send_max_supports_ironwood_only_inputs() {
         transparent_recipient,
         None,
         ReceivedNotes::new(vec![], vec![], vec![received_note]),
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
     )
     .expect("transparent-recipient send-max should build from Ironwood notes");
 
@@ -4574,7 +4622,10 @@ fn fabricated_batch_step(
         Some(shielded_inputs),
         BlockHeight::from_u32(900),
         balance,
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
         TargetHeight::from(BlockHeight::from_u32(1_000)),
         ConfirmationsPolicy::default(),
         false,
@@ -4627,7 +4678,10 @@ fn gift_card_batch_rejects_more_than_one_funding_transaction_for_every_signer() 
     let first = fabricated_batch_step(2, batch_orchard_inputs(1), 1);
     let second = fabricated_batch_step(2, batch_orchard_inputs(1), 2);
     let two_steps = Proposal::multi_step(
-        ConservativeZip317FeeRule,
+        ConservativeZip317FeeRule::for_target(
+            &crate::wallet::network::WalletNetwork::Regtest,
+            zcash_protocol::consensus::BlockHeight::from_u32(120),
+        ),
         TargetHeight::from(BlockHeight::from_u32(1_000)),
         ConfirmationsPolicy::default(),
         nonempty::NonEmpty::from((
@@ -4839,4 +4893,30 @@ fn gift_card_batch_ledger_rejects_fifth_recipient_before_signing() {
     // The device review budget does not constrain software or Keystone accounts.
     validate_batch(&proposal, None).unwrap();
     validate_batch(&proposal, Some(HardwareSignerKind::Keystone)).unwrap();
+}
+
+#[test]
+fn nu7_padded_split_pczt_uses_reduced_fees_on_both_networks() {
+    for (network, target) in [
+        (WalletNetwork::Main, 3_543_405),
+        (WalletNetwork::Test, 4_465_026),
+    ] {
+        let (pczt, _) = built_padded_v6_split_pczt_at(network, target, 16_000);
+        crate::wallet::sync::pczt::redact_pczt_for_signer(&pczt.bytes).unwrap();
+        let fee_rule =
+            ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(target));
+        let fee = fee_rule
+            .fee_required(
+                &network,
+                BlockHeight::from_u32(target),
+                vec![TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE - 50); 3],
+                std::iter::empty::<usize>(),
+                0,
+                0,
+                0,
+                0,
+            )
+            .unwrap();
+        assert_eq!(u64::from(fee), 3_000);
+    }
 }

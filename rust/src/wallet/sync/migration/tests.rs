@@ -1,6 +1,20 @@
+const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 15_000;
+const DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI: u64 = 80_000;
 use super::*;
 use rand::{rngs::StdRng, SeedableRng};
 use std::cell::Cell;
+
+fn init_fee_status_fixture(db_path: &str) {
+    crate::wallet::keys::ensure_db_initialized(db_path, WalletNetwork::Test).unwrap();
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    // The library derives its known tip from scan ranges. An account-free
+    // fixture has no birthday, so update_chain_tip alone creates no range.
+    conn.execute("INSERT INTO scan_queue (block_range_start, block_range_end, priority) VALUES (119, 120, 0)", []).unwrap();
+    assert_eq!(
+        super::super::send::fee_policy_target(db_path, WalletNetwork::Test).unwrap(),
+        120
+    );
+}
 
 const TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const TEST_SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
@@ -2352,7 +2366,10 @@ fn planner_drains_balance_beyond_the_old_run_cap() {
         .iter()
         .all(|value| is_zip318_canonical_denomination(*value)));
     let orchard_change = plan.orchard_change.unwrap_or(0);
-    assert!(!orchard_balance_can_create_migration_output(orchard_change).unwrap());
+    assert!(
+        !orchard_balance_can_create_migration_output(orchard_change, WalletNetwork::Test, 120)
+            .unwrap()
+    );
     assert_eq!(
         plan.total_migratable_zatoshi
             + migration_fee * plan.migration_outputs.len() as u64
@@ -6860,13 +6877,45 @@ fn pending_policy_checks_detect_fee_drift_and_only_mined_input_spends() {
     .unwrap();
 
     assert_eq!(
-        noncanonical_unconfirmed_fee_count(&db_path, "run-1", 15_000).unwrap(),
+        noncanonical_unconfirmed_fee_count(&db_path, "run-1", WalletNetwork::Test).unwrap(),
+        0
+    );
+    conn.execute(
+        &format!("UPDATE {PENDING_TXS_TABLE} SET fee_zatoshi = 20_000 WHERE status = 'scheduled'"),
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        noncanonical_unconfirmed_fee_count(&db_path, "run-1", WalletNetwork::Main).unwrap(),
+        1
+    );
+    conn.execute(
+        &format!("UPDATE {PENDING_TXS_TABLE} SET target_height = 3543405, fee_zatoshi = 3000"),
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        noncanonical_unconfirmed_fee_count(&db_path, "run-1", WalletNetwork::Main).unwrap(),
         0
     );
     assert_eq!(
-        noncanonical_unconfirmed_fee_count(&db_path, "run-1", 20_000).unwrap(),
+        noncanonical_unconfirmed_fee_count(&db_path, "run-1", WalletNetwork::Test).unwrap(),
         1
     );
+    conn.execute(
+        &format!("UPDATE {PENDING_TXS_TABLE} SET target_height = 4465026"),
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        noncanonical_unconfirmed_fee_count(&db_path, "run-1", WalletNetwork::Test).unwrap(),
+        0
+    );
+    conn.execute(
+        &format!("UPDATE {PENDING_TXS_TABLE} SET target_height = 90, fee_zatoshi = 15000"),
+        [],
+    )
+    .unwrap();
     assert!(
         scheduled_inputs_spent_by_mined_transactions(&db_path, "run-1")
             .unwrap()
@@ -6988,6 +7037,7 @@ fn migration_status_treats_non_migratable_residual_as_complete() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
+    init_fee_status_fixture(&db_path);
 
     let status = migration_status(
         &db_path,
@@ -7021,6 +7071,7 @@ fn migration_status_treats_sub_minimum_plan_value_as_complete() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
+    init_fee_status_fixture(&db_path);
 
     let status = migration_status(
         &db_path,
@@ -7044,6 +7095,7 @@ fn migration_status_keeps_completed_run_complete_with_residual_orchard() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
+    init_fee_status_fixture(&db_path);
     let plan = DenominationPlan {
         migration_outputs: vec![ZATOSHIS_PER_ZEC],
         orchard_change: Some(MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI),
@@ -7094,6 +7146,7 @@ fn migration_status_keeps_migratable_orchard_ready_after_ironwood_exists() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
+    init_fee_status_fixture(&db_path);
 
     let status = migration_status(
         &db_path,
@@ -7118,9 +7171,17 @@ fn migration_status_requires_the_first_split_and_migration_fees() {
         + ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI;
 
     for orchard_spendable in [0, minimum_input - 1] {
-        assert!(!orchard_balance_can_create_migration_output(orchard_spendable).unwrap());
+        assert!(!orchard_balance_can_create_migration_output(
+            orchard_spendable,
+            WalletNetwork::Test,
+            120
+        )
+        .unwrap());
     }
-    assert!(orchard_balance_can_create_migration_output(minimum_input).unwrap());
+    assert!(
+        orchard_balance_can_create_migration_output(minimum_input, WalletNetwork::Test, 120)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -7128,6 +7189,7 @@ fn migration_status_waits_for_pending_orchard_before_partial_migration() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
+    init_fee_status_fixture(&db_path);
 
     let status = migration_status(
         &db_path,
@@ -7148,6 +7210,7 @@ fn migration_status_waits_for_pending_ironwood_after_external_migration() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
+    init_fee_status_fixture(&db_path);
 
     let status = migration_status(
         &db_path,
@@ -10486,4 +10549,30 @@ fn due_pending_unblocks_later_parts_after_stale_head_is_mined() {
         2,
         "after promoting part 0, two later scheduled parts remain due at tip"
     );
+}
+
+#[test]
+fn migration_affordability_uses_the_target_height_fee() {
+    for (network, activation) in [
+        (WalletNetwork::Main, 3_543_405),
+        (WalletNetwork::Test, 4_465_026),
+    ] {
+        let lowered_minimum = ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI + 19_000;
+        assert!(!orchard_balance_can_create_migration_output(
+            lowered_minimum,
+            network,
+            activation - 1
+        )
+        .unwrap());
+        assert!(
+            orchard_balance_can_create_migration_output(lowered_minimum, network, activation)
+                .unwrap()
+        );
+        assert!(!orchard_balance_can_create_migration_output(
+            lowered_minimum - 1,
+            network,
+            activation
+        )
+        .unwrap());
+    }
 }

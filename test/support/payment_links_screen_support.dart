@@ -629,6 +629,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
@@ -1068,6 +1069,7 @@ class FakePaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);

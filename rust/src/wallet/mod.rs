@@ -8,6 +8,7 @@ pub(crate) mod block_times;
 pub(crate) mod bounded_runtime;
 pub(crate) mod db;
 pub mod failure;
+pub(crate) mod fees;
 pub(crate) mod gift_card_tracking;
 pub mod keys;
 pub mod keystone;

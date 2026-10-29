@@ -720,25 +720,37 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
     }
 }
 
-// Temporary fee policy for testing: applies immediately on every network,
-// without waiting for NU7 or ZIP 2009's coordinated mainnet switch height.
-pub(in crate::wallet) const WALLET_MARGINAL_FEE_ZATOSHI: u64 = 1_000;
-
-fn wallet_zip317_fee_rule() -> PrimitiveZip317FeeRule {
-    PrimitiveZip317FeeRule::non_standard(
-        Zatoshis::const_from_u64(WALLET_MARGINAL_FEE_ZATOSHI),
-        GRACE_ACTIONS,
-        P2PKH_STANDARD_INPUT_SIZE,
-        P2PKH_STANDARD_OUTPUT_SIZE,
-    )
-    .expect("ZIP-317 standard input and output sizes are nonzero")
+/// The fee is fixed when the proposal is created. Input selection, change and
+/// transaction building must all use that same policy snapshot.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(in crate::wallet) struct ConservativeZip317FeeRule {
+    marginal_fee: u64,
 }
 
-/// Wallet-local ZIP-317 rule that uses the temporary marginal fee and
-/// prevents exact transparent-input serialization from shrinking below
-/// ZIP-317's P2PKH size bound between proposal and transaction build.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(in crate::wallet) struct ConservativeZip317FeeRule;
+impl ConservativeZip317FeeRule {
+    pub(in crate::wallet) fn for_target<P: Parameters>(network: &P, target: BlockHeight) -> Self {
+        Self {
+            marginal_fee: crate::wallet::fees::marginal_fee(network, target),
+        }
+    }
+
+    fn primitive(self) -> PrimitiveZip317FeeRule {
+        PrimitiveZip317FeeRule::non_standard(
+            Zatoshis::const_from_u64(self.marginal_fee),
+            GRACE_ACTIONS,
+            P2PKH_STANDARD_INPUT_SIZE,
+            P2PKH_STANDARD_OUTPUT_SIZE,
+        )
+        .expect("ZIP-317 standard input and output sizes are nonzero")
+    }
+}
+
+pub(crate) fn fee_policy_target(db_path: &str, network: WalletNetwork) -> Result<u32, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    wallet_target_height(&db)?
+        .map(|height| u32::from(BlockHeight::from(height)))
+        .ok_or_else(|| "Wallet must sync before estimating fees".to_string())
+}
 
 pub(in crate::wallet) type WalletFeeRule = ConservativeZip317FeeRule;
 
@@ -764,7 +776,7 @@ impl FeeRule for ConservativeZip317FeeRule {
             TransparentInputSize::Unknown(outpoint) => TransparentInputSize::Unknown(outpoint),
         });
 
-        wallet_zip317_fee_rule().fee_required(
+        self.primitive().fee_required(
             params,
             target_height,
             transparent_input_sizes,
@@ -779,19 +791,19 @@ impl FeeRule for ConservativeZip317FeeRule {
 
 impl Zip317FeeRule for ConservativeZip317FeeRule {
     fn marginal_fee(&self) -> Zatoshis {
-        wallet_zip317_fee_rule().marginal_fee()
+        self.primitive().marginal_fee()
     }
 
     fn grace_actions(&self) -> usize {
-        wallet_zip317_fee_rule().grace_actions()
+        self.primitive().grace_actions()
     }
 }
 
-fn canonical_migration_fee_zatoshi(
+pub(super) fn canonical_migration_fee_zatoshi(
     network: WalletNetwork,
     target_height: u32,
 ) -> Result<u64, String> {
-    ConservativeZip317FeeRule
+    ConservativeZip317FeeRule::for_target(&network, BlockHeight::from_u32(target_height))
         .fee_required(
             &network,
             BlockHeight::from_u32(target_height),
@@ -810,16 +822,11 @@ fn pending_migration_policy_rebuild_message(
     db_path: &str,
     network: WalletNetwork,
     run_id: &str,
-    chain_tip_height: u32,
+    _chain_tip_height: u32,
 ) -> Result<Option<String>, String> {
-    let canonical_fee = canonical_migration_fee_zatoshi(
-        network,
-        chain_tip_height
-            .checked_add(1)
-            .ok_or("Migration target height overflow")?,
-    )?;
+    // Signed parts keep the policy of their own target, even after the tip moves.
     let stale_fee_count =
-        super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, canonical_fee)?;
+        super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, network)?;
     if stale_fee_count > 0 {
         return Ok(Some(format!(
             "{stale_fee_count} migration transaction(s) use an outdated canonical fee. Review and approve a fresh schedule for the remaining Orchard balance."
@@ -2133,7 +2140,8 @@ fn build_orchard_migration_immediate_pczt(
             .collect::<Vec<_>>();
         let (orchard_anchor, orchard_inputs) =
             migration_orchard_witnesses(&mut db, network, anchor_height, &orchard_notes)?;
-        let fee_rule = ConservativeZip317FeeRule;
+        let fee_rule =
+            ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
         let make_builder = |amount: Zatoshis| {
             let mut builder = migration_child_builder(
                 network,
@@ -3990,7 +3998,11 @@ fn build_shielding_proposal(
         )?);
     }
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, false);
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(
+        ConservativeZip317FeeRule::for_target(&network, chain_height + 1),
+        None,
+        false,
+    );
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -4072,8 +4084,11 @@ fn build_ledger_shielding_round(
         migration_locks: &BTreeSet::new(),
         transparent_allowlist: Some(&allowed),
     };
-    let (change_strategy, selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, true);
+    let (change_strategy, selector) = zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target)),
+        None,
+        true,
+    );
     let proposal = selector
         .propose_shielding(
             &network,
@@ -4281,8 +4296,11 @@ fn propose_send_with_reserved_notes(
         .ok_or("Account not found")?;
     let is_ledger = crate::wallet::keys::hardware_signer_kind(account.source())
         == Some(crate::wallet::keys::HardwareSignerKind::Ledger);
-    let (change_strategy, input_selector) =
-        zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(None, is_ledger);
+    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_, WalletDatabase>>(
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height)),
+        None,
+        is_ledger,
+    );
 
     input_selector
         .propose_transaction(
@@ -4701,7 +4719,10 @@ fn build_send_max_proposal(
         }
         None => None,
     };
-    let fee_rule = ConservativeZip317FeeRule;
+    let target_height =
+        wallet_target_height(db)?.ok_or("Wallet must sync before estimating send-max")?;
+    let fee_rule =
+        ConservativeZip317FeeRule::for_target(&network, BlockHeight::from(target_height));
 
     if matches!(recipient_address, Address::Transparent(_)) {
         return build_transparent_recipient_send_max_proposal(
@@ -7218,6 +7239,7 @@ fn order_resubmittable_transactions(
 /// (single change output for Ledger, minimum 0.1 ZEC output split otherwise) in one
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
+    fee_rule: WalletFeeRule,
     change_memo: Option<MemoBytes>,
     is_ledger: bool,
 ) -> (
@@ -7225,7 +7247,7 @@ fn zip317_helper<DbT: InputSource>(
     GreedyInputSelector<DbT>,
 ) {
     let change_strategy = MultiOutputChangeStrategy::new(
-        ConservativeZip317FeeRule,
+        fee_rule,
         change_memo,
         ShieldedPool::Orchard,
         DustOutputPolicy::default(),

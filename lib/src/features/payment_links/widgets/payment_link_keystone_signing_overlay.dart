@@ -31,6 +31,7 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
     required this.onCancel,
     required this.onFundingBroadcast,
     this.presentation,
+    this.expectedQuote,
     this.batch,
     this.onBatchRefused,
     super.key,
@@ -39,6 +40,7 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation? presentation;
+  final PaymentLinkFundingQuote? expectedQuote;
   final PaymentLinkBatchDraft? batch;
 
   /// A group whose proposal no longer matches its quote, or that its signer
@@ -111,6 +113,7 @@ class _PaymentLinkKeystoneSigningOverlayState
               amountZatoshi: widget.amountZatoshi,
               sourceAccountUuid: widget.sourceAccountUuid,
               presentation: widget.presentation,
+              expectedQuote: widget.expectedQuote,
             )
           : service.createBatchFundingPczt(widget.batch!);
       _draftCreation = creation;
@@ -342,6 +345,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       amountZatoshi: widget.amountZatoshi,
       sourceAccountUuid: widget.sourceAccountUuid,
       presentation: widget.presentation,
+      expectedQuote: widget.expectedQuote,
     );
     _draftCreation = creation;
     final draft = await creation;

@@ -630,8 +630,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _amountError = null;
         _feeZatoshi = widget.initialFeeZatoshi;
         if (_feeZatoshi == null && !widget.refreshReviewFeeOnInit) {
-          // Matches the temporary Rust fee policy's two-action minimum.
-          _feeZatoshi = BigInt.from(2000);
+          // Preview fallback only; real submissions use a Rust proposal quote.
+          _feeZatoshi = BigInt.from(10000);
         }
         _seedInitialMaxQuote();
         _seedInitialReviewFeeQuote();

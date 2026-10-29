@@ -512,7 +512,12 @@ fn migration_status_with_projection_height(
         return status_for_run(&conn, run, current_scanned_height);
     }
 
-    let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
+    let orchard_migratable = orchard_spendable > 0
+        && orchard_balance_can_create_migration_output(
+            orchard_spendable,
+            network,
+            super::send::fee_policy_target(db_path, network)?,
+        )?;
     if orchard_pending == 0 && !orchard_migratable {
         if let Some(run) = latest_completed_run(&conn, account_uuid, network)? {
             let current_scanned_height = projection_scanned_height
@@ -643,14 +648,18 @@ pub(crate) fn reconcile_denomination_run(db_path: &str, run_id: &str) -> Result<
     Ok(progress.total_count == 0 || progress.completed_count == progress.total_count)
 }
 
-fn orchard_balance_can_create_migration_output(orchard_spendable: u64) -> Result<bool, String> {
+fn orchard_balance_can_create_migration_output(
+    orchard_spendable: u64,
+    network: WalletNetwork,
+    target_height: u32,
+) -> Result<bool, String> {
     if orchard_spendable == 0 {
         return Ok(false);
     }
     let plan = plan_denominations(
         orchard_spendable,
-        DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI,
-        MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI,
+        16 * crate::wallet::fees::marginal_fee(&network, BlockHeight::from_u32(target_height)),
+        3 * crate::wallet::fees::marginal_fee(&network, BlockHeight::from_u32(target_height)),
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
     )?;
     Ok(!plan.migration_outputs.is_empty())
@@ -4489,22 +4498,29 @@ pub(crate) fn replace_resigned_pending_parts(
 pub(crate) fn noncanonical_unconfirmed_fee_count(
     db_path: &str,
     run_id: &str,
-    canonical_fee_zatoshi: u64,
+    network: WalletNetwork,
 ) -> Result<u32, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
-    conn.query_row(
-        &format!(
-            "SELECT COUNT(*)
-             FROM {PENDING_TXS_TABLE}
-             WHERE run_id = ?1
-               AND status IN ('scheduled', 'broadcasted', 'needs_resign')
-               AND fee_zatoshi != ?2"
-        ),
-        params![run_id, canonical_fee_zatoshi],
-        |row| row.get::<_, u32>(0),
-    )
-    .map_err(|e| format!("Count migration transactions with stale fees: {e}"))
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT target_height, fee_zatoshi FROM {PENDING_TXS_TABLE}
+         WHERE run_id = ?1 AND status IN ('scheduled', 'broadcasted', 'needs_resign')"
+        ))
+        .map_err(|e| format!("Read migration fee policies: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, u32>(0)?, row.get::<_, u64>(1)?))
+        })
+        .map_err(|e| format!("Query migration fee policies: {e}"))?;
+    let mut count = 0;
+    for row in rows {
+        let (target, fee) = row.map_err(|e| format!("Read migration fee policy: {e}"))?;
+        if fee != super::send::canonical_migration_fee_zatoshi(network, target)? {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 pub(crate) fn scheduled_inputs_spent_by_mined_transactions(

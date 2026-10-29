@@ -16,16 +16,6 @@ pub(crate) const FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS: u32 = 48;
 pub(crate) const FAST_TESTNET_ANCHOR_BUCKET_MODULUS: u32 = 12;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 pub(crate) const DENSE_MIGRATION_PART_THRESHOLD: usize = 10;
-// Mirrors the per-child ZIP-317 migration fee estimate used by send planning:
-// 3 logical actions (a 2-action padded Orchard bundle and a 1-action
-// unpadded Ironwood bundle).
-const MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI: u64 =
-    3 * super::send::WALLET_MARGINAL_FEE_ZATOSHI;
-// Every migration needs at least one 16-action padded Orchard transaction
-// before its first Ironwood output can be created.
-const DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI: u64 =
-    16 * super::send::WALLET_MARGINAL_FEE_ZATOSHI;
-
 static FAST_TESTNET_MIGRATION_ENABLED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

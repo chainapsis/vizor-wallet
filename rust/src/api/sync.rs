@@ -1551,6 +1551,30 @@ pub fn propose_send(
     })
 }
 
+/// Fee policy for new transactions at this wallet's authoritative target height.
+/// Reads only local chain state; no network request is made.
+pub struct WalletFeePolicy {
+    pub target_height: u32,
+    pub marginal_fee_zatoshi: u64,
+    pub minimum_fee_zatoshi: u64,
+}
+
+pub fn get_wallet_fee_policy(db_path: String, network: String) -> Result<WalletFeePolicy, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let target_height = wallet_sync::fee_policy_target(&db_path, network)?;
+        let marginal_fee = crate::wallet::fees::marginal_fee(
+            &network,
+            zcash_protocol::consensus::BlockHeight::from_u32(target_height),
+        );
+        Ok(WalletFeePolicy {
+            target_height,
+            marginal_fee_zatoshi: marginal_fee,
+            minimum_fee_zatoshi: 2 * marginal_fee,
+        })
+    })
+}
+
 /// Estimate the fee for a transfer without storing a proposal.
 pub fn estimate_fee(
     db_path: String,

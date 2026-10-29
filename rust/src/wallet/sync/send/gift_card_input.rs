@@ -91,7 +91,14 @@ impl CardInput {
             ReceivedNoteId,
         >,
     > {
-        let (change, selector) = zip317_helper::<Self>(None, false);
+        let (change, selector) = zip317_helper::<Self>(
+            ConservativeZip317FeeRule::for_target(
+                &network,
+                BlockHeight::from_u32(self.state.checked_height + 1),
+            ),
+            None,
+            false,
+        );
         // The pinned transparent-ledger backend uses the selector API without
         // migration parameters. This source selects only Ironwood notes at the
         // card's retained anchor and explicitly proposes V6, so no Orchard

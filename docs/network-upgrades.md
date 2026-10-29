@@ -6,14 +6,20 @@ block the network rejects it. Vizor's rules for the blocks around an upgrade
 follow from that, and they apply to any upgrade Common schedules. NU7 also
 changes the block spacing, which only NU7 code handles.
 
-## Temporary fee policy
+## Fee policy
 
-For immediate testing, this branch uses 1,000 zatoshis per logical action on
-every network and at every height, with the existing two-action minimum
-(2,000 zatoshis). This is unconditional: it does not wait for NU7 or ZIP 2009's
-coordinated mainnet height of 3,590,000. The logical-action calculation and the
-conservative transparent-input size bound are unchanged. Gift Card claim
-reserves and migration fee estimates use the same reduced fee.
+New transactions use 5,000 zatoshis per logical action before NU7 and 1,000
+from NU7 at their target height (mainnet 3,543,405; testnet 4,465,026).
+The two-action minimum is 10,000 / 2,000 zatoshis. A tip at activation minus
+one already targets the activation block. There is no separate switch at
+3,590,000. Networks without scheduled NU7 keep the legacy fee.
+
+The fee rule snapshots its marginal fee when the proposal is created, so input
+selection, change and building use the same rate. Signed transactions keep their
+fee; the upgrade's existing branch/expiry checks still apply. Migration estimates
+use the same target-height policy. Gift Card quotes snapshot their claim reserve,
+persist it with the draft and compare the reviewed quote before signing. Recovery
+uses the stored reserve; external cards recognize both legacy and NU7 funding.
 
 ## Where the rules live
 

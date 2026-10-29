@@ -109,12 +109,14 @@ class PaymentLinkLedgerFundingService {
     required String accountUuid,
     required BigInt amountZatoshi,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) => lifecycle.run(() {
     _requireAccount(accountUuid);
     return hardware.createFundingPczt(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: accountUuid,
       presentation: presentation,
+      expectedQuote: expectedQuote,
     );
   });
 

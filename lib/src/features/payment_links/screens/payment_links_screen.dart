@@ -1386,9 +1386,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       });
       return;
     }
-    final minimumFunding = paymentLinkFundingAmountZatoshi(amount);
+    final minimumFunding = amount;
     if (readySync.hasBalanceData &&
-        readySync.spendableBalance < minimumFunding) {
+        readySync.spendableBalance <= minimumFunding) {
       setState(() {
         _amountSupportingText = 'Above your maximum ZEC';
         _amountSupportingTextIsError = true;
@@ -1736,6 +1736,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       setState(() {
         _operationInProgress = true;
         _hardwareFundingRequest = _PaymentLinkHardwareFundingRequest(
+          expectedQuote: quote,
           signerKind: _signerFor(sourceAccountUuid),
           amountZatoshi: amount,
           sourceAccountUuid: sourceAccountUuid,
@@ -1753,6 +1754,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       final funding = await ref
           .read(paymentLinkOperationsProvider)
           .createFundedLink(
+            expectedQuote: quote,
             amountZatoshi: amount,
             sourceAccountUuid: sourceAccountUuid,
             presentation: presentation,
@@ -1867,6 +1869,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
   ) {
     if (request.signerKind == HardwareSignerKind.ledger) {
       return PaymentLinkLedgerSigningOverlay(
+        expectedQuote: request.expectedQuote,
         key: ObjectKey(request),
         amountZatoshi: request.amountZatoshi,
         sourceAccountUuid: request.sourceAccountUuid,
@@ -1881,6 +1884,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       );
     }
     return PaymentLinkKeystoneSigningOverlay(
+      expectedQuote: request.expectedQuote,
       key: ObjectKey(request),
       amountZatoshi: request.amountZatoshi,
       sourceAccountUuid: request.sourceAccountUuid,
@@ -4151,9 +4155,11 @@ class _PaymentLinkHardwareFundingRequest {
     required this.sourceAccountUuid,
     required this.presentation,
     required this.signerKind,
+    this.expectedQuote,
   });
 
   final HardwareSignerKind? signerKind;
+  final PaymentLinkFundingQuote? expectedQuote;
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
   final PaymentLinkPresentation presentation;
