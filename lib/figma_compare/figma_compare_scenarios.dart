@@ -102,6 +102,13 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'mobile-account-removal-passcode',
+    description: 'Passcode confirmation before account removal',
+    builder: buildMobilePasscodeAccountRemovalCapture,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-shield-ledger-connection-help',
     description: 'Ledger pairing recovery inside the mobile shielding scene',
     builder: buildLedgerInlineConnectionHelpUseCase,

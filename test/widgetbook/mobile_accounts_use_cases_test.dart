@@ -47,6 +47,12 @@ void main() {
       );
       await tester.tap(confirm);
       await tester.pumpAndSettle();
+      expect(find.text('Enter Passcode'), findsOneWidget);
+      for (final digit in '123456'.split('')) {
+        await tester.tap(find.bySemanticsLabel('Digit $digit'));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
       expect(find.byKey(ValueKey(removedMenu)), findsNothing);
       if (action == 'Reset Vizor') {
         expect(find.text('Navigated to /welcome'), findsOneWidget);

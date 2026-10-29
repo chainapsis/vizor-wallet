@@ -56,6 +56,7 @@ import '../src/core/widgets/app_button.dart';
 import '../src/features/accounts/screens/accounts_screen.dart';
 import '../src/features/about/screens/about_screen.dart';
 import '../src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import '../src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import '../src/features/accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../src/features/activity/swap_activity_row_items_provider.dart';
 import '../src/features/activity/gift_card_activity_index.dart';
@@ -4017,6 +4018,7 @@ Widget _buildMobileAccountsUseCase(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_accountsBootstrap(accountState)),
+      appSecurityProvider.overrideWith(_PreviewBackupSecurityNotifier.new),
       accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
       biometricUnlockProvider.overrideWith(
         () => _PreviewBiometricUnlockNotifier(BiometricUnlockState.initial),
@@ -4477,6 +4479,12 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
             initialSheetAccountUuid: widget.initialSheetAccountUuid,
             initialSheet: widget.initialSheet,
             initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
+          ),
+        ),
+        GoRoute(
+          path: '/accounts/confirm-removal',
+          builder: (_, state) => MobileAccountRemovalPasscodeScreen(
+            isLastAccount: state.extra == true,
           ),
         ),
         GoRoute(

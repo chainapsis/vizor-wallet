@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../feedback/app_review.dart';
 
 import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
+import '../../features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_software_shield_screen.dart';
@@ -161,6 +162,15 @@ List<RouteBase> _walletRoutes() {
         child: MobileSeedPhraseScreen(
           accountUuid: state.extra is String ? state.extra as String : null,
           showBackupIntro: true,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/accounts/confirm-removal',
+      pageBuilder: (context, state) => _mobilePage(
+        key: state.pageKey,
+        child: MobileAccountRemovalPasscodeScreen(
+          isLastAccount: state.extra == true,
         ),
       ),
     ),

@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/core/navigation/mobile_destinations.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activity_screen.dart';
+import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
@@ -185,6 +186,38 @@ List<({Color? fill, Color? label})> _sidebarPaints(WidgetTester tester) => [
 ];
 
 void main() {
+  testWidgets(
+    'account removal passcode covers the tab shell and cancels on back',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.reset);
+      final router = _router();
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_app(router));
+      await tester.pumpAndSettle();
+      final result = router.push<bool>(
+        '/accounts/confirm-removal',
+        extra: true,
+      );
+      await tester.pumpAndSettle();
+      final screen = find.byType(MobileAccountRemovalPasscodeScreen);
+      expect(screen, findsOneWidget);
+      expect(tester.getSize(screen), const Size(393, 852));
+      expect(find.byType(AppMobileShell), findsNothing);
+      expect(find.text('Enter your passcode to reset Vizor.'), findsOneWidget);
+      expect(
+        ModalRoute.of(tester.element(screen)),
+        isA<CupertinoRouteTransitionMixin<dynamic>>(),
+      );
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+      expect(await result, false);
+      expect(find.byType(AppMobileShell), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final interrupted in ['none', 'different', 'same']) {
     testWidgets(
       'sidebar waits for cleanup, serializes input and respects route changes ($interrupted)',
