@@ -92,8 +92,8 @@ Returned signatures are still cryptographically verified.
    firmware PR or a host-crate version is not a deployed device capability.
 2. Update the relevant Rust enforcement, Flutter policy, and this table together.
    Test the boundary and an adjacent software/Keystone path.
-3. Run the affected [Speculos scenario](speculos.md), and the
-   Orchard-to-Ironwood canary when that path changes. Speculos proves
+3. Run the affected [Speculos scenario](speculos.md); the lane includes the
+   Orchard-to-Ironwood canary by default. Speculos proves
    firmware/APDU behavior, not physical USB/Bluetooth or production broadcast.
 
 `pczt-ledger` is a comparison/reference implementation; Vizor does not add it as

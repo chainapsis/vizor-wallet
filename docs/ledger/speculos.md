@@ -82,8 +82,8 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
   approval, signed-outbox broadcast, and recovery storage to create four cards
   with one transaction. Wallet-path resolution and secure storage are isolated;
   a loopback lightwalletd stub accepts the transaction without chain mining.
-- `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary,
-  a V6 transaction on the NU7 branch. On 2026-10-29 Zcash 3.10.0 signed it on
+- The compatibility canary runs by default; `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=false`
+  skips it. It signs a V6 transaction on the NU7 branch. On 2026-10-29 Zcash 3.10.0 signed it on
   both NU6.3 and NU7, and 3.9.4 rejected it on both. The scenario signs it with
   the full signer and again with the compact signer Immediate migration uses.
   The PCZT is synthetic, not built by the migration planner.
