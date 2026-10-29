@@ -38,6 +38,7 @@ class _OneClickQuoteRequest {
     this.recipient,
     this.slippageToleranceBps,
     this.deadline,
+    this.confidentiality,
   });
 
   factory _OneClickQuoteRequest.fromJson(Map<String, dynamic> json) {
@@ -54,6 +55,7 @@ class _OneClickQuoteRequest {
           _optionalInt(json, 'slippageTolerance') ??
           _optionalInt(json, 'slippage'),
       deadline: _optionalString(json, 'deadline'),
+      confidentiality: _optionalString(json, 'confidentiality'),
     );
   }
 
@@ -67,6 +69,7 @@ class _OneClickQuoteRequest {
   final String? recipient;
   final int? slippageToleranceBps;
   final String? deadline;
+  final String? confidentiality;
 }
 
 class _OneClickQuote {

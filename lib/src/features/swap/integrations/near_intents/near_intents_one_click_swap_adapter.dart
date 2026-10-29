@@ -11,6 +11,10 @@ part 'near_intents_one_click_models.dart';
 part 'near_intents_one_click_transport.dart';
 
 const _notReportedText = 'Not reported';
+const _publicConfidentiality = 'public';
+const _basicConfidentiality = 'basic';
+// 1Click quotes these chains only as Confidential Intents swaps.
+const _confidentialBlockchains = {'qtc'};
 
 class NearIntentsOneClickSwapAdapter
     implements SwapProvider, SwapPricingProvider {
@@ -87,6 +91,10 @@ class NearIntentsOneClickSwapAdapter
     final requestedSlippageBps = request.slippageBps ?? slippageBps;
     final requestedRefundTo = request.refundAddress!.trim();
     final requestedRecipient = request.destination.trim();
+    final requestedConfidentiality = _confidentialityFor(
+      sellToken,
+      receiveToken,
+    );
 
     final body = <String, Object?>{
       'dry': request.dryRun,
@@ -103,6 +111,7 @@ class NearIntentsOneClickSwapAdapter
       'deadline': _deadlineIso(request.deadline ?? quoteDeadline),
       'depositMode': 'SIMPLE',
       'quoteWaitingTimeMs': quoteWaitingTimeMs,
+      'confidentiality': ?requestedConfidentiality,
       if (referral != null && referral!.isNotEmpty) 'referral': referral,
     };
 
@@ -121,6 +130,7 @@ class NearIntentsOneClickSwapAdapter
       expectedSlippageBps: requestedSlippageBps,
       expectedRefundTo: requestedRefundTo,
       expectedRecipient: requestedRecipient,
+      expectedConfidentiality: requestedConfidentiality,
       sellToken: sellToken,
       receiveToken: receiveToken,
       allowFlexibleQuotedAmount:
@@ -147,6 +157,17 @@ class NearIntentsOneClickSwapAdapter
       return SwapQuoteMode.flexInput;
     }
     return request.mode;
+  }
+
+  String? _confidentialityFor(
+    _OneClickToken sellToken,
+    _OneClickToken receiveToken,
+  ) {
+    final isConfidential = [sellToken, receiveToken].any(
+      (token) =>
+          _confidentialBlockchains.contains(token.blockchain.toLowerCase()),
+    );
+    return isConfidential ? _basicConfidentiality : null;
   }
 
   @override
@@ -735,6 +756,7 @@ class NearIntentsOneClickSwapAdapter
     required int expectedSlippageBps,
     required String expectedRefundTo,
     required String expectedRecipient,
+    required String? expectedConfidentiality,
     required _OneClickToken sellToken,
     required _OneClickToken receiveToken,
     required bool allowFlexibleQuotedAmount,
@@ -801,6 +823,15 @@ class NearIntentsOneClickSwapAdapter
         actual.recipient?.trim() != expectedRecipient) {
       throw const OneClickApiException(
         '1Click quote response did not match the requested addresses',
+        operation: 'quote',
+      );
+    }
+    final actualConfidentiality =
+        actual.confidentiality?.trim().toLowerCase() ?? _publicConfidentiality;
+    if (actualConfidentiality !=
+        (expectedConfidentiality ?? _publicConfidentiality)) {
+      throw const OneClickApiException(
+        '1Click quote response did not match the requested confidentiality',
         operation: 'quote',
       );
     }
