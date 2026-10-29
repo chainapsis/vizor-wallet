@@ -1935,6 +1935,8 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         sourceAccountUuid: request.sourceAccountUuid,
         presentation: request.presentation,
         onCancel: _cancelHardwareFunding,
+        onBatchRefused: (refusal) =>
+            _handleHardwareFundingRefused(request, refusal),
         onFundingBroadcast: (link, result) async {
           // Persistence is already complete; an old account must not replace
           // a newly opened wizard after a background completion.
@@ -1950,9 +1952,26 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       sourceAccountUuid: request.sourceAccountUuid,
       presentation: request.presentation,
       onCancel: _cancelHardwareFunding,
+      onBatchRefused: (refusal) =>
+          _handleHardwareFundingRefused(request, refusal),
       onFundingBroadcast: (link, result) =>
           _completeHardwareFunding(request, link, result),
     );
+  }
+
+  Future<void> _handleHardwareFundingRefused(
+    _PaymentLinkHardwareFundingRequest request,
+    Object refusal,
+  ) async {
+    // Overlays report refusals only before creating a signing draft. A late
+    // result from an old account/request must not replace the current flow.
+    if (!mounted || _hardwareFundingRequest != request) return;
+    if (refusal is PaymentLinkBatchQuoteChanged) {
+      _showError(_kBatchFeeChangedText);
+    } else if (refusal is PaymentLinkBatchRejected) {
+      _showError(refusal.message);
+    }
+    await _cancelHardwareFunding();
   }
 
   Future<void> _cancelHardwareFunding() async {

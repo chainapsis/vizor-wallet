@@ -43,8 +43,8 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
   final PaymentLinkFundingQuote? expectedQuote;
   final PaymentLinkBatchDraft? batch;
 
-  /// A group whose proposal no longer matches its quote, or that its signer
-  /// cannot sign, returns here instead of offering a retry.
+  /// A single card or group whose proposal no longer matches its quote, or
+  /// that its signer cannot sign, returns here before a draft exists.
   final FutureOr<void> Function(Object refusal)? onBatchRefused;
   final FutureOr<void> Function() onCancel;
   final Future<void> Function(
@@ -166,14 +166,7 @@ class _PaymentLinkKeystoneSigningOverlayState
     } catch (error, stackTrace) {
       log('PaymentLinkKeystoneSigning._preparePczt: $error\n$stackTrace');
       if (_cancelled) return;
-      final refused = widget.onBatchRefused;
-      if (refused != null &&
-          mounted &&
-          _draft == null &&
-          isPaymentLinkBatchRefusal(error)) {
-        await refused(error);
-        return;
-      }
+      if (await _handlePreparationRefusal(error)) return;
       try {
         await _discardDraft();
       } catch (cleanupError) {
@@ -185,6 +178,19 @@ class _PaymentLinkKeystoneSigningOverlayState
         _error = _friendlyError(error);
       });
     }
+  }
+
+  Future<bool> _handlePreparationRefusal(Object error) async {
+    final refused = widget.onBatchRefused;
+    if (refused == null ||
+        !mounted ||
+        _cancelled ||
+        _draft != null ||
+        !isPaymentLinkBatchRefusal(error)) {
+      return false;
+    }
+    await refused(error);
+    return true;
   }
 
   Future<bool> _showDownloadPrompt() {
@@ -348,7 +354,17 @@ class _PaymentLinkKeystoneSigningOverlayState
       expectedQuote: widget.expectedQuote,
     );
     _draftCreation = creation;
-    final draft = await creation;
+    final PaymentLinkHardwarePcztDraft draft;
+    try {
+      draft = await creation;
+    } catch (error) {
+      // The mobile flow owns its failure surface; consume a pre-draft refusal
+      // here so the parent can refresh Review before that surface handles it.
+      if (await _handlePreparationRefusal(error)) {
+        throw const MobileKeystonePcztSigningAborted();
+      }
+      rethrow;
+    }
     _draft = draft;
     if (!mounted || _cancelled) {
       await _discardDraft();
