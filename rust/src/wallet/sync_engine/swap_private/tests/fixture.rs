@@ -106,19 +106,32 @@ impl Chain {
         chain
     }
 
-    /// Records the tree state of the block just mined.
+    /// Records the tree state of the block just mined. The chain's own wallet scans it so
+    /// [`Self::rewind`] can truncate that wallet with the block cache.
     fn advance(&mut self) -> u32 {
+        let height = self.record_tip();
+        self.st.scan_cached_blocks(height.into(), 1);
+        height
+    }
+
+    /// Records the tree state of the block just mined, without scanning it.
+    fn record_tip(&mut self) -> u32 {
         let block = self.st.latest_cached_block().unwrap();
         let height = u32::from(block.height());
         self.states.insert(height, block.chain_state().clone());
         height
     }
 
-    /// Mines `n` blocks without shielded outputs.
+    /// Mines `n` blocks without shielded outputs, scanned in one batch.
     pub(super) fn mine(&mut self, n: u32) {
         for _ in 0..n {
             self.st.generate_empty_block();
-            self.advance();
+            self.record_tip();
+        }
+        if n > 0 {
+            let limit = n.try_into().expect("a u32 fits in usize");
+            self.st
+                .scan_cached_blocks((self.tip() + 1 - n).into(), limit);
         }
     }
 
@@ -141,6 +154,16 @@ impl Chain {
     /// note. `indexed` says the receiver directory lists it, as for NEAR's zero-OVK
     /// payouts.
     pub(super) fn pay(&mut self, fvk: &FullViewingKey, value: u64, indexed: bool) -> u32 {
+        self.pay_tx(fvk, value, indexed).0
+    }
+
+    /// [`Self::pay`], also returning the paying transaction's ID in internal byte order.
+    pub(super) fn pay_tx(
+        &mut self,
+        fvk: &FullViewingKey,
+        value: u64,
+        indexed: bool,
+    ) -> (u32, [u8; 32]) {
         let (height, _, _) = self.st.generate_next_block(
             &IronwoodFvk(fvk.clone()),
             AddressType::DefaultExternal,
@@ -148,11 +171,12 @@ impl Chain {
         );
         let height = u32::from(height);
         self.advance();
+        let record = self.record(height, fvk);
+        let txid = record.payment.txid;
         if indexed {
-            let record = self.record(height, fvk);
             self.records.push(record);
         }
-        height
+        (height, txid)
     }
 
     /// Lists the payment to `fvk` at `height` that the directory left out (see [`Self::pay`]).
@@ -178,6 +202,22 @@ impl Chain {
     pub(super) fn mine_tx(&mut self, tx: &Transaction) -> u32 {
         self.st.generate_next_block_from_tx(1, tx);
         self.advance()
+    }
+
+    /// Mines a block holding only `tx`, an app-built payment to `fvk`, and lists that
+    /// payment in the receiver directory as NEAR's payouts are. Returns its height and
+    /// the transaction ID in internal byte order. Mining the same `tx` again after a
+    /// rewind moves the same receipt to a new block.
+    pub(super) fn mine_indexed_tx(
+        &mut self,
+        tx: &Transaction,
+        fvk: &FullViewingKey,
+    ) -> (u32, [u8; 32]) {
+        let height = self.mine_tx(tx);
+        let record = self.record(height, fvk);
+        let txid = record.payment.txid;
+        self.records.push(record);
+        (height, txid)
     }
 
     /// The cached compact block at `height`.
@@ -292,6 +332,11 @@ impl Held {
         self.arrived
             .recv_timeout(Duration::from_secs(30))
             .expect("the held request arrived");
+    }
+
+    /// Waits up to `timeout` for the held request, returning whether it arrived.
+    pub(super) fn try_wait(&self, timeout: Duration) -> bool {
+        self.arrived.recv_timeout(timeout).is_ok()
     }
 
     /// Lets the held response go.
@@ -523,6 +568,11 @@ impl Service {
     /// Makes the head name `protocol`, which this client does not support.
     pub(super) fn serve_protocol(&self, protocol: &str) {
         *self.protocol.lock().unwrap() = Some(protocol.into());
+    }
+
+    /// Makes the head name the supported protocol again.
+    pub(super) fn serve_supported(&self) {
+        *self.protocol.lock().unwrap() = None;
     }
 
     /// Makes the filter head name history revision `revision`, as after a correction the
@@ -760,19 +810,14 @@ impl Service {
         if class == "query" {
             self.record_query(body);
         }
-        let (seen, gate) = {
-            let seen = self
-                .requests
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|(c, ..)| *c == class)
-                .count();
-            // Counted on arrival so a later request of the same class gets the next index.
-            self.requests
-                .lock()
-                .unwrap()
-                .push((class, route.clone(), body.len(), 0));
+        let (seen, index, gate) = {
+            // Counted and recorded under one lock, so concurrent requests of a class get
+            // distinct indexes and never share a hold.
+            let mut requests = self.requests.lock().unwrap();
+            let seen = requests.iter().filter(|(c, ..)| *c == class).count();
+            requests.push((class, route.clone(), body.len(), 0));
+            let index = requests.len() - 1;
+            drop(requests);
             let holds = self.holds.lock().unwrap();
             let gate = holds
                 .iter()
@@ -781,7 +826,7 @@ impl Service {
                     let _ = h.arrived.send(());
                     h.release.clone()
                 });
-            (seen, gate)
+            (seen, index, gate)
         };
         if let Some(gate) = gate {
             gate.acquire().await.unwrap().forget();
@@ -810,15 +855,7 @@ impl Service {
         if response.len() > limit {
             return Err(session::Error::Transport("response over its limit".into()));
         }
-        let mut requests = self.requests.lock().unwrap();
-        let entry = requests
-            .iter_mut()
-            .rev()
-            .find(|(c, r, req, resp)| {
-                *c == class && *r == route && *req == body.len() && *resp == 0
-            })
-            .unwrap();
-        entry.3 = response.len();
+        self.requests.lock().unwrap()[index].3 = response.len();
         Ok(response)
     }
 
@@ -996,6 +1033,53 @@ impl Wallet {
         account
     }
 
+    /// Deletes `account` through the app's per-account delete path.
+    pub(super) fn delete_account(&mut self, account: &Account) {
+        crate::wallet::keys::delete_account(&self.path, NETWORK, &account.uuid).unwrap();
+        self.accounts.retain(|a| a.id != account.id);
+    }
+
+    /// Imports a spending account with ZIP 32 metadata but no Orchard key, as an
+    /// unbackfilled hardware import can be.
+    pub(super) fn import_without_orchard(
+        &self,
+        seed: u8,
+        birthday: u32,
+        chain: &Chain,
+    ) -> AccountUuid {
+        use zcash_client_backend::data_api::{
+            Account as _, AccountBirthday, AccountPurpose, Zip32Derivation,
+        };
+        let seed = [seed; 32];
+        let usk = zcash_keys::keys::UnifiedSpendingKey::from_seed(
+            &NETWORK,
+            &seed,
+            zip32::AccountId::ZERO,
+        )
+        .unwrap();
+        let ufvk = zcash_keys::keys::UnifiedFullViewingKey::new(
+            Some(usk.transparent().to_account_pubkey()),
+            Some(usk.sapling().to_diversifiable_full_viewing_key()),
+            None,
+        )
+        .unwrap();
+        self.db()
+            .import_account_ufvk(
+                "No Orchard",
+                &ufvk,
+                &AccountBirthday::from_parts(chain.state(birthday - 1).clone(), None),
+                AccountPurpose::Spending {
+                    derivation: Some(Zip32Derivation::new(
+                        zip32::fingerprint::SeedFingerprint::from_seed(&seed).unwrap(),
+                        zip32::AccountId::ZERO,
+                    )),
+                },
+                None,
+            )
+            .unwrap()
+            .id()
+    }
+
     /// The first account.
     pub(super) fn account(&self) -> &Account {
         &self.accounts[0]
@@ -1160,7 +1244,7 @@ impl Wallet {
         self.mark_used();
         let path = self.path.clone();
         let service = service.clone();
-        std::thread::spawn(move || run_worker(&path, &service, manual, None, budget))
+        std::thread::spawn(move || run_worker(&path, &*service, manual, None, budget))
     }
 
     /// Runs one automatic worker round with `active`'s work first, under `budget`.
@@ -1410,12 +1494,12 @@ impl Wallet {
 /// longer `STALL_TIMEOUT`.
 pub(super) const STALL: Duration = Duration::from_secs(1);
 
-/// Runs `recover_with_transport` with the generation the production entry point captures
-/// and the wallet's own descriptor store, starting requests for `budget` as `recover`
-/// does for its round deadline.
-fn run_worker(
+/// Runs `recover_with_transport` over `transport` with the generation the production entry
+/// point captures and the wallet's own descriptor store, starting requests for `budget` as
+/// `recover` does for its round deadline.
+pub(super) fn run_worker<T: Transport>(
     path: &str,
-    service: &Service,
+    transport: &T,
     manual: bool,
     active: Option<AccountUuid>,
     budget: Duration,
@@ -1433,7 +1517,7 @@ fn run_worker(
                 manual,
                 active,
                 ORIGIN,
-                service,
+                transport,
                 &DescriptorTable::new(path, generation),
                 generation,
                 deadline,
