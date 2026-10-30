@@ -15,7 +15,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../migration/providers/ironwood_migration_state_provider.dart';
 import '../../send/services/send_amount_conversion.dart';
 import '../../send/services/send_flow.dart';
 import '../../send/services/send_proving_key_warmup.dart';

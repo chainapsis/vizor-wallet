@@ -116,26 +116,17 @@ pub struct AccountExportMetadata {
     pub seed_fingerprint: Option<Vec<u8>>,
 }
 
-/// Connected lightwalletd chain state relevant to Ironwood rollout decisions.
+/// Ironwood activation at the connected lightwalletd's chain tip.
 pub struct ChainUpgradeStatus {
     pub network: String,
-    pub lightwalletd_chain_name: String,
     pub tip_height: u64,
-    pub lightwalletd_reported_height: u64,
-    pub lightwalletd_estimated_height: u64,
-    pub lightwalletd_consensus_branch_id: String,
-    pub lightwalletd_upgrade_name: String,
-    pub lightwalletd_upgrade_height: u64,
-    pub nu6_3_activation_height: Option<u64>,
     pub ironwood_active_at_tip: bool,
-    pub endpoint_matches_network: bool,
 }
 
 /// Chain upgrade activation state computed from a known chain tip height.
 pub struct ChainUpgradeActivationStatus {
     pub network: String,
     pub tip_height: u64,
-    pub nu6_3_activation_height: Option<u64>,
     pub ironwood_active_at_tip: bool,
 }
 
@@ -193,12 +184,6 @@ fn block_height_from_u64(height: u64) -> Result<BlockHeight, String> {
 
 fn is_ironwood_active_at_height(network: WalletNetwork, height: u64) -> Result<bool, String> {
     Ok(network.is_nu_active(NetworkUpgrade::Nu6_3, block_height_from_u64(height)?))
-}
-
-fn nu6_3_activation_height(network: WalletNetwork) -> Option<u64> {
-    network
-        .activation_height(NetworkUpgrade::Nu6_3)
-        .map(|height| u32::from(height) as u64)
 }
 
 /// Get the latest block height from lightwalletd.
@@ -281,8 +266,6 @@ pub fn get_chain_upgrade_status(
         let network = keys::parse_network(&network)?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
-            use zcash_client_backend::proto::service::Empty;
-
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -293,27 +276,10 @@ pub fn get_chain_upgrade_status(
             )
             .await
             .map_err(|e| e.to_string())?;
-            let info = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                client.get_lightd_info(Empty {}),
-            )
-            .await
-            .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
-            .map_err(|e| format!("get_lightd_info: {e}"))?
-            .into_inner();
 
-            let expected_network = network_name(network).to_string();
             Ok(ChainUpgradeStatus {
-                network: expected_network.clone(),
-                endpoint_matches_network: info.chain_name == expected_network,
-                lightwalletd_chain_name: info.chain_name,
+                network: network_name(network).to_string(),
                 tip_height: tip.height,
-                lightwalletd_reported_height: info.block_height,
-                lightwalletd_estimated_height: info.estimated_height,
-                lightwalletd_consensus_branch_id: info.consensus_branch_id,
-                lightwalletd_upgrade_name: info.upgrade_name,
-                lightwalletd_upgrade_height: info.upgrade_height,
-                nu6_3_activation_height: nu6_3_activation_height(network),
                 ironwood_active_at_tip: is_ironwood_active_at_height(network, tip.height)?,
             })
         })
@@ -330,7 +296,6 @@ pub fn get_chain_upgrade_status_at_height(
         Ok(ChainUpgradeActivationStatus {
             network: network_name(network).to_string(),
             tip_height,
-            nu6_3_activation_height: nu6_3_activation_height(network),
             ironwood_active_at_tip: is_ironwood_active_at_height(network, tip_height)?,
         })
     })
@@ -1612,7 +1577,6 @@ mod tests {
         });
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn discovery_reads_history_from_the_rounded_birthday() {
         assert_eq!(
@@ -1638,7 +1602,6 @@ mod tests {
         dir.path().join(name).to_str().unwrap().to_string()
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_created_accounts_and_claims_keep_their_birthday() {
         let dir = tempfile::tempdir().unwrap();
@@ -1678,7 +1641,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_software_restores_round_their_birthday() {
         let dir = tempfile::tempdir().unwrap();
@@ -1730,7 +1692,6 @@ mod tests {
         assert_eq!(birthdays[&linked.account_uuid], 2_340_001);
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_hardware_imports_round_their_birthday() {
         use secrecy::ExposeSecret;
@@ -2006,6 +1967,12 @@ mod tests {
         assert_ne!(empty.unified_address, wrong_case.unified_address);
     }
 
+    fn nu6_3_activation_height(network: WalletNetwork) -> Option<u64> {
+        network
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .map(|height| u32::from(height) as u64)
+    }
+
     #[test]
     fn ironwood_activation_status_follows_nu6_3_height() {
         for network in [WalletNetwork::Main, WalletNetwork::Test] {
@@ -2025,7 +1992,6 @@ mod tests {
             get_chain_upgrade_status_at_height("main".to_string(), activation - 1).unwrap();
         assert_eq!(before.network, "main");
         assert_eq!(before.tip_height, activation - 1);
-        assert_eq!(before.nu6_3_activation_height, Some(activation));
         assert!(!before.ironwood_active_at_tip);
 
         let at_activation =

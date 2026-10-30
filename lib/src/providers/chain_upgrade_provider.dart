@@ -6,10 +6,6 @@ import '../rust/api/wallet.dart' as rust_wallet;
 import 'rpc_endpoint_failover_provider.dart';
 
 String ironwoodActiveSeenStorageKey(String network) {
-  if (kZcashIronwoodMasquerade &&
-      normalizeZcashNetworkName(network) == 'main') {
-    return 'zcash_ironwood_active_seen_ironwood_masquerade_main';
-  }
   return 'zcash_ironwood_active_seen_$network';
 }
 
@@ -58,15 +54,7 @@ class ChainUpgradeStatusState {
     required this.network,
     required this.endpointUrl,
     required this.tipHeight,
-    required this.nu63ActivationHeight,
     required this.ironwoodActiveAtTip,
-    this.lightwalletdChainName,
-    this.lightwalletdReportedHeight,
-    this.lightwalletdEstimatedHeight,
-    this.lightwalletdConsensusBranchId,
-    this.lightwalletdUpgradeName,
-    this.lightwalletdUpgradeHeight,
-    this.endpointMatchesNetwork,
   });
 
   factory ChainUpgradeStatusState.fromLightwalletd(
@@ -78,19 +66,11 @@ class ChainUpgradeStatusState {
       network: status.network,
       endpointUrl: endpoint.normalizedLightwalletdUrl,
       tipHeight: status.tipHeight,
-      nu63ActivationHeight: status.nu63ActivationHeight,
       ironwoodActiveAtTip: _resolveIronwoodActive(
         previous,
         endpoint,
         status.ironwoodActiveAtTip,
       ),
-      lightwalletdChainName: status.lightwalletdChainName,
-      lightwalletdReportedHeight: status.lightwalletdReportedHeight,
-      lightwalletdEstimatedHeight: status.lightwalletdEstimatedHeight,
-      lightwalletdConsensusBranchId: status.lightwalletdConsensusBranchId,
-      lightwalletdUpgradeName: status.lightwalletdUpgradeName,
-      lightwalletdUpgradeHeight: status.lightwalletdUpgradeHeight,
-      endpointMatchesNetwork: status.endpointMatchesNetwork,
     );
   }
 
@@ -99,34 +79,11 @@ class ChainUpgradeStatusState {
     BigInt? tipHeight,
     ChainUpgradeStatusState? previous,
   }) {
-    final preserveMetadata = _sameEndpoint(previous, endpoint);
     return ChainUpgradeStatusState(
       network: endpoint.networkName,
       endpointUrl: endpoint.normalizedLightwalletdUrl,
       tipHeight: tipHeight ?? previous?.tipHeight ?? BigInt.zero,
-      nu63ActivationHeight: previous?.nu63ActivationHeight,
       ironwoodActiveAtTip: true,
-      lightwalletdChainName: preserveMetadata
-          ? previous?.lightwalletdChainName
-          : null,
-      lightwalletdReportedHeight: preserveMetadata
-          ? previous?.lightwalletdReportedHeight
-          : null,
-      lightwalletdEstimatedHeight: preserveMetadata
-          ? previous?.lightwalletdEstimatedHeight
-          : null,
-      lightwalletdConsensusBranchId: preserveMetadata
-          ? previous?.lightwalletdConsensusBranchId
-          : null,
-      lightwalletdUpgradeName: preserveMetadata
-          ? previous?.lightwalletdUpgradeName
-          : null,
-      lightwalletdUpgradeHeight: preserveMetadata
-          ? previous?.lightwalletdUpgradeHeight
-          : null,
-      endpointMatchesNetwork: preserveMetadata
-          ? previous?.endpointMatchesNetwork
-          : null,
     );
   }
 
@@ -135,55 +92,22 @@ class ChainUpgradeStatusState {
     RpcEndpointConfig endpoint, {
     ChainUpgradeStatusState? previous,
   }) {
-    final preserveMetadata = _sameEndpoint(previous, endpoint);
     return ChainUpgradeStatusState(
       network: status.network,
       endpointUrl: endpoint.normalizedLightwalletdUrl,
       tipHeight: status.tipHeight,
-      nu63ActivationHeight: status.nu63ActivationHeight,
       ironwoodActiveAtTip: _resolveIronwoodActive(
         previous,
         endpoint,
         status.ironwoodActiveAtTip,
       ),
-      lightwalletdChainName: preserveMetadata
-          ? previous?.lightwalletdChainName
-          : null,
-      lightwalletdReportedHeight: preserveMetadata
-          ? previous?.lightwalletdReportedHeight
-          : null,
-      lightwalletdEstimatedHeight: preserveMetadata
-          ? previous?.lightwalletdEstimatedHeight
-          : null,
-      lightwalletdConsensusBranchId: preserveMetadata
-          ? previous?.lightwalletdConsensusBranchId
-          : null,
-      lightwalletdUpgradeName: preserveMetadata
-          ? previous?.lightwalletdUpgradeName
-          : null,
-      lightwalletdUpgradeHeight: preserveMetadata
-          ? previous?.lightwalletdUpgradeHeight
-          : null,
-      endpointMatchesNetwork: preserveMetadata
-          ? previous?.endpointMatchesNetwork
-          : null,
     );
   }
 
   final String network;
   final String endpointUrl;
   final BigInt tipHeight;
-  final BigInt? nu63ActivationHeight;
   final bool ironwoodActiveAtTip;
-  final String? lightwalletdChainName;
-  final BigInt? lightwalletdReportedHeight;
-  final BigInt? lightwalletdEstimatedHeight;
-  final String? lightwalletdConsensusBranchId;
-  final String? lightwalletdUpgradeName;
-  final BigInt? lightwalletdUpgradeHeight;
-  final bool? endpointMatchesNetwork;
-
-  bool get hasLightwalletdMetadata => lightwalletdChainName != null;
 
   static bool _sameEndpoint(
     ChainUpgradeStatusState? previous,

@@ -30,9 +30,12 @@ use crate::wallet::{
     sync, transparent_receive_cache, tree_states,
 };
 
+// Test modules reach it through `use super::*`.
+#[cfg(test)]
+use ::transparent::address::TransparentAddress;
 use {
     ::transparent::{
-        address::{Script, TransparentAddress},
+        address::Script,
         bundle::{OutPoint, TxOut},
         keys::TransparentKeyScope,
     },
@@ -1443,29 +1446,6 @@ async fn repair_anchor_root_mismatch_if_needed(
     )))
 }
 
-fn transparent_utxo_query_network(network: WalletNetwork) -> WalletNetwork {
-    #[cfg(ironwood_masquerade)]
-    if network == WalletNetwork::Main {
-        return WalletNetwork::Test;
-    }
-
-    network
-}
-
-fn transparent_address_for_query(
-    address: &str,
-    source_network: WalletNetwork,
-    query_network: WalletNetwork,
-) -> Result<String, String> {
-    if source_network == query_network {
-        return Ok(address.to_string());
-    }
-
-    TransparentAddress::decode(&source_network, address)
-        .map(|address| address.encode(&query_network))
-        .map_err(|e| format!("decode transparent address {address}: {e}"))
-}
-
 struct TransparentRefresh {
     addresses: Vec<String>,
     start_height: BlockHeight,
@@ -1611,18 +1591,12 @@ async fn refresh_utxos(
             TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT
         };
 
-        let query_network = transparent_utxo_query_network(network);
-        let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
+        let external_addresses = keys::get_external_transparent_receive_addresses_from_db(
             db_data_path,
             network,
             Some(&account_uuid),
         )
         .map_err(|e| SyncError::db(format!("external transparent receive addresses: {e}")))?;
-        for address in &mut external_addresses {
-            address.address =
-                transparent_address_for_query(&address.address, network, query_network)
-                    .map_err(SyncError::parse)?;
-        }
         let external_batches = match transparent_receive_cache::plan_external_utxo_refresh(
             db_data_path,
             network,
@@ -1698,7 +1672,7 @@ async fn refresh_utxos(
                 .filter(|(_, meta)| meta.scope() == Some(TransparentKeyScope::INTERNAL))
                 .map(|(addr, meta)| {
                     meta.address_index()
-                        .map(|index| (index.index(), addr.encode(&query_network)))
+                        .map(|index| (index.index(), addr.encode(&network)))
                         .ok_or_else(|| SyncError::db("Ledger internal address has no child index"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -1739,7 +1713,7 @@ async fn refresh_utxos(
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
             .map(|(addr, metadata)| {
-                let query_address = addr.encode(&query_network);
+                let query_address = addr.encode(&network);
                 if metadata.scope() == Some(TransparentKeyScope::INTERNAL) {
                     internal_addresses.insert(query_address.clone());
                 }
@@ -6178,7 +6152,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn first_batch_of_a_rounded_mainnet_birthday_needs_no_tree_state_request() {
         use zcash_client_backend::proto::compact_formats::{ChainMetadata, CompactBlock};

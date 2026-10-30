@@ -13,7 +13,7 @@ import '../src/app_bootstrap.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/features/address_book/models/address_book_contact.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
-import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import '../src/features/migration/providers/ironwood_migration_state_provider.dart';
 import '../src/features/send/models/send_prefill_args.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
 import '../src/features/send/screens/send_screen.dart';

@@ -37,10 +37,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Mutex, OnceLock,
-};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Instant;
 
@@ -364,7 +361,7 @@ struct BuiltImmediateMigration {
 }
 
 #[derive(Clone, Copy)]
-struct MigrationBroadcastPolicy<'a> {
+struct MigrationBroadcastPolicy {
     max_per_step: Option<usize>,
     max_proofs_per_step: Option<usize>,
     defer_broadcast_after_proving: bool,
@@ -379,17 +376,15 @@ struct MigrationBroadcastPolicy<'a> {
     /// wallet-open tip guarantees every part of the on-open overdue set is
     /// redrawn by the single fallback acceptance.
     wallet_overdue_redraw_floor: Option<u32>,
-    cancel: Option<&'a AtomicBool>,
 }
 
-impl MigrationBroadcastPolicy<'_> {
+impl MigrationBroadcastPolicy {
     const FOREGROUND: Self = Self {
         max_per_step: None,
         max_proofs_per_step: None,
         defer_broadcast_after_proving: false,
         reschedule_wallet_overdue: false,
         wallet_overdue_redraw_floor: None,
-        cancel: None,
     };
 
     const ONE_FOREGROUND: Self = Self {
@@ -398,7 +393,6 @@ impl MigrationBroadcastPolicy<'_> {
         defer_broadcast_after_proving: false,
         reschedule_wallet_overdue: true,
         wallet_overdue_redraw_floor: None,
-        cancel: None,
     };
 
     fn with_wallet_overdue_redraw_floor(self, floor: Option<u32>) -> Self {
@@ -406,22 +400,6 @@ impl MigrationBroadcastPolicy<'_> {
             wallet_overdue_redraw_floor: floor,
             ..self
         }
-    }
-
-    fn background_preparation(cancel: &AtomicBool) -> MigrationBroadcastPolicy<'_> {
-        MigrationBroadcastPolicy {
-            max_per_step: None,
-            max_proofs_per_step: None,
-            defer_broadcast_after_proving: false,
-            reschedule_wallet_overdue: false,
-            wallet_overdue_redraw_floor: None,
-            cancel: Some(cancel),
-        }
-    }
-
-    fn is_cancelled(self) -> bool {
-        self.cancel
-            .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
     }
 
     fn limit(self, total: usize) -> usize {
@@ -3122,79 +3100,6 @@ fn any_migration_proof_candidate_ready<T>(
     Ok(false)
 }
 
-/// Advances only the denomination preparation graph for an existing migration.
-///
-/// This deliberately stops at `ready_to_migrate`: child proof creation stays
-/// in the foreground, while prepared migration transaction broadcast belongs
-/// to the separate mobile outbox lane.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn advance_orchard_migration_preparation_for_run(
-    db_path: &str,
-    lightwalletd_url: &str,
-    network: WalletNetwork,
-    account_uuid: &str,
-    expected_run_id: &str,
-    pending_password: zeroize::Zeroizing<Vec<u8>>,
-    pending_salt_base64: &str,
-    cancel: &AtomicBool,
-) -> Result<IronwoodMigrationResult, String> {
-    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
-        return Err("Ironwood migration preparation has no active run".to_string());
-    };
-    if run.run_id != expected_run_id {
-        return Err("Ironwood migration preparation run changed".to_string());
-    }
-
-    if run.phase != super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS {
-        return Ok(IronwoodMigrationResult {
-            txids: String::new(),
-            status: run.phase.clone(),
-            broadcasted_count: 0,
-            total_count: run.target_values_zatoshi.len() as u32,
-            message: None,
-            fee_zatoshi: 0,
-            migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
-        });
-    }
-
-    match advance_staged_denomination_run(
-        db_path,
-        lightwalletd_url,
-        network,
-        account_uuid,
-        &run,
-        pending_password.as_slice(),
-        pending_salt_base64,
-        MigrationBroadcastPolicy::background_preparation(cancel),
-    )
-    .await?
-    {
-        StagedDenominationAdvance::Waiting(result) => Ok(result),
-        StagedDenominationAdvance::Ready => {
-            let timing_policy =
-                super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
-            let proof_ready_height = super::migration::prepared_notes_proof_ready_height(
-                db_path,
-                &run.run_id,
-                network,
-                timing_policy,
-            )?
-            .ok_or("Prepared denomination notes are missing their mined height")?;
-            super::migration::set_proof_retry_height(db_path, &run.run_id, proof_ready_height)?;
-            Ok(IronwoodMigrationResult {
-                txids: String::new(),
-                status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
-                broadcasted_count: 0,
-                total_count: run.target_values_zatoshi.len() as u32,
-                message: None,
-                fee_zatoshi: 0,
-                migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
-            })
-        }
-    }
-}
-
 pub async fn broadcast_due_orchard_migration_transactions(
     db_path: &str,
     lightwalletd_url: &str,
@@ -3246,7 +3151,7 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     account_uuid: &str,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
     pending_salt_base64: &str,
-    policy: MigrationBroadcastPolicy<'_>,
+    policy: MigrationBroadcastPolicy,
 ) -> Result<MigrationBroadcastAdvance, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
@@ -3262,12 +3167,6 @@ async fn broadcast_due_orchard_migration_transactions_inner(
             },
         ));
     };
-    if policy.is_cancelled() {
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            cancelled_migration_result(&run),
-        ));
-    }
-
     // Reconcile chain changes before deciding whether an already-scheduled
     // child is still valid. Independent due children should not miss their
     // broadcast height while another denomination branch is still advancing.
@@ -5541,7 +5440,7 @@ fn finalize_presigned_migration_children(
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
-    policy: MigrationBroadcastPolicy<'_>,
+    policy: MigrationBroadcastPolicy,
 ) -> Result<usize, String> {
     if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
         return Ok(0);
@@ -5622,9 +5521,6 @@ fn finalize_presigned_migration_children(
     let mut deferred_child_seen = false;
     let mut stopped_at_proof_limit = false;
     for (child_index, child) in signed_children.into_iter().enumerate() {
-        if policy.is_cancelled() {
-            break;
-        }
         if finalized_count >= proof_limit {
             stopped_at_proof_limit = true;
             break;
@@ -5737,7 +5633,7 @@ fn finalize_presigned_migration_children(
     }
 
     let remaining_signed_child_count = super::migration::signed_child_pczt_count(db_path, run_id)?;
-    if remaining_signed_child_count > 0 && !policy.is_cancelled() {
+    if remaining_signed_child_count > 0 {
         let mut retry_height = super::migration::next_anchor_retry_height_after(
             network,
             timing_policy,
@@ -5768,7 +5664,7 @@ fn finalize_ready_denomination_stages(
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
-    policy: MigrationBroadcastPolicy<'_>,
+    policy: MigrationBroadcastPolicy,
 ) -> Result<usize, String> {
     let stages = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -5793,7 +5689,7 @@ fn finalize_ready_denomination_stages(
         .iter()
         .filter(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
     {
-        if policy.is_cancelled() || promoted_count >= proof_limit {
+        if promoted_count >= proof_limit {
             break;
         }
         let Some((anchor, witnesses)) = (match orchard_anchor_and_witnesses_for_denomination_inputs(
@@ -5945,7 +5841,7 @@ async fn broadcast_pending_denomination_stages(
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
-    policy: MigrationBroadcastPolicy<'_>,
+    policy: MigrationBroadcastPolicy,
 ) -> Result<Option<CreatedBroadcastResult>, String> {
     let progress = super::get_sync_progress(db_path, network)?;
     let scanned_height = u32::try_from(progress.scanned_height)
@@ -5995,18 +5891,6 @@ async fn broadcast_pending_denomination_stages(
         ) == DenominationStageBroadcastReadiness::Ready
     }) {
         return Ok(None);
-    }
-    if policy.is_cancelled() {
-        return Ok(Some(CreatedBroadcastResult {
-            broadcast_failure_kind: None,
-            txids,
-            status: CreatedBroadcastResult::PENDING_BROADCAST,
-            broadcasted_count: 0,
-            total_count,
-            message: Some(
-                "Background migration stopped before denomination broadcast.".to_string(),
-            ),
-        }));
     }
     let live_chain_tip_height = match live_chain_tip_height(lightwalletd_url).await {
         Ok(height) => height,
@@ -6067,9 +5951,6 @@ async fn broadcast_pending_denomination_stages(
         };
     for stage in due.into_iter().take(broadcast_limit) {
         let stage_was_overdue = stage.effective_broadcast_height() < chain_tip_height;
-        if policy.is_cancelled() {
-            break;
-        }
         super::migration::mark_denomination_broadcast_attempted(
             db_path,
             run_id,
@@ -6159,23 +6040,23 @@ async fn broadcast_pending_denomination_stages(
         },
         broadcasted_count,
         total_count,
-        message: Some(if policy.is_cancelled() {
-            "Background migration stopped before the next denomination broadcast.".to_string()
-        } else if broadcasted_count < total_count
-            && (policy.max_per_step.is_some()
-                || preparation_timing_policy
-                    == super::migration::PreparationTimingPolicy::Zip318Spaced)
-        {
-            "One denomination stage was submitted. Remaining stages will continue on later migration advances."
+        message: Some(
+            if broadcasted_count < total_count
+                && (policy.max_per_step.is_some()
+                    || preparation_timing_policy
+                        == super::migration::PreparationTimingPolicy::Zip318Spaced)
+            {
+                "One denomination stage was submitted. Remaining stages will continue on later migration advances."
                 .to_string()
-        } else if total_count == 1 {
-            "Denomination split stage was created. Migration will continue after confirmation."
-                .to_string()
-        } else {
-            format!(
+            } else if total_count == 1 {
+                "Denomination split stage was created. Migration will continue after confirmation."
+                    .to_string()
+            } else {
+                format!(
                 "{total_count} independent denomination split stages were created. Migration will continue after confirmation."
             )
-        }),
+            },
+        ),
     }))
 }
 
@@ -6188,7 +6069,7 @@ async fn broadcast_due_scheduled_migration_txs(
     pending_salt_base64: &str,
     fallback_total_count: u32,
     fallback_migrated_zatoshi: u64,
-    policy: MigrationBroadcastPolicy<'_>,
+    policy: MigrationBroadcastPolicy,
 ) -> Result<MigrationBroadcastAdvance, String> {
     let totals_before = super::migration::pending_totals_for_run(db_path, run_id)?;
     if totals_before.total_count == 0 {
@@ -6330,30 +6211,9 @@ async fn broadcast_due_scheduled_migration_txs(
             ),
         ));
     }
-    if policy.is_cancelled() {
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            migration_result_from_pending_totals(
-                totals_before,
-                super::migration::PHASE_BROADCAST_SCHEDULED,
-                Some("Background migration stopped before the next broadcast.".to_string()),
-                fallback_total_count,
-                fallback_migrated_zatoshi,
-            ),
-        ));
-    }
-
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
     let mut accepted_txids = Vec::new();
     for pending in due.into_iter().take(policy.limit(usize::MAX)) {
-        if policy.is_cancelled() {
-            super::migration::mark_run_phase(
-                db_path,
-                run_id,
-                super::migration::PHASE_BROADCAST_SCHEDULED,
-                Some("Background migration stopped before the next broadcast."),
-            )?;
-            break;
-        }
         super::migration::mark_pending_broadcast_attempted(db_path, run_id, &pending.txid_hex)?;
         if let Err(e) = broadcast_raw_transaction_isolated(lightwalletd_url, &pending.raw_tx).await
         {

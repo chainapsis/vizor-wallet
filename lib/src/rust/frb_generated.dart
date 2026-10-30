@@ -13483,13 +13483,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return ChainUpgradeActivationStatus(
       network: dco_decode_String(arr[0]),
       tipHeight: dco_decode_u_64(arr[1]),
-      nu63ActivationHeight: dco_decode_opt_box_autoadd_u_64(arr[2]),
-      ironwoodActiveAtTip: dco_decode_bool(arr[3]),
+      ironwoodActiveAtTip: dco_decode_bool(arr[2]),
     );
   }
 
@@ -13497,20 +13496,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ChainUpgradeStatus dco_decode_chain_upgrade_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return ChainUpgradeStatus(
       network: dco_decode_String(arr[0]),
-      lightwalletdChainName: dco_decode_String(arr[1]),
-      tipHeight: dco_decode_u_64(arr[2]),
-      lightwalletdReportedHeight: dco_decode_u_64(arr[3]),
-      lightwalletdEstimatedHeight: dco_decode_u_64(arr[4]),
-      lightwalletdConsensusBranchId: dco_decode_String(arr[5]),
-      lightwalletdUpgradeName: dco_decode_String(arr[6]),
-      lightwalletdUpgradeHeight: dco_decode_u_64(arr[7]),
-      nu63ActivationHeight: dco_decode_opt_box_autoadd_u_64(arr[8]),
-      ironwoodActiveAtTip: dco_decode_bool(arr[9]),
-      endpointMatchesNetwork: dco_decode_bool(arr[10]),
+      tipHeight: dco_decode_u_64(arr[1]),
+      ironwoodActiveAtTip: dco_decode_bool(arr[2]),
     );
   }
 
@@ -17977,14 +17968,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_network = sse_decode_String(deserializer);
     var var_tipHeight = sse_decode_u_64(deserializer);
-    var var_nu63ActivationHeight = sse_decode_opt_box_autoadd_u_64(
-      deserializer,
-    );
     var var_ironwoodActiveAtTip = sse_decode_bool(deserializer);
     return ChainUpgradeActivationStatus(
       network: var_network,
       tipHeight: var_tipHeight,
-      nu63ActivationHeight: var_nu63ActivationHeight,
       ironwoodActiveAtTip: var_ironwoodActiveAtTip,
     );
   }
@@ -17995,30 +17982,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_network = sse_decode_String(deserializer);
-    var var_lightwalletdChainName = sse_decode_String(deserializer);
     var var_tipHeight = sse_decode_u_64(deserializer);
-    var var_lightwalletdReportedHeight = sse_decode_u_64(deserializer);
-    var var_lightwalletdEstimatedHeight = sse_decode_u_64(deserializer);
-    var var_lightwalletdConsensusBranchId = sse_decode_String(deserializer);
-    var var_lightwalletdUpgradeName = sse_decode_String(deserializer);
-    var var_lightwalletdUpgradeHeight = sse_decode_u_64(deserializer);
-    var var_nu63ActivationHeight = sse_decode_opt_box_autoadd_u_64(
-      deserializer,
-    );
     var var_ironwoodActiveAtTip = sse_decode_bool(deserializer);
-    var var_endpointMatchesNetwork = sse_decode_bool(deserializer);
     return ChainUpgradeStatus(
       network: var_network,
-      lightwalletdChainName: var_lightwalletdChainName,
       tipHeight: var_tipHeight,
-      lightwalletdReportedHeight: var_lightwalletdReportedHeight,
-      lightwalletdEstimatedHeight: var_lightwalletdEstimatedHeight,
-      lightwalletdConsensusBranchId: var_lightwalletdConsensusBranchId,
-      lightwalletdUpgradeName: var_lightwalletdUpgradeName,
-      lightwalletdUpgradeHeight: var_lightwalletdUpgradeHeight,
-      nu63ActivationHeight: var_nu63ActivationHeight,
       ironwoodActiveAtTip: var_ironwoodActiveAtTip,
-      endpointMatchesNetwork: var_endpointMatchesNetwork,
     );
   }
 
@@ -23448,7 +23417,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.network, serializer);
     sse_encode_u_64(self.tipHeight, serializer);
-    sse_encode_opt_box_autoadd_u_64(self.nu63ActivationHeight, serializer);
     sse_encode_bool(self.ironwoodActiveAtTip, serializer);
   }
 
@@ -23459,16 +23427,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.network, serializer);
-    sse_encode_String(self.lightwalletdChainName, serializer);
     sse_encode_u_64(self.tipHeight, serializer);
-    sse_encode_u_64(self.lightwalletdReportedHeight, serializer);
-    sse_encode_u_64(self.lightwalletdEstimatedHeight, serializer);
-    sse_encode_String(self.lightwalletdConsensusBranchId, serializer);
-    sse_encode_String(self.lightwalletdUpgradeName, serializer);
-    sse_encode_u_64(self.lightwalletdUpgradeHeight, serializer);
-    sse_encode_opt_box_autoadd_u_64(self.nu63ActivationHeight, serializer);
     sse_encode_bool(self.ironwoodActiveAtTip, serializer);
-    sse_encode_bool(self.endpointMatchesNetwork, serializer);
   }
 
   @protected

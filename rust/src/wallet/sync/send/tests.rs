@@ -1063,7 +1063,6 @@ fn foreground_migration_policy_keeps_existing_batch_behavior() {
     assert_eq!(MigrationBroadcastPolicy::FOREGROUND.limit(500), 500);
     assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(500), 500);
     assert!(!MigrationBroadcastPolicy::FOREGROUND.should_defer_broadcast(500));
-    assert!(!MigrationBroadcastPolicy::FOREGROUND.is_cancelled());
 }
 
 #[test]
@@ -1312,7 +1311,6 @@ fn on_open_migration_policy_sends_at_most_one_due_transaction() {
     );
     assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.should_defer_broadcast(500));
     assert!(MigrationBroadcastPolicy::ONE_FOREGROUND.reschedule_wallet_overdue);
-    assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.is_cancelled());
 }
 
 #[test]

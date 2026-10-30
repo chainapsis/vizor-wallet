@@ -1030,7 +1030,6 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
 /// outpoint, or txid. The follow-up does not raise the wallet, so it sends the
 /// service nothing, creates no companion, and reports nothing again. The
 /// queued work stays durable.
-#[cfg(not(ironwood_masquerade))]
 #[tokio::test(flavor = "multi_thread")]
 async fn private_queries_discloses_nothing_before_it_raises_the_wallet() {
     use crate::api::wallet::{

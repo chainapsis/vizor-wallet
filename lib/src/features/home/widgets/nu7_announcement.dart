@@ -18,7 +18,7 @@ class Nu7AnnouncementContent extends StatelessWidget {
 
   final VoidCallback onClose;
 
-  /// Desktop sizing, matching the Ironwood announcement modal.
+  /// Desktop sizing.
   final bool compact;
 
   @override
@@ -83,8 +83,7 @@ class Nu7AnnouncementContent extends StatelessWidget {
   }
 }
 
-/// Desktop card around [Nu7AnnouncementContent], as wide as the Ironwood
-/// announcement modal.
+/// Desktop card around [Nu7AnnouncementContent].
 class Nu7AnnouncementModal extends StatelessWidget {
   const Nu7AnnouncementModal({required this.onClose, super.key});
 
@@ -199,8 +198,8 @@ class _Nu7AnnouncementOverlayState extends State<Nu7AnnouncementOverlay>
 class _Nu7AnnouncementHeader extends ConsumerWidget {
   const _Nu7AnnouncementHeader({required this.onClose, required this.compact});
 
-  // The logo's bounds in the Figma header. The compact header matches the
-  // Ironwood modal's 154 hero with the logo scaled to the narrower card.
+  // The logo's bounds in the Figma header. The compact header has a 154 hero
+  // with the logo scaled to the narrower card.
   static const _logoAspect = 241 / 99;
 
   final VoidCallback onClose;

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
@@ -64,12 +64,13 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
+          find.byKey(
+            const ValueKey('home_desktop_ironwood_migration_cta_button'),
+          ),
         ),
-        description: 'Ironwood announcement after activation',
+        description: 'migration CTA after activation',
         timeout: const Duration(minutes: 5),
       );
-      await dismissIronwoodAnnouncement(tester);
       await openPrivateMigrationReview(tester);
 
       e2eLog('stopping lightwalletd before migration authorization');
