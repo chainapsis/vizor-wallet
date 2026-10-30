@@ -28,7 +28,7 @@ use zakura_pir_client::transparent::{
     HttpExchange, HttpFailure, HttpMethod, HttpReply, HttpRequest,
 };
 
-use super::{routed_response, secure_endpoint_uri, RoutedHttpError, RoutedTransport};
+use super::{routed_response, secure_endpoint_uri, RoutedHttpError, RoutedTransport, HTTP_TIMEOUT};
 use crate::wallet::sync_engine::{watch_for_exit, SyncError};
 
 /// The `x-txid-map-sha256` header the txid display map carries.
@@ -140,6 +140,7 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
                 request.body.clone(),
                 should_exit,
                 &self.route.direct,
+                HTTP_TIMEOUT,
             )
             .await
             .map_err(|error| match error {
