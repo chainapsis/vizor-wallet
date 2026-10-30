@@ -11887,12 +11887,10 @@ impl SseDecode for crate::api::wallet::ChainUpgradeActivationStatus {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_network = <String>::sse_decode(deserializer);
         let mut var_tipHeight = <u64>::sse_decode(deserializer);
-        let mut var_nu63ActivationHeight = <Option<u64>>::sse_decode(deserializer);
         let mut var_ironwoodActiveAtTip = <bool>::sse_decode(deserializer);
         return crate::api::wallet::ChainUpgradeActivationStatus {
             network: var_network,
             tip_height: var_tipHeight,
-            nu6_3_activation_height: var_nu63ActivationHeight,
             ironwood_active_at_tip: var_ironwoodActiveAtTip,
         };
     }
@@ -11902,28 +11900,12 @@ impl SseDecode for crate::api::wallet::ChainUpgradeStatus {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_network = <String>::sse_decode(deserializer);
-        let mut var_lightwalletdChainName = <String>::sse_decode(deserializer);
         let mut var_tipHeight = <u64>::sse_decode(deserializer);
-        let mut var_lightwalletdReportedHeight = <u64>::sse_decode(deserializer);
-        let mut var_lightwalletdEstimatedHeight = <u64>::sse_decode(deserializer);
-        let mut var_lightwalletdConsensusBranchId = <String>::sse_decode(deserializer);
-        let mut var_lightwalletdUpgradeName = <String>::sse_decode(deserializer);
-        let mut var_lightwalletdUpgradeHeight = <u64>::sse_decode(deserializer);
-        let mut var_nu63ActivationHeight = <Option<u64>>::sse_decode(deserializer);
         let mut var_ironwoodActiveAtTip = <bool>::sse_decode(deserializer);
-        let mut var_endpointMatchesNetwork = <bool>::sse_decode(deserializer);
         return crate::api::wallet::ChainUpgradeStatus {
             network: var_network,
-            lightwalletd_chain_name: var_lightwalletdChainName,
             tip_height: var_tipHeight,
-            lightwalletd_reported_height: var_lightwalletdReportedHeight,
-            lightwalletd_estimated_height: var_lightwalletdEstimatedHeight,
-            lightwalletd_consensus_branch_id: var_lightwalletdConsensusBranchId,
-            lightwalletd_upgrade_name: var_lightwalletdUpgradeName,
-            lightwalletd_upgrade_height: var_lightwalletdUpgradeHeight,
-            nu6_3_activation_height: var_nu63ActivationHeight,
             ironwood_active_at_tip: var_ironwoodActiveAtTip,
-            endpoint_matches_network: var_endpointMatchesNetwork,
         };
     }
 }
@@ -17900,7 +17882,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::ChainUpgradeActivatio
         [
             self.network.into_into_dart().into_dart(),
             self.tip_height.into_into_dart().into_dart(),
-            self.nu6_3_activation_height.into_into_dart().into_dart(),
             self.ironwood_active_at_tip.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -17922,24 +17903,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::ChainUpgradeStatus {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.network.into_into_dart().into_dart(),
-            self.lightwalletd_chain_name.into_into_dart().into_dart(),
             self.tip_height.into_into_dart().into_dart(),
-            self.lightwalletd_reported_height
-                .into_into_dart()
-                .into_dart(),
-            self.lightwalletd_estimated_height
-                .into_into_dart()
-                .into_dart(),
-            self.lightwalletd_consensus_branch_id
-                .into_into_dart()
-                .into_dart(),
-            self.lightwalletd_upgrade_name.into_into_dart().into_dart(),
-            self.lightwalletd_upgrade_height
-                .into_into_dart()
-                .into_dart(),
-            self.nu6_3_activation_height.into_into_dart().into_dart(),
             self.ironwood_active_at_tip.into_into_dart().into_dart(),
-            self.endpoint_matches_network.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -22341,7 +22306,6 @@ impl SseEncode for crate::api::wallet::ChainUpgradeActivationStatus {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.network, serializer);
         <u64>::sse_encode(self.tip_height, serializer);
-        <Option<u64>>::sse_encode(self.nu6_3_activation_height, serializer);
         <bool>::sse_encode(self.ironwood_active_at_tip, serializer);
     }
 }
@@ -22350,16 +22314,8 @@ impl SseEncode for crate::api::wallet::ChainUpgradeStatus {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.network, serializer);
-        <String>::sse_encode(self.lightwalletd_chain_name, serializer);
         <u64>::sse_encode(self.tip_height, serializer);
-        <u64>::sse_encode(self.lightwalletd_reported_height, serializer);
-        <u64>::sse_encode(self.lightwalletd_estimated_height, serializer);
-        <String>::sse_encode(self.lightwalletd_consensus_branch_id, serializer);
-        <String>::sse_encode(self.lightwalletd_upgrade_name, serializer);
-        <u64>::sse_encode(self.lightwalletd_upgrade_height, serializer);
-        <Option<u64>>::sse_encode(self.nu6_3_activation_height, serializer);
         <bool>::sse_encode(self.ironwood_active_at_tip, serializer);
-        <bool>::sse_encode(self.endpoint_matches_network, serializer);
     }
 }
 
