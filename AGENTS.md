@@ -1014,7 +1014,7 @@ Restores are the discovery import
 (`import_hardware_account`). Newly created accounts (`create_wallet`,
 `add_account`, and `import_wallet` from onboarding's reveal-then-confirm
 flow), payment-link claims (`import_wallet`), and Gift Card observers keep the
-exact height; testnet, regtest, and masquerade builds are unchanged. Code that queries lightwalletd from a restored birthday must use the
+exact height; testnet and regtest are unchanged. Code that queries lightwalletd from a restored birthday must use the
 rounded value, never the exact requested height. The weekly
 `update-mainnet-chain-tables.yml` workflow appends checkpoints.
 

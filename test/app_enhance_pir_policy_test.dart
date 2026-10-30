@@ -76,7 +76,6 @@ void main() {
     () => TransparentPolicyStartup.current = const TransparentPolicyStartup(),
   );
 
-  // Masquerade builds never enable the production service.
   final available = isEnhancePirAvailableForNetwork('main');
 
   for (final kind in AppBootstrapFailureKind.values) {

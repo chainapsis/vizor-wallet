@@ -70,11 +70,9 @@ pub(crate) struct BlockTimePoint {
 
 /// Whether the compiled-in table describes `network`'s chain.
 ///
-/// Only real mainnet qualifies. Ironwood masquerade builds run a private test
-/// chain under the `main` name, so its heights and times are unrelated to the
-/// table.
+/// Only mainnet qualifies.
 pub(crate) fn table_covers(network: WalletNetwork) -> bool {
-    network == WalletNetwork::Main && !cfg!(ironwood_masquerade)
+    network == WalletNetwork::Main
 }
 
 fn table_point(index: usize) -> BlockTimePoint {
@@ -341,24 +339,11 @@ mod tests {
         }
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn table_covers_only_real_mainnet() {
         assert!(table_covers(WalletNetwork::Main));
         assert!(!table_covers(WalletNetwork::Test));
         assert!(!table_covers(WalletNetwork::Regtest));
-    }
-
-    #[cfg(ironwood_masquerade)]
-    #[test]
-    fn masquerade_builds_never_use_the_table() {
-        for network in [
-            WalletNetwork::Main,
-            WalletNetwork::Test,
-            WalletNetwork::Regtest,
-        ] {
-            assert!(!table_covers(network));
-        }
     }
 
     #[test]

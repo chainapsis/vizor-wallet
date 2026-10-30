@@ -1077,7 +1077,6 @@ mod tests {
 
             // A private preference on mainnet routes the status work privately,
             // and the public ABI refuses it.
-            #[cfg(not(ironwood_masquerade))]
             {
                 let (_main_dir, main_path) = wallet(WalletNetwork::Main);
                 let url = lwd.url.clone();
