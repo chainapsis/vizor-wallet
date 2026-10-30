@@ -377,7 +377,7 @@ mod tests {
             }
         }
         const WINDOW: usize = 12;
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let mut files = Vec::new();
         walk(&root, &mut files);
         let mut ungated = Vec::new();

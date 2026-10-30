@@ -306,7 +306,7 @@ mod tests {
     /// Shared with `test/core/logging/log_redaction_test.dart`.
     const VECTORS: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../test/fixtures/log_redaction_vectors.json"
+        "/../../../test/fixtures/log_redaction_vectors.json"
     );
 
     #[derive(serde::Deserialize)]

@@ -4,235 +4,53 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
+path = "src/facade.rs"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+# Keep the native package as the artifact boundary. Runtime dependencies
+# belong to the implementation crate. FRB remains here for codegen.
 [dependencies]
-zakura-pir-protocol = { version = "=0.0.1-rc3", default-features = false, features = ["http-endpoint"] }
-zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
-zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
-zakura-pir-client = { version = "=0.0.1-rc3", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
-zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
-flutter_rust_bridge = "=2.11.1"
+vizor_wallet_impl = { package = "vizor-wallet-implementation", path = "src/implementation" }
+flutter_rust_bridge = { workspace = true }
 
-zcash_script = "0.6"
-voting-crypto-deps = "=0.4.0"
-sapling-crypto = { package = "zakura-sapling-crypto", version = "=4.0.0", default-features = false, features = ["circuit"] }
-uuid = "1.1"
-zip32 = "0.2"
-pasta_curves = { package = "zakura-pasta-curves", version = "=4.0.0" }
-ff = "0.14"
-# Required by no-op Sapling prover trait impls
-jubjub = { package = "zakura-jubjub", version = "=4.0.0" }
-bls12_381 = { package = "zakura-bls12-381", version = "=4.0.0" }
-rand_core = "0.6"
-secp256k1 = "0.33"
-
-# Key generation
-bip0039 = "0.12"
-
-# Serialization
-nonempty = "0.11"
-minicbor = "0.19"
-prost = "0.14"
-incrementalmerkletree = "0.8"
-shardtree = "0.7"
-
-# Security
-secrecy = "0.8"
-zeroize = "1"
-aes = { version = "0.8", features = ["zeroize"] }
-aes-gcm = { version = "0.10", features = ["zeroize"] }
-base64 = "0.22"
-pbkdf2 = "0.12"
-serde = { version = "1", features = ["derive"] }
-sha2 = "0.10"
-
-# Random number generation
-rand = "0.8"
-
-# Async runtime & gRPC
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
-futures = "0.3"
-tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
-bytes = "1"
-http = "1"
-http-body = "1"
-http-body-util = "0.1"
-hyper = "1"
-hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "tls12", "webpki-roots"] }
-hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
-tower-service = "0.3"
-time = "0.3"
-# rustls is in the graph transitively via tonic; make it a direct dep
-# so we can explicitly install the ring CryptoProvider in `init_app`.
-# Without an explicit provider install, rustls 0.23+ panics the first
-# TLS handshake with "no process-level CryptoProvider installed".
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
-
-# SQLite (re-exported by zcash_client_sqlite but needed for Connection type)
-rusqlite = "0.37"
-redb = "4.1.0"
-# Bind explicit public detail loads to the existing physical wallet file.
-same-file = "1.0.6"
-
-# Logging. `log_redaction` installs the process logger, which masks
-# identifiers and forwards to the backend FRB's default utils would install.
-log = "0.4"
-regex = "1"
-
-# Hex encoding
-hex = "0.4"
-
-# Keystone hardware wallet
-ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
-serde_json = "1"
-url = "2.5.8"
-# Vote-store proofs use SHA-256 through our existing sha2 dependency.
-# ICS23 defaults add unrelated hashes and protobuf JSON support.
-ics23 = { version = "0.12", default-features = false }
-prost13 = { package = "prost", version = "0.13" }
-tendermint = "0.40.4"
-tendermint-light-client-verifier = "0.40.4"
-
-# Zcash core. Package names are the Zakura forks; lib names stay upstream so
-# `use orchard` / `use zcash_client_backend` keep working.
-[dependencies.zcash_primitives]
-package = "zakura-primitives"
-version = "=4.0.0"
-features = ["non-standard-fees"]
-
-[dependencies.zcash_address]
-package = "zakura-address"
-version = "=4.0.0"
-
-[dependencies.zcash_keys]
-package = "zakura-keys"
-version = "=4.0.0"
-features = ["orchard"]
-
-[dependencies.zcash_protocol]
-package = "zakura-protocol"
-version = "=4.0.0"
-
-[dependencies.transparent]
-package = "zakura-transparent"
-version = "=4.0.0"
-
-[dependencies.zcash_client_backend]
-package = "zakura-client-backend"
-version = "=0.1.0-rc9.4"
-features = [
-    "orchard",
-    "transparent-inputs",
-    "lightwalletd-tonic",
-    "lightwalletd-tonic-tls-webpki-roots",
-    "tor",
-    "sync",
-    "pczt",
-]
-
-[dependencies.zcash_client_sqlite]
-package = "zakura-client-sqlite"
-version = "=0.1.0-rc9.4"
-features = ["orchard", "transparent-inputs", "unstable", "serde"]
-
-[dependencies.zcash_voting]
-version = "=5.2.0-rc.2"
-
-[dependencies.orchard]
-package = "zakura-orchard"
-version = "=4.0.0"
-# Cargo unifies this feature with wallet-library Orchard and Ironwood tree hashing.
-features = ["weighted-merkle"]
-
-[dependencies.zcash_proofs]
-package = "zakura-proofs"
-version = "=4.0.0"
-features = ["local-prover"]
-
-[dependencies.pczt]
-package = "zakura-pczt"
-version = "=0.1.0-rc9"
-features = [
-    "orchard",
-    "io-finalizer",
-    "prover",
-    "signer",
-    "spend-finalizer",
-    "tx-extractor",
-    "zcp-builder",
-]
-
-[dependencies.ur-registry]
-git = "https://github.com/valargroup/keystone-sdk-rust.git"
-rev = "c2119436f5246be05b1ba877a7e6b63f51c01339"
-package = "ur-registry"
-default-features = false
-features = ["std"]
-
-# The platform log backends FRB 2.11.1 uses, at the versions it already pulls in.
-[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
-oslog = "0.2.0"
-
-[target.'cfg(target_os = "android")'.dependencies]
-android_logger = "0.15"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = { version = "3.7", features = ["OSX_10_15"] }
-
-[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
-ledger-transport = "0.11.0"
-ledger-transport-hid = "0.11.0"
-
+# Existing examples/integration tests retain their direct imports and
+# original test-only feature edges. Unit tests live in core.
 [dev-dependencies]
-hyper = { version = "1", features = ["server", "http2"] }
-# Deterministic signatures for validator-rotation verification tests.
-ed25519-consensus = "2.1"
-tempfile = "3"
-hex = "0.4"
-
-# Integration tests inject/inspect scan_queue rows directly to exercise the
-# VZR-89 rescue path. Keep this version aligned with the [dependencies] entry.
-rusqlite = "0.37"
-# The scripted PIR probe transport builds the same typed failure the real
-# transport attaches, and pauses time so the probe deadline is exercised
-# without waiting on it. Both are already in the graph.
-anyhow = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
-# The transparent PIR privacy tests match requests against the service routes
-# with the library's own expression. Already in the graph.
-regex = "1"
-
-# Builds wallets through real private recovery for the history mapping tests.
-[dev-dependencies.zcash_client_sqlite]
-package = "zakura-client-sqlite"
-version = "=0.1.0-rc9.4"
-features = ["test-dependencies"]
-
-[dev-dependencies.zcash_client_backend]
-package = "zakura-client-backend"
-version = "=0.1.0-rc9.4"
-features = ["test-dependencies"]
-
-[dev-dependencies.zcash_voting]
-version = "=5.2.0-rc.2"
-features = ["test-fixtures"]
-
-# Real adapter batches for the coordinator's fixture source, the fake txid
-# display publication the loop-4 tests serve, and a real shard service in
-# process. Keep the version aligned with the runtime dependency above.
-[dev-dependencies.zakura-pir-client]
-version = "=0.0.1-rc3"
-default-features = false
-features = ["testing"]
-
-[dev-dependencies.ipir-sp]
-version = "=0.1.0-rc.7"
-
-[dev-dependencies.vote-commitment-tree]
-version = "=0.8.0"
-default-features = false
-features = ["zakura"]
+anyhow = { workspace = true }
+bip0039 = { workspace = true }
+ed25519-consensus = { workspace = true }
+hex = { workspace = true }
+hyper = { workspace = true, features = ["server", "http2"] }
+ipir-sp = { workspace = true }
+orchard = { workspace = true }
+pczt = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+rusqlite = { workspace = true }
+secp256k1 = { workspace = true }
+secrecy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+shardtree = { workspace = true }
+tempfile = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "time"] }
+transparent = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+vote-commitment-tree = { workspace = true }
+voting-crypto-deps = { workspace = true }
+zakura-pir-client = { workspace = true, features = ["testing"] }
+zcash_address = { workspace = true }
+zcash_client_backend = { workspace = true, features = ["test-dependencies"] }
+zcash_client_sqlite = { workspace = true, features = ["test-dependencies"] }
+zcash_keys = { workspace = true }
+zcash_note_encryption = { workspace = true }
+zcash_primitives = { workspace = true }
+zcash_protocol = { workspace = true }
+zcash_voting = { workspace = true, features = ["test-fixtures"] }
+zip32 = { workspace = true }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
@@ -277,3 +95,48 @@ zakura-pir-query-server = { git = "https://github.com/zakura-core/wallet-librari
 zakura-pir-server-core = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
 # The library above takes `ipir-sp` from git. Keep the app's test evaluator on that source.
 ipir-sp = { git = "https://github.com/valargroup/ipir-sp", rev = "5ea080a3281a01c5459f585e0a1bbbde50ec2bd2" }
+
+[workspace]
+members = ["src/implementation"]
+default-members = [".", "src/implementation"]
+resolver = "2"
+
+# Shared core/test/example versions and production feature baselines.
+# Add dev-only features at the member edge, not to this shared table.
+[workspace.dependencies]
+anyhow = "1"
+bip0039 = "0.12"
+ed25519-consensus = "2.1"
+flutter_rust_bridge = "=2.11.1"
+hex = "0.4"
+hyper = "1"
+ipir-sp = { version = "=0.1.0-rc.7" }
+orchard = { package = "zakura-orchard", version = "=4.0.0", features = ["weighted-merkle"] }
+pczt = { package = "zakura-pczt", version = "=0.1.0-rc9", features = ["orchard", "io-finalizer", "prover", "signer", "spend-finalizer", "tx-extractor", "zcp-builder"] }
+rand = "0.8"
+regex = "1"
+rusqlite = "0.37"
+secp256k1 = "0.33"
+secrecy = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+shardtree = "0.7"
+tempfile = "3"
+time = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+transparent = { package = "zakura-transparent", version = "=4.0.0" }
+url = "2.5.8"
+uuid = "1.1"
+vote-commitment-tree = { version = "=0.8.0", default-features = false, features = ["zakura"] }
+voting-crypto-deps = "=0.4.0"
+zakura-pir-client = { version = "=0.0.1-rc3", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
+zcash_address = { package = "zakura-address", version = "=4.0.0" }
+zcash_client_backend = { package = "zakura-client-backend", version = "=0.1.0-rc9.4", features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots", "tor", "sync", "pczt"] }
+zcash_client_sqlite = { package = "zakura-client-sqlite", version = "=0.1.0-rc9.4", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
+zcash_keys = { package = "zakura-keys", version = "=4.0.0", features = ["orchard"] }
+zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
+zcash_primitives = { package = "zakura-primitives", version = "=4.0.0", features = ["non-standard-fees"] }
+zcash_protocol = { package = "zakura-protocol", version = "=4.0.0" }
+zcash_voting = { version = "=5.2.0-rc.2" }
+zip32 = "0.2"

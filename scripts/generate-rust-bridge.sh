@@ -19,6 +19,9 @@ import sys
 cargo = os.environ['VIZOR_CODEGEN_REAL_CARGO']
 args = sys.argv[1:]
 if args and args[0] == 'expand':
+    # The API definitions stay in their original files inside core.
+    if '-p' not in args and '--package' not in args:
+        args.extend(['--package', 'vizor-wallet-implementation'])
     result = subprocess.run([cargo, *args], stdout=subprocess.PIPE)
     # Parsing function bodies is incidental to FRB's API/type discovery.
     sys.stdout.buffer.write(re.sub(rb'\bsuper\s+let\b', b'let', result.stdout))

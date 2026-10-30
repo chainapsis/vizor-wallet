@@ -470,7 +470,7 @@ fn display_values(row: &TransactionInfo, detail: &TransactionDetail) -> serde_js
 /// these values. Regenerate with `VIZOR_UPDATE_FIXTURES=1`.
 const DISPLAY_FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../test/fixtures/private_shielding_activity.json"
+    "/../../../test/fixtures/private_shielding_activity.json"
 );
 
 /// The two reported mainnet shapes: shielding 0.0018 and 0.004 ZEC with a
@@ -628,7 +628,7 @@ fn enhance_output_presence_labels_a_provisional_debit() {
     displayed["transaction"]["activityPool"] = serde_json::json!(row.activity_pool);
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../test/fixtures/private_transparent_activity.json"
+        "/../../../test/fixtures/private_transparent_activity.json"
     );
     if std::env::var_os("VIZOR_UPDATE_FIXTURES").is_some() {
         std::fs::write(
