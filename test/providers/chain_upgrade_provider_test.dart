@@ -313,16 +313,8 @@ rust_wallet.ChainUpgradeStatus _fullStatus({
 }) {
   return rust_wallet.ChainUpgradeStatus(
     network: network,
-    lightwalletdChainName: network,
     tipHeight: BigInt.from(tipHeight),
-    lightwalletdReportedHeight: BigInt.from(tipHeight),
-    lightwalletdEstimatedHeight: BigInt.from(tipHeight),
-    lightwalletdConsensusBranchId: ironwoodActive ? '37a5165b' : 'c8e71055',
-    lightwalletdUpgradeName: '',
-    lightwalletdUpgradeHeight: BigInt.zero,
-    nu63ActivationHeight: BigInt.from(3_428_143),
     ironwoodActiveAtTip: ironwoodActive,
-    endpointMatchesNetwork: true,
   );
 }
 
@@ -334,7 +326,6 @@ rust_wallet.ChainUpgradeActivationStatus _activationStatus({
   return rust_wallet.ChainUpgradeActivationStatus(
     network: network,
     tipHeight: tipHeight,
-    nu63ActivationHeight: BigInt.from(3_428_143),
     ironwoodActiveAtTip: ironwoodActive,
   );
 }

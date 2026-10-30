@@ -1157,7 +1157,6 @@ ProviderContainer _container({
             rust_wallet.ChainUpgradeActivationStatus(
               network: network,
               tipHeight: tipHeight,
-              nu63ActivationHeight: BigInt.from(3_428_143),
               ironwoodActiveAtTip: ironwoodActiveAtTip,
             ),
       ),
@@ -1282,18 +1281,8 @@ rust_wallet.ChainUpgradeStatus _chainStatus({
 }) {
   return rust_wallet.ChainUpgradeStatus(
     network: network,
-    lightwalletdChainName: network,
     tipHeight: BigInt.from(tipHeight),
-    lightwalletdReportedHeight: BigInt.from(tipHeight),
-    lightwalletdEstimatedHeight: BigInt.from(tipHeight),
-    lightwalletdConsensusBranchId: ironwoodActiveAtTip
-        ? '37a5165b'
-        : 'c8e71055',
-    lightwalletdUpgradeName: '',
-    lightwalletdUpgradeHeight: BigInt.zero,
-    nu63ActivationHeight: BigInt.from(3_428_143),
     ironwoodActiveAtTip: ironwoodActiveAtTip,
-    endpointMatchesNetwork: true,
   );
 }
 
