@@ -17,7 +17,7 @@ import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../../../providers/account_provider.dart';
 import '../../../address_book/providers/address_book_provider.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../migration/providers/ironwood_migration_state_provider.dart';
 import '../../../swap/models/swap_intent_presentation_mapper.dart'
     show swapIntentsFromRecords;
 import '../../../swap/models/swap_models.dart';

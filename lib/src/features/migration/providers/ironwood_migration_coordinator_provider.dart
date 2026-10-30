@@ -16,7 +16,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../models/ironwood_migration_presentation.dart';
 import '../models/mobile_ironwood_migration_attention_state.dart';
 import '../services/ironwood_migration_service.dart';
-import 'ironwood_migration_announcement_provider.dart';
+import 'ironwood_migration_state_provider.dart';
 
 const _migrationStatusPollInterval = Duration(seconds: 15);
 
