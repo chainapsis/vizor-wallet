@@ -20,7 +20,7 @@ pub fn init_app() {
 }
 
 /// Keep wallet consensus parameters aligned with the local Ironwood regtest
-/// node. Production builds leave the default activation-at-height-1 behavior.
+/// node. Without it, regtest keeps NU6.3 inactive.
 pub fn configure_regtest_ironwood_activation_height(height: u32) -> Result<(), String> {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(height)
 }

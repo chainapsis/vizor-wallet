@@ -15,7 +15,7 @@ import '../../../address_book/models/address_book_contact.dart';
 import '../../../pay/widgets/mobile/mobile_pay_review_content.dart';
 import '../../../pay/models/pay_recent_recipients.dart';
 import '../../../address_book/providers/address_book_provider.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../migration/providers/ironwood_migration_state_provider.dart';
 import '../../domain/swap_direction.dart';
 import '../../domain/swap_quote.dart';
 import '../../models/swap_activity_navigation.dart';

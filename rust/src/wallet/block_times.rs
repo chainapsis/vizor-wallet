@@ -35,7 +35,7 @@ pub(crate) const NU7_BLOCK_SECONDS: u32 = PRE_NU7_BLOCK_SECONDS / NU7_POW_TARGET
 const TARGET_SPACING_SECONDS: u64 = PRE_NU7_BLOCK_SECONDS as u64;
 const NU7_TARGET_SPACING_SECONDS: u64 = NU7_BLOCK_SECONDS as u64;
 
-/// Mainnet NU7 activation height, once the protocol crate schedules it.
+/// Mainnet NU7 activation height from the pinned protocol crate.
 fn mainnet_nu7_activation() -> Option<u64> {
     Network::MainNetwork
         .activation_height(NetworkUpgrade::Nu7)

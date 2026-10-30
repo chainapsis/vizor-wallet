@@ -6,7 +6,7 @@ import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/config/ironwood_migration_privacy_lock_config.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
