@@ -18,7 +18,7 @@ import '../../providers/sync_provider.dart';
 import '../../providers/voting/voting_rounds_provider.dart';
 import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
-import '../../features/migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../features/migration/providers/ironwood_migration_state_provider.dart';
 import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/providers/swap_state_provider.dart';

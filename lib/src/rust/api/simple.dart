@@ -11,7 +11,7 @@ String greet({required String name}) =>
     RustLib.instance.api.crateApiSimpleGreet(name: name);
 
 /// Keep wallet consensus parameters aligned with the local Ironwood regtest
-/// node. Production builds leave the default activation-at-height-1 behavior.
+/// node. Without it, regtest keeps NU6.3 inactive.
 Future<void> configureRegtestIronwoodActivationHeight({required int height}) =>
     RustLib.instance.api.crateApiSimpleConfigureRegtestIronwoodActivationHeight(
       height: height,

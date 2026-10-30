@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/sync_provider.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../migration/providers/ironwood_migration_state_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
