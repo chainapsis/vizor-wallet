@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `accounts_within_used_batches`, `block_height_from_u64`, `catch`, `discover_privately`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_error`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
+// These functions are ignored because they are not marked as `pub`: `accounts_within_used_batches`, `block_height_from_u64`, `catch`, `discover_privately`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_error`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Probe`
 
 /// Get the latest block height from lightwalletd.
@@ -617,22 +617,17 @@ class BlockSpacingSchedule {
 class ChainUpgradeActivationStatus {
   final String network;
   final BigInt tipHeight;
-  final BigInt? nu63ActivationHeight;
   final bool ironwoodActiveAtTip;
 
   const ChainUpgradeActivationStatus({
     required this.network,
     required this.tipHeight,
-    this.nu63ActivationHeight,
     required this.ironwoodActiveAtTip,
   });
 
   @override
   int get hashCode =>
-      network.hashCode ^
-      tipHeight.hashCode ^
-      nu63ActivationHeight.hashCode ^
-      ironwoodActiveAtTip.hashCode;
+      network.hashCode ^ tipHeight.hashCode ^ ironwoodActiveAtTip.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -641,51 +636,24 @@ class ChainUpgradeActivationStatus {
           runtimeType == other.runtimeType &&
           network == other.network &&
           tipHeight == other.tipHeight &&
-          nu63ActivationHeight == other.nu63ActivationHeight &&
           ironwoodActiveAtTip == other.ironwoodActiveAtTip;
 }
 
-/// Connected lightwalletd chain state relevant to Ironwood rollout decisions.
+/// Ironwood activation at the connected lightwalletd's chain tip.
 class ChainUpgradeStatus {
   final String network;
-  final String lightwalletdChainName;
   final BigInt tipHeight;
-  final BigInt lightwalletdReportedHeight;
-  final BigInt lightwalletdEstimatedHeight;
-  final String lightwalletdConsensusBranchId;
-  final String lightwalletdUpgradeName;
-  final BigInt lightwalletdUpgradeHeight;
-  final BigInt? nu63ActivationHeight;
   final bool ironwoodActiveAtTip;
-  final bool endpointMatchesNetwork;
 
   const ChainUpgradeStatus({
     required this.network,
-    required this.lightwalletdChainName,
     required this.tipHeight,
-    required this.lightwalletdReportedHeight,
-    required this.lightwalletdEstimatedHeight,
-    required this.lightwalletdConsensusBranchId,
-    required this.lightwalletdUpgradeName,
-    required this.lightwalletdUpgradeHeight,
-    this.nu63ActivationHeight,
     required this.ironwoodActiveAtTip,
-    required this.endpointMatchesNetwork,
   });
 
   @override
   int get hashCode =>
-      network.hashCode ^
-      lightwalletdChainName.hashCode ^
-      tipHeight.hashCode ^
-      lightwalletdReportedHeight.hashCode ^
-      lightwalletdEstimatedHeight.hashCode ^
-      lightwalletdConsensusBranchId.hashCode ^
-      lightwalletdUpgradeName.hashCode ^
-      lightwalletdUpgradeHeight.hashCode ^
-      nu63ActivationHeight.hashCode ^
-      ironwoodActiveAtTip.hashCode ^
-      endpointMatchesNetwork.hashCode;
+      network.hashCode ^ tipHeight.hashCode ^ ironwoodActiveAtTip.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -693,17 +661,8 @@ class ChainUpgradeStatus {
       other is ChainUpgradeStatus &&
           runtimeType == other.runtimeType &&
           network == other.network &&
-          lightwalletdChainName == other.lightwalletdChainName &&
           tipHeight == other.tipHeight &&
-          lightwalletdReportedHeight == other.lightwalletdReportedHeight &&
-          lightwalletdEstimatedHeight == other.lightwalletdEstimatedHeight &&
-          lightwalletdConsensusBranchId ==
-              other.lightwalletdConsensusBranchId &&
-          lightwalletdUpgradeName == other.lightwalletdUpgradeName &&
-          lightwalletdUpgradeHeight == other.lightwalletdUpgradeHeight &&
-          nu63ActivationHeight == other.nu63ActivationHeight &&
-          ironwoodActiveAtTip == other.ironwoodActiveAtTip &&
-          endpointMatchesNetwork == other.endpointMatchesNetwork;
+          ironwoodActiveAtTip == other.ironwoodActiveAtTip;
 }
 
 /// A generated software account that has not been imported into the wallet DB.
