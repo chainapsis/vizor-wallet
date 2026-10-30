@@ -1052,7 +1052,11 @@ class SwapActivityDepositInstruction {
     this.qr,
   });
 
+  /// The instructions for funding `intent`, or null while it has none to show,
+  /// including while its wallet start is pending (see
+  /// [SwapIntent.startPending]).
   static SwapActivityDepositInstruction? fromIntent(SwapIntent intent) {
+    if (intent.startPending) return null;
     final direction = intent.direction;
     final externalAsset = intent.externalAsset;
     final depositAddress = intent.depositAddress;

@@ -196,8 +196,8 @@ class _OneClickSwapDetails {
     this.refundReason,
     this.depositedAmount,
     this.depositedAmountFormatted,
-    this.originChainTxHash,
-    this.destinationChainTxHash,
+    this.originChainTxHashes = const [],
+    this.destinationChainTxHashes = const [],
   });
 
   factory _OneClickSwapDetails.fromJson(Map<String, dynamic> json) {
@@ -217,12 +217,14 @@ class _OneClickSwapDetails {
         json,
         'depositedAmountFormatted',
       ),
-      originChainTxHash:
-          _firstChainTxHash(json, 'originChainTxHashes') ??
-          _firstChainTxHash(json, 'origin_chain_tx_hashes'),
-      destinationChainTxHash:
-          _firstChainTxHash(json, 'destinationChainTxHashes') ??
-          _firstChainTxHash(json, 'destination_chain_tx_hashes'),
+      originChainTxHashes: [
+        ..._chainTxHashes(json, 'originChainTxHashes'),
+        ..._chainTxHashes(json, 'origin_chain_tx_hashes'),
+      ],
+      destinationChainTxHashes: [
+        ..._chainTxHashes(json, 'destinationChainTxHashes'),
+        ..._chainTxHashes(json, 'destination_chain_tx_hashes'),
+      ],
     );
   }
 
@@ -238,8 +240,16 @@ class _OneClickSwapDetails {
   final String? refundReason;
   final String? depositedAmount;
   final String? depositedAmountFormatted;
-  final String? originChainTxHash;
-  final String? destinationChainTxHash;
+
+  /// Every origin and destination chain transaction the provider reports.
+  final List<String> originChainTxHashes;
+  final List<String> destinationChainTxHashes;
+
+  /// The first origin hash, preferring the camel-case field.
+  String? get originChainTxHash => originChainTxHashes.firstOrNull;
+
+  /// The first destination hash, preferring the camel-case field.
+  String? get destinationChainTxHash => destinationChainTxHashes.firstOrNull;
 }
 
 const _placeholderDepositAddress = 'quote-placeholder-deposit';

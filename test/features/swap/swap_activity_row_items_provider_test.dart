@@ -4,6 +4,7 @@ import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provi
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_tracker.dart';
 
 void main() {
   test('exposes persisted swap records as activity row items', () async {
@@ -142,6 +143,35 @@ void main() {
       expect(count, 7);
     },
   );
+
+  test('a swap whose start finished shows started even when saving it '
+      'failed', () async {
+    final store = _FakeSwapActivityStore({
+      'account-1': [
+        _pendingCountRecord(id: 'private').copyWith(startPending: true),
+      ],
+    });
+    final container = ProviderContainer(
+      overrides: [swapActivityStoreProvider.overrideWithValue(store)],
+    );
+    addTearDown(container.dispose);
+    final starting = await container.read(
+      swapActivityRowItemsProvider('account-1').future,
+    );
+    expect(starting.single.startPending, isTrue);
+
+    // This store refuses every save.
+    await expectLater(
+      container
+          .read(swapActivityTrackerProvider)
+          .finishStart(accountUuid: 'account-1', intentId: 'private'),
+      throwsUnsupportedError,
+    );
+    final started = await container.read(
+      swapActivityRowItemsProvider('account-1').future,
+    );
+    expect(started.single.startPending, isFalse);
+  });
 
   test('row items use resolved status so the list agrees with the panel', () async {
     final past = DateTime.utc(2020, 1, 1);

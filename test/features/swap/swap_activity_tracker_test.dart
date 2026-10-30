@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_lifecycle.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
@@ -474,6 +477,440 @@ void main() {
     expect(provider.statusRequests, isEmpty);
   });
 
+  test('expired incoming swaps need no scan-watch reclaim polling', () async {
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({});
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+    );
+    await tracker.saveIntents(
+      accountUuid: 'account-1',
+      intents: [
+        _intent(
+          id: 'expired',
+          depositAddress: 'expired',
+          depositTxHash: null,
+          status: SwapIntentStatus.expired,
+        ).copyWith(
+          direction: SwapDirection.externalToZec,
+          oneClickRecipient: 'u1swap',
+          depositDeadline: DateTime.now().toUtc().subtract(
+            const Duration(days: 2),
+          ),
+        ),
+      ],
+    );
+    await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: [],
+    );
+    expect(provider.statusRequests, isEmpty);
+  });
+
+  test(
+    'an expired private quote is polled until the wallet releases it',
+    () async {
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({
+        'private': _snapshot(
+          id: 'private',
+          depositAddress: 'private',
+          status: SwapIntentStatus.awaitingExternalDeposit,
+        ),
+      });
+      // The wallet still holds the slot on the first poll and frees it there.
+      final tracked = [true, false];
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+        onProviderSnapshot: (_, _, _) async => tracked.removeAt(0),
+      );
+      final intent =
+          _intent(
+            id: 'private',
+            depositAddress: 'private',
+            depositTxHash: null,
+            status: SwapIntentStatus.expired,
+          ).copyWith(
+            direction: SwapDirection.externalToZec,
+            privateAddress: true,
+            depositDeadline: DateTime.now().toUtc().subtract(
+              const Duration(days: 2),
+            ),
+          );
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+      for (var poll = 0; poll < 3; poll++) {
+        await tracker.refreshOpenIntents(
+          accountUuid: 'account-1',
+          currentIntents: [],
+        );
+      }
+      expect(provider.statusRequests, ['private', 'private']);
+      final stored = await tracker.loadIntents(accountUuid: 'account-1');
+      expect(stored.single.status, SwapIntentStatus.expired);
+      expect(stored.single.walletReleased, isTrue);
+    },
+  );
+
+  test('only private swaps share statuses with the wallet', () async {
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({});
+    final recorded = <String>[];
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+      onProviderSnapshot: (intent, _, _) async {
+        recorded.add(intent.id);
+        return true;
+      },
+    );
+    final intents = [
+      _intent(id: 'ordinary', depositAddress: 'ordinary'),
+      _intent(
+        id: 'private',
+        depositAddress: 'private',
+      ).copyWith(privateAddress: true),
+    ];
+    await tracker.saveIntents(accountUuid: 'account-1', intents: intents);
+    await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: intents,
+    );
+    expect(provider.statusRequests, unorderedEquals(['ordinary', 'private']));
+    expect(recorded, ['private']);
+  });
+
+  test('a started swap whose final save failed is still polled and saved '
+      'started', () async {
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({});
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+    );
+    // Created in this launch, after the tracker.
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    final starting =
+        _intent(
+          id: 'private',
+          depositAddress: 'private',
+          status: SwapIntentStatus.awaitingExternalDeposit,
+        ).copyWith(
+          direction: SwapDirection.externalToZec,
+          privateAddress: true,
+          startPending: true,
+          createdAt: DateTime.now().toUtc(),
+        );
+    await tracker.saveIntents(accountUuid: 'account-1', intents: [starting]);
+    // The save that would store it started fails once.
+    store.onSave = () async {
+      store.onSave = null;
+      throw StateError('secure storage unavailable');
+    };
+    await expectLater(
+      tracker.finishStart(accountUuid: 'account-1', intentId: 'private'),
+      throwsStateError,
+    );
+    expect(store.savedRecords.single.startPending, isTrue);
+
+    await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: const [],
+    );
+
+    expect(provider.statusRequests, ['private']);
+    expect(store.savedRecords.single.startPending, isFalse);
+    expect(store.savedRecords.single.status, SwapIntentStatus.processing);
+  });
+
+  test('wallet deletion waits for saved private swap activity', () async {
+    final lifecycle = LedgerOperationLifecycle();
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({});
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+      lifecycle: lifecycle,
+      onProviderSnapshot: (_, _, _) async => true,
+    );
+    final private = _intent(
+      id: 'private',
+      depositAddress: 'private',
+    ).copyWith(privateAddress: true);
+    await tracker.saveIntents(accountUuid: 'account-1', intents: [private]);
+    final held = Completer<void>();
+    var saving = false;
+    store.onSave = () {
+      saving = true;
+      return held.future;
+    };
+    final refresh = tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: [private],
+    );
+    await pumpEventQueue();
+    expect(saving, isTrue, reason: 'the status arrived and its save started');
+
+    var drained = false;
+    unawaited(lifecycle.quiesceAndDrain().then((_) => drained = true));
+    await pumpEventQueue();
+    expect(drained, isFalse, reason: 'deletion waits for the activity write');
+    held.complete();
+    await refresh;
+    await pumpEventQueue();
+    expect(drained, isTrue);
+    lifecycle.resume();
+  });
+
+  test('a replacement save writes without reading what it replaces', () async {
+    final store = _MemorySwapActivityStore();
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: _StatusSwapProvider({}),
+    );
+    await tracker.saveIntents(
+      accountUuid: 'account-1',
+      intents: [_intent(id: 'swap', depositAddress: 'swap')],
+    );
+    expect(store.saveCount, 1);
+    expect(store.loadCount, 0);
+  });
+
+  test('ordinary swaps stay outside the wallet deletion drain', () async {
+    final lifecycle = LedgerOperationLifecycle();
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({});
+    final held = Completer<void>();
+    provider.onGetStatus = (_) => held.future;
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+      lifecycle: lifecycle,
+      onProviderSnapshot: (_, _, _) async => true,
+    );
+    final ordinary = _intent(id: 'ordinary', depositAddress: 'ordinary');
+    await tracker.saveIntents(accountUuid: 'account-1', intents: [ordinary]);
+    final refresh = tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: [ordinary],
+    );
+    await pumpEventQueue();
+    expect(provider.statusRequests, ['ordinary']);
+
+    var drained = false;
+    unawaited(lifecycle.quiesceAndDrain().then((_) => drained = true));
+    await pumpEventQueue();
+    expect(drained, isTrue, reason: 'deletion skips the held status request');
+    // Loads and saves keep working while deletion holds admission.
+    expect(await tracker.loadIntents(accountUuid: 'account-1'), hasLength(1));
+    await tracker.saveIntents(accountUuid: 'account-1', intents: [ordinary]);
+    held.complete();
+    expect((await refresh).didRefresh, isTrue);
+    lifecycle.resume();
+  });
+
+  test(
+    'a private swap status refresh holds the wallet deletion drain',
+    () async {
+      final lifecycle = LedgerOperationLifecycle();
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({});
+      final held = Completer<void>();
+      provider.onGetStatus = (_) => held.future;
+      final recorded = <String>[];
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+        lifecycle: lifecycle,
+        onProviderSnapshot: (intent, _, _) async {
+          recorded.add(intent.id);
+          return true;
+        },
+      );
+      final private = _intent(
+        id: 'private',
+        depositAddress: 'private',
+      ).copyWith(privateAddress: true);
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [private]);
+      final refresh = tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: [private],
+      );
+      await pumpEventQueue();
+
+      var drained = false;
+      unawaited(lifecycle.quiesceAndDrain().then((_) => drained = true));
+      await pumpEventQueue();
+      expect(drained, isFalse, reason: 'its result still writes the wallet');
+      held.complete();
+      await refresh;
+      await pumpEventQueue();
+      expect(drained, isTrue);
+      expect(recorded, ['private']);
+
+      // No private refresh starts while deletion runs.
+      final skipped = await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: [private],
+      );
+      expect(skipped.didRefresh, isFalse);
+      expect(provider.statusRequests, ['private']);
+      lifecycle.resume();
+    },
+  );
+
+  test(
+    'a completed status without its token completes only private swaps',
+    () async {
+      // A flexible-input swap quoted 70 USDC, then paid out less. Its external
+      // token has left NEAR's catalog, so the status cannot state the payout.
+      final completed = SwapIntentSnapshot(
+        id: 'swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> Unlisted token',
+        sellAmountText: 'Not reported',
+        receiveEstimateText: 'Not reported',
+        status: SwapIntentStatus.complete,
+        nextAction: 'Swap completed',
+        depositInstruction: const SwapDepositInstruction(
+          asset: SwapAsset.zec,
+          address: 'swap',
+          expiresInLabel: '01:30',
+          reuseWarning: 'Do not reuse this address',
+        ),
+        providerStatusRaw: 'SUCCESS',
+        amountOutBaseUnits: '35000000',
+        statusOnly: true,
+      );
+      final store = _MemorySwapActivityStore();
+      final provider = _StatusSwapProvider({});
+      provider.onGetStatus = (_) async => throw OneClickStatusOnlyException(
+        'NEAR Intents does not currently list USDC',
+        snapshot: completed,
+      );
+      final tracker = SwapActivityTracker(
+        activityStore: store,
+        swapProvider: provider,
+        onProviderSnapshot: (_, _, _) async => true,
+      );
+
+      // An ordinary swap fails the refresh, as before private swaps existed, and
+      // never shows the quoted 70 USDC as its completed amount.
+      final ordinary = _intent(id: 'swap', depositAddress: 'swap');
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [ordinary]);
+      final failed = await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: [ordinary],
+      );
+      expect(failed.refreshError, isNotNull);
+      expect(failed.intents.single.status, SwapIntentStatus.awaitingDeposit);
+      expect(failed.intents.single.receiveEstimate, '70.00 USDC');
+
+      // A private swap still takes the status, which its wallet records need.
+      final private = ordinary.copyWith(privateAddress: true);
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [private]);
+      final refreshed = await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: [private],
+      );
+      expect(refreshed.refreshError, isNull);
+      expect(refreshed.intents.single.status, SwapIntentStatus.complete);
+    },
+  );
+
+  test('a swap the wallet no longer tracks is marked released', () async {
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({});
+    final tracked = {'held': true, 'released': false};
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+      onProviderSnapshot: (intent, _, _) async => tracked[intent.id],
+    );
+    final intents = [
+      for (final id in tracked.keys)
+        _intent(id: id, depositAddress: id).copyWith(privateAddress: true),
+    ];
+    await tracker.saveIntents(accountUuid: 'account-1', intents: intents);
+    await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: intents,
+    );
+    final stored = await tracker.loadIntents(accountUuid: 'account-1');
+    expect(stored.swapIntentById('held')?.walletReleased, isFalse);
+    expect(stored.swapIntentById('released')?.walletReleased, isTrue);
+  });
+
+  test('a wallet failure does not fail the status refresh', () async {
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({
+      'private': _snapshot(
+        id: 'private',
+        depositAddress: 'private',
+        status: SwapIntentStatus.depositObserved,
+      ),
+    });
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+      onProviderSnapshot: (_, _, _) async =>
+          throw StateError('database is locked'),
+    );
+    final intent = _intent(
+      id: 'private',
+      depositAddress: 'private',
+    ).copyWith(privateAddress: true);
+    await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+    final result = await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: [intent],
+    );
+    expect(result.refreshError, isNull);
+    expect(result.intents.single.status, SwapIntentStatus.depositObserved);
+  });
+
+  test('a wallet failure on a terminal status keeps the swap open', () async {
+    final store = _MemorySwapActivityStore();
+    final provider = _StatusSwapProvider({
+      'private': _snapshot(
+        id: 'private',
+        depositAddress: 'private',
+        status: SwapIntentStatus.refunded,
+      ),
+    });
+    var failures = 1;
+    final recorded = <SwapIntentStatus>[];
+    final tracker = SwapActivityTracker(
+      activityStore: store,
+      swapProvider: provider,
+      onProviderSnapshot: (_, snapshot, _) async {
+        if (failures-- > 0) throw StateError('database is locked');
+        recorded.add(snapshot.status);
+        return true;
+      },
+    );
+    final intent = _intent(
+      id: 'private',
+      depositAddress: 'private',
+    ).copyWith(privateAddress: true);
+    await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+    final failed = await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: [intent],
+    );
+    expect(failed.refreshError, isNotNull);
+    final stored = await tracker.loadIntents(accountUuid: 'account-1');
+    expect(stored.single.status.isTerminal, isFalse);
+
+    final retried = await tracker.refreshOpenIntents(
+      accountUuid: 'account-1',
+      currentIntents: stored,
+    );
+    expect(retried.refreshError, isNull);
+    expect(recorded, [SwapIntentStatus.refunded]);
+  });
+
   test('status refresh over Tor names the blocked route', () async {
     final store = _MemorySwapActivityStore();
     final provider = _StatusSwapProvider({});
@@ -556,12 +993,17 @@ SwapIntentSnapshot _snapshot({
 
 class _MemorySwapActivityStore implements SwapActivityStore {
   var saveCount = 0;
+  var loadCount = 0;
   List<SwapIntentRecord> savedRecords = const [];
+
+  /// Runs before each save, for tests that hold a write.
+  Future<void> Function()? onSave;
 
   @override
   Future<List<SwapIntentRecord>> loadRecords({
     required String accountUuid,
   }) async {
+    loadCount++;
     return savedRecords;
   }
 
@@ -570,6 +1012,7 @@ class _MemorySwapActivityStore implements SwapActivityStore {
     required String accountUuid,
     required List<SwapIntentRecord> records,
   }) async {
+    await onSave?.call();
     saveCount++;
     savedRecords = records;
   }
