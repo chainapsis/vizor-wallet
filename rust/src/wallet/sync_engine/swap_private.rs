@@ -1059,7 +1059,6 @@ async fn drain<T: Transport>(
         };
         let pace = || Pace {
             records: STEP_RECORDS,
-            retries: 0,
         };
         match retried(generation, || lookup_with(client, work, pace())).await {
             Ok(page) => {
