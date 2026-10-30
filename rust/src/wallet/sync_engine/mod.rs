@@ -61,6 +61,8 @@ pub(crate) mod mempool;
 mod private_recovery_reorg_tests;
 mod retry_progress;
 #[cfg(test)]
+mod scan_bench;
+#[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;
 pub(crate) mod transparent_details;
