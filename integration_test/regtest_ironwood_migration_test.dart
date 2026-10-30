@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';

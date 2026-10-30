@@ -45,7 +45,7 @@ import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
 import '../../activity/swap_activity_row_items_provider.dart';
 import '../../activity/swap_activity_row_mapper.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../migration/providers/ironwood_migration_state_provider.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';

@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/migration_send_gate_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';

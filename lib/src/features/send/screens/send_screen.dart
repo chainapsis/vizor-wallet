@@ -37,7 +37,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../migration/providers/ironwood_migration_state_provider.dart';
 import '../models/send_prefill_args.dart';
 import '../models/send_scan_result.dart';
 import '../services/send_amount_conversion.dart';

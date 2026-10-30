@@ -37,7 +37,7 @@ import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
