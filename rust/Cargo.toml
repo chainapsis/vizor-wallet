@@ -40,8 +40,6 @@ shardtree = "0.7"
 # Security
 secrecy = "0.8"
 zeroize = "1"
-aes = { version = "0.8", features = ["zeroize"] }
-aes-gcm = { version = "0.10", features = ["zeroize"] }
 base64 = "0.22"
 pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }
@@ -179,6 +177,15 @@ android_logger = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
+
+# Preserve the existing cipher stack outside supported Apple ARM targets.
+[target.'cfg(all(target_arch = "aarch64", target_endian = "little", target_vendor = "apple", any(target_os = "macos", target_os = "ios")))'.dependencies]
+aes = { version = "=0.9.3", features = ["zeroize"] }
+aes-gcm = { version = "=0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
+
+[target.'cfg(not(all(target_arch = "aarch64", target_endian = "little", target_vendor = "apple", any(target_os = "macos", target_os = "ios"))))'.dependencies]
+aes = { version = "0.8", features = ["zeroize"] }
+aes-gcm = { version = "0.10", features = ["zeroize"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 ledger-transport = "0.11.0"

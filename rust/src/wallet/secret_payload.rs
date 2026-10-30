@@ -1,9 +1,10 @@
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use pbkdf2::pbkdf2_hmac;
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zeroize::Zeroizing;
@@ -111,7 +112,8 @@ fn encrypt_with_cipher(
     cipher: Aes256Gcm,
     clear_text: Zeroizing<Vec<u8>>,
 ) -> Result<String, String> {
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let mut nonce = Nonce::default();
+    OsRng.fill_bytes(nonce.as_mut_slice());
     let cipher_text_and_tag = Zeroizing::new(
         cipher
             .encrypt(&nonce, clear_text.as_slice())
@@ -180,11 +182,10 @@ fn decrypt_with_cipher(
     ciphertext_and_tag.extend_from_slice(cipher_text.as_slice());
     ciphertext_and_tag.extend_from_slice(mac.as_slice());
 
+    let mut nonce_array = Nonce::default();
+    nonce_array.copy_from_slice(nonce.as_slice());
     let clear_text = cipher
-        .decrypt(
-            Nonce::from_slice(nonce.as_slice()),
-            ciphertext_and_tag.as_slice(),
-        )
+        .decrypt(&nonce_array, ciphertext_and_tag.as_slice())
         .map_err(|_| "Failed to decrypt secure-storage payload".to_string())?;
     drop(cipher);
     drop(ciphertext_and_tag);
