@@ -290,6 +290,7 @@ Future<void> applyEnhancePirPolicy(
   AppBootstrapState bootstrap, {
   void Function(bool enabled)? setRustEnabled,
   void Function(bool confirmed)? setPreferenceConfirmed,
+  void Function(bool enabled)? setRustSwapPrivacyEnabled,
   TransparentPolicyReconciler? reconcileTransparentPolicy,
   TransparentPolicyReader? readTransparentPolicy,
   TransparentOptOutStore optOutStore =
@@ -312,6 +313,11 @@ Future<void> applyEnhancePirPolicy(
         (confirmed) => rust_sync.setEnhancePirPreferenceConfirmed(
           confirmed: confirmed,
         ))(saved != null);
+    // Rust issues new swap addresses only with NEAR swap privacy on.
+    (setRustSwapPrivacyEnabled ??
+        (value) => rust_sync.setNearSwapPrivacyEnabled(enabled: value))(
+      bootstrap.nearSwapPrivacyEnabled,
+    );
   }
 
   final reconcile =

@@ -2090,6 +2090,17 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         recordError('voting cache wipe', e, st);
       }
       await ref.read(appPasswordInputSourceProvider).clear();
+      // Through the swap activity store, so a swap save still in flight cannot
+      // write a deleted account's activity back after the wipe.
+      for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
+        try {
+          await ref
+              .read(swapActivityStoreProvider)
+              .deleteForAccount(accountUuid: account.uuid);
+        } catch (e, st) {
+          log('resetWallet: failed to delete swap activity: $e\n$st');
+        }
+      }
       try {
         await _storage.deleteAll();
       } catch (e, st) {
