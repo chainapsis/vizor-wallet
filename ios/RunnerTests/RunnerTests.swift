@@ -1753,12 +1753,12 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(
       migrationPreparationForegroundRecoveryNotificationEvent(
         scope: scope,
-        preparationState: 5
+        preparationState: 2
       ),
       MigrationPreparationNotificationEvent(
         scope: scope,
         kind: .needsForegroundRecovery,
-        fingerprint: "foreground-preparation-required:state-5"
+        fingerprint: "foreground-preparation-required:state-2"
       )
     )
     XCTAssertNil(
