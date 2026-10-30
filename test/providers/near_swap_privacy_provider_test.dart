@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
@@ -93,6 +95,8 @@ void main() {
     _Sync sync, {
     bool private = false,
     bool swap = false,
+    String network = 'main',
+    List<Override> extra = const [],
   }) {
     final container = ProviderContainer(
       overrides: [
@@ -101,8 +105,8 @@ void main() {
             initialLocation: '/settings',
             initialAccountState: const AccountState(),
             initialSyncSnapshot: AppSyncSnapshot.empty,
-            network: 'main',
-            rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+            network: network,
+            rpcEndpointConfig: defaultRpcEndpointConfig(network),
             themeMode: ThemeMode.system,
             privacyModeEnabled: false,
             isPasswordConfigured: false,
@@ -118,6 +122,7 @@ void main() {
         enhancePirBackgroundSinkProvider.overrideWithValue((_) async {}),
         transparentOptOutStoreProvider.overrideWithValue(_OptOut()),
         transparentPolicyReconcilerProvider.overrideWithValue(_reconcile),
+        ...extra,
       ],
     );
     addTearDown(container.dispose);
@@ -214,6 +219,36 @@ void main() {
     expect(c.read(nearSwapPrivacyProvider), isTrue);
     final off = setup(_Store(), _Sync(), private: true);
     expect(off.read(nearSwapPrivacyProvider), isFalse);
+  });
+
+  /// Settings offers the row only where the private service runs, so swaps
+  /// alone don't show it.
+  test('the row stays hidden while the private service is off', () {
+    final c = setup(
+      _Store(),
+      _Sync(),
+      swap: true,
+      extra: [
+        swapFeatureEnabledProvider.overrideWithValue(true),
+        enhancePirAvailableProvider.overrideWithValue(false),
+      ],
+    );
+    expect(c.read(nearSwapPrivacySettingAvailableProvider), isFalse);
+    expect(c.read(nearSwapPrivacyProvider), isFalse);
+  });
+
+  /// Off mainnet there are no swaps and no private service, so a saved opt-in
+  /// neither shows the row nor turns the feature on.
+  test('testnet hides the row and keeps a saved opt-in off', () {
+    final c = setup(
+      _Store(),
+      _Sync(),
+      private: true,
+      swap: true,
+      network: 'test',
+    );
+    expect(c.read(nearSwapPrivacySettingAvailableProvider), isFalse);
+    expect(c.read(nearSwapPrivacyProvider), isFalse);
   });
   test(
     'the install preference defaults off and survives store recreation',
