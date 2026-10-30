@@ -1,5 +1,4 @@
-use ledger_transport::{APDUAnswer, APDUCommand};
-use ledger_transport_hid::hidapi::{HidApi, HidDevice};
+use hidapi::{HidApi, HidDevice};
 
 #[cfg(debug_assertions)]
 use std::{
@@ -14,8 +13,8 @@ use serde_json::{json, Value};
 use url::{Host, Url};
 
 use super::{
-    apdu::{decode_ufvk_chunks, map_status_word, ufvk_commands},
-    serializer::{packet_p1, packet_p2, CommandPackets},
+    apdu::{decode_ufvk_chunks, map_status_word, ufvk_commands, ApduCommand, ZCASH_CLA},
+    serializer::{packet_p1, packet_p2, CommandPackets, MAX_PACKET_SIZE},
     OperationContext,
 };
 
@@ -35,7 +34,6 @@ fn hid_connection_error(message: &str) -> String {
     }
 }
 
-const ZCASH_CLA: u8 = 0xe0;
 const BOLOS_CLA: u8 = 0xb0;
 const GET_APP_AND_VERSION: u8 = 0x01;
 const OPEN_APP: u8 = 0xd8;
@@ -300,17 +298,17 @@ impl LedgerTransport {
         let command = build_command(cla, ins, p1, p2, data)?;
         let response = retry_review_busy(
             || self.exchange_hid(&command),
-            |response| response.retcode(),
+            |response| response.status,
             || {
                 self.operation.check()?;
                 std::thread::sleep(REVIEW_BUSY_RETRY_DELAY);
                 self.operation.check()
             },
         )?;
-        if response.retcode() != RESPONSE_OK {
-            return Err(map_status_word(response.retcode()));
+        if response.status != RESPONSE_OK {
+            return Err(map_status_word(response.status));
         }
-        Ok(response.data().to_vec())
+        Ok(response.data)
     }
 
     /// App transitions may detach HID before the status word reaches the host.
@@ -322,37 +320,37 @@ impl LedgerTransport {
         let response = match &self.backend {
             Backend::Hid(_) => {
                 self.operation.check()?;
-                self.write_apdu(&command.serialize())?;
+                self.write_apdu(&encode_command(&command))?;
                 let answer = match self.read_apdu() {
                     Ok(answer) => answer,
                     Err(_) => return Ok(()),
                 };
-                APDUAnswer::from_answer(answer)
-                    .map_err(|_| "Ledger HID response was too short to contain a status word")?
+                decode_response(answer)
+                    .ok_or("Ledger HID response was too short to contain a status word")?
             }
             #[cfg(debug_assertions)]
             Backend::Speculos(_) => self.exchange_hid(&command)?,
         };
-        if response.retcode() != RESPONSE_OK {
-            return Err(map_status_word(response.retcode()));
+        if response.status != RESPONSE_OK {
+            return Err(map_status_word(response.status));
         }
         Ok(())
     }
 
-    fn exchange_hid(&self, command: &APDUCommand<Vec<u8>>) -> Result<APDUAnswer<Vec<u8>>, String> {
+    fn exchange_hid(&self, command: &ApduCommand) -> Result<ApduResponse, String> {
         self.operation.check()?;
         let answer = match &self.backend {
             Backend::Hid(_) => {
-                self.write_apdu(&command.serialize())?;
+                self.write_apdu(&encode_command(command))?;
                 self.read_apdu()?
             }
             #[cfg(debug_assertions)]
             Backend::Speculos(client) => {
-                client.exchange_apdu(&command.serialize(), self.operation)?
+                client.exchange_apdu(&encode_command(command), self.operation)?
             }
         };
-        APDUAnswer::from_answer(answer)
-            .map_err(|_| "Ledger response was too short to contain a status word".into())
+        decode_response(answer)
+            .ok_or_else(|| "Ledger response was too short to contain a status word".into())
     }
 
     fn write_apdu(&self, command: &[u8]) -> Result<(), String> {
@@ -756,20 +754,41 @@ fn find_crlf(bytes: &[u8], start: usize) -> Option<usize> {
         .map(|offset| start + offset)
 }
 
-fn build_command(
-    cla: u8,
-    ins: u8,
-    p1: u8,
-    p2: u8,
+struct ApduResponse {
     data: Vec<u8>,
-) -> Result<APDUCommand<Vec<u8>>, String> {
-    if data.len() > 255 {
+    status: u16,
+}
+
+fn encode_command(command: &ApduCommand) -> Vec<u8> {
+    let mut bytes = vec![
+        command.cla,
+        command.ins,
+        command.p1,
+        command.p2,
+        command.data.len() as u8,
+    ];
+    bytes.extend_from_slice(&command.data);
+    bytes
+}
+
+fn decode_response(mut bytes: Vec<u8>) -> Option<ApduResponse> {
+    let status_offset = bytes.len().checked_sub(2)?;
+    let status = u16::from_be_bytes([bytes[status_offset], bytes[status_offset + 1]]);
+    bytes.truncate(status_offset);
+    Some(ApduResponse {
+        data: bytes,
+        status,
+    })
+}
+
+fn build_command(cla: u8, ins: u8, p1: u8, p2: u8, data: Vec<u8>) -> Result<ApduCommand, String> {
+    if data.len() > MAX_PACKET_SIZE {
         return Err(format!(
             "Ledger APDU payload exceeds 255 bytes: {}",
             data.len()
         ));
     }
-    Ok(APDUCommand {
+    Ok(ApduCommand {
         cla,
         ins,
         p1,
@@ -1077,23 +1096,56 @@ mod tests {
     #[test]
     fn device_management_apdus_match_ledger_protocol() {
         assert_eq!(
-            build_command(BOLOS_CLA, GET_APP_AND_VERSION, 0, 0, vec![])
-                .unwrap()
-                .serialize(),
+            encode_command(&build_command(BOLOS_CLA, GET_APP_AND_VERSION, 0, 0, vec![]).unwrap()),
             [0xb0, 0x01, 0x00, 0x00, 0x00]
         );
         assert_eq!(
-            build_command(ZCASH_CLA, OPEN_APP, 0, 0, b"Zcash".to_vec())
-                .unwrap()
-                .serialize(),
+            encode_command(&build_command(ZCASH_CLA, OPEN_APP, 0, 0, b"Zcash".to_vec()).unwrap()),
             [0xe0, 0xd8, 0x00, 0x00, 0x05, b'Z', b'c', b'a', b's', b'h']
         );
         assert_eq!(
-            build_command(BOLOS_CLA, CLOSE_APP, 0, 0, vec![])
-                .unwrap()
-                .serialize(),
+            encode_command(&build_command(BOLOS_CLA, CLOSE_APP, 0, 0, vec![]).unwrap()),
             [0xb0, 0xa7, 0x00, 0x00, 0x00]
         );
+    }
+
+    #[test]
+    fn apdu_command_preserves_maximum_payload_and_rejects_oversize() {
+        let data: Vec<u8> = (0..=254).collect();
+        let command = build_command(0xe0, 0x56, 0x80, 0x01, data.clone()).unwrap();
+        let encoded = encode_command(&command);
+        assert_eq!(&encoded[..5], &[0xe0, 0x56, 0x80, 0x01, 0xff]);
+        assert_eq!(&encoded[5..], data);
+        assert_eq!(
+            build_command(0xe0, 0x56, 0, 0, vec![0; 256]).unwrap_err(),
+            "Ledger APDU payload exceeds 255 bytes: 256"
+        );
+    }
+
+    #[test]
+    fn apdu_response_requires_two_status_bytes_and_preserves_unknown_codes() {
+        assert!(decode_response(vec![]).is_none());
+        assert!(decode_response(vec![0x90]).is_none());
+        for status in [0x0000u16, 0x6901, 0x6985, 0x9000, 0xffff] {
+            let empty = decode_response(status.to_be_bytes().to_vec()).unwrap();
+            assert!(empty.data.is_empty());
+            assert_eq!(empty.status, status);
+
+            let mut bytes = vec![0x90, 0x00, 0xff, 0x01];
+            bytes.extend_from_slice(&status.to_be_bytes());
+            let response = decode_response(bytes).unwrap();
+            assert_eq!(response.data, [0x90, 0x00, 0xff, 0x01]);
+            assert_eq!(response.status, status);
+        }
+    }
+
+    #[test]
+    fn apdu_response_preserves_a_full_hid_response() {
+        let mut bytes = vec![0xa5; u16::MAX as usize - 2];
+        bytes.extend_from_slice(&RESPONSE_OK.to_be_bytes());
+        let response = decode_response(bytes).unwrap();
+        assert_eq!(response.data, vec![0xa5; u16::MAX as usize - 2]);
+        assert_eq!(response.status, RESPONSE_OK);
     }
 
     #[test]
