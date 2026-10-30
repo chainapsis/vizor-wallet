@@ -3089,7 +3089,10 @@ async fn run_payment_link_claim_sync_once(
     }
 }
 
-/// Inner sync implementation. Called by run_sync_inner (with retry wrapper).
+/// Inner sync implementation, called by [`run_sync_inner`] with retries.
+///
+/// Erase only the progress callback so each caller shares this implementation
+/// and its downstream futures instead of monomorphizing the whole sync loop.
 async fn run_sync_impl(
     db_data_path: &str,
     lightwalletd_url: &str,
@@ -3099,7 +3102,7 @@ async fn run_sync_impl(
     desired_mode: &AtomicU8,
     active_account_target: Option<&ActiveSyncAccountTarget>,
     allow_resubmit: bool,
-    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
+    progress_fn: &(dyn Fn(SyncProgressEvent) + Send + Sync),
     mut checking_cycle: u32,
     main_scan_complete: bool,
 ) -> Result<(), SyncError> {
@@ -4826,7 +4829,7 @@ async fn run_sync_impl(
             &transparent_ledger::TransparentPirSource::new(db_data_path, network),
             first,
             &should_exit,
-            progress_fn,
+            &progress_fn,
             (final_scanned_height, final_tip_height),
         )
         .await;
@@ -4843,7 +4846,7 @@ async fn run_sync_impl(
             enhancement.policy(),
             &client,
             &should_exit,
-            progress_fn,
+            &progress_fn,
             (final_scanned_height, final_tip_height),
         )
         .await;
