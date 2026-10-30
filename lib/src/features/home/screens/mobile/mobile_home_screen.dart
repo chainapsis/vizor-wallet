@@ -56,7 +56,7 @@ import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
 import '../../../migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../../migration/models/mobile_ironwood_migration_attention_state.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../migration/providers/ironwood_migration_state_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
