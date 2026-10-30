@@ -574,18 +574,9 @@ fn catch<T>(
 ) -> Result<T, VotingErrorView> {
     match panic::catch_unwind(f) {
         Ok(result) => result.map_err(VotingErrorView::from),
-        Err(e) => {
-            let msg = if let Some(s) = e.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = e.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic".to_string()
-            };
-            Err(VotingErrorView::from(internal(format!(
-                "Rust panic: {msg}"
-            ))))
-        }
+        Err(e) => Err(VotingErrorView::from(internal(super::panic_message(
+            e.as_ref(),
+        )))),
     }
 }
 
