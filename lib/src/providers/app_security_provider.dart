@@ -110,6 +110,7 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   int _unlockRequestGeneration = 0;
   int _confirmRequestGeneration = 0;
   int? _pendingUnlockSessionGeneration;
+  int? _pendingPasswordMutationGeneration;
 
   /// True only while this notifier owns an active, prepared setup session.
   /// Provider state remains unconfigured until the account import commits.
@@ -118,7 +119,9 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
       _passwordSetupRequestGeneration == _unlockRequestGeneration &&
       _passwordSetupLifecycleGeneration == _lifecycleGeneration &&
       _passwordSetupSessionGeneration != null &&
-      _store.isSessionGenerationCurrent(_passwordSetupSessionGeneration!) &&
+      _store.isAuthenticationGenerationCurrent(
+        _passwordSetupSessionGeneration!,
+      ) &&
       _store.hasSessionPassword;
 
   @override
@@ -126,10 +129,9 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     _lifecycleGeneration++;
     ref.onDispose(() {
       _lifecycleGeneration++;
-      final pendingGeneration = _pendingUnlockSessionGeneration;
-      if (_store.enforcesSessionGeneration &&
-          pendingGeneration != null &&
-          _store.isSessionGenerationCurrent(pendingGeneration)) {
+      final generation = _store.authenticationGeneration;
+      if (_pendingUnlockSessionGeneration == generation ||
+          _pendingPasswordMutationGeneration == generation) {
         _store.clearSessionPassword();
       }
     });
@@ -156,42 +158,51 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   Future<void> _preparePasswordSetup(String password) async {
     final lifecycleGeneration = _lifecycleGeneration;
     final requestGeneration = _unlockRequestGeneration;
-    final sessionGeneration = _store.sessionGeneration;
-    if (state.isPasswordConfigured) {
-      throw StateError('Password is already configured.');
-    }
-    if (_isPasswordSetupPrepared) {
-      throw StateError('Password setup is already pending.');
-    }
-    final error = validateRequiredWalletPassword(password);
-    if (error != null) {
-      throw ArgumentError(error);
-    }
-    // Bootstrap must also recover interrupted ordinary creation/import before
-    // an account exists. This marker precedes every first-wallet credential.
-    await _store.writePlain(kGiftWalletSetupStartedStorageKey, 'true');
-    // Persist the verifier and open the secure-storage session before account
-    // creation/import writes the encrypted mnemonic. Publishing provider state
-    // is still delayed until commit so the router never sees half-completed
-    // onboarding.
-    await _store.configurePassword(password);
-    _isPasswordSetupPrepared = true;
-    _passwordSetupSessionGeneration = _store.sessionGeneration;
-    _passwordSetupRequestGeneration = requestGeneration;
-    _passwordSetupLifecycleGeneration = lifecycleGeneration;
-    if (_store.enforcesSessionGeneration &&
-        (lifecycleGeneration != _lifecycleGeneration ||
-            requestGeneration != _unlockRequestGeneration ||
-            !_store.isSessionGenerationCurrent(sessionGeneration + 1) ||
-            !_store.hasSessionPassword)) {
-      // Account creation has not started. Discard the stale attempt without
-      // reopening its session; the normal setup flow can be retried.
-      _isPasswordSetupPrepared = false;
-      _passwordSetupSessionGeneration = null;
-      if (_store.isSessionGenerationCurrent(sessionGeneration + 1)) {
-        _store.clearSessionPassword();
+    final sessionGeneration = _store.authenticationGeneration;
+    _pendingPasswordMutationGeneration = sessionGeneration;
+    try {
+      if (state.isPasswordConfigured) {
+        throw StateError('Password is already configured.');
       }
-      throw const SecureStorageSessionChangedException();
+      if (_isPasswordSetupPrepared) {
+        throw StateError('Password setup is already pending.');
+      }
+      final error = validateRequiredWalletPassword(password);
+      if (error != null) {
+        throw ArgumentError(error);
+      }
+      // Bootstrap must also recover interrupted ordinary creation/import before
+      // an account exists. This marker precedes every first-wallet credential.
+      await _store.writePlain(kGiftWalletSetupStartedStorageKey, 'true');
+      _checkAuthenticationRequest(
+        lifecycleGeneration: lifecycleGeneration,
+        sessionGeneration: sessionGeneration,
+        isCurrentRequest: requestGeneration == _unlockRequestGeneration,
+      );
+      // Persist the verifier and open the secure-storage session before account
+      // creation/import writes the encrypted mnemonic. Publishing provider state
+      // is still delayed until commit so the router never sees half-completed
+      // onboarding.
+      await _store.configurePassword(password);
+      _isPasswordSetupPrepared = true;
+      _passwordSetupSessionGeneration = _store.authenticationGeneration;
+      _passwordSetupRequestGeneration = requestGeneration;
+      _passwordSetupLifecycleGeneration = lifecycleGeneration;
+      if (lifecycleGeneration != _lifecycleGeneration ||
+          requestGeneration != _unlockRequestGeneration ||
+          !_store.isAuthenticationGenerationCurrent(sessionGeneration + 1) ||
+          !_store.hasSessionPassword) {
+        // Account creation has not started. Discard the stale attempt without
+        // reopening its session; the normal setup flow can be retried.
+        _isPasswordSetupPrepared = false;
+        _passwordSetupSessionGeneration = null;
+        if (_store.isAuthenticationGenerationCurrent(sessionGeneration + 1)) {
+          _store.clearSessionPassword();
+        }
+        throw const SecureStorageSessionChangedException();
+      }
+    } finally {
+      _pendingPasswordMutationGeneration = null;
     }
   }
 
@@ -205,10 +216,9 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     state = AppSecurityState(
       isPasswordConfigured: true,
       isUnlocked:
-          !_store.enforcesSessionGeneration ||
-          (sessionGeneration != null &&
-              _store.isSessionGenerationCurrent(sessionGeneration) &&
-              _store.hasSessionPassword),
+          sessionGeneration != null &&
+          _store.isAuthenticationGenerationCurrent(sessionGeneration) &&
+          _store.hasSessionPassword,
     );
   }
 
@@ -256,7 +266,7 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     final lifecycleGeneration = _lifecycleGeneration;
     final requestGeneration = ++_unlockRequestGeneration;
     final verification = _store.verifyPassword(password);
-    final sessionGeneration = _store.sessionGeneration;
+    final sessionGeneration = _store.authenticationGeneration;
     _pendingUnlockSessionGeneration = sessionGeneration;
     try {
       final isValid = await verification;
@@ -279,7 +289,7 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   Future<bool> confirmPassword(String password) async {
     final lifecycleGeneration = _lifecycleGeneration;
     final requestGeneration = ++_confirmRequestGeneration;
-    final sessionGeneration = _store.sessionGeneration;
+    final sessionGeneration = _store.authenticationGeneration;
     if (!isWalletPasswordValid(password)) {
       return false;
     }
@@ -297,10 +307,9 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     required int sessionGeneration,
     required bool isCurrentRequest,
   }) {
-    if (_store.enforcesSessionGeneration &&
-        (lifecycleGeneration != _lifecycleGeneration ||
-            !_store.isSessionGenerationCurrent(sessionGeneration) ||
-            !isCurrentRequest)) {
+    if (lifecycleGeneration != _lifecycleGeneration ||
+        !_store.isAuthenticationGenerationCurrent(sessionGeneration) ||
+        !isCurrentRequest) {
       throw const SecureStorageSessionChangedException();
     }
   }
@@ -329,37 +338,42 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   }) async {
     final lifecycleGeneration = _lifecycleGeneration;
     final unlockRequestGeneration = _unlockRequestGeneration;
-    final sessionGeneration = _store.sessionGeneration;
-    if (!state.isUnlocked) {
-      throw StateError('Wallet must be unlocked to change the password.');
+    final sessionGeneration = _store.authenticationGeneration;
+    _pendingPasswordMutationGeneration = sessionGeneration;
+    try {
+      if (!state.isUnlocked) {
+        throw StateError('Wallet must be unlocked to change the password.');
+      }
+      if (currentPassword == newPassword) {
+        throw ArgumentError(kWalletPasswordMustDifferMessage);
+      }
+      final newPasswordError = validateRequiredWalletPassword(newPassword);
+      if (newPasswordError != null) {
+        throw ArgumentError(newPasswordError);
+      }
+      await ref.read(passwordChangePreflightProvider)();
+      _checkAuthenticationRequest(
+        lifecycleGeneration: lifecycleGeneration,
+        sessionGeneration: sessionGeneration,
+        isCurrentRequest: unlockRequestGeneration == _unlockRequestGeneration,
+      );
+      final didChange = await _store.changePassword(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      );
+      // A committed rotation still succeeds after locking, but must not reopen
+      // the session. The store only installs the new password for its own session.
+      if (didChange &&
+          lifecycleGeneration == _lifecycleGeneration &&
+          unlockRequestGeneration == _unlockRequestGeneration &&
+          _store.isAuthenticationGenerationCurrent(sessionGeneration + 1) &&
+          _store.hasSessionPassword) {
+        state = state.copyWith(isPasswordConfigured: true, isUnlocked: true);
+      }
+      return didChange;
+    } finally {
+      _pendingPasswordMutationGeneration = null;
     }
-    if (currentPassword == newPassword) {
-      throw ArgumentError(kWalletPasswordMustDifferMessage);
-    }
-    final newPasswordError = validateRequiredWalletPassword(newPassword);
-    if (newPasswordError != null) {
-      throw ArgumentError(newPasswordError);
-    }
-    await ref.read(passwordChangePreflightProvider)();
-    _checkAuthenticationRequest(
-      lifecycleGeneration: lifecycleGeneration,
-      sessionGeneration: sessionGeneration,
-      isCurrentRequest: unlockRequestGeneration == _unlockRequestGeneration,
-    );
-    final didChange = await _store.changePassword(
-      currentPassword: currentPassword,
-      newPassword: newPassword,
-    );
-    // A committed rotation still succeeds after locking, but must not reopen
-    // the session. The store only installs the new password for its own session.
-    if (didChange &&
-        (!_store.enforcesSessionGeneration ||
-            (lifecycleGeneration == _lifecycleGeneration &&
-                unlockRequestGeneration == _unlockRequestGeneration &&
-                _store.hasSessionPassword))) {
-      state = state.copyWith(isPasswordConfigured: true, isUnlocked: true);
-    }
-    return didChange;
   }
 
   void lock() {
