@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/config/private_transparent_recovery_config.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_icon_hover_button.dart';
 import 'network_privacy_control.dart';
 import 'wallet_pir_server_popup.dart';
 
@@ -11,11 +12,26 @@ class EnhancePirPrivacyControl extends StatelessWidget {
     required this.enabled,
     required this.onToggle,
     required this.transition,
+    this.label = 'Private queries',
+    this.keyPrefix = 'settings_enhance_pir',
+    this.description = kPrivateQueriesSettingsCopy,
+    this.onInfo,
+    this.serverSettings = true,
     super.key,
   });
 
+  final String label;
+  final String keyPrefix;
+  final String description;
   final bool enabled;
   final VoidCallback? onToggle;
+
+  /// Shows an explanation of the setting from an info icon after the label.
+  final VoidCallback? onInfo;
+
+  /// Shows the private query server picker after the label. Only the Private
+  /// queries row owns the server choice.
+  final bool serverSettings;
 
   /// Feedback for the user's own toggle only. Recovery queue counts are
   /// deliberately not surfaced here: they are dominated by obligations that
@@ -59,7 +75,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              'Private queries',
+                              label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTypography.labelLarge.copyWith(
@@ -67,16 +83,30 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          WalletPirServerSettingsButton(
-                            enabled: enabled && onToggle != null,
-                          ),
+                          if (onInfo case final onInfo?) ...[
+                            const SizedBox(width: AppSpacing.xxs),
+                            AppIconHoverButton(
+                              key: ValueKey('${keyPrefix}_info'),
+                              icon: AppIcons.help,
+                              semanticLabel: "What's this?",
+                              size: 20,
+                              iconSize: 16,
+                              iconColor: colors.icon.muted,
+                              onTap: onInfo,
+                            ),
+                          ],
+                          if (serverSettings) ...[
+                            const SizedBox(width: AppSpacing.xxs),
+                            WalletPirServerSettingsButton(
+                              enabled: enabled && onToggle != null,
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
                         enabled ? 'On' : 'Off',
-                        key: const ValueKey('settings_enhance_pir_status'),
+                        key: ValueKey('${keyPrefix}_status'),
                         style: AppTypography.labelLarge.copyWith(
                           color: enabled
                               ? colors.text.brandCrimson
@@ -89,10 +119,10 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 PrivacyToggle(
-                  key: const ValueKey('settings_enhance_pir_toggle'),
-                  trackKey: const ValueKey('settings_enhance_pir_toggle_track'),
+                  key: ValueKey('${keyPrefix}_toggle'),
+                  trackKey: ValueKey('${keyPrefix}_toggle_track'),
                   enabled: enabled,
-                  semanticsLabel: 'Private queries',
+                  semanticsLabel: label,
                   onToggle: onToggle,
                 ),
               ],
@@ -103,7 +133,7 @@ class EnhancePirPrivacyControl extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             transition!,
-            key: const ValueKey('settings_enhance_pir_transition'),
+            key: ValueKey('${keyPrefix}_transition'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
@@ -113,8 +143,8 @@ class EnhancePirPrivacyControl extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            kPrivateQueriesSettingsCopy,
-            key: const ValueKey('settings_enhance_pir_description'),
+            description,
+            key: ValueKey('${keyPrefix}_description'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),
