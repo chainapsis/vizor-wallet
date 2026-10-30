@@ -170,6 +170,11 @@ package = "ur-registry"
 default-features = false
 features = ["std"]
 
+# Keep runtime CPU detection and software fallback on supported ASM targets.
+# Windows is unsupported; 32-bit SHA-512 requires unchecked SSSE3.
+[target.'cfg(all(not(target_os = "windows"), target_endian = "little", any(target_arch = "x86_64", all(target_arch = "aarch64", target_vendor = "apple"))))'.dependencies]
+sha2 = { version = "0.10", features = ["asm"] }
+
 # The platform log backends FRB 2.11.1 uses, at the versions it already pulls in.
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
 oslog = "0.2.0"
