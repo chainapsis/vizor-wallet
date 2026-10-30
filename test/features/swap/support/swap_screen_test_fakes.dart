@@ -1151,6 +1151,10 @@ class _FakeSwapPersistenceStore
   final _preferencesByAccount = <String, SwapComposerPreferences>{};
   final _payAssetByAccount = <String, SwapAsset>{};
 
+  /// The swaps saved under `accountUuid`.
+  List<SwapIntent> intentsFor(String accountUuid) =>
+      _intentsByAccount[accountUuid] ?? const [];
+
   @override
   Future<List<SwapIntentRecord>> loadRecords({
     required String accountUuid,
@@ -1236,6 +1240,19 @@ class _DelayedComposerPreferencesStore extends _FakeSwapPersistenceStore {
     final preferences = await super.loadPreferences(accountUuid: accountUuid);
     await _preferencesGate.future;
     return preferences;
+  }
+}
+
+class _FailingSaveSwapPersistenceStore extends _FakeSwapPersistenceStore {
+  final failedSaves = <String>[];
+
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) async {
+    failedSaves.add(accountUuid);
+    throw StateError('secure storage unavailable');
   }
 }
 

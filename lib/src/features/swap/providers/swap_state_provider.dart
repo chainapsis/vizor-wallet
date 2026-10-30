@@ -113,7 +113,13 @@ class SwapNotifier extends Notifier<SwapState> {
       (previous, next) {
         if (previous == next) return;
         if (previous != null) {
-          unawaited(_persistCurrentIntents(accountUuid: previous));
+          unawaited(
+            _persistCurrentIntents(accountUuid: previous).catchError((
+              Object e,
+            ) {
+              log('Swap: saving activity on account switch failed error=$e');
+            }),
+          );
           // In Pay mode the composer state carries Pay's direction/payout
           // asset, which must not overwrite the previous account's saved
           // swap composer selection.
@@ -871,6 +877,14 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return null;
     }
+    // Advances on every account switch, including a switch back.
+    final scope = _accountScopeGeneration;
+    // Whether the screen moved to other swaps since the start began: another
+    // account, or this one again while its swaps reload. The screen's list
+    // then no longer saves for this account, so the start is dropped before
+    // anything is listed, saved or sent for it.
+    bool screenMoved() =>
+        scope != _accountScopeGeneration || !_isAccountActive(accountUuid);
     final activeAccountIsHardware = ref
         .read(accountProvider.notifier)
         .isActiveAccountHardware;
@@ -908,6 +922,10 @@ class SwapNotifier extends Notifier<SwapState> {
         );
         return null;
       }
+      if (screenMoved()) {
+        log('Swap: start dropped after an account switch');
+        return null;
+      }
     }
 
     late final SwapIntentSnapshot snapshot;
@@ -923,6 +941,12 @@ class SwapNotifier extends Notifier<SwapState> {
         quoteLoading: false,
         statusError: _providerFailureMessage(SwapFailureOperation.start, e),
       );
+      return null;
+    }
+    // The provider swap exists but nothing was sent to it yet, and no screen
+    // shows its instructions, so leaving it unfunded is safe.
+    if (screenMoved()) {
+      log('Swap: start dropped after an account switch');
       return null;
     }
     var intent = swapIntentFromSnapshot(
