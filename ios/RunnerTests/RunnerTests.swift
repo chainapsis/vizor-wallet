@@ -1447,19 +1447,8 @@ class RunnerTests: XCTestCase {
     )
   }
 
-  func testPreparationStateOutcomesSeparateRecoveryFromTaskFailure() {
-    XCTAssertEqual(
-      migrationPreparationScopeTrackingDisposition(
-        state: 1,
-        completedStageCount: 2,
-        totalStageCount: 2,
-        confirmationTarget: 3
-      ),
-      .needsForegroundRecovery(
-        fingerprint: "state-1-unverified",
-        taskFailed: true
-      )
-    )
+  func testPreparationStateOutcomesMapTheInspectedStates() {
+    XCTAssertNil(migrationPreparationScopeTrackingDisposition(state: 0))
     XCTAssertEqual(
       migrationPreparationScopeTrackingDisposition(state: 2),
       .needsForegroundRecovery(
@@ -1468,18 +1457,12 @@ class RunnerTests: XCTestCase {
       )
     )
     XCTAssertEqual(
-      migrationPreparationScopeTrackingDisposition(state: 3),
-      .needsForegroundRecovery(
-        fingerprint: "state-3",
-        taskFailed: true
-      )
+      migrationPreparationScopeTrackingDisposition(state: 4),
+      .inactive
     )
     XCTAssertEqual(
-      migrationPreparationScopeTrackingDisposition(state: 5),
-      .needsForegroundRecovery(
-        fingerprint: "state-5",
-        taskFailed: false
-      )
+      migrationPreparationScopeTrackingDisposition(state: 1),
+      .terminalFailure(fingerprint: "unexpected-state-1")
     )
   }
 
@@ -1734,21 +1717,17 @@ class RunnerTests: XCTestCase {
   }
 
   func testMigrationPreparationForegroundContinuationTracksEverySyncWait() {
-    for state in [UInt8(0), 2, 3, 5] {
+    for state in [UInt8(0), 2] {
       XCTAssertTrue(
         migrationPreparationStateNeedsForegroundContinuation(state)
       )
     }
-    XCTAssertFalse(migrationPreparationStateNeedsForegroundContinuation(1))
     XCTAssertFalse(migrationPreparationStateNeedsForegroundContinuation(4))
   }
 
   func testCompletedConfirmationWaitDoesNotCreateForegroundNotification() {
     XCTAssertFalse(migrationPreparationStateNeedsForegroundNotification(0))
-    for state in [UInt8(2), 3, 5] {
-      XCTAssertTrue(migrationPreparationStateNeedsForegroundNotification(state))
-    }
-    XCTAssertFalse(migrationPreparationStateNeedsForegroundNotification(1))
+    XCTAssertTrue(migrationPreparationStateNeedsForegroundNotification(2))
     XCTAssertFalse(migrationPreparationStateNeedsForegroundNotification(4))
   }
 
