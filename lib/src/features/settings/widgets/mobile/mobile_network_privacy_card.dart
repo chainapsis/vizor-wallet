@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../near_swap_privacy_info.dart';
-import '../near_swap_privacy_turn_off.dart';
 import '../settings_sub_option.dart';
 import 'mobile_tor_control.dart';
 import 'mobile_private_queries_control.dart';
@@ -74,7 +74,9 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                         ? null
                         : kNearSwapPrivacyUnavailableLabel,
                     onToggle: nearSwapPrivacy.available
-                        ? () => unawaited(toggleNearSwapPrivacy(context, ref))
+                        ? () => unawaited(
+                            ref.read(nearSwapPrivacyProvider.notifier).toggle(),
+                          )
                         : null,
                   ),
                   // Feedback for this toggle only, as under Private queries.
