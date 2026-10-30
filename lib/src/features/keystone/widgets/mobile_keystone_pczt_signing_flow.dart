@@ -1,3 +1,4 @@
+import '../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -470,14 +471,17 @@ class _MobileKeystonePcztSigningFlowState
     final child = _stage == _SignStage.scanning
         ? _buildScannerPage()
         : _buildQrPage();
-    return PopScope<void>(
-      canPop: !_decoding,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _cancel();
-      },
-      child: DefaultTextStyle.merge(
-        style: const TextStyle(decoration: TextDecoration.none),
-        child: SizedBox.expand(key: _key('screen'), child: child),
+    return MobileSidebarExitScope(
+      canNavigate: !_decoding,
+      child: PopScope<void>(
+        canPop: !_decoding,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _cancel();
+        },
+        child: DefaultTextStyle.merge(
+          style: const TextStyle(decoration: TextDecoration.none),
+          child: SizedBox.expand(key: _key('screen'), child: child),
+        ),
       ),
     );
   }

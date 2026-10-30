@@ -15,7 +15,10 @@ import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
+import 'figma_compare/figma_compare_font_loader.dart';
+
 void main() {
+  setUpAll(loadFigmaCompareFonts);
   setUpAll(() => RustLib.initMock(api: _RustFake()));
   tearDownAll(RustLib.dispose);
 
@@ -52,7 +55,13 @@ void main() {
           await tester.tap(find.text('Add account review entry'));
           await tester.pumpAndSettle();
         }
-        await tester.tap(find.byKey(ValueKey('welcome_${flow}_button')));
+        // Direct entries have no selector-origin query parameters. They must
+        // retain their original Welcome/Add account fallback destination.
+        harness.router.go(switch (flow) {
+          'import_wallet' => '/import',
+          'connect_keystone' => '/onboarding/keystone',
+          _ => '/onboarding/ledger',
+        });
         await tester.pumpAndSettle();
 
         expect(harness.router.canPop(), isFalse);

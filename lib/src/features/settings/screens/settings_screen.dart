@@ -14,10 +14,12 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
 import '../../../core/navigation/route_stack.dart';
 import '../../../core/profile_pictures.dart';
+import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -32,6 +34,7 @@ import '../../donation/donation_config.dart';
 import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
 import '../widgets/enhance_pir_privacy_control.dart';
+import '../widgets/private_queries_turn_off.dart';
 import '../widgets/settings_new_badge.dart';
 import '../widgets/windows_update_download_flow.dart';
 
@@ -106,12 +109,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final account = accountState?.activeAccount;
     if (account == null) return;
     final notifier = ref.read(accountProvider.notifier);
-    if (name.trim() != account.name.trim()) {
-      await notifier.renameAccount(account.uuid, name);
-    }
-    final draftPicture = _editDraftProfilePictureId;
-    if (draftPicture != null && draftPicture != account.profilePictureId) {
-      await notifier.updateProfilePicture(account.uuid, draftPicture);
+    try {
+      if (name.trim() != account.name.trim()) {
+        await notifier.renameAccount(account.uuid, name);
+      }
+      final draftPicture = _editDraftProfilePictureId;
+      if (draftPicture != null && draftPicture != account.profilePictureId) {
+        await notifier.updateProfilePicture(account.uuid, draftPicture);
+      }
+    } on WalletMutationBusyException catch (error) {
+      // Another wallet mutation, such as the private queries toggle, holds
+      // the wallet. The modal stays open with its drafts for a retry.
+      if (mounted) showAppToast(context, error.toString());
+      return;
     }
     if (!mounted) return;
     _closeModal();
@@ -126,9 +136,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _updateProfilePicture(String profilePictureId) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-    await ref
-        .read(accountProvider.notifier)
-        .updateProfilePicture(accountUuid, profilePictureId);
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .updateProfilePicture(accountUuid, profilePictureId);
+    } on WalletMutationBusyException catch (error) {
+      if (mounted) showAppToast(context, error.toString());
+      return;
+    }
     if (!mounted) return;
     _closeModal();
   }
@@ -498,10 +513,11 @@ class _SettingsList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final enhancePirEnabled = ref.watch(enhancePirProvider);
-    final enhancePirAvailable = ref.watch(enhancePirAvailableProvider);
+    final enhancePirEnabled = ref.watch(privateQueriesControlEnabledProvider);
+    final enhancePirAvailable =
+        ref.watch(enhancePirAvailableProvider) || enhancePirEnabled;
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
-    final changingRecovery = recoveryTransition == 'Changing setting…';
+    final changingRecovery = recoveryTransition == kEnhancePirChangingMessage;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -610,9 +626,7 @@ class _SettingsList extends ConsumerWidget {
                 transition: recoveryTransition,
                 onToggle: changingRecovery
                     ? null
-                    : () => unawaited(
-                        ref.read(enhancePirProvider.notifier).toggle(),
-                      ),
+                    : () => unawaited(togglePrivateQueries(context, ref)),
               ),
             ],
           ],

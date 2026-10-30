@@ -457,7 +457,10 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
         return Stack(
           fit: StackFit.passthrough,
           children: [
-            widget.child,
+            // What the shield hides from the screen is hidden from screen
+            // readers too; the shield's icon says so instead. The child stays
+            // mounted, so its state survives the shield.
+            ExcludeSemantics(excluding: showShield, child: widget.child),
             if (showShield)
               Positioned.fill(
                 child: _SensitivePrivacyShield(

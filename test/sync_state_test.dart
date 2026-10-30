@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_balance_cache.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -30,6 +31,140 @@ void main() {
       SpendableBalanceFreshness.authoritative,
     );
     expect(state.isUsingCompletedSpendableSnapshot, isFalse);
+  });
+
+  group('persisted balance snapshot', () {
+    SyncState restoreSnapshot() {
+      final saved = CachedWalletBalance(
+        _balance(
+          orchard: BigInt.from(40),
+          ironwood: BigInt.from(30),
+          orchardPending: BigInt.from(20),
+          ironwoodPending: BigInt.from(10),
+          spendable: BigInt.from(70),
+          total: BigInt.from(100),
+        ),
+        DateTime.utc(2026),
+      );
+      return SyncState(
+        accountUuid: 'account-a',
+        isSyncing: true,
+      ).withCachedBalance(CachedWalletBalance.decode(saved.encode())!);
+    }
+
+    test('keeps spendable, pending and holdings stable across live reads', () {
+      final restored = restoreSnapshot();
+      expect(restored.displaySpendableBalance, BigInt.from(70));
+      expect(restored.displayOrchardPendingBalance, BigInt.from(20));
+      expect(restored.displayIronwoodPendingBalance, BigInt.from(10));
+      expect(restored.displayShieldedBalance, BigInt.from(100));
+      expect(restored.hasBalanceData, isFalse);
+
+      final firstRead = restored.withFetchedAccountData(
+        balance: _balance(
+          orchard: BigInt.zero,
+          ironwood: BigInt.zero,
+          orchardPending: BigInt.from(100),
+          ironwoodPending: BigInt.from(20),
+          spendable: BigInt.zero,
+          total: BigInt.from(120),
+        ),
+        syncComplete: false,
+      );
+      expect(firstRead.hasBalanceData, isTrue);
+      expect(firstRead.hasCachedBalance, isFalse);
+      expect(firstRead.spendableBalance, BigInt.zero);
+      expect(firstRead.pendingBalance, BigInt.from(120));
+      expect(firstRead.totalBalance, BigInt.from(120));
+
+      final secondRead = firstRead.withFetchedAccountData(
+        balance: _balance(
+          orchard: BigInt.from(60),
+          ironwood: BigInt.from(20),
+          orchardPending: BigInt.from(30),
+          ironwoodPending: BigInt.from(10),
+          spendable: BigInt.from(80),
+          total: BigInt.from(120),
+        ),
+        syncComplete: false,
+      );
+      expect(secondRead.spendableBalance, BigInt.from(80));
+      expect(secondRead.pendingBalance, BigInt.from(40));
+
+      for (final state in [firstRead, secondRead]) {
+        expect(state.displaySpendableBalance, BigInt.from(70));
+        expect(state.displayOrchardBalance, BigInt.from(40));
+        expect(state.displayIronwoodBalance, BigInt.from(30));
+        expect(state.displayOrchardPendingBalance, BigInt.from(20));
+        expect(state.displayIronwoodPendingBalance, BigInt.from(10));
+        expect(state.displayShieldedBalance, BigInt.from(100));
+        expect(state.displayTotalBalance, BigInt.from(100));
+        expect(state.isUsingCompletedSpendableSnapshot, isTrue);
+        expect(state.hasSettledSpendableBalance, isFalse);
+      }
+
+      // Completion may increase, decrease, or genuinely empty the balance.
+      for (final amount in [0, 60, 120]) {
+        final completed = secondRead.withFetchedAccountData(
+          balance: _balance(
+            orchard: BigInt.from(amount),
+            ironwood: BigInt.zero,
+            spendable: BigInt.from(amount),
+            total: BigInt.from(amount),
+          ),
+          syncComplete: true,
+        );
+        expect(completed.displaySpendableBalance, BigInt.from(amount));
+        expect(completed.displayOrchardBalance, BigInt.from(amount));
+        expect(completed.displayIronwoodBalance, BigInt.zero);
+        expect(completed.displayOrchardPendingBalance, BigInt.zero);
+        expect(completed.displayIronwoodPendingBalance, BigInt.zero);
+        expect(completed.displayShieldedBalance, BigInt.from(amount));
+        expect(completed.displayTotalBalance, BigInt.from(amount));
+        expect(completed.isUsingCompletedSpendableSnapshot, isFalse);
+      }
+    });
+
+    test('completion without a valid balance keeps the snapshot protected', () {
+      final restored = restoreSnapshot();
+      final afterLiveRead = restored.withFetchedAccountData(
+        balance: _balance(
+          orchard: BigInt.zero,
+          ironwood: BigInt.zero,
+          spendable: BigInt.zero,
+          total: BigInt.zero,
+        ),
+        syncComplete: false,
+      );
+      for (final previous in [restored, afterLiveRead]) {
+        final completed = previous.withFetchedAccountData(syncComplete: true);
+        expect(completed.displaySpendableBalance, BigInt.from(70));
+        expect(completed.displayOrchardPendingBalance, BigInt.from(20));
+        expect(completed.displayIronwoodPendingBalance, BigInt.from(10));
+        expect(completed.displayTotalBalance, BigInt.from(100));
+        expect(completed.isUsingCompletedSpendableSnapshot, isTrue);
+      }
+    });
+
+    test(
+      'an initial scan without a snapshot still publishes live balances',
+      () {
+        final scanning = SyncState(isSyncing: true).withFetchedAccountData(
+          balance: _balance(
+            orchard: BigInt.from(25),
+            ironwood: BigInt.zero,
+            orchardPending: BigInt.from(5),
+            spendable: BigInt.from(25),
+            total: BigInt.from(30),
+          ),
+          syncComplete: false,
+        );
+        expect(scanning.displaySpendableBalance, BigInt.from(25));
+        expect(scanning.displayOrchardPendingBalance, BigInt.from(5));
+        expect(scanning.displayTotalBalance, BigInt.from(30));
+        expect(scanning.isUsingCompletedSpendableSnapshot, isFalse);
+      },
+    );
   });
 
   test('only a completed account snapshot is eligible for preservation', () {
@@ -155,6 +290,8 @@ void main() {
     );
     final balance = rust_sync.WalletBalance(
       availability: rust_sync.WalletBalanceAvailability.available,
+      transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
+      transparentPrivate: false,
       transparent: BigInt.from(1),
       sapling: BigInt.from(2),
       orchard: BigInt.from(3),
@@ -277,6 +414,8 @@ void main() {
   test('fetched Ironwood-only balance feeds the spendable display', () {
     final balance = rust_sync.WalletBalance(
       availability: rust_sync.WalletBalanceAvailability.available,
+      transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
+      transparentPrivate: false,
       transparent: BigInt.zero,
       sapling: BigInt.zero,
       orchard: BigInt.zero,
@@ -667,11 +806,15 @@ rust_sync.WalletBalance _balance({
   required BigInt orchard,
   BigInt? orchardLocked,
   required BigInt ironwood,
+  BigInt? orchardPending,
+  BigInt? ironwoodPending,
   required BigInt spendable,
   required BigInt total,
 }) {
   return rust_sync.WalletBalance(
     availability: rust_sync.WalletBalanceAvailability.available,
+    transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
+    transparentPrivate: false,
     transparent: BigInt.zero,
     sapling: BigInt.zero,
     orchard: orchard,
@@ -682,8 +825,8 @@ rust_sync.WalletBalance _balance({
     ironwoodLocked: BigInt.zero,
     transparentPending: BigInt.zero,
     saplingPending: BigInt.zero,
-    orchardPending: BigInt.zero,
-    ironwoodPending: BigInt.zero,
+    orchardPending: orchardPending ?? BigInt.zero,
+    ironwoodPending: ironwoodPending ?? BigInt.zero,
     changePendingConfirmation: BigInt.zero,
     valuePendingSpendability: BigInt.zero,
     uneconomicValue: BigInt.zero,
@@ -700,6 +843,10 @@ rust_sync.TransactionInfo _tx(String txidHex) {
     expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'received',

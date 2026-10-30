@@ -3,31 +3,37 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/home/widgets/keystone_shield_signing_overlay.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../fakes/fake_sync_notifier.dart';
 
 /// The desktop shield overlay lives on `/home`, so the location-based rules in
 /// `payment_uri_drain_policy.dart` cannot see it. Its hold on
-/// `paymentUriBusySurfaceProvider` is the only thing stopping an inbound
+/// `externalActionGuardProvider` is the only thing stopping an inbound
 /// `zcash:` link from disposing it — and the prepared PCZT with it.
 void main() {
   testWidgets('holds the payment-URI busy latch while it is mounted', (
     tester,
   ) async {
     final container = ProviderContainer(
-      overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        syncProvider.overrideWith(FakeSyncNotifier.new),
+      ],
     );
     addTearDown(container.dispose);
 
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
     await tester.pumpWidget(_host(container, mountOverlay: true));
     await tester.pump();
 
     expect(
-      container.read(paymentUriBusySurfaceProvider),
+      container.read(externalActionGuardProvider).activeHoldCount,
       1,
       reason: 'a mounted shield overlay makes the payment-URI drain busy',
     );
@@ -37,7 +43,7 @@ void main() {
     // places Riverpod forbids a synchronous provider write.
     await tester.pump();
 
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 }
 

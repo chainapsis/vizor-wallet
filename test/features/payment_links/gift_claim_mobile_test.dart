@@ -2,7 +2,11 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_check_progress_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_card_entry_price_provider.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_scanner_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_mobile_views.dart';
 import 'dart:io';
@@ -22,6 +26,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/gift_claim_failu
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_passcode_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/account_persona_draft.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -36,6 +41,9 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_cl
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_copy.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_motion.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/gift_claim_failure_notice_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_claim_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
@@ -54,6 +62,7 @@ import '../../support/payment_links_screen_support.dart'
     show
         FakePaymentLinkClipboard,
         incomingLink,
+        secondIncomingLink,
         loadPaymentLinksTestFonts,
         pumpPaymentLinksScreen;
 
@@ -71,12 +80,14 @@ void main() {
     Future<double?>? entryPrice,
     BiometricUnlock? biometric,
     Size size = const Size(393, 852),
+    ThemeMode themeMode = ThemeMode.dark,
     bool restored = false,
     bool testPrivacyLock = false,
     bool multipleRestoredAccounts = false,
     bool addingGiftAccount = false,
     PaymentLinkReceivedStore? receivedStore,
     GiftClaimImportStore? importStore,
+    GlobalKey? captureBoundaryKey,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -100,7 +111,9 @@ void main() {
           ),
           if (scanner != null)
             paymentLinkScannerProvider.overrideWithValue(scanner),
-          appBootstrapProvider.overrideWithValue(_noWalletBootstrap),
+          appBootstrapProvider.overrideWithValue(
+            _noWalletBootstrap(themeMode: themeMode),
+          ),
           accountProvider.overrideWith(
             addingGiftAccount
                 ? _ExistingGiftAccounts.new
@@ -125,7 +138,12 @@ void main() {
             paymentClipboard ?? FakePaymentLinkClipboard(text: clipboard),
           ),
         ],
-        child: const ZcashWalletApp(),
+        child: captureBoundaryKey == null
+            ? const ZcashWalletApp()
+            : RepaintBoundary(
+                key: captureBoundaryKey,
+                child: const ZcashWalletApp(),
+              ),
       ),
     );
     await pumpUntilPresent(
@@ -182,7 +200,14 @@ void main() {
         GoRoute(
           path: '/',
           builder: (_, _) => MobilePasscodeScreen(
-            args: args,
+            args: walletLink
+                ? args
+                : args.withPersona(
+                    const AccountPersona(
+                      name: 'Imported wallet',
+                      profilePictureId: 'pfp-01',
+                    ),
+                  ),
             completeWalletLinkPackage:
                 ({
                   required packageId,
@@ -211,7 +236,7 @@ void main() {
       ProviderScope(
         key: UniqueKey(),
         overrides: [
-          appBootstrapProvider.overrideWithValue(_noWalletBootstrap),
+          appBootstrapProvider.overrideWithValue(_noWalletBootstrap()),
           accountProvider.overrideWith(
             () => _NoAccounts(importedAccountCount: count),
           ),
@@ -253,10 +278,7 @@ void main() {
       }
     }
     await tester.pumpAndSettle();
-    if (!walletLink) {
-      await tester.tap(keyed('mobile_customise_account_continue'));
-      await tester.pumpAndSettle();
-    }
+
     return container;
   }
 
@@ -568,6 +590,39 @@ void main() {
     expect(await GiftClaimImportStore().load(), isNull);
   });
 
+  // Home can keep animating while live data or a claim is pending. These
+  // route tests wait for navigation, rather than for background work to settle.
+  Future<void> pumpGiftTransition(WidgetTester tester) async {
+    for (var frame = 0; frame < 8; frame++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    if (location(tester) != '/home') await tester.pumpAndSettle();
+  }
+
+  Future<void> submitPersonaOrRetry(WidgetTester tester) async {
+    if (keyed('mobile_passcode_retry_setup').evaluate().isNotEmpty) {
+      await tester.tap(keyed('mobile_passcode_retry_setup'));
+    } else {
+      if (keyed(
+        'mobile_customise_account_continue',
+      ).hitTestable().evaluate().isNotEmpty) {
+        await tester.tap(keyed('mobile_customise_account_continue'));
+        await pumpGiftTransition(tester);
+      }
+      if (find.text('Create Passcode').hitTestable().evaluate().isNotEmpty) {
+        for (var round = 0; round < 2; round++) {
+          for (final digit in '135790'.split('')) {
+            await tester.tap(
+              find.bySemanticsLabel('Digit $digit').hitTestable(),
+            );
+            await tester.pump();
+          }
+        }
+      }
+    }
+    await pumpGiftTransition(tester);
+  }
+
   testWidgets('repeated create-wallet taps open only one passcode page', (
     tester,
   ) async {
@@ -584,7 +639,7 @@ void main() {
 
     gate.complete(null);
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/passcode');
+    expect(location(tester), '/gift/customise');
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(location(tester), '/gift');
@@ -613,7 +668,7 @@ void main() {
     store.loadGate = null;
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/passcode');
+    expect(location(tester), '/gift/customise');
     expect(tester.takeException(), isNull);
   });
 
@@ -624,18 +679,13 @@ void main() {
     container
         .read(paymentLinkIntakeProvider.notifier)
         .receive(paymentLinkNavigationLink.toUri().toString());
-    await tester.pumpAndSettle();
+    await pumpGiftTransition(tester);
 
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
-    await tester.pumpAndSettle();
-    expect(location(tester), '/gift/passcode');
-    for (var round = 0; round < 2; round++) {
-      for (final digit in '135790'.split('')) {
-        await tester.tap(find.bySemanticsLabel('Digit $digit'));
-        await tester.pump();
-      }
-    }
-    await tester.pumpAndSettle();
+    await pumpGiftTransition(tester);
+    expect(location(tester), '/gift/customise');
+
+    await pumpGiftTransition(tester);
 
     expect(container.read(accountProvider).value?.hasAccounts, isFalse);
     expect(container.read(appSecurityProvider).isPasswordConfigured, isFalse);
@@ -651,8 +701,8 @@ void main() {
       keyed('mobile_customise_account_name_field'),
       'My gift wallet',
     );
-    await tester.tap(keyed('mobile_customise_account_continue'));
-    await tester.pumpAndSettle();
+    await submitPersonaOrRetry(tester);
+    await pumpGiftTransition(tester);
     expect(location(tester), '/home');
     expect(operations.bindDestinations, ['new-account']);
     expect(operations.claimedDestinations, ['new-account']);
@@ -687,24 +737,55 @@ void main() {
     container
         .read(paymentLinkIntakeProvider.notifier)
         .receive(paymentLinkNavigationLink.toUri().toString());
-    await tester.pumpAndSettle();
+    await pumpGiftTransition(tester);
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
-    await tester.pumpAndSettle();
-    for (var round = 0; round < 2; round++) {
-      for (final digit in '135790'.split('')) {
-        await tester.tap(find.bySemanticsLabel('Digit $digit'));
-        await tester.pump();
-      }
-    }
-    await tester.pumpAndSettle();
+    await pumpGiftTransition(tester);
+
+    await pumpGiftTransition(tester);
     return container;
   }
+
+  testWidgets('back after failed Gift passcode requires new confirmation', (
+    tester,
+  ) async {
+    final container = await reachGiftCustomise(tester);
+    final security = container.read(appSecurityProvider.notifier) as _Security;
+    security.prepareError = StateError('Passcode preparation unavailable');
+    await tester.enterText(
+      keyed('mobile_customise_account_name_field'),
+      'Draft gift',
+    );
+    await submitPersonaOrRetry(tester);
+    expect(location(tester), '/gift/passcode');
+    expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNotNull);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(location(tester), '/gift/customise');
+    expect(find.text('Draft gift'), findsOneWidget);
+    expect(container.read(giftClaimFlowProvider)?.setupPasscode, isNull);
+    security.prepareError = null;
+    await tester.tap(keyed('mobile_customise_account_continue'));
+    await tester.pumpAndSettle();
+    expect(location(tester), '/gift/passcode');
+    expect(
+      (container.read(accountProvider.notifier) as _NoAccounts).creationCalls,
+      0,
+    );
+    expect(find.text('Create Passcode'), findsOneWidget);
+    await submitPersonaOrRetry(tester);
+    expect(location(tester), '/onboarding/biometrics');
+    expect(
+      (container.read(accountProvider.notifier) as _NoAccounts).creationCalls,
+      1,
+    );
+    container.read(paymentLinkClaimCoordinatorProvider).pause();
+  });
 
   testWidgets('a slow broadcast does not hold Face ID or Home', (tester) async {
     final container = await reachGiftCustomise(tester);
     final broadcast = Completer<void>();
     operations.broadcastGate = broadcast;
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/onboarding/biometrics');
     expect(broadcast.isCompleted, isFalse);
@@ -743,7 +824,7 @@ void main() {
     };
     final broadcast = Completer<void>();
     operations.broadcastGate = broadcast;
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/onboarding/biometrics');
     expect(accounts.creationCalls, 1);
@@ -780,26 +861,17 @@ void main() {
         )
         ..recoveryError = StateError('storage still unavailable');
       for (var attempt = 0; attempt < 2; attempt++) {
-        await tester.tap(keyed('mobile_customise_account_continue'));
+        await submitPersonaOrRetry(tester);
         await tester.pumpAndSettle();
-        expect(location(tester), '/gift/customise');
+        expect(location(tester), '/gift/passcode');
         expect(
-          find.text('Couldn’t finish saving your wallet. Try again.'),
+          find.textContaining(
+            attempt == 0 ? 'Setup interrupted.' : "Couldn't resume setup.",
+          ),
           findsOneWidget,
         );
-        expect(find.text('Try again'), findsOneWidget);
-        expect(
-          tester
-              .widget<TextField>(keyed('mobile_customise_account_name_field'))
-              .enabled,
-          isFalse,
-        );
-        expect(
-          tester
-              .widget<AppButton>(keyed('mobile_customise_account_randomise'))
-              .onPressed,
-          isNull,
-        );
+        expect(find.text('Retry setup'), findsOneWidget);
+        expect(find.bySemanticsLabel('Back').hitTestable(), findsNothing);
         expect(accounts.creationCalls, 1);
         expect(accounts.recoveryCalls, attempt + 1);
         expect(operations.claimedDestinations, isEmpty);
@@ -810,7 +882,7 @@ void main() {
       }
 
       accounts.recoveryError = null;
-      await tester.tap(keyed('mobile_customise_account_continue'));
+      await submitPersonaOrRetry(tester);
       await tester.pumpAndSettle();
       expect(location(tester), '/onboarding/biometrics');
       expect(accounts.creationCalls, 1);
@@ -835,10 +907,10 @@ void main() {
         StateError('storage unavailable'),
       )
       ..skipRecoverySave = true;
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/customise');
-    expect(find.text('Try again'), findsOneWidget);
+    expect(location(tester), '/gift/passcode');
+    expect(find.text('Retry setup'), findsOneWidget);
     expect(operations.claimedDestinations, isEmpty);
     expect(accounts.creationCalls, 1);
     expect(accounts.recoveryCalls, 1);
@@ -855,9 +927,9 @@ void main() {
           StateError('storage unavailable'),
         )
         ..recoveryError = StateError('storage still unavailable');
-      await tester.tap(keyed('mobile_customise_account_continue'));
+      await submitPersonaOrRetry(tester);
       await tester.pumpAndSettle();
-      expect(location(tester), '/gift/customise');
+      expect(location(tester), '/gift/passcode');
       expect(
         container.read(giftClaimFlowProvider)?.walletSetupInProgress,
         isTrue,
@@ -879,15 +951,16 @@ void main() {
     final container = await reachGiftCustomise(tester);
     (container.read(accountProvider.notifier) as _NoAccounts).creationError =
         GiftClaimAccountCreatedException(null, StateError('DB unavailable'));
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
-    expect(location(tester), '/gift/customise');
-    expect(find.text(kWalletAccountStateUncertainMessage), findsOneWidget);
+    expect(location(tester), '/gift/passcode');
     expect(
-      tester
-          .widget<AppButton>(keyed('mobile_customise_account_continue'))
-          .onPressed,
-      isNull,
+      find.text('Setup interrupted. Retry to recover your wallet.'),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<AppButton>(keyed('mobile_passcode_retry_setup')).onPressed,
+      isNotNull,
     );
     expect(container.read(appSecurityProvider).isPasswordConfigured, isTrue);
   });
@@ -903,19 +976,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    for (var round = 0; round < 2; round++) {
-      for (final digit in '135790'.split('')) {
-        await tester.tap(find.bySemanticsLabel('Digit $digit'));
-        await tester.pump();
-      }
-    }
+
     await tester.pumpAndSettle();
 
     await tester.enterText(
       keyed('mobile_customise_account_name_field'),
       'My gift wallet',
     );
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/home');
     expect(operations.claimedDestinations, ['new-account']);
@@ -932,22 +1000,17 @@ void main() {
       container
           .read(paymentLinkIntakeProvider.notifier)
           .receive(paymentLinkNavigationLink.toUri().toString());
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
       await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
-      await tester.pumpAndSettle();
-      for (var round = 0; round < 2; round++) {
-        for (final digit in '135790'.split('')) {
-          await tester.tap(find.bySemanticsLabel('Digit $digit'));
-          await tester.pump();
-        }
-      }
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
+
+      await pumpGiftTransition(tester);
       await tester.enterText(
         keyed('mobile_customise_account_name_field'),
         'My gift wallet',
       );
-      await tester.tap(keyed('mobile_customise_account_continue'));
-      await tester.pumpAndSettle();
+      await submitPersonaOrRetry(tester);
+      await pumpGiftTransition(tester);
 
       expect(location(tester), '/onboarding/biometrics');
       expect(find.byType(MobileBiometricsScreen), findsOneWidget);
@@ -965,7 +1028,7 @@ void main() {
           enable ? 'mobile_biometrics_enable' : 'mobile_biometrics_not_now',
         ),
       );
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
       expect(location(tester), '/home');
       expect(biometric.enabledPasscode, enable ? '135790' : null);
     });
@@ -982,19 +1045,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
     await tester.pumpAndSettle();
-    for (var round = 0; round < 2; round++) {
-      for (final digit in '135790'.split('')) {
-        await tester.tap(find.bySemanticsLabel('Digit $digit'));
-        await tester.pump();
-      }
-    }
+
     await tester.pumpAndSettle();
 
     await tester.enterText(
       keyed('mobile_customise_account_name_field'),
       'My gift wallet',
     );
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     expect(location(tester), '/home');
     expect(operations.bindDestinations, ['new-account']);
@@ -1014,15 +1072,10 @@ void main() {
 
       await tester.tap(keyed('gift_claim_create_a_wallet_to_claim'));
       await tester.pumpAndSettle();
-      for (var round = 0; round < 2; round++) {
-        for (final digit in '135790'.split('')) {
-          await tester.tap(find.bySemanticsLabel('Digit $digit'));
-          await tester.pump();
-        }
-      }
+
       await tester.pumpAndSettle();
 
-      await tester.tap(keyed('mobile_customise_account_continue'));
+      await submitPersonaOrRetry(tester);
       await tester.pumpAndSettle();
       expect(location(tester), '/onboarding/biometrics');
       expect(container.read(giftClaimFailureNoticeProvider), isNotNull);
@@ -1069,7 +1122,7 @@ void main() {
     final gate = Completer<void>();
     operations.bindGate = gate;
     operations.bindFails = true;
-    await tester.tap(keyed('mobile_customise_account_continue'));
+    await submitPersonaOrRetry(tester);
     await tester.pumpAndSettle();
     await tester.tap(keyed('mobile_biometrics_not_now'));
     await tester.pumpAndSettle();
@@ -1118,6 +1171,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(PaymentLinkLoadingMobileCard), findsNothing);
   });
+
+  for (final completesScan in [false, true]) {
+    testWidgets(
+      'mobile Gift scanner resumes queued intake after ${completesScan ? "a QR result" : "cancellation"}',
+      (tester) async {
+        final container = await pumpWelcome(tester);
+        await tester.tap(keyed('mobile_welcome_redeem_card'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Scan QR code'));
+        await tester.pumpAndSettle();
+        final sheet = find.byType(PaymentLinkScanSheet);
+        expect(sheet, findsOneWidget);
+
+        container
+            .read(paymentLinkIntakeProvider.notifier)
+            .receive(secondIncomingLink.toUri().toString());
+        await tester.pumpAndSettle();
+        expect(container.read(giftClaimFlowProvider), isNull);
+        expect(operations.allowLongSyncChecks, isEmpty);
+        Navigator.of(
+          tester.element(sheet),
+        ).pop(completesScan ? incomingLink : null);
+        await tester.pumpAndSettle();
+
+        final flow = container.read(giftClaimFlowProvider);
+        expect(location(tester), '/gift');
+        expect(flow?.phase, GiftClaimPhase.inspected);
+        expect(
+          flow?.link.mnemonic,
+          (completesScan ? incomingLink : secondIncomingLink).mnemonic,
+        );
+        expect(operations.allowLongSyncChecks, [false]);
+        expect(operations.claimedDestinations, isEmpty);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('Back consumes the deep link before asynchronous card cleanup', (
     tester,
@@ -1220,9 +1310,9 @@ void main() {
       );
       final router = GoRouter.of(tester.element(find.byType(Navigator).last));
       router.push('/add-account');
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
       await tester.tap(keyed('mobile_welcome_redeem_card'));
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
       expect(
         find.text('Create account by redeeming Vizor Gift Card'),
         findsOneWidget,
@@ -1236,7 +1326,7 @@ void main() {
         findsNothing,
       );
       await tester.tap(find.text('Paste card link'));
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
       expect(
         find.text('Create an account or use one you have to claim it.'),
         findsOneWidget,
@@ -1244,16 +1334,16 @@ void main() {
       expect(keyed('gift_claim_create_an_account_to_claim'), findsOneWidget);
       expect(keyed('gift_claim_claim_with_an_existing_wallet'), findsOneWidget);
       await tester.tap(keyed('gift_claim_claim_with_an_existing_wallet'));
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
       expect(location(tester), '/onboarding/method');
       router.pop();
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
       await tester.tap(keyed('gift_claim_create_an_account_to_claim'));
-      await tester.pumpAndSettle();
+      await pumpGiftTransition(tester);
       expect(find.byType(MobileCustomiseAccountScreen), findsOneWidget);
       expect(find.byType(MobilePasscodeScreen), findsNothing);
-      await tester.tap(keyed('mobile_customise_account_continue'));
-      await tester.pumpAndSettle();
+      await submitPersonaOrRetry(tester);
+      await pumpGiftTransition(tester);
       expect(location(tester), '/home');
       expect(
         (container.read(appSecurityProvider.notifier) as _Security)
@@ -1519,6 +1609,56 @@ void main() {
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
   });
 
+  testWidgets(
+    'funding is visible on a waiting surface without actions before checking finishes',
+    (tester) async {
+      final container = await pumpWelcome(tester);
+      final gate = Completer<void>();
+      operations.inspectionGate = gate;
+      final link = paymentLinkNavigationLink;
+      container
+          .read(paymentLinkIntakeProvider.notifier)
+          .receive(link.toUri().toString());
+      await pumpUntilPresent(tester, find.text('Checking the gift…'));
+      container
+          .read(giftCardCheckProgressProvider.notifier)
+          .update(
+            link,
+            rust_sync.ApiGiftCardCheckProgress(
+              phase: 'checking',
+              completed: BigInt.from(50),
+              total: BigInt.from(100),
+              fundingHeight: link.birthdayHeight + 1,
+              checkedHeight: link.birthdayHeight + 50,
+              totalZatoshi: link.amountZatoshi + BigInt.from(10000),
+              unspentZatoshi: link.amountZatoshi + BigInt.from(10000),
+              complete: false,
+            ),
+          );
+      await tester.pump();
+      expect(find.text('Checking the gift… 50%'), findsWidgets);
+      expect(find.text('Checking your\ngift card'), findsOneWidget);
+      expect(find.text('Create a wallet to claim').hitTestable(), findsNothing);
+      expect(
+        find.text('Claim with an existing wallet').hitTestable(),
+        findsNothing,
+      );
+      expect(find.byType(PaymentLinkConfetti), findsNothing);
+      expect(
+        find.ancestor(
+          of: find.text('Checking the gift… 50%'),
+          matching: find.byType(AppButton),
+        ),
+        findsNothing,
+      );
+      gate.complete();
+      container.read(giftCardCheckProgressProvider.notifier).clear(link);
+      await tester.pumpAndSettle();
+      expect(find.text('Create a wallet to claim'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final (description, error, exitLabel) in [
     ('network error', const SocketException('offline'), 'Close'),
     (
@@ -1617,6 +1757,201 @@ void main() {
 
   // Layout checks need the real display fonts; they run last so the rest of
   // the file keeps its usual metrics.
+  for (final size in [const Size(320, 568), const Size(402, 874)]) {
+    for (final outcome in ['empty', 'claimed', 'network error']) {
+      testWidgets(
+        'gift card keeps its scrolled position after $outcome at $size',
+        (tester) async {
+          await loadFigmaCompareFonts();
+          tester.platformDispatcher.textScaleFactorTestValue = 1.4;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          tester.view.padding = const FakeViewPadding(top: 62, bottom: 34);
+          addTearDown(tester.view.resetPadding);
+          final container = await pumpWelcome(tester, size: size);
+          operations.inspectionAvailability = outcome == 'claimed'
+              ? PaymentLinkAvailability.claimedElsewhere
+              : PaymentLinkAvailability.noBalance;
+          final gate = Completer<void>();
+          operations.inspectionGate = gate;
+          container
+              .read(paymentLinkIntakeProvider.notifier)
+              .receive(paymentLinkNavigationLink.toUri().toString());
+          await pumpUntilPresent(tester, find.text('Checking the gift…'));
+          await tester.pump(const Duration(seconds: 1));
+          await tester.ensureVisible(find.text('Checking the gift…'));
+          await tester.pump();
+          final slot = keyed('gift_claim_card_slot');
+          final bounds = tester.getRect(slot);
+          if (outcome == 'network error') {
+            gate.completeError(const SocketException('offline'));
+          } else {
+            gate.complete();
+          }
+          await pumpUntilPresent(tester, keyed('gift_claim_status'));
+          await tester.pumpAndSettle();
+          expect(
+            tester.getRect(slot),
+            rectMoreOrLessEquals(bounds, epsilon: 0.001),
+          );
+          expect(find.byType(PaymentLinkLoadingMobileCard), findsNothing);
+          expect(keyed('gift_claim_close_button'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  for (final size in [
+    const Size(320, 568),
+    const Size(375, 667),
+    const Size(393, 852),
+    const Size(402, 874),
+    const Size(440, 956),
+  ]) {
+    for (final (textScale, safeInsets, fundingFound) in [
+      (1.0, false, true),
+      (1.4, false, true),
+      (1.0, true, false),
+      (1.4, true, true),
+    ]) {
+      testWidgets(
+        'gift card keeps its bounds through loading at $size, scale $textScale, safe insets $safeInsets, funding found $fundingFound',
+        (tester) async {
+          await loadFigmaCompareFonts();
+          tester.platformDispatcher.textScaleFactorTestValue = textScale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          if (safeInsets) {
+            tester.view.padding = const FakeViewPadding(top: 62, bottom: 34);
+            addTearDown(tester.view.resetPadding);
+          }
+          final captureKey = GlobalKey();
+          const captureDirectory = String.fromEnvironment(
+            'GIFT_CLAIM_LAYOUT_CAPTURE_DIR',
+          );
+          const captureTheme = String.fromEnvironment(
+            'GIFT_CLAIM_LAYOUT_THEME',
+          );
+          final container = await pumpWelcome(
+            tester,
+            size: size,
+            themeMode: captureTheme == 'light'
+                ? ThemeMode.light
+                : ThemeMode.dark,
+            captureBoundaryKey: captureDirectory.isEmpty ? null : captureKey,
+          );
+          Future<void> capture(String state) async {
+            if (captureDirectory.isEmpty) return;
+            final output = File(
+              '$captureDirectory/${size.width.toInt()}x${size.height.toInt()}-$textScale-$safeInsets-$fundingFound-$state.png',
+            );
+            output.parent.createSync(recursive: true);
+            await expectLater(
+              find.byKey(captureKey),
+              matchesGoldenFile(output.uri),
+            );
+          }
+
+          final gate = Completer<void>();
+          operations.inspectionGate = gate;
+          final link = safeInsets && !fundingFound
+              ? paymentLinkNavigationLink
+              : incomingLink;
+          container
+              .read(paymentLinkIntakeProvider.notifier)
+              .receive(link.toUri().toString());
+          await pumpUntilPresent(tester, find.text('Checking the gift…'));
+          await tester.pump(const Duration(seconds: 1));
+          final slot = keyed('gift_claim_card_slot');
+          var skeletonBounds = tester.getRect(slot);
+          final motionState = tester.state(find.byType(PaymentLinkCardMotion));
+          expect(skeletonBounds.center.dx, closeTo(size.width / 2, 0.01));
+          expect(
+            skeletonBounds.width / skeletonBounds.height,
+            closeTo(1.6, 0.01),
+          );
+          expect(find.byType(PaymentLinkLoadingMobileCard), findsOneWidget);
+          expect(
+            tester.getRect(keyed('payment_link_mobile_loading_card')),
+            rectMoreOrLessEquals(skeletonBounds, epsilon: 0.001),
+          );
+          expect(
+            keyed('gift_claim_create_a_wallet_to_claim').hitTestable(),
+            findsNothing,
+          );
+
+          await capture('skeleton');
+          if (safeInsets && fundingFound) {
+            await tester.ensureVisible(find.text('Checking the gift…'));
+            await tester.pump();
+            skeletonBounds = tester.getRect(slot);
+          }
+          if (fundingFound) {
+            container
+                .read(giftCardCheckProgressProvider.notifier)
+                .update(
+                  link,
+                  rust_sync.ApiGiftCardCheckProgress(
+                    phase: 'checking',
+                    completed: BigInt.from(50),
+                    total: BigInt.from(100),
+                    fundingHeight: link.birthdayHeight + 1,
+                    checkedHeight: link.birthdayHeight + 50,
+                    totalZatoshi: link.amountZatoshi,
+                    unspentZatoshi: link.amountZatoshi,
+                    complete: false,
+                  ),
+                );
+            await tester.pump();
+            expect(tester.getRect(slot), skeletonBounds);
+            expect(find.byType(PaymentLinkLoadingMobileCard), findsNothing);
+            expect(
+              tester.getRect(find.byType(PaymentLinkGiftCard).first),
+              rectMoreOrLessEquals(skeletonBounds, epsilon: 0.1),
+            );
+            expect(
+              tester.state(find.byType(PaymentLinkCardMotion)),
+              same(motionState),
+            );
+
+            await capture('funding');
+          }
+          gate.complete();
+          container.read(giftCardCheckProgressProvider.notifier).clear(link);
+          await tester.pump();
+          await pumpUntilPresent(tester, find.text('Gift found'));
+          // Check both the first loaded frame and the settled reveal. The motion
+          // state must survive so completion doesn't restart its entry scaling.
+          expect(tester.getRect(slot), skeletonBounds);
+          expect(
+            tester.state(find.byType(PaymentLinkCardMotion)),
+            same(motionState),
+          );
+          expect(
+            find.ancestor(
+              of: find.byType(PaymentLinkConfetti),
+              matching: find.byType(PaymentLinkCardMotion),
+            ),
+            findsNothing,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.getRect(slot), skeletonBounds);
+          expect(
+            tester.getRect(find.byType(PaymentLinkGiftCard).first),
+            rectMoreOrLessEquals(skeletonBounds, epsilon: 0.1),
+          );
+          await capture('loaded');
+          expect(
+            tester
+                .getRect(keyed('gift_claim_claim_with_an_existing_wallet'))
+                .bottom,
+            lessThanOrEqualTo(size.height),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   for (final (size, textScale) in [
     (const Size(393, 852), 1.0),
     (const Size(320, 568), 1.0),
@@ -1645,6 +1980,8 @@ void main() {
             tester.getRect(keyed('gift_claim_close_button')).bottom,
           ),
         );
+        await tester.ensureVisible(status);
+        await tester.pumpAndSettle();
         expect(
           tester.getRect(status).bottom,
           lessThanOrEqualTo(tester.getRect(primary).top),
@@ -1699,6 +2036,8 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
   final claimedDestinations = <String>[];
   final retainedClaimAddresses = <String>[];
   bool waiting = false;
+  PaymentLinkAvailability inspectionAvailability =
+      PaymentLinkAvailability.available;
   bool bindFails = false;
   Completer<void>? bindGate;
   Completer<void>? inspectionGate;
@@ -1802,13 +2141,16 @@ class _GiftOperations extends PendingClaimPaymentLinkOperations {
       dbPath: '/tmp/claim.db',
       accountUuid: 'claim-account',
       totalZatoshi: link.amountZatoshi + BigInt.from(10000),
-      claimableZatoshi: waiting ? BigInt.zero : link.amountZatoshi,
+      claimableZatoshi:
+          waiting || inspectionAvailability != PaymentLinkAvailability.available
+          ? BigInt.zero
+          : link.amountZatoshi,
       feeZatoshi: waiting ? BigInt.zero : BigInt.from(10000),
       fundingConfirmationCount: waiting ? 1 : 2,
       waitingForFundingConfirmations: waiting,
       availability: waiting
           ? PaymentLinkAvailability.noBalance
-          : PaymentLinkAvailability.available,
+          : inspectionAvailability,
     );
   }
 
@@ -1942,6 +2284,7 @@ class _Security extends AppSecurityNotifier {
     isUnlocked: false,
   );
 
+  Object? prepareError;
   int prepareCalls = 0;
   int rollbackCalls = 0;
   @override
@@ -1957,6 +2300,7 @@ class _Security extends AppSecurityNotifier {
   @override
   Future<void> preparePasswordSetup(String password) async {
     prepareCalls++;
+    if (prepareError case final error?) throw error;
     _passcode = password;
   }
 
@@ -2005,18 +2349,19 @@ class _MemoryStorage implements PaymentLinkReceivedStorage {
   Future<void> write(String next) async => value = next;
 }
 
-final _noWalletBootstrap = AppBootstrapState(
-  initialLocation: '/welcome',
-  initialAccountState: const AccountState(),
-  initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
-  themeMode: ThemeMode.dark,
-  privacyModeEnabled: false,
-  isPasswordConfigured: false,
-  isUnlocked: false,
-  passwordRotationRecoveryFailed: false,
-);
+AppBootstrapState _noWalletBootstrap({ThemeMode themeMode = ThemeMode.dark}) =>
+    AppBootstrapState(
+      initialLocation: '/welcome',
+      initialAccountState: const AccountState(),
+      initialSyncSnapshot: AppSyncSnapshot.empty,
+      network: 'main',
+      rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+      themeMode: themeMode,
+      privacyModeEnabled: false,
+      isPasswordConfigured: false,
+      isUnlocked: false,
+      passwordRotationRecoveryFailed: false,
+    );
 
 class _NoBiometrics extends BiometricUnlock {
   @override

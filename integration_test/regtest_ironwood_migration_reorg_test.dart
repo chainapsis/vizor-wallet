@@ -88,12 +88,11 @@ void main() {
       final runId = started.activeRunId;
       expect(runId, isNotNull);
 
-      await ironwoodDriverPost(
+      await prepareDesktopRegtestMigrationSchedule(
+        tester,
         _driverUrl,
-        '/mine',
-        payload: const {'blocks': 10},
+        accountUuid,
       );
-      await prepareDesktopRegtestMigrationSchedule(tester, accountUuid);
       final firstChild = await advanceDesktopRegtestMigrationSchedule(
         tester,
         _driverUrl,
@@ -142,12 +141,19 @@ void main() {
       expect(rolledBackDenomination.activeRunId, runId);
 
       await _releaseTransactions(reintroducedDenominations);
+      // Confirm the released split in one call. Once the split is mined again
+      // the app resends the reorged child, which must stay unmined until the
+      // child reorg below mines it in a block of its own.
       await ironwoodDriverPost(
         _driverUrl,
         '/mine',
         payload: const {'blocks': 10},
       );
-      await prepareDesktopRegtestMigrationSchedule(tester, accountUuid);
+      await prepareDesktopRegtestMigrationSchedule(
+        tester,
+        _driverUrl,
+        accountUuid,
+      );
       final rebuiltChild = await advanceDesktopRegtestMigrationSchedule(
         tester,
         _driverUrl,
@@ -160,6 +166,7 @@ void main() {
         greaterThan(0),
       );
       expect(rebuiltChild.totalCount, firstChild.totalCount);
+      await _waitForSubmittedChildInMempool(rebuiltChild);
 
       // Release any pre-reorg child that was held. If rebuilding produced the
       // same effecting-data txid, this also releases the rebuilt transaction.
@@ -279,6 +286,25 @@ Future<void> _waitForIronwoodSync(
 
 List<String> _txids(Map<String, Object?> payload, String key) {
   return (payload[key] as List<Object?>).cast<String>();
+}
+
+/// Waits until the app has resent the run's submitted child to the mempool.
+Future<void> _waitForSubmittedChildInMempool(
+  rust_sync.MigrationStatus status,
+) async {
+  final submitted = status.scheduledBroadcasts
+      .where((broadcast) => broadcast.status == 'broadcasted')
+      .map((broadcast) => broadcast.txidHex)
+      .toSet();
+  expect(submitted, isNotEmpty);
+  final deadline = DateTime.now().add(const Duration(minutes: 3));
+  while (DateTime.now().isBefore(deadline)) {
+    final mempool = await ironwoodDriverGet(_driverUrl, '/mempool');
+    final txids = (mempool['txids'] as List<Object?>).cast<String>();
+    if (txids.any(submitted.contains)) return;
+    await Future<void>.delayed(const Duration(seconds: 2));
+  }
+  fail('The submitted Ironwood child did not return to the mempool.');
 }
 
 Future<void> _releaseTransactions(List<String> txids) async {

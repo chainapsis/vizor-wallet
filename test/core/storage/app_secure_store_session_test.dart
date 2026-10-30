@@ -606,11 +606,11 @@ void main() {
           currentPassword: _password,
           newPassword: 'Otherpass1!',
         ),
-        throwsA(isA<LinuxWalletMutationBusyException>()),
+        throwsA(isA<WalletMutationBusyException>()),
       );
       await expectLater(
         security.configurePassword('Otherpass1!'),
-        throwsA(isA<LinuxWalletMutationBusyException>()),
+        throwsA(isA<WalletMutationBusyException>()),
       );
       expect(coordinator.hasPendingMutation, isTrue);
       gate.release();

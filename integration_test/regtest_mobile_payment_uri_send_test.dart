@@ -136,6 +136,13 @@ Future<void> _sendViaPaymentUri(
 
   // The URI is parsed and drained onto the payment-request card, over
   // whatever the wallet was showing — it is not a jump into the composer.
+  // A link from outside the wallet opens on a warning; the requested terms
+  // are behind its details.
+  await tapAppButton(
+    tester,
+    const ValueKey('payment_request_link_details'),
+    timeout: const Duration(minutes: 1),
+  );
   await pumpUntil(
     tester,
     () =>
@@ -157,7 +164,13 @@ Future<void> _sendViaPaymentUri(
   );
   await pumpUntil(
     tester,
-    () => tester.any(find.text('Review payment request')),
+    () =>
+        tester.any(find.text('Review Payment')) &&
+        keyedTextEquals(
+          tester,
+          const ValueKey('mobile_send_review_amount'),
+          '$amount ${mobileE2eTicker.toUpperCase()}',
+        ),
     description: 'the mobile payment-request review step',
     timeout: const Duration(minutes: 1),
   );

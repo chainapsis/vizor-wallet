@@ -784,6 +784,108 @@ void main() {
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
+  group('Linux keyring value codec', () {
+    const accountsJson =
+        '[{"uuid":"550e8400-e29b-41d4-a716-446655440000","name":"Account 1"}]';
+
+    /// Mirrors flutter_secure_storage_linux, which keeps every entry in one
+    /// JSON object that a passwordless gnome-keyring cannot reload once it
+    /// contains a backslash.
+    Future<bool> keyringItemHasEscapes(_MapStorage storage) async =>
+        jsonEncode(await storage.readAll()).contains(r'\');
+
+    test('stores JSON values and secrets without JSON escapes', () async {
+      final storage = _MapStorage('linux');
+      store = AppSecureStore.testing(
+        storage: storage,
+        encodeLinuxKeyringValues: true,
+      );
+
+      await store.writePlain(kWalletDbNameKey, 'zcash_wallet_abc.db');
+      await store.writeString('zcash_accounts', accountsJson);
+      await store.configurePassword(_oldPassword);
+      await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+
+      expect(await keyringItemHasEscapes(storage), isFalse);
+      expect(storage.valueFor(kWalletDbNameKey), 'zcash_wallet_abc.db');
+      expect(await store.readPlain(kWalletDbNameKey), 'zcash_wallet_abc.db');
+      expect(await store.readString('zcash_accounts'), accountsJson);
+      expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+    });
+
+    test('re-encodes legacy values and keeps them readable', () async {
+      final storage = _MapStorage('linux');
+      await storage.write(key: 'zcash_accounts', value: accountsJson);
+      await storage.write(key: kWalletDbNameKey, value: 'zcash_wallet_abc.db');
+      store = AppSecureStore.testing(
+        storage: storage,
+        encodeLinuxKeyringValues: true,
+      );
+      expect(await store.readString('zcash_accounts'), accountsJson);
+
+      await store.encodeLegacyLinuxKeyringValues();
+
+      expect(await keyringItemHasEscapes(storage), isFalse);
+      expect(storage.valueFor(kWalletDbNameKey), 'zcash_wallet_abc.db');
+      expect(await store.readString('zcash_accounts'), accountsJson);
+    });
+
+    test('re-encoding survives a keyring reload between writes', () async {
+      const encryptedSecret = '{"v":1,"c":"cGF5bG9hZA=="}';
+      final storage = _PasswordlessKeyringStorage({
+        kWalletDbNameKey: 'zcash_wallet_abc.db',
+        'zcash_accounts': accountsJson,
+        _mnemonicKey: encryptedSecret,
+      });
+      store = AppSecureStore.testing(
+        storage: storage,
+        encodeLinuxKeyringValues: true,
+      );
+
+      await store.encodeLegacyLinuxKeyringValues();
+
+      expect(storage.reloadedEmpty, isTrue);
+      expect(jsonEncode(await storage.readAll()), isNot(contains(r'\')));
+      expect(await store.readPlain(kWalletDbNameKey), 'zcash_wallet_abc.db');
+      expect(await store.readString('zcash_accounts'), accountsJson);
+      expect(await store.readString(_mnemonicKey), encryptedSecret);
+    });
+
+    test('password rotation keeps encoded secrets readable', () async {
+      final storage = _MapStorage('linux');
+      store = AppSecureStore.testing(
+        storage: storage,
+        encodeLinuxKeyringValues: true,
+      );
+      await store.configurePassword(_oldPassword);
+      await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+
+      final didChange = await store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      );
+
+      expect(didChange, isTrue);
+      expect(await keyringItemHasEscapes(storage), isFalse);
+      store.clearSessionPassword();
+      expect(await store.verifyPassword(_newPassword), isTrue);
+      expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+    });
+
+    test('other platforms store values unchanged', () async {
+      final storage = _MapStorage('other');
+      store = AppSecureStore.testing(
+        storage: storage,
+        encodeLinuxKeyringValues: false,
+      );
+
+      await store.writeString('zcash_accounts', accountsJson);
+      await store.encodeLegacyLinuxKeyringValues();
+
+      expect(storage.valueFor('zcash_accounts'), accountsJson);
+    });
+  });
+
   test('deleteAll clears separate mnemonic storage', () async {
     final operations = <String>[];
     final regularStorage = _MapStorage('regular', operations: operations);
@@ -1492,4 +1594,102 @@ class _RustSecretApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Models flutter_secure_storage_linux on a passwordless gnome-keyring
+/// collection. Every write rewrites one JSON item, and the first lookup after
+/// a write reloads that item from the plaintext file, where an item containing
+/// a backslash loads with an empty secret. It starts with the legacy item still
+/// held in memory, as after two writes within the same second.
+class _PasswordlessKeyringStorage extends FlutterSecureStorage {
+  _PasswordlessKeyringStorage(Map<String, String> initial)
+    : _item = Map.of(initial),
+      _file = jsonEncode(initial);
+
+  Map<String, String> _item;
+  String _file;
+  bool _fileChanged = false;
+  bool reloadedEmpty = false;
+
+  Map<String, String> _lookup() {
+    if (_fileChanged) {
+      _fileChanged = false;
+      reloadedEmpty = reloadedEmpty || _file.contains(r'\');
+      _item = _file.contains(r'\')
+          ? {}
+          : Map<String, String>.from(jsonDecode(_file) as Map);
+    }
+    return _item;
+  }
+
+  void _save(Map<String, String> item) {
+    _item = item;
+    _file = jsonEncode(item);
+    _fileChanged = true;
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => _lookup()[key];
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    final item = Map.of(_lookup());
+    if (value == null) {
+      item.remove(key);
+    } else {
+      item[key] = value;
+    }
+    _save(item);
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    final item = Map.of(_lookup());
+    if (item.remove(key) != null) _save(item);
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => Map.of(_lookup());
+
+  @override
+  Future<void> deleteAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => _save({});
 }

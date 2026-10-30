@@ -1,3 +1,4 @@
+import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -8,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/navigation/external_action_guard_provider.dart';
+import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/clipboard/sensitive_clipboard.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -31,6 +34,7 @@ import '../../../../services/biometric_unlock.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
+import '../../../onboarding/mobile/adaptive_passcode_layout.dart';
 import '../../../onboarding/mobile/mobile_secret_passphrase_screen.dart'
     show SecretPassphraseRevealWarningCard;
 
@@ -478,7 +482,7 @@ class _MobileSeedPhraseScreenState
       },
     );
     final colors = context.colors;
-    return Scaffold(
+    final scaffold = Scaffold(
       backgroundColor: colors.background.window,
       body: AppToastHost(
         child: SensitivePrivacyOverlay(
@@ -491,17 +495,24 @@ class _MobileSeedPhraseScreenState
           child: SafeArea(
             child: Column(
               children: [
-                MobileTopNav.back(
-                  title: _stage == _SeedStage.confirmAccess
-                      ? ''
-                      : 'Secret Passphrase',
-                  onBack: () {
-                    if (context.canPop()) {
-                      context.pop();
-                    } else {
-                      context.go('/home');
-                    }
-                  },
+                ExternalActionNavigationGuard(
+                  child: MobileTopNav.back(
+                    title: _stage == _SeedStage.confirmAccess
+                        ? ''
+                        : 'Secret Passphrase',
+                    onBack: () {
+                      if (ref
+                          .read(externalActionGuardProvider)
+                          .blocks(ExternalAction.navigation)) {
+                        return;
+                      }
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/home');
+                      }
+                    },
+                  ),
                 ),
                 Expanded(
                   child: switch (_stage) {
@@ -514,6 +525,15 @@ class _MobileSeedPhraseScreenState
             ),
           ),
         ),
+      ),
+    );
+    return MobileSidebarExitScope(
+      canNavigate: !_checking && !_markingBackedUp && !_snoozingBackup,
+      child: PopScope(
+        canPop: !ref
+            .watch(externalActionGuardProvider)
+            .blocks(ExternalAction.navigation),
+        child: scaffold,
       ),
     );
   }
@@ -541,7 +561,9 @@ class _MobileSeedPhraseScreenState
             children: [
               AppButton(
                 key: const ValueKey('mobile_seed_backup_intro_continue'),
-                onPressed: _snoozingBackup
+                onPressed:
+                    _snoozingBackup ||
+                        !ref.watch(externalActionGuardProvider).canProtect
                     ? null
                     : () {
                         setState(() => _stage = _SeedStage.confirmAccess);
@@ -558,7 +580,9 @@ class _MobileSeedPhraseScreenState
                 AppButton(
                   key: const ValueKey('mobile_seed_backup_remind_later'),
                   variant: AppButtonVariant.ghost,
-                  onPressed: _snoozingBackup
+                  onPressed:
+                      _snoozingBackup ||
+                          !ref.watch(externalActionGuardProvider).canProtect
                       ? null
                       : () => unawaited(_snoozeBackup(account.uuid)),
                   size: AppButtonSize.large,
@@ -641,58 +665,95 @@ class _MobileSeedPhraseScreenState
           ),
         ),
     ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        double textHeight(Text text) {
-          final painter = TextPainter(
-            text: TextSpan(text: text.data, style: text.style),
-            textDirection: Directionality.of(context),
-            textScaler: MediaQuery.textScalerOf(context),
-          )..layout(maxWidth: constraints.maxWidth);
-          final height = painter.height;
-          painter.dispose();
-          return height;
-        }
+    return AdaptivePasscodeLayout(
+      title: 'Enter Passcode',
+      subtitle: 'Confirm your access',
+      prompt: PasscodePromptField(
+        length: kMobilePasscodeLength,
+        filled: _entry.length,
+        error: _gateError,
+        minGap: 0,
+      ),
+      keypad: PasscodeNumpad(
+        onDigit: _onDigit,
+        onBackspace: _onBackspace,
+        canDelete: _entry.isNotEmpty,
+        enabled: !_checking,
+      ),
+      footer: showBiometric
+          ? SizedBox(
+              key: const ValueKey('mobile_seed_phrase_biometric_footer'),
+              height: 36,
+              child: Center(
+                child: PasscodeBiometricButton(
+                  label: biometric.availability.kind.signInLabel,
+                  icon: Center(
+                    child: BiometricIcon(
+                      kind: biometric.availability.kind,
+                      size: 13.5,
+                      fingerprintSize: 16,
+                    ),
+                  ),
+                  onPressed: () => unawaited(_tryBiometricGate()),
+                ),
+              ),
+            )
+          : null,
+      footerHeight: showBiometric ? 36 : 0,
+      legacy: LayoutBuilder(
+        builder: (context, constraints) {
+          double textHeight(Text text) {
+            final painter = TextPainter(
+              text: TextSpan(text: text.data, style: text.style),
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+            )..layout(maxWidth: constraints.maxWidth);
+            final height = painter.height;
+            painter.dispose();
+            return height;
+          }
 
-        // Match the shared keypad's wrap geometry, including narrow viewports.
-        final keypadWidth = math.min(
-          kPasscodeKeypadWidth,
-          constraints.maxWidth,
-        );
-        final columns =
-            ((keypadWidth + AppSpacing.sm) / (kPasscodeKeySize + AppSpacing.sm))
-                .floor()
-                .clamp(1, 3);
-        final rows = (12 / columns).ceil();
-        final keypadHeight =
-            rows * kPasscodeKeySize + (rows - 1) * AppSpacing.sm;
-        final requiredHeight =
-            textHeight(title) +
-            textHeight(subtitle) +
-            AppSpacing.s +
-            AppSpacing.md +
-            kPasscodePromptDigitsHeight +
-            keypadHeight +
-            AppSpacing.md +
-            (showBiometric ? biometricHeight : 0);
-        if (requiredHeight > constraints.maxHeight) {
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                prompt,
-                const SizedBox(height: AppSpacing.md),
-                ...controls,
-              ],
-            ),
+          // Match the shared keypad's wrap geometry, including narrow viewports.
+          final keypadWidth = math.min(
+            kPasscodeKeypadWidth,
+            constraints.maxWidth,
           );
-        }
-        return Column(
-          children: [
-            Expanded(child: Center(child: prompt)),
-            ...controls,
-          ],
-        );
-      },
+          final columns =
+              ((keypadWidth + AppSpacing.sm) /
+                      (kPasscodeKeySize + AppSpacing.sm))
+                  .floor()
+                  .clamp(1, 3);
+          final rows = (12 / columns).ceil();
+          final keypadHeight =
+              rows * kPasscodeKeySize + (rows - 1) * AppSpacing.sm;
+          final requiredHeight =
+              textHeight(title) +
+              textHeight(subtitle) +
+              AppSpacing.s +
+              AppSpacing.md +
+              kPasscodePromptDigitsHeight +
+              keypadHeight +
+              AppSpacing.md +
+              (showBiometric ? biometricHeight : 0);
+          if (requiredHeight > constraints.maxHeight) {
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+                  prompt,
+                  const SizedBox(height: AppSpacing.md),
+                  ...controls,
+                ],
+              ),
+            );
+          }
+          return Column(
+            children: [
+              Expanded(child: Center(child: prompt)),
+              ...controls,
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -829,7 +890,9 @@ class _MobileSeedPhraseScreenState
             ),
             child: AppButton(
               key: const ValueKey('mobile_seed_backed_up'),
-              onPressed: _markingBackedUp
+              onPressed:
+                  _markingBackedUp ||
+                      !ref.watch(externalActionGuardProvider).canProtect
                   ? null
                   : () => _markBackedUp(account.uuid),
               size: AppButtonSize.large,
@@ -846,41 +909,44 @@ class _MobileSeedPhraseScreenState
     );
   }
 
-  Future<void> _markBackedUp(String accountUuid) async {
-    setState(() => _markingBackedUp = true);
-    try {
-      await ref.read(accountProvider.notifier).markBackedUp(accountUuid);
-    } catch (error) {
-      log('MobileSeedPhrase: marking backed up failed: $error');
-      if (mounted) {
-        showAppToast(context, 'Couldn’t save that. Try again.');
-        setState(() => _markingBackedUp = false);
-      }
-      return;
-    }
-    if (!mounted) return;
-    if (widget.showBackupIntro || !context.canPop()) {
-      context.go('/home');
-    } else {
-      context.pop();
-    }
-  }
+  Future<void> _markBackedUp(String accountUuid) =>
+      _saveBackup(accountUuid, snooze: false);
 
-  Future<void> _snoozeBackup(String accountUuid) async {
-    setState(() => _snoozingBackup = true);
+  Future<void> _snoozeBackup(String accountUuid) =>
+      _saveBackup(accountUuid, snooze: true);
+
+  Future<void> _saveBackup(String accountUuid, {required bool snooze}) async {
+    final lease = ref.read(externalActionGuardProvider.notifier).tryProtect();
+    if (lease == null) return;
+    setState(() {
+      _snoozingBackup = snooze;
+      _markingBackedUp = !snooze;
+    });
     try {
-      await ref
-          .read(accountProvider.notifier)
-          .snoozeBackupReminder(accountUuid);
+      final accounts = ref.read(accountProvider.notifier);
+      if (snooze) {
+        await accounts.snoozeBackupReminder(accountUuid);
+      } else {
+        await accounts.markBackedUp(accountUuid);
+      }
+      if (!mounted) return;
+      if (snooze || widget.showBackupIntro || !context.canPop()) {
+        context.go('/home');
+      } else {
+        context.pop();
+      }
     } catch (error) {
-      log('MobileSeedPhrase: snoozing backup failed: $error');
+      log('MobileSeedPhrase: saving backup failed: $error');
       if (mounted) {
         showAppToast(context, 'Couldn’t save that. Try again.');
-        setState(() => _snoozingBackup = false);
+        setState(() {
+          _snoozingBackup = false;
+          _markingBackedUp = false;
+        });
       }
-      return;
+    } finally {
+      lease.release();
     }
-    if (mounted) context.go('/home');
   }
 }
 

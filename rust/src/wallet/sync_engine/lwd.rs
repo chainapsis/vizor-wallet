@@ -30,16 +30,19 @@ use zcash_client_backend::{
     proto::service::{
         self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
         Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction,
-        SendResponse, TransparentAddressBlockFilter, TreeState,
+        SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
-use zcash_primitives::block::BlockHash;
+use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
 use super::block_source::MemoryBlockSource;
 use super::{elapsed, SyncError, WalletDatabase};
+
+pub(super) mod dispatch_signal;
+pub(super) mod transparent_lookup;
 
 const LIGHTWALLETD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const LIGHTWALLETD_UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(20);
@@ -85,6 +88,34 @@ where
         Ok(Err(status)) => Err(status),
         Err(_) => Err(timeout_status(label, timeout)),
     }
+}
+
+/// A gRPC service the lookup helpers can call through: the lightwalletd
+/// channel, or the channel under a [`dispatch_signal::DispatchSignalService`].
+pub(crate) trait LwdService:
+    tonic::client::GrpcService<
+        tonic::body::Body,
+        Error: Into<tonic::codegen::StdError>,
+        ResponseBody: http_body::Body<
+            Data = bytes::Bytes,
+            Error: Into<tonic::codegen::StdError> + Send,
+        > + Send
+                          + 'static,
+    > + Send
+{
+}
+
+impl<T> LwdService for T where
+    T: tonic::client::GrpcService<
+            tonic::body::Body,
+            Error: Into<tonic::codegen::StdError>,
+            ResponseBody: http_body::Body<
+                Data = bytes::Bytes,
+                Error: Into<tonic::codegen::StdError> + Send,
+            > + Send
+                              + 'static,
+        > + Send
+{
 }
 
 async fn await_tonic_stream<T, F>(
@@ -146,6 +177,20 @@ pub(crate) async fn open_lwd_channel_with_cancel(
     open_lwd_channel_for_route(lightwalletd_url, false, cancelled).await
 }
 
+/// The transport [`open_lwd_channel`] wraps, for lookups that layer a
+/// dispatch signal over it.
+pub(crate) async fn open_lwd_transport(lightwalletd_url: &str) -> Result<Channel, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, false, || false).await
+}
+
+/// The transport [`open_lwd_channel_with_cancel`] wraps.
+pub(crate) async fn open_lwd_transport_with_cancel(
+    lightwalletd_url: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<Channel, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, false, cancelled).await
+}
+
 /// Opens an isolated Tor circuit when Tor is enabled. Direct mode retains its
 /// normal direct transport. Use this for transaction broadcasts that must not
 /// share a Tor circuit with other wallet activity.
@@ -153,6 +198,24 @@ pub(crate) async fn open_isolated_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
     open_lwd_channel_for_route(lightwalletd_url, true, || false).await
+}
+
+/// The transport [`open_isolated_lwd_channel`] wraps, for broadcasts that
+/// layer [`send_transaction_signalling`] over it.
+pub(crate) async fn open_isolated_lwd_transport(
+    lightwalletd_url: &str,
+) -> Result<Channel, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, true, || false).await
+}
+
+/// [`open_isolated_lwd_transport`] that stops waiting for the route once
+/// `cancelled` reports true, for a user-started request that a lock or a
+/// destructive wallet change must not wait out.
+pub(crate) async fn open_isolated_lwd_transport_until(
+    lightwalletd_url: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<Channel, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, true, cancelled).await
 }
 
 /// Opens a lightwalletd channel that is always direct, bypassing the
@@ -173,6 +236,16 @@ pub(crate) async fn open_isolated_lwd_channel(
 pub(crate) async fn open_background_direct_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_background_direct_lwd_transport(lightwalletd_url)
+        .await
+        .map(CompactTxStreamerClient::new)
+}
+
+/// The same background-only direct route, exposed so a transparent gate can
+/// release its dispatch lease at hand-off to this transport.
+pub(crate) async fn open_background_direct_lwd_transport(
+    lightwalletd_url: &str,
+) -> Result<Channel, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -192,7 +265,7 @@ pub(crate) async fn open_background_direct_lwd_channel(
         .connect()
         .await
         .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
-    Ok(CompactTxStreamerClient::new(channel))
+    Ok(channel)
 }
 
 async fn open_lwd_channel_for_route(
@@ -200,6 +273,16 @@ async fn open_lwd_channel_for_route(
     isolated: bool,
     cancelled: impl Fn() -> bool,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_transport_for_route(lightwalletd_url, isolated, cancelled)
+        .await
+        .map(CompactTxStreamerClient::new)
+}
+
+async fn open_lwd_transport_for_route(
+    lightwalletd_url: &str,
+    isolated: bool,
+    cancelled: impl Fn() -> bool,
+) -> Result<Channel, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -214,7 +297,7 @@ async fn open_lwd_channel_for_route(
     {
         let allow_onion_services = endpoint_allows_onion_services(&endpoint);
         return tor_client
-            .connect_to_lightwalletd(endpoint.uri().clone(), allow_onion_services)
+            .connect_lightwalletd_channel(endpoint.uri().clone(), allow_onion_services)
             .await
             .map_err(|e| SyncError::net(format!("Tor gRPC connect failed: {e}")));
     }
@@ -225,11 +308,10 @@ async fn open_lwd_channel_for_route(
     } else {
         endpoint
     };
-    let channel = endpoint
+    endpoint
         .connect_with_connector(DirectRouteConnector::new())
         .await
-        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
-    Ok(CompactTxStreamerClient::new(channel))
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))
 }
 
 #[derive(Clone)]
@@ -418,6 +500,30 @@ pub(crate) async fn send_transaction_with_status(
     .await
 }
 
+/// Like [`send_transaction_with_status`], over `transport`, firing
+/// `dispatched` once the request body has been handed to the connection.
+pub(crate) async fn send_transaction_signalling(
+    transport: Channel,
+    data: &[u8],
+    dispatched: dispatch_signal::Dispatched,
+) -> Result<SendResponse, Status> {
+    let mut client = CompactTxStreamerClient::new(dispatch_signal::DispatchSignalService::new(
+        transport, dispatched,
+    ));
+    await_tonic_response(
+        "send_transaction",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.send_transaction(timed_request(
+            RawTransaction {
+                data: data.to_vec(),
+                height: 0,
+            },
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+}
+
 /// Submit a raw transaction with a bounded response wait and map tonic
 /// errors into the sync error taxonomy.
 pub(crate) async fn send_transaction(
@@ -432,8 +538,11 @@ pub(crate) async fn send_transaction(
 /// Open the deprecated transparent-address transaction stream with a
 /// bounded wait for response headers. Individual stream messages must
 /// still be read with [`next_stream_message`] to bound an idle stream.
-pub(crate) async fn get_taddress_txids(
-    client: &mut CompactTxStreamerClient<Channel>,
+///
+/// It discloses `address`; lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_taddress_txids<T: LwdService>(
+    client: &mut CompactTxStreamerClient<T>,
     address: String,
     start_height: u64,
     end_height: u64,
@@ -463,8 +572,11 @@ pub(crate) async fn get_taddress_txids(
 /// Open a transparent UTXO stream with a bounded wait for response headers.
 /// Callers should read individual messages with [`next_stream_message`] so a
 /// stalled lightwalletd stream cannot pin the sync loop indefinitely.
-pub(super) async fn get_address_utxos_stream(
-    client: &mut CompactTxStreamerClient<Channel>,
+///
+/// It discloses `addresses`; lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_address_utxos_stream<T: LwdService>(
+    client: &mut CompactTxStreamerClient<T>,
     addresses: Vec<String>,
     start_height: BlockHeight,
 ) -> Result<AddressUtxoStream, SyncError> {
@@ -477,6 +589,25 @@ pub(super) async fn get_address_utxos_stream(
         })),
     )
     .await
+}
+
+/// Public, txid-disclosing `GetTransaction`. Lanes reach it only through
+/// [`transparent_lookup::TransparentLookupGate`].
+async fn get_transaction_payload<T: LwdService>(
+    client: &mut CompactTxStreamerClient<T>,
+    txid: TxId,
+) -> Result<RawTransaction, Status> {
+    const TIMEOUT: Duration = Duration::from_secs(20);
+    let mut request = Request::new(TxFilter {
+        block: None,
+        index: 0,
+        hash: txid.as_ref().to_vec(),
+    });
+    request.set_timeout(TIMEOUT);
+    tokio::time::timeout(TIMEOUT, client.get_transaction(request))
+        .await
+        .map_err(|_| Status::deadline_exceeded("get_transaction_payload timed out"))?
+        .map(|response| response.into_inner())
 }
 
 async fn await_stream_message<T, F>(
@@ -758,22 +889,24 @@ pub(super) async fn download_blocks(
     .await
     .map_err(|e| status_to_network_error("get_block_range", e))?;
 
-    let blocks = collect_compact_blocks(
+    let blocks = collect_compact_blocks_bounded(
         &mut stream,
         start_height,
         end_height,
         LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
+        None,
     )
     .await?;
 
     Ok(MemoryBlockSource::new(blocks))
 }
 
-async fn collect_compact_blocks<S>(
+async fn collect_compact_blocks_bounded<S>(
     stream: &mut S,
     start_height: u64,
     end_height: u64,
     idle_timeout: Duration,
+    byte_limit: Option<usize>,
 ) -> Result<Vec<CompactBlock>, SyncError>
 where
     S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
@@ -784,6 +917,7 @@ where
         .try_reserve_exact(expected_count)
         .map_err(|_| SyncError::other("get_block_range request is too large"))?;
 
+    let mut byte_count = 0usize;
     loop {
         let next = await_stream_message("get_block_range stream", idle_timeout, async {
             match stream.next().await {
@@ -814,6 +948,10 @@ where
                  request {start_height}..={end_height}",
                 block.height,
             )));
+        }
+        byte_count += prost::Message::encoded_len(&block);
+        if byte_limit.is_some_and(|limit| byte_count > limit) {
+            return Err(SyncError::other("Gift Card range exceeds memory limit"));
         }
         blocks.push(block);
     }
@@ -1131,6 +1269,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn card_stream_stops_when_the_memory_budget_is_exceeded() {
+        let mut stream = futures::stream::iter([Ok(compact_block(10)), Ok(compact_block(11))]);
+        let limit = prost::Message::encoded_len(&compact_block(10));
+        let error = collect_compact_blocks_bounded(
+            &mut stream,
+            10,
+            11,
+            Duration::from_secs(1),
+            Some(limit),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("range exceeds memory limit"));
+    }
+
+    #[tokio::test]
     async fn compact_block_stream_propagates_status_and_idle_timeout() {
         let mut failed_stream = futures::stream::iter([
             Ok(compact_block(10)),
@@ -1153,4 +1307,84 @@ mod tests {
             matches!(timeout_error, SyncError::Network(message) if message.contains("timed out"))
         );
     }
+}
+
+/// Nullifier-only compact blocks for Gift Card observation. The caller probes
+/// Ironwood content against a full block before accepting this endpoint.
+#[allow(deprecated)]
+pub(super) async fn download_nullifiers(
+    client: &mut CompactTxStreamerClient<Channel>,
+    start: u32,
+    end: u32,
+) -> Result<Vec<CompactBlock>, SyncError> {
+    let mut stream = await_tonic_stream(
+        "get_block_range_nullifiers",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_block_range_nullifiers(Request::new(BlockRange {
+            start: Some(BlockId {
+                height: start as u64,
+                hash: vec![],
+            }),
+            end: Some(BlockId {
+                height: end as u64,
+                hash: vec![],
+            }),
+            pool_types: vec![service::PoolType::Ironwood as i32],
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_block_range_nullifiers", e))?;
+    collect_compact_blocks_bounded(
+        &mut stream,
+        start as u64,
+        end as u64,
+        LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
+        Some(16 * 1024 * 1024),
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn collect_compact_blocks<S>(
+    stream: &mut S,
+    start: u64,
+    end: u64,
+    idle: Duration,
+) -> Result<Vec<CompactBlock>, SyncError>
+where
+    S: Stream<Item = Result<CompactBlock, Status>> + Unpin,
+{
+    collect_compact_blocks_bounded(stream, start, end, idle, None).await
+}
+
+pub(super) async fn download_card_blocks(
+    client: &mut CompactTxStreamerClient<Channel>,
+    start: u32,
+    end: u32,
+) -> Result<Vec<CompactBlock>, SyncError> {
+    let mut stream = await_tonic_stream(
+        "gift_card_block_range",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_block_range(Request::new(BlockRange {
+            start: Some(BlockId {
+                height: start as u64,
+                hash: vec![],
+            }),
+            end: Some(BlockId {
+                height: end as u64,
+                hash: vec![],
+            }),
+            pool_types: vec![service::PoolType::Ironwood as i32],
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("gift_card_block_range", e))?;
+    collect_compact_blocks_bounded(
+        &mut stream,
+        start as u64,
+        end as u64,
+        LIGHTWALLETD_STREAM_IDLE_TIMEOUT,
+        Some(16 * 1024 * 1024),
+    )
+    .await
 }

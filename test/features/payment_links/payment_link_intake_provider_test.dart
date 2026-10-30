@@ -5,6 +5,77 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 
 void main() {
+  test('an interrupted preview retains its slot in a full intake', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(paymentLinkIntakeProvider.notifier);
+    final original = _link();
+    notifier.receive(original.toUri().toString());
+    final reservation = notifier.takePendingForPreview()!;
+    for (var i = 1; i < kPaymentLinkIntakeQueueCapacity; i++) {
+      expect(
+        notifier.receive(
+          _link(amountZatoshi: BigInt.from(100000 + i)).toUri().toString(),
+        ),
+        PaymentLinkIntakeResult.accepted,
+      );
+    }
+    expect(
+      notifier.receive(
+        _link(amountZatoshi: BigInt.from(200000)).toUri().toString(),
+      ),
+      PaymentLinkIntakeResult.rejected,
+    );
+    reservation.restoreAfterRouteDisposal();
+    await pumpEventQueue();
+    final state = container.read(paymentLinkIntakeProvider);
+    expect(state.pendingLinks, hasLength(kPaymentLinkIntakeQueueCapacity));
+    expect(state.pendingLink!.hasSameCanonicalPayload(original), isTrue);
+    expect(
+      state.pendingLinks.last.amountZatoshi,
+      BigInt.from(100000 + kPaymentLinkIntakeQueueCapacity - 1),
+    );
+  });
+
+  test(
+    'a prepared preview releases its slot and coalesces active duplicates',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(paymentLinkIntakeProvider.notifier);
+      notifier.receive(_link().toUri().toString());
+      final reservation = notifier.takePendingForPreview()!;
+      expect(
+        notifier.receive(_link().toUri().toString()),
+        PaymentLinkIntakeResult.accepted,
+      );
+      expect(container.read(paymentLinkIntakeProvider).pendingLinks, isEmpty);
+      reservation.release();
+      reservation.release();
+      for (var i = 0; i < kPaymentLinkIntakeQueueCapacity; i++) {
+        expect(
+          notifier.receive(
+            _link(amountZatoshi: BigInt.from(100000 + i)).toUri().toString(),
+          ),
+          PaymentLinkIntakeResult.accepted,
+        );
+      }
+    },
+  );
+
+  test(
+    'a route restoration after container disposal does not revive intake',
+    () async {
+      final container = ProviderContainer();
+      final notifier = container.read(paymentLinkIntakeProvider.notifier);
+      notifier.receive(_link().toUri().toString());
+      final reservation = notifier.takePendingForPreview()!;
+      reservation.restoreAfterRouteDisposal();
+      container.dispose();
+      await pumpEventQueue();
+    },
+  );
+
   test('accepts and exposes a valid Vizor payment link', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
+import 'mobile/mobile_ledger_help_navigation.dart';
 
 /// A mobile Ledger modal over its caller. The operation owner stays mounted
 /// across discovery, verification and signing; changing content never pops a
@@ -11,11 +12,15 @@ class MobileLedgerSigningSurface extends StatefulWidget {
     required this.child,
     required this.onBack,
     required this.canLeave,
+    this.onPrevious,
     this.title = 'Ledger',
     super.key,
   });
   final Widget child;
   final VoidCallback onBack;
+
+  /// Returns to the previous step; dismissal still uses [onBack].
+  final VoidCallback? onPrevious;
   final bool canLeave;
   final String title;
 
@@ -28,6 +33,7 @@ class _MobileLedgerSigningSurfaceState
     extends State<MobileLedgerSigningSurface> {
   bool _closing = false;
   double _dragDistance = 0;
+  final _helpNavigation = MobileLedgerHelpNavigation();
 
   @override
   void didUpdateWidget(covariant MobileLedgerSigningSurface oldWidget) {
@@ -44,11 +50,18 @@ class _MobileLedgerSigningSurfaceState
     widget.onBack();
   }
 
+  void _previous() {
+    if (!widget.canLeave || _closing) return;
+    if (_helpNavigation.previous()) return;
+    _closing = true;
+    (widget.onPrevious ?? widget.onBack)();
+  }
+
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: false,
     onPopInvokedWithResult: (didPop, _) {
-      if (!didPop) _dismiss();
+      if (!didPop) _previous();
     },
     child: Stack(
       fit: StackFit.expand,
@@ -73,7 +86,14 @@ class _MobileLedgerSigningSurfaceState
                   _dismiss();
                 }
               },
-              child: MobileModalCard(child: widget.child),
+              child: MobileModalCard(
+                onBack: widget.onPrevious == null ? null : _previous,
+                backEnabled: widget.canLeave && !_closing,
+                child: MobileLedgerHelpScope(
+                  navigation: _helpNavigation,
+                  child: widget.child,
+                ),
+              ),
             ),
           ),
         ),

@@ -13,8 +13,9 @@ import '../../services/ledger_pairing_recovery_service.dart';
 import 'mobile_ledger_bluetooth_content.dart';
 import '../ledger_pairing_session.dart';
 import 'mobile_ledger_sheet_content.dart';
+import 'mobile_ledger_connection_help.dart';
 
-class MobileLedgerAccessContent extends ConsumerWidget {
+class MobileLedgerAccessContent extends ConsumerStatefulWidget {
   const MobileLedgerAccessContent({
     required this.account,
     required this.onRetry,
@@ -33,34 +34,78 @@ class MobileLedgerAccessContent extends ConsumerWidget {
   final LedgerDeviceSelectionRequest? selectionRequest;
   final bool retrySelectsDevice;
 
+  @override
+  ConsumerState<MobileLedgerAccessContent> createState() =>
+      _MobileLedgerAccessContentState();
+}
+
+class _MobileLedgerAccessContentState
+    extends ConsumerState<MobileLedgerAccessContent> {
+  bool _help = false;
+
+  Future<void> _openHelp(LedgerPairingSessionState session) async {
+    if (!await session.pauseForHelp() || !mounted) return;
+    setState(() => _help = true);
+  }
+
+  void _search(LedgerPairingSessionState session) {
+    setState(() => _help = false);
+    session.scan();
+  }
+
   Widget _bluetooth({VoidCallback? retry, String retryLabel = 'Reconnect'}) =>
       MobileLedgerBluetoothContent(
-        onRetry: retry ?? onRetry,
-        onClose: onClose,
+        onRetry: retry ?? widget.onRetry,
+        onClose: widget.onClose,
         retryLabel: retryLabel,
       );
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if ((!pairingRecovery && selectionRequest == null) || account == null) {
+  Widget build(BuildContext context) {
+    final account = widget.account;
+    if ((!widget.pairingRecovery && widget.selectionRequest == null) ||
+        account == null) {
       return _bluetooth();
     }
     final platform = ref.watch(ledgerTargetPlatformProvider);
     return LedgerPairingSession(
-      accountUuid: account!.uuid,
-      pairingInvalid: pairingInvalid,
-      onRetry: onRetry,
-      onClose: onClose,
-      selectionRequest: selectionRequest,
-      retrySelectsDevice: retrySelectsDevice,
+      accountUuid: account.uuid,
+      pairingInvalid: widget.pairingInvalid,
+      onRetry: widget.onRetry,
+      onClose: widget.onClose,
+      selectionRequest: widget.selectionRequest,
+      retrySelectsDevice: widget.retrySelectsDevice,
       onBusyChanged: (_) {},
       builder: (context, c) {
         if (c.accessRecovery) {
-          return _bluetooth(retry: c.scan, retryLabel: 'Find my Ledger');
+          return _bluetooth(
+            retry: () => _search(c),
+            retryLabel: 'Find my Ledger',
+          );
+        }
+        if (_help && !c.invalidated) {
+          return MobileLedgerConnectionHelp(
+            platform: platform,
+            initialModel: LedgerHelpModel.fromSavedModel(
+              account.ledgerDeviceModel,
+            ),
+            pairingInvalid: c.pairingInvalid,
+            busy: c.busy,
+            error: c.error,
+            onBack: () => setState(() => _help = false),
+            onClose: widget.onClose,
+            onSearch: () => _search(c),
+            onSettings: c.service is LedgerBluetoothPairingSettings
+                ? c.settings
+                : null,
+          );
         }
         final choosing =
             c.stage == LedgerPairingStage.scanning ||
             c.stage == LedgerPairingStage.devices;
+        final helpAvailable =
+            (c.stage == LedgerPairingStage.devices && c.devices.isEmpty) ||
+            (c.stage == LedgerPairingStage.failed && c.pairingInvalid);
         final title = switch (c.stage) {
           LedgerPairingStage.scanning || LedgerPairingStage.devices =>
             c.devices.isNotEmpty
@@ -105,7 +150,44 @@ class MobileLedgerAccessContent extends ConsumerWidget {
         };
         return MobileLedgerSheetContent(
           title: title,
-          onClose: onClose,
+          onClose: widget.onClose,
+          action: c.busy
+              ? null
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MobileLedgerAction(
+                      switch (c.stage) {
+                        LedgerPairingStage.ready => 'Continue signing',
+                        LedgerPairingStage.mismatch => 'Choose another Ledger',
+                        LedgerPairingStage.devices => 'Search again',
+                        LedgerPairingStage.failed when !c.pairingInvalid =>
+                          c.failureRetryable
+                              ? 'Try again'
+                              : 'Choose another Ledger',
+                        _ => 'Find my Ledger',
+                      },
+                      onPressed: c.invalidated
+                          ? null
+                          : c.stage == LedgerPairingStage.ready
+                          ? c.continueSigning
+                          : c.scan,
+                    ),
+                    if (helpAvailable)
+                      AppButton(
+                        variant: AppButtonVariant.ghost,
+                        expand: true,
+                        constrainContent: true,
+                        growWithContent: true,
+                        onPressed: c.invalidated ? null : () => _openHelp(c),
+                        child: Text(
+                          c.pairingInvalid
+                              ? 'Reset Bluetooth pairing'
+                              : 'Connection help',
+                        ),
+                      ),
+                  ],
+                ),
           children: [
             MobileLedgerMessage(message),
             if (choosing && c.devices.isNotEmpty) ...[
@@ -141,7 +223,7 @@ class MobileLedgerAccessContent extends ConsumerWidget {
                                 style: AppTypography.bodyMediumStrong,
                               ),
                               if (ledgerDeviceDiffersFromSavedConnection(
-                                account?.ledgerDeviceId,
+                                account.ledgerDeviceId,
                                 device.id,
                               )) ...[
                                 const SizedBox(height: AppSpacing.xxs),
@@ -164,53 +246,26 @@ class MobileLedgerAccessContent extends ConsumerWidget {
             ],
             if (!choosing && c.selectedDevice != null)
               MobileLedgerIdentity(ledgerDeviceLabel(c.selectedDevice!)),
-            if (c.stage == LedgerPairingStage.failed && c.pairingInvalid) ...[
-              const SizedBox(height: AppSpacing.sm),
-              MobileLedgerMessage(
-                platform == TargetPlatform.iOS
-                    ? 'Open Settings > Bluetooth. If your Ledger is listed, tap its info button and forget the device. Then come back and find your Ledger again.'
-                    : 'Open Bluetooth settings and remove your Ledger’s saved pairing. Then come back and find your Ledger again.',
-              ),
-              if (platform != TargetPlatform.iOS &&
-                  c.service is LedgerBluetoothPairingSettings)
-                AppButton(
-                  variant: AppButtonVariant.ghost,
-                  onPressed: c.busy ? null : c.settings,
-                  child: const Text('Open settings'),
-                ),
-            ],
             if (c.error != null) ...[
               const SizedBox(height: AppSpacing.sm),
               MobileLedgerMessage(c.error!),
             ],
-            if (c.busy)
-              MobileLedgerStatus(switch (c.stage) {
-                LedgerPairingStage.scanning =>
-                  c.devices.isEmpty
-                      ? 'Searching nearby…'
-                      : 'Still searching nearby…',
-                LedgerPairingStage.verifying =>
-                  c.sameSavedDevice
-                      ? 'Connecting…'
-                      : 'Follow the prompts on your Ledger',
-                LedgerPairingStage.saving => 'Saving connection…',
-                _ => 'Opening Bluetooth settings…',
-              })
-            else
-              MobileLedgerAction(
-                switch (c.stage) {
-                  LedgerPairingStage.ready => 'Continue signing',
-                  LedgerPairingStage.mismatch => 'Choose another Ledger',
-                  LedgerPairingStage.devices => 'Search again',
-                  LedgerPairingStage.failed when !c.pairingInvalid =>
-                    c.failureRetryable ? 'Try again' : 'Choose another Ledger',
-                  _ => 'Find my Ledger',
-                },
-                onPressed: c.invalidated
-                    ? null
-                    : c.stage == LedgerPairingStage.ready
-                    ? c.continueSigning
-                    : c.scan,
+            if (c.busy && !(choosing && c.devices.isNotEmpty))
+              MobileLedgerStatus(
+                c.preparingHelp
+                    ? 'Opening connection help…'
+                    : switch (c.stage) {
+                        LedgerPairingStage.scanning =>
+                          c.devices.isEmpty
+                              ? 'Searching nearby…'
+                              : 'Still searching nearby…',
+                        LedgerPairingStage.verifying =>
+                          c.sameSavedDevice
+                              ? 'Connecting…'
+                              : 'Follow the prompts on your Ledger',
+                        LedgerPairingStage.saving => 'Saving connection…',
+                        _ => 'Opening Bluetooth settings…',
+                      },
               ),
           ],
         );

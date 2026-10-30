@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../../../../../main.dart' show log;
 import '../../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_window_policy.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -41,6 +43,9 @@ bool _shouldRefreshTransparentAddressAfterSyncUpdate(
 /// QR with the renew control on its bottom edge, compact address line,
 /// and share/copy actions, composed from the shared receive widgets.
 class MobileReceiveScreen extends ConsumerStatefulWidget {
+  /// Route-local cap; the shell still limits ordinary mobile pages to 440.
+  static const maximumWideWidth = 640.0;
+
   const MobileReceiveScreen({
     this.initialType = ReceiveAddressType.shielded,
     super.key,
@@ -56,6 +61,8 @@ class MobileReceiveScreen extends ConsumerStatefulWidget {
 class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   late ReceiveAddressType _selectedType;
   late final PageController _pageController;
+  // Keep the pager and its QR bitmaps mounted when it moves between columns.
+  final _qrPagerKey = GlobalKey();
   String? _shieldedAddress;
   String? _transparentAddress;
   bool _renewing = false;
@@ -227,6 +234,14 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     final scanOptimizedQr = activeAccount?.isKeystone ?? false;
     final poolLabel = _isShielded ? 'shielded' : 'transparent';
 
+    if (MobileWindowPolicyScope.of(context).usesWideLayout) {
+      return _buildWide(
+        context,
+        accountName: accountName,
+        scanOptimizedQr: scanOptimizedQr,
+      );
+    }
+
     return Scaffold(
       backgroundColor: colors.background.window,
       body: AppToastHost(
@@ -264,27 +279,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     ),
                     const SizedBox(height: _MobileReceiveMetrics.tabsToQrGap),
                     Center(
-                      child: SizedBox(
-                        width: _MobileReceiveMetrics.qrWrapWidth,
-                        height: _MobileReceiveMetrics.qrCodeHeight,
-                        child: PageView(
-                          key: const ValueKey('mobile_receive_qr_pager'),
-                          controller: _pageController,
-                          onPageChanged: _handlePageChanged,
-                          children: [
-                            for (final type in ReceiveAddressType.values)
-                              _ReceiveQrPage(
-                                key: ValueKey('mobile_receive_qr_${type.name}'),
-                                type: type,
-                                address: _addressFor(type),
-                                renewing: _renewing,
-                                scanOptimizedQr: scanOptimizedQr,
-                                onRenew: () =>
-                                    unawaited(_renewShieldedAddress()),
-                              ),
-                          ],
-                        ),
-                      ),
+                      child: _buildQrPager(scanOptimizedQr: scanOptimizedQr),
                     ),
                     const SizedBox(
                       height: _MobileReceiveMetrics.qrToAddressGap,
@@ -310,7 +305,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                               children: [
                                 Expanded(
                                   child: AppButton(
-                                    key: const ValueKey('mobile_receive_share'),
+                                    key: const ValueKey('mobile_receive_copy'),
                                     expand: true,
                                     constrainContent: true,
                                     height: _MobileReceiveMetrics.buttonHeight,
@@ -319,14 +314,14 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                         : AppButtonVariant.secondary,
                                     onPressed: _selectedAddress.isEmpty
                                         ? null
-                                        : _shareAddress,
+                                        : () => unawaited(_copyAddress()),
                                     leading: const AppIcon(
-                                      AppIcons.share,
+                                      AppIcons.copy,
                                       size:
                                           _MobileReceiveMetrics.buttonIconSize,
                                     ),
                                     child: Text(
-                                      'Share $poolLabel address',
+                                      'Copy $poolLabel address',
                                       style: AppTypography.labelMedium.copyWith(
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -334,21 +329,17 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.xs),
-                                // Icon only, beside the share pill — the home
-                                // card's "Pay" shape and the desktop receive
-                                // pane's request entry. A third labelled tier
-                                // under Share made the stack taller than the
-                                // pane it sits in.
+                                // Sharing is familiar as an icon; the request
+                                // gets its own visible label on the row below.
                                 SizedBox(
                                   width: _MobileReceiveMetrics.buttonHeight,
                                   height: _MobileReceiveMetrics.buttonHeight,
                                   child: Semantics(
                                     button: true,
-                                    label:
-                                        'Request $kZcashDefaultCurrencyTicker',
+                                    label: 'Share $poolLabel address',
                                     child: AppButton(
                                       key: const ValueKey(
-                                        'mobile_receive_request',
+                                        'mobile_receive_share',
                                       ),
                                       minWidth:
                                           _MobileReceiveMetrics.buttonHeight,
@@ -358,9 +349,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                       variant: AppButtonVariant.secondary,
                                       onPressed: _selectedAddress.isEmpty
                                           ? null
-                                          : _openRequest,
+                                          : _shareAddress,
                                       child: const AppIcon(
-                                        AppIcons.qr,
+                                        AppIcons.share,
                                         size: _MobileReceiveMetrics
                                             .buttonIconSize,
                                       ),
@@ -370,11 +361,11 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                               ],
                             ),
                             const SizedBox(height: AppSpacing.s),
-                            _CopyAddressTextButton(
-                              key: const ValueKey('mobile_receive_copy'),
-                              label: 'Copy $poolLabel address',
+                            _RequestTextButton(
+                              key: const ValueKey('mobile_receive_request'),
+                              label: 'Request $kZcashDefaultCurrencyTicker',
                               enabled: _selectedAddress.isNotEmpty,
-                              onTap: () => unawaited(_copyAddress()),
+                              onTap: _openRequest,
                             ),
                           ],
                         ),
@@ -389,9 +380,202 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
       ),
     );
   }
+
+  Widget _buildQrPager({required bool scanOptimizedQr}) => SizedBox(
+    key: _qrPagerKey,
+    width: _MobileReceiveMetrics.qrWrapWidth,
+    height: _MobileReceiveMetrics.qrCodeHeight,
+    child: PageView(
+      key: const ValueKey('mobile_receive_qr_pager'),
+      controller: _pageController,
+      onPageChanged: _handlePageChanged,
+      children: [
+        for (final type in ReceiveAddressType.values)
+          _ReceiveQrPage(
+            key: ValueKey('mobile_receive_qr_${type.name}'),
+            type: type,
+            address: _addressFor(type),
+            renewing: _renewing,
+            scanOptimizedQr: scanOptimizedQr,
+            onRenew: () => unawaited(_renewShieldedAddress()),
+          ),
+      ],
+    ),
+  );
+
+  Widget _buildWide(
+    BuildContext context, {
+    required String accountName,
+    required bool scanOptimizedQr,
+  }) => Scaffold(
+    backgroundColor: context.colors.background.window,
+    body: AppToastHost(
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final split =
+                constraints.maxWidth >= _MobileReceiveMetrics.minimumSplitWidth;
+            // A narrow wide-window pane still fits the unchanged 292px card.
+            final horizontalPadding = math.min(
+              AppSpacing.sm,
+              math.max(
+                0.0,
+                (constraints.maxWidth - _MobileReceiveMetrics.qrWrapWidth) / 2,
+              ),
+            );
+            final qr = _buildQrPager(scanOptimizedQr: scanOptimizedQr);
+            final details = Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ReceiveAddressSummary(
+                  adaptive: true,
+                  accountName: accountName,
+                  type: _selectedType,
+                  address: _selectedAddress,
+                  onShowHelp: () => unawaited(
+                    showReceiveAddressInfoSheet(context, _selectedType),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _buildWideActions(),
+              ],
+            );
+            return SingleChildScrollView(
+              key: const ValueKey('mobile_receive_wide_scroll'),
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                0,
+                horizontalPadding,
+                AppSpacing.md,
+              ),
+              child: Column(
+                children: [
+                  MobileTopNav.back(
+                    title: 'Receive $kZcashDefaultCurrencyTicker',
+                    titleStyle: AppTypography.headlineLarge,
+                    height: _MobileReceiveMetrics.topNavHeight,
+                    onBack: () => context.pop(),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  ReceiveTabs(
+                    width: math.min(
+                      _MobileReceiveMetrics.tabsWidth,
+                      constraints.maxWidth - horizontalPadding * 2,
+                    ),
+                    height: _MobileReceiveMetrics.tabsHeight,
+                    iconSize: _MobileReceiveMetrics.tabsIconSize,
+                    iconGap: AppSpacing.xs,
+                    labelStyle: AppTypography.labelLarge,
+                    labelFontWeight: FontWeight.w500,
+                    alwaysDarkSelected: true,
+                    selectedType: _selectedType,
+                    onChanged: _selectType,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  if (split)
+                    Row(
+                      key: const ValueKey('mobile_receive_split'),
+                      children: [
+                        qr,
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(child: details),
+                      ],
+                    )
+                  else
+                    Column(
+                      key: const ValueKey('mobile_receive_stacked'),
+                      children: [
+                        qr,
+                        const SizedBox(height: AppSpacing.md),
+                        SizedBox(
+                          width: _MobileReceiveMetrics.buttonStackWidth,
+                          child: details,
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    ),
+  );
+
+  Widget _buildWideActions() {
+    final poolLabel = _isShielded ? 'shielded' : 'transparent';
+    final enabled = _selectedAddress.isNotEmpty;
+    final labelStyle = AppTypography.labelMedium.copyWith(
+      fontWeight: FontWeight.w500,
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppButton(
+          key: const ValueKey('mobile_receive_copy'),
+          expand: true,
+          constrainContent: true,
+          growWithContent: true,
+          height: _MobileReceiveMetrics.buttonHeight,
+          variant: _isShielded
+              ? AppButtonVariant.primary
+              : AppButtonVariant.secondary,
+          onPressed: enabled ? () => unawaited(_copyAddress()) : null,
+          leading: const AppIcon(
+            AppIcons.copy,
+            size: _MobileReceiveMetrics.buttonIconSize,
+          ),
+          child: Text(
+            'Copy address',
+            semanticsLabel: 'Copy $poolLabel address',
+            textAlign: TextAlign.center,
+            style: labelStyle,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        AppButton(
+          key: const ValueKey('mobile_receive_share'),
+          expand: true,
+          constrainContent: true,
+          growWithContent: true,
+          height: _MobileReceiveMetrics.buttonHeight,
+          variant: AppButtonVariant.secondary,
+          onPressed: enabled ? _shareAddress : null,
+          leading: const AppIcon(
+            AppIcons.share,
+            size: _MobileReceiveMetrics.buttonIconSize,
+          ),
+          child: Text(
+            'Share address',
+            semanticsLabel: 'Share $poolLabel address',
+            textAlign: TextAlign.center,
+            style: labelStyle,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        AppButton(
+          key: const ValueKey('mobile_receive_request'),
+          expand: true,
+          constrainContent: true,
+          growWithContent: true,
+          height: _MobileReceiveMetrics.buttonHeight,
+          variant: AppButtonVariant.ghost,
+          onPressed: enabled ? _openRequest : null,
+          child: Text(
+            'Request $kZcashDefaultCurrencyTicker',
+            textAlign: TextAlign.center,
+            style: labelStyle,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 abstract final class _MobileReceiveMetrics {
+  // 292px QR + 16px gap + 220px actions + 16px padding on each side.
+  static const minimumSplitWidth = 560.0;
   static const topNavHeight = 74.0;
   static const topGap = 16.5;
   static const tabsWidth = 320.0;
@@ -479,12 +663,14 @@ class _ReceiveAddressSummary extends StatelessWidget {
     required this.type,
     required this.address,
     required this.onShowHelp,
+    this.adaptive = false,
   });
 
   final String accountName;
   final ReceiveAddressType type;
   final String address;
   final VoidCallback onShowHelp;
+  final bool adaptive;
 
   @override
   Widget build(BuildContext context) {
@@ -492,14 +678,15 @@ class _ReceiveAddressSummary extends StatelessWidget {
     return SizedBox(
       key: const ValueKey('mobile_receive_address_summary'),
       width: _MobileReceiveMetrics.addressWidth,
-      height: _MobileReceiveMetrics.addressHeight,
+      height: adaptive ? null : _MobileReceiveMetrics.addressHeight,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            height: _MobileReceiveMetrics.accountNameHeight,
+            height: adaptive ? null : _MobileReceiveMetrics.accountNameHeight,
             child: Text(
               accountName,
-              maxLines: 1,
+              maxLines: adaptive ? 2 : 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: AppTypography.bodyLarge.copyWith(
@@ -535,8 +722,8 @@ class _ReceiveAddressSummary extends StatelessWidget {
   }
 }
 
-class _CopyAddressTextButton extends StatelessWidget {
-  const _CopyAddressTextButton({
+class _RequestTextButton extends StatelessWidget {
+  const _RequestTextButton({
     required this.label,
     required this.enabled,
     required this.onTap,
@@ -564,12 +751,6 @@ class _CopyAddressTextButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppIcon(
-                AppIcons.copy,
-                size: _MobileReceiveMetrics.buttonIconSize,
-                color: color,
-              ),
-              const SizedBox(width: AppSpacing.xs),
               Flexible(
                 child: Text(
                   label,

@@ -14,7 +14,21 @@ import 'onboarding_split_view.dart';
 /// `onboarding_split_view.dart` so subsequent onboarding steps can reuse
 /// the same left rail while only the right pane cross-fades.
 class IntroZcashScreen extends ConsumerStatefulWidget {
-  const IntroZcashScreen({super.key});
+  const IntroZcashScreen({
+    this.onContinue,
+    this.onSkip,
+    this.backTarget,
+    this.closingText,
+    this.actionsEnabled = true,
+    this.resetCreateDraft = true,
+    super.key,
+  });
+  final VoidCallback? onContinue;
+  final VoidCallback? onSkip;
+  final OnboardingBackTarget? backTarget;
+  final String? closingText;
+  final bool actionsEnabled;
+  final bool resetCreateDraft;
 
   @override
   ConsumerState<IntroZcashScreen> createState() => _IntroZcashScreenState();
@@ -24,6 +38,7 @@ class _IntroZcashScreenState extends ConsumerState<IntroZcashScreen> {
   @override
   void initState() {
     super.initState();
+    if (!widget.resetCreateDraft) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       clearCreateOnboardingSecretState(ref.read);
@@ -32,19 +47,35 @@ class _IntroZcashScreenState extends ConsumerState<IntroZcashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const OnboardingTrailingPane(
-      backTarget: OnboardingBackTarget.route(
-        label: 'Welcome',
-        routePath: '/welcome',
-      ),
+    return OnboardingTrailingPane(
+      backTarget:
+          widget.backTarget ??
+          const OnboardingBackTarget.route(
+            label: 'Welcome',
+            routePath: '/welcome',
+          ),
       bodyPadding: EdgeInsets.zero,
-      child: _HeroLayout(),
+      child: _HeroLayout(
+        onContinue: widget.onContinue,
+        onSkip: widget.onSkip,
+        actionsEnabled: widget.actionsEnabled,
+        closingText: widget.closingText,
+      ),
     );
   }
 }
 
 class _HeroLayout extends StatelessWidget {
-  const _HeroLayout();
+  const _HeroLayout({
+    this.onContinue,
+    this.onSkip,
+    required this.actionsEnabled,
+    this.closingText,
+  });
+  final VoidCallback? onContinue;
+  final VoidCallback? onSkip;
+  final bool actionsEnabled;
+  final String? closingText;
 
   static const double _contentAreaWidth = 420;
   static const double _contentPaddingX = 12;
@@ -52,7 +83,7 @@ class _HeroLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       children: [
         Expanded(
           child: Center(
@@ -65,8 +96,12 @@ class _HeroLayout extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    Expanded(child: _OnPageContent()),
-                    _ButtonStack(),
+                    Expanded(child: _OnPageContent(closingText: closingText)),
+                    _ButtonStack(
+                      onContinue: onContinue,
+                      onSkip: onSkip,
+                      actionsEnabled: actionsEnabled,
+                    ),
                   ],
                 ),
               ),
@@ -79,20 +114,21 @@ class _HeroLayout extends StatelessWidget {
 }
 
 class _OnPageContent extends StatelessWidget {
-  const _OnPageContent();
+  const _OnPageContent({this.closingText});
+  final String? closingText;
 
   static const double _sectionGap = 32;
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _TitleBlock(),
-        SizedBox(height: _sectionGap),
-        _ShieldedInfoCard(),
-        SizedBox(height: _sectionGap),
-        _SetupIntroText(),
+        const _TitleBlock(),
+        const SizedBox(height: _sectionGap),
+        const _ShieldedInfoCard(),
+        const SizedBox(height: _sectionGap),
+        _SetupIntroText(closingText: closingText),
       ],
     );
   }
@@ -112,6 +148,7 @@ class _TitleBlock extends StatelessWidget {
           child: Text(
             'The Shielded World',
             style: AppTypography.displayLarge.copyWith(
+              fontWeight: FontWeight.w500,
               color: colors.text.accent,
             ),
             textAlign: TextAlign.center,
@@ -148,8 +185,8 @@ class _ShieldedInfoCard extends StatelessWidget {
     final colors = context.colors;
     final isDark = context.appTheme == AppThemeData.dark;
     final patternAsset = isDark
-        ? 'assets/illustrations/home_balance_card_pattern_dark.png'
-        : 'assets/illustrations/home_balance_card_pattern_light.png';
+        ? 'assets/illustrations/desktop/home_balance_card_pattern_dark.webp'
+        : 'assets/illustrations/desktop/home_balance_card_pattern_light.webp';
 
     return Container(
       height: _height,
@@ -227,7 +264,8 @@ class _ShieldedInfoCard extends StatelessWidget {
 }
 
 class _SetupIntroText extends StatelessWidget {
-  const _SetupIntroText();
+  const _SetupIntroText({this.closingText});
+  final String? closingText;
 
   @override
   Widget build(BuildContext context) {
@@ -240,8 +278,9 @@ class _SetupIntroText extends StatelessWidget {
       child: SizedBox(
         width: double.infinity,
         child: Text(
-          "You're a few steps away from your first private wallet.\n"
-          "Let's get you set up.",
+          closingText ??
+              "You're a few steps away from your first private wallet.\n"
+                  "Let's get you set up.",
           style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),
@@ -251,7 +290,14 @@ class _SetupIntroText extends StatelessWidget {
 }
 
 class _ButtonStack extends StatelessWidget {
-  const _ButtonStack();
+  const _ButtonStack({
+    this.onContinue,
+    this.onSkip,
+    required this.actionsEnabled,
+  });
+  final VoidCallback? onContinue;
+  final VoidCallback? onSkip;
+  final bool actionsEnabled;
 
   static const double _buttonMinWidth = 196;
 
@@ -264,8 +310,12 @@ class _ButtonStack extends StatelessWidget {
           child: Column(
             children: [
               AppButton(
-                onPressed: () =>
-                    context.go(OnboardingStep.addressTypes.routePath),
+                key: const ValueKey('desktop_education_continue'),
+                onPressed: actionsEnabled
+                    ? onContinue ??
+                          () =>
+                              context.go(OnboardingStep.addressTypes.routePath)
+                    : null,
                 variant: AppButtonVariant.primary,
                 minWidth: _buttonMinWidth,
                 trailing: const AppIcon(AppIcons.chevronForward),
@@ -273,8 +323,13 @@ class _ButtonStack extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.s),
               AppButton(
-                onPressed: () =>
-                    context.go(OnboardingStep.secretPassphrase.routePath),
+                key: const ValueKey('desktop_education_skip'),
+                onPressed: actionsEnabled
+                    ? onSkip ??
+                          () => context.go(
+                            OnboardingStep.secretPassphrase.routePath,
+                          )
+                    : null,
                 variant: AppButtonVariant.ghost,
                 minWidth: _buttonMinWidth,
                 trailing: const AppIcon(AppIcons.skip),

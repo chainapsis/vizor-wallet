@@ -14,6 +14,7 @@ class PreparedModalSheetRoute<T> extends ControlledModalSheetRoute<T> {
     required super.isDismissible,
     required super.enableDrag,
     super.canDismiss,
+    super.constraints,
   }) : super(
          isScrollControlled: true,
          useSafeArea: true,

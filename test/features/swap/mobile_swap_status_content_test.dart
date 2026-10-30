@@ -21,7 +21,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_status_presentation.d
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_status_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_activity_panel.dart'
-    show mobileSwapStatusHeaderLabels, mobileSwapStatusRecipientFullAddress;
+    show mobileSwapStatusRecipientFullAddress;
 
 import '../../figma_compare/figma_compare_font_loader.dart';
 
@@ -170,18 +170,6 @@ void main() {
     expect(
       tester.getRect(find.text(description)).bottom,
       lessThanOrEqualTo(step.bottom),
-    );
-  });
-
-  test('mobile failed and refunded headers do not imply delivery', () {
-    for (final status in [SwapIntentStatus.failed, SwapIntentStatus.refunded]) {
-      final labels = mobileSwapStatusHeaderLabels(status);
-      expect(labels.pay, 'Deposit amount');
-      expect(labels.receive, 'Expected to receive');
-    }
-    expect(
-      mobileSwapStatusHeaderLabels(SwapIntentStatus.complete).receive,
-      'You received',
     );
   });
 

@@ -10,6 +10,7 @@ class AppPaneModalOverlay extends StatelessWidget {
     this.borderRadius = defaultBorderRadius,
     this.alignment = Alignment.center,
     this.scrimColor,
+    this.barrierDismissible = true,
     super.key,
   });
 
@@ -22,6 +23,7 @@ class AppPaneModalOverlay extends StatelessWidget {
   final BorderRadius? borderRadius;
   final Alignment alignment;
   final Color? scrimColor;
+  final bool barrierDismissible;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +49,7 @@ class AppPaneModalOverlay extends StatelessWidget {
             borderRadius: borderRadius,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: onDismiss,
+              onTap: barrierDismissible ? onDismiss : null,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: scrimColor ?? colors.background.neutralScrim,

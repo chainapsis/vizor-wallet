@@ -17,8 +17,8 @@ class OnboardingWelcomeBackdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = isDark
-        ? 'assets/illustrations/welcome_bg_dark.png'
-        : 'assets/illustrations/welcome_bg_light.png';
+        ? 'assets/illustrations/welcome_bg_dark.webp'
+        : 'assets/illustrations/welcome_bg_light.webp';
     return Image.asset(asset, fit: fit, alignment: alignment);
   }
 }

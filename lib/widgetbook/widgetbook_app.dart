@@ -1,3 +1,4 @@
+import 'desktop_gift_import_use_cases.dart';
 // ignore_for_file: depend_on_referenced_packages
 // widgetbook is a dev-only dependency; imports of it are confined to
 // `lib/widgetbook/` and `lib/widgetbook.dart`, which are not reachable from
@@ -22,10 +23,12 @@ import 'mobile_pay_use_cases.dart';
 import 'mobile_shell_use_cases.dart';
 import 'mobile_welcome_network_use_cases.dart';
 import 'mobile_gift_onboarding_use_cases.dart';
+import 'desktop_gift_onboarding_use_cases.dart';
 import 'payment_request_use_cases.dart';
 import 'request_amount_use_cases.dart';
 import 'pay_use_cases.dart';
 import 'payment_link_mobile_use_cases.dart';
+import 'payment_link_amount_currency_use_cases.dart';
 import 'payment_link_claim_outcome_use_cases.dart';
 import 'payment_link_use_cases.dart';
 import 'receive_use_cases.dart';
@@ -40,6 +43,7 @@ import 'token_use_cases.dart';
 import 'toast_use_cases.dart';
 import 'typography_use_cases.dart';
 import 'voting_use_cases.dart';
+import 'wallet_pir_server_use_cases.dart';
 
 /// Top-level Widgetbook app for the Zcash design system.
 ///
@@ -84,6 +88,7 @@ class WidgetbookApp extends StatelessWidget {
         WidgetbookFolder(
           name: 'Screens',
           children: [
+            buildWalletPirServerWidgetbookComponent(),
             WidgetbookComponent(
               name: 'Voting',
               useCases: [
@@ -109,11 +114,93 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Onboarding',
               children: [
                 WidgetbookComponent(
+                  name: 'Home setup guidance - Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Backup and education',
+                      builder: buildDesktopHomeSetupUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Initial scan',
+                      builder: buildDesktopHomeSetupImportingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Zcash introduction',
+                      builder: buildDesktopZcashEducationIntroUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Address types',
+                      builder: buildDesktopZcashEducationAddressTypesUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Things to know',
+                      builder: buildDesktopZcashEducationThingsToKnowUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Gift onboarding - Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Imported receiving account',
+                      builder: buildDesktopGiftReceivingAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Imported accounts scrolling',
+                      builder: buildDesktopGiftReceivingManyAccountsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient preparation',
+                      builder: buildDesktopGiftReceivingPendingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient retry',
+                      builder: buildDesktopGiftReceivingErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Entry',
+                      builder: buildDesktopGiftEntryUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Checking card',
+                      builder: buildDesktopGiftCheckingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Ready to create',
+                      builder: buildDesktopGiftInspectedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Set password',
+                      builder: buildDesktopGiftPasswordUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Customise - First account',
+                      builder: buildDesktopGiftCustomiseUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Customise - Additional account',
+                      builder: buildDesktopGiftAdditionalCustomiseUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Inspection error',
+                      builder: buildDesktopGiftCheckErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Long scan consent',
+                      builder: buildDesktopGiftLongScanUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Welcome',
                   useCases: [
                     WidgetbookUseCase(
                       name: 'Large',
                       builder: buildWelcomeLargeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Add account',
+                      builder: buildDesktopAddAccountWelcomeUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Network settings',
@@ -143,6 +230,18 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Off',
                       builder: buildMobileWelcomeNetworkOff,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Private queries on',
+                      builder: buildMobileWelcomePrivateQueriesEnabled,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Private queries changing',
+                      builder: buildMobileWelcomePrivateQueriesChanging,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Private queries save failed',
+                      builder: buildMobileWelcomePrivateQueriesFailed,
                     ),
                     WidgetbookUseCase(
                       name: 'Connecting',
@@ -235,6 +334,18 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Fingerprint',
                       builder: buildMobileUnlockFingerprintUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Use Face ID next time',
+                      builder: buildMobileUnlockFaceIdOptInUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Use Touch ID next time',
+                      builder: buildMobileUnlockTouchIdOptInUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Use fingerprint next time',
+                      builder: buildMobileUnlockFingerprintOptInUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Forgot passcode',
@@ -458,6 +569,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Accounts modal',
                       builder: buildMobileHomeAccountsModalUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'NU7 announcement',
+                      builder: buildMobileHomeNu7AnnouncementUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
@@ -466,6 +581,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Gift Cards',
                       builder: buildDesktopHomeGiftCardsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'NU7 announcement',
+                      builder: buildDesktopHomeNu7AnnouncementUseCase,
                     ),
                   ],
                 ),
@@ -523,6 +642,15 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Migration complete',
                       builder: buildIronwoodMigrationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration stopped by network upgrade',
+                      builder: buildIronwoodMigrationUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration stopped by network upgrade',
+                      builder:
+                          buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase,
                     ),
                   ],
                 ),
@@ -655,6 +783,21 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Home - Migration needs input modal',
                       builder:
                           buildMobileIronwoodMigrationHomeAttentionModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Migration stopped',
+                      builder:
+                          buildMobileIronwoodMigrationUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Home banner',
+                      builder:
+                          buildMobileIronwoodMigrationHomeUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Home sheet',
+                      builder:
+                          buildMobileIronwoodMigrationHomeUpgradeStoppedModalUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Keystone - QR scan help',
@@ -855,6 +998,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Viewing key gate',
                       builder: buildSettingsViewingKeyGateUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Viewing key · choose access',
+                      builder: buildSettingsViewingKeyChoiceUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Viewing key reveal',
@@ -1318,6 +1465,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobilePaymentLinkAmountFilledUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Amount - USD input',
+                      builder: buildGiftCardUsdAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Amount - Focused',
                       builder: buildMobilePaymentLinkAmountFocusedUseCase,
                     ),
@@ -1443,6 +1594,18 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'ZEC amount',
                       builder: buildPaymentLinkCreateAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'USD amount',
+                      builder: buildGiftCardUsdAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'USD price loading',
+                      builder: buildGiftCardAmountPriceLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'USD price unavailable',
+                      builder: buildGiftCardAmountPriceUnavailableUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Waiting for sync',
@@ -1881,6 +2044,18 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentRequestFullUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Pasted link',
+                      builder: buildPaymentRequestPastedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scanned QR - matches link',
+                      builder: buildPaymentRequestScannedMatchesLinkUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scanned QR - link differs',
+                      builder: buildPaymentRequestScannedDiffersFromLinkUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Minimal',
                       builder: buildPaymentRequestMinimalUseCase,
                     ),
@@ -1964,6 +2139,20 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Full',
                       builder: buildMobilePaymentRequestFullUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Pasted link',
+                      builder: buildMobilePaymentRequestPastedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scanned QR - matches link',
+                      builder:
+                          buildMobilePaymentRequestScannedMatchesLinkUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Scanned QR - link differs',
+                      builder:
+                          buildMobilePaymentRequestScannedDiffersFromLinkUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Minimal',

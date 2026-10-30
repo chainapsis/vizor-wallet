@@ -16,9 +16,9 @@ use std::collections::HashSet;
 
 use crate::wallet::{
     network::WalletNetwork,
-    sync_engine::{SyncError, WalletDatabase},
+    sync_engine::{SyncError, TransparentLookupGate, WalletDatabase},
 };
-use zakura_transaction_status::{
+use zakura_pir_client::status::policy::{
     DisabledSource, StatusError, StatusMode, StatusObservation, StatusReader, StatusRequest,
     StatusSource,
 };
@@ -26,7 +26,9 @@ use zcash_client_backend::data_api::{status::TransactionStatusWork, WalletRead};
 use zcash_primitives::transaction::TxId;
 
 pub(crate) use private::PrivateStatusSource;
-pub(super) use public::lightwalletd_source;
+#[cfg(test)]
+pub(crate) use public::gated;
+pub(crate) use public::lightwalletd_source;
 #[cfg(test)]
 pub(super) use store::persist_status_observation;
 
@@ -61,7 +63,7 @@ impl<P: StatusSource, R: StatusSource> RoutedStatusReader<P, R> {
                 self.private
                     .observe(StatusRequest {
                         txid: request.txid(),
-                        coverage: zakura_pir_status::LocalCoverageContext {
+                        coverage: zakura_pir_client::status::LocalCoverageContext {
                             earliest_possible_inclusion: request
                                 .earliest_possible_inclusion()
                                 .map(u32::from),
@@ -86,7 +88,7 @@ where
 {
     RoutedStatusReader::new(
         public_source,
-        PrivateStatusSource::new(db_path, network, should_exit, false),
+        PrivateStatusSource::new(db_path, network, should_exit),
     )
 }
 
@@ -98,6 +100,7 @@ pub(super) async fn run_requests<P, R>(
     reader: &mut RoutedStatusReader<P, R>,
     db: &mut WalletDatabase,
     work: &[TransactionStatusWork],
+    gate: &TransparentLookupGate,
     attempted: &mut HashSet<TxId>,
     private_failed: &mut bool,
     db_path: &str,
@@ -108,11 +111,21 @@ where
     P: StatusSource,
     R: StatusSource,
 {
+    // Public status discloses the txid; private work is unaffected. The public
+    // source is gated per observation, and persistence re-reads the generation
+    // in its own transaction. Withheld public work stays durable.
+    let mut public_allowed = work.iter().any(|work| !is_private(work)) && gate.permits()?;
     let pending: Vec<_> = work
         .iter()
         .copied()
         .filter(|work| !attempted.contains(&work.txid()))
         .filter(|work| !(*private_failed && is_private(work)))
+        // A private txid answered at this tip, or created by a reply here,
+        // waits for the next block, whatever the reply said.
+        .filter(|work| {
+            !is_private(work) || super::content_failures::may_ask_status(db_path, &work.txid())
+        })
+        .filter(|work| public_allowed || is_private(work))
         .collect();
     let actionable = !pending.is_empty();
     // set_transaction_status evaluates absence against this database's advertised chain tip.
@@ -133,17 +146,37 @@ where
         if should_exit() {
             return Ok(actionable);
         }
+        if !is_private(&work) && !public_allowed {
+            continue;
+        }
         let txid = work.txid();
         attempted.insert(txid);
         let observation = match reader.observe(work, required_through).await {
-            Ok(observation) => observation.into(),
+            Ok(observation) => {
+                if is_private(&work) {
+                    super::content_failures::status_answered(db_path, txid);
+                }
+                observation.into()
+            }
             Err(StatusError::CoverageIncomplete) if is_private(&work) => {
+                // A row without this txid's record is a reply about it, so
+                // the txid waits for the next block like any other answer.
+                // The sync then fails without retrying at this tip (see
+                // `SyncError::recovery_strategy`).
+                super::content_failures::status_answered(db_path, txid);
                 // GetStatus work is expected to be highly unlikely in private
                 // mode. Temporarily fail visibly so this feedback gate detects
                 // real occurrences; if users encounter it, we will design the
                 // complete negative-coverage recovery instead of silently
                 // weakening privacy.
                 return Err(SyncError::PrivateStatusCoverageIncomplete);
+            }
+            // The gated public source reports a withheld observation as
+            // `Cancelled`; the rest of the public work is withheld too.
+            Err(StatusError::Cancelled) if !is_private(&work) && !gate.permits()? => {
+                attempted.remove(&txid);
+                public_allowed = false;
+                continue;
             }
             Err(StatusError::Cancelled) => return Ok(actionable),
             // The wallet's own database could not be read. That is not a
@@ -152,6 +185,18 @@ where
                 return Err(SyncError::db(
                     "transaction status: local wallet database read failed",
                 ));
+            }
+            // The private source reserves Malformed for a row decode error
+            // after accepting the manifest, setup and query envelope. Such a
+            // service could aim it at chosen rows. The work stays durable
+            // for a later sync, and the other txids are still asked, so
+            // nothing else in the sync changes.
+            Err(StatusError::Malformed) if is_private(&work) => {
+                super::content_failures::status_answered(db_path, txid);
+                log::warn!(
+                    "private status reply did not decode; the transaction waits for a later sync"
+                );
+                continue;
             }
             Err(error) if is_private(&work) => {
                 // Inconclusive: keep the work and stop querying the private
@@ -174,6 +219,7 @@ where
             observation,
             required_through,
             decision_hash,
+            gate,
         )? {
             ready.insert(txid.as_ref().to_vec());
         }

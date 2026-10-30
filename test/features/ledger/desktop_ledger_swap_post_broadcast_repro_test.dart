@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_operation_recovery.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -76,9 +77,9 @@ void main() {
         () => find
             .text(
               ledgerFailureGuidance(error)?.pairingInvalid == true
-                  ? 'Find my Ledger'
+                  ? 'Find Ledger'
                   : accessRecovery
-                  ? 'Reconnect'
+                  ? 'Find Ledger'
                   : 'Try again',
             )
             .evaluate()
@@ -492,6 +493,41 @@ void main() {
     expect(find.text('Retry saving'), findsNothing);
   });
 
+  testWidgets('desktop Ledger explains a deposit the upgrade expired', (
+    tester,
+  ) async {
+    final operations = _StatefulOperationService(
+      status: 'expired',
+      message:
+          "Transactions can't be sent this close to the network upgrade. "
+          'Try again after it activates.',
+    );
+    var cancelCalls = 0;
+
+    await _pumpOverlay(
+      tester,
+      intent: _intent(),
+      operations: operations,
+      signing: _HardwareSigningService(),
+      sign: (_, _) async => const [3],
+      persist: (_, _) async {},
+      onCompleted: (_) async {},
+      onCancelled: () => cancelCalls++,
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text(kNetworkUpgradeHoldMessage).evaluate().isNotEmpty,
+    );
+
+    expect(operations.acknowledgeCalls, 1);
+    expect(cancelCalls, 0);
+    expect(find.text('Paused for network upgrade'), findsOneWidget);
+
+    await tester.tap(find.text('Back to activity'));
+    await _pumpUntil(tester, () => cancelCalls == 1);
+    expect(cancelCalls, 1);
+  });
+
   testWidgets(
     'desktop Ledger retries expired draft cleanup before acknowledgement',
     (tester) async {
@@ -898,9 +934,11 @@ class _StatefulOperationService implements LedgerSignedOperationService {
     this.status = SwapDepositBroadcastStatus.broadcasted,
     this.acknowledgeFailures = 0,
     this.failBroadcastResponseAfterAccept = false,
+    this.message,
   });
 
   final String status;
+  final String? message;
   int acknowledgeFailures;
   final bool failBroadcastResponseAfterAccept;
   var checkpointCalls = 0;
@@ -963,6 +1001,7 @@ class _StatefulOperationService implements LedgerSignedOperationService {
       operationId: operationId,
       txid: 'txid-1',
       status: status,
+      message: message,
       requiresAck: true,
     );
   }

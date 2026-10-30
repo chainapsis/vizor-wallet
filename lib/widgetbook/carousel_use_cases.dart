@@ -10,7 +10,7 @@ const _historyTile = Color(0xFF9667E2);
 const _walletTile = Color(0xFF00A460);
 const _helmetTile = Color(0xFFB90A4A);
 const _helmetAsset =
-    'assets/illustrations/ironwood_migration_expect_running.png';
+    'assets/illustrations/desktop/ironwood_migration_expect_running.webp';
 
 const _preparationItems = [
   AppCarouselItem.icon(

@@ -253,7 +253,7 @@ class _LostPasswordContent extends StatelessWidget {
         // Figma: this screen's badge sits on a 30% gray shield, unlike the
         // crimson welcome/unlock badge.
         Image.asset(
-          'assets/illustrations/lost_password_badge.png',
+          'assets/illustrations/lost_password_badge.webp',
           width: 50,
           height: 50,
         ),

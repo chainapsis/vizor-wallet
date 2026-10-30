@@ -1,12 +1,9 @@
 /// Route-shape predicates shared by every policy that has to reason about
 /// "where is the user right now".
 ///
-/// Both incoming-link policies — `payment_uri_drain_policy.dart` for a
-/// ZIP-321 `zcash:` request and `payment_link_entry_policy.dart` for a Vizor
-/// Gift Card — ask the same two questions about setup and unlock routes, and
-/// `appRedirect` in `app.dart` asks them too. Keeping one copy is the only way
-/// a new onboarding route cannot be added to one guard and forgotten in the
-/// other.
+/// Incoming links and update prompts share the account-setup classification.
+/// The router also shares initial onboarding and unlock predicates, but keeps
+/// post-creation backup and education separate from wallet reachability.
 ///
 /// Only the predicates that are genuinely the same for every caller live here.
 /// A policy's own extra routes (the Gift Card blocklist's transactional
@@ -36,6 +33,18 @@ bool isOnboardingLocation(String matchedLocation) =>
     isRouteOrChild(matchedLocation, '/gift') ||
     matchedLocation.startsWith('/onboarding/') ||
     matchedLocation.startsWith('/import');
+
+/// Backup and education continue account setup after the wallet exists.
+/// These routes must remain reachable under the router's wallet guard.
+bool isPostCreationSetupLocation(String matchedLocation) =>
+    isRouteOrChild(matchedLocation, '/setup/backup') ||
+    isRouteOrChild(matchedLocation, '/setup/education');
+
+/// Account setup screens whose state must survive external interruptions.
+/// Use this for incoming links and prompts, not wallet reachability redirects.
+bool isAccountSetupLocation(String matchedLocation) =>
+    isOnboardingLocation(matchedLocation) ||
+    isPostCreationSetupLocation(matchedLocation);
 
 /// Locations that own the locked-wallet reset flow. An incoming link arriving
 /// here must not navigate: `go('/unlock')` from `/lost-password` unmounts the

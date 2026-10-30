@@ -9,6 +9,19 @@ import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/rust/network_privacy.dart' as rust_types;
 
 void main() {
+  group('transparent recovery companions', () {
+    test('stay out of device backups in every build', () async {
+      final excluded = <String>[];
+      Future<void> exclude(String directory) async => excluded.add(directory);
+
+      await excludeTransparentRecoveryCompanionsFromBackup(
+        '/support/zcash_wallet.db',
+        exclude: exclude,
+      );
+      expect(excluded, ['/support/zcash_wallet.db.tpir']);
+    });
+  });
+
   // The launch this owner exists for reads almost nothing: a locked app routes
   // to `/unlock`, `syncKeepAwakeActiveProvider` returns early on
   // `requiresUnlock` before it reaches `syncProvider`, and the unlock screens

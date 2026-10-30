@@ -18,9 +18,12 @@ import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/transparent_ledger_errors.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 import '../../../core/zcash/zip321_payment_request.dart'
     show stripUnsupportedZip321MemoText;
 import '../../../providers/account_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -29,6 +32,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../ledger/services/ledger_operation_lifecycle.dart';
 import '../../ledger/services/ledger_signed_operation_service.dart';
 import 'sapling_params.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 /// Longest requester label the review screens will render.
 ///
@@ -126,11 +130,25 @@ class KeystoneBroadcastArgs {
     required this.reviewArgs,
     required this.pcztWithProofs,
     required this.pcztWithSignatures,
+    this.isRecoveryRetry = false,
   });
 
   final SendReviewArgs reviewArgs;
   final List<List<int>> pcztWithProofs;
   final List<List<int>> pcztWithSignatures;
+
+  /// Rust already retained this batch. Dart must not discard its proposal if
+  /// a new attempt fails before reaching Rust.
+  final bool isRecoveryRetry;
+
+  /// Reuses the signed payload after a retryable outcome. Local preparation
+  /// failures during this attempt preserve Rust's existing reservation.
+  KeystoneBroadcastArgs forRecoveryRetry() => KeystoneBroadcastArgs(
+    reviewArgs: reviewArgs,
+    pcztWithProofs: pcztWithProofs,
+    pcztWithSignatures: pcztWithSignatures,
+    isRecoveryRetry: true,
+  );
 }
 
 /// Direct-USB Ledger handoff payload. The device-signed PCZT is combined with
@@ -532,6 +550,8 @@ const kWrongNetworkAddressMessage =
 ///
 /// Follows the card's status-line convention: one line, no trailing period.
 String friendlyPaymentRequestCheckError(String raw) {
+  final upgradeHold = networkUpgradeHoldMessage(raw);
+  if (upgradeHold != null) return upgradeHold;
   final lower = raw.toLowerCase();
   if (lower.contains('grpc connect failed') ||
       lower.contains('connection refused') ||
@@ -543,6 +563,14 @@ String friendlyPaymentRequestCheckError(String raw) {
 }
 
 String friendlyProposeSendError(String raw) {
+  final upgradeHold = networkUpgradeHoldMessage(raw);
+  if (upgradeHold != null) return upgradeHold;
+  if (isTransparentLedgerNeedsNewerBuildError(raw)) {
+    return transparentLedgerNeedsNewerBuildMessage;
+  }
+  if (isTransparentRecoveryIncompleteError(raw)) {
+    return transparentRecoveryIncompleteMessage;
+  }
   final lower = raw.toLowerCase();
   if (lower.contains('wallet sync is still finishing') ||
       lower.contains('wallet sync failed before balance refresh') ||
@@ -575,6 +603,8 @@ String friendlyProposeSendError(String raw) {
 }
 
 String friendlyBroadcastError(String raw) {
+  final upgradeHold = networkUpgradeHoldMessage(raw);
+  if (upgradeHold != null) return upgradeHold;
   final lower = raw.toLowerCase();
   if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
     return 'Insufficient shielded balance to cover amount and fee.';
@@ -609,6 +639,7 @@ class SendBroadcastOutcome {
     this.txid,
     this.statusMessage,
     this.error,
+    this.canRetryBroadcast = false,
   });
 
   final SendBroadcastPhase phase;
@@ -617,6 +648,12 @@ class SendBroadcastOutcome {
   /// when false the caller must not assume the proposal was released
   /// here unless the phase is [SendBroadcastPhase.aborted].
   final bool proposalConsumed;
+
+  /// Rust retained the validated signed batch and its proposal for another
+  /// attempt. Retry must reuse the same payload rather than create a new send.
+  /// The proposal is then not consumed: a caller that leaves without retrying
+  /// releases it, which Rust ignores once a submission has started.
+  final bool canRetryBroadcast;
   final String? txid;
   final String? statusMessage;
   final String? error;
@@ -740,7 +777,8 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
 }) async {
   final hasHardwarePayload = ledger != null || keystone != null;
   var proposalConsumed = hasHardwarePayload;
-  var proposalReleased = false;
+  var proposalReleased = keystone?.isRecoveryRetry ?? false;
+  var keystoneRustAttempted = false;
   LinuxSecretOperationGuard? secretGuard;
   final syncNotifier = ref.read(syncProvider.notifier);
 
@@ -775,6 +813,21 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     proposalConsumed: proposalConsumed,
   );
 
+  /// The outcome when the signed Keystone batch stays retained for a retry.
+  /// The batch is the caller's again: a retry reuses it, and leaving, now or
+  /// later, releases it. Rust keeps the inputs locked through that release
+  /// once a submission has started.
+  Future<SendBroadcastOutcome> retainedForRetry(String error) async {
+    proposalReleased = false;
+    if (await abortRequested()) return aborted();
+    return SendBroadcastOutcome(
+      phase: SendBroadcastPhase.failed,
+      proposalConsumed: false,
+      canRetryBroadcast: true,
+      error: error,
+    );
+  }
+
   try {
     secretGuard = LinuxSecretOperationGuard(
       store: ref.read(linuxSecretOperationStoreProvider),
@@ -793,6 +846,11 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
         if (await abortRequested()) return aborted();
         final downloadConfirmed = await confirmSaplingParamsDownload();
         if (!downloadConfirmed) {
+          if (keystone?.isRecoveryRetry ?? false) {
+            return await retainedForRetry(
+              'Proof parameters are required to retry this signed transaction.',
+            );
+          }
           if (await abortRequested()) return aborted();
           if (!proposalReleased) {
             if (ledger != null) {
@@ -919,9 +977,11 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
             payload.pcztWithProofs.isEmpty) {
           throw Exception('Invalid Keystone signing round count.');
         }
-        // The Rust orchestration owns proposal-lock cleanup on every outcome
-        // from this point onward, including validation and atomic-store errors.
+        // Rust owns proposal-lock bookkeeping from this point onward. It
+        // preserves retryable mined-evidence errors and cleans up terminal
+        // validation failures and completed outcomes.
         proposalReleased = true;
+        keystoneRustAttempted = true;
         final rust_sync.StoreAndBroadcastPcztsResult result;
         if (args.addressType == 'tex') {
           result = await rust_sync.storeAndBroadcastSignedPcztsForProposal(
@@ -1065,6 +1125,21 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     }
 
     if (canReadProviders) {
+      if (broadcastComplete &&
+          !ref.read(appSecurityProvider).requiresUnlock &&
+          (ref
+                  .read(accountProvider)
+                  .value
+                  ?.accounts
+                  .any((account) => account.uuid == args.proposalAccountUuid) ??
+              false)) {
+        ref
+            .read(pendingActivityEvidenceProvider.notifier)
+            .observe(
+              accountUuid: args.proposalAccountUuid,
+              txids: txids.split(','),
+            );
+      }
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
       } catch (e) {
@@ -1083,12 +1158,23 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
       txid: receiptTxid,
       statusMessage: pendingStatusMessage,
       error: broadcastExpired
-          ? 'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
+          ? networkUpgradeHoldMessage(broadcastMessageForFallback ?? '') ??
+                'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.'
           : null,
     );
   } catch (e) {
     log('SendBroadcast: ERROR: $e');
-    final message = friendlyBroadcastError(e.toString());
+    // Only Rust can confirm, with its retry code, that a failed native call
+    // retained the signed proposal.
+    final canRetryBroadcast =
+        keystone != null &&
+        ((keystone.isRecoveryRetry && !keystoneRustAttempted) ||
+            walletErrorCode(e) ==
+                rust_sync.ApiWalletErrorCode.retryAfterRecovery);
+    final message = canRetryBroadcast
+        ? 'Wait for wallet sync, then retry this signed transaction.'
+        : friendlyBroadcastError(e.toString());
+    if (canRetryBroadcast) return await retainedForRetry(message);
     if (await abortRequested()) return aborted();
     if (!proposalReleased) {
       proposalConsumed = await discardSendProposal(
@@ -1103,6 +1189,7 @@ Future<SendBroadcastOutcome> _runSendBroadcast({
     return SendBroadcastOutcome(
       phase: SendBroadcastPhase.failed,
       proposalConsumed: proposalConsumed,
+      canRetryBroadcast: canRetryBroadcast,
       error: message,
     );
   }

@@ -3,6 +3,10 @@
 
 import 'package:flutter/widgets.dart';
 
+import '../figma_compare/zip321_prefill_use_cases.dart';
+import '../src/features/send/models/send_prefill_args.dart';
+import '../src/features/send/widgets/send_review_content_view.dart';
+import '../src/features/send/widgets/send_review_layout.dart';
 import '../src/core/theme/app_theme.dart';
 import '../src/features/send/widgets/payment_request_card.dart';
 import '../src/features/send/widgets/payment_request_surface.dart';
@@ -57,6 +61,51 @@ const _fullRequest = PaymentRequestView(
   memo: _sampleMemo,
   note: _sampleNote,
   spendableText: '0.21 ZEC',
+);
+
+/// The same request pasted into the send recipient field.
+const _pastedRequest = PaymentRequestView(
+  source: PaymentRequestSource.pastedLink,
+  requesterLabel: 'Blue Door Coffee',
+  amountZecText: '0.5 ZEC',
+  fiatText: r'$35.00',
+  address: _sampleAddress,
+  memo: _sampleMemo,
+  note: _sampleNote,
+);
+
+const _scannedRequest = PaymentRequestView(
+  source: PaymentRequestSource.qrCode,
+  requesterLabel: 'Blue Door Coffee',
+  amountZecText: '0.5 ZEC',
+  fiatText: r'$35.00',
+  address: _sampleAddress,
+  memo: _sampleMemo,
+  note: _sampleNote,
+);
+
+/// "Scan original QR" over a link that asked for the same payment.
+const _scannedMatchingRequest = PaymentRequestView(
+  source: PaymentRequestSource.qrCode,
+  requesterLabel: 'Blue Door Coffee',
+  amountZecText: '0.5 ZEC',
+  fiatText: r'$35.00',
+  address: _sampleAddress,
+  memo: _sampleMemo,
+  note: _sampleNote,
+  linkDifferences: <PaymentRequestLinkDifference>{},
+);
+
+/// "Scan original QR" over a link whose address had been swapped.
+const _scannedDifferingRequest = PaymentRequestView(
+  source: PaymentRequestSource.qrCode,
+  requesterLabel: 'Blue Door Coffee',
+  amountZecText: '0.5 ZEC',
+  fiatText: r'$35.00',
+  address: _sampleAddress,
+  memo: _sampleMemo,
+  note: _sampleNote,
+  linkDifferences: {PaymentRequestLinkDifference.address},
 );
 
 const _minimalRequest = PaymentRequestView(
@@ -131,7 +180,7 @@ const _transparentRequest = PaymentRequestView(
 /// The recipient is saved in the address book: the contact's name and avatar
 /// take the "To" headline and the address drops to the sub-line.
 const _contactRequest = PaymentRequestView(
-  source: PaymentRequestSource.link,
+  source: PaymentRequestSource.qrCode,
   requesterLabel: 'Blue Door Coffee',
   amountZecText: '0.5 ZEC',
   fiatText: r'$35.00',
@@ -172,8 +221,23 @@ const _noteOnlyRequest = PaymentRequestView(
 Widget buildPaymentRequestFullUseCase(BuildContext context) =>
     _desktop(_fullRequest);
 
+Widget buildPaymentRequestPastedUseCase(BuildContext context) =>
+    _desktop(_pastedRequest);
+
+Widget buildPaymentRequestScannedMatchesLinkUseCase(BuildContext context) =>
+    _desktop(_scannedMatchingRequest);
+
+Widget buildPaymentRequestScannedDiffersFromLinkUseCase(BuildContext context) =>
+    _desktop(_scannedDifferingRequest);
+
 Widget buildPaymentRequestAddressExpandedUseCase(BuildContext context) =>
-    _desktop(_fullRequest, addressExpanded: true);
+    _desktop(_fullRequest, addressExpanded: true, linkDetails: true);
+
+Widget buildPaymentRequestScannedUseCase(BuildContext context) =>
+    _desktop(_scannedRequest);
+
+Widget buildPaymentRequestLinkDetailsUseCase(BuildContext context) =>
+    _desktop(_fullRequest, linkDetails: true);
 
 Widget buildPaymentRequestMinimalUseCase(BuildContext context) =>
     _desktop(_minimalRequest);
@@ -185,35 +249,43 @@ Widget buildPaymentRequestLongValuesExpandedUseCase(BuildContext context) =>
     _desktop(_longValuesRequest, messageExpanded: true);
 
 Widget buildPaymentRequestCheckingUseCase(BuildContext context) =>
-    _desktop(_statusRequest(PaymentRequestStatus.checking));
+    _desktop(_statusRequest(PaymentRequestStatus.checking), linkDetails: true);
 
 Widget buildPaymentRequestInvalidAddressUseCase(BuildContext context) =>
-    _desktop(_statusRequest(PaymentRequestStatus.invalidAddress));
+    _desktop(
+      _statusRequest(PaymentRequestStatus.invalidAddress),
+      linkDetails: true,
+    );
 
-Widget buildPaymentRequestInsufficientUseCase(BuildContext context) =>
-    _desktop(_statusRequest(PaymentRequestStatus.insufficientFunds));
+Widget buildPaymentRequestInsufficientUseCase(BuildContext context) => _desktop(
+  _statusRequest(PaymentRequestStatus.insufficientFunds),
+  linkDetails: true,
+);
 
 Widget buildPaymentRequestSyncingUseCase(BuildContext context) =>
-    _desktop(_statusRequest(PaymentRequestStatus.syncing));
+    _desktop(_statusRequest(PaymentRequestStatus.syncing), linkDetails: true);
 
 /// The syncing card once it has run out of ways to answer itself: same
 /// blocked request, but the primary action becomes an enabled "Check again"
 /// rather than a Review that can never fire.
-Widget buildPaymentRequestSyncStalledUseCase(BuildContext context) =>
-    _desktop(_statusRequest(PaymentRequestStatus.syncStalled));
+Widget buildPaymentRequestSyncStalledUseCase(BuildContext context) => _desktop(
+  _statusRequest(PaymentRequestStatus.syncStalled),
+  linkDetails: true,
+);
 
 Widget buildPaymentRequestFailedUseCase(BuildContext context) => _desktop(
   _statusRequest(
     PaymentRequestStatus.failed,
     statusMessage: _failedStatusMessage,
   ),
+  linkDetails: true,
 );
 
 Widget buildPaymentRequestReplacedUseCase(BuildContext context) =>
     _desktop(_replacedRequest);
 
 Widget buildPaymentRequestTransparentUseCase(BuildContext context) =>
-    _desktop(_transparentRequest);
+    _desktop(_transparentRequest, linkDetails: true);
 
 Widget buildPaymentRequestContactUseCase(BuildContext context) =>
     _desktop(_contactRequest);
@@ -225,10 +297,10 @@ Widget buildPaymentRequestOwnAccountExpandedUseCase(BuildContext context) =>
     _desktop(_ownAccountRequest, addressExpanded: true);
 
 Widget buildPaymentRequestNoteOnlyUseCase(BuildContext context) =>
-    _desktop(_noteOnlyRequest);
+    _desktop(_noteOnlyRequest, linkDetails: true);
 
 Widget buildPaymentRequestNoAmountUseCase(BuildContext context) =>
-    _desktop(_noAmountRequest);
+    _desktop(_noAmountRequest, linkDetails: true);
 
 Widget buildPaymentRequestLargeTextUseCase(BuildContext context) =>
     _desktop(_fullRequest, textScale: 1.5);
@@ -242,7 +314,24 @@ Widget buildMobilePaymentRequestFullUseCase(BuildContext context) =>
     _mobile(_fullRequest);
 
 Widget buildMobilePaymentRequestAddressExpandedUseCase(BuildContext context) =>
-    _mobile(_fullRequest, addressExpanded: true);
+    _mobile(_fullRequest, addressExpanded: true, linkDetails: true);
+
+Widget buildMobilePaymentRequestScannedUseCase(BuildContext context) =>
+    _mobile(_scannedRequest);
+
+Widget buildMobilePaymentRequestPastedUseCase(BuildContext context) =>
+    _mobile(_pastedRequest);
+
+Widget buildMobilePaymentRequestScannedMatchesLinkUseCase(
+  BuildContext context,
+) => _mobile(_scannedMatchingRequest);
+
+Widget buildMobilePaymentRequestScannedDiffersFromLinkUseCase(
+  BuildContext context,
+) => _mobile(_scannedDifferingRequest);
+
+Widget buildMobilePaymentRequestLinkDetailsUseCase(BuildContext context) =>
+    _mobile(_fullRequest, linkDetails: true);
 
 Widget buildMobilePaymentRequestMinimalUseCase(BuildContext context) =>
     _mobile(_minimalRequest);
@@ -255,29 +344,36 @@ Widget buildMobilePaymentRequestLongValuesExpandedUseCase(
 ) => _mobile(_longValuesRequest, messageExpanded: true);
 
 Widget buildMobilePaymentRequestCheckingUseCase(BuildContext context) =>
-    _mobile(_statusRequest(PaymentRequestStatus.checking));
+    _mobile(_statusRequest(PaymentRequestStatus.checking), linkDetails: true);
 
 Widget buildMobilePaymentRequestInvalidAddressUseCase(BuildContext context) =>
-    _mobile(_statusRequest(PaymentRequestStatus.invalidAddress));
+    _mobile(
+      _statusRequest(PaymentRequestStatus.invalidAddress),
+      linkDetails: true,
+    );
 
 Widget buildMobilePaymentRequestInsufficientUseCase(BuildContext context) =>
-    _mobile(_statusRequest(PaymentRequestStatus.insufficientFunds));
+    _mobile(
+      _statusRequest(PaymentRequestStatus.insufficientFunds),
+      linkDetails: true,
+    );
 
 Widget buildMobilePaymentRequestSyncingUseCase(BuildContext context) =>
-    _mobile(_statusRequest(PaymentRequestStatus.syncing));
+    _mobile(_statusRequest(PaymentRequestStatus.syncing), linkDetails: true);
 
 Widget buildMobilePaymentRequestFailedUseCase(BuildContext context) => _mobile(
   _statusRequest(
     PaymentRequestStatus.failed,
     statusMessage: _failedStatusMessage,
   ),
+  linkDetails: true,
 );
 
 Widget buildMobilePaymentRequestReplacedUseCase(BuildContext context) =>
     _mobile(_replacedRequest);
 
 Widget buildMobilePaymentRequestTransparentUseCase(BuildContext context) =>
-    _mobile(_transparentRequest);
+    _mobile(_transparentRequest, linkDetails: true);
 
 Widget buildMobilePaymentRequestContactUseCase(BuildContext context) =>
     _mobile(_contactRequest);
@@ -290,16 +386,46 @@ Widget buildMobilePaymentRequestOwnAccountExpandedUseCase(
 ) => _mobile(_ownAccountRequest, addressExpanded: true);
 
 Widget buildMobilePaymentRequestNoteOnlyUseCase(BuildContext context) =>
-    _mobile(_noteOnlyRequest);
+    _mobile(_noteOnlyRequest, linkDetails: true);
 
 Widget buildMobilePaymentRequestNoAmountUseCase(BuildContext context) =>
-    _mobile(_noAmountRequest);
+    _mobile(_noAmountRequest, linkDetails: true);
 
 Widget buildMobilePaymentRequestLargeTextUseCase(BuildContext context) =>
     _mobile(_fullRequest, textScale: 1.5);
 
 Widget buildMobilePaymentRequestRtlUseCase(BuildContext context) =>
     _mobile(_fullRequest, textDirection: TextDirection.rtl);
+
+/// Second stage with the same terms as the external introduction fixture.
+Widget buildPaymentRequestReviewUseCase(BuildContext context) => ColoredBox(
+  color: context.colors.background.window,
+  child: SendReviewContentView(
+    amountText: _fullRequest.amountZecText!,
+    fiatText: _fullRequest.fiatText,
+    recipient: const SendReviewAddressRecipient(address: _sampleAddress),
+    memoText: _sampleMemo,
+    feeText: '0.0001 ZEC',
+    isPaymentRequest: true,
+    onConfirm: () {},
+    onCancel: () {},
+    onShowFullAddress: () {},
+    onExpandMemo: () {},
+    onFeeHelp: () {},
+  ),
+);
+
+Widget buildMobilePaymentRequestReviewUseCase(BuildContext context) =>
+    buildMobilePaymentRequestReviewPreview(
+      const SendPrefillArgs(
+        id: 'payment-request-review-preview',
+        source: kPaymentUriPrefillSource,
+        address: _sampleAddress,
+        amountText: '0.5',
+        memoText: _sampleMemo,
+        preserveMemoText: true,
+      ),
+    );
 
 // ─── Frames ──────────────────────────────────────────────────────────
 
@@ -309,6 +435,7 @@ Widget _desktop(
   TextDirection? textDirection,
   bool addressExpanded = false,
   bool messageExpanded = false,
+  bool linkDetails = false,
 }) {
   return _PaymentRequestFrame(
     // A desktop pane is the surface a payment link interrupts.
@@ -320,6 +447,7 @@ Widget _desktop(
       request: request,
       initialAddressExpanded: addressExpanded,
       initialMessageExpanded: messageExpanded,
+      initialLinkDetails: linkDetails,
       onContinue: () {},
       onEdit: () {},
       onCancel: () {},
@@ -327,6 +455,7 @@ Widget _desktop(
       // app — enabled. A preview that left it null would show the one status
       // whose whole point is an actionable button with a dead one.
       onRecheck: () {},
+      onScan: () {},
     ),
   );
 }
@@ -337,6 +466,7 @@ Widget _mobile(
   TextDirection? textDirection,
   bool addressExpanded = false,
   bool messageExpanded = false,
+  bool linkDetails = false,
 }) {
   return _PaymentRequestFrame(
     size: const Size(393, 852),
@@ -347,6 +477,7 @@ Widget _mobile(
       request: request,
       initialAddressExpanded: addressExpanded,
       initialMessageExpanded: messageExpanded,
+      initialLinkDetails: linkDetails,
       onContinue: () {},
       onEdit: () {},
       onCancel: () {},
@@ -354,6 +485,7 @@ Widget _mobile(
       // app — enabled. A preview that left it null would show the one status
       // whose whole point is an actionable button with a dead one.
       onRecheck: () {},
+      onScan: () {},
     ),
   );
 }

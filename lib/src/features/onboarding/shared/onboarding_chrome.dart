@@ -198,7 +198,7 @@ class OnboardingSidebarNav extends StatelessWidget {
         children: [
           for (var i = 0; i < steps.length; i++) ...[
             OnboardingSidebarItem(step: steps[i]),
-            if (i != steps.length - 1) const SizedBox(height: AppSpacing.xs),
+            if (i != steps.length - 1) const SizedBox(height: AppSpacing.xxs),
           ],
         ],
       ),

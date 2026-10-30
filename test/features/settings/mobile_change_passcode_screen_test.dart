@@ -162,6 +162,34 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('wide flow retains the existing phase identifiers', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(951, 669);
+    addTearDown(tester.view.resetPhysicalSize);
+    final security = _FakeSecurityNotifier();
+    final popResult = <bool?>[];
+    await tester.pumpWidget(_app(security, popResult: popResult));
+    await open(tester);
+    expect(
+      find.byKey(const ValueKey('mobile_change_passcode_verify')),
+      findsOneWidget,
+    );
+    await _enterPasscode(tester, '111111');
+    expect(
+      find.byKey(const ValueKey('mobile_change_passcode_create')),
+      findsOneWidget,
+    );
+    await _enterPasscode(tester, '222222');
+    expect(
+      find.byKey(const ValueKey('mobile_change_passcode_confirm')),
+      findsOneWidget,
+    );
+    await _enterPasscode(tester, '222222');
+    expect(popResult, [true]);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a wrong current passcode shows Incorrect Passcode and stays '
       'on the verify phase', (tester) async {
     final security = _FakeSecurityNotifier(confirmResult: false);

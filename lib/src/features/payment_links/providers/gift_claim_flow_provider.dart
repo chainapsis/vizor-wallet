@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/input/app_password_input_source.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../onboarding/shared/account_persona_draft.dart';
 import '../../../providers/wallet_provider.dart';
 import '../models/vizor_payment_link.dart';
 import '../services/payment_link_service.dart';
@@ -14,7 +16,7 @@ import 'payment_link_intake_provider.dart';
 
 enum GiftClaimPhase { checking, longSyncConfirmation, inspected, failed }
 
-enum GiftClaimFailure { network, otherNetwork, invalid }
+enum GiftClaimFailure { network, otherNetwork, invalid, interrupted }
 
 /// The Gift Card a recipient is looking at on `/gift`.
 ///
@@ -28,6 +30,8 @@ class GiftClaimFlowState {
     this.inspection,
     this.failure,
     this.setupPasscode,
+    this.setupPersona,
+    this.setupPasswordInputSource,
     this.walletSetupInProgress = false,
   });
 
@@ -37,6 +41,8 @@ class GiftClaimFlowState {
   final GiftClaimFailure? failure;
   // Kept only until setup leaves the screen. Route refresh must not serialize it.
   final String? setupPasscode;
+  final AccountPersona? setupPersona;
+  final PasswordInputSourceCandidate? setupPasswordInputSource;
   final bool walletSetupInProgress;
 }
 
@@ -115,9 +121,16 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
   final _cleanupByWallet = <String, Future<void>>{};
   Completer<void>? _unlockWaiter;
   int _lockGeneration = 0;
+  late PaymentLinkClaimCoordinator _coordinator;
+  ({VizorPaymentLink link, int generation, bool allowLongSync})?
+  _deferredInspection;
+  int? _activeInspectionGeneration;
+  bool _inspectionResumeScheduled = false;
 
   @override
   GiftClaimFlowState? build() {
+    _coordinator = ref.read(paymentLinkClaimCoordinatorProvider);
+    _coordinator.preparationChanges.addListener(_scheduleInspectionResume);
     ref.listen(appSecurityProvider, (previous, next) {
       if (next.requiresUnlock) {
         if (previous?.requiresUnlock != true) _lockGeneration++;
@@ -127,6 +140,7 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
       }
     });
     ref.onDispose(() {
+      _coordinator.preparationChanges.removeListener(_scheduleInspectionResume);
       _unlockWaiter?.complete();
       _unlockWaiter = null;
     });
@@ -154,6 +168,8 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
   void beginWalletSetup(
     PaymentLinkClaimInspection inspection, {
     String? passcode,
+    AccountPersona? persona,
+    PasswordInputSourceCandidate? passwordInputSource,
   }) {
     _generation++;
     state = GiftClaimFlowState(
@@ -161,7 +177,32 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
       phase: GiftClaimPhase.inspected,
       inspection: inspection,
       setupPasscode: passcode,
+      setupPersona:
+          persona ??
+          (identical(state?.inspection, inspection)
+              ? state?.setupPersona
+              : null),
+      setupPasswordInputSource: passwordInputSource,
       walletSetupInProgress: true,
+    );
+  }
+
+  /// Return from unsaved personalisation to the inspected Card.
+  void cancelWalletSetup(PaymentLinkClaimInspection inspection) {
+    if (!ref.mounted ||
+        state?.walletSetupInProgress != true ||
+        !identical(state?.inspection, inspection)) {
+      return;
+    }
+    if (state?.setupPasscode != null) {
+      finishWalletSetup(inspection);
+      return;
+    }
+    _generation++;
+    state = GiftClaimFlowState(
+      link: inspection.link,
+      phase: GiftClaimPhase.inspected,
+      inspection: inspection,
     );
   }
 
@@ -269,6 +310,7 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
 
   void _check(VizorPaymentLink link, {required bool allowLongSync}) {
     final generation = ++_generation;
+    _deferredInspection = null;
     state = GiftClaimFlowState(link: link, phase: GiftClaimPhase.checking);
     _inspectionTask = null;
     final cleanup = _cleanupByWallet[paymentLinkClaimWalletDirectoryName(link)];
@@ -314,7 +356,63 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
     int generation, {
     required bool allowLongSync,
   }) {
-    _inspectionTask = _inspect(link, generation, allowLongSync: allowLongSync);
+    if (!_coordinator.canStartPreparation) {
+      _deferredInspection = (
+        link: link,
+        generation: generation,
+        allowLongSync: allowLongSync,
+      );
+      return;
+    }
+    _deferredInspection = null;
+    _activeInspectionGeneration = generation;
+    _inspectionTask = _inspect(link, generation, allowLongSync: allowLongSync)
+        .whenComplete(() {
+          if (_activeInspectionGeneration == generation) {
+            _activeInspectionGeneration = null;
+          }
+          _scheduleInspectionResume();
+        });
+  }
+
+  void _scheduleInspectionResume() {
+    if (!ref.mounted || _inspectionResumeScheduled) return;
+    _inspectionResumeScheduled = true;
+    scheduleMicrotask(() {
+      _inspectionResumeScheduled = false;
+      if (!ref.mounted) return;
+      final request = _deferredInspection;
+      if (request == null) return;
+      if (request.generation != _generation ||
+          state?.phase != GiftClaimPhase.checking ||
+          state?.walletSetupInProgress == true) {
+        _deferredInspection = null;
+        return;
+      }
+      if (!_coordinator.canStartPreparation ||
+          _activeInspectionGeneration != null) {
+        return;
+      }
+      _deferredInspection = null;
+      final cleanup =
+          _cleanupByWallet[paymentLinkClaimWalletDirectoryName(request.link)];
+      if (cleanup == null) {
+        _startInspection(
+          request.link,
+          request.generation,
+          allowLongSync: request.allowLongSync,
+        );
+      } else {
+        unawaited(
+          _startAfterCleanup(
+            cleanup,
+            request.link,
+            request.generation,
+            allowLongSync: request.allowLongSync,
+          ),
+        );
+      }
+    });
   }
 
   Future<GiftClaimFlowState> _inspect(
@@ -361,6 +459,22 @@ class GiftClaimFlowNotifier extends Notifier<GiftClaimFlowState?> {
         link: link,
         phase: GiftClaimPhase.failed,
         failure: GiftClaimFailure.invalid,
+      );
+    } on GiftCardPreparationInterrupted catch (error) {
+      log('GiftClaimFlow: inspection interrupted reason=${error.reason.name}');
+      if (error.canResume && generation == _generation && ref.mounted) {
+        _deferredInspection = (
+          link: link,
+          generation: generation,
+          allowLongSync: allowLongSync,
+        );
+      }
+      next = GiftClaimFlowState(
+        link: link,
+        phase: error.canResume
+            ? GiftClaimPhase.checking
+            : GiftClaimPhase.failed,
+        failure: error.canResume ? null : GiftClaimFailure.interrupted,
       );
     } catch (error) {
       log('GiftClaimFlow: inspection failed: ${error.runtimeType}');

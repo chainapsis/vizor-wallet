@@ -19,12 +19,13 @@ library;
 
 import '../zcash/zip321_payment_request.dart';
 import 'app_route_predicates.dart';
+import 'incoming_link_entry_policy.dart';
 
 // Re-exported so a caller that already reasons about the drain (`appRedirect`
 // in `app.dart`) does not need a second import for the two route questions
 // this table asks.
 export 'app_route_predicates.dart'
-    show isOnboardingLocation, isUnlockFlowLocation;
+    show isAccountSetupLocation, isOnboardingLocation, isUnlockFlowLocation;
 
 /// A parked prefill older than this is stale and is dropped instead of
 /// delivered.
@@ -44,7 +45,7 @@ const kPaymentUriParkTtl = Duration(minutes: 10);
 /// the one thing that is always true: the link is gone, and re-opening it once
 /// the wallet is up recovers it.
 const kPaymentUriUnavailableMessage =
-    "Vizor couldn't open this payment link. "
+    "Vizor couldn't open this request link. "
     'Open it again once your wallet has loaded.';
 
 /// Shown when a second `zcash:` link arrives before the first one has been
@@ -52,7 +53,7 @@ const kPaymentUriUnavailableMessage =
 /// no queue), so the earlier one is gone and the user is told rather than
 /// left to wonder which link opened.
 const kPaymentUriReplacedMessage =
-    'Only the newest payment link was kept. Open the earlier one again to '
+    'Only the newest request link was kept. Open the earlier one again to '
     'pay it.';
 
 /// Shown when a parked link outlived [kPaymentUriParkTtl] before it could be
@@ -61,31 +62,31 @@ const kPaymentUriReplacedMessage =
 /// The user acted on that link deliberately, so the drop is stated rather than
 /// silent, and the link itself is still good: opening it again pays it.
 const kPaymentUriExpiredMessage =
-    'That payment link timed out. Open it again to pay.';
+    'That request link timed out. Open it again to pay.';
 
 /// Shown when there is no wallet yet and the user is not already inside a
 /// setup flow.
 const kPaymentUriNoWalletMessage =
-    'Set up or import a wallet before opening payment links.';
+    'Set up or import a wallet before opening request links.';
 
 /// Shown when the link arrives while the user is part-way through onboarding,
 /// import, or adding an account. Navigating away from those screens throws
 /// away a typed seed phrase or a generated mnemonic, so the link is dropped
 /// and the user is left exactly where they were.
 const kPaymentUriOnboardingMessage =
-    'Finish setting up your wallet before opening payment links.';
+    'Finish setting up your wallet before opening request links.';
 
 /// Shown when a Private (Ironwood) migration has the account's whole
 /// spendable balance in flight, so the product disables sending entirely.
 /// Delivering the link would open a send form that cannot be submitted.
 const kPaymentUriMigrationSendGateMessage =
-    'Finish your Ironwood migration before opening payment links.';
+    'Finish your Ironwood migration before opening request links.';
 
 /// Shown when a `zcash:` link parses but asks for a ZIP-321 feature Vizor does
 /// not implement yet: more than one recipient, a binary memo, a custom asset.
 /// Nothing about the link is wrong, so it does not tell the sender off.
 const kPaymentUriUnsupportedMessage =
-    "This payment link uses a feature Vizor doesn't support yet.";
+    "This request link uses a feature Vizor doesn't support yet.";
 
 /// Shown when a `zcash:` link cannot be parsed at all — bad encoding, a
 /// malformed amount, a missing address, a link too long to read.
@@ -93,7 +94,7 @@ const kPaymentUriUnsupportedMessage =
 /// The parser's own message is spec wording written for us, not for the payer,
 /// and it echoes back fragments of the link's own text; it belongs in the log.
 const kPaymentUriMalformedMessage =
-    "This payment link isn't valid. Ask the sender for a new one.";
+    "This request link isn't valid. Ask the sender for a new one.";
 
 /// The one sentence the payer sees when a `zcash:` link is refused.
 ///
@@ -189,7 +190,7 @@ bool paymentUriShouldDropOnWalletTransition({
 ///
 /// [parkedFor] is how long the prefill has been parked (null when nothing is
 /// parked, or when the park time is unknown). [hasBusySurface] is true while a
-/// hardware signing session is mounted — see `paymentUriBusySurfaceProvider`.
+/// hardware signing session is mounted — see `externalActionGuardProvider`.
 /// [hasActiveSendProposal] is true while the current desktop send-review route
 /// owns a proposal and its selected inputs. A second proposal must wait until
 /// that route releases the first one. [sendIsInFlight] is the negation of
@@ -210,6 +211,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   required bool isUnlocked,
   required String matchedLocation,
   bool hasBusySurface = false,
+  bool navigationBlocked = false,
   bool hasActiveSendProposal = false,
   bool sendIsInFlight = false,
   bool sendGatedByMigration = false,
@@ -243,7 +245,7 @@ PaymentUriDrainDecision decidePaymentUriDrain({
   // phrase, a freshly generated mnemonic, an in-flight account creation).
   // A card over a half-typed seed phrase is the one presentation that would
   // still cost the user something, so onboarding keeps its drop.
-  if (isOnboardingLocation(matchedLocation)) {
+  if (isAccountSetupLocation(matchedLocation)) {
     // On the welcome screen with no wallet nothing has been started yet, so
     // the plain no-wallet wording fits better than "finish setting up".
     return PaymentUriDrainDecision(
@@ -254,30 +256,19 @@ PaymentUriDrainDecision decidePaymentUriDrain({
     );
   }
 
-  // A hardware signing session waits rather than drops. The device is showing
-  // a QR the user is part-way through scanning, so a card over it would be
-  // both a distraction and, on the desktop shield overlay, a scrim over a
-  // live animated QR. The listener re-drains when the hold is given back, and
-  // the TTL still bounds the wait.
-  if (hasBusySurface) return _waitDecision;
-
-  // A proposal locks its selected inputs until its review owner is disposed.
-  // Pre-checking a new request before that release can report insufficient
-  // funds even when the requested payment becomes affordable immediately after
-  // leaving the existing review. Keep the link parked; the review's busy hold
-  // re-runs the drain once disposal has released the proposal.
-  if (hasActiveSendProposal) return _waitDecision;
-
-  // A broadcast still running on `/send/status` waits too, and for a harder
-  // reason than distraction: the card's Review and Edit both `go(...)`, which
-  // unmounts the status screen, and `runSendBroadcast`'s
-  // `shouldAbort: () async => !mounted` then discards the outcome at the
-  // post-`executeProposal` checkpoint. The transaction is already on the
-  // network but the user never sees a txid or a receipt. Holding until the
-  // send reaches a terminal phase costs nothing — the listener re-drains when
-  // the flag flips, and the TTL still bounds the wait.
-  if (sendIsInFlight && isSendStatusLocation(matchedLocation)) {
-    return _waitDecision;
+  final entry = decideIncomingLinkEntry(
+    kind: IncomingLinkKind.paymentRequest,
+    location: matchedLocation,
+    navigationBlocked: navigationBlocked,
+    paymentRequestBlocked: hasBusySurface,
+    activeSendProposal: hasActiveSendProposal,
+    sendInFlight: sendIsInFlight,
+  );
+  if (entry.action == IncomingLinkEntryAction.wait) {
+    return PaymentUriDrainDecision(
+      PaymentUriDrainAction.wait,
+      message: entry.message,
+    );
   }
 
   if (!hasWallet) {

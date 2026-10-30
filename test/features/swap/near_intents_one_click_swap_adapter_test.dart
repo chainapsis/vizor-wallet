@@ -1178,23 +1178,23 @@ void main() {
     expect(baseUsdc.railLabel, 'Base USDC');
     expect(baseUsdc.tokenIconKey, 'usdc');
     expect(baseUsdc.chainIconKey, 'base');
-    expect(baseUsdc.tokenIconAsset, 'assets/swap/tokens/usdc.png');
-    expect(baseUsdc.chainIconAsset, 'assets/swap/chains/base.png');
+    expect(baseUsdc.tokenIconAsset, 'assets/swap/tokens/usdc.webp');
+    expect(baseUsdc.chainIconAsset, 'assets/swap/chains/base.webp');
 
     final bscUsdc = supported.singleWhere(
       (asset) => asset.symbol == 'USDC' && asset.chainTicker == 'bsc',
     );
     expect(bscUsdc.chainLabel, 'Binance Smart Chain');
-    expect(bscUsdc.tokenIconAsset, 'assets/swap/tokens/usdc.png');
+    expect(bscUsdc.tokenIconAsset, 'assets/swap/tokens/usdc.webp');
     expect(bscUsdc.chainIconKey, 'bsc');
-    expect(bscUsdc.chainIconAsset, 'assets/swap/tokens/bnb.png');
+    expect(bscUsdc.chainIconAsset, 'assets/swap/tokens/bnb.webp');
 
     final bnb = supported.singleWhere(
       (asset) => asset.symbol == 'BNB' && asset.chainTicker == 'bsc',
     );
     expect(bnb.displayName, 'BNB');
-    expect(bnb.tokenIconAsset, 'assets/swap/tokens/bnb.png');
-    expect(bnb.chainIconAsset, 'assets/swap/tokens/bnb.png');
+    expect(bnb.tokenIconAsset, 'assets/swap/tokens/bnb.webp');
+    expect(bnb.chainIconAsset, 'assets/swap/tokens/bnb.webp');
 
     await provider.quote(
       SwapQuoteRequest(
@@ -1233,6 +1233,46 @@ void main() {
     expect(refreshed.externalPerZec[refreshedUsdc], closeTo(541.10, 0.001));
     expect(transport.requests, hasLength(2));
   });
+
+  for (final price in <String?>['0', null]) {
+    test(
+      'full catalog retains unpriced deprecated tokens (price=$price)',
+      () async {
+        final tokens = [
+          ..._tokensWithPrices('100'),
+          {
+            'assetId': 'nep141:future.omft.near',
+            'decimals': 6,
+            'blockchain': 'eth',
+            'symbol': 'FUTURE_(DEPRECATED)',
+            'price': ?price,
+          },
+        ];
+        final transport = _FakeOneClickTransport([
+          _FakeResponse.get('/v0/tokens', tokens),
+          _FakeResponse.get('/v0/tokens', tokens),
+        ]);
+        final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+        for (final forceRefresh in [false, true]) {
+          final pricing = await provider.loadPricingSnapshot(
+            forceRefresh: forceRefresh,
+          );
+          expect(pricing.supportedExternalAssets, isNotEmpty);
+          expect(
+            pricing.supportedExternalAssets.any((a) => a.isDeprecated),
+            isFalse,
+          );
+          final catalog = await provider.listSupportedExternalAssets();
+          final deprecated = catalog.singleWhere(
+            (asset) => asset.assetId == 'nep141:future.omft.near',
+          );
+          expect(deprecated.isDeprecated, isTrue);
+          expect(transport.requests, hasLength(forceRefresh ? 2 : 1));
+        }
+      },
+    );
+  }
 
   test(
     'quote supports non-USDC external assets on their preferred chain',
@@ -1294,6 +1334,37 @@ void main() {
     },
   );
 
+  test('status still resolves provider assets marked deprecated', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', [
+        for (final token in _tokens)
+          if (token['assetId'] == 'nep141:usdc.example')
+            {...token, 'symbol': 'FUTURE_(DEPRECATED)'}
+          else
+            token,
+      ]),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:usdc.example',
+          amountInFormatted: '1',
+          amountOutFormatted: '70',
+          minAmountOut: '69650000',
+          depositAddress: 't1deprecated-deposit',
+          status: 'PENDING_DEPOSIT',
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    final status = await provider.getStatus('t1deprecated-deposit');
+
+    expect(status.status, SwapIntentStatus.awaitingDeposit);
+    expect(status.pairText, 'ZEC -> FUTURE_(DEPRECATED)');
+    expect(status.depositInstruction.address, 't1deprecated-deposit');
+  });
+
   test('supported assets are prioritized without picker grouping', () async {
     final transport = _FakeOneClickTransport([
       _FakeResponse.get('/v0/tokens', _tokensWithAdditionalAssets),
@@ -1314,6 +1385,25 @@ void main() {
 
   test('representative live token icon mappings resolve to bundled images', () {
     final assets = [
+      for (final (symbol, chain) in const [
+        ('QTC', 'qtc'),
+        ('FOGO', 'fogo'),
+        ('USDG', 'hood'),
+        ('PONS', 'hood'),
+        ('CASHCAT', 'hood'),
+        ('USDe', 'hood'),
+        ('GRAM', 'ton'),
+        ('TLO', 'eth'),
+        ('laUSDC', 'base'),
+        ('wNEARKAT', 'sol'),
+        ('COCA', 'pol'),
+      ])
+        SwapAsset.live(
+          assetId: 'icon-test:$chain:$symbol',
+          symbol: symbol,
+          blockchain: chain,
+          decimals: 6,
+        ),
       SwapAsset.live(
         assetId: 'nep141:aptos.omft.near',
         symbol: 'APT',

@@ -32,6 +32,7 @@ _mobileMigrationPartPresentations({
   required rust_sync.MigrationStatus? status,
   required rust_sync.OrchardMigrationPrivatePlan? previewPlan,
   required List<MobileIronwoodMigrationPartPresentation>? explicitParts,
+  required BlockTimeEstimate blockTimes,
   int? currentHeight,
 }) {
   if (explicitParts != null) return explicitParts;
@@ -41,6 +42,7 @@ _mobileMigrationPartPresentations({
     final lateScheduledTxids = _mobileLateScheduledTxids(
       status!,
       currentHeight: currentHeight,
+      blockSpacing: blockTimes.spacing,
     );
     final plannedTransferByPart = {
       for (final transfer in previewPlan?.scheduledTransfers ?? const [])
@@ -64,6 +66,7 @@ _mobileMigrationPartPresentations({
             : _mobileMigrationPartDetail(
                 part,
                 status: status,
+                blockTimes: blockTimes,
                 currentHeight: currentHeight,
                 plannedTransfer: plannedTransferByPart[part.partIndex],
               ),
@@ -100,6 +103,7 @@ _mobileMigrationPartPresentations({
                   ? 'Queued'
                   : migrationHeightRemainingDurationLabel(
                       broadcasts[index].scheduledHeight,
+                      blockTimes: blockTimes,
                       currentHeight: currentHeight,
                     ),
           },
@@ -129,8 +133,16 @@ _mobileMigrationPartPresentations({
           detail: '${_compactZec(targetValues[index])} ZEC',
           valueZatoshi: targetValues[index],
           eta: index == status.nextActionPartIndex
-              ? _mobileWaitingLabel(status, currentHeight: currentHeight)
-              : _mobilePlannedPartDurationLabel(previewPlan, partIndex: index),
+              ? _mobileWaitingLabel(
+                  status,
+                  blockTimes: blockTimes,
+                  currentHeight: currentHeight,
+                )
+              : _mobilePlannedPartDurationLabel(
+                  previewPlan,
+                  blockTimes: blockTimes,
+                  partIndex: index,
+                ),
         ),
     ];
   }
@@ -143,7 +155,10 @@ _mobileMigrationPartPresentations({
         status: MobileIronwoodMigrationPartStatus.pending,
         detail: '${_compactZec(transfers[index].valueZatoshi)} ZEC',
         valueZatoshi: transfers[index].valueZatoshi,
-        eta: migrationBlockOffsetDurationLabel(transfers[index].blockOffset),
+        eta: migrationBlockOffsetDurationLabel(
+          transfers[index].blockOffset,
+          blockTimes: blockTimes,
+        ),
       ),
   ];
 }
@@ -172,6 +187,7 @@ MobileIronwoodMigrationPartStatus _mobileMigrationPartStatus(
 Set<String> _mobileLateScheduledTxids(
   rust_sync.MigrationStatus status, {
   required int? currentHeight,
+  required BlockSpacing blockSpacing,
 }) {
   if (currentHeight == null || currentHeight <= 0) return const {};
   return {
@@ -179,7 +195,10 @@ Set<String> _mobileLateScheduledTxids(
       if (broadcast.status.toLowerCase() == 'scheduled' &&
           broadcast.scheduledHeight > 0 &&
           currentHeight >=
-              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks)
+              ironwoodMigrationLateHeight(
+                broadcast.scheduledHeight,
+                blockSpacing,
+              ))
         broadcast.txidHex.toLowerCase(),
   };
 }
@@ -187,6 +206,7 @@ Set<String> _mobileLateScheduledTxids(
 String? _mobileMigrationPartDetail(
   rust_sync.MigrationPartStatus part, {
   required rust_sync.MigrationStatus? status,
+  required BlockTimeEstimate blockTimes,
   required int? currentHeight,
   rust_sync.MigrationScheduledTransfer? plannedTransfer,
 }) {
@@ -202,20 +222,29 @@ String? _mobileMigrationPartDetail(
     if (scheduledHeight != null && currentHeight != null && currentHeight > 0) {
       return migrationHeightRemainingDurationLabel(
         scheduledHeight,
+        blockTimes: blockTimes,
         currentHeight: currentHeight,
       );
     }
     if (status?.nextActionPartIndex == part.partIndex) {
-      return _mobileWaitingLabel(status!, currentHeight: currentHeight);
+      return _mobileWaitingLabel(
+        status!,
+        blockTimes: blockTimes,
+        currentHeight: currentHeight,
+      );
     }
     return plannedTransfer == null
         ? 'Queued'
-        : migrationBlockOffsetDurationLabel(plannedTransfer.blockOffset);
+        : migrationBlockOffsetDurationLabel(
+            plannedTransfer.blockOffset,
+            blockTimes: blockTimes,
+          );
   }
   return switch (part.state) {
     rust_sync.MigrationPartState.scheduled => _mobileScheduledPartLabel(
       part,
       status: status,
+      blockTimes: blockTimes,
       currentHeight: currentHeight,
     ),
     rust_sync.MigrationPartState.migrating => 'Migrating...',
@@ -227,6 +256,7 @@ String? _mobileMigrationPartDetail(
 String _mobileScheduledPartLabel(
   rust_sync.MigrationPartStatus part, {
   required rust_sync.MigrationStatus? status,
+  required BlockTimeEstimate blockTimes,
   required int? currentHeight,
 }) {
   final scheduledHeight = part.scheduledHeight;
@@ -235,12 +265,14 @@ String _mobileScheduledPartLabel(
   }
   return migrationHeightRemainingDurationLabel(
     scheduledHeight,
+    blockTimes: blockTimes,
     currentHeight: currentHeight,
   );
 }
 
 String _mobileWaitingLabel(
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   required int? currentHeight,
 }) {
   final nextHeight = status.nextActionHeight;
@@ -249,6 +281,7 @@ String _mobileWaitingLabel(
       ? null
       : migrationHeightRemainingDurationLabel(
           nextHeight,
+          blockTimes: blockTimes,
           currentHeight: currentHeight,
         );
   if (timing != null &&
@@ -261,12 +294,16 @@ String _mobileWaitingLabel(
 
 String _mobilePlannedPartDurationLabel(
   rust_sync.OrchardMigrationPrivatePlan? plan, {
+  required BlockTimeEstimate blockTimes,
   required int partIndex,
 }) {
   if (plan == null) return 'Queued';
   for (final transfer in plan.scheduledTransfers) {
     if (transfer.partIndex == partIndex) {
-      return migrationBlockOffsetDurationLabel(transfer.blockOffset);
+      return migrationBlockOffsetDurationLabel(
+        transfer.blockOffset,
+        blockTimes: blockTimes,
+      );
     }
   }
   return 'Queued';

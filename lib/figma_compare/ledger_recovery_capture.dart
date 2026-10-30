@@ -2,6 +2,7 @@
 // Deterministic product widgets with scripted BLE failures; no native device IO.
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -36,6 +37,9 @@ Widget _signing(
         ),
         mobileTitle: 'Confirm transaction',
         mobile: kAppFormFactor == AppFormFactor.mobile,
+        platform: kAppFormFactor == AppFormFactor.mobile
+            ? defaultTargetPlatform
+            : TargetPlatform.macOS,
         failureOverride: LedgerSigningFailurePresentation(
           title: 'Ledger needs attention',
           statusLabel: 'Action needed',
@@ -133,6 +137,12 @@ Widget buildLedgerPermissionRequestCapture(BuildContext context) => _signing(
 Widget buildLedgerPermissionRestrictedCapture(BuildContext context) => _signing(
   LedgerMobileFailure.permissionDenied,
   permission: LedgerBluetoothPermission.restricted,
+);
+
+Widget buildLedgerLocationRestrictedCapture(BuildContext context) => _signing(
+  LedgerMobileFailure.permissionDenied,
+  permission: LedgerBluetoothPermission.restricted,
+  locationPermission: true,
 );
 
 class _PermissionCaptureBle extends _CaptureBle

@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-Future<bool> approveNextSpeculosReview(String apiUrl) async {
+Future<bool> approveNextSpeculosReview(
+  String apiUrl, {
+  bool reject = false,
+}) async {
   final client = HttpClient();
   final deadline = DateTime.now().add(const Duration(minutes: 2));
   var reviewStarted = false;
@@ -16,22 +19,27 @@ Future<bool> approveNextSpeculosReview(String apiUrl) async {
         reviewStarted = true;
       }
       if (reviewStarted) {
-        if (normalized.contains('approve') ||
-            normalized.contains('accept') ||
-            normalized.contains('confirm') ||
-            normalized.contains('sign transaction')) {
+        final actionable = reject
+            ? normalized.contains('reject') || normalized.contains('cancel')
+            : normalized.contains('approve') ||
+                  normalized.contains('accept') ||
+                  normalized.contains('confirm') ||
+                  normalized.contains('sign transaction');
+        if (actionable) {
           await _pressButton(client, apiUrl, 'both');
           return true;
         }
         await _pressButton(
           client,
           apiUrl,
-          normalized.contains('cancel') ? 'left' : 'right',
+          !reject && normalized.contains('cancel') ? 'left' : 'right',
         );
       }
       await Future<void>.delayed(const Duration(milliseconds: 150));
     }
-    throw TimeoutException('Speculos review did not become approvable.');
+    throw TimeoutException(
+      'Speculos review did not become ${reject ? 'rejectable' : 'approvable'}.',
+    );
   } finally {
     client.close();
   }

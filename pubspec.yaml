@@ -38,7 +38,7 @@ dependencies:
   rust_lib_zcash_wallet:
     path: rust_builder
   flutter_rust_bridge: 2.11.1
-  flutter_riverpod: ^3.3.1
+  flutter_riverpod: ^3.4.3
   go_router: ^17.1.0
   flutter_secure_storage: ^10.0.0
   path_provider: ^2.1.5
@@ -89,6 +89,8 @@ dev_dependencies:
   # Widgetbook for showcasing the design system in isolation.
   # Entry point: `fvm flutter run -t lib/widgetbook.dart`.
   widgetbook: ^3.14.3
+  # Test-only validation of platform asset declarations.
+  yaml: ^3.1.3
 
 dependency_overrides:
   freezed: ^3.2.5
@@ -114,12 +116,35 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  shaders:
+    - shaders/liquid_metal.frag
+
   assets:
+    - assets/fonts/ShieldingSerif-OFL.txt
     - assets/animations/
+    # Desktop artwork is omitted from iOS and Android bundles.
+    - path: assets/animations/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/illustrations/
+    - path: assets/illustrations/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/illustrations/payment_links/
     - assets/profile_pictures/
     - assets/icons/
+    - path: assets/icons/desktop/
+      platforms:
+        - linux
+        - macos
+        - web
+        - windows
     - assets/swap/tokens/
     - assets/swap/chains/
 
@@ -158,3 +183,10 @@ flutter:
         # AppTypography display/headline tokens.
         - asset: assets/fonts/YoungSerif-Regular.ttf
           weight: 400
+    # Isolated reference-video weights; other app serif tokens keep their fonts.
+    - family: Shielding Serif
+      fonts:
+        - asset: assets/fonts/ShieldingSerif-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/ShieldingSerif-Bold.ttf
+          weight: 700

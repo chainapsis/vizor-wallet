@@ -28,7 +28,7 @@ class Zip321PaymentRequest {
     // common case before the string is encoded.
     if (input.length > kMaxPaymentUriLength ||
         utf8.encode(input).length > kMaxPaymentUriLength) {
-      throw const Zip321ParseException('Payment link is too long.');
+      throw const Zip321ParseException('Request link is too long.');
     }
     final trimmed = input.trim();
     if (trimmed.isEmpty) {

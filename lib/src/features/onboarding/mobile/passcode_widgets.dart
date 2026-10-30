@@ -16,6 +16,7 @@ const double kPasscodeDotSize = 14;
 const double kPasscodePromptDigitsHeight = 81;
 const double kPasscodeKeySize = 80;
 const double kPasscodeKeypadWidth = 320;
+const double kPasscodeKeypadHeight = kPasscodeKeySize * 4 + AppSpacing.sm * 3;
 const double _kPasscodeBackspaceSlotWidth = 30;
 const double _kPasscodeBackspaceSlotHeight = 32;
 const double _kPasscodeBackspaceGlyphWidth = 26.25;
@@ -158,6 +159,8 @@ class PasscodeNumpad extends StatelessWidget {
     this.canDelete = false,
     this.onHelp,
     this.enabled = true,
+    this.keySize = kPasscodeKeySize,
+    this.spacing = AppSpacing.sm,
     super.key,
   });
 
@@ -171,6 +174,8 @@ class PasscodeNumpad extends StatelessWidget {
   final VoidCallback? onHelp;
 
   final bool enabled;
+  final double keySize;
+  final double spacing;
 
   @override
   Widget build(BuildContext context) {
@@ -193,7 +198,7 @@ class PasscodeNumpad extends StatelessWidget {
                   effectiveTap();
                 },
           child: SizedBox.square(
-            dimension: kPasscodeKeySize,
+            dimension: keySize,
             child: Center(child: child),
           ),
         ),
@@ -212,7 +217,7 @@ class PasscodeNumpad extends StatelessWidget {
             // Figma `_Passcode Button`: Young Serif 40 / 33 inside
             // an 80px circular neutral-alpha key.
             style: AppTypography.headlineLarge.copyWith(
-              fontSize: 40,
+              fontSize: keySize / 2,
               height: 33 / 40,
               color: enabled ? colors.text.accent : colors.text.disabled,
             ),
@@ -262,12 +267,17 @@ class PasscodeNumpad extends StatelessWidget {
               ? constraints.maxWidth
               : kPasscodeKeypadWidth;
           return SizedBox(
-            width: math.min(kPasscodeKeypadWidth, maxWidth),
+            width: math.min(
+              keySize == kPasscodeKeySize && spacing == AppSpacing.sm
+                  ? kPasscodeKeypadWidth
+                  : keySize * 3 + spacing * 2,
+              maxWidth,
+            ),
             child: Wrap(
               alignment: WrapAlignment.center,
               runAlignment: WrapAlignment.center,
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
+              spacing: spacing,
+              runSpacing: spacing,
               children: [
                 digitKey(1),
                 digitKey(2),
@@ -285,6 +295,81 @@ class PasscodeNumpad extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Opt into biometric escrow only after the current passcode unlock succeeds.
+class PasscodeBiometricOptIn extends StatelessWidget {
+  const PasscodeBiometricOptIn({
+    required this.label,
+    required this.selected,
+    required this.onChanged,
+    super.key,
+  });
+
+  final String label;
+  final bool selected;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final enabled = onChanged != null;
+    void toggle() {
+      unawaited(AppHaptics.auxiliaryKey());
+      onChanged?.call(!selected);
+    }
+
+    return Semantics(
+      label: label,
+      checked: selected,
+      enabled: enabled,
+      onTap: enabled ? toggle : null,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? toggle : null,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? colors.background.inverse : null,
+                  border: Border.all(
+                    color: enabled
+                        ? colors.border.regular
+                        : colors.border.subtle,
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                ),
+                child: selected
+                    ? AppIcon(
+                        AppIcons.check,
+                        size: 13,
+                        color: colors.icon.inverse,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Flexible(
+                child: Text(
+                  label,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: enabled ? colors.text.primary : colors.text.disabled,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

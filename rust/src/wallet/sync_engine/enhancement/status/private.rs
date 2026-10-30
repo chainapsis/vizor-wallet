@@ -1,16 +1,15 @@
 //! Private status observation. A selected private lookup never issues a txid RPC.
-use super::super::{
-    super::WalletDatabase, transport::StatusPirTransport, DEFAULT_MAINNET_ENDPOINT,
-};
+use super::super::{super::WalletDatabase, transport::StatusPirTransport};
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::pir_config::{client_origin, PirProduct};
 use crate::wallet::transaction_data::{LookupError, TransactionObservation};
 use std::time::{SystemTime, UNIX_EPOCH};
-use zakura_pir_status::{
+use zakura_pir_client::status::policy::{
+    StatusError, StatusObservation, StatusRequest, StatusSession, StatusSource,
+};
+use zakura_pir_client::status::{
     transport::{PendingClient, StatusPirClient},
     AcceptedAnchor, Error, LocalCoverageContext, Observation,
-};
-use zakura_transaction_status::{
-    StatusError, StatusObservation, StatusRequest, StatusSession, StatusSource,
 };
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::TxId;
@@ -18,10 +17,10 @@ use zcash_protocol::consensus::BlockHeight;
 
 const MAINNET_GENESIS_DISPLAY: &str =
     "00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08";
-const ENDPOINT_ENV: &str = "VIZOR_STATUS_PIR_URL";
-
+/// The Status PIR endpoint: the selected wallet PIR server. Empty when none
+/// is selected, which fails before any request (see `enhance_endpoint`).
 fn status_endpoint() -> String {
-    std::env::var(ENDPOINT_ENV).unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.into())
+    client_origin(PirProduct::Status).unwrap_or_default()
 }
 
 fn now_ms() -> Result<u64, LookupError> {
@@ -61,37 +60,37 @@ fn classify(error: Error) -> LookupError {
     }
 }
 
+/// Manifest, setup and response-envelope failures say nothing about a row.
+/// Keep their transaction eligible for the normal recovery backoff.
+fn classify_session(error: Error) -> LookupError {
+    match error {
+        Error::Malformed => LookupError::Unavailable,
+        error => classify(error),
+    }
+}
+
+fn classify_query(error: Error, query_reply: bool) -> LookupError {
+    if query_reply {
+        classify(error)
+    } else {
+        classify_session(error)
+    }
+}
+
 /// App-owned private source for the wallet-libraries status reader. Opening is
 /// lazy, so no PIR request occurs when public status is selected.
 pub(crate) struct PrivateStatusSource<'a, F> {
     db_path: &'a str,
     network: WalletNetwork,
     should_exit: &'a F,
-    route_policy: StatusRoutePolicy,
-}
-
-#[derive(Clone, Copy)]
-enum StatusRoutePolicy {
-    WalletPreference,
-    ForceDirect,
 }
 
 impl<'a, F: Fn() -> bool + Sync> PrivateStatusSource<'a, F> {
-    pub(crate) fn new(
-        db_path: &'a str,
-        network: WalletNetwork,
-        should_exit: &'a F,
-        direct_only: bool,
-    ) -> Self {
+    pub(crate) fn new(db_path: &'a str, network: WalletNetwork, should_exit: &'a F) -> Self {
         Self {
             db_path,
             network,
             should_exit,
-            route_policy: if direct_only {
-                StatusRoutePolicy::ForceDirect
-            } else {
-                StatusRoutePolicy::WalletPreference
-            },
         }
     }
 }
@@ -131,14 +130,9 @@ impl<'a, F: Fn() -> bool + Sync> StatusSource for PrivateStatusSource<'a, F> {
     type Session = PrivateStatusSession<'a, F>;
 
     async fn open(self) -> Result<Self::Session, StatusError> {
-        begin_from_db_path(
-            self.db_path,
-            self.network,
-            self.should_exit,
-            self.route_policy,
-        )
-        .await
-        .map_err(status_error)
+        begin_from_db_path(self.db_path, self.network, self.should_exit)
+            .await
+            .map_err(status_error)
     }
 }
 
@@ -189,10 +183,10 @@ fn require_bound_for_absence(
 
 fn accepted_anchor(
     db: &WalletDatabase,
-    manifest: &zakura_pir_status::Manifest,
+    manifest: &zakura_pir_client::status::Manifest,
 ) -> Result<AcceptedAnchor, LookupError> {
     if manifest.network != mainnet_genesis() {
-        return Err(LookupError::Malformed);
+        return Err(LookupError::Unavailable);
     }
     let anchor_height = BlockHeight::from_u32(manifest.anchor_height);
     let scanned = db
@@ -207,7 +201,7 @@ fn accepted_anchor(
         // Scanned but hashless is not a read failure: wait for scanning.
         .ok_or(LookupError::Unavailable)?;
     if local_hash.0 != manifest.anchor_hash {
-        return Err(LookupError::Malformed);
+        return Err(LookupError::Unavailable);
     }
     Ok(AcceptedAnchor {
         network: mainnet_genesis(),
@@ -253,6 +247,16 @@ impl<F: Fn() -> bool + Sync> PrivateStatusSession<'_, F> {
             let bounded;
             (bounded, positive_only) = bound_coverage(coverage, client.manifest().anchor_height);
             let result = client.observe(&self.route, txid.as_ref(), bounded).await;
+            let query_reply = self.route.take_status_query_reply();
+            // The library also uses Malformed for a manifest outside its
+            // clock window, both before dispatch and after receiving a body.
+            // A complete envelope alone is not proof of a row decode error.
+            if matches!(result, Err(Error::Malformed)) {
+                client
+                    .manifest()
+                    .fresh(session_now_ms())
+                    .map_err(classify_session)?;
+            }
             let conflict = matches!(&result, Err(Error::Unavailable))
                 && self.route.take_status_session_conflict();
             match result {
@@ -260,7 +264,7 @@ impl<F: Fn() -> bool + Sync> PrivateStatusSession<'_, F> {
                     *client = self.refresh().await?;
                     retried = true;
                 }
-                result => break result.map_err(classify)?,
+                result => break result.map_err(|error| classify_query(error, query_reply))?,
             }
         };
         let observation = require_bound_for_absence(observation, positive_only)?;
@@ -288,7 +292,7 @@ async fn initialize<F: Fn() -> bool + Sync>(
     for attempt in 0..2 {
         let pending = PendingClient::fetch(route, endpoint, session_now_ms as fn() -> u64)
             .await
-            .map_err(classify)?;
+            .map_err(classify_session)?;
         let anchor = {
             let db = open_anchor_db(db_path, network)?;
             accepted_anchor(&db, pending.manifest())?
@@ -299,7 +303,7 @@ async fn initialize<F: Fn() -> bool + Sync>(
         if conflict && attempt == 0 {
             continue;
         }
-        return result.map_err(classify);
+        return result.map_err(classify_session);
     }
     unreachable!("bounded status initialization returns on second attempt")
 }
@@ -310,16 +314,12 @@ async fn begin_from_db_path<'a, F: Fn() -> bool + Sync>(
     db_path: &'a str,
     network: WalletNetwork,
     should_exit: &'a F,
-    route_policy: StatusRoutePolicy,
 ) -> Result<PrivateStatusSession<'a, F>, LookupError> {
     if should_exit() {
         return Err(LookupError::Cancelled);
     }
     let endpoint = status_endpoint();
-    let route = match route_policy {
-        StatusRoutePolicy::WalletPreference => StatusPirTransport::new(should_exit),
-        StatusRoutePolicy::ForceDirect => StatusPirTransport::new_direct(should_exit),
-    };
+    let route = StatusPirTransport::new(should_exit);
     let client = initialize(&route, &endpoint, db_path, network).await?;
     Ok(PrivateStatusSession {
         route,
@@ -335,11 +335,67 @@ async fn begin_from_db_path<'a, F: Fn() -> bool + Sync>(
 mod tests {
     use super::*;
 
+    /// Neither a wrong network nor a wrong chain anchor is a row answer.
+    #[test]
+    fn status_session_failures_in_manifest_keep_transactions_retryable() {
+        let (_dir, path, _) =
+            crate::wallet::sync::private_shielding_tests::wallet_with_a_private_memo_query();
+        let db = open_anchor_db(&path, WalletNetwork::Regtest).unwrap();
+        let scanned = db.block_fully_scanned().unwrap().unwrap();
+        let height = scanned.block_height();
+        let hash = db.get_block_hash(height).unwrap().unwrap().0;
+        let mut manifest = zakura_pir_client::status::Manifest {
+            protocol: zakura_pir_client::status::PROTOCOL.into(),
+            network: mainnet_genesis(),
+            salt: [1; 32],
+            generation: 1,
+            recovery_epoch: 0,
+            coverage_start: 1,
+            anchor_height: u32::from(height),
+            anchor_hash: hash,
+            observed_ms: 1,
+            entries: 1,
+            rows_digest: [2; 32],
+            public_digest: [3; 32],
+        };
+        assert!(accepted_anchor(&db, &manifest).is_ok());
+        manifest.network = [0; 32];
+        assert!(matches!(
+            accepted_anchor(&db, &manifest),
+            Err(LookupError::Unavailable)
+        ));
+        manifest.network = mainnet_genesis();
+        manifest.anchor_hash[0] ^= 1;
+        assert!(matches!(
+            accepted_anchor(&db, &manifest),
+            Err(LookupError::Unavailable)
+        ));
+    }
+
     #[test]
     fn mainnet_identity_uses_protocol_byte_order() {
         let mut display = mainnet_genesis();
         display.reverse();
         assert_eq!(hex::encode(display), MAINNET_GENESIS_DISPLAY);
+    }
+
+    #[test]
+    fn only_a_malformed_row_reply_is_a_content_failure() {
+        assert_eq!(classify_session(Error::Malformed), LookupError::Unavailable);
+        assert_eq!(
+            classify_query(Error::Malformed, false),
+            LookupError::Unavailable
+        );
+        assert_eq!(
+            classify_query(Error::Malformed, true),
+            LookupError::Malformed
+        );
+        assert_eq!(classify_query(Error::Timeout, true), LookupError::Timeout);
+        assert_eq!(
+            classify_query(Error::Cancelled, false),
+            LookupError::Cancelled
+        );
+        assert_eq!(classify_session(Error::Stale), LookupError::Stale);
     }
 
     #[test]

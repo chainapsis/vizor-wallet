@@ -20,9 +20,7 @@ void main() {
     tester,
   ) async {
     await _pumpUseCase(tester, buildMobilePaymentLinkAmountFocusedUseCase);
-    final field = find.byKey(
-      const ValueKey('mobile_payment_link_focused_amount_editor'),
-    );
+    final field = find.byKey(const ValueKey('payment_link_amount_editor'));
     final controller = tester.widget<EditableText>(field).controller;
     // This visual fixture intentionally keeps its price-loading animation active.
     for (final separator in ['.', ',']) {
@@ -248,7 +246,7 @@ void main() {
     await _pumpInteractivePreview(tester);
 
     final amountEditor = find.byKey(
-      const ValueKey('mobile_payment_link_interactive_amount_editor'),
+      const ValueKey('payment_link_amount_editor'),
     );
     await tester.tap(
       find.byKey(const ValueKey('payment_link_mobile_card_slot')),
@@ -270,7 +268,7 @@ void main() {
       findsOneWidget,
     );
     await tester.pump(kMobilePaymentLinkPreviewFiatDelay);
-    expect(find.text(r'$1,210.40'), findsOneWidget);
+    expect(find.text(r'≈ $1,112.50'), findsOneWidget);
 
     for (final amount in ['0', '2', '', '4.45']) {
       await tester.enterText(amountEditor, amount);
@@ -279,9 +277,19 @@ void main() {
         find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
         findsNothing,
       );
-      if (amount == '2') expect(find.text(r'$544.00'), findsOneWidget);
+      if (amount == '2') expect(find.text(r'≈ $500.00'), findsOneWidget);
     }
-    expect(find.text(r'$1,210.40'), findsOneWidget);
+    expect(find.text(r'≈ $1,112.50'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_amount_currency_usd')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<EditableText>(amountEditor).controller.text,
+      '1112.50',
+    );
+    expect(find.text('≈ 4.45 ZEC'), findsOneWidget);
 
     final amountContinue = find.byKey(
       const ValueKey('payment_link_mobile_amount_continue_button'),
@@ -311,7 +319,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Review a Card'), findsOneWidget);
-    expect(find.text(r'$1,210.40'), findsOneWidget);
+    expect(find.text(r'$1,112.50'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
       findsNothing,

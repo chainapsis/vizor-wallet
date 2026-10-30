@@ -97,9 +97,13 @@ class _IronwoodMigrationPrivacyLockHostState
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ExcludeFocus(
+          // Screen readers must not read or activate the covered app either.
+          ExcludeSemantics(
             excluding: locked,
-            child: IgnorePointer(ignoring: locked, child: widget.child),
+            child: ExcludeFocus(
+              excluding: locked,
+              child: IgnorePointer(ignoring: locked, child: widget.child),
+            ),
           ),
           if (locked)
             Positioned.fill(

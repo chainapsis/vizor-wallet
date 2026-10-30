@@ -1,10 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/clipboard/sensitive_clipboard.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
@@ -12,18 +12,17 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
-import '../viewing_key_copy.dart';
+import '../../../core/layout/app_pane_scroll_scaffold.dart';
+import '../widgets/viewing_key_content.dart';
 import '../widgets/confirm_access_card.dart';
 import '../widgets/settings_pane_backdrop.dart';
 
-/// Settings → Viewing key — password-gated export of the account's Unified
-/// Full Viewing Key (UFVK). Available for both software and hardware
+/// Settings → Viewing key — password-gated choice and export of the account's
+/// full or incoming viewing key. Available for both software and hardware
 /// (Keystone) accounts, unlike the secret-passphrase screen: a UFVK only
 /// grants view access (balance, transaction history), never spend, so
 /// hardware accounts — which never hold spend authority on the phone — can
@@ -32,16 +31,17 @@ class SettingsViewingKeyScreen extends ConsumerStatefulWidget {
   const SettingsViewingKeyScreen({
     this.accountUuid,
     this.privacyOverlayController,
-    this.ufvkLoader,
+    this.viewingKeysLoader,
     super.key,
   });
 
   final String? accountUuid;
   final SensitivePrivacyOverlayController? privacyOverlayController;
 
-  /// Test seam — production calls `rust_wallet.getAccountUfvk` directly.
+  /// Test seam — production calls `rust_wallet.getAccountViewingKeys` directly.
   @visibleForTesting
-  final Future<String> Function(String accountUuid)? ufvkLoader;
+  final Future<rust_wallet.AccountViewingKeys> Function(String accountUuid)?
+  viewingKeysLoader;
 
   @override
   ConsumerState<SettingsViewingKeyScreen> createState() =>
@@ -53,10 +53,28 @@ class SettingsViewingKeyScreen extends ConsumerStatefulWidget {
 /// This is intentionally a separate widget rather than an initial state on
 /// [SettingsViewingKeyScreen], so production navigation cannot bypass the
 /// password confirmation gate.
-class SettingsViewingKeyRevealPreview extends StatelessWidget {
-  const SettingsViewingKeyRevealPreview({required this.ufvk, super.key});
+class SettingsViewingKeyRevealPreview extends StatefulWidget {
+  const SettingsViewingKeyRevealPreview({
+    required this.viewingKeys,
+    required this.account,
+    this.initialType = ViewingKeyType.full,
+    this.initialFormat = ViewingKeyFormat.qr,
+    super.key,
+  });
 
-  final String ufvk;
+  final rust_wallet.AccountViewingKeys viewingKeys;
+  final AccountInfo account;
+  final ViewingKeyType? initialType;
+  final ViewingKeyFormat initialFormat;
+
+  @override
+  State<SettingsViewingKeyRevealPreview> createState() =>
+      _SettingsViewingKeyRevealPreviewState();
+}
+
+class _SettingsViewingKeyRevealPreviewState
+    extends State<SettingsViewingKeyRevealPreview> {
+  late ViewingKeyType? _selectedType = widget.initialType;
 
   @override
   Widget build(BuildContext context) {
@@ -65,18 +83,26 @@ class SettingsViewingKeyRevealPreview extends StatelessWidget {
       sidebar: const AppMainSidebar(),
       pane: _SettingsViewingKeyPane(
         onBeforeNavigateBack: () {},
+        onBackToChoice: _selectedType == null
+            ? null
+            : () => setState(() => _selectedType = null),
+        centerContent: false,
         child: _ViewingKeyRevealView(
-          ufvk: ufvk,
+          viewingKeys: widget.viewingKeys,
+          initialType: _selectedType,
+          onSelectType: (type) => setState(() => _selectedType = type),
+          initialFormat: widget.initialFormat,
+          account: widget.account,
+          onRetry: () {},
           errorText: null,
-          copied: false,
-          onCopyPressed: _noopPreviewCopy,
+          onCopy: _noopPreviewCopy,
         ),
       ),
     );
   }
 }
 
-Future<void> _noopPreviewCopy() async {}
+Future<void> _noopPreviewCopy(String value) async {}
 
 enum _SettingsViewingKeyStage { password, reveal }
 
@@ -92,10 +118,9 @@ class _SettingsViewingKeyScreenState
   bool _isSubmitting = false;
   _SettingsViewingKeyStage _stage = _SettingsViewingKeyStage.password;
   String? _passwordError;
-  String? _ufvk;
+  rust_wallet.AccountViewingKeys? _viewingKeys;
   String? _revealError;
-  bool _copied = false;
-  Timer? _copyResetTimer;
+  ViewingKeyType? _selectedType;
 
   String? get _passwordPolicyMessage =>
       validateWalletPassword(_passwordController.text);
@@ -111,20 +136,19 @@ class _SettingsViewingKeyScreenState
   }
 
   void _clearSensitiveState({String? passwordError}) {
-    _copyResetTimer?.cancel();
     _passwordController.clear();
     _isSubmitting = false;
     _stage = _SettingsViewingKeyStage.password;
     _passwordError = passwordError;
-    _ufvk = null;
+    _viewingKeys = null;
     _revealError = null;
-    _copied = false;
+    _selectedType = null;
   }
 
   void _handleTargetAccountChanged() {
     if (_stage == _SettingsViewingKeyStage.password &&
         !_isSubmitting &&
-        _ufvk == null) {
+        _viewingKeys == null) {
       return;
     }
 
@@ -211,7 +235,7 @@ class _SettingsViewingKeyScreenState
         return;
       }
 
-      final ufvk = await _loadUfvk(targetAccountUuid);
+      final viewingKeys = await _loadViewingKeys(targetAccountUuid);
 
       if (!mounted) return;
       if (_targetAccountChanged(targetAccountUuid)) {
@@ -225,10 +249,9 @@ class _SettingsViewingKeyScreenState
       }
 
       setState(() {
-        _ufvk = ufvk;
+        _viewingKeys = viewingKeys;
         _stage = _SettingsViewingKeyStage.reveal;
         _isSubmitting = false;
-        _copied = false;
       });
     } on _ViewingKeyUnavailableException catch (e) {
       if (!mounted) return;
@@ -241,51 +264,40 @@ class _SettingsViewingKeyScreenState
       log('SettingsViewingKeyScreen._submitPassword: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _revealError = "Couldn't load the viewing key. Please try again.";
+        _revealError = 'Confirm access again to try loading this key.';
         _stage = _SettingsViewingKeyStage.reveal;
         _isSubmitting = false;
       });
     }
   }
 
-  Future<String> _loadUfvk(String targetAccountUuid) async {
+  Future<rust_wallet.AccountViewingKeys> _loadViewingKeys(
+    String targetAccountUuid,
+  ) async {
     try {
-      final loader = widget.ufvkLoader;
+      final loader = widget.viewingKeysLoader;
       if (loader != null) return await loader(targetAccountUuid);
 
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      return await rust_wallet.getAccountUfvk(
+      return await rust_wallet.getAccountViewingKeys(
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: targetAccountUuid,
       );
-    } catch (e) {
+    } catch (e, st) {
+      log('SettingsViewingKeyScreen._loadViewingKeys: ERROR: $e\n$st');
       throw _ViewingKeyUnavailableException(
-        'Viewing key is not available for this account: $e',
+        'Confirm access again to try loading this key.',
       );
     }
   }
 
-  Future<void> _copyUfvk() async {
-    final ufvk = _ufvk;
-    if (ufvk == null || ufvk.isEmpty) return;
-    await SensitiveClipboard.copyText(ufvk);
-    _markCopied();
-  }
-
-  void _markCopied() {
-    if (!mounted) return;
-    _copyResetTimer?.cancel();
-    setState(() {
-      _copied = true;
-    });
-    _copyResetTimer = Timer(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      setState(() {
-        _copied = false;
-      });
-    });
+  Future<void> _copyViewingKey(String value) async {
+    if (_stage != _SettingsViewingKeyStage.reveal || _viewingKeys == null) {
+      return;
+    }
+    await SensitiveClipboard.copyText(value);
   }
 
   @override
@@ -298,36 +310,58 @@ class _SettingsViewingKeyScreenState
       },
     );
 
-    return AppDesktopBackdropShell(
-      background: _stage == _SettingsViewingKeyStage.reveal
-          ? ColoredBox(color: context.colors.background.window)
-          : const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
-      sidebar: const AppMainSidebar(),
-      pane: SensitivePrivacyOverlay(
-        sensitiveContentVisible:
-            _stage == _SettingsViewingKeyStage.reveal && _ufvk != null,
-        controller: widget.privacyOverlayController,
-        child: _SettingsViewingKeyPane(
-          onBeforeNavigateBack: () => _clearSensitiveState(),
-          child: switch (_stage) {
-            _SettingsViewingKeyStage.password => Center(
-              child: ConfirmAccessCard(
-                subtitle: 'To view the viewing key.',
-                controller: _passwordController,
-                errorText: _passwordError ?? _passwordPolicyMessage,
-                isSubmitting: _isSubmitting,
-                canSubmit: _canSubmit,
-                onChanged: _handlePasswordChanged,
-                onSubmit: _submitPassword,
+    final accounts = ref.watch(accountProvider).value;
+    final targetAccount = _targetAccount(accounts);
+    return PopScope(
+      canPop: _selectedType == null,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _selectedType != null) {
+          setState(() => _selectedType = null);
+        }
+      },
+      child: AppDesktopBackdropShell(
+        background: _stage == _SettingsViewingKeyStage.reveal
+            ? ColoredBox(color: context.colors.background.window)
+            : const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
+        sidebar: const AppMainSidebar(),
+        pane: SensitivePrivacyOverlay(
+          sensitiveContentVisible:
+              _stage == _SettingsViewingKeyStage.reveal && _viewingKeys != null,
+          controller: widget.privacyOverlayController,
+          child: _SettingsViewingKeyPane(
+            onBeforeNavigateBack: () => _clearSensitiveState(),
+            onBackToChoice: _selectedType == null
+                ? null
+                : () => setState(() => _selectedType = null),
+            centerContent: _stage != _SettingsViewingKeyStage.reveal,
+            child: switch (_stage) {
+              _SettingsViewingKeyStage.password => Center(
+                child: ConfirmAccessCard(
+                  subtitle: 'To view the viewing key.',
+                  controller: _passwordController,
+                  errorText: _passwordError ?? _passwordPolicyMessage,
+                  isSubmitting: _isSubmitting,
+                  canSubmit: _canSubmit,
+                  onChanged: _handlePasswordChanged,
+                  onSubmit: _submitPassword,
+                ),
               ),
-            ),
-            _SettingsViewingKeyStage.reveal => _ViewingKeyRevealView(
-              ufvk: _ufvk,
-              errorText: _revealError,
-              copied: _copied,
-              onCopyPressed: _copyUfvk,
-            ),
-          },
+              _SettingsViewingKeyStage.reveal => _ViewingKeyRevealView(
+                viewingKeys: _viewingKeys,
+                initialType: _selectedType,
+                onSelectType: (type) => setState(() => _selectedType = type),
+                account: targetAccount,
+                showAccountName:
+                    targetAccount != null &&
+                    targetAccount.uuid != accounts?.activeAccountUuid,
+                onRetry: targetAccount == null
+                    ? () => context.go('/accounts')
+                    : () => setState(_clearSensitiveState),
+                errorText: _revealError,
+                onCopy: _copyViewingKey,
+              ),
+            },
+          ),
         ),
       ),
     );
@@ -338,255 +372,79 @@ class _SettingsViewingKeyPane extends StatelessWidget {
   const _SettingsViewingKeyPane({
     required this.onBeforeNavigateBack,
     required this.child,
+    this.centerContent = true,
+    this.onBackToChoice,
   });
 
   final VoidCallback onBeforeNavigateBack;
   final Widget child;
+  final bool centerContent;
+  final VoidCallback? onBackToChoice;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AppPaneToolbar(
-            backLinkMinWidth: 60,
-            onBeforeNavigate: onBeforeNavigateBack,
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.md,
-                0,
-                AppSpacing.md,
-                AppSpacing.md,
-              ),
-              child: child,
-            ),
-          ),
-        ],
+    return AppPaneScrollScaffold(
+      toolbar: AppPaneToolbar(
+        backLinkMinWidth: 60,
+        leading: onBackToChoice == null
+            ? null
+            : AppBackLink(label: 'Viewing key', onTap: onBackToChoice!),
+        onBeforeNavigate: onBeforeNavigateBack,
+      ),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        centerContent ? AppSpacing.md : AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.md,
+      ),
+      child: Align(
+        alignment: centerContent ? Alignment.center : Alignment.topCenter,
+        child: child,
       ),
     );
   }
 }
-
-const _viewingKeyCardWidth = 396.0;
-
-List<BoxShadow> _viewingKeyCardShadows(Color color) => [
-  BoxShadow(color: color, blurRadius: 0.5),
-  BoxShadow(color: color, offset: const Offset(0, 2), blurRadius: 2),
-  BoxShadow(color: color, offset: const Offset(0, 1), blurRadius: 1),
-  BoxShadow(color: color, blurRadius: 0.5),
-];
 
 class _ViewingKeyRevealView extends StatelessWidget {
   const _ViewingKeyRevealView({
-    required this.ufvk,
+    required this.viewingKeys,
+    required this.account,
     required this.errorText,
-    required this.copied,
-    required this.onCopyPressed,
+    required this.onCopy,
+    required this.onRetry,
+    this.showAccountName = false,
+    this.initialType,
+    required this.onSelectType,
+    this.initialFormat = ViewingKeyFormat.qr,
   });
 
-  final String? ufvk;
+  final AccountInfo? account;
+  final rust_wallet.AccountViewingKeys? viewingKeys;
   final String? errorText;
-  final bool copied;
-  final Future<void> Function() onCopyPressed;
+  final Future<void> Function(String) onCopy;
+  final VoidCallback onRetry;
+  final bool showAccountName;
+  final ViewingKeyType? initialType;
+  final ValueChanged<ViewingKeyType> onSelectType;
+  final ViewingKeyFormat initialFormat;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Viewing Key',
-            textAlign: TextAlign.center,
-            style: AppTypography.headlineLarge.copyWith(
-              color: colors.text.accent,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: Column(
-              children: [
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: viewingKeyAccessSummary,
-                        style: AppTypography.bodyLarge.copyWith(
-                          color: colors.text.accent,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const TextSpan(text: ' $viewingKeyAccessDetails'),
-                    ],
-                  ),
-                  key: const ValueKey('viewing_key_explanation'),
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyLarge.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  viewingKeyPrivacyNotice,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyLarge.copyWith(
-                    color: colors.text.accent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (errorText == null && ufvk != null)
-            _ViewingKeyCard(
-              ufvk: ufvk!,
-              copied: copied,
-              onCopyPressed: onCopyPressed,
-            )
-          else
-            _ViewingKeyErrorCard(
-              message:
-                  errorText ?? 'Viewing key is not available for this account.',
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ViewingKeyCard extends StatelessWidget {
-  const _ViewingKeyCard({
-    required this.ufvk,
-    required this.copied,
-    required this.onCopyPressed,
-  });
-
-  final String ufvk;
-  final bool copied;
-  final Future<void> Function() onCopyPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final cardTextColor = colors.text.homeCard;
-
-    return Container(
-      width: _viewingKeyCardWidth,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.sm,
-        AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.homeCard,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: _viewingKeyCardShadows(colors.shadows.subtle),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 32,
-            child: Row(
-              children: [
-                AppIcon(
-                  AppIcons.eye,
-                  size: AppIconSize.medium,
-                  color: cardTextColor,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Expanded(
-                  child: Text(
-                    'Full Viewing Key',
-                    style: AppTypography.bodyLarge.copyWith(
-                      color: cardTextColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                AppButton(
-                  key: const ValueKey('settings_viewing_key_copy_button'),
-                  onPressed: () {
-                    onCopyPressed();
-                  },
-                  variant: AppButtonVariant.secondary,
-                  size: AppButtonSize.mediumLarge,
-                  height: 24,
-                  minWidth: 52,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xxs,
-                  ),
-                  child: Text(copied ? 'Copied' : 'Copy'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          Container(
-            key: const ValueKey('settings_viewing_key_value'),
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.s),
-            decoration: BoxDecoration(
-              color: colors.background.ground,
-              borderRadius: BorderRadius.circular(AppRadii.medium),
-            ),
-            child: Text(
-              ufvk,
-              style: AppTypography.codeSmall.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ViewingKeyErrorCard extends StatelessWidget {
-  const _ViewingKeyErrorCard({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Container(
-      width: _viewingKeyCardWidth,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.base,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: _viewingKeyCardShadows(colors.shadows.subtle),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(
-            AppIcons.warning,
-            size: AppIconSize.large,
-            color: colors.icon.destructive,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
-          ),
-        ],
+    return SizedBox(
+      width: 440,
+      child: ViewingKeyContent(
+        account: account,
+        viewingKeys: viewingKeys,
+        type: initialType,
+        onSelectType: onSelectType,
+        initialFormat: initialFormat,
+        errorText: errorText,
+        showTitle: true,
+        showAccountName: showAccountName,
+        onCopy: onCopy,
+        onRetry: onRetry,
+        copyButtonKey: const ValueKey('settings_viewing_key_copy_button'),
+        keyValueKey: const ValueKey('settings_viewing_key_value'),
       ),
     );
   }

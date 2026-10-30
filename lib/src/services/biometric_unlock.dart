@@ -53,6 +53,8 @@ extension BiometricKindCopy on BiometricKind {
   String get enableLabel => 'Enable $inlineLabel';
 
   String get signInLabel => 'Sign in with $inlineLabel';
+
+  String get useNextTimeLabel => 'Use $inlineLabel next time';
 }
 
 class BiometricAvailability {
@@ -152,7 +154,7 @@ class BiometricUnlock {
   }
 
   /// Writes (or overwrites) the escrow. Requires an enrolled biometric
-  /// set; the prompt is NOT shown for writes.
+  /// set. Android prompts to authorize encryption; iOS writes without a prompt.
   Future<void> enable(String passcode) async {
     try {
       await _channel.invokeMethod<void>('enable', {'passcode': passcode});

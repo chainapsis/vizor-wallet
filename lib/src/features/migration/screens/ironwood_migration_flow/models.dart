@@ -13,29 +13,28 @@ enum IronwoodMigrationFlowStep {
 enum IronwoodMigrationReviewPreviewStage { review, analyzing }
 
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
-const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 6);
+const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 2);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
-const _migrationEstimatedSecondsPerBlock = 75;
 const _migrationPrepareConfirmationBlocks = 3;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
 const _keystoneMigrationLegacySignResultUrType = 'zcash-sign-result';
 const _keystoneMigrationFirmwareUpdateError =
     'Update Keystone firmware to sign Ironwood migrations, then try again.';
 const _ironwoodMigrationIntroBannerLightAsset =
-    'assets/illustrations/ironwood_migration_intro_banner_light.png';
+    'assets/illustrations/desktop/ironwood_migration_intro_banner_light.webp';
 const _ironwoodMigrationIntroBannerDarkAsset =
-    'assets/illustrations/ironwood_migration_intro_banner_dark.png';
+    'assets/illustrations/desktop/ironwood_migration_intro_banner_dark.webp';
 const _ironwoodMigrationHowStepAssets = [
-  'assets/illustrations/ironwood_migration_how_step_1.png',
-  'assets/illustrations/ironwood_migration_how_step_2.png',
-  'assets/illustrations/ironwood_migration_how_step_3.png',
+  'assets/illustrations/desktop/ironwood_migration_how_step_1.webp',
+  'assets/illustrations/desktop/ironwood_migration_how_step_2.webp',
+  'assets/illustrations/desktop/ironwood_migration_time.webp',
 ];
 const _ironwoodMigrationExpectationRunningAsset =
-    'assets/illustrations/ironwood_migration_expect_running.png';
+    'assets/illustrations/desktop/ironwood_migration_expect_running.webp';
 const _ironwoodMigrationExpectationAssets = [
-  'assets/illustrations/ironwood_migration_expect_time.png',
-  'assets/illustrations/ironwood_migration_expect_spend.png',
-  'assets/illustrations/ironwood_migration_expect_privacy.png',
+  'assets/illustrations/desktop/ironwood_migration_time.webp',
+  'assets/illustrations/desktop/ironwood_migration_expect_spend.webp',
+  'assets/illustrations/desktop/ironwood_migration_expect_privacy.webp',
   _ironwoodMigrationExpectationRunningAsset,
 ];
 
@@ -85,7 +84,12 @@ final ironwoodMigrationFlowDataProvider =
 
       final cta = ref.watch(ironwoodHomeMigrationPresentationProvider);
       final status = cta.accountUuid == inputs.accountUuid ? cta.status : null;
-      final targetTotal = _sumTargetValues(status);
+      // A stopped run's targets include what it already moved; moving the
+      // rest starts from the balance.
+      final targetTotal =
+          status?.phase == kIronwoodMigrationStoppedByUpgradePhase
+          ? BigInt.zero
+          : _sumTargetValues(status);
       final amount = targetTotal > BigInt.zero
           ? targetTotal
           : inputs.orchardBalance + inputs.orchardPendingBalance;
@@ -104,6 +108,13 @@ final ironwoodMigrationPrivatePlanProvider =
       final request = ref.watch(
         ironwoodMigrationInputsProvider.select(
           (inputs) => inputs.statusRequest,
+        ),
+      );
+      // Rust refuses a schedule drawn before an upgrade, so draw again once
+      // the next block is on the new branch.
+      ref.watch(
+        networkUpgradeWindowProvider.select(
+          (window) => (window.nextActivationHeight, window.holdsTransactions),
         ),
       );
       if (request == null) return null;
@@ -150,7 +161,9 @@ bool _routeShouldResumeMigration(rust_sync.MigrationStatus status) {
 }
 
 bool _routeShouldStartMigration(String phase) {
-  return kIronwoodMigrationStartPhases.contains(phase);
+  // A stopped run's remainder starts a new run, as on the home CTA.
+  return kIronwoodMigrationStartPhases.contains(phase) ||
+      phase == kIronwoodMigrationStoppedByUpgradePhase;
 }
 
 bool _isEmptyCompletedMigrationStatus(rust_sync.MigrationStatus status) {

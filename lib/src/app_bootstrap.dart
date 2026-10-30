@@ -15,6 +15,7 @@ import 'core/config/zcash_explorer.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/enhance_pir_preference_store.dart';
 import 'core/storage/wallet_paths.dart';
+import 'core/storage/wallet_balance_cache.dart';
 import 'core/storage/secure_storage_diagnostics.dart';
 import 'providers/account_models.dart';
 import 'rust/api/sync.dart' as rust_sync;
@@ -79,7 +80,11 @@ class AppBootstrapState {
   final bool swapEnabledOverrideCachedForRelease;
   final bool syncKeepAwakeEnabled;
   final bool syncKeepAwakePromptSeen;
-  final bool enhancePirEnabled;
+
+  /// The saved private queries setting, or `null` when it could not be read.
+  /// An unreadable setting is private for this launch, but unconfirmed: see
+  /// [readEnhancePirEnabledPreference].
+  final bool? enhancePirEnabled;
 
   /// Whether biometric unlock was enabled at startup, read synchronously from
   /// secure storage. The unlock screen uses this to paint the biometric
@@ -131,6 +136,7 @@ class AppSyncSnapshot {
   const AppSyncSnapshot({
     this.accountUuid,
     this.hasAccountScopedData = false,
+    this.cachedBalance,
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
@@ -141,6 +147,11 @@ class AppSyncSnapshot {
     required this.ironwoodBalance,
     required this.orchardLockedBalance,
     required this.transparentPendingBalance,
+    this.transparentLockedBalance,
+    this.transparentAuthority = rust_sync.TransparentBalanceAuthority.current,
+    this.transparentLastKnownBalance,
+    this.transparentStop,
+    this.transparentPrivate = false,
     required this.saplingPendingBalance,
     required this.orchardPendingBalance,
     required this.ironwoodPendingBalance,
@@ -154,6 +165,7 @@ class AppSyncSnapshot {
 
   final String? accountUuid;
   final bool hasAccountScopedData;
+  final CachedWalletBalance? cachedBalance;
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
@@ -164,6 +176,19 @@ class AppSyncSnapshot {
   final BigInt ironwoodBalance;
   final BigInt orchardLockedBalance;
   final BigInt transparentPendingBalance;
+
+  /// See `SyncState.transparentLockedBalance`; `null` is none.
+  final BigInt? transparentLockedBalance;
+
+  /// See `SyncState.transparentAuthority`.
+  final rust_sync.TransparentBalanceAuthority transparentAuthority;
+  final BigInt? transparentLastKnownBalance;
+
+  /// See `SyncState.transparentStop`.
+  final rust_sync.TransparentStopReason? transparentStop;
+
+  /// See `SyncState.transparentPrivate`.
+  final bool transparentPrivate;
   final BigInt saplingPendingBalance;
   final BigInt orchardPendingBalance;
   final BigInt ironwoodPendingBalance;
@@ -229,6 +254,7 @@ Future<AppBootstrapState> loadAppBootstrap({
       StorageBootstrapStage.started,
     );
     await ensureIosSecureStoreAccessibilityMigrated();
+    await storage.encodeLegacyLinuxKeyringValues();
     await storage.ensureWalletDbName();
     await _applyE2eBootstrapOverrides(storage);
     var passwordRotationRecoveryFailed = false;
@@ -314,7 +340,6 @@ Future<AppBootstrapState> loadAppBootstrap({
     );
 
     var rustAccounts = <AccountInfo>[];
-    final rustAddressesByUuid = <String, String>{};
     if (databaseExists) {
       try {
         final legacyHardwareAccounts = legacyHardwareAccountsForBackfill(
@@ -345,7 +370,6 @@ Future<AppBootstrapState> loadAppBootstrap({
               'Rust account ${account.uuid} returned inconsistent hardware signer metadata.',
             );
           }
-          rustAddressesByUuid[account.uuid] = account.unifiedAddress;
           final stored = storedAccountsByUuid[account.uuid];
           return mergeBootstrappedAccountInfo(
             rustAccount: AccountInfo(
@@ -407,9 +431,18 @@ Future<AppBootstrapState> loadAppBootstrap({
       }
     }
     final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
-    final activeAddress = !isUnlocked || activeAccountUuid == null
-        ? null
-        : rustAddressesByUuid[activeAccountUuid];
+    String? activeAddress;
+    if (isUnlocked && activeAccountUuid != null) {
+      try {
+        activeAddress = await rust_wallet.getUnifiedAddress(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: activeAccountUuid,
+        );
+      } catch (error) {
+        log('bootstrap: active address unavailable: $error');
+      }
+    }
     final hasWallet = accounts.isNotEmpty;
     var initialSyncSnapshot = AppSyncSnapshot.empty;
 
@@ -665,12 +698,14 @@ Future<bool> _readPlainBool(
 /// so an upgrading install keeps the choice it already made.
 ///
 /// A preference read must never block bootstrap, but an unreadable value is
-/// unknown, not off. It resolves to private for this launch only: nothing is
-/// written back, so the next launch that can read the saved choice uses it.
-/// Resolving to off would release native background work from its private
-/// default and send public lookups for a user who opted in.
+/// unknown, not off. It returns `null`, which applies as private for this
+/// launch only: nothing is written back, so the next launch that can read the
+/// saved choice uses it. Resolving to off would release native background
+/// work from its private default and send public lookups for a user who opted
+/// in. An unknown value is never a confirmed choice, so it never durably
+/// raises a wallet's transparent policy either.
 @visibleForTesting
-Future<bool> readEnhancePirEnabledPreference(
+Future<bool?> readEnhancePirEnabledPreference(
   AppSecureStore storage, {
   EnhancePirPreferenceStore preferences =
       const SharedPreferencesEnhancePirStore(),
@@ -683,7 +718,7 @@ Future<bool> readEnhancePirEnabledPreference(
       'bootstrap: failed to read private queries preference; '
       'using private for this launch: $e',
     );
-    return true;
+    return null;
   }
   var legacyEnabled = false;
   try {
@@ -695,7 +730,7 @@ Future<bool> readEnhancePirEnabledPreference(
       'bootstrap: failed to read legacy private queries flag; '
       'using private for this launch: $e',
     );
-    return true;
+    return null;
   }
   try {
     await preferences.writeEnabled(legacyEnabled);
@@ -751,80 +786,35 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
   required String accountUuid,
 }) async {
   try {
-    final syncStatus = await rust_sync.getSyncStatus(
-      dbPath: dbPath,
-      network: network,
-    );
-    final balance = await rust_sync.getBalance(
+    final cached = await readCachedWalletBalance(
       dbPath: dbPath,
       network: network,
       accountUuid: accountUuid,
     );
-    if (balance.availability != rust_sync.WalletBalanceAvailability.available) {
-      throw StateError(
-        'Wallet balance unavailable during bootstrap: '
-        '${balance.availability.name}',
-      );
-    }
-    final recentTransactions = await rust_sync.getTransactionHistory(
-      dbPath: dbPath,
-      network: network,
-      limit: 10,
-      accountUuid: accountUuid,
-    );
-    var canShieldTransparentBalance = false;
-    var shieldTransparentFee = BigInt.zero;
-    var shieldTransparentAmount = BigInt.zero;
-    if (balance.transparent > BigInt.zero) {
-      try {
-        final shieldStatus = await rust_sync.getShieldTransparentStatus(
-          dbPath: dbPath,
-          network: network,
-          accountUuid: accountUuid,
-        );
-        canShieldTransparentBalance = shieldStatus.canShield;
-        shieldTransparentFee = shieldStatus.feeZatoshi;
-        shieldTransparentAmount = shieldStatus.shieldedZatoshi;
-      } catch (e) {
-        log('bootstrap: failed to load shield transparent status: $e');
-      }
-    }
-    final scannedHeight = syncStatus.scannedHeight.toInt();
-    final chainTipHeight = syncStatus.chainTipHeight.toInt();
-    final percentage = chainTipHeight == 0
-        ? 0.0
-        : (scannedHeight / chainTipHeight).clamp(0.0, 1.0);
-
-    log(
-      'bootstrap: loaded initial sync snapshot '
-      '(scanned=$scannedHeight, tip=$chainTipHeight, txs=${recentTransactions.length})',
-    );
-
     return AppSyncSnapshot(
       accountUuid: accountUuid,
-      hasAccountScopedData: true,
-      scannedHeight: scannedHeight,
-      chainTipHeight: chainTipHeight,
-      percentage: percentage,
-      isSyncComplete: syncStatus.isComplete,
-      transparentBalance: balance.transparent,
-      saplingBalance: balance.sapling,
-      orchardBalance: balance.orchard,
-      ironwoodBalance: balance.ironwood,
-      orchardLockedBalance: balance.orchardLocked,
-      transparentPendingBalance: balance.transparentPending,
-      saplingPendingBalance: balance.saplingPending,
-      orchardPendingBalance: balance.orchardPending,
-      ironwoodPendingBalance: balance.ironwoodPending,
-      canShieldTransparentBalance: canShieldTransparentBalance,
-      shieldTransparentFee: shieldTransparentFee,
-      shieldTransparentAmount: shieldTransparentAmount,
-      spendableBalance: balance.spendable,
-      totalBalance: balance.total,
-      recentTransactions: recentTransactions,
+      cachedBalance: cached,
+      scannedHeight: 0,
+      chainTipHeight: 0,
+      percentage: 0,
+      transparentBalance: BigInt.zero,
+      saplingBalance: BigInt.zero,
+      orchardBalance: BigInt.zero,
+      ironwoodBalance: BigInt.zero,
+      orchardLockedBalance: BigInt.zero,
+      transparentPendingBalance: BigInt.zero,
+      saplingPendingBalance: BigInt.zero,
+      orchardPendingBalance: BigInt.zero,
+      ironwoodPendingBalance: BigInt.zero,
+      canShieldTransparentBalance: false,
+      shieldTransparentFee: BigInt.zero,
+      shieldTransparentAmount: BigInt.zero,
+      spendableBalance: BigInt.zero,
+      totalBalance: BigInt.zero,
+      recentTransactions: const [],
     );
   } catch (e) {
-    log('bootstrap: failed to load initial sync snapshot: $e');
+    log('bootstrap: failed to load balance cache: $e');
     return AppSyncSnapshot.emptyForAccount(accountUuid);
   }
 }

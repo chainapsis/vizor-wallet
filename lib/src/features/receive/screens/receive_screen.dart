@@ -6,6 +6,7 @@ import 'package:flutter/material.dart'
     show CircularProgressIndicator, Colors, ScaffoldMessenger, SnackBar;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
@@ -289,6 +290,18 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     copyTextWithToast(context, text: address, toastMessage: 'Address copied');
   }
 
+  Future<void> _shareSelectedAddress() async {
+    final address = _selectedAddress;
+    if (address.isEmpty) return;
+    try {
+      await SharePlus.instance.share(ShareParams(text: address));
+    } catch (e) {
+      log('Receive: ERROR sharing address: $e');
+      if (!mounted) return;
+      showAppToast(context, "Couldn't share this address. Copy it instead.");
+    }
+  }
+
   void _selectAddressType(ReceiveAddressType type) {
     if (_selectedType == type) return;
 
@@ -540,6 +553,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
               onTypeChanged: _selectAddressType,
               onRenewShielded: isShielded ? _renewShieldedAddress : null,
               onCopy: _copySelectedAddress,
+              onShare: _shareSelectedAddress,
               onRequest: _openRequest,
               onShowHelp: () => _showAddressInfo(_selectedType),
             ),
@@ -604,6 +618,7 @@ class _ReceivePane extends StatelessWidget {
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
+    required this.onShare,
     required this.onRequest,
     required this.onShowHelp,
   });
@@ -617,6 +632,7 @@ class _ReceivePane extends StatelessWidget {
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
+  final VoidCallback onShare;
   final VoidCallback onRequest;
   final VoidCallback onShowHelp;
 
@@ -642,6 +658,7 @@ class _ReceivePane extends StatelessWidget {
             onTypeChanged: onTypeChanged,
             onRenewShielded: onRenewShielded,
             onCopy: onCopy,
+            onShare: onShare,
             onRequest: onRequest,
             onShowHelp: onShowHelp,
           ),
@@ -662,23 +679,22 @@ class _ReceiveContentLayout extends StatelessWidget {
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
+    required this.onShare,
     required this.onRequest,
     required this.onShowHelp,
   });
 
   static const _contentWidth = 420.0;
 
-  /// One action row: the copy pill and, beside it, the compact request
-  /// button — the home card's "Pay" shape — so the fixed-coordinate content
-  /// keeps the single-button screen's height instead of growing a second row.
+  // Keep both action rows within the existing content height.
   static const _contentHeight = 656.0;
   static const _contentHeightWithError = 724.0;
-  static const _actionsTop = 596.0;
+  static const _actionsTop = 548.0;
   static const _actionButtonWidth = 230.0;
   static const _actionButtonHeight = 44.0;
-  static const _requestButtonWidth = 60.0;
+  static const _shareButtonWidth = 60.0;
   static const _actionsWidth =
-      _actionButtonWidth + AppSpacing.xs + _requestButtonWidth;
+      _actionButtonWidth + AppSpacing.xs + _shareButtonWidth;
   static const _actionsLeft = (_contentWidth - _actionsWidth) / 2;
 
   final ReceiveAddressType selectedType;
@@ -690,6 +706,7 @@ class _ReceiveContentLayout extends StatelessWidget {
   final ValueChanged<ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
+  final VoidCallback onShare;
   final VoidCallback onRequest;
   final VoidCallback onShowHelp;
 
@@ -776,49 +793,66 @@ class _ReceiveContentLayout extends StatelessWidget {
                       left: _actionsLeft,
                       top: _actionsTop,
                       width: _actionsWidth,
-                      height: _actionButtonHeight,
-                      child: Row(
+                      height: _actionButtonHeight * 2 + AppSpacing.xs,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          SizedBox(
-                            width: _actionButtonWidth,
-                            height: _actionButtonHeight,
-                            child: ReceiveCopyAddressButton(
-                              key: ValueKey(
-                                _isShielded
-                                    ? 'receive_copy_shielded_address_button'
-                                    : 'receive_copy_transparent_address_button',
-                              ),
-                              label: _isShielded
-                                  ? 'Copy shielded address'
-                                  : 'Copy transparent address',
-                              type: selectedType,
-                              enabled: address.isNotEmpty && !isLoading,
-                              onTap: onCopy,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          // Icon only, like the home card's "Pay" button: the
-                          // request is the secondary way to hand out this
-                          // address, and a second labelled pill under the
-                          // copy button pushed the screen past its frame.
-                          AppTooltip(
-                            message: 'Request $kZcashDefaultCurrencyTicker',
-                            child: Semantics(
-                              button: true,
-                              label: 'Request $kZcashDefaultCurrencyTicker',
-                              excludeSemantics: true,
-                              child: AppButton(
-                                key: const ValueKey('receive_request_button'),
-                                variant: AppButtonVariant.secondary,
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: _actionButtonWidth,
                                 height: _actionButtonHeight,
-                                minWidth: _requestButtonWidth,
-                                contentPadding: EdgeInsets.zero,
-                                onPressed: address.isNotEmpty && !isLoading
-                                    ? onRequest
-                                    : null,
-                                child: const AppIcon(AppIcons.qr, size: 20),
+                                child: ReceiveCopyAddressButton(
+                                  key: ValueKey(
+                                    _isShielded
+                                        ? 'receive_copy_shielded_address_button'
+                                        : 'receive_copy_transparent_address_button',
+                                  ),
+                                  label: _isShielded
+                                      ? 'Copy shielded address'
+                                      : 'Copy transparent address',
+                                  type: selectedType,
+                                  enabled: address.isNotEmpty && !isLoading,
+                                  onTap: onCopy,
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: AppSpacing.xs),
+                              AppTooltip(
+                                message: _isShielded
+                                    ? 'Share shielded address'
+                                    : 'Share transparent address',
+                                child: Semantics(
+                                  button: true,
+                                  label: _isShielded
+                                      ? 'Share shielded address'
+                                      : 'Share transparent address',
+                                  child: AppButton(
+                                    key: const ValueKey('receive_share_button'),
+                                    variant: AppButtonVariant.secondary,
+                                    height: _actionButtonHeight,
+                                    minWidth: _shareButtonWidth,
+                                    contentPadding: EdgeInsets.zero,
+                                    onPressed: address.isNotEmpty && !isLoading
+                                        ? onShare
+                                        : null,
+                                    child: const ExcludeSemantics(
+                                      child: AppIcon(AppIcons.share, size: 20),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          AppButton(
+                            key: const ValueKey('receive_request_button'),
+                            variant: AppButtonVariant.ghost,
+                            height: _actionButtonHeight,
+                            expand: true,
+                            onPressed: address.isNotEmpty && !isLoading
+                                ? onRequest
+                                : null,
+                            child: const Text('Request ZEC'),
                           ),
                         ],
                       ),

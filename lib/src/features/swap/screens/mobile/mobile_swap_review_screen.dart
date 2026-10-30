@@ -1,3 +1,4 @@
+import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -53,6 +54,7 @@ class _MobileSwapReviewScreenState
   var _startIntentInFlight = false;
   SwapState? _startingReviewSnapshot;
   var _keystoneSigningReviewInactive = false;
+  int _sidebarExitGeneration = 0;
   Timer? _expiryTimer;
   DateTime? _expiryDeadline;
   Duration? _expiryRemaining;
@@ -102,8 +104,9 @@ class _MobileSwapReviewScreenState
     _expiryRemaining = deadline?.difference(DateTime.now());
     if (deadline == null) return;
     if (_expiryRemaining! <= Duration.zero) {
+      final generation = _sidebarExitGeneration;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
+        if (mounted && generation == _sidebarExitGeneration) {
           ref.read(swapStateProvider.notifier).expireReviewQuote();
         }
       });
@@ -130,11 +133,12 @@ class _MobileSwapReviewScreenState
   }
 
   void _reviewAgain() {
+    final generation = _sidebarExitGeneration;
     unawaited(() async {
       await ref
           .read(swapStateProvider.notifier)
           .showReview(preserveCurrentReview: true);
-      if (!mounted) return;
+      if (!mounted || generation != _sidebarExitGeneration) return;
       final next = ref.read(swapStateProvider);
       if (!next.reviewVisible ||
           next.reviewQuote == null ||
@@ -469,6 +473,15 @@ class _MobileSwapReviewScreenState
         ),
       ),
     );
-    return PopScope<void>(canPop: !_startIntentInFlight, child: content);
+    return MobileSidebarExitScope(
+      canNavigate: !_startIntentInFlight && !_startingIntent,
+      onExit: () async {
+        _sidebarExitGeneration++;
+        _expiryTimer?.cancel();
+        ref.read(swapStateProvider.notifier).cancelReviewQuote();
+        return true;
+      },
+      child: PopScope<void>(canPop: !_startIntentInFlight, child: content),
+    );
   }
 }

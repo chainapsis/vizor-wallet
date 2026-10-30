@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../fixtures/orchard_receive_address.dart';
+import 'receive_qr_bitmap_cases.dart';
 
 const _shielded = 'u1tvg2412a23kshieldedaddressk64123hhq6d';
 const _transparent = 't1aWwWwqk3jYGkZc7nLGuTvuM8hDywMZCo';
@@ -157,6 +158,7 @@ final _priceProvider = NotifierProvider<_PriceNotifier, double?>(
 );
 
 void main() {
+  registerReceiveQrBitmapTests();
   testWidgets('shows the shielded pool by default with share and copy', (
     tester,
   ) async {
@@ -164,7 +166,7 @@ void main() {
 
     expect(find.text('Receive ZEC'), findsOneWidget);
     expect(find.text('Account Name'), findsOneWidget);
-    expect(find.text('Share shielded address'), findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
     expect(find.text('Copy shielded address'), findsOneWidget);
     // Compact address line: leading 13 chars visible.
     expect(
@@ -190,17 +192,17 @@ void main() {
       const Size(292, 308),
     );
     expect(tester.getSize(find.byType(ReceiveRenewButton)), const Size(48, 48));
-    // Share shares its row with the square request button: 300 - 8 - 50.
+    // Copy shares its row with the square share button: 300 - 8 - 50.
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
       const Size(242, 50),
     );
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
       const Size(50, 50),
     );
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
       const Size(300, 50),
     );
     final helpIcon = tester.widget<AppIcon>(
@@ -225,7 +227,7 @@ void main() {
     await tester.tap(find.text('Transparent'));
     await _settle(tester);
 
-    expect(find.text('Share transparent address'), findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
     expect(find.text('Copy transparent address'), findsOneWidget);
     expect(
       find.textContaining(_transparent.substring(0, 13), findRichText: true),
@@ -409,7 +411,7 @@ void main() {
     );
     await _settle(tester);
 
-    expect(find.text('Share transparent address'), findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
     expect(find.text('Copy transparent address'), findsOneWidget);
 
     await tester.drag(
@@ -418,7 +420,7 @@ void main() {
     );
     await _settle(tester);
 
-    expect(find.text('Share shielded address'), findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
     expect(find.text('Copy shielded address'), findsOneWidget);
   });
 
@@ -587,7 +589,7 @@ void main() {
 
     await tester.tap(find.bySemanticsLabel('Generate new shielded address'));
     await _settle(tester);
-    await tester.tap(find.text('Share shielded address'));
+    await tester.tap(find.byKey(const ValueKey('mobile_receive_share')));
     await _settle(tester);
 
     expect(find.text('Not available yet'), findsNothing);
@@ -598,7 +600,7 @@ void main() {
     );
   });
 
-  testWidgets('puts the request entry beside share, above copy', (
+  testWidgets('puts copy beside share with a labelled request below', (
     tester,
   ) async {
     await _pumpReceive(tester, _FakeReceiveAddressService());
@@ -608,21 +610,23 @@ void main() {
     final copy = find.byKey(const ValueKey('mobile_receive_copy'));
 
     expect(request, findsOneWidget);
-    // Icon only, like the home card's "Pay": the label is the semantics.
-    expect(find.text('Request ZEC'), findsNothing);
+    expect(find.text('Request ZEC'), findsOneWidget);
     expect(find.bySemanticsLabel('Request ZEC'), findsOneWidget);
-    expect(tester.getSize(request), const Size(50, 50));
+    expect(tester.getSize(copy), const Size(242, 50));
+    expect(tester.getSize(share), const Size(50, 50));
+    expect(tester.getSize(request), const Size(300, 50));
+    expect(find.bySemanticsLabel('Share shielded address'), findsOneWidget);
     expect(
-      tester.getTopLeft(request).dy,
+      tester.getTopLeft(copy).dy,
       moreOrLessEquals(tester.getTopLeft(share).dy, epsilon: 0.1),
     );
     expect(
-      tester.getTopLeft(request).dx - tester.getTopRight(share).dx,
+      tester.getTopLeft(share).dx - tester.getTopRight(copy).dx,
       moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
     );
     expect(
-      tester.getTopLeft(copy).dy,
-      greaterThan(tester.getBottomLeft(request).dy),
+      tester.getTopLeft(request).dy,
+      greaterThan(tester.getBottomLeft(copy).dy),
     );
   });
 

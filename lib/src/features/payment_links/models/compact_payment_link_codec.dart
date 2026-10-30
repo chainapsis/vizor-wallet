@@ -15,6 +15,7 @@ abstract final class _CompactPaymentLinkCodec {
       final network = link.network.trim();
       _validateRequired(network, link.birthdayHeight, link.amountZatoshi);
       final presentation = link.presentation?.toPayload();
+      final fiatAmount = link.presentation?.fiatSnapshot?.amount;
       final entropy = rust_wallet.giftMnemonicToEntropy(
         mnemonic: mnemonic ?? link.mnemonic.trim(),
       );
@@ -26,7 +27,8 @@ abstract final class _CompactPaymentLinkCodec {
         link.birthdayHeight,
         link.amountZatoshi.toString(),
         presentation?['artworkId'],
-        link.presentation?.fiatSnapshot?.amount,
+        // Fiat is display-only; keep sub-cent precision out of shared URLs.
+        fiatAmount == null ? null : double.parse(fiatAmount.toStringAsFixed(2)),
         presentation?['message'],
         label == _defaultLabel ? null : label,
       ];

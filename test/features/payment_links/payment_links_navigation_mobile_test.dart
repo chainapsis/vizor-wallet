@@ -9,7 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import '../../support/payment_links_screen_support.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
-import 'package:zcash_wallet/src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
+import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_scanner_provider.dart';
 
 const _amount = 'payment_link_mobile_amount_continue_button';
 const _message = 'payment_link_mobile_message_continue_button';

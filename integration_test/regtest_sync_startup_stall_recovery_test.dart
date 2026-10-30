@@ -58,6 +58,10 @@ void main() {
         tester,
         const ValueKey('welcome_import_wallet_button'),
       );
+      await tapAppWidget(
+        tester,
+        const ValueKey('desktop_import_secret_passphrase_card'),
+      );
       await enterAppText(
         tester,
         const ValueKey('import_mnemonic_first_word_field'),
@@ -69,6 +73,7 @@ void main() {
         tester,
         const ValueKey('unknown_birthday_confirm_button'),
       );
+      await finishDesktopAccountCustomisation(tester);
       await enterAppText(
         tester,
         const ValueKey('set_password_password_field'),
@@ -81,7 +86,7 @@ void main() {
       );
       proxy.stallNextAddressUtxosStreamAfterHeaders();
       await tapAppButton(tester, const ValueKey('set_password_submit_button'));
-      await finishDesktopAccountCustomisation(tester);
+
 
       await pumpUntil(
         tester,

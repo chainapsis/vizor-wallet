@@ -471,6 +471,8 @@ Widget buildSwapStatusCapturedFiatUseCase(BuildContext context) {
       receiveFiatText: r'$123.45',
       payAmountText: '2.0000 ZEC',
       receiveAmountText: '123.45 USDC',
+      payLabel: 'You paid',
+      receiveLabel: 'You received',
     ),
   );
 }
@@ -498,6 +500,8 @@ Widget buildSwapStatusCompletedUseCase(BuildContext context) {
       showTabs: false,
       steps: const [],
       details: _designCompletedDetails,
+      payLabel: 'You paid',
+      receiveLabel: 'You received',
     ),
   );
 }
@@ -1208,6 +1212,8 @@ class _SwapStatusPreview extends StatefulWidget {
     this.receiveFiatText = '\$110.24',
     this.payAmountText = '999,999.99 USDC',
     this.receiveAmountText = '0.251 ZEC',
+    this.payLabel = "You're paying",
+    this.receiveLabel = "You're receiving",
   });
 
   final String title;
@@ -1224,6 +1230,8 @@ class _SwapStatusPreview extends StatefulWidget {
   final String receiveFiatText;
   final String payAmountText;
   final String receiveAmountText;
+  final String payLabel;
+  final String receiveLabel;
 
   @override
   State<_SwapStatusPreview> createState() => _SwapStatusPreviewState();
@@ -1248,6 +1256,8 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       receiveAsset: widget.receiveAsset,
       payAmountText: widget.payAmountText,
       receiveAmountText: widget.receiveAmountText,
+      payLabel: widget.payLabel,
+      receiveLabel: widget.receiveLabel,
       payDetailText: widget.payFiatText,
       receiveDetailText: widget.receiveFiatText,
       statusLabel: widget.statusLabel,

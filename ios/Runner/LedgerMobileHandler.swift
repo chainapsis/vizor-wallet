@@ -811,7 +811,13 @@ final class LedgerMobileHandler: NSObject, FlutterStreamHandler {
         if let progressId { self.onSigningProgress?(progressId, phase) }
       }
       report("sending")
-      defer { signingReadyAt = Date().addingTimeInterval(4) }
+      // The silent account-key probe has no post-signing status screen. Do
+      // not make the PCZT exchange immediately after it wait four seconds.
+      let isSilentAccountProbe = commands.count == 1
+        && commands[0].cla == 0xe0 && commands[0].ins == 0x40 && commands[0].p1 == 0
+      defer {
+        if !isSilentAccountProbe { signingReadyAt = Date().addingTimeInterval(4) }
+      }
       var responses: [[UInt8]] = []
       for command in commands {
         try Task.checkCancellation()

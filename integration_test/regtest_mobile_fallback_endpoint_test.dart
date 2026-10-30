@@ -67,13 +67,14 @@ void main() {
         const ValueKey('mobile_import_birthday_continue'),
         timeout: const Duration(minutes: 1),
       );
-      await enterPasscode(tester, mobileE2ePasscode);
-      await enterPasscode(tester, mobileE2ePasscode);
+
       await tapAppButton(
         tester,
         const ValueKey('mobile_customise_account_continue'),
         timeout: const Duration(minutes: 2),
       );
+      await enterPasscode(tester, mobileE2ePasscode);
+      await enterPasscode(tester, mobileE2ePasscode);
       await tapWidget(
         tester,
         const ValueKey('mobile_biometrics_not_now'),

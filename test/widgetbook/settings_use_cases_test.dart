@@ -3,6 +3,8 @@ import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/viewing_key_content.dart';
 import 'package:zcash_wallet/src/features/settings/viewing_key_copy.dart';
 import 'package:zcash_wallet/widgetbook/screen_use_cases.dart';
 
@@ -128,10 +130,77 @@ void main() {
     );
 
     _expectNoCrash(errors);
-    expect(find.text('Viewing Key'), findsOneWidget);
-    expect(find.text('Full Viewing Key'), findsOneWidget);
+    expect(find.text('Viewing key'), findsOneWidget);
+    expect(find.text('Full viewing key'), findsOneWidget);
     expect(find.text(viewingKeyExplanation), findsOneWidget);
-    expect(find.text(viewingKeyPrivacyNotice), findsOneWidget);
+    expect(find.text(viewingKeyWarningTitle), findsOneWidget);
+  });
+
+  testWidgets('viewing key choice shows scope before revealing a key', (
+    tester,
+  ) async {
+    final errors = await _pumpSettingsUseCase(
+      tester,
+      buildSettingsViewingKeyChoiceUseCase,
+      viewport: const Size(1080, 720),
+    );
+    _expectNoCrash(errors);
+    expect(find.text(viewingKeyChoiceSharingWarning), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('viewing_key_choose_incoming')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('viewing_key_choose_full')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('settings_viewing_key_value')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('settings_viewing_key_copy_button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('viewing keys fit the minimum desktop window in both formats', (
+    tester,
+  ) async {
+    for (final type in ViewingKeyType.values) {
+      for (final format in ViewingKeyFormat.values) {
+        final errors = await _pumpSettingsUseCase(
+          tester,
+          (context) => buildSettingsViewingKeyRevealUseCase(
+            context,
+            type: type,
+            format: format,
+          ),
+          viewport: const Size(1080, 720),
+        );
+        _expectNoCrash(errors);
+        final outerScroll = find
+            .descendant(
+              of: find.byKey(AppPaneScrollScaffold.scrollViewKey),
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        final position = tester.state<ScrollableState>(outerScroll).position;
+        expect(
+          position.maxScrollExtent,
+          0,
+          reason: '${type.name} / ${format.name}',
+        );
+        final copy = tester.getRect(
+          find.byKey(const ValueKey('settings_viewing_key_copy_button')),
+        );
+        expect(
+          copy.bottom,
+          lessThanOrEqualTo(664),
+          reason: 'Leave room below copy at the minimum window height',
+        );
+      }
+    }
   });
 
   testWidgets('settings change password gate use case renders the gate', (
@@ -264,10 +333,11 @@ Future<List<FlutterErrorDetails>> _pumpSettingsUseCase(
   WidgetTester tester,
   WidgetBuilder builder, {
   Duration? settleDuration,
+  Size viewport = const Size(1512, 982),
 }) async {
   // Match the accounts widgetbook test viewport so the desktop shell
   // (full-window backdrop + sidebar) has room to lay out.
-  tester.view.physicalSize = const Size(1512, 982);
+  tester.view.physicalSize = viewport;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);

@@ -127,13 +127,36 @@ its outbox checkpoint or first broadcast. After that boundary the address may be
 known to the network and stays reserved. A reservation that did reach the
 network but was never mined still counts toward the ten.
 
+## Private queries
+
+Everything above describes public lookups. With Private queries on, the wallet
+sends lightwalletd no transparent address, outpoint or txid, and transparent
+funds come from the transparent PIR service instead (see
+`rust/src/wallet/sync_engine/enhancement/README.md`, "Transparent policy gate"
+and the recovery sections after it):
+
+- Private coverage starts at each account's birthday, not at height zero. No
+  height-zero first lookup is sent, so outputs received before the birthday are
+  not recovered privately.
+- The UTXO refresh, the deferred inactive-account refresh and the internal
+  address schedule above do not run. The `.receive.redb` completion maps are
+  neither read for a lookup nor advanced, and their recorded heights, like queued
+  history ranges, stay as they were for a later public pass.
+- Ledger accounts recover privately from their birthday like other accounts,
+  and their public discovery is withheld. A birthday later than the account's
+  first activity can omit earlier history; see
+  `docs/ledger/transparent-recovery.md`.
+- Turning Private queries off resumes public lookups for every transparent
+  address of every account on the next sync.
+
 ## Limits
 
 This searches addresses already generated within the wallet's supported gap
 windows. Newly generated children are eligible on a following sync. It does not
 reconstruct the use of fully spent historical addresses to cross arbitrary gaps.
 Software additional-account discovery still uses its existing birthday-bounded
-first-address history check. Returned funds to ephemeral addresses used by
+first-address history check, through the transparent PIR service under private
+queries. Returned funds to ephemeral addresses used by
 another wallet sharing the seed, arbitrary derivation paths, Sprout shielded
 funds, and Keystone device signing are outside this change.
 

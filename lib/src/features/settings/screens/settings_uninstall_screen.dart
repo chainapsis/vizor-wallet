@@ -494,7 +494,7 @@ class _UninstallBadge extends StatelessWidget {
             child: Transform.translate(
               offset: const Offset(-0.63, -3.13),
               child: Image.asset(
-                'assets/illustrations/uninstall_badge_helmet.png',
+                'assets/illustrations/desktop/uninstall_badge_helmet.webp',
                 width: 38.75,
                 height: 38.75,
                 fit: BoxFit.contain,

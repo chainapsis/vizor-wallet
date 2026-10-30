@@ -43,6 +43,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
     required this.onBack,
     this.onRetry,
     this.waitingForSync = false,
+    this.isLedger = false,
     this.mixedArtworks,
     this.onMixChanged,
     super.key,
@@ -50,6 +51,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
 
   final int count;
   final int maxCount;
+  final bool isLedger;
   final TextEditingController amountController;
   final TextEditingController messageController;
   final PaymentLinkCardArtwork artwork;
@@ -132,12 +134,31 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
   }
 
   /// Centred in the same display style as the other Gift Cards pages.
-  Widget _header(BuildContext context) => Text(
-    reviewing ? 'Review $count cards' : 'Create cards for a group',
-    textAlign: TextAlign.center,
-    style: AppTypography.headlineLarge.copyWith(
-      color: context.colors.text.accent,
-    ),
+  Widget _header(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        reviewing
+            ? 'Review $count cards'
+            : isLedger
+            ? 'Create multiple cards'
+            : 'Create cards for a group',
+        textAlign: TextAlign.center,
+        style: AppTypography.headlineLarge.copyWith(
+          color: context.colors.text.accent,
+        ),
+      ),
+      if (isLedger && !reviewing) ...[
+        const SizedBox(height: AppSpacing.s),
+        Text(
+          'Create up to $maxCount cards at once with Ledger.',
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyMedium.copyWith(
+            color: context.colors.text.secondary,
+          ),
+        ),
+      ],
+    ],
   );
 
   Widget _configure(BuildContext context) => LayoutBuilder(
@@ -303,14 +324,15 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
             maxCount: maxCount,
             onChanged: onCountChanged,
           ),
-          Wrap(
-            spacing: AppSpacing.xxs,
-            runSpacing: AppSpacing.xxs,
-            children: [
-              for (final preset in {10, 20, maxCount})
-                if (preset <= maxCount) _countPreset(preset),
-            ],
-          ),
+          if (!isLedger)
+            Wrap(
+              spacing: AppSpacing.xxs,
+              runSpacing: AppSpacing.xxs,
+              children: [
+                for (final preset in {10, 20, maxCount})
+                  if (preset <= maxCount) _countPreset(preset),
+              ],
+            ),
         ],
       ),
       const SizedBox(height: AppSpacing.sm),

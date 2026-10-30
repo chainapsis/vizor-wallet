@@ -4,9 +4,9 @@
 //! snapshot, and dispatches only explicitly public requests to lightwalletd.
 
 use tonic::transport::Channel;
-use zakura_pir_enhance::transport;
-use zakura_pir_enhance::wallet::{Acceptance, PreparedWork};
-use zakura_pir_enhance::{ClientResourceLimits, Manifest};
+use zakura_pir_client::enhance::transport;
+use zakura_pir_client::enhance::wallet::{Acceptance, PreparedWork};
+use zakura_pir_client::enhance::{ClientResourceLimits, Manifest};
 use zcash_client_backend::{
     data_api::{
         enhance_pir::{
@@ -23,7 +23,9 @@ use crate::wallet::{db::with_wallet_db_write_lock, network::WalletNetwork};
 
 use super::{
     super::{
-        super::{block_source::MemoryBlockSource, SyncError, WalletDatabase},
+        super::{
+            block_source::MemoryBlockSource, SyncError, TransparentLookupGate, WalletDatabase,
+        },
         transport::await_request_with_cancel,
     },
     private::{
@@ -33,8 +35,6 @@ use super::{
     public::PublicPayloadExecutor,
 };
 
-/// Servicing one route can create work on the other.
-const MAX_ROUTED_PASSES: usize = 3;
 pub(super) const MAX_LOGICAL_ROWS: u64 = 65_536;
 
 /// One routed enhancement snapshot, split by transport.
@@ -60,6 +60,23 @@ impl RoutedWork {
         PreparedWork::new(self.private.iter().copied())
     }
 
+    /// The work this drain may ask. Private work that failed on content, or
+    /// that a reply created, at the current chain tip at `db_path` is left
+    /// out: it waits for the next block. With a `snapshot`, so is private
+    /// work that did not exist when the drain point began: whether more
+    /// work follows never depends on a reply.
+    pub(super) fn askable(
+        mut self,
+        db_path: &str,
+        snapshot: Option<&super::super::content_failures::PrivateWork>,
+    ) -> Self {
+        self.private.retain(|work| {
+            super::super::content_failures::may_ask(db_path, work)
+                && snapshot.is_none_or(|snapshot| snapshot.contains(work))
+        });
+        self
+    }
+
     fn is_empty(&self) -> bool {
         self.public.is_empty() && self.private.is_empty()
     }
@@ -78,8 +95,17 @@ pub(in crate::wallet::sync_engine) trait RecoveryWallet {
     fn apply(
         &mut self,
         request: EnhancePirRequest,
-        record: &zakura_pir_enhance::EnhanceRecord,
+        record: &zakura_pir_client::enhance::EnhanceRecord,
     ) -> Result<EnhancePirStoreResult, EnhancePirRunError>;
+    /// Counts one content failure for `requests`, every request of one
+    /// transaction in one row whose reply arrived but did not decode. The
+    /// wallet stops querying a position after three such failures or
+    /// rejections in the open wallet session. Never called for a request
+    /// failure (an HTTP refusal, a transport error, a timeout).
+    fn record_unreadable(
+        &mut self,
+        requests: &[EnhancePirRequest],
+    ) -> Result<(), EnhancePirRunError>;
 }
 
 impl RecoveryWallet for WalletDatabase {
@@ -94,7 +120,7 @@ impl RecoveryWallet for WalletDatabase {
         network: WalletNetwork,
         manifest: &Manifest,
     ) -> Result<Acceptance, EnhancePirRunError> {
-        Ok(zakura_pir_enhance::wallet::acceptance(
+        Ok(zakura_pir_client::enhance::wallet::acceptance(
             self,
             manifest,
             &network,
@@ -105,10 +131,19 @@ impl RecoveryWallet for WalletDatabase {
     fn apply(
         &mut self,
         request: EnhancePirRequest,
-        record: &zakura_pir_enhance::EnhanceRecord,
+        record: &zakura_pir_client::enhance::EnhanceRecord,
     ) -> Result<EnhancePirStoreResult, EnhancePirRunError> {
         Ok(with_wallet_db_write_lock("enhance_pir.apply", || {
             self.apply_ironwood_enhance_record(request, record)
+        })
+        .map_err(|e| SyncError::db(e.to_string()))?)
+    }
+    fn record_unreadable(
+        &mut self,
+        requests: &[EnhancePirRequest],
+    ) -> Result<(), EnhancePirRunError> {
+        Ok(with_wallet_db_write_lock("enhance_pir.unreadable", || {
+            self.record_ironwood_enhance_unreadable(requests)
         })
         .map_err(|e| SyncError::db(e.to_string()))?)
     }
@@ -141,6 +176,7 @@ pub(in crate::wallet::sync_engine) struct ProductionEnhancementEffects<'a> {
     db_path: &'a str,
     lwd: &'a mut CompactTxStreamerClient<Channel>,
     cached: Option<&'a MemoryBlockSource>,
+    gate: TransparentLookupGate,
     public: PublicPayloadExecutor,
 }
 
@@ -150,12 +186,14 @@ impl<'a> ProductionEnhancementEffects<'a> {
         db_path: &'a str,
         lwd: &'a mut CompactTxStreamerClient<Channel>,
         cached: Option<&'a MemoryBlockSource>,
+        gate: TransparentLookupGate,
     ) -> Self {
         Self {
             network,
             db_path,
             lwd,
             cached,
+            gate,
             public: PublicPayloadExecutor::default(),
         }
     }
@@ -185,8 +223,12 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
             // Near the known tip the window is truncated there.
             let tip = zcash_client_backend::data_api::WalletRead::chain_height(&*db)
                 .map_err(|e| SyncError::db(format!("chain_height: {e}")))?;
-            let (start, end) =
-                rediscovery_cover_range(request.height, tip, random_rediscovery_offset());
+            let (start, end) = rediscovery_cover_range(
+                self.network,
+                request.height,
+                tip,
+                random_rediscovery_offset,
+            );
             downloaded = await_request_with_cancel(
                 crate::wallet::sync_engine::lwd::download_blocks(
                     self.lwd,
@@ -221,6 +263,10 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
         requests: &[PublicTransactionEnhancementRequest],
         should_exit: &impl Fn() -> bool,
     ) {
+        // Durable routing already withholds public work under a private policy;
+        // the gate re-checks the captured generation before each request so a
+        // transition made by another connection cannot release work routed
+        // before it.
         self.public
             .run(
                 self.lwd,
@@ -228,6 +274,7 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
                 self.db_path,
                 self.network,
                 requests,
+                &self.gate,
                 should_exit,
             )
             .await;
@@ -235,12 +282,14 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
 }
 
 impl RoutedPayloadEnhancement {
-    /// Services one routed snapshot in bounded passes: rediscovery, private
-    /// queries, a reread, then routed public payloads. Passes repeat only while
-    /// the durable snapshot changes. Private failures defer PIR for this sync
-    /// session and never dispatch public work; a local database failure is
-    /// returned instead of deferred. Only a routed public request
-    /// reaches lightwalletd. Cancellation stops before the next dispatch.
+    /// Services one routed snapshot in one pass: rediscovery, private
+    /// queries, a reread, then routed public payloads. Work the pass unlocks
+    /// (a record that moves a transaction to the other route aside) waits for
+    /// the next drain point: whether another private round runs now must not
+    /// depend on what the replies said. Private failures defer PIR for this
+    /// sync session and never dispatch public work; a local database failure
+    /// is returned instead of deferred. Only a routed public request reaches
+    /// lightwalletd. Cancellation stops before the next dispatch.
     pub(in crate::wallet::sync_engine) async fn run<W: RecoveryWallet, E: EnhancementEffects<W>>(
         &mut self,
         db: &mut W,
@@ -248,41 +297,37 @@ impl RoutedPayloadEnhancement {
         effects: &mut E,
         should_exit: &impl Fn() -> bool,
     ) -> Result<(), EnhancePirRunError> {
-        let mut previous = None;
-        for _ in 0..MAX_ROUTED_PASSES {
-            if should_exit() {
-                return Err(EnhancePirRunError::ExitRequested);
-            }
-            let work = db.work()?;
-            if work.is_empty() || previous.as_ref() == Some(&work) {
-                break;
-            }
-            if self.private_work_enabled() && !work.private.is_empty() {
-                match self
-                    .run_private(db, route, effects, &work, should_exit)
-                    .await
-                {
-                    Ok(()) => {}
-                    Err(EnhancePirRunError::ExitRequested) => {
-                        return Err(EnhancePirRunError::ExitRequested)
-                    }
-                    // A local database failure is not a service outage: the
-                    // sync must fail rather than report success with recovered
-                    // details left unpersisted.
-                    Err(error @ EnhancePirRunError::Failed(SyncError::Db(_))) => return Err(error),
-                    Err(error) => self.defer_after(error),
+        if should_exit() {
+            return Err(EnhancePirRunError::ExitRequested);
+        }
+        let work = db.work()?.askable(&self.db_path, self.snapshot.as_ref());
+        if work.is_empty() {
+            return Ok(());
+        }
+        if self.private_work_enabled() && !work.private.is_empty() {
+            match self
+                .run_private(db, route, effects, &work, should_exit)
+                .await
+            {
+                Ok(()) => {}
+                Err(EnhancePirRunError::ExitRequested) => {
+                    return Err(EnhancePirRunError::ExitRequested)
                 }
+                // A local database failure is not a service outage: the
+                // sync must fail rather than report success with recovered
+                // details left unpersisted.
+                Err(error @ EnhancePirRunError::Failed(SyncError::Db(_))) => return Err(error),
+                Err(error) => self.defer_after(error),
             }
-            // Applying a record can atomically move a transaction to LWD, and
-            // rediscovery can resolve a mixed shape; dispatch that in this pass.
-            let routed = db.work()?;
-            if should_exit() {
-                return Err(EnhancePirRunError::ExitRequested);
-            }
-            if !routed.public.is_empty() {
-                effects.public(db, &routed.public, should_exit).await;
-            }
-            previous = Some(work);
+        }
+        // Applying a record can atomically move a transaction to LWD, and
+        // rediscovery can resolve a mixed shape; dispatch that in this pass.
+        let routed = db.work()?;
+        if should_exit() {
+            return Err(EnhancePirRunError::ExitRequested);
+        }
+        if !routed.public.is_empty() {
+            effects.public(db, &routed.public, should_exit).await;
         }
         if should_exit() {
             return Err(EnhancePirRunError::ExitRequested);

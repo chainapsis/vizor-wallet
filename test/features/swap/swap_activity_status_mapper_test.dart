@@ -6,6 +6,44 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
 
 void main() {
+  test('labels the Pay amount by outcome', () {
+    expect(
+      payActivityStatusAmountLabel(PayActivityStatusPhase.inProgress),
+      "You're paying",
+    );
+    expect(
+      payActivityStatusAmountLabel(PayActivityStatusPhase.completed),
+      'You paid',
+    );
+    for (final phase in [
+      PayActivityStatusPhase.failed,
+      PayActivityStatusPhase.refunded,
+    ]) {
+      expect(payActivityStatusAmountLabel(phase), 'Amount', reason: phase.name);
+    }
+  });
+
+  test('labels swap headers by outcome', () {
+    for (final (status, pay, receive) in [
+      (SwapIntentStatus.processing, "You're paying", "You're receiving"),
+      (SwapIntentStatus.complete, 'You paid', 'You received'),
+      // Unsuccessful swaps must not imply delivery.
+      (SwapIntentStatus.failed, 'Deposit amount', 'Expected to receive'),
+      (SwapIntentStatus.refunded, 'Deposit amount', 'Expected to receive'),
+    ]) {
+      final presentation = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+        ),
+      );
+      expect(presentation.payLabel, pay, reason: status.name);
+      expect(presentation.receiveLabel, receive, reason: status.name);
+    }
+  });
+
   test('maps in-progress status page data from the saved swap intent', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(indicativeExternalPerZec: {SwapAsset.usdc: 70}),
@@ -442,6 +480,44 @@ void main() {
       isNot(contains('You paid')),
     );
   });
+
+  test(
+    'partial Pay needs provider deposit evidence before showing paid copy',
+    () {
+      for (final status in [
+        SwapIntentStatus.awaitingDeposit,
+        SwapIntentStatus.expired,
+        SwapIntentStatus.processing,
+      ]) {
+        final intent = _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          depositTxHash: 'accepted-parent-rejected-deposit',
+          payMode: true,
+        ).copyWith(broadcastStatus: 'partial_broadcast');
+        // Account deletion remains conservative about the accepted parent.
+        expect(intent.hasConfirmedDepositEvidence, isTrue);
+        final presentation = swapActivityStatusPresentationForIntent(
+          _state(),
+          intent,
+        );
+        final paid = status == SwapIntentStatus.processing;
+        expect(presentation.payLabel, paid ? 'You paid' : 'You pay');
+        expect(
+          presentation.details.map((row) => row.label),
+          paid ? contains('You paid') : isNot(contains('You paid')),
+        );
+        final observed = intent.copyWith(
+          originChainTxHash: 'provider-observed-deposit',
+        );
+        expect(
+          swapActivityStatusPresentationForIntent(_state(), observed).payLabel,
+          'You paid',
+        );
+      }
+    },
+  );
 
   test('failed Pay copy requires provider-observed deposit evidence', () {
     SwapActivityStatusPresentation presentation({

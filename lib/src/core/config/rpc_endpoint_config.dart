@@ -86,18 +86,6 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     url: 'https://eu.zec.stardust.rest:443',
   ),
   const RpcEndpointPreset(
-    id: 'eu2-zec-stardust',
-    region: 'Europe',
-    label: 'Stardust Europe 2',
-    url: 'https://eu2.zec.stardust.rest:443',
-  ),
-  const RpcEndpointPreset(
-    id: 'jp-zec-stardust',
-    region: 'Asia Pacific',
-    label: 'Stardust Japan',
-    url: 'https://jp.zec.stardust.rest:443',
-  ),
-  const RpcEndpointPreset(
     id: 'zec-rocks',
     region: 'Global',
     label: 'Zec Rocks',
@@ -120,6 +108,14 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Europe',
     label: 'Zec Rocks Europe',
     url: 'https://eu.zec.rocks:443',
+  ),
+  // Failover follows list order. Keep this third Stardust host after the
+  // Global, Americas, and Europe Zec Rocks hosts.
+  const RpcEndpointPreset(
+    id: 'kr-zec-stardust',
+    region: 'Asia Pacific',
+    label: 'Stardust Korea',
+    url: 'https://kr.zec.stardust.rest:443',
   ),
   const RpcEndpointPreset(
     id: 'ap-zec-rocks',
@@ -276,6 +272,20 @@ RpcEndpointPreset? _selectedFallbackPrimaryPreset(RpcEndpointConfig primary) {
   return explicitRpcEndpointPresetFor(primary);
 }
 
+// Hosts dropped from the mainnet preset list because they no longer answer.
+// A saved selection that still names one resolves to that network's default.
+// Leaving the old preset id to fall through would pin the wallet to the dead
+// host as a custom endpoint, and custom endpoints do not fail over.
+const _kRetiredMainnetRpcEndpointPresetIds = <String>{
+  'eu2-zec-stardust',
+  'jp-zec-stardust',
+};
+
+const _kRetiredMainnetRpcEndpointUrls = <String>{
+  'https://eu2.zec.stardust.rest:443',
+  'https://jp.zec.stardust.rest:443',
+};
+
 RpcEndpointConfig resolveStoredRpcEndpointConfig({
   required String networkName,
   required String? storedUrl,
@@ -298,6 +308,9 @@ RpcEndpointConfig resolveStoredRpcEndpointConfig({
         presetId: preset.id,
       );
     }
+    if (_kRetiredMainnetRpcEndpointPresetIds.contains(presetId)) {
+      return defaultRpcEndpointConfig(network.name);
+    }
   }
 
   final url = storedUrl?.trim();
@@ -305,9 +318,14 @@ RpcEndpointConfig resolveStoredRpcEndpointConfig({
     return defaultRpcEndpointConfig(network.name);
   }
 
+  final normalized = normalizeRpcEndpointUrl(url, allowDefaultPort: true);
+  if (_kRetiredMainnetRpcEndpointUrls.contains(normalized)) {
+    return defaultRpcEndpointConfig(network.name);
+  }
+
   return RpcEndpointConfig(
     networkName: network.name,
-    lightwalletdUrl: normalizeRpcEndpointUrl(url, allowDefaultPort: true),
+    lightwalletdUrl: normalized,
     presetId: kCustomRpcEndpointPresetId,
   );
 }

@@ -6,6 +6,7 @@ use std::{
 
 use rusqlite::{params, OptionalExtension};
 
+use crate::wallet::failure::{FailureCode, WalletFailure};
 use crate::wallet::sync::proposal_locks;
 
 use crate::wallet::{
@@ -26,6 +27,7 @@ pub(crate) struct SignedOperationMetadata {
     pub kind: String,
     pub external_ref: Option<String>,
     pub expiry_height: Option<u32>,
+    pub shielded_zatoshi: Option<u64>,
     pub state: String,
     pub txid: Option<String>,
     pub status: Option<String>,
@@ -116,7 +118,7 @@ pub(crate) fn checkpoint(
     external_ref: Option<&str>,
     proof_pczt: &[u8],
     signature_pczt: &[u8],
-) -> Result<SignedOperationMetadata, String> {
+) -> Result<SignedOperationMetadata, WalletFailure> {
     checkpoint_batch(
         db_path,
         network,
@@ -138,7 +140,7 @@ pub(crate) fn checkpoint_batch(
     external_ref: Option<&str>,
     proof_pczts: &[Vec<u8>],
     signature_pczts: &[Vec<u8>],
-) -> Result<SignedOperationMetadata, String> {
+) -> Result<SignedOperationMetadata, WalletFailure> {
     validate_identifier("operation ID", operation_id)?;
     validate_identifier("account UUID", account_uuid)?;
     let operation_kind = OperationKind::parse(kind)?;
@@ -209,9 +211,15 @@ pub(crate) fn checkpoint_batch(
                     |row| row.get(0),
                 )
                 .map_err(|e| format!("Verify repeated Ledger checkpoint: {e}"))?;
+            // Another signed transaction already holds this operation ID.
+            // Saving these signatures again can never succeed, so the caller
+            // must stop offering retries rather than loop on the same refusal.
             if !exact_match {
-                return Err(format!(
-                    "Ledger operation {operation_id} is already checkpointed with different data"
+                return Err(WalletFailure::coded(
+                    FailureCode::LedgerOperationTerminal,
+                    format!(
+                        "Ledger operation {operation_id} is already checkpointed with different data"
+                    ),
                 ));
             }
         }
@@ -234,6 +242,86 @@ pub(crate) fn checkpoint_batch(
     })
 }
 
+/// Upgrade ownerless shielding checkpoints before the first balance snapshot.
+/// Wallet locks and outbox attribution share a transaction; no signed bytes change.
+pub(crate) fn recover_shield_reservations(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    use voting_crypto_deps::rand::rngs::OsRng;
+    use zcash_client_backend::{
+        data_api::OutputLockStore,
+        wallet::{LockOwner, OutputRef},
+    };
+    use zcash_client_sqlite::util::SystemClock;
+    use zcash_client_sqlite::{SqlTransaction, WalletDb};
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::{consensus::BlockHeight, PoolType};
+    with_wallet_db_write_lock("ledger.recover_shield_reservations", || {
+        let mut conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&conn)?;
+        proposal_locks::ensure_schema(&conn)?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let rows = {
+            let mut stmt = tx.prepare(&format!("SELECT operation_id, proof_pczt, expiry_height FROM {TABLE} op
+                WHERE network = ?1 AND kind = 'shield'
+                AND (state = 'signed_pending_broadcast' OR
+                    (state = 'result_pending_ack' AND status NOT IN ('broadcasted', 'expired')))
+                AND NOT EXISTS (SELECT 1 FROM vizor_send_proposal_locks l WHERE l.operation_id = op.operation_id)"))
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([network_name(network)], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, Option<u32>>(2)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| e.to_string())?
+        };
+        for (operation_id, bytes, expiry) in rows {
+            let mut inputs = std::collections::BTreeSet::new();
+            let mut owner = None;
+            for bytes in decode_pczt_batch(&bytes)? {
+                if let Some(bound) = proposal_locks::pczt_owner(&bytes)? {
+                    if owner.is_some_and(|old| old != bound) {
+                        return Err("Shield checkpoint has different reservation owners".into());
+                    }
+                    owner = Some(bound);
+                }
+                let pczt = pczt::Pczt::parse(&bytes)
+                    .map_err(|e| format!("Recover shield checkpoint: {e:?}"))?;
+                for input in pczt.transparent().inputs() {
+                    inputs.insert(OutputRef::new(
+                        TxId::from_bytes(*input.prevout_txid()),
+                        PoolType::TRANSPARENT,
+                        *input.prevout_index(),
+                    ));
+                }
+            }
+            let inputs = inputs.into_iter().collect::<Vec<_>>();
+            if inputs.is_empty() {
+                return Err("Shield checkpoint has no transparent inputs".into());
+            }
+            let owner = owner.unwrap_or_else(|| LockOwner::random(&mut OsRng));
+            let expiry = BlockHeight::from_u32(expiry.filter(|h| *h > 0).unwrap_or(u32::MAX));
+            {
+                let mut rng = OsRng;
+                let clock = SystemClock;
+                let mut db =
+                    WalletDb::from_connection(SqlTransaction::new(&tx), &network, &clock, &mut rng);
+                db.lock_outputs(&inputs, owner, expiry)
+                    .map_err(|e| format!("Restore shield checkpoint inputs: {e:?}"))?;
+            }
+            proposal_locks::restore_signed_owner(&tx, owner, &inputs, expiry, &operation_id)?;
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit shield reservation recovery: {e}"))
+    })
+}
+
 pub(crate) fn list(
     db_path: &str,
     network: WalletNetwork,
@@ -248,7 +336,8 @@ pub(crate) fn list(
         ensure_table(&conn)?;
         let sql = format!(
             "SELECT operation_id, account_uuid, kind, external_ref, expiry_height,
-                    state, txid, status, message, created_at_ms, updated_at_ms
+                    state, txid, status, message, created_at_ms, updated_at_ms,
+                    CASE WHEN kind = 'shield' THEN proof_pczt END
              FROM {TABLE}
              WHERE network = ?1 AND (?2 IS NULL OR account_uuid = ?2)
              ORDER BY created_at_ms, operation_id"
@@ -271,7 +360,7 @@ pub(crate) async fn broadcast(
     operation_id: &str,
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
-) -> Result<BroadcastResult, String> {
+) -> Result<BroadcastResult, WalletFailure> {
     validate_identifier("operation ID", operation_id)?;
     let _broadcast_guard = BroadcastGuard::acquire(db_path, network, operation_id)?;
     let stored = load_for_broadcast(db_path, network, operation_id)?;
@@ -295,11 +384,13 @@ pub(crate) async fn broadcast(
             &result.txids,
             &result.status,
             result.message.as_deref(),
-        ),
+        )
+        .map_err(WalletFailure::from),
         Err(error) => {
             if record_broadcast_failure(db_path, network, operation_id, &error)? {
-                Err(format!(
-                    "Ledger signed operation cannot be retried: {error}"
+                Err(WalletFailure::coded(
+                    FailureCode::LedgerOperationTerminal,
+                    format!("Ledger signed operation cannot be retried: {error}"),
                 ))
             } else {
                 Err(error)
@@ -343,27 +434,54 @@ pub(crate) fn acknowledge(
     operation_id: &str,
 ) -> Result<(), String> {
     validate_identifier("operation ID", operation_id)?;
-    let network = network_name(network);
-    with_wallet_db_write_lock("ledger.operations.acknowledge", || {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
-        ensure_table(&conn)?;
-        let deleted = conn
-            .execute(
+    let release = with_wallet_db_write_lock("ledger.operations.acknowledge", || {
+        let mut connection = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_table(&connection)?;
+        proposal_locks::ensure_schema(&connection)?;
+        let conn = connection.transaction().map_err(|e| e.to_string())?;
+        let (status, message): (Option<String>, Option<String>) = conn
+            .query_row(
                 &format!(
                     "DELETE FROM {TABLE}
-                     WHERE network = ?1 AND operation_id = ?2 AND state = ?3"
+                     WHERE network = ?1 AND operation_id = ?2 AND state = ?3
+                     RETURNING status, message"
                 ),
-                params![network, operation_id, STATE_RESULT_PENDING_ACK],
+                params![
+                    network_name(network),
+                    operation_id,
+                    STATE_RESULT_PENDING_ACK
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
-            .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?;
-        if deleted == 1 {
-            Ok(())
-        } else {
-            Err(format!(
+            .optional()
+            .map_err(|e| format!("Acknowledge Ledger operation: {e}"))?
+            .ok_or_else(|| {
+                format!(
                 "Ledger operation {operation_id} has no broadcast result awaiting acknowledgment"
-            ))
+            )
+            })?;
+        // Partial results may still report failed wallet storage. Caller metadata
+        // alone cannot protect inputs while sync recovers an unrecorded spend.
+        // This diagnostic is emitted by store_and_broadcast_pczts_inner when
+        // both wallet-storage paths fail, regardless of the broadcast count.
+        let storage_failed = message
+            .as_deref()
+            .is_some_and(|message| message.contains("local storage failed"));
+        let release = status.as_deref() == Some("partial_broadcast") && !storage_failed;
+        if release {
+            proposal_locks::release_operation(&conn, operation_id)?;
         }
-    })
+        conn.commit()
+            .map_err(|e| format!("Commit Ledger acknowledgment: {e}"))?;
+        Ok::<_, String>(release)
+    })?;
+    if release {
+        // A durable release remains recoverable if wallet cleanup fails.
+        if let Err(error) = proposal_locks::recover_before_balance(db_path, network) {
+            log::warn!("Ledger reservation cleanup pending after acknowledgment: {error}");
+        }
+    }
+    Ok(())
 }
 
 fn load_for_broadcast(
@@ -471,8 +589,9 @@ fn record_broadcast_failure(
     db_path: &str,
     network: WalletNetwork,
     operation_id: &str,
-    message: &str,
+    failure: &WalletFailure,
 ) -> Result<bool, String> {
+    let message = failure.message.as_str();
     let network = network_name(network);
     let now = now_ms()?;
     with_wallet_db_write_lock("ledger.operations.record_failure", || {
@@ -480,7 +599,7 @@ fn record_broadcast_failure(
         ensure_table(&connection)?;
         proposal_locks::ensure_schema(&connection)?;
         let conn = connection.transaction().map_err(|e| e.to_string())?;
-        if is_terminal_broadcast_failure(message) {
+        if is_terminal_broadcast_failure(failure) {
             conn.execute(
                 &format!(
                     "DELETE FROM {TABLE}
@@ -514,8 +633,11 @@ fn record_broadcast_failure(
     })
 }
 
-fn is_terminal_broadcast_failure(message: &str) -> bool {
-    let normalized = message.to_ascii_lowercase();
+fn is_terminal_broadcast_failure(failure: &WalletFailure) -> bool {
+    if failure.code == Some(FailureCode::AuthorityRefused) {
+        return true;
+    }
+    let normalized = failure.message.to_ascii_lowercase();
     normalized.contains("expired before broadcast") || normalized.contains("broadcast rejected")
 }
 
@@ -677,7 +799,8 @@ fn load_metadata(
     conn.query_row(
         &format!(
             "SELECT operation_id, account_uuid, kind, external_ref, expiry_height,
-                    state, txid, status, message, created_at_ms, updated_at_ms
+                    state, txid, status, message, created_at_ms, updated_at_ms,
+                    CASE WHEN kind = 'shield' THEN proof_pczt END
              FROM {TABLE} WHERE network = ?1 AND operation_id = ?2"
         ),
         params![network, operation_id],
@@ -689,6 +812,12 @@ fn load_metadata(
 
 fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperationMetadata> {
     let expiry_height: Option<i64> = row.get(4)?;
+    // Reconstruct display metadata from the durable payload, including old
+    // checkpoints. A malformed amount must not hide an operation from recovery.
+    let proof_pczt: Option<Vec<u8>> = row.get(11)?;
+    let shielded_zatoshi = proof_pczt
+        .as_deref()
+        .and_then(|bytes| checkpoint_shielded_zatoshi(bytes).ok());
     Ok(SignedOperationMetadata {
         operation_id: row.get(0)?,
         account_uuid: row.get(1)?,
@@ -701,6 +830,7 @@ fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperatio
                 Box::new(e),
             )
         })?,
+        shielded_zatoshi,
         state: row.get(5)?,
         txid: row.get(6)?,
         status: row.get(7)?,
@@ -708,6 +838,53 @@ fn metadata_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignedOperatio
         created_at_ms: row.get(9)?,
         updated_at_ms: row.get(10)?,
     })
+}
+
+/// A shielding transaction moves transparent inputs into shielded pools. The
+/// bundles' public value balances are spends minus outputs, so their negation
+/// gives the shielded amount after fees, even when individual values are redacted.
+fn checkpoint_shielded_zatoshi(encoded: &[u8]) -> Result<u64, String> {
+    decode_pczt_batch(encoded)?
+        .iter()
+        .try_fold(0u64, |total, bytes| {
+            let pczt = pczt::Pczt::parse(bytes)
+                .map_err(|e| format!("Parse shielding checkpoint: {e:?}"))?;
+            if pczt.transparent().inputs().is_empty()
+                || !pczt.transparent().outputs().is_empty()
+                || !pczt.sapling().spends().is_empty()
+            {
+                return Err("Checkpoint is not a transparent shielding transaction".into());
+            }
+            let amount = shielded_value_from_balances(
+                *pczt.sapling().value_sum(),
+                *pczt.orchard().value_sum(),
+                *pczt.ironwood().value_sum(),
+            )?;
+            total
+                .checked_add(amount)
+                .ok_or_else(|| "Shielding checkpoint total overflow".into())
+        })
+}
+
+fn shielded_value_from_balances(
+    sapling: i128,
+    orchard: (u64, bool),
+    ironwood: (u64, bool),
+) -> Result<u64, String> {
+    let signed_value = |(magnitude, negative): (u64, bool)| {
+        if negative {
+            -i128::from(magnitude)
+        } else {
+            i128::from(magnitude)
+        }
+    };
+    sapling
+        .checked_add(signed_value(orchard))
+        .and_then(|value| value.checked_add(signed_value(ironwood)))
+        .and_then(i128::checked_neg)
+        .and_then(|value| u64::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "Shielding checkpoint has no valid positive shielded value".into())
 }
 
 fn validate_identifier(label: &str, value: &str) -> Result<(), String> {
@@ -790,9 +967,17 @@ mod tests {
     }
 
     fn signed_pczt(target_height: u32) -> (Vec<u8>, Vec<u8>, u32) {
-        let sk = secp256k1::SecretKey::from_slice(&[7; 32]).unwrap();
-        let secp = secp256k1::Secp256k1::new();
-        let pubkey = sk.public_key(&secp);
+        let sk = secp256k1::SecretKey::from_secret_bytes([7; 32]).unwrap();
+        signed_pczt_with_input(target_height, sk, OutPoint::new([1; 32], 0), 1_000_000)
+    }
+
+    pub(super) fn signed_pczt_with_input(
+        target_height: u32,
+        sk: secp256k1::SecretKey,
+        prevout: OutPoint,
+        value: u64,
+    ) -> (Vec<u8>, Vec<u8>, u32) {
+        let pubkey = sk.public_key();
         let pubkey_bytes = pubkey.serialize();
         let address = TransparentAddress::from_pubkey(&pubkey);
 
@@ -810,12 +995,12 @@ mod tests {
         builder
             .add_transparent_p2pkh_input(
                 pubkey,
-                OutPoint::new([1; 32], 0),
-                TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+                prevout,
+                TxOut::new(Zatoshis::from_u64(value).unwrap(), address.script().into()),
             )
             .unwrap();
         builder
-            .add_transparent_output(&address, Zatoshis::const_from_u64(990_000))
+            .add_transparent_output(&address, Zatoshis::from_u64(value - 10_000).unwrap())
             .unwrap();
         let PcztResult { pczt_parts, .. } = builder
             .build_for_pczt(OsRng, &zip317::FeeRule::standard())
@@ -844,7 +1029,7 @@ mod tests {
             .unwrap()
             .transparent_sighash(0)
             .unwrap();
-        let signature = secp.sign_ecdsa(&secp256k1::Message::from_digest(sighash), &sk);
+        let signature = secp256k1::ecdsa::sign(secp256k1::Message::from_digest(sighash), &sk);
         let mut ledger_der = signature.serialize_der().to_vec();
         ledger_der[0] |= 1;
         let signature_bytes = super::super::apply_signatures(
@@ -879,6 +1064,131 @@ mod tests {
             &signature,
         )
         .unwrap()
+    }
+
+    fn shielding_pczt(amount: u64) -> Vec<u8> {
+        #[derive(Clone, Copy, Debug)]
+        struct ShieldNetwork;
+        impl Parameters for ShieldNetwork {
+            fn network_type(&self) -> NetworkType {
+                NetworkType::Test
+            }
+            fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+                let _ = nu;
+                Some(BlockHeight::from_u32(1))
+            }
+        }
+        let fvk = orchard::keys::FullViewingKey::from(
+            &orchard::keys::SpendingKey::from_bytes([0x43; 32]).unwrap(),
+        );
+        let pubkey = secp256k1::SecretKey::from_secret_bytes([7; 32])
+            .unwrap()
+            .public_key();
+        let address = TransparentAddress::from_pubkey(&pubkey);
+        let mut builder = Builder::new(
+            ShieldNetwork,
+            100.into(),
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: None,
+                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
+        );
+        let recipient = fvk.address_at(0u32, orchard::keys::Scope::Internal);
+        builder
+            .add_ironwood_output::<zip317::FeeError>(
+                None,
+                recipient,
+                Zatoshis::from_u64(amount).unwrap(),
+                zcash_protocol::memo::MemoBytes::empty(),
+            )
+            .unwrap();
+        let fee = 15_000;
+        builder
+            .add_transparent_p2pkh_input(
+                pubkey,
+                OutPoint::new([1; 32], 0),
+                TxOut::new(
+                    Zatoshis::from_u64(amount + fee).unwrap(),
+                    address.script().into(),
+                ),
+            )
+            .unwrap();
+        let PcztResult { pczt_parts, .. } = builder
+            .build_for_pczt(OsRng, &zip317::FeeRule::standard())
+            .unwrap();
+        Creator::build_from_parts(pczt_parts)
+            .unwrap()
+            .serialize()
+            .unwrap()
+    }
+
+    #[test]
+    fn recovers_shielded_amount_from_pczt_and_batch_without_fees() {
+        let orchard = shielding_pczt(990_000);
+        let ironwood = shielding_pczt(1_970_000);
+        for (pczt, expected) in [(&orchard, 990_000), (&ironwood, 1_970_000)] {
+            assert_eq!(
+                checkpoint_shielded_zatoshi(&encode_pczt_batch(&[pczt.clone()]).unwrap()).unwrap(),
+                expected
+            );
+        }
+        assert_eq!(
+            checkpoint_shielded_zatoshi(&encode_pczt_batch(&[orchard, ironwood]).unwrap()).unwrap(),
+            2_960_000
+        );
+        assert!(checkpoint_shielded_zatoshi(b"invalid").is_err());
+        assert!(
+            checkpoint_shielded_zatoshi(&encode_pczt_batch(&[signed_pczt(100).0]).unwrap())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn shielding_balances_cover_legacy_orchard_and_ironwood_and_reject_invalid_totals() {
+        assert_eq!(
+            shielded_value_from_balances(0, (990_000, true), (0, false)).unwrap(),
+            990_000
+        );
+        assert_eq!(
+            shielded_value_from_balances(0, (0, false), (1_970_000, true)).unwrap(),
+            1_970_000
+        );
+        assert_eq!(
+            shielded_value_from_balances(0, (990_000, true), (1_970_000, true)).unwrap(),
+            2_960_000
+        );
+        assert!(shielded_value_from_balances(0, (0, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(0, (1, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(i128::MIN, (0, false), (0, false)).is_err());
+        assert!(shielded_value_from_balances(0, (u64::MAX, true), (1, true)).is_err());
+    }
+
+    #[test]
+    fn existing_shield_checkpoint_gets_amount_without_schema_change() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_str().unwrap();
+        checkpoint_test_operation(path, "old-shield", "shield");
+        let conn = rusqlite::Connection::open(path).unwrap();
+        let proof = encode_pczt_batch(&[shielding_pczt(990_000)]).unwrap();
+        conn.execute(
+            &format!("UPDATE {TABLE} SET proof_pczt = ?1 WHERE operation_id = 'old-shield'"),
+            [&proof],
+        )
+        .unwrap();
+        let recovered = list(path, WalletNetwork::Main, Some("account-1")).unwrap();
+        assert_eq!(recovered[0].shielded_zatoshi, Some(990_000));
+        // Unreadable display metadata does not suppress durable recovery work.
+        conn.execute(
+            &format!("UPDATE {TABLE} SET proof_pczt = x'00' WHERE operation_id = 'old-shield'"),
+            [],
+        )
+        .unwrap();
+        let recovered = list(path, WalletNetwork::Main, None).unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].shielded_zatoshi, None);
     }
 
     #[test]
@@ -1024,7 +1334,8 @@ mod tests {
             &signature,
         )
         .unwrap_err();
-        assert!(error.contains("expiry mismatch"));
+        assert!(error.message.contains("expiry mismatch"));
+        assert_eq!(error.code, None);
     }
 
     #[test]
@@ -1047,8 +1358,38 @@ mod tests {
             &different_signature,
         )
         .unwrap_err();
-        assert!(error.contains("different data"));
+        assert!(error.message.contains("different data"));
         assert_eq!(list(db_path, WalletNetwork::Main, None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn checkpoint_conflict_with_different_data_is_terminal() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        let saved = checkpoint_test_operation(db_path, "op-1", "send");
+
+        let (different_proof, different_signature, _) = signed_pczt(1_234_501);
+        let conflict = || {
+            checkpoint(
+                db_path,
+                WalletNetwork::Main,
+                "op-1",
+                "account-1",
+                "send",
+                None,
+                &different_proof,
+                &different_signature,
+            )
+            .unwrap_err()
+        };
+        // The app stops offering "Retry saving" on this code: a retry repeats
+        // the same refusal and must leave the saved transaction untouched.
+        assert_eq!(conflict().code, Some(FailureCode::LedgerOperationTerminal));
+        assert_eq!(conflict().code, Some(FailureCode::LedgerOperationTerminal));
+        assert_eq!(
+            list(db_path, WalletNetwork::Main, None).unwrap(),
+            vec![saved]
+        );
     }
 
     #[test]
@@ -1067,6 +1408,7 @@ mod tests {
             &signature,
         )
         .unwrap_err()
+        .message
         .contains("require an external reference"));
         assert!(checkpoint(
             db_path,
@@ -1079,6 +1421,7 @@ mod tests {
             &signature,
         )
         .unwrap_err()
+        .message
         .contains("must not have"));
     }
 
@@ -1114,7 +1457,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.contains("Validate Ledger signed checkpoint"));
+        assert!(error.message.contains("Validate Ledger signed checkpoint"));
         assert!(
             list(file.path().to_str().unwrap(), WalletNetwork::Main, None,)
                 .unwrap()
@@ -1225,7 +1568,7 @@ mod tests {
             db_path,
             WalletNetwork::Main,
             "send-1",
-            "network unavailable",
+            &"network unavailable".into(),
         )
         .unwrap();
         assert!(!terminal);
@@ -1234,6 +1577,33 @@ mod tests {
         assert_eq!(listed[0].state, STATE_SIGNED_PENDING_BROADCAST);
         assert_eq!(listed[0].status.as_deref(), Some("retryable_error"));
         assert!(acknowledge(db_path, WalletNetwork::Main, "send-1").is_err());
+    }
+
+    /// A refusal transparent broadcast authority made for good, such as
+    /// quarantine or a hold, discards the operation and releases its inputs;
+    /// a busy wallet or recovery still catching up keeps it for a retry.
+    #[test]
+    fn a_final_authority_refusal_discards_the_signed_operation() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        checkpoint_test_operation(db_path, "send-1", "send");
+        let retryable = WalletFailure::coded(
+            FailureCode::RetryAfterRecovery,
+            "Reserve transparent broadcast authority: database is locked",
+        );
+        assert!(
+            !record_broadcast_failure(db_path, WalletNetwork::Main, "send-1", &retryable).unwrap()
+        );
+        assert_eq!(list(db_path, WalletNetwork::Main, None).unwrap().len(), 1);
+
+        let refused = WalletFailure::coded(
+            FailureCode::AuthorityRefused,
+            "Transparent broadcast authority unavailable: Transparent funds are unavailable",
+        );
+        assert!(
+            record_broadcast_failure(db_path, WalletNetwork::Main, "send-1", &refused).unwrap()
+        );
+        assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
     }
 
     #[test]
@@ -1245,11 +1615,237 @@ mod tests {
             db_path,
             WalletNetwork::Main,
             "send-1",
-            "Hardware signing request expired before broadcast",
+            &"Hardware signing request expired before broadcast".into(),
         )
         .unwrap();
 
         assert!(terminal);
         assert!(list(db_path, WalletNetwork::Main, None).unwrap().is_empty());
     }
+    #[tokio::test]
+    async fn ledger_recovery_child() {
+        let Ok(path) = std::env::var("VIZOR_TEST_LEDGER_DB") else {
+            return;
+        };
+        let url = std::env::var("VIZOR_TEST_LEDGER_URL").unwrap();
+        let rows = list(&path, WalletNetwork::Regtest, None).unwrap();
+        if rows[0].state == STATE_SIGNED_PENDING_BROADCAST {
+            let result = broadcast(
+                &path,
+                &url,
+                WalletNetwork::Regtest,
+                "restart-op",
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.status, "broadcasted");
+            assert!(result.requires_ack);
+            let rows = list(&path, WalletNetwork::Regtest, None).unwrap();
+            assert_eq!(rows[0].state, STATE_RESULT_PENDING_ACK);
+            assert_eq!(rows[0].txid.as_deref(), Some(result.txid.as_str()));
+        } else {
+            // Startup consumes an outcome awaiting acknowledgement through metadata
+            // recovery, rather than invoking the pending-broadcast API again.
+            assert_eq!(rows[0].state, STATE_RESULT_PENDING_ACK);
+            assert_eq!(rows[0].status.as_deref(), Some("broadcasted"));
+            assert!(rows[0].txid.is_some());
+            assert_eq!(rows[0].external_ref.as_deref(), Some("deposit-1"));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn restart_recovers_after_wallet_commit_and_before_outbox_commit() {
+        use crate::wallet::{
+            db::{open_wallet_db_with_timeout, WALLET_DB_BUSY_TIMEOUT},
+            keys,
+        };
+        use secrecy::ExposeSecret;
+        use transparent::keys::{AccountPrivKey, NonHardenedChildIndex, TransparentKeyScope};
+        use zcash_client_backend::{
+            data_api::{wallet::decrypt_and_store_transaction, WalletWrite},
+            wallet::WalletTransparentOutput,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let seed = keys::mnemonic_to_seed(&keys::generate_mnemonic()).unwrap();
+        let (uuid, _) = keys::init_db_and_create_account(
+            &path,
+            WalletNetwork::Regtest,
+            &seed,
+            Some(1),
+            "Ledger",
+        )
+        .unwrap();
+        let account = keys::parse_account_uuid(&uuid).unwrap();
+        let sk = AccountPrivKey::from_seed(
+            &WalletNetwork::Regtest,
+            seed.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
+        .unwrap()
+        .derive_external_secret_key(NonHardenedChildIndex::from_index(0).unwrap())
+        .unwrap();
+        let address = TransparentAddress::from_pubkey(&sk.public_key());
+        let (proof, signature, _) =
+            signed_pczt_with_input(200, sk, OutPoint::new([1; 32], 0), 1_000_000);
+        let mut db =
+            open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, WALLET_DB_BUSY_TIMEOUT)
+                .unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
+        db.put_received_transparent_utxo(
+            &WalletTransparentOutput::from_parts(
+                OutPoint::new([1; 32], 0),
+                TxOut::new(Zatoshis::const_from_u64(1_000_000), address.script().into()),
+                Some(BlockHeight::from_u32(150)),
+                Some(account),
+                Some(TransparentKeyScope::EXTERNAL),
+                None,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        drop(db);
+        checkpoint(
+            &path,
+            WalletNetwork::Regtest,
+            "restart-op",
+            &uuid,
+            "swap_deposit",
+            Some("deposit-1"),
+            &proof,
+            &signature,
+        )
+        .unwrap();
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TRIGGER interrupt_outbox BEFORE UPDATE ON vizor_ledger_signed_operations WHEN NEW.state = 'result_pending_ack' BEGIN SELECT RAISE(ABORT, 'interrupted outcome write'); END").unwrap();
+        let server =
+            crate::wallet::sync_engine::test_lwd::CapturingLwd::start_for_broadcast(200).await;
+        assert!(broadcast(
+            &path,
+            &server.url,
+            WalletNetwork::Regtest,
+            "restart-op",
+            None,
+            None
+        )
+        .await
+        .is_err());
+        assert_eq!(server.count("/SendTransaction"), 1);
+        let own_spends: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transparent_received_output_spends",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(own_spends, 1);
+        assert_eq!(
+            list(&path, WalletNetwork::Regtest, None).unwrap()[0].state,
+            STATE_SIGNED_PENDING_BROADCAST
+        );
+        conn.execute_batch("DROP TRIGGER interrupt_outbox").unwrap();
+        drop(conn);
+        // Execute the actual outbox broadcast API with a fresh process and fresh globals.
+        let child_path = path.clone();
+        let child_url = server.url.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wallet::ledger::operations::tests::ledger_recovery_child",
+                    "--nocapture",
+                ])
+                .env("VIZOR_TEST_LEDGER_DB", child_path)
+                .env("VIZOR_TEST_LEDGER_URL", child_url)
+                .status()
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        assert!(status.success());
+        assert_eq!(server.count("/SendTransaction"), 2);
+        // Restart after outcome commit must preserve the acknowledgement checkpoint.
+        assert_eq!(
+            list(&path, WalletNetwork::Regtest, None).unwrap()[0].state,
+            STATE_RESULT_PENDING_ACK
+        );
+        let child_path = path.clone();
+        let child_url = server.url.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wallet::ledger::operations::tests::ledger_recovery_child",
+                    "--nocapture",
+                ])
+                .env("VIZOR_TEST_LEDGER_DB", child_path)
+                .env("VIZOR_TEST_LEDGER_URL", child_url)
+                .status()
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        assert!(status.success());
+        assert_eq!(server.count("/SendTransaction"), 2);
+        acknowledge(&path, WalletNetwork::Regtest, "restart-op").unwrap();
+        assert!(list(&path, WalletNetwork::Regtest, None)
+            .unwrap()
+            .is_empty());
+        // Recreate the interrupted checkpoint, now with reliable mined evidence and an
+        // unreachable route. Recovery must succeed even beyond the transaction's expiry.
+        checkpoint(
+            &path,
+            WalletNetwork::Regtest,
+            "restart-op",
+            &uuid,
+            "swap_deposit",
+            Some("deposit-1"),
+            &proof,
+            &signature,
+        )
+        .unwrap();
+        let mut db =
+            open_wallet_db_with_timeout(&path, WalletNetwork::Regtest, WALLET_DB_BUSY_TIMEOUT)
+                .unwrap();
+        let raw: Vec<u8> = rusqlite::Connection::open(&path)
+            .unwrap()
+            .query_row(
+                "SELECT raw FROM transactions WHERE raw IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let tx = zcash_primitives::transaction::Transaction::read(
+            &raw[..],
+            zcash_protocol::consensus::BranchId::Nu5,
+        )
+        .unwrap();
+        decrypt_and_store_transaction(
+            &WalletNetwork::Regtest,
+            &mut db,
+            &tx,
+            Some(BlockHeight::from_u32(201)),
+        )
+        .unwrap();
+        db.update_chain_tip(BlockHeight::from_u32(1000)).unwrap();
+        drop(db);
+        let result = broadcast(
+            &path,
+            "http://127.0.0.1:1",
+            WalletNetwork::Regtest,
+            "restart-op",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.status, "broadcasted");
+        assert_eq!(server.count("/SendTransaction"), 2);
+    }
 }
+
+#[cfg(test)]
+#[path = "operations/mined_recovery_tests.rs"]
+mod mined_recovery_tests;

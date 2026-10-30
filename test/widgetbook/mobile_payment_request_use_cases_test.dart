@@ -11,6 +11,39 @@ import 'package:zcash_wallet/src/features/send/widgets/payment_request_surface.d
 import 'package:zcash_wallet/widgetbook/payment_request_use_cases.dart';
 
 void main() {
+  testWidgets('mobile status previews show details and matching actions', (
+    tester,
+  ) async {
+    for (final (builder, label, showsStatus) in <(WidgetBuilder, String, bool)>[
+      (buildMobilePaymentRequestCheckingUseCase, 'Checking…', false),
+      (buildMobilePaymentRequestInvalidAddressUseCase, 'Review payment', true),
+      (buildMobilePaymentRequestInsufficientUseCase, 'Review payment', true),
+      (buildMobilePaymentRequestSyncingUseCase, 'Review payment', true),
+      (buildMobilePaymentRequestFailedUseCase, 'Check again', true),
+    ]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _pumpPaymentRequest(
+        tester,
+        size: const Size(393, 852),
+        child: Builder(builder: builder),
+      );
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('payment_request_continue')),
+        findsOneWidget,
+      );
+      expect(find.text(label), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('payment_request_status')),
+        showsStatus ? findsOneWidget : findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('collapsed address and pool badge fit at 2x text scale', (
     tester,
   ) async {
@@ -40,28 +73,28 @@ void main() {
       textScaler: scaler,
     );
 
-    final style = AppTypography.bodyMediumStrong;
-    final lineHeight = scaler.scale(style.fontSize!) * style.height!;
-    final expectedHeight = (lineHeight * 2 + AppSpacing.xxs).ceilToDouble() + 1;
-
     for (final key in <String>[
       'payment_request_requester_toggle',
       'payment_request_memo_toggle',
     ]) {
+      final button = tester.widget<AppButton>(find.byKey(ValueKey(key)));
+      expect(button.growWithContent, isTrue);
       expect(
-        tester.widget<AppButton>(find.byKey(ValueKey(key))).height,
-        expectedHeight,
+        tester.getSize(find.byKey(ValueKey(key))).height,
+        greaterThanOrEqualTo(48),
       );
     }
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('default mobile requests fit without scrolling', (tester) async {
+  testWidgets('external introductions keep scan and review choices visible', (
+    tester,
+  ) async {
     for (final (builder, size) in <(WidgetBuilder, Size)>[
       (buildMobilePaymentRequestFullUseCase, const Size(393, 852)),
       (buildMobilePaymentRequestFullUseCase, const Size(375, 812)),
-      (buildMobilePaymentRequestContactUseCase, const Size(393, 852)),
-      (buildMobilePaymentRequestContactUseCase, const Size(375, 812)),
+      (buildMobilePaymentRequestMinimalUseCase, const Size(393, 852)),
+      (buildMobilePaymentRequestMinimalUseCase, const Size(375, 812)),
     ]) {
       await _pumpPaymentRequest(
         tester,
@@ -70,18 +103,18 @@ void main() {
       );
 
       expect(tester.takeException(), isNull, reason: '$builder at $size');
-      expect(_maxScrollExtent(tester), 0, reason: '$builder at $size');
-      expect(find.text('Review'), findsOneWidget);
-      expect(find.text('Edit'), findsOneWidget);
+      final action = tester.getRect(
+        find.byKey(const ValueKey('payment_request_scan')),
+      );
+      expect(action.top, greaterThan(0));
+      expect(action.bottom, lessThan(size.height));
+      expect(find.text('0.5 ZEC'), findsNothing);
+      expect(find.text('u195091 ... 190591'), findsNothing);
+      expect(find.text('Scan original QR'), findsOneWidget);
+      expect(find.text('Review link details'), findsOneWidget);
     }
   });
 }
-
-double _maxScrollExtent(WidgetTester tester) => tester
-    .widget<SingleChildScrollView>(find.byKey(kPaymentRequestScrollViewKey))
-    .controller!
-    .position
-    .maxScrollExtent;
 
 Future<void> _pumpPaymentRequest(
   WidgetTester tester, {
@@ -111,7 +144,7 @@ Future<void> _pumpPaymentRequest(
                 PaymentRequestSurface(
                   layout: PaymentRequestLayout.mobile,
                   request: const PaymentRequestView(
-                    source: PaymentRequestSource.link,
+                    source: PaymentRequestSource.qrCode,
                     requesterLabel: 'Blue Door Coffee',
                     note: 'Meet at the side entrance.',
                     amountZecText: '0.5 ZEC',
@@ -120,6 +153,7 @@ Future<void> _pumpPaymentRequest(
                         '73d57f73c6dc05121591a83861cd190591',
                     memo: 'Table 4',
                   ),
+                  onScan: () {},
                   onContinue: () {},
                   onEdit: () {},
                   onCancel: () {},

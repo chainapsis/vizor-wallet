@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../ledger/ledger_capability.dart';
 import 'payment_link_action.dart';
 import 'payment_link_gift_card.dart';
 
@@ -11,13 +12,16 @@ class PaymentLinkGroupEntry extends StatelessWidget {
   const PaymentLinkGroupEntry({
     required this.onPressed,
     this.fullWidth = false,
+    this.isLedger = false,
     super.key,
   });
 
   static const double width = 144;
+  static const double ledgerWidth = 168;
 
   final VoidCallback onPressed;
   final bool fullWidth;
+  final bool isLedger;
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +29,9 @@ class PaymentLinkGroupEntry extends StatelessWidget {
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
     return PaymentLinkAction(
       key: const ValueKey('payment_link_create_batch_button'),
-      semanticLabel: 'Create cards for a group',
+      semanticLabel: isLedger
+          ? 'Create multiple cards, up to $kLedgerMaxExternalShieldedOutputs with Ledger'
+          : 'Create cards for a group',
       onPressed: onPressed,
       builder: (context, hovered, focused) => TweenAnimationBuilder<double>(
         tween: Tween(end: hovered ? 1 : 0),
@@ -36,12 +42,28 @@ class PaymentLinkGroupEntry extends StatelessWidget {
         builder: (context, hover, _) {
           // Reduced motion keeps the colour change and drops the movement.
           final motion = reducedMotion ? 0.0 : hover;
-          final label = Text(
-            'For a group',
+          final title = Text(
+            isLedger ? 'Multiple cards' : 'For a group',
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
             ),
           );
+          final label = isLedger
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    title,
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      'Up to $kLedgerMaxExternalShieldedOutputs with Ledger',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
+                )
+              : title;
           final chevron = Transform.translate(
             offset: Offset(2 * motion, 0),
             child: AppIcon(
@@ -54,7 +76,11 @@ class PaymentLinkGroupEntry extends StatelessWidget {
           return Transform.translate(
             offset: Offset(0, -2 * motion),
             child: Container(
-              width: fullWidth ? double.infinity : width,
+              width: fullWidth
+                  ? double.infinity
+                  : isLedger
+                  ? ledgerWidth
+                  : width,
               padding: const EdgeInsets.all(AppSpacing.sm),
               decoration: BoxDecoration(
                 gradient: LinearGradient(

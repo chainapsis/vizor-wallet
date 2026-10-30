@@ -10,7 +10,9 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -299,54 +301,64 @@ void main() {
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
   });
 
-  test('shows no migration UI for Ledger with Orchard funds', () async {
-    final migrationStatusCalls = <String>[];
-    final orchardBalance = BigInt.from(100_000_000);
-    final orchardPendingBalance = BigInt.from(10_000_000);
-    final container = _container(
-      ironwoodActiveAtTip: true,
-      isLedgerAccount: true,
-      migrationStatusCalls: migrationStatusCalls,
-      syncState: SyncState(
-        accountUuid: _accountUuid,
-        hasAccountScopedData: true,
-        isSyncComplete: true,
-        scannedHeight: 3_500_000,
-        chainTipHeight: 3_500_000,
-        orchardBalance: orchardBalance,
-        orchardPendingBalance: orchardPendingBalance,
-        spendableBalance: orchardBalance,
-        totalBalance: orchardBalance + orchardPendingBalance,
-      ),
-    );
-    addTearDown(container.dispose);
-
-    await _settleCoreProviders(container);
-    await container.read(ironwoodPostMigrationStateProvider.future);
-
-    expect(
-      (await container.read(
+  test('gives way to the NU7 announcement once the tip reaches NU7', () async {
+    Future<bool> visibleWith(int nu7ActivationHeight) async {
+      final container = _container(nu7ActivationHeight: nu7ActivationHeight);
+      addTearDown(container.dispose);
+      await _settleCoreProviders(container);
+      return (await container.read(
         ironwoodMigrationAnnouncementProvider.future,
-      )).visible,
-      isFalse,
-    );
-    expect(
-      (await container.read(ironwoodHomeMigrationCtaProvider.future)).visible,
-      isFalse,
-    );
-    expect(
-      (await container.read(ironwoodMigrationRouteCtaProvider.future)).visible,
-      isFalse,
-    );
-    expect(
-      container.read(ironwoodHomeMigrationPresentationProvider).visible,
-      isFalse,
-    );
-    expect(
-      container.read(ironwoodHomeBalancePresentationProvider),
-      IronwoodHomeBalancePresentationMode.allShielded,
-    );
-    expect(migrationStatusCalls, isEmpty);
+      )).visible;
+    }
+
+    // The ready state's tip is 3,500,000.
+    expect(await visibleWith(3_500_001), isTrue);
+    expect(await visibleWith(3_500_000), isFalse);
+  });
+
+  test('shows Ledger the same migration UI as a software account', () async {
+    Future<List<Object?>> migrationUi({required bool isLedgerAccount}) async {
+      final migrationStatusCalls = <String>[];
+      final orchardBalance = BigInt.from(100_000_000);
+      final orchardPendingBalance = BigInt.from(10_000_000);
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        isLedgerAccount: isLedgerAccount,
+        migrationStatusCalls: migrationStatusCalls,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: orchardBalance,
+          orchardPendingBalance: orchardPendingBalance,
+          spendableBalance: orchardBalance,
+          totalBalance: orchardBalance + orchardPendingBalance,
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodPostMigrationStateProvider.future);
+
+      return [
+        (await container.read(
+          ironwoodMigrationAnnouncementProvider.future,
+        )).visible,
+        (await container.read(ironwoodHomeMigrationCtaProvider.future)).visible,
+        (await container.read(
+          ironwoodMigrationRouteCtaProvider.future,
+        )).visible,
+        container.read(ironwoodHomeMigrationPresentationProvider).visible,
+        container.read(ironwoodHomeBalancePresentationProvider),
+        migrationStatusCalls.isNotEmpty,
+      ];
+    }
+
+    final ledger = await migrationUi(isLedgerAccount: true);
+    expect(ledger, await migrationUi(isLedgerAccount: false));
+    expect(ledger.first, isTrue);
   });
 
   test('stays hidden when the migration state is not ready', () async {
@@ -430,6 +442,109 @@ void main() {
     expect(state.visible, isTrue);
     expect(state.buttonLabel, 'Continue migration');
   });
+
+  test(
+    'a run stopped by the upgrade shows as stopped, not resumable',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationStoppedByUpgradePhase,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_543_500,
+          chainTipHeight: 3_543_500,
+          orchardBalance: BigInt.from(3_000_000),
+          ironwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(4_000_000),
+          totalBalance: BigInt.from(4_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      final homeCta = await container.read(
+        ironwoodHomeMigrationCtaProvider.future,
+      );
+      final routeCta = await container.read(
+        ironwoodMigrationRouteCtaProvider.future,
+      );
+      final postMigration = await container.read(
+        ironwoodPostMigrationStateProvider.future,
+      );
+
+      expect(homeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
+      expect(routeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
+      // Orchard funds stay spendable: no in-progress Ironwood-only display.
+      expect(postMigration.mode, IronwoodPostMigrationMode.required);
+      expect(
+        container.read(
+          ironwoodMigrationAwareDisplaySpendableProvider(_accountUuid),
+        ),
+        BigInt.from(4_000_000),
+      );
+    },
+  );
+
+  test('a stopped run stays visible while the wallet syncs', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationStoppedByUpgradePhase,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncing: true,
+        scannedHeight: 3_543_400,
+        chainTipHeight: 3_543_500,
+        orchardBalance: BigInt.from(3_000_000),
+        spendableBalance: BigInt.from(3_000_000),
+        totalBalance: BigInt.from(3_000_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final homeCta = await container.read(
+      ironwoodHomeMigrationCtaProvider.future,
+    );
+    final routeCta = await container.read(
+      ironwoodMigrationRouteCtaProvider.future,
+    );
+
+    expect(homeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
+    expect(routeCta.mode, IronwoodHomeMigrationCtaMode.stopped);
+  });
+
+  test(
+    'moving the rest of a stopped run shows the remaining balance',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationStoppedByUpgradePhase,
+        migrationTargetValues: const [5_000_000],
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_543_500,
+          chainTipHeight: 3_543_500,
+          orchardBalance: BigInt.from(3_000_000),
+          spendableBalance: BigInt.from(3_000_000),
+          totalBalance: BigInt.from(3_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodHomeMigrationCtaProvider.future);
+
+      expect(
+        container.read(ironwoodMigrationFlowDataProvider)?.amountZatoshi,
+        BigInt.from(3_000_000),
+      );
+    },
+  );
 
   test('active migration keeps migrated Ironwood funds usable', () async {
     final container = _container(
@@ -1151,9 +1266,18 @@ ProviderContainer _container({
   Object? migrationStatusError,
   OrchardMigrationStatusGetter? getMigrationStatus,
   bool isLedgerAccount = false,
+  int? nu7ActivationHeight,
 }) {
   return ProviderContainer(
     overrides: [
+      if (nu7ActivationHeight != null)
+        blockSpacingProvider.overrideWithValue(
+          BlockSpacing(
+            preNu7BlockSeconds: 75,
+            nu7BlockSeconds: 25,
+            nu7ActivationHeight: nu7ActivationHeight,
+          ),
+        ),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(isLedgerAccount: isLedgerAccount),
       ),

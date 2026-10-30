@@ -1,3 +1,4 @@
+import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'dart:async';
 
@@ -74,23 +75,29 @@ class _MobileVotingProposalDetailScreenState
             !hasBlockingRoundRecoveryWork(sessionState.roundPlan)
         ? 'Voted'
         : 'Coinholder voting';
-    return PopScope<void>(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) unawaited(_clearDraftForExit());
+    return MobileSidebarExitScope(
+      onExit: () async {
+        await _clearDraftForExit(propagateError: true);
+        return true;
       },
-      child: MobileVotingScaffold(
-        title: title,
-        showHeader: false,
-        onBack: () => unawaited(_handleBack()),
-        child: VotingProposalDetailView(
-          roundId: widget.roundId,
-          showDesktopToolbar: false,
-          mobileHeaderBuilder: (compact, navigation) => VotingScrollHeader(
-            title: title,
-            compact: compact,
-            navigation: navigation,
-            onBack: () => unawaited(_handleBack()),
+      child: PopScope<void>(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) unawaited(_clearDraftForExit());
+        },
+        child: MobileVotingScaffold(
+          title: title,
+          showHeader: false,
+          onBack: () => unawaited(_handleBack()),
+          child: VotingProposalDetailView(
+            roundId: widget.roundId,
+            showDesktopToolbar: false,
+            mobileHeaderBuilder: (compact, navigation) => VotingScrollHeader(
+              title: title,
+              compact: compact,
+              navigation: navigation,
+              onBack: () => unawaited(_handleBack()),
+            ),
           ),
         ),
       ),
@@ -107,7 +114,7 @@ class _MobileVotingProposalDetailScreenState
     }
   }
 
-  Future<void> _clearDraftForExit() async {
+  Future<void> _clearDraftForExit({bool propagateError = false}) async {
     if (_draftExitCleanupStarted) return;
     final activeAccountUuid = ref
         .read(accountProvider)
@@ -128,6 +135,8 @@ class _MobileVotingProposalDetailScreenState
     try {
       await notifier.clearAll();
     } catch (error) {
+      _draftExitCleanupStarted = false;
+      if (propagateError) rethrow;
       debugPrint(
         '[zcash] Voting: draft cleanup failed on poll exit '
         'round=${draftKey.roundId} account=${draftKey.accountUuid} '
@@ -137,16 +146,31 @@ class _MobileVotingProposalDetailScreenState
   }
 }
 
-class MobileVotingReviewScreen extends StatelessWidget {
+class MobileVotingReviewScreen extends ConsumerWidget {
   const MobileVotingReviewScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  Widget build(BuildContext context) {
-    return MobileVotingScaffold(
-      title: 'Review your answers',
-      child: VotingReviewView(roundId: roundId, showDesktopToolbar: false),
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MobileSidebarExitScope(
+      onExit: () async {
+        final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+        if (accountUuid != null && accountUuid.isNotEmpty) {
+          await ref
+              .read(
+                votingDraftProvider(
+                  VotingSessionKey(roundId: roundId, accountUuid: accountUuid),
+                ).notifier,
+              )
+              .clearAll();
+        }
+        return true;
+      },
+      child: MobileVotingScaffold(
+        title: 'Review your answers',
+        child: VotingReviewView(roundId: roundId, showDesktopToolbar: false),
+      ),
     );
   }
 }

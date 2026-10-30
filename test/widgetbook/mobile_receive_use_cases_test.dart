@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -10,7 +11,11 @@ import 'package:zcash_wallet/src/features/receive/widgets/mobile/receive_address
 import 'package:zcash_wallet/src/features/receive/widgets/receive_address_widgets.dart';
 import 'package:zcash_wallet/widgetbook/receive_use_cases.dart';
 
+import '../figma_compare/figma_compare_font_loader.dart';
+
 void main() {
+  setUpAll(loadFigmaCompareFonts);
+
   testWidgets('receive mobile shielded use case renders receive screen', (
     tester,
   ) async {
@@ -20,19 +25,23 @@ void main() {
     expect(find.byType(MobileReceiveScreen), findsOneWidget);
     expect(find.text('Receive ZEC'), findsOneWidget);
     expect(find.text('Account Name'), findsOneWidget);
-    expect(find.text('Share shielded address'), findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
     expect(find.text('Copy shielded address'), findsOneWidget);
-    // Share shares its row with the square request button: 300 - 8 - 50.
+    final scrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable).first,
+    );
+    expect(scrollable.position.maxScrollExtent, 0);
+    // Copy shares its row with the square share button: 300 - 8 - 50.
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
       const Size(242, 50),
     );
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
       const Size(50, 50),
     );
     expect(
-      tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
+      tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
       const Size(300, 50),
     );
     expect(
@@ -74,7 +83,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Share transparent address'), findsOneWidget);
+    expect(find.text('Request ZEC'), findsOneWidget);
     expect(find.text('Copy transparent address'), findsOneWidget);
   });
 
@@ -90,14 +99,7 @@ void main() {
     expect(find.text('Shielded address'), findsOneWidget);
     expect(find.text('Strong privacy by default.'), findsOneWidget);
     expect(find.text('Close'), findsOneWidget);
-    expect(
-      tester.getSize(find.byType(ReceiveAddressInfoSheet)),
-      const Size(361, 454),
-    );
-    expect(
-      tester.getTopLeft(find.byType(ReceiveAddressInfoSheet)),
-      const Offset(16, 366),
-    );
+    _expectFloatingInfoSheet(tester);
     final firstItem = find.byKey(const ValueKey('receive_address_info_item_0'));
     final secondItem = find.byKey(
       const ValueKey('receive_address_info_item_1'),
@@ -143,14 +145,29 @@ void main() {
     expect(find.text('Publicly visible'), findsOneWidget);
     expect(find.text('Close'), findsOneWidget);
     expect(
-      tester.getSize(find.byType(ReceiveAddressInfoSheet)),
-      const Size(361, 479),
+      find.textContaining('next transparent address will automatically change'),
+      findsOneWidget,
     );
     expect(
-      tester.getTopLeft(find.byType(ReceiveAddressInfoSheet)),
-      const Offset(16, 341),
+      find.byKey(const ValueKey('receive_address_info_item_3')),
+      findsOneWidget,
     );
+    _expectFloatingInfoSheet(tester);
   });
+}
+
+void _expectFloatingInfoSheet(WidgetTester tester) {
+  final sheet = find.byType(ReceiveAddressInfoSheet);
+  final rect = tester.getRect(sheet);
+  expect(rect.left, 16);
+  expect(rect.width, 361);
+  expect(rect.bottom, 852 - 16);
+  // Copy can grow the sheet; the frame must keep its bottom and side gaps,
+  // and the actual app font must fit every explainer without truncation.
+  final text = find.descendant(of: sheet, matching: find.byType(Text));
+  for (final paragraph in tester.renderObjectList<RenderParagraph>(text)) {
+    expect(paragraph.didExceedMaxLines, isFalse);
+  }
 }
 
 Future<void> _pumpReceiveMobileUseCase(

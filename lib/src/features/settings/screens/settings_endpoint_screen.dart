@@ -835,7 +835,7 @@ class _CustomEndpointHeroCard extends StatelessWidget {
   // Export of Figma node 4083:457542 with the design's 30% art opacity and
   // the bottom gradient to #1B1F1F baked in — drawn as-is, no code overlay.
   static const _backgroundAsset =
-      'assets/illustrations/settings_endpoint_custom_bg.png';
+      'assets/illustrations/endpoint_custom_bg.webp';
 
   final TextEditingController controller;
   final String? messageText;

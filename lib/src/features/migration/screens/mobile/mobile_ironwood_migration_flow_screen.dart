@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -21,16 +22,18 @@ import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/primitives.dart';
+import '../../../../core/zcash/block_spacing.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/network_privacy_provider.dart';
 import '../../../../providers/sync_display_progress_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../models/ironwood_migration_presentation.dart';
-import '../../../ledger/ledger_capability.dart';
+import '../../models/ironwood_migration_upgrade_stop.dart';
 import '../../models/mobile_ironwood_migration_attention_state.dart';
 import '../../models/mobile_ironwood_migration_status_entry.dart';
 import '../../providers/ironwood_migration_announcement_provider.dart';
@@ -41,6 +44,7 @@ import '../../widgets/ironwood_migration_shimmer_text.dart';
 import '../../widgets/ledger_immediate_migration_signing_overlay.dart';
 import '../../widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../ironwood_migration_flow_screen.dart';
+import '../../../../core/zcash/network_upgrade_hold.dart';
 
 part 'mobile_ironwood_migration_models.dart';
 part 'mobile_ironwood_migration_back_scope.dart';

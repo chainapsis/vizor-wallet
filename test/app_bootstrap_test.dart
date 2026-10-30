@@ -394,7 +394,7 @@ void main() {
 
     for (final legacy in [null, 'false', 'true']) {
       test(
-        'an unreadable preference is private for this launch (legacy=$legacy)',
+        'an unreadable preference is unknown for this launch (legacy=$legacy)',
         () async {
           final storage = storeWith({kLegacyEnhancePirEnabledKey: ?legacy});
           final preferences = _FailingEnhancePirStore();
@@ -404,8 +404,8 @@ void main() {
               storage,
               preferences: preferences,
             ),
-            isTrue,
-            reason: 'unknown must never relax native private mode',
+            isNull,
+            reason: 'unknown is neither off nor a confirmed on',
           );
           expect(preferences.writes, 0, reason: 'the saved choice is kept');
           expect(await storage.readPlain(kLegacyEnhancePirEnabledKey), legacy);
@@ -413,7 +413,7 @@ void main() {
       );
     }
 
-    test('an unreadable legacy flag is private and not migrated', () async {
+    test('an unreadable legacy flag is unknown and not migrated', () async {
       final storage = _UnreadableSecureStore();
       final preferences = _FakeEnhancePirStore();
 
@@ -422,7 +422,7 @@ void main() {
           storage,
           preferences: preferences,
         ),
-        isTrue,
+        isNull,
       );
       expect(preferences.writes, 0, reason: 'nothing was known to migrate');
       expect(

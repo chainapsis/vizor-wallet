@@ -70,6 +70,12 @@ fn old_wallet(db_path: &str) -> WalletDatabase {
     rusqlite::vtab::array::load_module(&conn).unwrap();
     // A plain handle deliberately retains the upstream AllAvailableKeys default.
     WalletDb::from_connection(conn, WalletNetwork::Main, SystemClock, OsRng)
+        .with_transparent_ledger_mode(
+            crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for(
+                db_path,
+                WalletNetwork::Main,
+            ),
+        )
 }
 
 fn old_birthday() -> AccountBirthday {
@@ -589,7 +595,7 @@ fn software_renewal_remains_current_after_reservation_and_reopen() {
         renewed
     );
     assert_eq!(
-        keys::list_accounts(path, WalletNetwork::Main).unwrap()[0].unified_address,
+        keys::get_address_from_db(path, WalletNetwork::Main, Some(&keys::list_accounts(path, WalletNetwork::Main).unwrap()[0].uuid)).unwrap(),
         renewed
     );
     let conn = rusqlite::Connection::open(path).unwrap();

@@ -17,6 +17,7 @@ void main() {
     'processing',
     'processing-nano',
     'reviewing',
+    'proofs-pending',
     'finishing',
     'processing-multiple',
     'voting-processing',

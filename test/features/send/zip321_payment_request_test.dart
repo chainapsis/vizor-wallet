@@ -52,7 +52,7 @@ void main() {
         isA<Zip321ParseException>().having(
           (e) => e.message,
           'message',
-          'Payment link is too long.',
+          'Request link is too long.',
         ),
       ),
     );
@@ -74,7 +74,7 @@ void main() {
         isA<Zip321ParseException>().having(
           (e) => e.message,
           'message',
-          'Payment link is too long.',
+          'Request link is too long.',
         ),
       ),
     );

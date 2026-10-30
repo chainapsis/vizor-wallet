@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../../main.dart' show log;
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/profile_pictures.dart';
+import '../../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -90,12 +91,20 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
         .read(accountProvider)
         .value
         ?.activeAccountUuid;
-    Navigator.of(context).pop();
-    if (uuid == activeAccountUuid) return;
+    if (uuid == activeAccountUuid) {
+      Navigator.of(context).pop();
+      return;
+    }
 
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
-    await accountNotifier.switchAccount(uuid);
+    try {
+      await accountNotifier.switchAccount(uuid);
+    } on WalletMutationBusyException catch (error) {
+      if (mounted) showAppToast(context, error.toString());
+      return;
+    }
+    if (mounted) Navigator.of(context).pop();
     unawaited(_refreshAfterAccountSwitch(syncNotifier));
   }
 

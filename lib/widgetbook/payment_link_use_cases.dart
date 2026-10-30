@@ -2,7 +2,6 @@
 // Widgetbook is dev-only; every value in this file is deterministic fixture
 // data and is intentionally isolated from payment-link services and storage.
 
-import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/services.dart';
@@ -14,20 +13,19 @@ import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_profile_picture.dart';
-import '../src/core/widgets/comma_to_dot_input_formatter.dart';
-import '../src/core/widgets/decimal_amount_input_formatter.dart';
+import '../src/features/ledger/ledger_capability.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/services/payment_link_service.dart';
 import '../src/features/payment_links/widgets/payment_link_card_flip.dart';
 import '../src/features/payment_links/widgets/payment_link_bulk_desktop_flow.dart';
 import '../src/features/payment_links/widgets/payment_link_batch_detail_desktop_view.dart';
 import '../src/features/payment_links/widgets/payment_link_card_motion.dart';
-import '../src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import '../src/features/payment_links/widgets/payment_link_confetti.dart';
 import '../src/features/payment_links/widgets/payment_link_copy.dart';
 import '../src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
 import '../src/features/payment_links/widgets/payment_link_long_sync_warning.dart';
+import 'payment_link_amount_preview.dart';
 
 const _previewWindowSize = Size(1080, 720);
 const _message = 'Hey there! Welcome to the Shielded\nWorld ;)';
@@ -86,6 +84,7 @@ enum PaymentLinkPreviewState {
   redeemInvalid,
   receivedWaiting,
   received,
+  receivedChecking,
   receivedMessage,
 }
 
@@ -110,6 +109,58 @@ Widget buildPaymentLinkCreateAmountUseCase(BuildContext context) =>
 
 Widget buildPaymentLinkBatchAmountUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchAmount);
+
+Widget buildPaymentLinkLedgerEntryUseCase(BuildContext context) => ColoredBox(
+  color: context.colors.background.window,
+  child: PaymentLinksHomeDesktopView(
+    isLedger: true,
+    illustration: Image.asset(
+      'assets/illustrations/payment_links/payment_link_empty_card.webp',
+      width: 243,
+      height: 162,
+    ),
+    onBack: _noop,
+    onShowHelp: _noop,
+    onCreate: _noop,
+    onCreateMultiple: _noop,
+    onRedeem: _noop,
+  ),
+);
+
+Widget buildPaymentLinkLedgerBatchUseCase(BuildContext context) => ColoredBox(
+  color: context.colors.background.window,
+  child: const _PaymentLinkBulkPreview(isLedger: true, initialCount: 4),
+);
+
+Widget buildPaymentLinkLedgerBatchEmptyUseCase(BuildContext context) =>
+    ColoredBox(
+      color: context.colors.background.window,
+      child: const _PaymentLinkBulkPreview(
+        isLedger: true,
+        initialCount: 2,
+        initialAmount: '',
+      ),
+    );
+
+Widget buildPaymentLinkLedgerBatchPreparingUseCase(BuildContext context) =>
+    ColoredBox(
+      color: context.colors.background.window,
+      child: const _PaymentLinkBulkPreview(
+        isLedger: true,
+        initialCount: 4,
+        initialPreparing: true,
+      ),
+    );
+
+Widget buildPaymentLinkLedgerBatchErrorUseCase(BuildContext context) =>
+    ColoredBox(
+      color: context.colors.background.window,
+      child: const _PaymentLinkBulkPreview(
+        isLedger: true,
+        initialCount: 4,
+        error: 'Unable to calculate the fee. Try again.',
+      ),
+    );
 
 Widget buildPaymentLinkBatchEmptyUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.batchEmpty);
@@ -266,6 +317,11 @@ Widget buildPaymentLinkRedeemInvalidUseCase(BuildContext context) =>
 Widget buildPaymentLinkReceivedUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.received);
 
+Widget buildPaymentLinkReceivedCheckingUseCase(BuildContext context) =>
+    const PaymentLinkDesktopPreview(
+      state: PaymentLinkPreviewState.receivedChecking,
+    );
+
 Widget buildPaymentLinkReceivedWaitingUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(
       state: PaymentLinkPreviewState.receivedWaiting,
@@ -282,9 +338,14 @@ Widget buildPaymentLinkReceivedMessageUseCase(BuildContext context) =>
 /// dependency. Unsupported values such as messages and fees exist only in
 /// this fixture layer.
 class PaymentLinkDesktopPreview extends StatelessWidget {
-  const PaymentLinkDesktopPreview({required this.state, super.key});
+  const PaymentLinkDesktopPreview({
+    required this.state,
+    this.content,
+    super.key,
+  });
 
   final PaymentLinkPreviewState state;
+  final Widget? content;
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +358,7 @@ class PaymentLinkDesktopPreview extends StatelessWidget {
             sidebar: const _PaymentLinkPreviewSidebar(),
             pane: AppDesktopPane(
               padding: EdgeInsets.zero,
-              child: _PaymentLinkPreviewPane(state: state),
+              child: content ?? _PaymentLinkPreviewPane(state: state),
             ),
           ),
         ),
@@ -319,37 +380,17 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         background: _home(),
         onClose: _noop,
       ),
-      PaymentLinkPreviewState.createEmpty => _amount(
-        visualState: PaymentLinkAmountVisualState.empty,
-        artwork: PaymentLinkCardArtwork.gift,
-        cardBuilder: (artwork) => PaymentLinkGiftCard(
-          artwork: artwork,
-          emptyAmountLabel: 'Enter Amount',
-          maxAmountText: '142.23',
-          onUseMax: _noop,
-        ),
+      PaymentLinkPreviewState.createEmpty => const PaymentLinkAmountPreview(
+        initialAmount: '',
+        initialArtwork: PaymentLinkCardArtwork.gift,
       ),
-      PaymentLinkPreviewState.createFocused => _amount(
-        visualState: PaymentLinkAmountVisualState.focused,
-        artwork: PaymentLinkCardArtwork.gift,
-        cardBuilder: (artwork) => PaymentLinkGiftCard(
-          artwork: artwork,
-          amountText: '1',
-          maxAmountText: '142.23',
-          onUseMax: _noop,
-          showMaxButton: true,
-        ),
+      PaymentLinkPreviewState.createFocused => const PaymentLinkAmountPreview(
+        initialAmount: '1',
+        initialArtwork: PaymentLinkCardArtwork.gift,
+        focusAmount: true,
       ),
-      PaymentLinkPreviewState.createAmount => _amount(
-        visualState: PaymentLinkAmountVisualState.amount,
-        artwork: PaymentLinkCardArtwork.chestLava,
-        cardBuilder: (artwork) => PaymentLinkGiftCard(
-          artwork: artwork,
-          amountText: '4.45',
-          maxAmountText: '142.23',
-          onUseMax: _noop,
-          showMaxButton: true,
-        ),
+      PaymentLinkPreviewState.createAmount => const PaymentLinkAmountPreview(
+        initialAmount: '4.45',
       ),
       PaymentLinkPreviewState.batchAmount => const _PaymentLinkBulkPreview(),
       PaymentLinkPreviewState.batchEmpty => const _PaymentLinkBulkPreview(
@@ -367,59 +408,32 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.batchMixed => const _PaymentLinkBulkPreview(
         initialMixed: true,
       ),
-      PaymentLinkPreviewState.createSyncing => _amount(
-        visualState: PaymentLinkAmountVisualState.amount,
-        artwork: PaymentLinkCardArtwork.diamond,
+      PaymentLinkPreviewState.createSyncing => const PaymentLinkAmountPreview(
+        initialAmount: '4.45',
+        initialArtwork: PaymentLinkCardArtwork.diamond,
         supportingText:
             'Card fee will be estimated when wallet sync completes.',
         enableContinue: false,
-        cardBuilder: (artwork) => PaymentLinkGiftCard(
-          artwork: artwork,
-          amountText: '4.45',
-          showCaret: false,
-        ),
+        showMax: false,
       ),
-      PaymentLinkPreviewState.createInsufficient => _amount(
-        visualState: PaymentLinkAmountVisualState.amount,
-        artwork: PaymentLinkCardArtwork.diamond,
-        supportingText: 'Above your maximum ZEC',
-        supportingTextIsError: true,
-        enableContinue: false,
-        cardBuilder: (artwork) => PaymentLinkGiftCard(
-          artwork: artwork,
-          amountText: '4.45',
-          maxAmountText: '142.23',
-          onUseMax: _noop,
-          showMaxButton: true,
-          supportingText: r'$1,210.20',
-          showCaret: false,
+      PaymentLinkPreviewState.createInsufficient =>
+        const PaymentLinkAmountPreview(
+          initialAmount: '4.45',
+          initialArtwork: PaymentLinkCardArtwork.diamond,
+          supportingText: 'Above your maximum ZEC',
+          supportingTextIsError: true,
+          enableContinue: false,
         ),
-      ),
-      PaymentLinkPreviewState.createFiatLoading => _amount(
-        visualState: PaymentLinkAmountVisualState.fiatLoading,
-        artwork: PaymentLinkCardArtwork.ruby,
-        cardBuilder: (artwork) => PaymentLinkGiftCard(
-          artwork: artwork,
-          amountText: '4.45',
-          maxAmountText: '142.23',
-          onUseMax: _noop,
-          showMaxButton: true,
-          supportingLoading: true,
-          showCaret: false,
+      PaymentLinkPreviewState.createFiatLoading =>
+        const PaymentLinkAmountPreview(
+          initialAmount: '4.45',
+          initialArtwork: PaymentLinkCardArtwork.ruby,
+          priceAvailable: false,
+          priceLoading: true,
         ),
-      ),
-      PaymentLinkPreviewState.createFiat => _amount(
-        visualState: PaymentLinkAmountVisualState.fiatLoaded,
-        artwork: PaymentLinkCardArtwork.ruby,
-        cardBuilder: (artwork) => PaymentLinkGiftCard(
-          artwork: artwork,
-          amountText: '4.45',
-          maxAmountText: '142.23',
-          onUseMax: _noop,
-          showMaxButton: true,
-          supportingText: r'$1,201.21',
-          showCaret: false,
-        ),
+      PaymentLinkPreviewState.createFiat => const PaymentLinkAmountPreview(
+        initialAmount: '4.45',
+        initialArtwork: PaymentLinkCardArtwork.ruby,
       ),
       PaymentLinkPreviewState.messageEmpty => PaymentLinkMessageDesktopView(
         state: PaymentLinkMessageVisualState.empty,
@@ -614,6 +628,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         state: PaymentLinkRedeemVisualState.paste,
         onBack: _noop,
         onPaste: _noop,
+        onScan: _noop,
         subtitle: 'Copy the card link you’ve received, and paste it below.',
         pasteLabel: 'Paste card link',
       ),
@@ -624,6 +639,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
             state: PaymentLinkRedeemVisualState.paste,
             onBack: _noop,
             onPaste: _noop,
+            onScan: _noop,
             subtitle: 'Copy the card link you’ve received, and paste it below.',
             pasteLabel: 'Paste card link',
           ),
@@ -643,6 +659,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         state: PaymentLinkRedeemVisualState.invalid,
         onBack: _noop,
         onPaste: _noop,
+        onScan: _noop,
         onClearClipboard: _noop,
         subtitle: 'Copy the card link you’ve received, and paste it below.',
         pasteLabel: 'Paste card link',
@@ -651,6 +668,8 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       PaymentLinkPreviewState.received => const _PaymentLinkReceivedPreview(
         hasMessage: false,
       ),
+      PaymentLinkPreviewState.receivedChecking =>
+        const _PaymentLinkReceivedPreview(hasMessage: false, checking: true),
       PaymentLinkPreviewState.receivedMessage =>
         const _PaymentLinkReceivedPreview(hasMessage: true),
     };
@@ -659,7 +678,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
   PaymentLinksHomeDesktopView _home() {
     return PaymentLinksHomeDesktopView(
       illustration: Image.asset(
-        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        'assets/illustrations/payment_links/payment_link_empty_card.webp',
         width: 243,
         height: 162,
         fit: BoxFit.contain,
@@ -696,24 +715,6 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
       onCreateMultiple: _noop,
       onRedeem: _noop,
       activeTab: PaymentLinkCardsTab.received,
-    );
-  }
-
-  Widget _amount({
-    required PaymentLinkAmountVisualState visualState,
-    required PaymentLinkCardArtwork artwork,
-    required _PaymentLinkGiftCardBuilder cardBuilder,
-    String? supportingText,
-    bool supportingTextIsError = false,
-    bool enableContinue = true,
-  }) {
-    return _PaymentLinkStaticAmountPreview(
-      visualState: visualState,
-      initialArtwork: artwork,
-      cardBuilder: cardBuilder,
-      supportingText: supportingText,
-      supportingTextIsError: supportingTextIsError,
-      enableContinue: enableContinue,
     );
   }
 
@@ -761,8 +762,8 @@ class _PaymentLinkBatchDetailPreview extends StatelessWidget {
             : 'Unused',
         used: used,
         note: detected ? 'Use detected' : null,
-        onCopyLink: _noop,
-        onShowQr: _noop,
+        onCopyLink: ready ? _noop : null,
+        onShowQr: ready ? _noop : null,
       );
     }
 
@@ -844,73 +845,6 @@ class _PaymentLinkReviewPreviewState extends State<_PaymentLinkReviewPreview> {
   }
 }
 
-typedef _PaymentLinkGiftCardBuilder =
-    Widget Function(PaymentLinkCardArtwork artwork);
-
-class _PaymentLinkStaticAmountPreview extends StatefulWidget {
-  const _PaymentLinkStaticAmountPreview({
-    required this.visualState,
-    required this.initialArtwork,
-    required this.cardBuilder,
-    this.supportingText,
-    this.supportingTextIsError = false,
-    this.enableContinue = true,
-  });
-
-  final PaymentLinkAmountVisualState visualState;
-  final PaymentLinkCardArtwork initialArtwork;
-  final _PaymentLinkGiftCardBuilder cardBuilder;
-  final String? supportingText;
-  final bool supportingTextIsError;
-  final bool enableContinue;
-
-  @override
-  State<_PaymentLinkStaticAmountPreview> createState() =>
-      _PaymentLinkStaticAmountPreviewState();
-}
-
-class _PaymentLinkStaticAmountPreviewState
-    extends State<_PaymentLinkStaticAmountPreview> {
-  late PaymentLinkCardArtwork _selectedArtwork;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedArtwork = widget.initialArtwork;
-  }
-
-  @override
-  void didUpdateWidget(covariant _PaymentLinkStaticAmountPreview oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialArtwork != widget.initialArtwork) {
-      _selectedArtwork = widget.initialArtwork;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PaymentLinkAmountDesktopView(
-      state: widget.visualState,
-      card: widget.cardBuilder(_selectedArtwork),
-      cardSelector: PaymentLinkCardSelectorRail(
-        artworks: PaymentLinkCardArtwork.values,
-        selected: _selectedArtwork,
-        onSelected: (artwork) {
-          if (artwork == _selectedArtwork) return;
-          setState(() => _selectedArtwork = artwork);
-        },
-      ),
-      onBack: _noop,
-      onCreate: widget.enableContinue ? _noop : null,
-      supportingText: widget.supportingText,
-      supportingTextIsError: widget.supportingTextIsError,
-      emptyActionLabel: widget.supportingTextIsError
-          ? 'Enter amount'
-          : 'Continue',
-    );
-  }
-}
-
 class _PaymentLinkBulkPreview extends StatefulWidget {
   const _PaymentLinkBulkPreview({
     this.initialReviewing = false,
@@ -919,6 +853,8 @@ class _PaymentLinkBulkPreview extends StatefulWidget {
     this.initialPreparing = false,
     this.initialMixed = false,
     this.initialMessage = '',
+    this.isLedger = false,
+    this.error,
   });
 
   final bool initialReviewing;
@@ -927,6 +863,8 @@ class _PaymentLinkBulkPreview extends StatefulWidget {
   final bool initialPreparing;
   final bool initialMixed;
   final String initialMessage;
+  final bool isLedger;
+  final String? error;
 
   @override
   State<_PaymentLinkBulkPreview> createState() =>
@@ -954,7 +892,8 @@ class _PaymentLinkBulkPreviewState extends State<_PaymentLinkBulkPreview> {
   @override
   Widget build(BuildContext context) => PaymentLinkBulkDesktopFlow(
     count: _count,
-    maxCount: 50,
+    maxCount: widget.isLedger ? kLedgerMaxExternalShieldedOutputs : 50,
+    isLedger: widget.isLedger,
     amountController: _amount,
     messageController: _message,
     artwork: _artwork,
@@ -965,7 +904,8 @@ class _PaymentLinkBulkPreviewState extends State<_PaymentLinkBulkPreview> {
           : null,
     ),
     spendable: BigInt.from(_count > 30 ? 1000000000 : 400000000),
-    quote: widget.initialPreparing || _amount.text.isEmpty
+    quote:
+        widget.initialPreparing || widget.error != null || _amount.text.isEmpty
         ? null
         : PaymentLinkBatchQuote(
             sourceAccountUuid: 'preview-account',
@@ -977,7 +917,8 @@ class _PaymentLinkBulkPreviewState extends State<_PaymentLinkBulkPreview> {
     reviewing: _reviewing,
     submitting: false,
     retrySaving: false,
-    error: null,
+    error: widget.error,
+    onRetry: widget.error == null ? null : _noop,
     onCountChanged: (count) => setState(() => _count = count),
     onAmountChanged: (_) => setState(() {}),
     onMessageChanged: (_) => setState(() {}),
@@ -985,7 +926,8 @@ class _PaymentLinkBulkPreviewState extends State<_PaymentLinkBulkPreview> {
       _artwork = artwork;
       _mixed = null;
     }),
-    onReview: widget.initialPreparing || _amount.text.isEmpty
+    onReview:
+        widget.initialPreparing || widget.error != null || _amount.text.isEmpty
         ? null
         : () => setState(() => _reviewing = true),
     onEdit: () => setState(() => _reviewing = false),
@@ -1260,9 +1202,13 @@ class _PaymentLinkInteractiveMessageDesktopPreviewState
 }
 
 class _PaymentLinkReceivedPreview extends StatefulWidget {
-  const _PaymentLinkReceivedPreview({required this.hasMessage});
+  const _PaymentLinkReceivedPreview({
+    required this.hasMessage,
+    this.checking = false,
+  });
 
   final bool hasMessage;
+  final bool checking;
 
   @override
   State<_PaymentLinkReceivedPreview> createState() =>
@@ -1283,6 +1229,20 @@ class _PaymentLinkReceivedPreviewState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.checking) {
+      return PaymentLinkReadyDesktopView(
+        state: PaymentLinkReadyVisualState.checking,
+        card: const PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.ruby,
+          amountText: '4.45',
+          supportingText: r'$1,210.20',
+          showCaret: false,
+        ),
+        onBack: _noop,
+        onCopy: null,
+        waitingStatusLabel: 'Checking the gift… 50%',
+      );
+    }
     if (!widget.hasMessage) {
       return PaymentLinkReceivedDesktopView(
         card: const PaymentLinkGiftCard(
@@ -1327,7 +1287,7 @@ class _PaymentLinkReceivedPreviewState
 ///
 /// It deliberately uses a fixed fake conversion rate and a local timer so it
 /// never reaches payment-link providers, storage, network, or Rust code.
-class PaymentLinkInteractiveDesktopPreview extends StatefulWidget {
+class PaymentLinkInteractiveDesktopPreview extends StatelessWidget {
   const PaymentLinkInteractiveDesktopPreview({
     this.initialAmount = '',
     this.focusAmount = false,
@@ -1338,149 +1298,15 @@ class PaymentLinkInteractiveDesktopPreview extends StatefulWidget {
   final bool focusAmount;
 
   @override
-  State<PaymentLinkInteractiveDesktopPreview> createState() =>
-      _PaymentLinkInteractiveDesktopPreviewState();
-}
-
-class _PaymentLinkInteractiveDesktopPreviewState
-    extends State<PaymentLinkInteractiveDesktopPreview> {
-  static const _usdPerZec = 272.0;
-  static const _amountFormatters = [
-    CommaToDotInputFormatter(),
-    DecimalAmountInputFormatter(maxFractionDigits: 8),
-  ];
-
-  late final TextEditingController _amountController;
-  final FocusNode _amountFocusNode = FocusNode();
-  PaymentLinkCardArtwork _selectedArtwork = PaymentLinkCardArtwork.gift;
-  Timer? _priceTimer;
-  bool _priceLoading = true;
-  bool _amountFocused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _amountController = TextEditingController(text: widget.initialAmount);
-    _priceTimer = Timer(kPaymentLinkPreviewFiatDelay, () {
-      if (mounted) setState(() => _priceLoading = false);
-    });
-    _amountFocused = widget.focusAmount;
-    _amountFocusNode.addListener(_handleAmountFocus);
-    if (widget.focusAmount) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _amountFocusNode.requestFocus();
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _priceTimer?.cancel();
-    _amountFocusNode
-      ..removeListener(_handleAmountFocus)
-      ..dispose();
-    _amountController.dispose();
-    super.dispose();
-  }
-
-  void _handleAmountFocus() {
-    if (_amountFocused == _amountFocusNode.hasFocus) return;
-    setState(() => _amountFocused = _amountFocusNode.hasFocus);
-  }
-
-  String? get _fiatText {
-    final value = _amountController.text;
-    final amount = double.tryParse(value.startsWith('.') ? '0$value' : value);
-    if (amount == null || amount < 0) return null;
-    if (amount == 0) return r'$0.00';
-    return _priceLoading ? null : _formatUsd(amount * _usdPerZec);
-  }
-
-  void _handleAmountChanged(String _) {
-    setState(() {});
-  }
-
-  PaymentLinkAmountVisualState get _visualState {
-    if (_amountController.text.isEmpty) {
-      return _amountFocused
-          ? PaymentLinkAmountVisualState.focused
-          : PaymentLinkAmountVisualState.empty;
-    }
-    if (!_hasPositiveAmount) return PaymentLinkAmountVisualState.focused;
-    if (_priceLoading) return PaymentLinkAmountVisualState.fiatLoading;
-    if (_fiatText != null) return PaymentLinkAmountVisualState.fiatLoaded;
-    return PaymentLinkAmountVisualState.amount;
-  }
-
-  bool get _hasPositiveAmount {
-    final value = _amountController.text;
-    final amount = double.tryParse(value.startsWith('.') ? '0$value' : value);
-    return amount != null && amount > 0;
-  }
-
-  void _useMax() {
-    const value = '142.23';
-    _amountController.value = const TextEditingValue(
-      text: value,
-      selection: TextSelection.collapsed(offset: value.length),
-    );
-    _handleAmountChanged(value);
-    _amountFocusNode.requestFocus();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SizedBox.fromSize(
-        size: _previewWindowSize,
-        child: AppDesktopShell(
-          sidebar: const _PaymentLinkPreviewSidebar(),
-          pane: AppDesktopPane(
-            padding: EdgeInsets.zero,
-            child: PaymentLinkAmountDesktopView(
-              state: _visualState,
-              card: PaymentLinkGiftCard(
-                artwork: _selectedArtwork,
-                amountController: _amountController,
-                amountFocusNode: _amountFocusNode,
-                amountEditorKey: const ValueKey(
-                  'payment_link_interactive_amount_editor',
-                ),
-                amountInputFormatters: _amountFormatters,
-                onAmountChanged: _handleAmountChanged,
-                maxAmountText: '142.23',
-                onUseMax: _useMax,
-                showMaxButton: true,
-                supportingText: _fiatText,
-                supportingLoading: _hasPositiveAmount && _priceLoading,
-                emptyAmountLabel: 'Enter Amount',
-                semanticLabel: 'Gift card amount input',
-              ),
-              cardSelector: PaymentLinkCardSelectorRail(
-                artworks: PaymentLinkCardArtwork.values,
-                selected: _selectedArtwork,
-                onSelected: (artwork) {
-                  if (artwork == _selectedArtwork) return;
-                  setState(() => _selectedArtwork = artwork);
-                },
-              ),
-              onBack: _noop,
-              onCreate: _noop,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static String _formatUsd(double value) {
-    final parts = value.toStringAsFixed(2).split('.');
-    final whole = parts.first.replaceAllMapped(
-      RegExp(r'(\d)(?=(\d{3})+$)'),
-      (match) => '${match[1]},',
-    );
-    return '\$$whole.${parts.last}';
-  }
+  Widget build(BuildContext context) => PaymentLinkDesktopPreview(
+    state: PaymentLinkPreviewState.createAmount,
+    content: PaymentLinkAmountPreview(
+      initialAmount: initialAmount,
+      initialArtwork: PaymentLinkCardArtwork.gift,
+      focusAmount: focusAmount,
+      priceDelay: kPaymentLinkPreviewFiatDelay,
+    ),
+  );
 }
 
 class _PaymentLinkThumbnail extends StatelessWidget {

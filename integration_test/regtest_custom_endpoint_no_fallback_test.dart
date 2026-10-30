@@ -52,7 +52,14 @@ void main() {
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
       _log('opening import flow');
-      await _tapButton(tester, const ValueKey('welcome_import_wallet_button'));
+      await _tapButton(
+        tester,
+        const ValueKey('welcome_import_wallet_button'),
+      );
+      await _tapButton(
+        tester,
+        const ValueKey('desktop_import_secret_passphrase_card'),
+      );
 
       _log('entering mnemonic');
       await _enterText(
@@ -70,6 +77,7 @@ void main() {
       );
 
       _log('setting password');
+      await finishDesktopAccountCustomisation(tester);
       await _enterText(
         tester,
         const ValueKey('set_password_password_field'),
@@ -81,7 +89,7 @@ void main() {
         _password,
       );
       await _tapButton(tester, const ValueKey('set_password_submit_button'));
-      await finishDesktopAccountCustomisation(tester);
+
 
       await _pumpUntil(
         tester,

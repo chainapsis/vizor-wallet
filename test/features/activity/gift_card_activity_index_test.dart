@@ -11,6 +11,77 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_re
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test(
+    'legacy received card pools require every claim leg before enrichment',
+    () {
+      final record = PaymentLinkReceivedRecord.fromLink(_link('legacy-pool'))
+          .copyWith(
+            status: PaymentLinkReceivedStatus.received,
+            destinationAccountUuid: 'account-1',
+            claimTxids: 'first,second',
+            claimSubmittedAt: DateTime.utc(2026, 10, 7),
+            claimDestinationPool: 'shielded',
+          );
+      final index = GiftCardActivityIndex.forAccount(
+        accountUuid: 'account-1',
+        createdRecords: [],
+        receivedRecords: [record],
+      );
+      final first = _transaction(
+        txidHex: 'first',
+        txKind: 'received',
+        activityPool: 'orchard',
+      );
+      final second = _transaction(
+        txidHex: 'second',
+        txKind: 'received',
+        activityPool: 'orchard',
+      );
+      expect(
+        index.metadataFor(first, transactions: [first])!.displayPool,
+        'shielded',
+      );
+      final enriched = index.metadataFor(first, transactions: [first, second])!;
+      expect(enriched.displayPool, 'orchard');
+      expect(enriched.claimTxids, ['first', 'second']);
+      expect(enriched.stableId, 'gift-card:legacy-pool');
+      expect(enriched.amountZatoshi, record.amountZatoshi);
+      expect(
+        index
+            .metadataFor(
+              first,
+              transactions: [
+                first,
+                _transaction(
+                  txidHex: 'second',
+                  txKind: 'received',
+                  activityPool: 'sapling',
+                ),
+              ],
+            )!
+            .displayPool,
+        'mixed',
+      );
+      expect(
+        index
+            .metadataFor(
+              first,
+              transactions: [
+                first,
+                _transaction(
+                  txidHex: 'second',
+                  txKind: 'received',
+                  activityPool: 'sapling',
+                  expiredUnmined: true,
+                ),
+              ],
+            )!
+            .displayPool,
+        'shielded',
+      );
+    },
+  );
+
   test('one funding transaction describes the whole created batch', () {
     final members = List.generate(
       3,
@@ -305,6 +376,38 @@ void main() {
     expect(redeemedMetadata.amountZatoshi, BigInt.from(100000000));
   });
 
+  test(
+    'large pending index preserves claim identity and deduplicates byte orientations',
+    () {
+      final received = [
+        for (var i = 1; i <= 300; i++)
+          PaymentLinkReceivedRecord.fromLink(_link('pending-$i')).copyWith(
+            status: PaymentLinkReceivedStatus.receiving,
+            destinationAccountUuid: 'account-1',
+            claimTxids: i.toRadixString(16).padLeft(64, '0'),
+            claimSubmittedAt: DateTime.utc(2026, 10, 7),
+            claimDestinationPool: 'orchard',
+          ),
+      ];
+      final index = GiftCardActivityIndex.forAccount(
+        accountUuid: 'account-1',
+        createdRecords: [],
+        receivedRecords: received,
+      );
+      final placeholders = index.withPendingClaims([]);
+      expect(placeholders.length, received.length);
+      final firstReversed = _transaction(
+        txidHex: _reverseHexBytes(received.first.claimTxids!),
+        txKind: 'received',
+      );
+      final rows = index.withPendingClaims([firstReversed]);
+      expect(rows.length, received.length);
+      expect(rows.first, firstReversed);
+      expect(index.metadataFor(rows.first)!.stableId, 'gift-card:pending-1');
+      expect(index.withPendingClaims(rows).length, received.length);
+    },
+  );
+
   test('refreshes its completed future after lifecycle writes', () async {
     final recoveryStore = PaymentLinkRecoveryStore(_MemoryRecoveryStorage());
     final receivedStore = PaymentLinkReceivedStore(_MemoryReceivedStorage());
@@ -375,6 +478,7 @@ rust_sync.TransactionInfo _transaction({
   required String txidHex,
   required String txKind,
   bool expiredUnmined = false,
+  String? activityPool,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
@@ -382,11 +486,16 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: txKind,
     displayAmount: BigInt.from(100000000),
     displayPool: 'shielded',
+    activityPool: activityPool,
     createdTime: BigInt.from(1800000000),
   );
 }

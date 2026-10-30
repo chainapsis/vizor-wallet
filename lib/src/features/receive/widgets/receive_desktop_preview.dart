@@ -15,7 +15,7 @@ enum ReceiveDesktopPreviewState {
   shieldedModal,
   transparentModal,
 
-  /// Shielded receive with the "Request ZEC" entry beside the copy button,
+  /// Shielded receive with copy/share and a labelled request entry below,
   /// which is where the live pane puts it. The plain [shielded] state keeps
   /// the single-CTA row the pane had before the request flow landed, so the
   /// two can still be compared.
@@ -451,23 +451,35 @@ class _ReceiveContentArea extends StatelessWidget {
           ),
         ),
         if (showsRequestEntry)
-          // The request entry shares the copy pill's row as a compact icon
-          // button — the home card's "Pay" shape — so the pane keeps the
-          // single-button height.
           Positioned(
             left: (420 - (230 + AppSpacing.xs + 60)) / 2,
-            top: 596,
+            top: 548,
             width: 230 + AppSpacing.xs + 60,
-            height: 44,
-            child: Row(
+            height: 44 * 2 + AppSpacing.xs,
+            child: Column(
               children: [
-                SizedBox(
-                  width: 230,
-                  height: 44,
-                  child: _CopyAddressButton(isShielded: isShielded),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 230,
+                      height: 44,
+                      child: _CopyAddressButton(isShielded: isShielded),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    const SizedBox(
+                      width: 60,
+                      height: 44,
+                      child: _ShareButton(),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                const SizedBox(width: 60, height: 44, child: _RequestButton()),
+                const SizedBox(height: AppSpacing.xs),
+                const _FixedPillButton(
+                  width: 230 + AppSpacing.xs + 60,
+                  height: 44,
+                  label: 'Request ZEC',
+                  variant: _FixedPillButtonVariant.ghost,
+                ),
               ],
             ),
           )
@@ -912,13 +924,8 @@ class _CopyAddressButton extends StatelessWidget {
   }
 }
 
-/// The request entry: a compact secondary pill beside the copy action.
-///
-/// Secondary rather than primary because copying the address is still what
-/// most visits to this screen are for; icon only because a second labelled
-/// pill under the copy button pushed the pane past its frame.
-class _RequestButton extends StatelessWidget {
-  const _RequestButton();
+class _ShareButton extends StatelessWidget {
+  const _ShareButton();
 
   @override
   Widget build(BuildContext context) {
@@ -926,7 +933,7 @@ class _RequestButton extends StatelessWidget {
       width: 60,
       height: 44,
       label: '',
-      iconName: AppIcons.qr,
+      iconName: AppIcons.share,
       iconSize: 20,
       variant: _FixedPillButtonVariant.secondary,
     );

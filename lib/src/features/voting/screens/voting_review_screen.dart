@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/navigation/route_owned_redirect.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -60,7 +63,6 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
   String? _snapshotBundlePrecomputeKey;
-  String? _resultsRedirectRoundId;
 
   @override
   void initState() {
@@ -90,7 +92,6 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
       _snapshotBundlePrecomputeKey = null;
-      _resultsRedirectRoundId = null;
     }
   }
 
@@ -173,13 +174,27 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
     }
   }
 
-  void _redirectToResults(String roundId) {
-    if (_resultsRedirectRoundId == roundId) return;
-    _resultsRedirectRoundId = roundId;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context.go(votingResultsRoute(roundId));
-    });
+  Widget _resultsRedirect(VotingSessionState snapshot) {
+    // Wake an intent blocked by account refresh or locking even when the
+    // voting session itself did not publish a different snapshot.
+    ref.watch(accountProvider);
+    ref.watch(appSecurityProvider.select((state) => state.requiresUnlock));
+    return RouteOwnedRedirect(
+      requestKey: (widget.roundId, snapshot.accountUuid),
+      isValid: () {
+        final session = ref.read(votingSessionProvider(widget.roundId));
+        final account = ref.read(accountProvider);
+        return !ref.read(appSecurityProvider).requiresUnlock &&
+            !session.isLoading &&
+            !session.hasError &&
+            !account.isLoading &&
+            !account.hasError &&
+            identical(session.value, snapshot) &&
+            account.value?.activeAccountUuid == snapshot.accountUuid;
+      },
+      onNavigate: () => context.go(votingResultsRoute(widget.roundId)),
+      child: _stateView(const VotingPaneLoading()),
+    );
   }
 
   @override
@@ -195,8 +210,7 @@ class _VotingReviewViewState extends ConsumerState<VotingReviewView>
         final round = state.round;
         if (round != null &&
             votingPollListStatus(round.status) != VotingPollListStatus.active) {
-          _redirectToResults(round.roundId);
-          return _stateView(const VotingPaneLoading());
+          return _resultsRedirect(state);
         }
         _maybePrepareVotingPower(state);
         _maybePrecomputeSnapshotBundles(state);

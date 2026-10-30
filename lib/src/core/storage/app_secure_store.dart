@@ -21,6 +21,7 @@ import '../../rust/api/secret.dart' as rust_secret;
 import 'voting_hotkey_store.dart';
 import 'secure_storage_diagnostics.dart';
 import 'linux_keyring_coordinator.dart';
+import 'linux_keyring_value_codec.dart';
 
 const kWalletDbNameKey = 'zcash_wallet_db_name';
 const kThemeModeKey = 'zcash_theme_mode';
@@ -119,6 +120,8 @@ class AppSecureStore {
        _diagnostics = SecureStorageDiagnostics.instance,
        _keyringCoordinator = LinuxKeyringCoordinator.instance,
        enforcesSessionGeneration =
+           !kIsWeb && defaultTargetPlatform == TargetPlatform.linux,
+       encodesLinuxKeyringValues =
            !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
 
   @visibleForTesting
@@ -128,12 +131,16 @@ class AppSecureStore {
     SecureStorageDiagnostics? diagnostics,
     LinuxKeyringCoordinator? keyringCoordinator,
     bool? enforceSessionGeneration,
+    bool? encodeLinuxKeyringValues,
   }) : _storage = storage,
        _mnemonicStorage = mnemonicStorage ?? storage,
        _diagnostics = diagnostics ?? SecureStorageDiagnostics.instance,
        _keyringCoordinator = keyringCoordinator,
        enforcesSessionGeneration =
            enforceSessionGeneration ??
+           (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux),
+       encodesLinuxKeyringValues =
+           encodeLinuxKeyringValues ??
            (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux);
 
   static final AppSecureStore instance = AppSecureStore._();
@@ -185,6 +192,10 @@ class AppSecureStore {
   final LinuxKeyringCoordinator? _keyringCoordinator;
   final _secretMutationLock = _AsyncLock();
   final bool enforcesSessionGeneration;
+
+  /// Whether stored values pass through the Linux keyring codec. See
+  /// `encodeLinuxKeyringValue` for the gnome-keyring failure it prevents.
+  final bool encodesLinuxKeyringValues;
   int _sessionGeneration = 0;
 
   /// Shared across provider containers so creation outlives the initiating UI.
@@ -236,6 +247,55 @@ class AppSecureStore {
     return dbName;
   }
 
+  /// Re-stores Linux keyring values written before the value codec existed.
+  ///
+  /// Every write rewrites the plugin's whole JSON item, so one legacy value
+  /// with a quote keeps the item unreadable on a passwordless gnome-keyring
+  /// collection (see `encodeLinuxKeyringValue`). Such a collection can still
+  /// hold the legacy item in memory until a write makes it reload the file,
+  /// after which the next write rebuilds the item from nothing. Entries lost
+  /// that way are restored from the snapshot read here. Does nothing on other
+  /// platforms.
+  Future<void> encodeLegacyLinuxKeyringValues() {
+    if (!encodesLinuxKeyringValues) return Future.value();
+    return _secretMutationLock.run(() async {
+      final storages = identical(_mnemonicStorage, _storage)
+          ? [_storage]
+          : [_storage, _mnemonicStorage];
+      for (final storage in storages) {
+        final stored = await _runStorageOperation(
+          'read legacy keyring values',
+          storage.readAll,
+        );
+        if (!stored.values.any(linuxKeyringValueNeedsEncoding)) continue;
+        final encoded = stored.map(
+          (key, value) => MapEntry(
+            key,
+            linuxKeyringValueNeedsEncoding(value)
+                ? encodeLinuxKeyringValue(value)
+                : value,
+          ),
+        );
+        Future<void> store(String key) => _runStorageOperation(
+          'write encoded keyring value "$key"',
+          () => storage.write(key: key, value: encoded[key]),
+        );
+        for (final key in encoded.keys) {
+          if (encoded[key] != stored[key]) await store(key);
+        }
+        // Every stored value is escape-free by now, so these restores cannot
+        // make the item unreadable again.
+        final migrated = await _runStorageOperation(
+          'read encoded keyring values',
+          storage.readAll,
+        );
+        for (final key in encoded.keys) {
+          if (migrated[key] != encoded[key]) await store(key);
+        }
+      }
+    });
+  }
+
   Future<String> getOrCreateIronwoodMigrationPendingTxSaltBase64({
     required String network,
     required String accountUuid,
@@ -257,7 +317,7 @@ class AppSecureStore {
   }
 
   Future<String?> readString(String key) async {
-    return _runStorageOperation('read "$key"', () => _storage.read(key: key));
+    return _runStorageOperation('read "$key"', () => _readValue(_storage, key));
   }
 
   Future<String?> readSecretStringWithOptions(
@@ -270,7 +330,7 @@ class AppSecureStore {
       if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final raw = await _runStorageOperation(
         'read secret "$key"',
-        () => _storage.read(key: key),
+        () => _readValue(_storage, key),
       );
       return _decryptStoredSecretString(
         raw,
@@ -292,7 +352,7 @@ class AppSecureStore {
       final key = _accountMnemonicKey(accountUuid);
       final raw = await _runStorageOperation(
         'read account mnemonic "$accountUuid"',
-        () => _mnemonicStorage.read(key: key),
+        () => _readValue(_mnemonicStorage, key),
       );
       final storedValue = await _decryptStoredSecretString(
         raw,
@@ -318,7 +378,7 @@ class AppSecureStore {
       final key = _accountMnemonicKey(accountUuid);
       final raw = await _runStorageOperation(
         'read account software wallet secret "$accountUuid"',
-        () => _mnemonicStorage.read(key: key),
+        () => _readValue(_mnemonicStorage, key),
       );
       final storedValue = await _decryptStoredSecretString(
         raw,
@@ -344,7 +404,7 @@ class AppSecureStore {
       final key = _accountMnemonicKey(accountUuid);
       final raw = await _runStorageOperation(
         'read account mnemonic bytes "$accountUuid"',
-        () => _mnemonicStorage.read(key: key),
+        () => _readValue(_mnemonicStorage, key),
       );
       return _decryptStoredSecretBytes(
         raw,
@@ -377,7 +437,7 @@ class AppSecureStore {
   Future<void> writeString(String key, String value) async {
     await _runStorageOperation(
       'write "$key"',
-      () => _storage.write(key: key, value: value),
+      () => _writeValue(_storage, key, value),
     );
   }
 
@@ -388,7 +448,7 @@ class AppSecureStore {
       final payload = await _encryptSecretString(value, generation);
       await _runStorageOperation('write secret "$key"', () async {
         _checkSessionGeneration(generation);
-        await _storage.write(key: key, value: payload);
+        await _writeValue(_storage, key, payload);
       });
     });
   }
@@ -410,7 +470,7 @@ class AppSecureStore {
       _checkSessionGeneration(generation);
       await _runStorageOperation('write account mnemonic "$accountUuid"', () {
         _checkSessionGeneration(generation);
-        return _mnemonicStorage.write(key: key, value: payload);
+        return _writeValue(_mnemonicStorage, key, payload);
       });
     });
   }
@@ -443,7 +503,7 @@ class AppSecureStore {
       final prefix = _votingHotkeyAccountPrefix(accountUuid);
       final storedValues = await _runStorageOperation(
         'read voting hotkeys for account "$accountUuid"',
-        _storage.readAll,
+        () => _readAllValues(_storage),
       );
       for (final key in storedValues.keys.toList(growable: false)) {
         if (!key.startsWith(prefix)) continue;
@@ -510,13 +570,13 @@ class AppSecureStore {
   }
 
   Future<String?> readPlain(String key) {
-    return _runStorageOperation('read "$key"', () => _storage.read(key: key));
+    return _runStorageOperation('read "$key"', () => _readValue(_storage, key));
   }
 
   Future<void> writePlain(String key, String value) {
     return _runStorageOperation(
       'write "$key"',
-      () => _storage.write(key: key, value: value),
+      () => _writeValue(_storage, key, value),
     );
   }
 
@@ -528,7 +588,7 @@ class AppSecureStore {
     if (prefix.isEmpty) return;
     final storedValues = await _runStorageOperation(
       'read keys with prefix "$prefix"',
-      _storage.readAll,
+      () => _readAllValues(_storage),
     );
     for (final key in storedValues.keys.toList(growable: false)) {
       if (!key.startsWith(prefix)) continue;
@@ -615,7 +675,7 @@ class AppSecureStore {
       }
       final storedValues = await _runStorageOperation(
         'read all account mnemonics',
-        _mnemonicStorage.readAll,
+        () => _readAllValues(_mnemonicStorage),
       );
       final rotatedSecrets = <_PasswordRotationEntry>[];
       final rollbackSecrets = <_PasswordRotationRollbackEntry>[];
@@ -652,7 +712,7 @@ class AppSecureStore {
       }
       final appManagedSecretValues = await _runStorageOperation(
         'read all app-managed secrets',
-        _storage.readAll,
+        () => _readAllValues(_storage),
       );
       for (final entry in appManagedSecretValues.entries) {
         if (!_isAppManagedGeneralSecretKey(entry.key)) continue;
@@ -895,6 +955,36 @@ class AppSecureStore {
     }
   }
 
+  /// Reads [key] from [storage], decoding a Linux keyring codec value.
+  Future<String?> _readValue(FlutterSecureStorage storage, String key) async {
+    final stored = await storage.read(key: key);
+    if (stored == null || !encodesLinuxKeyringValues) return stored;
+    return decodeLinuxKeyringValue(stored);
+  }
+
+  /// Writes [value] to [storage], encoding it for the Linux keyring.
+  Future<void> _writeValue(
+    FlutterSecureStorage storage,
+    String key,
+    String value,
+  ) {
+    return storage.write(
+      key: key,
+      value: encodesLinuxKeyringValues ? encodeLinuxKeyringValue(value) : value,
+    );
+  }
+
+  /// Reads every entry of [storage], decoding Linux keyring codec values.
+  Future<Map<String, String>> _readAllValues(
+    FlutterSecureStorage storage,
+  ) async {
+    final stored = await storage.readAll();
+    if (!encodesLinuxKeyringValues) return stored;
+    return stored.map(
+      (key, value) => MapEntry(key, decodeLinuxKeyringValue(value)),
+    );
+  }
+
   bool _shouldSkipLockedSecretRead(bool requireUnlockedSession) {
     return requireUnlockedSession && !hasSessionPassword;
   }
@@ -1017,7 +1107,7 @@ class AppSecureStore {
 
     final legacyValues = await _runStorageOperation(
       'read legacy secure storage values',
-      _storage.readAll,
+      () => _readAllValues(_storage),
     );
     var mnemonicsAvailable = true;
     var legacyCleanupComplete = true;
@@ -1027,12 +1117,12 @@ class AppSecureStore {
       try {
         final existing = await _runStorageOperation(
           'read migrated account mnemonic "${entry.key}"',
-          () => _mnemonicStorage.read(key: entry.key),
+          () => _readValue(_mnemonicStorage, entry.key),
         );
         if (existing == null) {
           await _runStorageOperation(
             'write migrated account mnemonic "${entry.key}"',
-            () => _mnemonicStorage.write(key: entry.key, value: entry.value),
+            () => _writeValue(_mnemonicStorage, entry.key, entry.value),
           );
         }
       } catch (error, stackTrace) {
@@ -1160,9 +1250,11 @@ class AppSecureStore {
     for (final entry in rotation.entries) {
       await _runStorageOperation(
         'write rotated secret "${entry.key}"',
-        () => _encryptedSecretStorageForKey(
+        () => _writeValue(
+          _encryptedSecretStorageForKey(entry.key),
           entry.key,
-        ).write(key: entry.key, value: entry.rotatedValue),
+          entry.rotatedValue,
+        ),
       );
     }
     await writePlain(_passwordVerifierSaltKey, rotation.newVerifierSalt);
@@ -1178,9 +1270,11 @@ class AppSecureStore {
       for (final entry in rollback.entries) {
         await _runStorageOperation(
           'restore secret "${entry.key}"',
-          () => _encryptedSecretStorageForKey(
+          () => _writeValue(
+            _encryptedSecretStorageForKey(entry.key),
             entry.key,
-          ).write(key: entry.key, value: entry.originalValue),
+            entry.originalValue,
+          ),
         );
       }
       if (rollback.oldVerifierSalt == null) {

@@ -42,8 +42,7 @@ cd "$ROOT_DIR"
 
 # Keep this ordered from the narrowest smoke test to broader user flows.
 # Desktop scenarios without a mobile counterpart yet (feature gaps):
-# custom-endpoint privacy (no mobile endpoint settings UI) and
-# shield-transparent ×2 (no mobile transparent balance / shield UI).
+# custom-endpoint privacy (no mobile endpoint settings UI).
 run_test "1/19 create wallet via passcode onboarding and sync" \
   "scripts/e2e/flutter-ios-regtest-mobile-create-sync.sh"
 

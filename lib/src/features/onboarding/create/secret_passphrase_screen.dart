@@ -12,7 +12,6 @@ import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/app_security_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'onboarding_split_view.dart';
 import '../shared/onboarding_chrome.dart';
@@ -116,16 +115,8 @@ class _SecretPassphraseScreenState
     }
     final mnemonic = _mnemonic;
     if (mnemonic == null) return;
-    final security = ref.read(appSecurityProvider);
-    clearCreateOnboardingSecretState(ref.read);
 
-    if (!security.isPasswordConfigured) {
-      context.go(
-        OnboardingStep.setPassword.routePath,
-        extra: SetPasswordScreenArgs.create(mnemonic: mnemonic),
-      );
-      return;
-    }
+    clearCreateOnboardingSecretState(ref.read);
 
     context.go(
       OnboardingStep.customiseAccount.routePath,

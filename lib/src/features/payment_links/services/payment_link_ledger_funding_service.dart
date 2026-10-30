@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -39,6 +40,9 @@ final paymentLinkLedgerFundingServiceProvider =
           );
         },
         refresh: () => ref.read(syncProvider.notifier).refreshAfterSend(),
+        onAcceptedBroadcast: (account, txids) => ref
+            .read(paymentLinkServiceProvider)
+            .observeActivityBroadcast(accountUuid: account, txids: txids),
         currentChainHeight: () =>
             ref.read(syncProvider).value?.chainTipHeight ?? 0,
       );
@@ -47,13 +51,18 @@ final paymentLinkLedgerFundingServiceProvider =
 int _unknownChainHeight() => 0;
 
 class LedgerGiftFundingTerminalException implements Exception {
-  const LedgerGiftFundingTerminalException();
+  const LedgerGiftFundingTerminalException({this.reason});
 
   static const message =
       'This gift card transaction expired or was rejected. Go back to create a new gift card.';
 
+  /// Rust's reason for the expiry, which can be the network upgrade hold.
+  final String? reason;
+
+  String get userMessage => networkUpgradeHoldMessage(reason ?? '') ?? message;
+
   @override
-  String toString() => message;
+  String toString() => userMessage;
 }
 
 /// Reuses Gift Card draft/proof storage but uses the Ledger signed outbox.
@@ -68,6 +77,7 @@ class PaymentLinkLedgerFundingService {
     required this.settleProposal,
     required this.refresh,
     this.currentChainHeight = _unknownChainHeight,
+    this.onAcceptedBroadcast,
   });
   final PaymentLinkHardwareSigningService hardware;
   final LedgerSignedOperationService operations;
@@ -80,6 +90,7 @@ class PaymentLinkLedgerFundingService {
 
   /// The in-memory sync tip used to date a submission; `0` when unknown.
   final int Function() currentChainHeight;
+  final void Function(String accountUuid, String txids)? onAcceptedBroadcast;
 
   void _requireAccount(String accountUuid) {
     if (!accountExists(accountUuid)) {
@@ -98,12 +109,14 @@ class PaymentLinkLedgerFundingService {
     required String accountUuid,
     required BigInt amountZatoshi,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) => lifecycle.run(() {
     _requireAccount(accountUuid);
     return hardware.createFundingPczt(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: accountUuid,
       presentation: presentation,
+      expectedQuote: expectedQuote,
     );
   });
 
@@ -235,7 +248,7 @@ class PaymentLinkLedgerFundingService {
         /* A sync refresh cannot undo funding. */
       }
       if (result.status == 'expired') {
-        throw const LedgerGiftFundingTerminalException();
+        throw LedgerGiftFundingTerminalException(reason: result.message);
       }
       return PaymentLinkHardwareFundingResult(
         txids: result.txid,
@@ -367,7 +380,11 @@ class PaymentLinkLedgerFundingService {
             'The gift card transaction does not match its saved funding.',
           );
         }
-      } else {
+      }
+      if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
+        onAcceptedBroadcast?.call(operation.accountUuid, result.txid);
+      }
+      if (record.state == PaymentLinkRecoveryState.draft) {
         // Only an accepted broadcast is promoted; the reconciler settles an
         // unknown one once the wallet holds the transaction or it expires.
         final accepted = isPaymentLinkFundingBroadcastAccepted(result.status);

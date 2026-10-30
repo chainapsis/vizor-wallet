@@ -83,48 +83,64 @@ class RequestAmountSheetCompose extends StatelessWidget {
       title: kRequestFlowTitle,
       onClose: onClose ?? _noop,
       bottomPadding: AppSpacing.base,
+      constrainBody: true,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: AppSpacing.sm),
-          _SerifAmountDisplay(
-            request: request,
-            controller: amountController,
-            onChanged: onAmountChanged,
-          ),
-          // Said next to where it broke, in the desktop card's words: red
-          // digits and a dead CTA state that something is wrong without
-          // saying what, and the two causes need opposite corrections.
-          if (amountError != null && amountError.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Center(child: RequestAmountErrorRow(text: amountError)),
-          ],
-          const SizedBox(height: AppSpacing.s),
-          _AmountUnitToggle(
-            text: request.conversionText,
-            enterUsdMode: !request.amountInputIsUsd,
-            onTap: onToggleAmountUnit,
-          ),
-          const SizedBox(height: AppSpacing.base),
-          // A transparent address cannot carry a memo at all, so the row is
-          // absent rather than disabled: an inert control invites a tap that
-          // can never do anything.
-          if (request.isShielded) ...[
-            if (messageExpanded)
-              RequestMessageField(
-                text: request.messageText ?? '',
-                controller: messageController,
-                onChanged: onMessageChanged,
-                onClose: onCloseMessage,
-              )
-            else
-              RequestMessageRow(
-                message: request.effectiveMessage,
-                onTap: onAddMessage,
+          // A tall keyboard can leave less room than the expanded memo needs.
+          // Scroll the fields so the action stays inside its hit-test bounds.
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: AppSpacing.sm),
+                  _SerifAmountDisplay(
+                    request: request,
+                    controller: amountController,
+                    onChanged: onAmountChanged,
+                  ),
+                  // Said next to where it broke, in the desktop card's words:
+                  // red digits and a dead CTA state that something is wrong
+                  // without saying what, and the two causes need opposite
+                  // corrections.
+                  if (amountError != null && amountError.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Center(child: RequestAmountErrorRow(text: amountError)),
+                  ],
+                  const SizedBox(height: AppSpacing.s),
+                  _AmountUnitToggle(
+                    text: request.conversionText,
+                    enterUsdMode: !request.amountInputIsUsd,
+                    onTap: onToggleAmountUnit,
+                  ),
+                  const SizedBox(height: AppSpacing.base),
+                  // A transparent address cannot carry a memo at all, so the
+                  // row is absent rather than disabled: an inert control
+                  // invites a tap that can never do anything.
+                  if (request.isShielded) ...[
+                    if (messageExpanded)
+                      RequestMessageField(
+                        visibleLines: 2,
+                        inlineValidationMessage: true,
+                        text: request.messageText ?? '',
+                        controller: messageController,
+                        onChanged: onMessageChanged,
+                        onClose: onCloseMessage,
+                      )
+                    else
+                      RequestMessageRow(
+                        message: request.effectiveMessage,
+                        onTap: onAddMessage,
+                      ),
+                  ],
+                ],
               ),
-            const SizedBox(height: AppSpacing.md),
-          ],
+            ),
+          ),
+          if (request.isShielded) const SizedBox(height: AppSpacing.md),
           AppButton(
             key: const ValueKey('request_create_button'),
             expand: true,

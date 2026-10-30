@@ -32,6 +32,23 @@ class GiftCardUsage {
   final bool cleanupPending;
   final bool cleaned;
 
+  /// Keep the saved observation while a provider loads or has no verified
+  /// history. A missing observation is not evidence that usage changed.
+  GiftCardUsage withLatestObservation(GiftCardUsage? observation) {
+    if (observation == null ||
+        (observation.status == GiftCardUsageStatus.unknown &&
+            observation.reason == null &&
+            observation.checkedAt == null) ||
+        (status != GiftCardUsageStatus.unknown &&
+            observation.status == GiftCardUsageStatus.unknown) ||
+        (checkedAt != null &&
+            observation.checkedAt != null &&
+            observation.checkedAt!.isBefore(checkedAt!))) {
+      return this;
+    }
+    return observation;
+  }
+
   String get label => switch (status) {
     GiftCardUsageStatus.unknown =>
       reason == GiftCardUsageReason.awaitingConfirmation

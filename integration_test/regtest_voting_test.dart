@@ -120,6 +120,10 @@ void main() {
           tester,
           const ValueKey('welcome_import_wallet_button'),
         );
+        await _tap(
+          tester,
+          const ValueKey('desktop_import_secret_passphrase_card'),
+        );
         await _enterText(
           tester,
           const ValueKey('import_mnemonic_first_word_field'),
@@ -141,6 +145,7 @@ void main() {
           tester,
           const ValueKey('unknown_birthday_confirm_button'),
         );
+        await finishDesktopAccountCustomisation(tester);
         await _enterText(
           tester,
           const ValueKey('set_password_password_field'),
@@ -152,7 +157,7 @@ void main() {
           _password,
         );
         await _tapButton(tester, const ValueKey('set_password_submit_button'));
-        await finishDesktopAccountCustomisation(tester);
+
       }
 
       await _pumpUntil(

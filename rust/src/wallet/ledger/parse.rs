@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use ff::PrimeField;
 use orchard::{
     bundle::BundleVersion,
     note::{NoteVersion, Rho},
@@ -423,6 +422,14 @@ fn required_shielded_derivation(
     }
 }
 
+/// A zero-valued spend still awaiting its signature. Since NU6.3 the builder
+/// pairs Orchard change with one under the account key; padding dummies arrive
+/// already signed.
+fn needs_zero_value_signature(action: &orchard::pczt::Action) -> bool {
+    let spend = action.spend();
+    spend.value().map(|value| value.inner()) == Some(0) && spend.spend_auth_sig().is_none()
+}
+
 fn convert_shielded_bundle(
     bundle: &orchard::pczt::Bundle,
     branch: BranchId,
@@ -434,6 +441,9 @@ fn convert_shielded_bundle(
     }
 
     let bundle_version = bundle_version_for(branch, pool)?;
+    if pool == ValuePool::Orchard && bundle.actions().iter().any(needs_zero_value_signature) {
+        return Err(LEDGER_ORCHARD_CHANGE_UNSUPPORTED.into());
+    }
     let actions = bundle
         .actions()
         .iter()
@@ -524,7 +534,7 @@ fn convert_shielded_action(
             .ok_or("Shielded spend is missing rseed")?,
         alpha: spend
             .alpha()
-            .map(|alpha| alpha.to_repr())
+            .map(|alpha| alpha.to_bytes())
             .ok_or("Shielded spend is missing alpha")?,
         signing_path: derivation.signing_path,
         seed_fingerprint: derivation.seed_fingerprint,
@@ -570,7 +580,10 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
         output
             .value()
             .ok_or("Shielded output is missing its value")?,
-        Rho::from_nf_old(*action.spend().nullifier()),
+        // An output note's rho is the nullifier its action reveals.
+        Rho::from_bytes(&action.spend().nullifier().to_bytes())
+            .into_option()
+            .ok_or("Shielded spend nullifier is not a valid rho")?,
         output.rseed().ok_or("Shielded output is missing rseed")?,
         *output.note_version(),
     )
@@ -604,6 +617,19 @@ fn output_memo_reaches_hash_path(action: &orchard::pczt::Action) -> Result<bool,
 /// recognises this error by matching on it.
 pub(super) const LEDGER_MEMO_HASH_UNSUPPORTED: &str =
     "Update the Ledger Zcash app to sign non-English memos";
+
+/// The app treats every zero-valued spend as padding and refuses to sign it, so
+/// it cannot sign the one paired with Orchard change. Keep this identical to
+/// `ledgerOrchardChangeUnsupportedError` in
+/// `lib/src/features/ledger/ledger_capability.dart`.
+pub(super) const LEDGER_ORCHARD_CHANGE_UNSUPPORTED: &str =
+    "Ledger can't sign a transaction that keeps change in Orchard. Migrate your Orchard balance to Ironwood first.";
+
+/// Apps before 3.10.0 reject the NU7 branch and an Orchard spend into Ironwood.
+/// Keep this identical to `ledgerAppUpdateRequiredError` in
+/// `lib/src/features/ledger/ledger_capability.dart`.
+pub(super) const LEDGER_APP_UPDATE_REQUIRED: &str =
+    "Update your Ledger and its Zcash app to 3.10.0 or newer in Ledger Wallet.";
 
 /// Whether the Ledger Zcash app would render `memo` as a hash rather than as
 /// text. Apps before 3.9.4 reset the device on that path, so `serialize_pczt`
@@ -649,10 +675,27 @@ fn map_orchard_error(pool: &str, error: OrchardError<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::ledger::LedgerAppSupport;
 
     fn memo_pczt(version: BundleVersion, memo: &[u8], value: u64, with_ovk: bool) -> Vec<u8> {
+        pczt_with_bundle_type(
+            version,
+            memo,
+            value,
+            with_ovk,
+            orchard::builder::BundleType::UNPADDED,
+        )
+    }
+
+    fn pczt_with_bundle_type(
+        version: BundleVersion,
+        memo: &[u8],
+        value: u64,
+        with_ovk: bool,
+        bundle_type: orchard::builder::BundleType,
+    ) -> Vec<u8> {
         use orchard::{
-            builder::{Builder, BundleType},
+            builder::Builder,
             keys::{FullViewingKey, Scope, SpendingKey},
             note::RandomSeed,
             tree::{MerkleHashOrchard, MerklePath},
@@ -686,7 +729,7 @@ mod tests {
         let path =
             MerklePath::from_parts(0, [MerkleHashOrchard::from_bytes(&[0; 32]).unwrap(); 32]);
         let mut builder = Builder::new(
-            BundleType::UNPADDED,
+            bundle_type,
             version,
             version.default_flags(),
             path.root(note.commitment().into()),
@@ -754,6 +797,44 @@ mod tests {
     }
 
     #[test]
+    fn ledger_needs_the_signer_view_not_the_keystone_batch_view() {
+        // The padding dummy is preauthorized; Keystone's batch view drops its
+        // alpha, which every action Ledger parses must carry.
+        let base = pczt_with_bundle_type(
+            BundleVersion::ironwood_v3(),
+            b"",
+            90_000,
+            true,
+            orchard::builder::BundleType::DEFAULT,
+        );
+        let signer_view = crate::wallet::sync::redact_pczt_for_signer(&base).unwrap();
+        assert!(parse_pczt(&signer_view).is_ok());
+        let batch_view = crate::wallet::sync::prepare_pczt_for_keystone_batch(&base)
+            .unwrap()
+            .redacted_pczt;
+        assert_eq!(
+            parse_pczt(&batch_view).err().as_deref(),
+            Some("Shielded spend is missing alpha")
+        );
+    }
+
+    #[test]
+    fn orchard_change_is_refused_before_the_device_sees_it() {
+        // Orchard change brings a zero-valued spend the app will not sign.
+        let pczt = pczt_with_bundle_type(
+            BundleVersion::orchard_v3(),
+            b"",
+            90_000,
+            true,
+            orchard::builder::BundleType::UNPADDED,
+        );
+        assert_eq!(
+            parse_pczt(&pczt).err().as_deref(),
+            Some(LEDGER_ORCHARD_CHANGE_UNSUPPORTED)
+        );
+    }
+
+    #[test]
     fn memos_the_device_would_hash_are_refused_for_apps_without_memo_hash() {
         for version in [
             BundleVersion::orchard_v2(),
@@ -777,15 +858,27 @@ mod tests {
             ] {
                 for value in [0, 90_000] {
                     let pczt = memo_pczt(version, memo, value, true);
-                    assert!(super::super::build_pczt_full_signing_plan(&pczt, false)
-                        .unwrap_err()
-                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
-                    assert!(super::super::build_pczt_signing_plan(&pczt, false)
-                        .unwrap_err()
-                        .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                    assert!(super::super::build_pczt_full_signing_plan(
+                        &pczt,
+                        LedgerAppSupport::OLDEST
+                    )
+                    .unwrap_err()
+                    .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                    assert!(
+                        super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::OLDEST)
+                            .unwrap_err()
+                            .contains(LEDGER_MEMO_HASH_UNSUPPORTED)
+                    );
                     // An app that can show the memo hash signs the same PCZT.
-                    assert!(super::super::build_pczt_full_signing_plan(&pczt, true).is_ok());
-                    assert!(super::super::build_pczt_signing_plan(&pczt, true).is_ok());
+                    assert!(super::super::build_pczt_full_signing_plan(
+                        &pczt,
+                        LedgerAppSupport::NEWEST
+                    )
+                    .is_ok());
+                    assert!(
+                        super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::NEWEST)
+                            .is_ok()
+                    );
                 }
             }
         }
@@ -821,7 +914,11 @@ mod tests {
                 &[b'x'; 512],
             ] {
                 let pczt = memo_pczt(version, memo, 90_000, true);
-                assert!(super::super::build_pczt_full_signing_plan(&pczt, false).is_ok());
+                assert!(super::super::build_pczt_full_signing_plan(
+                    &pczt,
+                    LedgerAppSupport::OLDEST
+                )
+                .is_ok());
             }
         }
     }

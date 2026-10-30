@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/formatting/date_format.dart';
+import '../../../core/navigation/route_owned_redirect.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../core/formatting/number_format.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -77,7 +80,6 @@ class _VotingProposalDetailViewState
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
   String? _snapshotBundlePrecomputeKey;
-  String? _resultsRedirectRoundId;
   Timer? _shareStatusDeadlineTimer;
   ProviderSubscription<AsyncValue<VotingSessionState>>?
   _visibleRoundSubscription;
@@ -106,7 +108,6 @@ class _VotingProposalDetailViewState
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
       _snapshotBundlePrecomputeKey = null;
-      _resultsRedirectRoundId = null;
       _visibleShareRefreshKey = null;
       _listenForVisibleShareRefresh();
       _clearShareStatusDeadline();
@@ -281,8 +282,7 @@ class _VotingProposalDetailViewState
         }
         if (votingPollListStatus(round.status) != VotingPollListStatus.active &&
             !hasBlockingRecovery) {
-          _redirectToResults(round.roundId);
-          return _stateView(const VotingPaneLoading());
+          return _resultsRedirect(state);
         }
         final draftKey = accountUuid == null
             ? null
@@ -384,13 +384,29 @@ class _VotingProposalDetailViewState
     return VotingPaneStateView(backLinkMinWidth: 60, child: child);
   }
 
-  void _redirectToResults(String roundId) {
-    if (_resultsRedirectRoundId == roundId) return;
-    _resultsRedirectRoundId = roundId;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context.go(votingResultsRoute(roundId));
-    });
+  Widget _resultsRedirect(VotingSessionState snapshot) {
+    // Wake an intent blocked by account refresh or locking even when the
+    // voting session itself did not publish a different snapshot.
+    ref.watch(accountProvider);
+    ref.watch(appSecurityProvider.select((state) => state.requiresUnlock));
+    return RouteOwnedRedirect(
+      requestKey: (widget.roundId, snapshot.accountUuid),
+      // The same branch must still be warranted at execution time. A fresh
+      // provider value will rebuild this intent; stale snapshots cannot navigate.
+      isValid: () {
+        final session = ref.read(votingSessionProvider(widget.roundId));
+        final account = ref.read(accountProvider);
+        return !ref.read(appSecurityProvider).requiresUnlock &&
+            !session.isLoading &&
+            !session.hasError &&
+            !account.isLoading &&
+            !account.hasError &&
+            identical(session.value, snapshot) &&
+            account.value?.activeAccountUuid == snapshot.accountUuid;
+      },
+      onNavigate: () => context.go(votingResultsRoute(widget.roundId)),
+      child: _stateView(const VotingPaneLoading()),
+    );
   }
 
   void _maybePrepareVotingPower(

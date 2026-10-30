@@ -94,6 +94,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
         // register the HTTPS deeplink, so `/payment-links` is only ever
         // reached from inside the app.
         context.go('/home');
+        syncNotifier.refreshHomeInBackground();
         final pendingPrefill = claimed.prefill;
         final notice = claimed.notice;
         if (pendingPrefill != null) {
@@ -101,7 +102,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
           // not a jump into the composer.
           ref
               .read(paymentRequestFlowProvider.notifier)
-              .present(pendingPrefill, source: PaymentRequestSource.link);
+              .present(pendingPrefill, source: pendingPrefill.requestSource);
         } else if (notice != null) {
           // The link outlived its park window while the user was finding their
           // password, or the wallet it landed on cannot open it. Landing on
@@ -214,7 +215,7 @@ class DesktopUnlockContent extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
-          'assets/illustrations/welcome_badge.png',
+          'assets/illustrations/desktop/welcome_badge.webp',
           width: 50,
           height: 50,
         ),

@@ -1,13 +1,12 @@
-const viewingKeyAccessSummary =
-    'A viewing key gives read-only access to this account.';
-
-const viewingKeyAccessDetails =
-    'A compatible wallet or service can use it to see your balance and '
-    'transaction activity, including future transactions, but cannot spend '
-    'your funds.';
+const viewingKeyWarningTitle = 'This key reveals your transactions';
+const incomingViewingKeyWarningTitle = 'This key reveals incoming payments';
+const viewingKeyChoiceSharingWarning =
+    'Share only with trusted parties. '
+    'Both keys may reveal transparent balances and spending.';
 
 const viewingKeyExplanation =
-    '$viewingKeyAccessSummary $viewingKeyAccessDetails';
+    'Reveals your balance and all past and future transactions. '
+    'It cannot spend ZEC.';
 
-const viewingKeyPrivacyNotice =
-    'Keep this key private and only share it with people or services you trust.';
+const incomingViewingKeyExplanation =
+    'Reveals past and future incoming payments. It cannot spend ZEC.';

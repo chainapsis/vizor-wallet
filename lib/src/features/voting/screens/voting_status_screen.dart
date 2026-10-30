@@ -4,6 +4,7 @@ import '../../../providers/account_provider.dart';
 import '../../ledger/services/ledger_device_selection.dart';
 import '../../ledger/widgets/ledger_access_recovery_modal.dart';
 import 'dart:async';
+import '../../../core/navigation/mobile_sidebar_exit.dart';
 
 import '../../ledger/services/ledger_signing_progress.dart';
 
@@ -13,7 +14,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -592,8 +593,15 @@ class _VotingStatusViewState extends ConsumerState<VotingStatusView> {
         );
       },
     );
-    if (usesPlatformScreen) return content;
-    return widget.contentWrapper?.call(context, content) ?? content;
+    final result = usesPlatformScreen
+        ? content
+        : widget.contentWrapper?.call(context, content) ?? content;
+    if (!widget.requireCurrentRouteForConfirmation) return result;
+    return MobileSidebarExitScope(
+      canNavigate: startError != null || (job != null && !job.isInFlight),
+      canSwitchAccount: job != null && !job.isInFlight,
+      child: result,
+    );
   }
 
   VotingSessionPhase _displayPhase(
@@ -985,7 +993,7 @@ class VotingStatusContent extends StatelessWidget {
                 // Only the signing panel is a live QR the device is reading.
                 // The hold sits above it rather than on the status screen, so
                 // a request still lands while the vote is merely submitting.
-                PaymentUriBusySurfaceHold(
+                ExternalActionGuardHold(
                   child: _KeystoneSigningPanel(
                     bundleIndex: keystoneSigningBundleIndex!,
                     urParts: keystoneUrParts,
@@ -1005,7 +1013,7 @@ class VotingStatusContent extends StatelessWidget {
                   submissionJobInFlight &&
                   phase == VotingSessionPhase.ledgerSigning &&
                   ledgerSigningBundleIndex != null) ...[
-                PaymentUriBusySurfaceHold(
+                ExternalActionGuardHold(
                   child: LedgerVotingSigningPanel(
                     accountUuid: ledgerAccountUuid,
                     displayMemo: ledgerDisplayMemo ?? '',
@@ -1211,7 +1219,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) =>
-      PaymentUriBusySurfaceHold(child: _buildContent(context, ref));
+      ExternalActionGuardHold(child: _buildContent(context, ref));
 
   Widget _buildContent(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
@@ -1265,11 +1273,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
         },
         stage == LedgerSigningStage.preparing
             ? 'Please wait while Vizor prepares your request.'
-            : stage.messageForDevice(
-                progress?.accountUuid == accountUuid
-                    ? progress?.deviceModel
-                    : null,
-              ),
+            : stage.message,
       ),
     };
     if (kAppFormFactor == AppFormFactor.mobile) {

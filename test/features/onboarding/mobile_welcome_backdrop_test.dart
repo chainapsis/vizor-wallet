@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player/video_player.dart';
 // video_player exposes its platform interface through a transitive package;
@@ -11,6 +12,7 @@ import 'package:video_player/video_player.dart';
 // ignore: depend_on_referenced_packages
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_backdrop.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/welcome_art_assets.dart';
 
 class _PendingPlaybackCommand {
   _PendingPlaybackCommand(this.name, this.completer);
@@ -40,6 +42,10 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
 
   @override
   Future<int?> createWithOptions(VideoCreationOptions options) async {
+    // A native video decoder is mocked, but its asset must still be available
+    // in the same mobile bundle that supplies the screen's actual images.
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    expect(manifest.listAssets(), contains(options.dataSource.asset));
     calls.add('create');
     createdSources.add(options.dataSource);
     createdOptions.add(options.videoPlayerOptions);
@@ -50,7 +56,9 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
       VideoEvent(
         eventType: VideoEventType.initialized,
         duration: Duration(seconds: 8),
-        size: Size(720, 1280),
+        size: options.dataSource.asset == kLandscapeWelcomeVideoAsset
+            ? const Size(1280, 720)
+            : const Size(720, 1280),
       ),
     );
     return playerId;
@@ -137,6 +145,7 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
 Widget _app({
   bool animate = true,
   bool disableAnimations = false,
+  bool landscape = false,
   GlobalKey<NavigatorState>? navigatorKey,
 }) {
   return MaterialApp(
@@ -147,7 +156,9 @@ Widget _app({
       ).copyWith(disableAnimations: disableAnimations),
       child: child!,
     ),
-    home: Scaffold(body: MobileWelcomeBackdrop(animate: animate)),
+    home: Scaffold(
+      body: MobileWelcomeBackdrop(animate: animate, landscape: landscape),
+    ),
   );
 }
 
@@ -159,6 +170,10 @@ Future<void> _pumpInitialized(WidgetTester tester, Widget app) async {
 
 Future<void> _disposeBackdrop(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
+  await _flushDisposal(tester);
+}
+
+Future<void> _flushDisposal(WidgetTester tester) async {
   // MobileWelcomeBackdrop deliberately starts controller disposal without
   // awaiting it, so flush the controller's subscription-cancellation steps.
   for (var i = 0; i < 4; i++) {
@@ -321,5 +336,36 @@ void main() {
     await _disposeBackdrop(tester);
 
     expect(platform.calls, contains('dispose'));
+  });
+
+  testWidgets('resizing replaces the video source and disposes old players', (
+    tester,
+  ) async {
+    await _pumpInitialized(tester, _app());
+    await _pumpInitialized(tester, _app(landscape: true));
+    await _flushDisposal(tester);
+    expect(platform.createdSources.map((source) => source.asset), [
+      kMobileWelcomeVideoAsset,
+      kLandscapeWelcomeVideoAsset,
+    ]);
+    expect(platform.calls.where((call) => call == 'dispose'), hasLength(1));
+    expect(find.byType(VideoPlayer), findsOneWidget);
+
+    await _pumpInitialized(tester, _app());
+    expect(platform.createdSources.last.asset, kMobileWelcomeVideoAsset);
+    await _flushDisposal(tester);
+    expect(platform.calls.where((call) => call == 'dispose'), hasLength(2));
+    await _disposeBackdrop(tester);
+    expect(platform.calls.where((call) => call == 'dispose'), hasLength(3));
+  });
+
+  testWidgets('wide reduced motion loads the shared landscape poster', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(landscape: true, disableAnimations: true));
+    await tester.pump();
+    final image = tester.widget<Image>(find.byType(Image));
+    expect((image.image as AssetImage).assetName, kLandscapeWelcomePosterAsset);
+    expect(platform.createdSources, isEmpty);
   });
 }

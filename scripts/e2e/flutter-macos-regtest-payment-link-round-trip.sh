@@ -11,4 +11,4 @@ cd "$ROOT_DIR"
 start_payment_link_regtest
 
 echo "running Gift Card create/open/claim round trip"
-run_payment_link_phase "$TEST_FILE"
+run_payment_link_phase "$TEST_FILE" "$@"

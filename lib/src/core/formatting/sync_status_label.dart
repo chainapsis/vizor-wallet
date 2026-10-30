@@ -68,17 +68,22 @@ class SyncStatusLabel {
 
     final complete =
         !sync.isSyncing &&
+        !sync.isChecking &&
         (sync.percentage >= 1.0 ||
             (sync.chainTipHeight > 0 &&
                 sync.scannedHeight >= sync.chainTipHeight));
-    if (!complete && (sync.isSyncing || sync.isBackgroundMode)) {
+    if (!complete &&
+        (sync.isSyncing || sync.isBackgroundMode || sync.isChecking)) {
       final pct =
           displayWholePercentage?.clamp(0, 99).toString() ??
-          formatSyncStatusPercentage(sync.percentage);
+          formatSyncStatusPercentage(
+            sync.checking?.percentage ?? sync.percentage,
+          );
       return SyncStatusLabel(
         kind: SyncStatusKind.syncing,
-        label: '$pct% Syncing...',
-        semanticsLabel: 'Syncing $pct percent',
+        label: formatSyncProgressLabel(pct, isChecking: sync.isChecking),
+        semanticsLabel:
+            '${sync.isChecking ? 'Checking' : 'Syncing'} $pct percent',
       );
     }
 
@@ -89,6 +94,9 @@ class SyncStatusLabel {
     );
   }
 }
+
+String formatSyncProgressLabel(Object percentage, {required bool isChecking}) =>
+    isChecking ? '$percentage% checking' : '$percentage% Syncing...';
 
 /// Whether Tor is where the route is heading. A disable in progress keeps
 /// `torEnabled` true while it drains, so the flag alone would read a route

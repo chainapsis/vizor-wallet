@@ -22,12 +22,15 @@ import '../../features/migration/providers/ironwood_migration_announcement_provi
 import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../features/swap/models/swap_activity_navigation.dart';
 import '../../features/swap/providers/swap_state_provider.dart';
+import '../navigation/external_action_guard_provider.dart';
+import '../navigation/external_action_guard_hold.dart';
 import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
 import '../formatting/number_format.dart';
 import '../formatting/zec_amount.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
+import '../storage/linux_keyring_coordinator.dart';
 import '../formatting/sync_status_label.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_copy_feedback.dart';
@@ -144,6 +147,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   void _navigateTo(String routePath) {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (widget.disabledRoutePaths.contains(routePath)) return;
     if (_matches(routePath)) {
       if (routePath == '/voting') {
@@ -160,16 +168,31 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   void _openAddAccount() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     _closeAccountMenu();
     context.go('/add-account');
   }
 
   void _openActivity() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (_matchedLocation == '/activity') return;
     context.go('/activity');
   }
 
   void _openSettings() {
+    if (ref
+        .read(externalActionGuardProvider)
+        .blocks(ExternalAction.navigation)) {
+      return;
+    }
     if (_matchedLocation == '/settings') return;
     context.go('/settings');
   }
@@ -187,24 +210,29 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final router = GoRouter.of(context);
     final entryPath = router.routerDelegate.currentConfiguration.uri.path;
     final swapNotifier = ref.read(swapStateProvider.notifier);
-    final selectedAsset = await swapNotifier.resolvePaySelectedAssetForEntry(
-      accountUuid: accountUuid,
-    );
-    if (!mounted ||
-        selectedAsset == null ||
-        router.routerDelegate.currentConfiguration.uri.path != entryPath) {
-      return;
-    }
-    final prepared = swapNotifier.preparePayFromShieldedZec(
-      preferredAsset: selectedAsset,
-      expectedAccountUuid: accountUuid,
-    );
-    if (!prepared) return;
-    router.go(
-      '/pay',
-      extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
-    );
+    await _trackPendingNavigation(() async {
+      final selectedAsset = await swapNotifier.resolvePaySelectedAssetForEntry(
+        accountUuid: accountUuid,
+      );
+      if (!mounted ||
+          selectedAsset == null ||
+          router.routerDelegate.currentConfiguration.uri.path != entryPath) {
+        return;
+      }
+      final prepared = swapNotifier.preparePayFromShieldedZec(
+        preferredAsset: selectedAsset,
+        expectedAccountUuid: accountUuid,
+      );
+      if (!prepared) return;
+      router.go(
+        '/pay',
+        extra: const PayComposerNavigationArgs(preservePreparedComposer: true),
+      );
+    });
   }
+
+  Future<void> _trackPendingNavigation(Future<void> Function() action) =>
+      ref.read(externalActionGuardProvider.notifier).runNavigation(action);
 
   void _toggleAccountMenu({
     required List<AccountInfo> accounts,
@@ -280,11 +308,20 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
-    await accountNotifier.switchAccount(uuid);
-    if (mounted) {
-      context.go('/home');
-    }
-    unawaited(_refreshAfterAccountSwitch(syncNotifier));
+    await _trackPendingNavigation(() async {
+      try {
+        await accountNotifier.switchAccount(uuid);
+      } on WalletMutationBusyException catch (error) {
+        // Another wallet mutation, such as the private queries toggle, holds
+        // the wallet: stay on this screen and say why nothing happened.
+        if (mounted) showAppToast(context, error.toString());
+        return;
+      }
+      if (mounted) {
+        context.go('/home');
+      }
+      unawaited(_refreshAfterAccountSwitch(syncNotifier));
+    });
   }
 
   Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
@@ -428,11 +465,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final networkPrivacy = ref.watch(networkPrivacyProvider);
     final accountSync = sync.scopedToAccount(activeAccountUuid);
     final isImporting =
-        activeAccountUuid != null &&
-        !accountSync.hasAccountScopedData &&
-        accountSync.failure == null;
+        activeAccountUuid != null && accountSync.isImportingAccount;
     final balanceText =
-        '${_formatSidebarBalance(accountSync.displayTotalBalance)} '
+        '${accountSync.hasDisplayBalance ? _formatSidebarBalance(accountSync.displayTotalBalance) : '—'} '
         '$kZcashDefaultCurrencyTicker';
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final balanceLabel = hideAmountIfPrivacyMode(
@@ -450,11 +485,17 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final migrationCoordinator = ref.watch(
       ironwoodMigrationCoordinatorProvider,
     );
-    final migrationStatus = activeAccountUuid == null
+    // A run the upgrade stopped has no active run id, so the coordinator
+    // status alone would drop the section; the home CTA still carries it.
+    final migrationStatus =
+        ironwoodHomeMigrationPresentation.mode ==
+            IronwoodHomeMigrationCtaMode.stopped
+        ? ironwoodHomeMigrationPresentation.status
+        : activeAccountUuid == null
         ? null
         : migrationCoordinator.statuses[activeAccountUuid];
 
-    return AppDesktopSidebarSurface(
+    final sidebar = AppDesktopSidebarSurface(
       glass: true,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -503,12 +544,15 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       ),
                     ),
                     SizedBox(height: headerNavGap),
-                    if (migrationStatus?.activeRunId != null &&
+                    if ((migrationStatus?.activeRunId != null ||
+                            migrationStatus?.phase ==
+                                kIronwoodMigrationStoppedByUpgradePhase) &&
                         migrationStatus?.phase !=
                             kIronwoodMigrationWaitingDenomConfirmationsPhase)
                       _SidebarMigrationHomeSection(
                         status: migrationStatus!,
                         isKeystone: activeAccount?.isKeystone ?? false,
+                        balanceIsAvailable: accountSync.hasDisplayBalance,
                         orchardBalance:
                             accountSync.displayOrchardHoldingsBalance,
                         ironwoodBalance:
@@ -613,6 +657,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         },
       ),
     );
+    return ExternalActionNavigationGuard(child: sidebar);
   }
 }
 
@@ -620,6 +665,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
   const _SidebarMigrationHomeSection({
     required this.status,
     required this.isKeystone,
+    required this.balanceIsAvailable,
     required this.orchardBalance,
     required this.ironwoodBalance,
     required this.privacyModeEnabled,
@@ -630,6 +676,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
 
   final rust_sync.MigrationStatus status;
   final bool isKeystone;
+  final bool balanceIsAvailable;
   final BigInt orchardBalance;
   final BigInt ironwoodBalance;
   final bool privacyModeEnabled;
@@ -645,12 +692,14 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
         isKeystone &&
         status.phase == kIronwoodMigrationReadyToMigratePhase &&
         (signingPartIndices == null || signingPartIndices.isNotEmpty);
+    final stopped = status.phase == kIronwoodMigrationStoppedByUpgradePhase;
+    final attention = needsInput || stopped;
     final orchardLabel = hideAmountIfPrivacyMode(
-      '${_formatSidebarBalance(orchardBalance)} ZEC',
+      '${balanceIsAvailable ? _formatSidebarBalance(orchardBalance) : '—'} ZEC',
       privacyModeEnabled: privacyModeEnabled,
     );
     final ironwoodLabel = hideAmountIfPrivacyMode(
-      '${_formatSidebarBalance(ironwoodBalance)} ZEC',
+      '${balanceIsAvailable ? _formatSidebarBalance(ironwoodBalance) : '—'} ZEC',
       privacyModeEnabled: privacyModeEnabled,
     );
 
@@ -668,6 +717,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
               label: 'Home',
               iconName: AppIcons.home,
               onTap: onHome,
+              // A stopped run released its notes, so Orchard is no longer held.
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -675,31 +725,40 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
                     orchardLabel,
                     key: ValueKey('sidebar_orchard_balance'),
                     style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.secondary.withValues(alpha: 0.5),
+                      color: stopped
+                          ? colors.text.secondary
+                          : colors.text.secondary.withValues(alpha: 0.5),
                     ),
                   ),
-                  SizedBox(width: AppSpacing.xxs),
-                  AppIcon(
-                    AppIcons.lock,
-                    size: 16,
-                    color: colors.icon.regular.withValues(alpha: 0.5),
-                  ),
+                  if (!stopped) ...[
+                    SizedBox(width: AppSpacing.xxs),
+                    AppIcon(
+                      AppIcons.lock,
+                      size: 16,
+                      color: colors.icon.regular.withValues(alpha: 0.5),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
-          Positioned(
-            left: _SidebarMigrationGlow.left,
-            top: _SidebarMigrationGlow.top,
-            child: _SidebarMigrationGlow(),
-          ),
+          if (!stopped)
+            Positioned(
+              left: _SidebarMigrationGlow.left,
+              top: _SidebarMigrationGlow.top,
+              child: _SidebarMigrationGlow(),
+            ),
           Positioned(
             left: 0,
             right: 0,
             top: 40,
             child: AppSidebarItem(
               key: ValueKey('sidebar_migration_progress_button'),
-              label: needsInput ? 'Needs input' : 'Migrating...',
+              label: stopped
+                  ? 'Migration stopped'
+                  : needsInput
+                  ? 'Needs input'
+                  : 'Migrating...',
               leading: SizedBox(
                 width: _SidebarMigrationGlow.visualWidth,
                 height: _SidebarMigrationGlow.visualHeight,
@@ -708,9 +767,9 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
               inactiveOpacity: 0.64,
               onTap: onMigration,
               trailing: AppIcon(
-                needsInput ? AppIcons.warning : AppIcons.loader,
+                attention ? AppIcons.warning : AppIcons.loader,
                 size: 20,
-                color: needsInput ? colors.icon.warning : colors.icon.regular,
+                color: attention ? colors.icon.warning : colors.icon.regular,
               ),
             ),
           ),

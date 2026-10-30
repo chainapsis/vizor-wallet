@@ -5,6 +5,7 @@
 
 import '../frb_generated.dart';
 import '../wallet/keystone.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `action_sig_from_api`, `action_sig_to_api`, `retain_consistent_firmware_version`, `sig_result_to_api`, `signed_pczt_firmware_version`

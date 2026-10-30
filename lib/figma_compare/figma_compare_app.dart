@@ -26,28 +26,33 @@ class FigmaCompareApp extends StatelessWidget {
         ? AppThemeData.light
         : AppThemeData.dark;
 
+    final capture = RepaintBoundary(
+      key: captureBoundaryKey,
+      child: Focus(
+        canRequestFocus: false,
+        descendantsAreFocusable: scenario.allowFocus,
+        child: IgnorePointer(
+          ignoring: !scenario.allowPointer,
+          child: Builder(builder: scenario.builder),
+        ),
+      ),
+    );
+
     return MaterialApp(
       title: 'Vizor Figma comparison',
       debugShowCheckedModeBanner: false,
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
       themeMode: themeMode,
-      home: Scaffold(
-        body: RepaintBoundary(
-          key: captureBoundaryKey,
-          child: Focus(
-            canRequestFocus: false,
-            descendantsAreFocusable: scenario.allowFocus,
-            child: IgnorePointer(child: Builder(builder: scenario.builder)),
-          ),
-        ),
-      ),
+      home: scenario.outsideScaffold
+          ? const SizedBox.shrink()
+          : Scaffold(body: capture),
       builder: (context, child) {
         final themed = AppThemeHost(
           themeMode: themeMode,
           child: ColoredBox(
             color: appTheme.colors.background.window,
-            child: child!,
+            child: scenario.outsideScaffold ? capture : child!,
           ),
         );
         final mediaQuery = MediaQuery.maybeOf(context);

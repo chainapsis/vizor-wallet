@@ -31,13 +31,16 @@ int compareActivityEntries(ActivityEntry a, ActivityEntry b) {
 /// An unmined, unexpired tx with no recorded time is treated as
 /// happening now — externally received mempool txs carry no block or
 /// creation time and must surface at the top, not sink to "Earlier".
-DateTime? transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
+DateTime? transactionActivityTimestamp(
+  rust_sync.TransactionInfo tx, {
+  DateTime? now,
+}) {
   final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
   if (seconds > BigInt.zero) {
     return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
   }
   if (tx.minedHeight == BigInt.zero && !tx.expiredUnmined) {
-    return DateTime.now();
+    return now ?? DateTime.now();
   }
   return null;
 }
@@ -45,14 +48,22 @@ DateTime? transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
 /// Sorts [entries] newest-first and groups consecutive entries that
 /// share a section title.
 List<ActivityFeedSectionData> buildActivityFeedSections(
-  List<ActivityEntry> entries,
-) {
-  final sorted = [...entries]..sort(compareActivityEntries);
+  List<ActivityEntry> entries, {
+  int? limit,
+}) {
+  // Dart List.sort is not stable. Preserve native/source order at equal
+  // timestamps so a later page cannot reshuffle rows already on screen.
+  final sorted = entries.indexed.toList()
+    ..sort((a, b) {
+      final order = compareActivityEntries(a.$2, b.$2);
+      return order != 0 ? order : a.$1.compareTo(b.$1);
+    });
+  final visible = limit == null ? sorted : sorted.take(limit);
   final sections = <ActivityFeedSectionData>[];
   List<ActivityRowData>? currentRows;
   String? currentTitle;
 
-  for (final entry in sorted) {
+  for (final (_, entry) in visible) {
     final title = _activitySectionTitle(entry.timestamp);
     if (title != currentTitle) {
       currentTitle = title;

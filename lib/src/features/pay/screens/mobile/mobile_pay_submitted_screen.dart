@@ -1,3 +1,4 @@
+import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -190,36 +191,40 @@ class _MobilePaySubmittedScreenState
         progress.notice ?? 'The payment could not be submitted. Try again.',
     };
 
-    return MobileTransactionProgressScreen(
-      phase: progress.phase,
-      title: title,
-      body: body,
-      bodyMaxWidth:
-          progress.phase == MobileTransactionProgressPhase.pending ||
-              progress.phase == MobileTransactionProgressPhase.failed
-          ? null
-          : 245,
-      canPop: terminal,
-      statusBadgeKey: const ValueKey('pay_submitted_status'),
-      titleKey: const ValueKey('pay_submitted_title'),
-      progressIconKey: const ValueKey('pay_submitted_status_loader'),
-      successIconKey: const ValueKey('pay_submitted_status_success'),
-      failureIconKey: const ValueKey('pay_submitted_status_failed'),
-      successRippleKey: const ValueKey('pay_submitted_status_ripple'),
-      primaryActionKey: const ValueKey('pay_submitted_done'),
-      primaryActionLabel: terminal
-          ? progress.phase == MobileTransactionProgressPhase.failed
-                ? 'Return home'
-                : 'Done'
-          : null,
-      onPrimaryAction: terminal ? () => context.go('/home') : null,
-      secondaryActionKey: const ValueKey('pay_submitted_activity'),
-      secondaryActionLabel: terminal ? 'Go to activity' : null,
-      onSecondaryAction: terminal
-          ? () => paymentUnavailable
-                ? context.go('/activity')
-                : _openActivity(context)
-          : null,
+    return MobileSidebarExitScope(
+      canNavigate: terminal,
+      canSwitchAccount: terminal,
+      child: MobileTransactionProgressScreen(
+        phase: progress.phase,
+        title: title,
+        body: body,
+        bodyMaxWidth:
+            progress.phase == MobileTransactionProgressPhase.pending ||
+                progress.phase == MobileTransactionProgressPhase.failed
+            ? null
+            : 245,
+        canPop: terminal,
+        statusBadgeKey: const ValueKey('pay_submitted_status'),
+        titleKey: const ValueKey('pay_submitted_title'),
+        progressIconKey: const ValueKey('pay_submitted_status_loader'),
+        successIconKey: const ValueKey('pay_submitted_status_success'),
+        failureIconKey: const ValueKey('pay_submitted_status_failed'),
+        successRippleKey: const ValueKey('pay_submitted_status_ripple'),
+        primaryActionKey: const ValueKey('pay_submitted_done'),
+        primaryActionLabel: terminal
+            ? progress.phase == MobileTransactionProgressPhase.failed
+                  ? 'Return home'
+                  : 'Done'
+            : null,
+        onPrimaryAction: terminal ? () => context.go('/home') : null,
+        secondaryActionKey: const ValueKey('pay_submitted_activity'),
+        secondaryActionLabel: terminal ? 'Go to activity' : null,
+        onSecondaryAction: terminal
+            ? () => paymentUnavailable
+                  ? context.go('/activity')
+                  : _openActivity(context)
+            : null,
+      ),
     );
   }
 }

@@ -132,7 +132,14 @@ void main() {
 
 Future<void> _importWallet(WidgetTester tester) async {
   _log('opening import flow');
-  await _tapButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await _tapButton(
+    tester,
+    const ValueKey('welcome_import_wallet_button'),
+  );
+  await _tapButton(
+    tester,
+    const ValueKey('desktop_import_secret_passphrase_card'),
+  );
 
   _log('entering mnemonic');
   await _enterText(
@@ -147,6 +154,7 @@ Future<void> _importWallet(WidgetTester tester) async {
   await _tapButton(tester, const ValueKey('unknown_birthday_confirm_button'));
 
   _log('setting password');
+  await finishDesktopAccountCustomisation(tester);
   await _enterText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -158,7 +166,7 @@ Future<void> _importWallet(WidgetTester tester) async {
     _password,
   );
   await _tapButton(tester, const ValueKey('set_password_submit_button'));
-  await finishDesktopAccountCustomisation(tester);
+
 }
 
 Future<void> _configureSlowPresetPrimary() async {
@@ -251,9 +259,11 @@ Future<void> _tapButton(WidgetTester tester, Key key) async {
   final finder = find.byKey(key);
   await _pumpUntil(
     tester,
-    () =>
-        tester.any(finder) &&
-        tester.widget<AppButton>(finder).onPressed != null,
+    () {
+      if (!tester.any(finder)) return false;
+      final widget = tester.widget(finder);
+      return widget is! AppButton || widget.onPressed != null;
+    },
     description: '$key button to be enabled',
   );
   await tester.ensureVisible(finder);

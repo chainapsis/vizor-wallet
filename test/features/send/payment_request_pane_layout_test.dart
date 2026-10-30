@@ -128,7 +128,9 @@ void main() {
       _expectFits(tester, size);
 
       // The disclosures are what make the card grow past its own frame.
-      await tester.tap(find.text('Show full address'));
+      await tester.tap(
+        find.byKey(const ValueKey('payment_request_show_full_address')),
+      );
       await tester.pumpAndSettle();
       _expectFits(tester, size);
 
@@ -159,7 +161,12 @@ Future<void> _present(
 ) async {
   container
       .read(paymentRequestFlowProvider.notifier)
-      .present(request, source: PaymentRequestSource.link);
+      .present(
+        request,
+        source: identical(request, _longRequest)
+            ? PaymentRequestSource.qrCode
+            : PaymentRequestSource.link,
+      );
   await tester.pumpAndSettle();
 }
 

@@ -20,7 +20,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(MobileSendScreen), findsOneWidget);
     expect(find.text('Select Recipient'), findsOneWidget);
-    expect(find.text('Zcash Address'), findsOneWidget);
+    expect(find.text('Address or request link'), findsOneWidget);
     expect(find.text('Paste'), findsNothing);
     expect(find.text('Scan a QR Code'), findsOneWidget);
     expect(find.text('Continue'), findsNothing);
@@ -375,7 +375,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('24.312'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('mobile send amount USD use case renders USD input mode', (
@@ -387,7 +387,7 @@ void main() {
     expect(find.text(r'$'), findsOneWidget);
     expect(find.text('120.12'), findsOneWidget);
     expect(find.text('12 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('mobile send review default use case matches review layout', (

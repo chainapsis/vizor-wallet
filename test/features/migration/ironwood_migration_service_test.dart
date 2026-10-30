@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
+import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_phases.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_operation_registry.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
@@ -3185,6 +3186,7 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(10_000_000),
           blockOffset: 144,
+          blocksPerReferenceBlock: 1,
         ),
       ];
       final service = IronwoodMigrationService(
@@ -3307,6 +3309,7 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(5_000_000),
           blockOffset: 144,
+          blocksPerReferenceBlock: 1,
         ),
       ];
       final service = IronwoodMigrationService(
@@ -3360,6 +3363,7 @@ void main() {
     BigInt? seenFee;
     BigInt? seenMigrated;
     int? seenNoteCount;
+    bool? seenKeystoneBatch;
     String? completedRequestId;
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
@@ -3386,11 +3390,13 @@ void main() {
             required approvedFeeZatoshi,
             required approvedMigratedZatoshi,
             required approvedInputNoteCount,
+            required keystoneBatch,
           }) async {
             seenAmount = approvedTotalInputZatoshi;
             seenFee = approvedFeeZatoshi;
             seenMigrated = approvedMigratedZatoshi;
             seenNoteCount = approvedInputNoteCount;
+            seenKeystoneBatch = keystoneBatch;
             return expectedRequest;
           },
       completeKeystoneImmediateMigration:
@@ -3429,7 +3435,15 @@ void main() {
     expect(seenFee, plan.feeZatoshi);
     expect(seenMigrated, plan.migratedZatoshi);
     expect(seenNoteCount, 2);
+    expect(seenKeystoneBatch, isTrue);
     expect(completedRequestId, expectedRequest.requestId);
+
+    await service.prepareLedgerImmediateMigrationRequest(
+      accountUuid: 'account-1',
+      approvedPlan: plan,
+    );
+    // Ledger needs every spend's alpha, which the batch view drops.
+    expect(seenKeystoneBatch, isFalse);
   });
 
   test(
@@ -3536,6 +3550,7 @@ void main() {
           partIndex: 0,
           valueZatoshi: BigInt.from(10_000_000),
           blockOffset: 144,
+          blocksPerReferenceBlock: 1,
         ),
       ];
 
@@ -5185,6 +5200,73 @@ void main() {
     );
   });
 
+  for (final (name, heldTxids, waits) in [
+    ('iOS waits out the network upgrade without an error', {'txid-1'}, true),
+    (
+      "iOS still surfaces a due transfer while another batch's part is held",
+      {'txid-other'},
+      false,
+    ),
+  ]) {
+    test(name, () async {
+      final store = await _boundBackgroundCredentialStore();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus(activeRunId: 'run-1'));
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'session-password',
+        isMobile: () => true,
+        isIOS: () => true,
+        isMacOS: () => false,
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(),
+        stageMigrationOutboxBatch: (_) async => const {'txid-1': 'digest-1'},
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async => true,
+        runMigrationOutboxOnceNow: () async => IronwoodMigrationOutboxRunResult(
+          outcome: IronwoodMigrationOutboxRunOutcome.waiting,
+          nextHeight: 288,
+          observedHeight: 300,
+          heldForUpgradeTxids: heldTxids,
+        ),
+      );
+
+      final continued = service.continueSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+      );
+      if (waits) {
+        await continued;
+      } else {
+        await expectLater(continued, throwsA(isA<StateError>()));
+      }
+    });
+  }
+
   test(
     'a failed receipt does not block later receipts or outbox recovery',
     () async {
@@ -5378,6 +5460,39 @@ void main() {
       expect(cancelledCount, 1);
     },
   );
+
+  test('a run the upgrade stopped cancels the scheduler', () async {
+    final store = _backgroundCredentialStore();
+    await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+    var cancelledCount = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(
+          _migrationStatus(phase: kIronwoodMigrationStoppedByUpgradePhase),
+        );
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      isMobile: () => true,
+      cancelBackgroundMigration: () async => cancelledCount++,
+    );
+
+    await service.status(network: 'test', accountUuid: 'account-1');
+
+    expect(cancelledCount, 1);
+  });
 
   test(
     'status stays read-only and explicit recovery records proof readiness',
@@ -5683,6 +5798,7 @@ rust_sync.MigrationOutboxBatch _outboxBatch({
                 scheduledHeight: 288,
                 scheduleStartHeight: 288,
                 expiryHeight: 34_560,
+                targetHeight: 288,
               ),
           ]
         : [
@@ -5695,6 +5811,7 @@ rust_sync.MigrationOutboxBatch _outboxBatch({
               scheduledHeight: 288,
               scheduleStartHeight: 288,
               expiryHeight: 34_560,
+              targetHeight: 288,
             ),
           ],
   );

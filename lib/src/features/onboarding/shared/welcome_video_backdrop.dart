@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:video_player/video_player.dart';
 
@@ -9,12 +10,16 @@ class WelcomeVideoBackdrop extends StatefulWidget {
   const WelcomeVideoBackdrop({
     required this.videoAsset,
     required this.posterAsset,
+    this.animatedImageAsset,
     this.animate = true,
     super.key,
   });
 
   final String videoAsset;
   final String posterAsset;
+
+  /// Multiframe image used where the native video plugin is unavailable.
+  final String? animatedImageAsset;
 
   /// Deterministic previews use the source poster instead of a native texture.
   final bool animate;
@@ -30,6 +35,12 @@ class _WelcomeVideoBackdropState extends State<WelcomeVideoBackdrop>
   bool _visible = false;
   bool _foreground = true;
   bool _updatingPlayback = false;
+
+  bool get _usesAnimatedImageBackend {
+    if (kIsWeb || widget.animatedImageAsset == null) return false;
+    return defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux;
+  }
 
   @override
   void initState() {
@@ -57,6 +68,7 @@ class _WelcomeVideoBackdropState extends State<WelcomeVideoBackdrop>
         !MediaQuery.disableAnimationsOf(context) &&
         TickerMode.valuesOf(context).enabled &&
         (ModalRoute.isCurrentOf(context) ?? true);
+    if (_usesAnimatedImageBackend) return;
     if (_visible && _foreground && !_initializationStarted) {
       _initializationStarted = true;
       unawaited(_initialize());
@@ -122,6 +134,12 @@ class _WelcomeVideoBackdropState extends State<WelcomeVideoBackdrop>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final foreground = state == AppLifecycleState.resumed;
+    if (_usesAnimatedImageBackend) {
+      if (_foreground != foreground && mounted) {
+        setState(() => _foreground = foreground);
+      }
+      return;
+    }
     _foreground = foreground;
     if (_visible && _foreground && !_initializationStarted) {
       _initializationStarted = true;
@@ -144,6 +162,7 @@ class _WelcomeVideoBackdropState extends State<WelcomeVideoBackdrop>
     final controller = _controller;
     final motionEnabled =
         widget.animate && !MediaQuery.disableAnimationsOf(context);
+    final animatedImageAsset = widget.animatedImageAsset;
     return ExcludeSemantics(
       child: RepaintBoundary(
         child: Stack(
@@ -154,9 +173,21 @@ class _WelcomeVideoBackdropState extends State<WelcomeVideoBackdrop>
               fit: BoxFit.cover,
               filterQuality: FilterQuality.medium,
             ),
+            if (_usesAnimatedImageBackend &&
+                motionEnabled &&
+                animatedImageAsset != null)
+              TickerMode(
+                enabled: _visible && _foreground,
+                child: Image.asset(
+                  animatedImageAsset,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
             // Keep the paused frame during a route transition; replacing it
             // with the poster would visibly jump back to the first frame.
-            if (motionEnabled &&
+            if (!_usesAnimatedImageBackend &&
+                motionEnabled &&
                 controller != null &&
                 controller.value.isInitialized)
               FittedBox(

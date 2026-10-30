@@ -178,6 +178,10 @@ class SwapAsset {
 
   bool get isNativeZec => this == zec;
 
+  /// Deprecated provider assets remain readable in saved swaps, but cannot be
+  /// selected for a new swap.
+  bool get isDeprecated => symbol.toUpperCase().contains('(DEPRECATED)');
+
   bool hasSameMarketAs(SwapAsset other) {
     return _marketKey == other._marketKey;
   }
@@ -580,23 +584,26 @@ String _normalizeIconKey(String value) {
 String _tokenIconAssetPath(String iconKey) {
   final assetKey = switch (iconKey) {
     'btc(omni)' => 'btc',
-    'gtusdcp' || 'mwusdc' || 'sparkusdc' || 'steakusdc' => 'usdc',
+    'gtusdcp' || 'lausdc' || 'mwusdc' || 'sparkusdc' || 'steakusdc' => 'usdc',
+    'gram' => 'ton',
     'hemibtc' => 'btc',
     'kv-gtsolb' => 'sol',
     'nrusdt' || 'usdt0' => 'usdt',
     'stnear' => 'near',
     _ => iconKey,
   };
-  return 'assets/swap/tokens/$assetKey.png';
+  return 'assets/swap/tokens/$assetKey.webp';
 }
 
 String _chainIconAssetPath(String iconKey) {
   return switch (iconKey) {
-    'abs' => 'assets/swap/chains/eth.png',
-    'bsc' => 'assets/swap/tokens/bnb.png',
-    'cardano' => 'assets/swap/tokens/ada.png',
-    'xlayer' => 'assets/swap/tokens/okb.png',
-    _ => 'assets/swap/chains/$iconKey.png',
+    'abs' => 'assets/swap/chains/eth.webp',
+    'bsc' => 'assets/swap/tokens/bnb.webp',
+    'cardano' => 'assets/swap/tokens/ada.webp',
+    'fogo' => 'assets/swap/tokens/fogo.webp',
+    'qtc' => 'assets/swap/tokens/qtc.webp',
+    'xlayer' => 'assets/swap/tokens/okb.webp',
+    _ => 'assets/swap/chains/$iconKey.webp',
   };
 }
 
@@ -633,12 +640,14 @@ String _chainDisplayName(String ticker) {
     'doge' => 'Dogecoin',
     'eth' => 'Ethereum',
     'gnosis' => 'Gnosis',
+    'hood' => 'Robinhood Chain',
     'ltc' => 'Litecoin',
     'monad' => 'Monad',
     'near' => 'NEAR',
     'op' => 'Optimism',
     'plasma' => 'Plasma',
     'pol' => 'Polygon',
+    'qtc' => 'Quantus',
     'scroll' => 'Scroll',
     'sol' => 'Solana',
     'starknet' => 'Starknet',

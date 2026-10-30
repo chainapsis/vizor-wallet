@@ -59,12 +59,12 @@ class SendReviewInfoSection extends StatelessWidget {
     this.recipientRow,
     this.onShowFullAddress,
     super.key,
-  });
+  }) : assert(recipient != null || recipientRow != null);
 
   /// Formatted send amount ("123.12 ZEC").
   final String amountText;
 
-  final SendReviewRecipient recipient;
+  final SendReviewRecipient? recipient;
 
   /// Pool badge for raw-address recipients. Contact recipients keep the
   /// truncated-address sub-line shown in Figma instead of a pool badge.
@@ -133,29 +133,36 @@ class SendReviewInfoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final amountRow = ReviewInfoRow(
+      label: 'Amount',
+      value: amountText,
+      leading: const ReviewZecCoinImage(),
+      bottomLeftText: fiatText,
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ReviewInfoRow(
-            label: 'Amount',
-            value: amountText,
-            leading: const ReviewZecCoinImage(),
-            bottomLeftText: fiatText,
-          ),
-          if (requestedAmountText != null)
-            Padding(
-              padding: const EdgeInsets.only(left: AppSpacing.xl),
-              child: Text(
-                'Requested $requestedAmountText',
-                key: const ValueKey('send_review_requested_amount'),
-                style: AppTypography.bodySmall.copyWith(
-                  color: context.colors.text.secondary,
+      child: ReviewInfoFlow(
+        connectorIconName: connectorIconName,
+        rows: [
+          if (requestedAmountText == null)
+            amountRow
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                amountRow,
+                Padding(
+                  padding: const EdgeInsets.only(left: AppSpacing.xl),
+                  child: Text(
+                    'Requested $requestedAmountText',
+                    key: const ValueKey('send_review_requested_amount'),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: context.colors.text.secondary,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ReviewConnectorIcon(iconName: connectorIconName),
           recipientRow ?? _recipientRow(context),
         ],
       ),
@@ -170,7 +177,7 @@ class SendReviewInfoSection extends StatelessWidget {
     final rowKey = isPaymentRequest
         ? const ValueKey('send_review_requested_by')
         : null;
-    return switch (recipient) {
+    return switch (recipient!) {
       SendReviewAddressRecipient(:final address) => ReviewInfoRow(
         key: rowKey,
         label: rowLabel,
@@ -356,35 +363,10 @@ class ReviewZecCoinImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipOval(
       child: Image.asset(
-        'assets/icons/network_zec.png',
+        'assets/icons/desktop/network_zec.png',
         width: AppAssetSize.size,
         height: AppAssetSize.size,
         fit: BoxFit.cover,
-      ),
-    );
-  }
-}
-
-/// 24px connector glyph centered in the 32px leading column, between the
-/// Amount and To rows.
-class ReviewConnectorIcon extends StatelessWidget {
-  const ReviewConnectorIcon({required this.iconName, super.key});
-
-  final String iconName;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: SizedBox(
-        width: AppAssetSize.size,
-        child: Center(
-          child: AppIcon(
-            iconName,
-            size: AppIconSize.large,
-            color: context.colors.text.accent,
-          ),
-        ),
       ),
     );
   }

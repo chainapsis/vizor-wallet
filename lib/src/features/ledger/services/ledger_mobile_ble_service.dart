@@ -231,25 +231,56 @@ class MethodChannelLedgerMobileBleService
   String? get connectedDeviceId => _connectedDeviceId;
 
   @override
-  Stream<LedgerDiscoveryUpdate> discoverDevices() async* {
-    _stopPairingEvidence();
-    final controller = StreamController<Object?>();
-    final subscription = _events.receiveBroadcastStream().listen(
-      controller.add,
-      onError: controller.addError,
-      onDone: controller.close,
-    );
-    try {
-      await _methods.invokeMethod<void>('startDiscovery');
-      await for (final event in controller.stream) {
-        yield _decodeDiscoveryEvent(event);
+  Stream<LedgerDiscoveryUpdate> discoverDevices() {
+    late StreamController<LedgerDiscoveryUpdate> controller;
+    late StreamSubscription<Object?> subscription;
+    var cancelled = false;
+
+    void fail(Object error, StackTrace stack) {
+      if (cancelled || controller.isClosed) return;
+      if (error is PlatformException) {
+        controller.add(LedgerDiscoveryFailed(_mapPlatformError(error)));
+      } else {
+        controller.addError(error, stack);
       }
-    } on PlatformException catch (error) {
-      yield LedgerDiscoveryFailed(_mapPlatformError(error));
-    } finally {
-      await subscription.cancel();
-      if (!controller.isClosed) await controller.close();
+      unawaited(controller.close());
     }
+
+    controller = StreamController<LedgerDiscoveryUpdate>(
+      onListen: () {
+        _stopPairingEvidence();
+        subscription = _events.receiveBroadcastStream().listen(
+          (event) {
+            if (cancelled || controller.isClosed) return;
+            try {
+              final update = _decodeDiscoveryEvent(event);
+              controller.add(update);
+              if (update is LedgerDiscoveryEnded ||
+                  update is LedgerDiscoveryFailed) {
+                unawaited(controller.close());
+              }
+            } catch (error, stack) {
+              fail(error, stack);
+            }
+          },
+          onError: fail,
+          onDone: () => unawaited(controller.close()),
+        );
+        unawaited(
+          _methods.invokeMethod<void>('startDiscovery').catchError(fail),
+        );
+      },
+      onPause: () => subscription.pause(),
+      onResume: () => subscription.resume(),
+      onCancel: () {
+        cancelled = true;
+        // An async* wrapper would wait for its next event before reaching
+        // finally. Native stop can be silent, so detach the event listener
+        // directly before a picker connects, closes, or starts another scan.
+        return subscription.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   @override

@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_unlock_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -28,6 +29,7 @@ import 'package:zcash_wallet/src/providers/payment_request_flow_provider.dart';
 import 'package:zcash_wallet/src/providers/payment_uri_prefill_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -45,6 +47,9 @@ const _parkedRequest = SendPrefillArgs(
 );
 
 class _FakeSecurityNotifier extends AppSecurityNotifier {
+  @override
+  String requireSessionPasswordForNativeSecretUse() => _passcode;
+
   @override
   Future<bool> unlock(String password) async {
     if (password != _passcode) return false;
@@ -72,7 +77,7 @@ class _FakeUnlockSyncNotifier extends FakeSyncNotifier {
   Future<void> refreshAfterUnlock() async {}
 
   @override
-  Future<void> startSyncAnyway() async {}
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {}
 }
 
 /// No biometric affordance: the passcode path is the one under test, and the
@@ -80,6 +85,28 @@ class _FakeUnlockSyncNotifier extends FakeSyncNotifier {
 class _NoBiometricNotifier extends BiometricUnlockNotifier {
   @override
   Future<BiometricUnlockState> build() async => BiometricUnlockState.initial;
+}
+
+class _OptInBiometricNotifier extends BiometricUnlockNotifier {
+  final enableCompletion = Completer<void>();
+  String? passcode;
+
+  @override
+  Future<BiometricUnlockState> build() async => const BiometricUnlockState(
+    availability: BiometricAvailability(
+      supported: true,
+      enrolled: true,
+      kind: BiometricKind.face,
+    ),
+    enabled: false,
+  );
+
+  @override
+  Future<void> enable(String passcode) async {
+    this.passcode = passcode;
+    await enableCompletion.future;
+    throw const BiometricUnlockException(BiometricUnlockErrorKind.cancelled);
+  }
 }
 
 PaymentRequestPrecheck _stubPrecheck() => PaymentRequestPrecheck(
@@ -128,12 +155,17 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-List<Override> _overrides({required bool migrationGate}) => [
+List<Override> _overrides({
+  required bool migrationGate,
+  BiometricUnlockNotifier Function()? biometricNotifier,
+}) => [
   appBootstrapProvider.overrideWithValue(_bootstrap()),
   appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
   accountProvider.overrideWith(_FakeAccountNotifier.new),
   syncProvider.overrideWith(_FakeUnlockSyncNotifier.new),
-  biometricUnlockProvider.overrideWith(_NoBiometricNotifier.new),
+  biometricUnlockProvider.overrideWith(
+    biometricNotifier ?? _NoBiometricNotifier.new,
+  ),
   migrationSendGateProvider.overrideWithValue(migrationGate),
   paymentRequestPrecheckProvider.overrideWithValue(_stubPrecheck()),
 ];
@@ -143,6 +175,7 @@ late GoRouter _router;
 Future<ProviderContainer> _pumpUnlock(
   WidgetTester tester, {
   bool migrationGate = false,
+  BiometricUnlockNotifier Function()? biometricNotifier,
 }) async {
   tester.view.physicalSize = const Size(520, 1100);
   tester.view.devicePixelRatio = 1.0;
@@ -150,7 +183,10 @@ Future<ProviderContainer> _pumpUnlock(
   addTearDown(tester.view.resetDevicePixelRatio);
 
   final container = ProviderContainer(
-    overrides: _overrides(migrationGate: migrationGate),
+    overrides: _overrides(
+      migrationGate: migrationGate,
+      biometricNotifier: biometricNotifier,
+    ),
   );
   addTearDown(container.dispose);
 
@@ -198,6 +234,33 @@ Future<void> _enterPasscode(WidgetTester tester, String passcode) async {
 String _location() => _router.routerDelegate.currentConfiguration.uri.path;
 
 void main() {
+  testWidgets(
+    'a request stays parked during opt-in and survives cancellation',
+    (tester) async {
+      final biometric = _OptInBiometricNotifier();
+      final container = await _pumpUnlock(
+        tester,
+        biometricNotifier: () => biometric,
+      );
+      container.read(paymentUriPrefillProvider.notifier).set(_parkedRequest);
+      await tester.tap(find.byType(PasscodeBiometricOptIn));
+      await _enterPasscode(tester, _passcode);
+      expect(biometric.passcode, _passcode);
+      expect(_location(), '/unlock');
+      expect(container.read(paymentUriPrefillProvider)?.id, _parkedRequest.id);
+      expect(container.read(paymentRequestFlowProvider), isNull);
+
+      biometric.enableCompletion.complete();
+      await tester.pumpAndSettle();
+      expect(_location(), '/home');
+      expect(container.read(paymentUriPrefillProvider), isNull);
+      expect(
+        container.read(paymentRequestFlowProvider)?.prefill.id,
+        _parkedRequest.id,
+      );
+    },
+  );
+
   testWidgets('a fresh parked link becomes a card over the unlocked wallet', (
     tester,
   ) async {
@@ -213,6 +276,21 @@ void main() {
     expect(flow.view.source, PaymentRequestSource.link);
     expect(container.read(paymentUriPrefillProvider), isNull);
     expect(find.text(kPaymentUriExpiredMessage), findsNothing);
+  });
+
+  testWidgets('a scanned request retains its provenance after unlock', (
+    tester,
+  ) async {
+    final container = await _pumpUnlock(tester);
+    container
+        .read(paymentUriPrefillProvider.notifier)
+        .set(_parkedRequest.withRequestSource(PaymentRequestSource.qrCode));
+    await _enterPasscode(tester, _passcode);
+    expect(
+      container.read(paymentRequestFlowProvider)?.view.source,
+      PaymentRequestSource.qrCode,
+    );
+    expect(container.read(paymentUriPrefillProvider), isNull);
   });
 
   testWidgets('a link parked past the TTL is dropped and said out loud', (

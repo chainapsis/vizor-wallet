@@ -141,6 +141,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_request_link_details')),
+    );
+    await tester.pumpAndSettle();
     controller.recordUse();
     expect(native.requests, 0);
   }
@@ -165,7 +169,7 @@ void main() {
 
   for (final (action, destination) in [
     ('Edit', '/send'),
-    ('Review', '/send/review'),
+    ('Review payment', '/send/review'),
   ]) {
     testWidgets('$action blocks reviews through slow release and navigation', (
       tester,

@@ -20,6 +20,8 @@ import 'pay_selected_asset_store.dart';
 import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
+import '../../../providers/network_upgrade_window_provider.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 export 'swap_provider_config.dart';
 
@@ -69,6 +71,8 @@ class SwapNotifier extends Notifier<SwapState> {
   var _accountScopeGeneration = 0;
   var _payEntryGeneration = 0;
   var _hasResolvedSupportedAssets = false;
+  Set<String> _deprecatedAssetIdentityKeys = const {};
+  Set<(String, String, int)> _deprecatedAssetMarkets = const {};
   var _statusRefreshInFlight = false;
   SwapAsset? _payRetryAsset;
   String? _restoredPayAssetAccountUuid;
@@ -285,8 +289,11 @@ class SwapNotifier extends Notifier<SwapState> {
     }
     _clearReviewState();
     _payRetryAsset = null;
-    final SwapAsset rememberedAsset =
+    final SwapAsset preferredPayAsset =
         preferredAsset ?? ref.read(paySelectedAssetProvider);
+    final rememberedAsset = _isDeprecatedForSelection(preferredPayAsset)
+        ? PaySelectedAssetNotifier.defaultAsset
+        : preferredPayAsset;
     final supportedAssets = state.supportedExternalAssets;
     final payAsset =
         _supportedAssetFor(rememberedAsset, supportedAssets) ??
@@ -609,16 +616,57 @@ class SwapNotifier extends Notifier<SwapState> {
           : await pricingProvider.loadPricingSnapshot(
               forceRefresh: forceRefreshPrices,
             );
-      final liveAssets = pricing?.supportedExternalAssets.isNotEmpty == true
+      // Pricing omits assets without positive prices, including deprecated ones.
+      final catalog = await provider.listSupportedExternalAssets();
+      final selectionCandidates =
+          pricing?.supportedExternalAssets.isNotEmpty == true
           ? pricing!.supportedExternalAssets
-          : await provider.listSupportedExternalAssets();
+          : catalog;
       if (generation != _pricingLoadGeneration) return;
       _hasResolvedSupportedAssets = true;
+      _deprecatedAssetIdentityKeys = {
+        for (final asset in catalog)
+          if (asset.isDeprecated) asset.identityKey,
+      };
+      // An ID-less preference cannot distinguish two provider contracts for
+      // the same market. Keep it when the catalog still has an active match.
+      _deprecatedAssetMarkets =
+          {
+            for (final asset in catalog)
+              if (asset.isDeprecated) _deprecatedAssetMarketKey(asset),
+          }.difference({
+            for (final asset in catalog)
+              if (!asset.isDeprecated) _deprecatedAssetMarketKey(asset),
+          });
       final supported = [
-        for (final asset in liveAssets)
-          if (asset != SwapAsset.zec) asset,
+        for (final asset in selectionCandidates)
+          if (asset != SwapAsset.zec && !_isDeprecatedForSelection(asset))
+            asset,
       ];
-      if (supported.isEmpty) return;
+      if (supported.isEmpty) {
+        state = state.copyWith(
+          supportedExternalAssets: supported,
+          externalAsset: _isDeprecatedForSelection(state.externalAsset)
+              ? SwapAsset.usdc
+              : state.externalAsset,
+          reviewVisible: false,
+          clearReview: true,
+          clearSupportedAssetsError: true,
+        );
+        return;
+      }
+      if (!state.payMode &&
+          _isDeprecatedForSelection(ref.read(paySelectedAssetProvider))) {
+        ref
+            .read(paySelectedAssetProvider.notifier)
+            .select(
+              _supportedAssetFor(
+                    PaySelectedAssetNotifier.defaultAsset,
+                    supported,
+                  ) ??
+                  supported.first,
+            );
+      }
       final retryAsset = state.payMode ? _payRetryAsset : null;
       final supportedRetryAsset = retryAsset == null
           ? null
@@ -833,6 +881,15 @@ class SwapNotifier extends Notifier<SwapState> {
         ? 'Ledger'
         : 'Keystone';
     if (quote.direction.sendsZec) {
+      // The provider would open a swap for a deposit Rust then refuses.
+      if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
+        log('Swap: start held for the network upgrade');
+        state = state.copyWith(
+          startSubmitting: false,
+          statusError: kNetworkUpgradeHoldMessage,
+        );
+        return null;
+      }
       try {
         await ref
             .read(swapDepositSenderProvider)
@@ -1829,12 +1886,16 @@ class SwapNotifier extends Notifier<SwapState> {
               state.reviewVisible)) {
         return;
       }
+      final deprecated = _isDeprecatedForSelection(preferences.externalAsset);
+      final rememberedAsset = deprecated
+          ? SwapAsset.usdc
+          : preferences.externalAsset;
+      final supportedAssets = state.supportedExternalAssets;
       final externalAsset =
-          _supportedAssetFor(
-            preferences.externalAsset,
-            state.supportedExternalAssets,
-          ) ??
-          preferences.externalAsset;
+          _supportedAssetFor(rememberedAsset, supportedAssets) ??
+          (deprecated && supportedAssets.isNotEmpty
+              ? supportedAssets.first
+              : rememberedAsset);
       _quoteGeneration++;
       state = state.copyWith(
         direction: preferences.direction,
@@ -2021,7 +2082,19 @@ class SwapNotifier extends Notifier<SwapState> {
       final saved = await ref
           .read(paySelectedAssetStoreProvider)
           .loadSelectedAsset(accountUuid: accountUuid);
-      restoredAsset = saved ?? PaySelectedAssetNotifier.defaultAsset;
+      if (saved != null && _isDeprecatedForSelection(saved)) {
+        final supportedAssets = state.supportedExternalAssets;
+        restoredAsset =
+            _supportedAssetFor(
+              PaySelectedAssetNotifier.defaultAsset,
+              supportedAssets,
+            ) ??
+            (supportedAssets.isEmpty
+                ? PaySelectedAssetNotifier.defaultAsset
+                : supportedAssets.first);
+      } else {
+        restoredAsset = saved ?? PaySelectedAssetNotifier.defaultAsset;
+      }
       loadSucceeded = true;
     } catch (_) {}
     if (accountScopeGeneration != _accountScopeGeneration ||
@@ -2068,6 +2141,12 @@ class SwapNotifier extends Notifier<SwapState> {
       return restoredAsset;
     }
   }
+
+  bool _isDeprecatedForSelection(SwapAsset asset) =>
+      asset.isDeprecated ||
+      _deprecatedAssetIdentityKeys.contains(asset.identityKey) ||
+      (asset.assetId == null &&
+          _deprecatedAssetMarkets.contains(_deprecatedAssetMarketKey(asset)));
 
   /// Slippage is shared with Pay, but Pay's direction/payout asset must not
   /// overwrite the saved swap composer selection — only the stored slippage
@@ -2200,6 +2279,15 @@ class SwapNotifier extends Notifier<SwapState> {
         normalizedStatus == SwapDepositBroadcastStatus.broadcastedStorageFailed;
   }
 }
+
+(String, String, int) _deprecatedAssetMarketKey(SwapAsset asset) => (
+  asset.symbol
+      .toUpperCase()
+      .replaceAll(RegExp(r'[_\s]*\(DEPRECATED\)[_\s]*'), '')
+      .trim(),
+  asset.chainTicker.trim().toLowerCase(),
+  asset.decimals,
+);
 
 SwapAsset? _supportedAssetFor(SwapAsset asset, List<SwapAsset> supported) {
   for (final candidate in supported) {

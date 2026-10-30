@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import 'mobile_onboarding_progress.dart';
 import 'mobile_onboarding_progress_scope.dart';
+
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
@@ -12,7 +14,6 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/app_security_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart'
     show AnimatedUrScannerView, ScanResult;
@@ -636,22 +637,6 @@ class MobileKeystoneBirthdayScreen extends ConsumerWidget {
       if (context.mounted) {
         context.goOnboarding(KeystoneOnboardingStep.selectAccount.routePath);
       }
-      return;
-    }
-
-    final security = ref.read(appSecurityProvider);
-    if (!security.isPasswordConfigured) {
-      if (!context.mounted) return;
-      context.pushOnboarding(
-        '/onboarding/set-passcode',
-        extra: SetPasswordScreenArgs.importKeystone(
-          name: account.name,
-          ufvk: account.ufvk,
-          seedFingerprint: account.seedFingerprint.toList(),
-          zip32Index: account.index,
-          birthdayHeight: height,
-        ),
-      );
       return;
     }
 

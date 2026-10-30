@@ -111,6 +111,7 @@ class _RecordingTorBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) => throw UnsupportedError('Unexpected GET');
 
   @override
@@ -120,6 +121,7 @@ class _RecordingTorBridge implements TorHttpBridge {
     required List<int> bodyBytes,
     required Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     posts.add(
       _RecordedPost(uri: uri, bodyBytes: List.of(bodyBytes), timeout: timeout),

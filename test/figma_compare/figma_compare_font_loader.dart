@@ -20,6 +20,10 @@ Future<void> loadFigmaCompareFonts() async {
       'assets/fonts/GeistMono-Medium.ttf',
     ],
     'Young Serif': ['assets/fonts/YoungSerif-Regular.ttf'],
+    'Shielding Serif': [
+      'assets/fonts/ShieldingSerif-Medium.ttf',
+      'assets/fonts/ShieldingSerif-Bold.ttf',
+    ],
     'MaterialIcons': ['fonts/MaterialIcons-Regular.otf'],
   };
 

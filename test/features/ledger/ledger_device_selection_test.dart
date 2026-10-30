@@ -72,7 +72,7 @@ void main() {
           );
           await pumpFrames(tester);
         }
-        expect(find.text('Select your Ledger'), findsOneWidget);
+        expect(find.text('Find Ledger'), findsOneWidget);
         expect(find.text('Different from saved connection'), findsOneWidget);
         expect(find.text('USB'), findsNothing);
         expect(ble.calls, contains('scan'));
@@ -80,8 +80,13 @@ void main() {
         expect(signs, 0);
         await tester.tap(find.text('Ledger Flex'));
         await pumpFrames(tester);
-        expect(find.text('Ledger saved'), findsOneWidget);
-        expect(find.text('Ledger Flex'), findsOneWidget);
+        expect(
+          find.text(
+            'This Ledger matches your account. Find it again to continue.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Ledger Flex · Bluetooth'), findsOneWidget);
         expect(find.text('Go back'), findsNothing);
         expect(signs, 0);
         expect(accounts.writes, 1);
@@ -89,7 +94,7 @@ void main() {
         final calls = List<String>.of(ble.calls);
         await pumpFrames(tester);
         expect(ble.calls, calls);
-        await tester.tap(find.text('Find my Ledger'));
+        await tester.tap(find.text('Find Ledger'));
         await pumpFrames(tester);
         expect(find.text('Different from saved connection'), findsNothing);
         await tester.tap(find.text('Ledger Flex'));
@@ -154,7 +159,10 @@ void main() {
       await pumpFrames(tester);
       await tester.tap(find.text('Ledger Flex'));
       await pumpFrames(tester);
-      expect(find.text('Connecting to your Ledger'), findsOneWidget);
+      expect(
+        find.text('Unlock Ledger and confirm opening Zcash if prompted.'),
+        findsOneWidget,
+      );
       expect(
         find.textContaining('approve sharing the viewing key'),
         findsNothing,
@@ -221,11 +229,16 @@ void main() {
         if (saved) {
           await tester.tap(find.text('Ledger Flex'));
           await pumpFrames(tester);
-          expect(find.text('Ledger saved'), findsOneWidget);
+          expect(
+            find.text(
+              'This Ledger matches your account. Find it again to continue.',
+            ),
+            findsOneWidget,
+          );
         }
         switch (cancel) {
           case 'close':
-            await tester.tap(find.bySemanticsLabel('Close'));
+            await tester.tap(find.text('Cancel'));
           case 'dispose':
             await tester.pumpWidget(const SizedBox());
           case 'lock':
@@ -298,9 +311,12 @@ void main() {
     await pumpFrames(tester);
     await tester.tap(find.text('Ledger Flex'));
     await pumpFrames(tester);
-    expect(find.text('Ledger saved'), findsOneWidget);
+    expect(
+      find.text('This Ledger matches your account. Find it again to continue.'),
+      findsOneWidget,
+    );
     expect(signs, 0);
-    await tester.tap(find.text('Find my Ledger'));
+    await tester.tap(find.text('Find Ledger'));
     await pumpFrames(tester);
     await tester.tap(find.text('Ledger Flex'));
     await pumpFrames(tester);

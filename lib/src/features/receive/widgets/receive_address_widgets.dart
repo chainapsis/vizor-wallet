@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show CircularProgressIndicator, Colors;
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -16,6 +17,7 @@ import '../../../core/config/network_config.dart'
     show kZcashDefaultCurrencyTicker;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_segmented_control.dart';
 import '../../../core/widgets/dot_qr_shape.dart';
 
 /// Which receiving pool an address belongs to.
@@ -62,127 +64,33 @@ class ReceiveTabs extends StatelessWidget {
         : colors.background.ground;
     final activeText = darkSelected ? colors.text.inverse : colors.text.accent;
 
-    return Container(
+    return AppSegmentedControl<ReceiveAddressType>(
       key: const ValueKey('receive_address_type_tabs'),
       width: width,
       height: height,
-      decoration: ShapeDecoration(
-        color: colors.background.raised,
-        shape: StadiumBorder(),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            alignment: selectedType == ReceiveAddressType.shielded
-                ? Alignment.centerLeft
-                : Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.all(2),
-              child: Container(
-                key: const ValueKey('receive_address_type_tabs_indicator'),
-                width: (width - 8) / 2,
-                decoration: ShapeDecoration(
-                  color: activeBg,
-                  shape: const StadiumBorder(),
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              _ReceiveTab(
-                key: const ValueKey('receive_address_type_tab_shielded'),
-                label: 'Shielded',
-                iconName: AppIcons.shieldKeyhole,
-                active: selectedType == ReceiveAddressType.shielded,
-                activeTextColor: activeText,
-                inactiveTextColor: colors.text.accent,
-                iconSize: iconSize,
-                iconGap: iconGap,
-                labelStyle: labelStyle,
-                labelFontWeight: labelFontWeight,
-                onTap: () => onChanged(ReceiveAddressType.shielded),
-              ),
-              _ReceiveTab(
-                key: const ValueKey('receive_address_type_tab_transparent'),
-                label: 'Transparent',
-                iconName: AppIcons.transparentBalance,
-                active: selectedType == ReceiveAddressType.transparent,
-                activeTextColor: activeText,
-                inactiveTextColor: colors.text.accent,
-                iconSize: iconSize,
-                iconGap: iconGap,
-                labelStyle: labelStyle,
-                labelFontWeight: labelFontWeight,
-                onTap: () => onChanged(ReceiveAddressType.transparent),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReceiveTab extends StatelessWidget {
-  const _ReceiveTab({
-    required this.label,
-    required this.iconName,
-    required this.active,
-    required this.activeTextColor,
-    required this.inactiveTextColor,
-    required this.iconSize,
-    required this.iconGap,
-    required this.labelStyle,
-    required this.labelFontWeight,
-    required this.onTap,
-    super.key,
-  });
-
-  final String label;
-  final String iconName;
-  final bool active;
-  final Color activeTextColor;
-  final Color inactiveTextColor;
-  final double iconSize;
-  final double iconGap;
-  final TextStyle? labelStyle;
-  final FontWeight? labelFontWeight;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = active ? activeTextColor : inactiveTextColor;
-    return Expanded(
-      child: MouseRegion(
-        cursor: active ? SystemMouseCursors.basic : SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: active ? null : onTap,
-          child: SizedBox.expand(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AppIcon(iconName, size: iconSize, color: color),
-                SizedBox(width: iconGap),
-                Flexible(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: (labelStyle ?? AppTypography.labelMedium).copyWith(
-                      color: color,
-                      fontWeight: labelFontWeight,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+      selected: selectedType,
+      onChanged: onChanged,
+      selectedBackground: activeBg,
+      selectedForeground: activeText,
+      indicatorKey: const ValueKey('receive_address_type_tabs_indicator'),
+      iconSize: iconSize,
+      iconGap: iconGap,
+      labelStyle: labelStyle,
+      labelFontWeight: labelFontWeight,
+      segments: const [
+        AppSegment(
+          value: ReceiveAddressType.shielded,
+          label: 'Shielded',
+          icon: AppIcons.shieldKeyhole,
+          key: ValueKey('receive_address_type_tab_shielded'),
         ),
-      ),
+        AppSegment(
+          value: ReceiveAddressType.transparent,
+          label: 'Transparent',
+          icon: AppIcons.transparentBalance,
+          key: ValueKey('receive_address_type_tab_transparent'),
+        ),
+      ],
     );
   }
 }
@@ -321,8 +229,76 @@ class _CachedQrBitmap extends StatefulWidget {
 
 const _transparentMinimumQrVersion = 9;
 
+/// Owns only the first badge frame and can detach before decoding finishes.
+/// No Canvas is recorded while an asset stream is still asynchronous.
+class _QrBadgeLoad {
+  _QrBadgeLoad(ImageProvider provider) {
+    _stream = provider.resolve(ImageConfiguration.empty);
+    _listener = ImageStreamListener(
+      (info, synchronous) {
+        if (_result.isCompleted) {
+          info.dispose();
+          return;
+        }
+        _stopListening();
+        _result.complete(info);
+      },
+      onError: (Object error, StackTrace? stack) {
+        if (_result.isCompleted) return;
+        _stopListening();
+        _result.completeError(error, stack);
+      },
+    );
+    _stream.addListener(_listener);
+  }
+
+  final _result = Completer<ImageInfo?>();
+  late final ImageStream _stream;
+  late final ImageStreamListener _listener;
+  bool _listening = true;
+
+  Future<ImageInfo?> get image => _result.future;
+
+  void cancel() {
+    _stopListening();
+    if (!_result.isCompleted) _result.complete(null);
+  }
+
+  void _stopListening() {
+    if (!_listening) return;
+    _listening = false;
+    _stream.removeListener(_listener);
+  }
+}
+
+/// Gives the QR painter a synchronous, single-frame snapshot. Bypass the
+/// global cache: a cache reset must neither start a new decode nor retain a
+/// separate cache entry for every generated QR.
+class _QrBadgeSnapshot extends ImageProvider<_QrBadgeSnapshot> {
+  _QrBadgeSnapshot(this.info);
+
+  final ImageInfo info;
+
+  @override
+  Future<_QrBadgeSnapshot> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture(this);
+
+  @override
+  void resolveStreamForKey(
+    ImageConfiguration configuration,
+    ImageStream stream,
+    _QrBadgeSnapshot key,
+    ImageErrorListener handleError,
+  ) {
+    stream.setCompleter(
+      OneFrameImageStreamCompleter(SynchronousFuture(info.clone())),
+    );
+  }
+}
+
 class _CachedQrBitmapState extends State<_CachedQrBitmap> {
   ui.Image? _image;
+  _QrBadgeLoad? _badgeLoad;
   Object? _error;
   int _generation = 0;
 
@@ -354,13 +330,22 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
   @override
   void dispose() {
     _generation++;
+    _badgeLoad?.cancel();
+    _badgeLoad = null;
     _image?.dispose();
     super.dispose();
   }
 
   Future<void> _renderQr() async {
     final generation = ++_generation;
+    _badgeLoad?.cancel();
+    ImageInfo? badge;
+    _QrBadgeLoad? load;
     try {
+      load = _QrBadgeLoad(AssetImage(widget.embeddedImageAsset));
+      _badgeLoad = load;
+      badge = await load.image;
+      if (badge == null || !mounted || generation != _generation) return;
       final qrCode = _qrCodeForData(
         widget.data,
         widget.type,
@@ -372,7 +357,7 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
         decoration: PrettyQrDecoration(
           quietZone: PrettyQrQuietZone.zero,
           image: PrettyQrDecorationImage(
-            image: AssetImage(widget.embeddedImageAsset),
+            image: _QrBadgeSnapshot(badge),
             scale: widget.embeddedImageScale,
             fit: BoxFit.fill,
             filterQuality: FilterQuality.high,
@@ -413,6 +398,9 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
         _error = e;
       });
       _disposeImageAfterFrame(previous);
+    } finally {
+      badge?.dispose();
+      if (identical(_badgeLoad, load)) _badgeLoad = null;
     }
   }
 

@@ -1,454 +1,530 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../ledger/ledger_device_label.dart';
-import '../../ledger/services/ledger_bluetooth_access.dart';
-import '../../ledger/widgets/ledger_bluetooth_recovery.dart';
-import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
-import '../../ledger/ledger_capability.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../ledger/ledger_onboarding_policy.dart';
+import '../../ledger/ledger_device_label.dart';
 import '../../ledger/services/ledger_account_service.dart';
+import '../../ledger/services/ledger_app_readiness_service.dart';
+import '../../ledger/services/ledger_bluetooth_access.dart';
+import '../../ledger/services/ledger_bluetooth_connection.dart';
+import '../../ledger/services/ledger_device_request.dart';
+import '../../../providers/account_models.dart';
+import '../../ledger/services/ledger_failure_guidance.dart';
 import '../../ledger/services/ledger_mobile_ble_service.dart';
+import '../../ledger/services/ledger_signing_service.dart';
+import '../../ledger/widgets/ledger_bluetooth_session.dart';
+import '../../ledger/widgets/ledger_bluetooth_restricted_help.dart';
+import '../../ledger/widgets/ledger_modal_content.dart';
+import '../../ledger/widgets/ledger_procedure.dart';
 
-Future<LedgerDeviceAccount?> showLedgerDesktopBleConnectDialog({
-  required BuildContext context,
-  required LedgerMobileBleService service,
-  required LedgerBluetoothAccountConnector connector,
-  required int accountIndex,
-}) async {
-  final account = await showDialog<LedgerDeviceAccount>(
-    context: context,
-    barrierDismissible: false,
-    builder: (dialogContext) => _LedgerDesktopBleConnectDialog(
-      service: service,
-      connector: connector,
-      accountIndex: accountIndex,
-      onConnected: (account) => Navigator.of(dialogContext).pop(account),
-      onClose: () => Navigator.of(dialogContext).pop(),
-    ),
-  );
-  if (account == null) {
-    await _bestEffortDisconnect(service);
-  }
-  return account;
-}
-
-Future<void> _bestEffortDisconnect(LedgerMobileBleService service) async {
-  try {
-    await service.stopDiscovery();
-  } catch (_) {
-    // The probe result is already visible; cleanup must not replace it.
-  }
-  try {
-    await service.disconnect();
-  } catch (_) {
-    // The device may already have disconnected while switching apps.
-  }
-}
-
-enum _ProbePhase {
+enum _Phase {
   preparing,
   scanning,
   devices,
   connecting,
-  readingAccount,
-  ready,
+  reading,
   empty,
   failed,
+  cancelling,
 }
 
-class _LedgerDesktopBleConnectDialog extends StatefulWidget {
-  const _LedgerDesktopBleConnectDialog({
+class LedgerDesktopConnectModal extends ConsumerStatefulWidget {
+  const LedgerDesktopConnectModal({
+    required this.transport,
     required this.service,
-    required this.connector,
+    required this.usbConnector,
+    required this.bluetoothConnector,
+    required this.cancelOperation,
     required this.accountIndex,
     required this.onConnected,
     required this.onClose,
+    super.key,
   });
-
+  final LedgerConnectionTransport transport;
   final LedgerMobileBleService service;
-  final LedgerBluetoothAccountConnector connector;
+  final LedgerAccountConnector usbConnector;
+  final LedgerBluetoothAccountConnector bluetoothConnector;
+  final LedgerOperationCanceller cancelOperation;
   final int accountIndex;
   final ValueChanged<LedgerDeviceAccount> onConnected;
   final VoidCallback onClose;
-
   @override
-  State<_LedgerDesktopBleConnectDialog> createState() =>
-      _LedgerDesktopBleConnectDialogState();
+  ConsumerState<LedgerDesktopConnectModal> createState() =>
+      _LedgerDesktopConnectModalState();
 }
 
-class _LedgerDesktopBleConnectDialogState
-    extends State<_LedgerDesktopBleConnectDialog> {
+class _LedgerDesktopConnectModalState
+    extends ConsumerState<LedgerDesktopConnectModal> {
   StreamSubscription<LedgerDiscoveryUpdate>? _subscription;
-  _ProbePhase _phase = _ProbePhase.preparing;
+  Future<void>? _work;
+  _Phase _phase = _Phase.preparing;
   List<LedgerBleDevice> _devices = const [];
-  LedgerBleDevice? _connectedDevice;
-  LedgerDeviceAccount? _account;
+  LedgerBleDevice? _device;
   String? _error;
-  bool _bluetoothRecovery = false;
-  var _generation = 0;
-
-  bool get _busy =>
-      _phase == _ProbePhase.preparing ||
-      _phase == _ProbePhase.scanning ||
-      _phase == _ProbePhase.connecting ||
-      _phase == _ProbePhase.readingAccount;
+  int? _declinedStep;
+  int? _resumingStep;
+  bool _accessRecovery = false,
+      _closing = false,
+      _stoppingSearch = false,
+      _cleanupFailed = false,
+      _retryable = true,
+      _reselectAfterCleanup = false,
+      _requestStarted = false;
+  int _generation = 0;
+  bool _discovering = false;
+  bool get _bluetooth =>
+      widget.transport == LedgerConnectionTransport.bluetooth;
+  bool get _declined => _declinedStep != null;
+  bool get _choosing =>
+      _device == null && _bluetooth && !_declined && !_accessRecovery;
+  bool _current(int generation) => mounted && generation == _generation;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_startDiscovery());
+    // Readiness publishes provider state before its first native await.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_bluetooth) {
+        _search();
+      } else {
+        _read();
+      }
+    });
   }
 
   @override
   void dispose() {
     _generation++;
     unawaited(_subscription?.cancel());
-    unawaited(widget.service.stopDiscovery().catchError((_) {}));
+    // Native work is drained before closing; never send a late global stop.
     super.dispose();
   }
 
   Future<void> _stopDiscovery() async {
     final subscription = _subscription;
     _subscription = null;
-    unawaited(subscription?.cancel());
-    await widget.service.stopDiscovery();
+    await Future.wait<void>([
+      subscription?.cancel() ?? Future<void>.value(),
+      widget.service.stopDiscovery(),
+    ], eagerError: true);
+    _discovering = false;
   }
 
-  Future<void> _startDiscovery() async {
+  void _search() {
+    if (_closing ||
+        (_work != null &&
+            (_phase == _Phase.preparing || _phase == _Phase.scanning))) {
+      return;
+    }
     final generation = ++_generation;
+    setState(() {
+      _phase = _Phase.preparing;
+      _devices = const [];
+      _device = null;
+      _error = null;
+      _retryable = true;
+      _accessRecovery = false;
+      _declinedStep = null;
+      _resumingStep = null;
+      _cleanupFailed = false;
+      _reselectAfterCleanup = false;
+      _requestStarted = false;
+    });
+    _work = _discover(generation);
+    unawaited(_work);
+  }
+
+  Future<void> _discover(int generation) async {
     try {
       await _stopDiscovery();
+      if (!_current(generation)) return;
       await widget.service.disconnect();
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        _phase = _ProbePhase.preparing;
-        _devices = const [];
-        _connectedDevice = null;
-        _account = null;
-        _error = null;
-        _bluetoothRecovery = false;
-      });
-
+      if (!_current(generation)) return;
       final granted = await prepareLedgerBluetoothDiscovery(widget.service);
-      if (!mounted || generation != _generation) return;
+      if (!_current(generation)) return;
       if (!granted) {
         _fail(
-          'Bluetooth permission is required. Allow Vizor in System Settings, then try again.',
+          generation,
+          const LedgerMobileException(
+            LedgerMobileFailure.permissionDenied,
+            'Allow Bluetooth access for Vizor in System Settings.',
+          ),
         );
         return;
       }
-
-      setState(() => _phase = _ProbePhase.scanning);
+      setState(() {
+        _phase = _Phase.scanning;
+        _discovering = true;
+      });
       _subscription = widget.service.discoverDevices().listen(
-        (update) => _handleDiscovery(generation, update),
-        onError: (Object error) => _handleError(generation, error),
+        (update) {
+          if (!_current(generation)) return;
+          switch (update) {
+            case LedgerDevicesDiscovered(:final devices):
+              setState(() {
+                _devices = devices;
+                _phase = devices.isEmpty ? _Phase.scanning : _Phase.devices;
+              });
+            case LedgerDiscoveryEnded():
+              _discovering = false;
+              setState(
+                () => _phase = _devices.isEmpty ? _Phase.empty : _Phase.devices,
+              );
+            case LedgerDiscoveryFailed(:final error):
+              _fail(generation, error);
+          }
+        },
+        onError: (Object error) => _fail(generation, error),
+        onDone: () {
+          if (!_current(generation) ||
+              ![_Phase.scanning, _Phase.devices].contains(_phase)) {
+            return;
+          }
+          _subscription = null;
+          setState(() {
+            _discovering = false;
+            _phase = _devices.isEmpty ? _Phase.empty : _Phase.devices;
+          });
+        },
       );
     } catch (error) {
-      _handleError(generation, error);
+      _fail(generation, error);
     }
   }
 
-  void _handleDiscovery(int generation, LedgerDiscoveryUpdate update) {
-    if (!mounted || generation != _generation) return;
-    switch (update) {
-      case LedgerDevicesDiscovered(:final devices):
-        setState(() {
-          _devices = devices;
-          _phase = devices.isEmpty ? _ProbePhase.scanning : _ProbePhase.devices;
-        });
-      case LedgerDiscoveryEnded():
-        setState(() {
-          _phase = _devices.isEmpty ? _ProbePhase.empty : _ProbePhase.devices;
-        });
-      case LedgerDiscoveryFailed(:final error):
-        _handleError(generation, error);
+  void _read([LedgerBleDevice? device]) {
+    if (_closing || _phase == _Phase.connecting || _phase == _Phase.reading) {
+      return;
     }
-  }
-
-  Future<void> _connect(LedgerBleDevice device) async {
-    if (_busy) return;
     final generation = ++_generation;
     setState(() {
-      _phase = _ProbePhase.connecting;
-      _connectedDevice = device;
+      _requestStarted = true;
+      _resumingStep = _declinedStep;
+      _declinedStep = null;
       _error = null;
+      _accessRecovery = false;
+      _device = device ?? _device;
+      _phase = _Phase.connecting;
     });
+    _work = _readAccount(generation);
+    unawaited(_work);
+  }
+
+  Future<void> _readAccount(int generation) async {
     try {
-      await _stopDiscovery();
-      await requireLedgerBluetoothAccess(widget.service);
-      if (!mounted || generation != _generation) return;
-      await widget.service.connect(device);
-      if (!mounted || generation != _generation) return;
-      setState(() => _phase = _ProbePhase.readingAccount);
-      final account = await widget.connector(widget.accountIndex, device);
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        _account = account;
-        _phase = _ProbePhase.ready;
-      });
+      if (_bluetooth) {
+        final check = ref.read(ledgerDeviceRequestsProvider).capture();
+        void checkCurrent() {
+          check();
+          if (!_current(generation)) {
+            throw const LedgerMobileException(
+              LedgerMobileFailure.cancelled,
+              'Ledger operation was cancelled.',
+            );
+          }
+        }
+
+        await _stopDiscovery();
+        checkCurrent();
+        await reconnectLedgerBluetoothDevice(
+          service: widget.service,
+          device: _device!,
+          checkCurrent: checkCurrent,
+        );
+      }
+      setState(() => _phase = _Phase.reading);
+      final account = _bluetooth
+          ? await widget.bluetoothConnector(widget.accountIndex, _device!)
+          : await widget.usbConnector(widget.accountIndex);
+      if (_current(generation)) widget.onConnected(account);
     } catch (error) {
-      _handleError(generation, error);
+      _fail(generation, error);
     }
   }
 
-  void _handleError(int generation, Object error) {
-    if (!mounted || generation != _generation) return;
+  void _fail(int generation, Object error) {
+    if (!_current(generation)) return;
     final guidance = ledgerFailureGuidance(
       error,
       requestKind: LedgerRequestKind.viewingKey,
     );
-    final message = switch (error) {
-      UnsupportedError() =>
-        'Update the Ledger Zcash app to version $kMinimumLedgerZcashAppVersion or newer.',
-      _
-          when LedgerRequestFailure.fromError(error) ==
-              LedgerRequestFailure.declined =>
-        'The viewing-key request was rejected on your Ledger.',
-      _ =>
-        guidance?.message ??
-            'Vizor could not connect to this Ledger over Bluetooth. Try again.',
-    };
-    _bluetoothRecovery = guidance?.bluetoothRecovery ?? false;
-    _fail(message);
-  }
-
-  void _fail(String message) {
     setState(() {
-      _phase = _ProbePhase.failed;
-      _error = message;
+      _phase = _Phase.failed;
+      _retryable =
+          guidance?.retryable ??
+          LedgerRequestFailure.fromError(error).retryable;
+      _declinedStep =
+          LedgerRequestFailure.fromError(error) == LedgerRequestFailure.declined
+          ? error is LedgerAppReadinessException
+                ? 1
+                : 2
+          : null;
+      _accessRecovery = guidance?.bluetoothRecovery ?? false;
+      _error = _declined
+          ? _declinedStep == 1
+                ? 'Opening Zcash was declined on Ledger. Try again when you’re ready.'
+                : 'Sharing was declined on Ledger. Try again when you’re ready.'
+          : guidance?.message ??
+                (error is LedgerAppReadinessException
+                    ? error.message
+                    : _bluetooth
+                    ? 'Vizor could not read this Ledger account. Try again.'
+                    : ledgerUsbErrorMessage(
+                            error,
+                            appInstruction:
+                                'Open the Zcash app, then try again.',
+                          ) ??
+                          'Vizor could not read this Ledger account. Reconnect Ledger with a USB cable, unlock it with your PIN, and open the Zcash app. Then try again.');
     });
   }
 
+  Future<void> _finish({bool reselect = false}) async {
+    if (_closing) return;
+    _reselectAfterCleanup = reselect;
+    final searching = !_requestStarted;
+    _generation++;
+    setState(() {
+      _closing = true;
+      _cleanupFailed = false;
+      _stoppingSearch = searching;
+      _phase = _Phase.cancelling;
+    });
+    try {
+      if (!searching) await widget.cancelOperation();
+      await _work;
+      if (_bluetooth) {
+        await _stopDiscovery();
+        await widget.service.disconnect();
+      }
+      if (!mounted) return;
+      if (reselect && _bluetooth) {
+        _closing = false;
+        _search();
+      } else {
+        widget.onClose();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _closing = false;
+        _cleanupFailed = true;
+        _accessRecovery = false;
+        _phase = _Phase.failed;
+        _error = 'Could not finish cleanup. Try again.';
+      });
+    }
+  }
+
+  Widget _footer({String? label, VoidCallback? action}) => label == null
+      ? Center(
+          child: AppButton(
+            size: AppButtonSize.mediumLarge,
+            variant: AppButtonVariant.ghost,
+            minWidth: kAppModalButtonMinWidth,
+            onPressed: () => unawaited(_finish()),
+            child: const Text('Cancel'),
+          ),
+        )
+      : AppModalActions(
+          onCancel: () => unawaited(_finish()),
+          actionLabel: label,
+          onAction: action,
+        );
+
+  Widget _message(String text) => Text(
+    text,
+    style: AppTypography.bodyMedium.copyWith(
+      color: context.colors.text.secondary,
+    ),
+  );
+
+  Widget _pending(String text) => Row(
+    children: [
+      const AppIcon(AppIcons.loader, size: 20),
+      const SizedBox(width: AppSpacing.xs),
+      Expanded(child: _message(text)),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
-    final recovery =
-        _phase == _ProbePhase.failed &&
-        _bluetoothRecovery &&
-        widget.service is LedgerBluetoothAccess;
+    final readiness = ref.watch(ledgerAppReadinessStateProvider);
+    return AppPaneModalOverlay(
+      barrierDismissible: false,
+      onDismiss: () => unawaited(_finish()),
+      child: _content(readiness),
+    );
+  }
 
-    if (recovery) {
-      return Dialog(
-        key: const ValueKey('ledger_desktop_ble_connect_dialog'),
-        backgroundColor: Colors.transparent,
-        child: AppModalCard(
-          width: 328,
+  Widget _content(LedgerAppReadinessState readiness) {
+    if (_phase == _Phase.cancelling) {
+      return LedgerModalContent(
+        title: _stoppingSearch ? 'Stopping search' : 'Cancelling request',
+        child: _pending(
+          _stoppingSearch
+              ? 'Returning to connection options…'
+              : 'Keep Ledger connected until the current request is cancelled.',
+        ),
+      );
+    }
+    if (_accessRecovery && widget.service is LedgerBluetoothAccess) {
+      return LedgerBluetoothSession(
+        service: widget.service,
+        onRetry: _search,
+        onClose: () => unawaited(_finish()),
+        retryLabel: 'Find Ledger',
+        builder: (context, model) => LedgerModalContent(
+          title: model.title,
+          onBack: () => unawaited(_finish()),
+          footer: model.restricted
+              ? Center(
+                  child: AppButton(
+                    size: AppButtonSize.mediumLarge,
+                    minWidth: kAppModalButtonMinWidth,
+                    onPressed: model.onAction,
+                    child: const Text('Close'),
+                  ),
+                )
+              : _footer(label: model.label, action: model.onAction),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Ledger · Bluetooth',
-                      style: AppTypography.bodySmall.copyWith(
-                        color: context.colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                  AppButton(
-                    key: const ValueKey('ledger_desktop_ble_close'),
-                    onPressed: widget.onClose,
-                    variant: AppButtonVariant.ghost,
-                    size: AppButtonSize.small,
-                    child: const AppIcon(
-                      AppIcons.cross,
-                      size: 16,
-                      semanticLabel: 'Close',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              LedgerBluetoothRecovery(
-                service: widget.service,
-                onRetry: () => unawaited(_startDiscovery()),
-                onClose: widget.onClose,
-                retryLabel: 'Find my Ledger',
-              ),
+              model.busy ? _pending(model.message) : _message(model.message),
+              LedgerBluetoothRestrictedHelp(model: model),
             ],
           ),
         ),
       );
     }
-    return Dialog(
-      key: const ValueKey('ledger_desktop_ble_connect_dialog'),
-      backgroundColor: Colors.transparent,
-      child: AppModalCard(
-        width: 440,
+    final failed = _phase == _Phase.failed;
+    if (_choosing && !failed) {
+      return LedgerModalContent(
+        title: 'Find Ledger',
+        identity: 'Bluetooth connection',
+        onBack: () => unawaited(_finish()),
+        footer: _phase == _Phase.empty
+            ? _footer(label: 'Search again', action: _search)
+            : _footer(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Connect Ledger with Bluetooth',
-              style: AppTypography.headlineMedium.copyWith(
-                color: context.colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Supported on Ledger ${ledgerBluetoothSupportedModels(TargetPlatform.macOS)}. Vizor will read the public viewing key after you approve it on the device.',
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            _buildBody(context),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (_phase == _ProbePhase.empty ||
-                    _phase == _ProbePhase.failed) ...[
-                  AppButton(
-                    key: const ValueKey('ledger_desktop_ble_retry'),
-                    onPressed: _busy
-                        ? null
-                        : () => unawaited(_startDiscovery()),
+            if (_phase == _Phase.empty)
+              _message(
+                'No Ledger found. Unlock Ledger, enable Bluetooth and keep it nearby. Then search again.',
+              )
+            else ...[
+              for (final device in _devices)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: AppButton(
+                    key: ValueKey('ledger_desktop_ble_device_${device.id}'),
                     variant: AppButtonVariant.secondary,
-                    child: const Text('Try again'),
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                    expand: true,
+                    constrainContent: true,
+                    growWithContent: true,
+                    height: 54,
+                    onPressed: () => _read(device),
+                    child: Row(
+                      children: [
+                        const AppIcon(AppIcons.ledger, size: 20),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(child: Text(ledgerDeviceLabel(device))),
+                        const AppIcon(AppIcons.chevronForward, size: 16),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: AppSpacing.xs),
-                ],
-                if (_phase == _ProbePhase.ready) ...[
-                  AppButton(
-                    key: const ValueKey('ledger_desktop_ble_continue'),
-                    onPressed: () => widget.onConnected(_account!),
-                    variant: AppButtonVariant.primary,
-                    child: const Text('Continue'),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                ],
-                AppButton(
-                  key: const ValueKey('ledger_desktop_ble_close'),
-                  onPressed: widget.onClose,
-                  variant: AppButtonVariant.ghost,
-                  child: const Text('Close'),
                 ),
-              ],
-            ),
+              if (_phase == _Phase.preparing) ...[
+                _pending('Checking Bluetooth access…'),
+                const SizedBox(height: AppSpacing.s),
+                _message(
+                  'macOS may ask for Bluetooth access. If prompted, allow access for Vizor.',
+                ),
+              ] else if (_discovering || _phase == _Phase.scanning)
+                _pending('Searching for nearby Ledgers…'),
+            ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildBody(BuildContext context) {
-    if (_phase == _ProbePhase.devices) {
-      return Column(
-        children: [
-          for (final device in _devices)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: _DeviceRow(
-                device: device,
-                onTap: () => unawaited(_connect(device)),
-              ),
-            ),
-        ],
       );
     }
-
-    final (icon, title, message) = switch (_phase) {
-      _ProbePhase.preparing => (
-        AppIcons.loader,
-        'Preparing Bluetooth',
-        'macOS may ask for Bluetooth permission.',
-      ),
-      _ProbePhase.scanning => (
-        AppIcons.search,
-        'Scanning for Ledger devices',
-        'This can take a few seconds.',
-      ),
-      _ProbePhase.connecting => (
-        AppIcons.loader,
-        'Connecting to ${_connectedDevice == null ? 'Ledger' : ledgerDeviceLabel(_connectedDevice!)}',
-        'Approve Bluetooth pairing on the device if prompted.',
-      ),
-      _ProbePhase.readingAccount => (
-        AppIcons.loader,
-        'Reading Ledger account',
-        'Confirm opening Zcash and approve the viewing-key request on your Ledger.',
-      ),
-      _ProbePhase.ready => (
-        AppIcons.ledger,
-        '${_connectedDevice == null ? 'Ledger' : ledgerDeviceLabel(_connectedDevice!)} is ready',
-        'Zcash ${_account?.appVersion ?? ''} approved account ${_account?.accountIndex ?? ''} over Bluetooth.',
-      ),
-      _ProbePhase.empty => (
-        AppIcons.search,
-        'No Ledger devices found',
-        'Check Bluetooth and make sure the Ledger is unlocked.',
-      ),
-      _ProbePhase.failed => (
-        AppIcons.warningCircle,
-        'Bluetooth test failed',
-        _error ?? 'Try again.',
-      ),
-      _ProbePhase.devices => throw StateError('Device list handled above'),
-    };
-
-    return Container(
-      key: ValueKey('ledger_desktop_ble_${_phase.name}'),
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: context.colors.background.neutralSubtleOpacity,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Row(
-        children: [
-          AppIcon(icon, size: 20, color: context.colors.icon.muted),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: context.colors.text.accent,
-                  ),
+    final procedure = !failed || (_declined && !_cleanupFailed);
+    final opening = readiness.phase == LedgerAppReadinessPhase.confirmOpening;
+    final current = _bluetooth && _phase == _Phase.connecting
+        ? 0
+        : _declinedStep ??
+              (opening
+                  ? 1
+                  : readiness.phase == LedgerAppReadinessPhase.ready
+                  ? 2
+                  : _resumingStep ?? 1);
+    return LedgerModalContent(
+      title: procedure ? 'Connect Ledger' : 'Could not connect Ledger',
+      identity:
+          '${_device == null ? 'Ledger' : ledgerDeviceLabel(_device!)} · ${_bluetooth ? 'Bluetooth' : 'USB'}',
+      onBack: () => unawaited(_finish(reselect: _device != null)),
+      backLabel: 'Choose another Ledger',
+      footer: failed
+          ? _footer(
+              label: !_cleanupFailed && !_retryable ? 'Back' : 'Try again',
+              action: _cleanupFailed
+                  ? () => unawaited(_finish(reselect: _reselectAfterCleanup))
+                  : !_retryable
+                  ? () => unawaited(_finish())
+                  : _choosing
+                  ? _search
+                  : () => _read(),
+            )
+          : _footer(),
+      child: procedure
+          ? LedgerProcedure(
+              topPadding: 0,
+              currentStep: current,
+              steps: [
+                LedgerStep(
+                  'Connect Ledger',
+                  message: current == 0
+                      ? 'Keep your Ledger nearby and unlocked, with Bluetooth turned on.'
+                      : null,
+                  busy: current == 0 && !failed,
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  message,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
+                LedgerStep(
+                  'Open Zcash',
+                  message: current == 1
+                      ? _declinedStep == 1
+                            ? _error
+                            : opening
+                            ? 'Confirm opening Zcash on Ledger.'
+                            : 'Vizor is checking the Zcash app.'
+                      : null,
+                  note: current == 1 && !failed ? 'Keep Zcash open.' : null,
+                  busy: current == 1 && !failed,
+                  requiresDeviceAction: opening && !failed,
+                ),
+                LedgerStep(
+                  'Approve viewing key',
+                  message: _declinedStep == 2
+                      ? _error
+                      : ledgerViewingKeyApprovalMessage(
+                          widget.accountIndex,
+                          readiness.version,
+                        ),
+                  busy: current == 2 && !failed,
+                  requiresDeviceAction: !failed,
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeviceRow extends StatelessWidget {
-  const _DeviceRow({required this.device, required this.onTap});
-
-  final LedgerBleDevice device;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppButton(
-      key: ValueKey('ledger_desktop_ble_device_${device.id}'),
-      onPressed: onTap,
-      variant: AppButtonVariant.secondary,
-      borderRadius: BorderRadius.circular(AppRadii.small),
-      expand: true,
-      constrainContent: true,
-      leading: const AppIcon(AppIcons.ledger),
-      growWithContent: true,
-      child: Text(ledgerDeviceLabel(device)),
+            )
+          : _message(_error!),
     );
   }
 }

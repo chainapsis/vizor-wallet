@@ -1,12 +1,63 @@
-//! Shared cancellation-aware HTTPS transport for Enhance PIR and Status PIR.
+//! Shared cancellation-aware HTTPS transport for Enhance PIR, Status PIR,
+//! transparent PIR and txid display PIR.
 
 mod cancellation;
 mod enhance_pir;
+mod pir_http;
 mod status_pir;
 
 pub(super) use cancellation::cancelable;
 pub(super) use enhance_pir::client_protocol_error;
+pub(in crate::wallet::sync_engine) use pir_http::RoutedExchange;
+#[cfg(test)]
+pub(in crate::wallet::sync_engine) use pir_http::{response, ObservedRequest, RequestObserver};
 pub(crate) use status_pir::StatusPirTransport;
+
+/// Test capture of the log records emitted on one thread.
+#[cfg(test)]
+pub(crate) mod test_log {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static LOG_LINES: RefCell<Option<Vec<(String, String)>>> = const { RefCell::new(None) };
+    }
+
+    /// Captures the log records emitted on the calling thread. Transports log
+    /// where they block, on their caller's thread.
+    struct ThreadLog;
+
+    impl log::Log for ThreadLog {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            LOG_LINES.with(|lines| {
+                if let Some(lines) = lines.borrow_mut().as_mut() {
+                    lines.push((
+                        record.target().to_owned(),
+                        format!("{} {}", record.level(), record.args()),
+                    ));
+                }
+            });
+        }
+
+        fn flush(&self) {}
+    }
+
+    /// Every record logged on this thread while `run` runs, with its target.
+    pub(crate) fn log_lines(run: impl FnOnce()) -> Vec<(String, String)> {
+        static LOGGER: ThreadLog = ThreadLog;
+        static INSTALL: std::sync::Once = std::sync::Once::new();
+        INSTALL.call_once(|| {
+            log::set_logger(&LOGGER).expect("no other logger in the test binary");
+            log::set_max_level(log::LevelFilter::Debug);
+        });
+        LOG_LINES.with(|lines| *lines.borrow_mut() = Some(Vec::new()));
+        run();
+        LOG_LINES.with(|lines| lines.borrow_mut().take().unwrap())
+    }
+}
 
 use bytes::Bytes;
 use http::{Method, Request, StatusCode};
@@ -15,7 +66,7 @@ use hyper::body::{Body, Incoming};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::{future::Future, time::Duration};
-use zakura_pir_enhance::transport::{self, BoundedBody};
+use zakura_pir_client::enhance::transport::{self, BoundedBody};
 
 use super::super::{lwd::DirectRouteConnector, SyncError};
 
@@ -35,12 +86,6 @@ impl From<SyncError> for RoutedHttpError {
     }
 }
 
-#[derive(Clone, Copy)]
-enum RoutePolicy {
-    WalletPreference,
-    ForceDirect,
-}
-
 /// One transport per `run`, reused by every request it makes.
 ///
 /// The pooled client lives here rather than being built per request: a hyper
@@ -56,17 +101,18 @@ enum RoutePolicy {
 pub(in crate::wallet::sync_engine) struct RoutedTransport<'a, F> {
     should_exit: &'a F,
     direct: DirectHttpsClient,
-    route_policy: RoutePolicy,
 }
 
 impl<'a, F> RoutedTransport<'a, F> {
     pub(in crate::wallet::sync_engine) fn new(should_exit: &'a F) -> Self {
-        Self::with_route(should_exit, RoutePolicy::WalletPreference)
-    }
-    pub(in crate::wallet::sync_engine) fn new_direct(should_exit: &'a F) -> Self {
-        Self::with_route(should_exit, RoutePolicy::ForceDirect)
-    }
-    fn with_route(should_exit: &'a F, route_policy: RoutePolicy) -> Self {
+        // Both rustls providers are compiled in, so none is the default until
+        // one is installed. Lightwalletd channels install ring; a routed
+        // request can be the process's first TLS use (private import
+        // discovery sends lightwalletd nothing), so it installs it too.
+        static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
+        RUSTLS_INIT.call_once(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
         let connector = HttpsConnectorBuilder::new()
             .with_webpki_roots()
             .https_only()
@@ -74,7 +120,6 @@ impl<'a, F> RoutedTransport<'a, F> {
             .wrap_connector(DirectRouteConnector::new());
         Self {
             should_exit,
-            route_policy,
             // Cheap: no connection is opened until the first request, and the
             // Tor route simply never uses it.
             direct: Client::builder(TokioExecutor::new()).build(connector),
@@ -105,14 +150,7 @@ async fn routed_request(
     direct: &DirectHttpsClient,
 ) -> Result<transport::ResponseBody, RoutedHttpError> {
     receive_response(
-        routed_response(
-            method,
-            url,
-            body,
-            should_exit,
-            direct,
-            RoutePolicy::WalletPreference,
-        ),
+        routed_response(method, url, body, should_exit, direct),
         collector,
         should_exit,
     )
@@ -125,15 +163,12 @@ async fn routed_response(
     body: Vec<u8>,
     should_exit: &impl Fn() -> bool,
     direct: &DirectHttpsClient,
-    route_policy: RoutePolicy,
 ) -> Result<http::Response<Incoming>, RoutedHttpError> {
     if should_exit() {
         return Err(RoutedHttpError::Cancelled);
     }
     let uri = secure_endpoint_uri(url)?;
-    if matches!(route_policy, RoutePolicy::WalletPreference)
-        && crate::network_privacy::is_tor_desired()
-    {
+    if crate::network_privacy::is_tor_desired() {
         let client = crate::network_privacy::tor_client_for_route(true, || should_exit())
             .await
             .map_err(|error| {

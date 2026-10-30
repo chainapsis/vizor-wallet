@@ -140,6 +140,7 @@ struct StoredSingleQrMigrationCompletion {
 struct StoredImmediateMigrationPczt {
     account_uuid: String,
     network: WalletNetwork,
+    target_height: u32,
     message_id: String,
     state: KeystoneMigrationRequestState,
     proof_error: Option<String>,

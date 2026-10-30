@@ -11,6 +11,35 @@ import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  testWidgets(
+    'pending supporting copy stays text-only beside the existing leading loader',
+    (tester) async {
+      await _pumpMappedTransactions(
+        tester,
+        transactions: [
+          _tx(
+            txidHex: 'pending',
+            kind: 'sent',
+            amount: BigInt.from(100000000),
+            minedHeight: BigInt.zero,
+          ),
+        ],
+        onRows: (_) {},
+      );
+      expect(find.text('Checking status'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon &&
+              widget.name == AppIcons.loader &&
+              widget.size == 12,
+        ),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   final ticker = kZcashDefaultCurrencyTicker;
 
   testWidgets('transaction rows are keyboard activatable but sync row is not', (
@@ -572,6 +601,10 @@ rust_sync.TransactionInfo _tx({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: kind,

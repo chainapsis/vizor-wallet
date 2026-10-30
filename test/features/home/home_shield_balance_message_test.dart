@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/home/services/transparent_shielding_service.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -34,6 +35,21 @@ void main() {
       expect(message, isNot(contains('Try again')));
       expect(message, contains('Check Activity'));
     });
+  });
+
+  test('a Keystone shield the upgrade expired shows the hold copy', () {
+    expect(
+      shieldPcztBroadcastStatusMessage(
+        const rust_sync.ExtractAndBroadcastPcztResult(
+          txid: 'txid',
+          status: 'expired',
+          message:
+              "Transactions can't be sent this close to the network upgrade. "
+              'Try again after it activates.',
+        ),
+      ),
+      kNetworkUpgradeHoldMessage,
+    );
   });
 }
 

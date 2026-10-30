@@ -23,6 +23,7 @@ class AppModalCard extends StatelessWidget {
     required this.child,
     this.width = kAppModalCardWidth,
     this.bottomPadding = AppSpacing.md,
+    this.padding,
     this.highlight = false,
     super.key,
   });
@@ -30,6 +31,9 @@ class AppModalCard extends StatelessWidget {
   final Widget child;
   final double width;
   final double bottomPadding;
+
+  /// Full-bleed content owns its insets; other cards keep the modal defaults.
+  final EdgeInsetsGeometry? padding;
 
   /// Paints the Figma `Shadow Overlay` inner highlight over the card edge.
   ///
@@ -46,12 +50,14 @@ class AppModalCard extends StatelessWidget {
     final card = Container(
       width: width,
       clipBehavior: Clip.antiAlias,
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.sm,
-        bottomPadding,
-      ),
+      padding:
+          padding ??
+          EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.md,
+            AppSpacing.sm,
+            bottomPadding,
+          ),
       decoration: ios
           ? ShapeDecoration(
               color: colors.background.base,

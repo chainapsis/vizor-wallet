@@ -226,9 +226,12 @@ class AppToast extends StatelessWidget {
 }
 
 class AppToastHost extends StatefulWidget {
-  const AppToastHost({required this.child, super.key});
+  const AppToastHost({required this.child, this.overlayBounds, super.key});
 
   final Widget child;
+
+  /// Optional foreground pane in host coordinates; the child can stay wider.
+  final Rect? overlayBounds;
 
   @override
   State<AppToastHost> createState() => _AppToastHostState();
@@ -335,14 +338,18 @@ class _AppToastHostState extends State<AppToastHost> {
   @override
   Widget build(BuildContext context) {
     final notification = _notification;
+    final media = MediaQuery.of(context);
+    final bounds = widget.overlayBounds ?? (Offset.zero & media.size);
     // Hosts mounted outside a SafeArea (the mobile screens) must keep
     // the toast clear of the status bar / notch; inside a SafeArea the
     // ambient padding is already consumed and this resolves to the
     // original 32px offset, so desktop is unchanged.
-    final topInset = math.max(
-      AppSpacing.base,
-      MediaQuery.paddingOf(context).top + AppSpacing.xs,
-    );
+    final topInset =
+        bounds.top +
+        math.max(
+          AppSpacing.base,
+          math.max(0.0, media.padding.top - bounds.top) + AppSpacing.xs,
+        );
     return _AppToastScope(
       state: this,
       child: Stack(
@@ -352,8 +359,8 @@ class _AppToastHostState extends State<AppToastHost> {
           if (notification != null)
             Positioned(
               top: topInset,
-              left: 0,
-              right: 0,
+              left: bounds.left,
+              right: media.size.width - bounds.right,
               child: IgnorePointer(
                 ignoring:
                     notification.action == null &&

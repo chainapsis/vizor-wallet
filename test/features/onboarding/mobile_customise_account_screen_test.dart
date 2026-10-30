@@ -6,6 +6,7 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -13,6 +14,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
@@ -22,6 +24,7 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_pr
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _mnemonic = 'stub mnemonic words';
@@ -97,6 +100,67 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
+  for (final (width, height, textScale) in [
+    (320.0, 640.0, 1.0),
+    (393.0, 640.0, 1.0),
+    (320.0, 568.0, 1.5),
+  ]) {
+    testWidgets('shows the full block-height error and permits retry on a '
+        '${width}x$height Android screen at ${textScale}x text', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, height);
+      addTearDown(tester.view.resetPhysicalSize);
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      var attempts = 0;
+
+      await tester.pumpWidget(
+        _harness(
+          MobileCustomiseAccountScreen(
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            ),
+            onFinish: (_, _) async {
+              attempts++;
+              if (attempts == 1) {
+                throw const WalletCreationCurrentBlockHeightException(
+                  'Network unavailable',
+                );
+              }
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final submit = find.byKey(
+        const ValueKey('mobile_customise_account_continue'),
+      );
+
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      final error = find.text(kWalletCreationCurrentBlockHeightErrorMessage);
+      expect(error, findsOneWidget);
+      await tester.ensureVisible(error);
+      await tester.pumpAndSettle();
+      final paragraph = tester.renderObject<RenderParagraph>(error);
+      expect(paragraph.didExceedMaxLines, isFalse);
+      final errorBounds = tester.getRect(error);
+      final scrollBounds = tester.getRect(find.byType(Scrollable).first);
+      expect(errorBounds.top, greaterThanOrEqualTo(scrollBounds.top));
+      expect(errorBounds.bottom, lessThanOrEqualTo(scrollBounds.bottom));
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      expect(attempts, 2);
+      expect(error, findsNothing);
+      expect(tester.takeException(), isNull);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  }
+
   for (final setupArgs in _setupArgsByFlow) {
     testWidgets('autofocuses the account name and opens text input for '
         '${setupArgs.flow.name}', (tester) async {
@@ -125,32 +189,22 @@ void main() {
   }
 
   for (final setupArgs in _setupArgsByFlow) {
-    for (final pendingPassword in const <String?>[null, '123456']) {
-      final securityState = pendingPassword == null ? 'configured' : 'new';
-      testWidgets(
-        'hides and blocks back for ${setupArgs.flow.name} with $securityState '
-        'security',
-        (tester) async {
-          await tester.pumpWidget(
-            _harness(
-              MobileCustomiseAccountScreen(
-                args: CustomiseAccountArgs(
-                  setupArgs: setupArgs,
-                  pendingPassword: pendingPassword,
-                ),
-                onFinish: (_, _) async {},
-              ),
-            ),
-          );
-
-          expect(find.bySemanticsLabel('Back'), findsNothing);
-          expect(
-            tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
-            isFalse,
-          );
-        },
+    testWidgets('callback preview hides and blocks back for '
+        '${setupArgs.flow.name}', (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          MobileCustomiseAccountScreen(
+            args: CustomiseAccountArgs(setupArgs: setupArgs),
+            onFinish: (_, _) async {},
+          ),
+        ),
       );
-    }
+      expect(find.bySemanticsLabel('Back'), findsNothing);
+      expect(
+        tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+        isFalse,
+      );
+    });
   }
 
   testWidgets('keeps account name focused after the route transition', (
@@ -227,7 +281,7 @@ void main() {
 
     expect(find.text('Customise Account'), findsOneWidget);
     expect(find.text('Windborne Wardbearer'), findsOneWidget);
-    expect(_stepsProgress(tester), closeTo(0.88435374150, 0.0001));
+    expect(_stepsProgress(tester), closeTo(0.76870748299, 0.0001));
     expect(random.nextIntCallCount, 3);
     expect(
       tester.getSize(
@@ -494,48 +548,59 @@ void main() {
     expect(tester.widget<PopScope<void>>(popScope).canPop, isFalse);
   });
 
-  testWidgets('blocks platform back after a pushed passcode flow', (
-    tester,
-  ) async {
-    final router = GoRouter(
-      initialLocation: '/',
-      routes: [
-        GoRoute(
-          path: '/',
-          pageBuilder: (_, state) => CupertinoPage<void>(
-            key: state.pageKey,
-            child: const Text('passcode route'),
-          ),
-        ),
-        GoRoute(
-          path: '/customise',
-          pageBuilder: (_, state) => CupertinoPage<void>(
-            key: state.pageKey,
-            child: const MobileCustomiseAccountScreen(
+  for (final systemBack in [false, true]) {
+    testWidgets('unsaved persona allows ${systemBack ? 'system' : 'toolbar'} '
+        'back to birthday', (tester) async {
+      final router = GoRouter(
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => const Text('birthday route')),
+          GoRoute(
+            path: '/customise',
+            builder: (_, _) => const MobileCustomiseAccountScreen(
               args: CustomiseAccountArgs(
-                setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
-                pendingPassword: '123456',
+                setupArgs: SetPasswordScreenArgs.importWallet(
+                  mnemonic: _mnemonic,
+                  birthdayHeight: 2500000,
+                ),
               ),
             ),
           ),
+        ],
+      );
+      addTearDown(router.dispose);
+      final accounts = _RecordingAccountNotifier();
+      final security = _RecordingSecurityNotifier();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+            accountProvider.overrideWith(() => accounts),
+            appSecurityProvider.overrideWith(() => security),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (_, c) => AppTheme(
+              data: AppThemeData.dark,
+              child: MobileOnboardingProgressFrame(child: c!),
+            ),
+          ),
         ),
-      ],
-    );
-    addTearDown(router.dispose);
-
-    await tester.pumpWidget(_routerHarness(router));
-    router.push('/customise');
-    await tester.pumpAndSettle();
-
-    expect(find.bySemanticsLabel('Back'), findsNothing);
-    expect(find.text('Customise Account'), findsOneWidget);
-
-    await tester.binding.handlePopRoute();
-    await tester.pump();
-
-    expect(find.text('Customise Account'), findsOneWidget);
-    expect(find.text('passcode route'), findsNothing);
-  });
+      );
+      router.push('/customise');
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Back'), findsOneWidget);
+      if (systemBack) {
+        await tester.binding.handlePopRoute();
+      } else {
+        await tester.tap(find.bySemanticsLabel('Back'));
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('birthday route'), findsOneWidget);
+      expect(find.text('Customise Account'), findsNothing);
+      expect(security.preparedPassword, isNull);
+      expect(accounts.importedMnemonic, isNull);
+    });
+  }
 
   testWidgets('imports Ledger account with name, avatar, and birthday', (
     tester,
@@ -572,6 +637,9 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => _RecordingSecurityNotifier(configured: true),
+          ),
           accountProvider.overrideWith(_RecordingAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           ledgerAccountImporterProvider.overrideWithValue(({
@@ -596,10 +664,10 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.bySemanticsLabel('Back'), findsNothing);
+    expect(find.bySemanticsLabel('Back'), findsOneWidget);
     expect(
       tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
-      isFalse,
+      isTrue,
     );
 
     await tester.enterText(
@@ -630,10 +698,12 @@ void main() {
           builder: (_, _) => MobileCustomiseAccountScreen(
             args: const CustomiseAccountArgs(
               setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
-              pendingPassword: '123456',
             ),
             random: _SequenceRandom([0, 1, 2]),
           ),
+        ),
+        ...mobileOnboardingRoutes().whereType<GoRoute>().where(
+          (route) => route.path == '/onboarding/set-passcode',
         ),
         GoRoute(
           path: '/onboarding/biometrics',
@@ -642,6 +712,7 @@ void main() {
       ],
     );
 
+    addTearDown(router.dispose);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -669,6 +740,21 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Create Passcode'), findsOneWidget);
+    expect(securityNotifier.preparedPassword, isNull);
+    expect(accountNotifier.createdMnemonic, isNull);
+    for (final digit in '123456'.split('')) {
+      await tester.tap(find.bySemanticsLabel('Digit $digit'));
+      await tester.pump();
+    }
+    expect(find.text('Confirm Passcode'), findsOneWidget);
+    expect(securityNotifier.preparedPassword, isNull);
+    expect(accountNotifier.createdMnemonic, isNull);
+    for (final digit in '123456'.split('')) {
+      await tester.tap(find.bySemanticsLabel('Digit $digit'));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
     expect(securityNotifier.preparedPassword, '123456');
     expect(securityNotifier.committed, isTrue);
     expect(accountNotifier.createdMnemonic, _mnemonic);
@@ -700,6 +786,9 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => _RecordingSecurityNotifier(configured: true),
+          ),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
@@ -721,6 +810,75 @@ void main() {
     expect(accountNotifier.createdMnemonic, _mnemonic);
     expect(accountNotifier.createdName, 'Windborne Wardbearer');
     expect(accountNotifier.createdProfilePictureId, 'pfp-03');
+    expect(find.text('home route'), findsOneWidget);
+  });
+
+  testWidgets('finishes an additional account before the wallet change '
+      'refreshes the router', (tester) async {
+    final accountNotifier = _PublishingAccountNotifier();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        appSecurityProvider.overrideWith(
+          () => _RecordingSecurityNotifier(configured: true),
+        ),
+        accountProvider.overrideWith(() => accountNotifier),
+        syncProvider.overrideWith(_NoopSyncNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    final refresh = container.read(routerRefreshProvider);
+    // The application router refreshes whenever the wallet derived from the
+    // account list changes.
+    container.listen(accountProvider, (_, _) => refresh.requestRefresh());
+    final router = GoRouter(
+      refreshListenable: refresh,
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const Text('birthday route')),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+        mobileOnboardingRoutes().whereType<GoRoute>().singleWhere(
+          (route) => route.path == '/onboarding/customise-account',
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, c) => AppTheme(
+            data: AppThemeData.dark,
+            child: MobileOnboardingProgressFrame(child: c!),
+          ),
+        ),
+      ),
+    );
+    router.push<void>(
+      '/onboarding/customise-account',
+      extra: const MobileOnboardingRouteArgs(
+        setupMode: OnboardingSetupMode.reusePasscode,
+        payload: CustomiseAccountArgs(
+          setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    // The new account is published while the mutation is still running.
+    // Give the router every chance to act on that change before it returns.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    accountNotifier.release.complete();
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.createdMnemonic, _mnemonic);
+    // A refresh during setup rebuilds the route without its arguments, which
+    // replaces the screen with an error view and never reaches Home.
+    expect(find.byType(ErrorWidget), findsNothing);
     expect(find.text('home route'), findsOneWidget);
   });
 
@@ -751,6 +909,9 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => _RecordingSecurityNotifier(configured: true),
+          ),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
@@ -806,6 +967,9 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          appSecurityProvider.overrideWith(
+            () => _RecordingSecurityNotifier(configured: true),
+          ),
           accountProvider.overrideWith(() => accountNotifier),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
         ],
@@ -956,13 +1120,42 @@ class _RecordingAccountNotifier extends AccountNotifier {
   }
 }
 
+/// Publishes the created account, as the real import does, then holds the
+/// mutation open until the test releases it.
+class _PublishingAccountNotifier extends _RecordingAccountNotifier {
+  final release = Completer<void>();
+
+  @override
+  Future<void> createAccountFromMnemonic({
+    required String mnemonic,
+    String? name,
+    String profilePictureId = 'pfp-01',
+  }) async {
+    await super.createAccountFromMnemonic(
+      mnemonic: mnemonic,
+      name: name,
+      profilePictureId: profilePictureId,
+    );
+    state = AsyncData(
+      AccountState(
+        accounts: [AccountInfo(uuid: 'added', name: name ?? '', order: 0)],
+        activeAccountUuid: 'added',
+        activeAddress: 'u-added',
+      ),
+    );
+    await release.future;
+  }
+}
+
 class _RecordingSecurityNotifier extends AppSecurityNotifier {
+  _RecordingSecurityNotifier({this.configured = false});
+  final bool configured;
   String? preparedPassword;
   var committed = false;
 
   @override
   AppSecurityState build() =>
-      const AppSecurityState(isPasswordConfigured: false, isUnlocked: true);
+      AppSecurityState(isPasswordConfigured: configured, isUnlocked: true);
 
   @override
   Future<void> preparePasswordSetup(String password) async {

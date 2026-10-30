@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../navigation/app_back_resolver.dart';
+import '../navigation/external_action_guard_provider.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 
@@ -140,26 +142,28 @@ class _AppBackLinkState extends State<AppBackLink> {
   }
 }
 
-class AppRouteBackLink extends StatelessWidget {
+class AppRouteBackLink extends ConsumerWidget {
   const AppRouteBackLink({this.onBeforeNavigate, this.minWidth = 0, super.key});
 
   final FutureOr<void> Function()? onBeforeNavigate;
   final double minWidth;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final target = AppBackResolver.resolve(context);
     return AppBackLink(
       label: target.label,
       minWidth: minWidth,
-      onTap: () async {
-        final before = onBeforeNavigate;
-        if (before != null) {
-          await Future<void>.value(before());
-        }
-        if (!context.mounted) return;
-        target.navigate(context);
-      },
+      onTap: () => ref.read(externalActionGuardProvider.notifier).runNavigation(
+        () async {
+          final before = onBeforeNavigate;
+          if (before != null) {
+            await Future<void>.value(before());
+          }
+          if (!context.mounted) return;
+          target.navigate(context);
+        },
+      ),
     );
   }
 }

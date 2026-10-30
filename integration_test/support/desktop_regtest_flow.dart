@@ -30,7 +30,14 @@ var _nextE2ePointer = 1000;
 int _takeE2ePointer() => _nextE2ePointer++;
 
 Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
-  await tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await tapAppButton(
+    tester,
+    const ValueKey('welcome_import_wallet_button'),
+  );
+  await tapAppWidget(
+    tester,
+    const ValueKey('desktop_import_secret_passphrase_card'),
+  );
   await enterAppText(
     tester,
     const ValueKey('import_mnemonic_first_word_field'),
@@ -39,6 +46,7 @@ Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
   await tapAppButton(tester, const ValueKey('import_secret_submit_button'));
   await tapAppButton(tester, const ValueKey('import_birthday_skip_button'));
   await tapAppButton(tester, const ValueKey('unknown_birthday_confirm_button'));
+  await finishDesktopAccountCustomisation(tester);
   await enterAppText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -50,7 +58,7 @@ Future<void> importDesktopRegtestWallet(WidgetTester tester) async {
     desktopRegtestPassword,
   );
   await tapAppButton(tester, const ValueKey('set_password_submit_button'));
-  await finishDesktopAccountCustomisation(tester);
+
   await pumpUntil(
     tester,
     () => tester.any(
@@ -70,7 +78,14 @@ Future<void> importAdditionalDesktopRegtestWallet(WidgetTester tester) async {
         tester.any(find.byKey(const ValueKey('welcome_import_wallet_button'))),
     description: 'add-account import option',
   );
-  await tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await tapAppButton(
+    tester,
+    const ValueKey('welcome_import_wallet_button'),
+  );
+  await tapAppWidget(
+    tester,
+    const ValueKey('desktop_import_secret_passphrase_card'),
+  );
   await enterAppText(
     tester,
     const ValueKey('import_mnemonic_first_word_field'),
@@ -148,7 +163,9 @@ Future<void> dismissIronwoodAnnouncement(WidgetTester tester) async {
   );
 }
 
-Future<void> openPrivateMigrationReview(WidgetTester tester) async {
+/// Home's migration CTA through the intro, How it works and What to expect to
+/// the migration options.
+Future<void> openMigrationOptions(WidgetTester tester) async {
   await tapAppButton(
     tester,
     const ValueKey('home_desktop_ironwood_migration_cta_button'),
@@ -157,16 +174,35 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
     tester,
     const ValueKey('ironwood_migration_intro_continue_button'),
   );
-  for (var step = 0; step < 3; step++) {
-    await tapAppButton(
-      tester,
-      const ValueKey('ironwood_migration_how_it_works_continue_button'),
-    );
-  }
-  await tapAppButton(
-    tester,
-    const ValueKey('ironwood_migration_what_to_expect_continue_button'),
+  const next = ValueKey('ironwood_migration_how_it_works_continue_button');
+  const whatToExpect = ValueKey(
+    'ironwood_migration_what_to_expect_continue_button',
   );
+  // How it works is a carousel, and a Next tapped before its page animation
+  // settles does not advance it, so tap until What to expect opens.
+  for (var tap = 0; tap < 6; tap++) {
+    await pumpUntil(
+      tester,
+      () =>
+          tester.any(find.byKey(whatToExpect)) || tester.any(find.byKey(next)),
+      description: 'How it works or What to expect',
+    );
+    if (tester.any(find.byKey(whatToExpect))) break;
+    await tapAppButton(tester, next);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+  }
+  await tapAppButton(tester, whatToExpect);
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('ironwood_migration_private_option')),
+    ),
+    description: 'migration options',
+  );
+}
+
+Future<void> openPrivateMigrationReview(WidgetTester tester) async {
+  await openMigrationOptions(tester);
   await tapAppWidget(
     tester,
     const ValueKey('ironwood_migration_private_option'),
@@ -185,24 +221,7 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
 }
 
 Future<void> openImmediateMigrationReview(WidgetTester tester) async {
-  await tapAppButton(
-    tester,
-    const ValueKey('home_desktop_ironwood_migration_cta_button'),
-  );
-  await tapAppButton(
-    tester,
-    const ValueKey('ironwood_migration_intro_continue_button'),
-  );
-  for (var step = 0; step < 3; step++) {
-    await tapAppButton(
-      tester,
-      const ValueKey('ironwood_migration_how_it_works_continue_button'),
-    );
-  }
-  await tapAppButton(
-    tester,
-    const ValueKey('ironwood_migration_what_to_expect_continue_button'),
-  );
+  await openMigrationOptions(tester);
   await tapAppWidget(tester, const ValueKey('ironwood_migration_fast_option'));
   await tapAppButton(
     tester,
@@ -335,24 +354,167 @@ Future<rust_sync.MigrationStatus> advanceDesktopRegtestMigrationSchedule(
   fail('Timed out advancing the regtest migration broadcast schedule.');
 }
 
+/// Mines a desktop run through its denomination preparation until its
+/// migration broadcasts are scheduled, or with [untilScheduled] false until
+/// the preparation is confirmed. Desktop spaces the preparation: each split is
+/// broadcast only once the tip reaches its scheduled height, and a later layer
+/// waits for its inputs to confirm. So mine to the next scheduled height, or
+/// one block while a split is unconfirmed, and let the app observe each block
+/// before mining again.
 Future<rust_sync.MigrationStatus> prepareDesktopRegtestMigrationSchedule(
   WidgetTester tester,
+  String driverUrl,
   String accountUuid, {
-  Duration timeout = const Duration(minutes: 5),
+  bool untilScheduled = true,
+  Duration timeout = const Duration(minutes: 12),
 }) async {
-  await waitForDesktopRegtestMigrationStatus(
+  final deadline = DateTime.now().add(timeout);
+  rust_sync.MigrationStatus? status;
+  while (DateTime.now().isBefore(deadline)) {
+    status = await desktopRegtestMigrationStatus(accountUuid);
+    final preparing = status.phase == 'waiting_denom_confirmations';
+    if (!preparing &&
+        (!untilScheduled || status.scheduledBroadcasts.isNotEmpty)) {
+      return status;
+    }
+    final chain = await ironwoodDriverGet(driverUrl, '/status');
+    final tip = (chain['zcashdHeight'] as num).toInt();
+    final target = preparing
+        ? _nextDesktopPreparationBlock(status, tip)
+        : _aboveTip(status.nextProofWindowHeight, tip);
+    if (target != null) {
+      e2eLog('mining ${target - tip} block(s) of migration preparation');
+      await ironwoodDriverPost(
+        driverUrl,
+        '/mine',
+        payload: {'blocks': target - tip},
+      );
+    }
+    // Without a block to mine, the app is sending a due split or proving.
+    await _waitForDesktopPreparationProgress(
+      tester,
+      accountUuid,
+      status,
+      Duration(seconds: target == null ? 30 : 60),
+    );
+  }
+  fail(
+    'Timed out preparing the regtest migration broadcast schedule. Last: '
+    '${status == null ? 'no status' : _desktopPreparationProgress(status)}',
+  );
+}
+
+int? _nextDesktopPreparationBlock(rust_sync.MigrationStatus status, int tip) {
+  final stages = _preparationStages(status);
+  if (stages.any(
+    (stage) =>
+        stage.state ==
+            rust_sync.MigrationPreparationTransactionState.broadcasted ||
+        stage.state ==
+            rust_sync.MigrationPreparationTransactionState.confirming,
+  )) {
+    return tip + 1;
+  }
+  int? next;
+  for (final stage in stages) {
+    if (stage.state !=
+        rust_sync.MigrationPreparationTransactionState.scheduled) {
+      continue;
+    }
+    final height = stage.scheduledHeight ?? stage.plannedHeight;
+    if (next == null || height < next) next = height;
+  }
+  // A layer waiting on confirmed inputs is built on a later scan.
+  final awaitingInputs = stages.any(
+    (stage) =>
+        stage.state ==
+        rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+  );
+  return _aboveTip(next, tip) ?? (awaitingInputs ? tip + 1 : null);
+}
+
+int? _aboveTip(int? height, int tip) =>
+    height != null && height > tip ? height : null;
+
+List<rust_sync.MigrationPreparationTransactionStatus> _preparationStages(
+  rust_sync.MigrationStatus status,
+) => status.preparationTransactions ?? const [];
+
+/// Preparation transactions per layer. Stage rounds count layers from 1.
+List<int> desktopPreparationLayers(rust_sync.MigrationStatus status) {
+  final layers = <int>[];
+  for (final stage in _preparationStages(status)) {
+    while (layers.length < stage.round) {
+      layers.add(0);
+    }
+    layers[stage.round - 1]++;
+  }
+  return layers;
+}
+
+String _desktopPreparationProgress(rust_sync.MigrationStatus status) => [
+  status.phase,
+  '${status.scheduledBroadcasts.length} scheduled',
+  for (final stage in _preparationStages(status))
+    '#${stage.stageIndex} ${stage.state.name} '
+        '${stage.confirmationCount}/${stage.confirmationTarget}',
+].join(', ');
+
+Future<void> _waitForDesktopPreparationProgress(
+  WidgetTester tester,
+  String accountUuid,
+  rust_sync.MigrationStatus before,
+  Duration timeout,
+) async {
+  final previous = _desktopPreparationProgress(before);
+  final end = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(end)) {
+    await tester.pump(const Duration(milliseconds: 250));
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    final status = await desktopRegtestMigrationStatus(accountUuid);
+    if (_desktopPreparationProgress(status) != previous) return;
+  }
+}
+
+/// Waits for the private migration status screen of a live run. A software
+/// account's run has no action button there. While the run prepares its
+/// denominations, the screen offers the preparation schedule.
+Future<void> waitForDesktopActiveMigrationStatus(
+  WidgetTester tester, {
+  bool preparing = false,
+  Duration timeout = const Duration(minutes: 2),
+}) {
+  return pumpUntil(
     tester,
-    accountUuid,
-    (status) => status.phase == 'ready_to_migrate',
-    description: 'migration denomination readiness',
+    () =>
+        tester.any(
+          find.byKey(const ValueKey('ironwood_migration_active_status')),
+        ) &&
+        (!preparing ||
+            tester.any(
+              find.byKey(
+                const ValueKey(
+                  'ironwood_migration_view_preparation_schedule_button',
+                ),
+              ),
+            )),
+    description: preparing
+        ? 'migration preparation status'
+        : 'active migration status',
     timeout: timeout,
   );
-  return waitForDesktopRegtestMigrationStatus(
+}
+
+/// Returns Home from the migration status through the sidebar while the run
+/// continues.
+Future<void> leaveDesktopMigrationStatusForHome(WidgetTester tester) async {
+  await tapAppWidget(tester, const ValueKey('sidebar_home_button'));
+  await pumpUntil(
     tester,
-    accountUuid,
-    (status) => status.scheduledBroadcasts.isNotEmpty,
-    description: 'persisted migration broadcast schedule',
-    timeout: timeout,
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
+    description: 'home while migration continues',
   );
 }
 

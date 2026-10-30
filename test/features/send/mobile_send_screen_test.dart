@@ -7,6 +7,7 @@ import '../../figma_compare/figma_compare_font_loader.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
@@ -16,7 +17,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
@@ -76,8 +77,13 @@ Completer<void>? _discardGate;
 bool _discardFails = false;
 int _discardCalls = 0;
 int _proposeCalls = 0;
+bool _nativeSyncRunning = false;
+int _nativeBalanceReads = 0;
 
 class _RustApiFake implements RustLibApi {
+  @override
+  bool crateApiSyncIsSyncRunning() => _nativeSyncRunning;
+
   @override
   Future<void> crateApiSyncDiscardProposal({
     required BigInt proposalId,
@@ -384,6 +390,71 @@ class _ControllableSnapshotSyncNotifier extends SyncNotifier {
       ),
     );
     if (!_authoritative.isCompleted) _authoritative.complete();
+  }
+}
+
+/// Keeps the UI at its carried balance while the real spend gate reads native
+/// readiness and balance. History publication is independent of that gate.
+class _PendingHistorySyncNotifier extends SyncNotifier {
+  _PendingHistorySyncNotifier({this.initiallyCarried = true})
+    : super(walletDbPathResolver: () async => '/tmp/zcash-test');
+
+  final bool initiallyCarried;
+
+  SyncState _snapshot(bool carried) => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    isSyncing: carried,
+    isSyncComplete: !carried,
+    percentage: carried ? 0.99 : 1,
+    scannedHeight: 101,
+    chainTipHeight: 101,
+    spendableBalance: BigInt.from(500000000),
+    displaySpendableBalance: BigInt.from(500000000),
+    displaySpendableFreshness: carried
+        ? SpendableBalanceFreshness.lastCompletedSync
+        : SpendableBalanceFreshness.authoritative,
+    totalBalance: BigInt.from(500000000),
+  );
+
+  @override
+  Future<SyncState> build() async => _snapshot(initiallyCarried);
+
+  SyncState get snapshot => state.requireValue;
+
+  void beginRefresh() => state = AsyncData(_snapshot(true));
+
+  @override
+  Future<WalletBalance> readWalletBalance({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    _nativeBalanceReads++;
+    final amount = BigInt.from(550000000);
+    return WalletBalance(
+      availability: WalletBalanceAvailability.available,
+      transparentAuthority: TransparentBalanceAuthority.current,
+      transparentPrivate: false,
+      transparent: BigInt.zero,
+      sapling: BigInt.zero,
+      orchard: amount,
+      ironwood: BigInt.zero,
+      transparentLocked: BigInt.zero,
+      saplingLocked: BigInt.zero,
+      orchardLocked: BigInt.zero,
+      ironwoodLocked: BigInt.zero,
+      transparentPending: BigInt.zero,
+      saplingPending: BigInt.zero,
+      orchardPending: BigInt.zero,
+      ironwoodPending: BigInt.zero,
+      changePendingConfirmation: BigInt.zero,
+      valuePendingSpendability: BigInt.zero,
+      uneconomicValue: BigInt.zero,
+      spendable: amount,
+      locked: BigInt.zero,
+      total: amount,
+    );
   }
 }
 
@@ -833,6 +904,8 @@ void main() {
     _discardFails = false;
     _discardCalls = 0;
     _proposeCalls = 0;
+    _nativeSyncRunning = false;
+    _nativeBalanceReads = 0;
     _proposeSendSucceeds = false;
     _proposeSendCompleter = null;
     _proposalFeeZatoshi = BigInt.from(10000);
@@ -1145,7 +1218,7 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(amountInput.controller?.text, '1.5');
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('the pushed amount page hands its edit back to the recipient', (
@@ -1307,7 +1380,7 @@ void main() {
             find.bySemanticsLabel(RegExp('Enter amount in USD')),
             findsOneWidget,
           );
-          expect(find.text('Finish & review'), findsNothing);
+          expect(find.text('Review & finish'), findsNothing);
         } finally {
           semantics.dispose();
         }
@@ -1492,7 +1565,7 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Back'));
       await tester.pumpAndSettle();
       expect(find.text('Enter Amount'), findsOneWidget);
-      expect(find.text('Finish & review'), findsOneWidget);
+      expect(find.text('Review & finish'), findsOneWidget);
 
       // Cancelling the amount step discards the memo as well as the amount.
       await tester.tap(find.bySemanticsLabel('Back'));
@@ -1752,6 +1825,166 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  for (final maxMode in [false, true]) {
+    testWidgets(
+      'pending history allows ${maxMode ? "Max" : "typed"} confirmation after native sync',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier();
+        _nativeSyncRunning = true;
+        _sendMaxEstimateBuilder = ({required toAddress, memo}) =>
+            SendMaxEstimateResult(
+              amountZatoshi: BigInt.from(549990000),
+              feeZatoshi: BigInt.from(10000),
+              needsSaplingParams: false,
+            );
+        var feeCalls = 0;
+        await tester.pumpWidget(
+          _reviewApp(
+            syncNotifier: sync,
+            initialMaxMode: maxMode,
+            initialAmount: '4.99995',
+            estimateFee:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                  required toAddress,
+                  required amountZatoshi,
+                  memo,
+                }) async {
+                  feeCalls++;
+                  return BigInt.from(10000);
+                },
+          ),
+        );
+        await tester.pumpAndSettle();
+        final before = sync.snapshot;
+        expect(_confirmButton(tester).onPressed, isNull);
+        expect(feeCalls, 0);
+        expect(_estimateSendMaxCalls, 0);
+        expect(_nativeBalanceReads, 0);
+
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(_nativeBalanceReads, greaterThan(0));
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        expect(find.text('Confirm & Send'), findsOneWidget);
+        expect(sync.snapshot, same(before));
+        expect(before.isUsingCompletedSpendableSnapshot, isTrue);
+        expect(before.percentage, 0.99);
+        expect(feeCalls, maxMode ? 0 : 1);
+        expect(_estimateSendMaxCalls, maxMode ? 1 : 0);
+        if (maxMode) expect(find.text('5.4999 ZEC'), findsOneWidget);
+
+        // The native proposal is still reached; its failure is not bypassed.
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_proposeCalls, 1);
+        expect(sync.snapshot, same(before));
+        expect(find.text('Confirm & Send'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'pending history reaches signing for ${maxMode ? "Max" : "typed"} sends',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier();
+        _nativeSyncRunning = true;
+        _proposeSendSucceeds = true;
+        await tester.pumpWidget(
+          _cancelRecoveryApp(
+            sync,
+            isMaxMode: maxMode,
+            signerKind: HardwareSignerKind.ledger,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNull);
+        final before = sync.snapshot;
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(find.text('Confirm with Ledger'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+        await tester.pumpAndSettle();
+        expect(_proposeCalls, 1);
+        expect(find.text('ledger sign'), findsOneWidget);
+        expect(sync.snapshot, same(before));
+      },
+    );
+
+    testWidgets(
+      'pending history requotes ${maxMode ? "Max" : "typed"} review after a new sync',
+      (tester) async {
+        final sync = _PendingHistorySyncNotifier(initiallyCarried: false);
+        var feeCalls = 0;
+        await tester.pumpWidget(
+          _reviewApp(
+            syncNotifier: sync,
+            initialMaxMode: maxMode,
+            estimateFee:
+                ({
+                  required dbPath,
+                  required network,
+                  required accountUuid,
+                  required toAddress,
+                  required amountZatoshi,
+                  memo,
+                }) async {
+                  feeCalls++;
+                  return BigInt.from(10000);
+                },
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        final callsBefore = maxMode ? _estimateSendMaxCalls : feeCalls;
+        _nativeSyncRunning = true;
+        sync.beginRefresh();
+        await tester.pumpAndSettle();
+        expect(_confirmButton(tester).onPressed, isNull);
+        expect(maxMode ? _estimateSendMaxCalls : feeCalls, callsBefore);
+
+        _nativeSyncRunning = false;
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(maxMode ? _estimateSendMaxCalls : feeCalls, callsBefore + 1);
+        expect(_confirmButton(tester).onPressed, isNotNull);
+        expect(find.text('Confirm & Send'), findsOneWidget);
+        expect(sync.snapshot.isUsingCompletedSpendableSnapshot, isTrue);
+      },
+    );
+  }
+
+  testWidgets('pending history keeps a native fee shortfall blocked', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _reviewApp(
+        syncNotifier: _PendingHistorySyncNotifier(),
+        estimateFee:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required toAddress,
+              required amountZatoshi,
+              memo,
+            }) async {
+              throw StateError(
+                'Insufficient balance (have 100, need 200 including fee)',
+              );
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(_nativeBalanceReads, greaterThan(0));
+    expect(_confirmButton(tester).onPressed, isNull);
+    expect(find.text('Try again'), findsNothing);
+    expect(_proposeCalls, 0);
   });
 
   testWidgets('failed review fee estimate exposes a working retry action', (
@@ -2071,7 +2304,7 @@ void main() {
       final container = ProviderScope.containerOf(
         tester.element(find.byType(MobileSendScreen)),
       );
-      expect(container.read(paymentUriBusySurfaceProvider), 0);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
       await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
       await tester.pump();
@@ -2079,7 +2312,7 @@ void main() {
       // A `zcash:` link arriving now must park rather than land as a card
       // that would outlive the coming route change.
       expect(find.text('Preparing...'), findsOneWidget);
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
       proposalCompleter.complete(
         ProposalResult(
@@ -2092,7 +2325,7 @@ void main() {
 
       expect(find.text('status can pop'), findsOneWidget);
       expect(
-        container.read(paymentUriBusySurfaceProvider),
+        container.read(externalActionGuardProvider).activeHoldCount,
         0,
         reason:
             'the status route is on screen, so the drain policy can '
@@ -2135,7 +2368,7 @@ void main() {
       tester.element(find.byType(MobileSendScreen)),
     );
     expect(find.text('Confirm with Keystone'), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
     await tester.pumpAndSettle();
@@ -2146,7 +2379,7 @@ void main() {
       reason: 'the proposal is made and handed to the signing route',
     );
     expect(
-      container.read(paymentUriBusySurfaceProvider),
+      container.read(externalActionGuardProvider).activeHoldCount,
       1,
       reason:
           'a `zcash:` link arriving while the device is signing must park, '
@@ -2164,14 +2397,14 @@ void main() {
 
     expect(find.text('Review Send'), findsOneWidget);
     expect(
-      container.read(paymentUriBusySurfaceProvider),
+      container.read(externalActionGuardProvider).activeHoldCount,
       1,
       reason: 'the proposal is still being released',
     );
 
     discardGate.complete();
     await tester.pumpAndSettle();
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 
   testWidgets(
@@ -2199,13 +2432,13 @@ void main() {
       expect(find.text('Review Send'), findsOneWidget);
       expect(_confirmButton(tester).onPressed, isNull);
       expect(sync.refreshCalls, 0);
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
       _discardGate!.complete();
       await tester.pumpAndSettle();
       expect(sync.refreshCalls, 1);
       expect(_confirmButton(tester).onPressed, isNull);
-      expect(container.read(paymentUriBusySurfaceProvider), 1);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
       expect(_proposeCalls, 1);
 
       sync.refreshGate!.complete();
@@ -2213,7 +2446,7 @@ void main() {
       expect(find.text('Not enough ZEC'), findsNothing);
       expect(find.text('Confirm with Keystone'), findsOneWidget);
       expect(_confirmButton(tester).onPressed, isNotNull);
-      expect(container.read(paymentUriBusySurfaceProvider), 0);
+      expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
       await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
       await tester.pumpAndSettle();
       expect(find.text('keystone sign'), findsOneWidget);
@@ -2246,13 +2479,13 @@ void main() {
     expect(find.text('Review Send'), findsOneWidget);
     expect(_confirmButton(tester).onPressed, isNull);
     expect(sync.refreshCalls, 0);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     _discardGate!.complete();
     await tester.pumpAndSettle();
     expect(sync.refreshCalls, 1);
     expect(_confirmButton(tester).onPressed, isNull);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
     expect(_proposeCalls, 1);
 
     sync.refreshGate!.complete();
@@ -2260,7 +2493,7 @@ void main() {
     expect(find.text('Not enough ZEC'), findsNothing);
     expect(find.text('Confirm with Ledger'), findsOneWidget);
     expect(_confirmButton(tester).onPressed, isNotNull);
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
     await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
     await tester.pumpAndSettle();
     expect(find.text('ledger sign'), findsOneWidget);
@@ -2448,7 +2681,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('status can pop'), findsNothing);
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 
   testWidgets('route-step review ignores back while preparing send', (
@@ -2738,6 +2971,139 @@ void main() {
       expect(editable.controller.text, isEmpty);
     },
   );
+
+  group('a payment link in the address field', () {
+    const link = 'zcash:$_shieldedAddress?amount=0.25&label=Coffee%20shop';
+
+    Finder addressInput() => find.descendant(
+      of: find.byKey(const ValueKey('mobile_send_address_field')),
+      matching: find.byType(EditableText),
+    );
+
+    String fieldText(WidgetTester tester) =>
+        tester.widget<EditableText>(addressInput()).controller.text;
+
+    Future<void> pumpScreen(WidgetTester tester) async {
+      await tester.pumpWidget(_app(precheck: _readyPaymentRequestPrecheck()));
+      await tester.pumpAndSettle();
+    }
+
+    void mockClipboard(WidgetTester tester) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => switch (call.method) {
+          'Clipboard.getData' => {'text': link},
+          'Clipboard.hasStrings' => {'value': true},
+          _ => null,
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+    }
+
+    /// The card leads with the same check an incoming link gets, but a pasted
+    /// link has no original QR to scan, so reviewing it is the way on.
+    void expectPastedLinkWarning() {
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('payment_request_scan')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('payment_request_link_details')),
+        findsOneWidget,
+      );
+    }
+
+    testWidgets('Paste opens it as a pasted link', (tester) async {
+      mockClipboard(tester);
+      await pumpScreen(tester);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_address_field')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paste'));
+      await tester.pumpAndSettle();
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('pasting from the long-press menu opens it too', (
+      tester,
+    ) async {
+      mockClipboard(tester);
+      await pumpScreen(tester);
+
+      await tester.longPress(addressInput());
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(TextSelectionToolbarTextButton, 'Paste'),
+      );
+      await tester.pumpAndSettle();
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('pasting it into the field opens the card', (tester) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, link);
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('a link that names only an address leaves the address', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, 'zcash:$_shieldedAddress');
+
+      expect(fieldText(tester), _shieldedAddress);
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsNothing,
+      );
+      expect(find.text('Invalid address'), findsNothing);
+    });
+
+    testWidgets('an edit that completes a link opens it', (tester) async {
+      await pumpScreen(tester);
+
+      await _enterAddress(tester, link.substring(1));
+      await _enterAddress(tester, link);
+
+      expectPastedLinkWarning();
+      expect(fieldText(tester), isEmpty);
+    });
+
+    testWidgets('a link that is not a request or an address says so', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          // Rust refuses a `zcash:` link as an address.
+          validateAddress: ({required address, required network}) async =>
+              const AddressValidationResult(
+                isValid: false,
+                addressType: '',
+                wrongNetwork: false,
+              ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, 'zcash:?amount=0.25');
+
+      expect(find.text(kUnreadablePaymentLinkMessage), findsOneWidget);
+    });
+  });
 
   testWidgets(
     'recipient focus keeps the address field mounted and stationary',
@@ -3330,7 +3696,7 @@ void main() {
 
     await _enterAmount(tester, '1.5');
     expect(find.text('Not enough ZEC'), findsNothing);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   // Rust reports this as "Propose failed: Insufficient balance (have …, need …
@@ -3413,7 +3779,7 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(amountInput.controller?.text, '4.9999');
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('Max estimate failure is shown through the disabled CTA', (
@@ -3487,7 +3853,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1.5 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
     await tester.pumpAndSettle();
@@ -3518,7 +3884,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1.5 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
 
     final container = ProviderScope.containerOf(
       tester.element(find.byType(MobileSendScreen)),
@@ -3532,7 +3898,7 @@ void main() {
     );
     expect(amountInput.controller?.text, '105');
     expect(find.text('0 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Review & finish'), findsNothing);
     expect(find.text('Enter amount to continue'), findsOneWidget);
     expect(
       tester
@@ -3548,7 +3914,7 @@ void main() {
 
     expect(amountInput.controller?.text, '105');
     expect(find.text('0.5 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('USD mode clears ZEC amounts that round to zero cents', (
@@ -3559,7 +3925,7 @@ void main() {
     await _toAmountStep(tester, _shieldedAddress);
 
     await _enterAmount(tester, '0.00000001');
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_send_amount_mode_toggle')),
@@ -3571,7 +3937,7 @@ void main() {
     );
     expect(amountInput.controller?.text, isEmpty);
     expect(find.text('0 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Review & finish'), findsNothing);
     expect(find.text('Enter amount to continue'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
@@ -3629,7 +3995,7 @@ void main() {
     expect(amountInput.decoration?.hintText, '0');
     expect(amountInput.controller?.text, '349.99');
     expect(find.text('4.9999 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('Max in USD mode does not leave a hidden sub-cent amount', (
@@ -3659,7 +4025,7 @@ void main() {
     );
     expect(amountInput.controller?.text, isEmpty);
     expect(find.text('0 ZEC'), findsOneWidget);
-    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Review & finish'), findsNothing);
     expect(find.text('Enter amount to continue'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
@@ -3704,7 +4070,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('mobile_send_max_button')));
     await tester.pumpAndSettle();
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
 
     feeCompleter.complete(BigInt.from(12345));
     await tester.pumpAndSettle();
@@ -3713,7 +4079,7 @@ void main() {
       find.byKey(const ValueKey('mobile_send_amount_input')),
     );
     expect(amountInput.controller?.text, '4.9999');
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets(
@@ -3729,7 +4095,7 @@ void main() {
       expect(_estimateSendMaxCalls, 1);
       expect(_lastEstimateSendMaxToAddress, _transparentAddress);
       expect(_lastEstimateSendMaxMemo, isNull);
-      expect(find.text('Finish & review'), findsOneWidget);
+      expect(find.text('Review & finish'), findsOneWidget);
     },
   );
 
@@ -3810,7 +4176,7 @@ void main() {
 
     // Once the re-validation settles, 1.5 ZEC is spendable again.
     await tester.pumpAndSettle();
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
   });
 
   testWidgets('prefilled amount waits for recipient validation before review', (
@@ -4415,7 +4781,7 @@ AppButton _confirmButton(WidgetTester tester) =>
     tester.widget<AppButton>(find.byKey(const ValueKey('mobile_send_confirm')));
 
 Widget _cancelRecoveryApp(
-  _CancelRecoverySyncNotifier sync, {
+  SyncNotifier sync, {
   bool isMaxMode = false,
   HardwareSignerKind signerKind = HardwareSignerKind.keystone,
 }) => _sendFlowRouterApp(

@@ -248,7 +248,7 @@ void main() {
     expect(tester.getSize(illustration), const Size(340, 220));
     expect(
       (tester.widget<Image>(illustration).image as AssetImage).assetName,
-      'assets/illustrations/swap_failed_illustration.png',
+      'assets/illustrations/swap_failed_illustration.webp',
     );
     expect(tester.getSize(message).width, 300);
     expect(

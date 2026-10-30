@@ -18,8 +18,10 @@ import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/core/navigation/payment_uri_busy_surface_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/route_owned_redirect.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
@@ -75,6 +77,152 @@ import '../../services/voting/fake_voting_http.dart';
 import 'fake_round_recovery_state.dart';
 
 void main() {
+  for (final review in [false, true]) {
+    for (final error in [false, true]) {
+      for (final interruptAccount in [false, true]) {
+        testWidgets(
+          'retained async data cannot validate redirect (review=$review, error=$error, account=$interruptAccount)',
+          (tester) async {
+            final snapshot = VotingSessionState(
+              roundId: _roundId,
+              accountUuid: 'account-1',
+              round: VotingRoundDetails(
+                roundId: _roundId,
+                title: 'Closed round',
+                status: 'pending',
+                snapshotHeight: 0,
+                eaPk: Uint8List(32),
+                ncRoot: Uint8List(32),
+                nullifierImtRoot: Uint8List(32),
+                rawJson: _roundStatusJson(),
+              ),
+            );
+            final notifier = _RetainedRedirectSessionNotifier(snapshot);
+            final account = _RetainedRedirectAccountNotifier();
+            final container = _statusContainer(
+              http: FakeVotingHttpClient(responses: _votingHttpResponses()),
+              accountOverride: () => account,
+              overrides: [
+                votingSessionProvider(_roundId).overrideWith(() => notifier),
+              ],
+            );
+            addTearDown(container.dispose);
+            var interrupted = false;
+            final app = _proposalHarness(
+              initialLocation: review ? '/voting/poll/$_roundId/review' : null,
+            );
+            await tester.pumpWidget(
+              UncontrolledProviderScope(
+                container: container,
+                child: Consumer(
+                  builder: (_, ref, _) {
+                    final value = ref.watch(votingSessionProvider(_roundId));
+                    if (value.hasValue && !value.isLoading && !interrupted) {
+                      interrupted = true;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (interruptAccount) {
+                          account.interrupt(error: error);
+                        } else {
+                          notifier.interrupt(error: error);
+                        }
+                      });
+                    }
+                    return app;
+                  },
+                ),
+              ),
+            );
+            for (var i = 0; i < 5; i++) {
+              await tester.pump(const Duration(milliseconds: 100));
+            }
+            expect(
+              container.read(votingSessionProvider(_roundId)).value,
+              same(snapshot),
+            );
+            expect(find.text('results route'), findsNothing);
+            if (interruptAccount) {
+              account.resume();
+            } else {
+              notifier.resume();
+            }
+            await tester.pumpAndSettle();
+            expect(find.text('results route'), findsOneWidget);
+          },
+        );
+      }
+    }
+  }
+
+  for (final review in [false, true]) {
+    testWidgets(
+      'result redirect resumes after a covering dialog (review=$review)',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1152, 768);
+        addTearDown(tester.view.reset);
+        final reply = Completer<VotingHttpResponse>();
+        final http = FakeVotingHttpClient(
+          responses: _votingHttpResponses()
+            ..['/shielded-vote/v1/round/$_roundId'] = reply.future,
+        );
+        final container = _statusContainer(
+          http: http,
+          accountOverride: _MnemonicAccountNotifier.new,
+          recoveryApi: _MutableVotingRecoveryApi(),
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: _proposalHarness(
+              initialLocation: review ? '/voting/poll/$_roundId/review' : null,
+            ),
+          ),
+        );
+        for (var i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        final view = review
+            ? find.byType(VotingReviewView)
+            : find.byType(VotingProposalDetailView);
+        final context = tester.element(view);
+        final router = GoRouter.of(context);
+        unawaited(
+          showDialog<void>(
+            context: context,
+            builder: (_) => const AlertDialog(content: Text('Covering dialog')),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        final round = _roundStatusJson()..['status'] = 'pending';
+        reply.complete(jsonResponse({'round': round}));
+        for (var i = 0; i < 15; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(
+          container.read(votingSessionProvider(_roundId)).value!.round!.status,
+          'pending',
+        );
+        expect(find.text('Covering dialog'), findsOneWidget);
+        expect(find.text('results route'), findsNothing);
+        router.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(
+          find.text('results route'),
+          findsNothing,
+          reason: 'The outgoing dialog barrier must finish before navigation',
+        );
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(find.text('results route'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   testWidgets(
     'Ledger voting stages ignore another account and defer approval guidance',
     (tester) async {
@@ -573,7 +721,10 @@ void main() {
     );
     expect(find.byKey(const ValueKey('ledger_voting_cancel')), findsOneWidget);
     expect(find.text('Signing with Keystone'), findsNothing);
-    expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
+    expect(
+      container.read(externalActionGuardProvider).activeHoldCount,
+      greaterThan(0),
+    );
   });
 
   testWidgets('status screen requires software account without mnemonic', (
@@ -4061,7 +4212,7 @@ void main() {
         )
         .setChoice(1, 0);
 
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -4072,7 +4223,7 @@ void main() {
     await _pumpUntilFound(tester, find.text('Sign 1 voting bundle'));
     await tester.pump();
 
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     // The scan screen is pushed over the status screen, so the panel is still
     // mounted and the session is still live: the hold stays.
@@ -4080,14 +4231,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('keystone scan route'), findsOneWidget);
-    expect(container.read(paymentUriBusySurfaceProvider), 1);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 1);
 
     // Signing done: the panel goes away and the hold comes back with it.
     await tester.tap(find.text('Return Signature'));
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
     await tester.pump();
 
-    expect(container.read(paymentUriBusySurfaceProvider), 0);
+    expect(container.read(externalActionGuardProvider).activeHoldCount, 0);
   });
 
   testWidgets('hardware status screen scans Keystone signature and submits', (
@@ -4270,7 +4421,10 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Voting with Ledger'), findsOneWidget);
-      expect(container.read(paymentUriBusySurfaceProvider), greaterThan(0));
+      expect(
+        container.read(externalActionGuardProvider).activeHoldCount,
+        greaterThan(0),
+      );
       expect(find.text('Preparing voting delegation'), findsOneWidget);
       expect(find.text('Signing with Keystone'), findsNothing);
       expect(find.text('Signing with Ledger'), findsOneWidget);
@@ -4902,18 +5056,26 @@ Widget _statusHarness({
 
 Widget _proposalHarness({String? initialLocation}) {
   final router = GoRouter(
+    observers: [RouteOwnedNavigationObserver()],
     initialLocation: initialLocation ?? '/voting/poll/$_roundId',
     routes: [
       GoRoute(
         path: '/voting/poll/:roundId',
-        builder: (_, state) => VotingProposalDetailScreen(
-          roundId: state.pathParameters['roundId']!,
-        ),
+        builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
+            ? MobileVotingProposalDetailScreen(
+                roundId: state.pathParameters['roundId']!,
+              )
+            : VotingProposalDetailScreen(
+                roundId: state.pathParameters['roundId']!,
+              ),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/review',
-        builder: (_, state) =>
-            VotingReviewScreen(roundId: state.pathParameters['roundId']!),
+        builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
+            ? MobileVotingReviewScreen(
+                roundId: state.pathParameters['roundId']!,
+              )
+            : VotingReviewScreen(roundId: state.pathParameters['roundId']!),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/status',
@@ -7123,4 +7285,49 @@ rust_api.ApiSignedVoteCommitments _commitments({
     ],
     batchDigest: null,
   );
+}
+
+// Riverpod exposes retained refresh/error values through provider updates.
+// Construct that exact metadata here to exercise the post-frame race.
+AsyncValue<T> _retainPrevious<T>(AsyncValue<T> next, AsyncValue<T> previous) {
+  // ignore: invalid_use_of_internal_member
+  return next.copyWithPrevious(previous);
+}
+
+class _RetainedRedirectSessionNotifier extends VotingSessionNotifier {
+  _RetainedRedirectSessionNotifier(this.snapshot) : super(snapshot.roundId);
+  final VotingSessionState snapshot;
+  @override
+  Future<VotingSessionState> build() async => snapshot;
+  @override
+  Future<BigInt?> refreshEligibleWeight() async => null;
+  void interrupt({required bool error}) {
+    state = _retainPrevious(
+      error
+          ? AsyncError<VotingSessionState>(
+              StateError('Refresh failed'),
+              StackTrace.current,
+            )
+          : const AsyncLoading<VotingSessionState>(),
+      state,
+    );
+  }
+
+  void resume() => state = AsyncData(snapshot);
+}
+
+class _RetainedRedirectAccountNotifier extends _MnemonicAccountNotifier {
+  void interrupt({required bool error}) {
+    state = _retainPrevious(
+      error
+          ? AsyncError<AccountState>(
+              StateError('Account refresh failed'),
+              StackTrace.current,
+            )
+          : const AsyncLoading<AccountState>(),
+      state,
+    );
+  }
+
+  void resume() => state = AsyncData(_bootstrap.initialAccountState);
 }

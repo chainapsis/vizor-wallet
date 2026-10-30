@@ -6,6 +6,7 @@ import '../payment_links/models/vizor_payment_link.dart';
 import '../payment_links/services/payment_link_recovery_store.dart';
 import '../payment_links/services/payment_link_lifecycle_revision.dart';
 import '../payment_links/services/payment_link_service.dart';
+import '../payment_links/services/payment_link_store_codec.dart';
 import '../payment_links/services/payment_link_transaction_matching.dart'
     as payment_link_matching;
 
@@ -25,6 +26,7 @@ class GiftCardActivityMetadata {
     this.claimFeeReserveZatoshi,
     this.batchCount,
     this.amountPerCardZatoshi,
+    this.claimTxids = const [],
   }) : assert(
          kind != GiftCardActivityKind.created || claimFeeReserveZatoshi != null,
        );
@@ -41,6 +43,24 @@ class GiftCardActivityMetadata {
   final BigInt? claimFeeReserveZatoshi;
   final int? batchCount;
   final BigInt? amountPerCardZatoshi;
+  final List<String> claimTxids;
+
+  GiftCardActivityMetadata withDisplayPool(String pool) =>
+      GiftCardActivityMetadata(
+        kind: kind,
+        amountZatoshi: amountZatoshi,
+        artworkId: artworkId,
+        message: message,
+        isClaimInFlight: isClaimInFlight,
+        stableId: stableId,
+        activityTimestamp: activityTimestamp,
+        displayPool: pool,
+        fiatSnapshot: fiatSnapshot,
+        claimFeeReserveZatoshi: claimFeeReserveZatoshi,
+        batchCount: batchCount,
+        amountPerCardZatoshi: amountPerCardZatoshi,
+        claimTxids: claimTxids,
+      );
 
   BigInt detailFeeZatoshi(BigInt transactionFee) {
     if (kind == GiftCardActivityKind.redeemed) return transactionFee;
@@ -61,7 +81,33 @@ class GiftCardActivityIndex {
     this.createdMetadataByTxid = const <String, GiftCardActivityMetadata>{},
     this.redeemedMetadataByTxid = const <String, GiftCardActivityMetadata>{},
     this.pendingClaims = const <PaymentLinkReceivedRecord>[],
-  });
+  }) : _createdByKey = null,
+       _redeemedByKey = null;
+
+  GiftCardActivityIndex._indexed(GiftCardActivityIndex source)
+    : createdTxids = source.createdTxids,
+      redeemedTxids = source.redeemedTxids,
+      createdMetadataByTxid = source.createdMetadataByTxid,
+      redeemedMetadataByTxid = source.redeemedMetadataByTxid,
+      pendingClaims = source.pendingClaims,
+      _createdByKey = _indexMetadata(source.createdMetadataByTxid),
+      _redeemedByKey = _indexMetadata(source.redeemedMetadataByTxid);
+
+  final Map<String, GiftCardActivityMetadata>? _createdByKey;
+  final Map<String, GiftCardActivityMetadata>? _redeemedByKey;
+
+  static Map<String, GiftCardActivityMetadata> _indexMetadata(
+    Map<String, GiftCardActivityMetadata> metadata,
+  ) {
+    final result = <String, GiftCardActivityMetadata>{};
+    for (final entry in metadata.entries) {
+      result.putIfAbsent(
+        payment_link_matching.paymentLinkTransactionKey(entry.key),
+        () => entry.value,
+      );
+    }
+    return result;
+  }
 
   factory GiftCardActivityIndex.forAccount({
     required String accountUuid,
@@ -117,22 +163,25 @@ class GiftCardActivityIndex {
           stableId: 'gift-card:${record.address}',
           activityTimestamp: record.claimSubmittedAt,
           displayPool: record.claimDestinationPool,
+          claimTxids: _splitTxids(record.claimTxids).toList(growable: false),
         );
       }
     }
-    return GiftCardActivityIndex(
-      createdTxids: createdMetadata.keys.toSet(),
-      redeemedTxids: redeemedMetadata.keys.toSet(),
-      createdMetadataByTxid: createdMetadata,
-      redeemedMetadataByTxid: redeemedMetadata,
-      pendingClaims: receivedRecords
-          .where(
-            (record) =>
-                record.destinationAccountUuid == accountUuid &&
-                record.status == PaymentLinkReceivedStatus.receiving &&
-                _splitTxids(record.claimTxids).isNotEmpty,
-          )
-          .toList(),
+    return GiftCardActivityIndex._indexed(
+      GiftCardActivityIndex(
+        createdTxids: createdMetadata.keys.toSet(),
+        redeemedTxids: redeemedMetadata.keys.toSet(),
+        createdMetadataByTxid: createdMetadata,
+        redeemedMetadataByTxid: redeemedMetadata,
+        pendingClaims: receivedRecords
+            .where(
+              (record) =>
+                  record.destinationAccountUuid == accountUuid &&
+                  record.status == PaymentLinkReceivedStatus.receiving &&
+                  _splitTxids(record.claimTxids).isNotEmpty,
+            )
+            .toList(),
+      ),
     );
   }
 
@@ -152,14 +201,22 @@ class GiftCardActivityIndex {
   ) {
     final source = transactions.toList();
     final duplicateInboundIndexes = <int>{};
+    final inboundKeys = {
+      for (final tx in source)
+        if (tx.txKind == 'received' || tx.txKind == 'receiving')
+          payment_link_matching.paymentLinkTransactionKey(tx.txidHex),
+    };
     for (final record in pendingClaims) {
       final txids = _splitTxids(record.claimTxids).toSet();
-      final hasInbound = source.any(
-        (tx) =>
-            (tx.txKind == 'received' || tx.txKind == 'receiving') &&
-            _matchesAny(txids, tx.txidHex),
+      final hasInbound = txids.any(
+        (txid) => inboundKeys.contains(
+          payment_link_matching.paymentLinkTransactionKey(txid),
+        ),
       );
       if (hasInbound) continue;
+      inboundKeys.add(
+        payment_link_matching.paymentLinkTransactionKey(txids.first),
+      );
       source.add(
         rust_sync.TransactionInfo(
           txidHex: txids.first,
@@ -167,6 +224,10 @@ class GiftCardActivityIndex {
           expiredUnmined: false,
           accountBalanceDelta: record.amountZatoshi.toInt(),
           fee: BigInt.zero,
+          feeState: rust_sync.TransactionFeeState.notApplicable,
+          detailsComplete: true,
+          provisional: false,
+          amountIncludesFee: false,
           blockTime: BigInt.zero,
           isTransparent: false,
           txKind: 'receiving',
@@ -213,28 +274,67 @@ class GiftCardActivityIndex {
   GiftCardActivityKind? kindFor(rust_sync.TransactionInfo transaction) {
     final kind = transaction.txKind;
     if ((kind == 'received' || kind == 'receiving') &&
-        _matchesAny(redeemedTxids, transaction.txidHex)) {
+        (_redeemedByKey?.containsKey(
+              payment_link_matching.paymentLinkTransactionKey(
+                transaction.txidHex,
+              ),
+            ) ??
+            _matchesAny(redeemedTxids, transaction.txidHex))) {
       return GiftCardActivityKind.redeemed;
     }
-    if (kind == 'sent' && _matchesAny(createdTxids, transaction.txidHex)) {
+    if (kind == 'sent' &&
+        (_createdByKey?.containsKey(
+              payment_link_matching.paymentLinkTransactionKey(
+                transaction.txidHex,
+              ),
+            ) ??
+            _matchesAny(createdTxids, transaction.txidHex))) {
       return GiftCardActivityKind.created;
     }
     return null;
   }
 
-  GiftCardActivityMetadata? metadataFor(rust_sync.TransactionInfo transaction) {
+  GiftCardActivityMetadata? metadataFor(
+    rust_sync.TransactionInfo transaction, {
+    Iterable<rust_sync.TransactionInfo>? transactions,
+  }) {
     final kind = kindFor(transaction);
     if (kind == null) return null;
     final metadata = kind == GiftCardActivityKind.created
         ? createdMetadataByTxid
         : redeemedMetadataByTxid;
-    for (final entry in metadata.entries) {
-      if (payment_link_matching.paymentLinkTxidsMatch(
-        entry.key,
-        transaction.txidHex,
-      )) {
-        return entry.value;
+    final indexed = kind == GiftCardActivityKind.created
+        ? _createdByKey
+        : _redeemedByKey;
+    final GiftCardActivityMetadata? card;
+    if (indexed != null) {
+      card =
+          indexed[payment_link_matching.paymentLinkTransactionKey(
+            transaction.txidHex,
+          )];
+    } else {
+      card = metadata.entries
+          .where(
+            (entry) => payment_link_matching.paymentLinkTxidsMatch(
+              entry.key,
+              transaction.txidHex,
+            ),
+          )
+          .firstOrNull
+          ?.value;
+    }
+    if (card != null) {
+      if (kind == GiftCardActivityKind.redeemed &&
+          paymentLinkClaimPoolNeedsEnrichment(card.displayPool) &&
+          card.claimTxids.isNotEmpty) {
+        final pool = paymentLinkClaimDestinationPoolFromHistory(
+          claimTxids: card.claimTxids.join(','),
+          transactions: transactions ?? [transaction],
+        );
+        // An incomplete multi-leg claim must not inherit its representative's pool.
+        return card.withDisplayPool(pool ?? card.displayPool ?? 'unknown');
       }
+      return card;
     }
     return GiftCardActivityMetadata(
       kind: kind,
@@ -250,13 +350,17 @@ final giftCardActivityIndexProvider = FutureProvider.autoDispose
       ref.watch(paymentLinkLifecycleRevisionProvider);
       final operations = ref.watch(paymentLinkOperationsProvider);
       final records = await Future.wait<Object>([
-        operations.loadCreatedLinkRecoveries(),
+        operations.loadCreatedLinks(),
         operations.loadReceivedLinkRecoveries(),
       ]);
-      return GiftCardActivityIndex.forAccount(
-        accountUuid: accountUuid,
-        createdRecords: records[0] as List<PaymentLinkRecoveryRecord>,
-        receivedRecords: records[1] as List<PaymentLinkReceivedRecord>,
+      final created = records[0] as List<PaymentLinkRecoveryRecord>;
+      final received = records[1] as List<PaymentLinkReceivedRecord>;
+      return runPaymentLinkStoreCodec(
+        _buildGiftCardActivityIndex,
+        (accountUuid: accountUuid, created: created, received: received),
+        inBackground:
+            created.length + received.length >=
+            paymentLinkCodecBackgroundRecords,
       );
     });
 
@@ -276,3 +380,16 @@ bool _matchesAny(Set<String> expectedTxids, String transactionTxid) {
     ),
   );
 }
+
+GiftCardActivityIndex _buildGiftCardActivityIndex(
+  ({
+    String accountUuid,
+    List<PaymentLinkRecoveryRecord> created,
+    List<PaymentLinkReceivedRecord> received,
+  })
+  input,
+) => GiftCardActivityIndex.forAccount(
+  accountUuid: input.accountUuid,
+  createdRecords: input.created,
+  receivedRecords: input.received,
+);

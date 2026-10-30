@@ -43,9 +43,11 @@ class AppMobileTabBar extends StatelessWidget {
     required this.items,
     required this.currentIndex,
     required this.onSelect,
+    this.axis = Axis.horizontal,
     super.key,
   });
 
+  final Axis axis;
   final List<AppMobileTabItem> items;
   final int currentIndex;
   final ValueChanged<int> onSelect;
@@ -70,13 +72,18 @@ class AppMobileTabBar extends StatelessWidget {
     final colors = context.colors;
     final radius = BorderRadius.circular(AppRadii.full);
     final motion = !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    final vertical = axis == Axis.vertical;
+    final selection = items.length > 1
+        ? -1 + 2 * currentIndex / (items.length - 1)
+        : 0.0;
     final pillAlignment = Alignment(
-      items.length > 1 ? -1 + 2 * currentIndex / (items.length - 1) : 0,
-      0,
+      vertical ? 0 : selection,
+      vertical ? selection : 0,
     );
 
     return SizedBox(
-      height: kMobileTabBarHeight,
+      height: vertical ? _itemHeight * items.length + 8 : kMobileTabBarHeight,
+      width: vertical ? kMobileTabBarHeight : null,
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: radius,
@@ -112,7 +119,8 @@ class AppMobileTabBar extends StatelessWidget {
                       curve: _selectCurve,
                       alignment: pillAlignment,
                       child: FractionallySizedBox(
-                        widthFactor: 1 / items.length,
+                        widthFactor: vertical ? 1 : 1 / items.length,
+                        heightFactor: vertical ? 1 / items.length : null,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: colors.navPanel.activeBg,
@@ -121,11 +129,14 @@ class AppMobileTabBar extends StatelessWidget {
                               color: colors.border.subtleOpacity,
                             ),
                           ),
-                          child: const SizedBox(height: _itemHeight),
+                          child: SizedBox(
+                            height: vertical ? double.infinity : _itemHeight,
+                          ),
                         ),
                       ),
                     ),
-                    Row(
+                    Flex(
+                      direction: axis,
                       children: [
                         for (var i = 0; i < items.length; i++)
                           Expanded(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
+import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
@@ -34,6 +36,26 @@ void main() {
       ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'))
       ..addFont(rootBundle.load('assets/fonts/Geist-SemiBold.ttf'));
     await loader.load();
+  });
+
+  testWidgets('sidebar shows additional Checking progress', (tester) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          isSyncing: true,
+          percentage: 1,
+          checking: const SyncCheckingProgress(
+            cycle: 1,
+            percentage: 0.75,
+            displayTargetPercentage: 0.75,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('75% checking'), findsOneWidget);
+    expect(find.text('99% Syncing...'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   const failureLabels = {
@@ -160,6 +182,170 @@ void main() {
       contains('12'),
     );
   });
+
+  for (final (name, state, balance, importing) in [
+    (
+      'cached balance',
+      SyncState(
+        accountUuid: 'account-1',
+        hasCachedBalance: true,
+        remainingScanBlocks: 100,
+        displayTotalBalance: BigInt.from(250000000),
+      ),
+      '2.5 ZEC',
+      false,
+    ),
+    (
+      'live balance without history',
+      SyncState(
+        accountUuid: 'account-1',
+        hasBalanceData: true,
+        displayTotalBalance: BigInt.from(250000000),
+      ),
+      '2.5 ZEC',
+      false,
+    ),
+    (
+      'history error',
+      SyncState(
+        accountUuid: 'account-1',
+        hasBalanceData: true,
+        hasRecentTransactionsError: true,
+        displayTotalBalance: BigInt.from(250000000),
+      ),
+      '2.5 ZEC',
+      false,
+    ),
+    ('unknown balance', SyncState(accountUuid: 'account-1'), '— ZEC', false),
+    (
+      'initial scan',
+      SyncState(
+        accountUuid: 'account-1',
+        remainingScanBlocks: 100,
+        isSyncing: true,
+      ),
+      '— ZEC',
+      true,
+    ),
+    (
+      'known zero balance',
+      SyncState(accountUuid: 'account-1', hasBalanceData: true),
+      '0 ZEC',
+      false,
+    ),
+    (
+      'cached zero balance',
+      SyncState(accountUuid: 'account-1', hasCachedBalance: true),
+      '0 ZEC',
+      false,
+    ),
+    (
+      'another account cache',
+      SyncState(
+        accountUuid: 'account-2',
+        hasCachedBalance: true,
+        displayTotalBalance: BigInt.from(9900000000),
+      ),
+      '— ZEC',
+      false,
+    ),
+    (
+      'failed initial scan',
+      SyncState(
+        accountUuid: 'account-1',
+        remainingScanBlocks: 100,
+        failure: const SyncFailure(
+          kind: SyncFailureKind.endpoint,
+          rawMessage: 'offline',
+          userMessage: 'Endpoint unavailable.',
+        ),
+      ),
+      '— ZEC',
+      false,
+    ),
+  ]) {
+    testWidgets('sidebar startup state: $name', (tester) async {
+      await tester.pumpWidget(_sidebarHarness(state));
+      await tester.pump();
+      expect(find.text(balance), findsOneWidget);
+      final home = tester.widget<AppSidebarItem>(
+        find.byKey(const ValueKey('sidebar_home_button')),
+      );
+      expect(home.label, importing ? 'Importing...' : 'Home');
+      for (final key in ['home', 'swap', 'pay', 'voting', 'activity']) {
+        final item = tester.widget<AppSidebarItem>(
+          find.byKey(ValueKey('sidebar_${key}_button')),
+        );
+        expect(
+          item.onTap,
+          importing ? isNull : isNotNull,
+          reason: '$name: $key',
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final available in [false, true]) {
+    for (final hidden in [false, true]) {
+      testWidgets(
+        'migration balances respect availability=$available privacy=$hidden',
+        (tester) async {
+          await tester.pumpWidget(
+            _sidebarHarness(
+              SyncState(
+                accountUuid: 'account-1',
+                hasCachedBalance: available,
+                displayTotalBalance: BigInt.from(250000000),
+                displayOrchardBalance: BigInt.from(200000000),
+                displayIronwoodBalance: BigInt.from(50000000),
+              ),
+              privacyModeEnabled: hidden,
+              migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+                statuses: {'account-1': _readyMigrationStatus},
+              ),
+            ),
+          );
+          await tester.pump();
+          expect(
+            tester
+                .widget<Text>(
+                  find.byKey(const ValueKey('sidebar_orchard_balance')),
+                )
+                .data,
+            hidden
+                ? '****** ZEC'
+                : available
+                ? '2 ZEC'
+                : '— ZEC',
+          );
+          expect(
+            tester
+                .widget<Text>(
+                  find.byKey(const ValueKey('sidebar_ironwood_balance')),
+                )
+                .data,
+            hidden
+                ? '****** ZEC'
+                : available
+                ? '0.5 ZEC'
+                : '— ZEC',
+          );
+          expect(
+            find.text(
+              hidden
+                  ? '****** ZEC'
+                  : available
+                  ? '2.5 ZEC'
+                  : '— ZEC',
+            ),
+            hidden || !available ? findsNWidgets(3) : findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('sidebar limits visible balance fractions to four places', (
     tester,
@@ -585,6 +771,44 @@ void main() {
     );
   });
 
+  testWidgets('busy wallet keeps the sidebar account switch on screen', (
+    tester,
+  ) async {
+    final coordinator = LinuxKeyringCoordinator.testing(enabled: false);
+    addTearDown(coordinator.dispose);
+    // The private queries toggle holds the wallet while it drains.
+    final release = Completer<void>();
+    final toggle = coordinator.runMutation(() => release.future);
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        accountState: _multiAccountState,
+        initialLocation: '/settings',
+        keyringCoordinator: coordinator,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('sidebar_accounts_button')));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('sidebar_account_popover_row_account-2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('settings'), findsOneWidget);
+    expect(find.text('home route'), findsNothing);
+    expect(find.text('Primary Vault'), findsOneWidget);
+    expect(
+      find.text('Finish the current wallet operation before starting another.'),
+      findsOneWidget,
+    );
+    release.complete();
+    await toggle;
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('sidebar accounts popover closes on outside pane click', (
     tester,
   ) async {
@@ -746,6 +970,7 @@ void main() {
           hasAccountScopedData: false,
           isSyncing: true,
           percentage: 0.32,
+          remainingScanBlocks: 1500,
         ),
       ),
     );
@@ -1215,6 +1440,7 @@ Widget _sidebarHarness(
   SyncState syncState, {
   AppThemeData themeData = AppThemeData.light,
   bool swapEnabled = true,
+  bool privacyModeEnabled = false,
   AccountState? accountState,
   String initialLocation = '/home',
   bool disableAnimations = true,
@@ -1227,8 +1453,12 @@ Widget _sidebarHarness(
       const IronwoodMigrationCoordinatorState(),
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
   bool suppressActiveSelection = false,
+  LinuxKeyringCoordinator? keyringCoordinator,
 }) {
-  final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
+  final bootstrap = _bootstrapFor(
+    accountState ?? _singleAccountState,
+    privacyModeEnabled: privacyModeEnabled,
+  );
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: [
@@ -1348,6 +1578,8 @@ Widget _sidebarHarness(
       ironwoodMigrationCoordinatorProvider.overrideWith(
         () => _FakeMigrationCoordinator(migrationCoordinatorState),
       ),
+      if (keyringCoordinator != null)
+        linuxKeyringCoordinatorProvider.overrideWithValue(keyringCoordinator),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -1598,14 +1830,17 @@ const _manyAccountState = AccountState(
   activeAddress: 'u1accountsaddress',
 );
 
-AppBootstrapState _bootstrapFor(AccountState accountState) => AppBootstrapState(
+AppBootstrapState _bootstrapFor(
+  AccountState accountState, {
+  bool privacyModeEnabled = false,
+}) => AppBootstrapState(
   initialLocation: '/home',
   initialAccountState: accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
   rpcEndpointConfig: defaultRpcEndpointConfig('main'),
   themeMode: ThemeMode.system,
-  privacyModeEnabled: false,
+  privacyModeEnabled: privacyModeEnabled,
   isPasswordConfigured: true,
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,

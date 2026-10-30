@@ -20,7 +20,7 @@ const _statusIconSize = 32.0;
 const _statusButtonWidth = 230.0;
 
 const mobileTransactionProgressBackgroundImage = AssetImage(
-  'assets/illustrations/mobile_send_status_background.png',
+  'assets/illustrations/mobile_send_status_background.webp',
 );
 
 /// Shared full-page presentation for a transaction being submitted.

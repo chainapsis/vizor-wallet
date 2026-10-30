@@ -139,6 +139,18 @@ Widget buildRequestMobileComposePriceUnavailableUseCase(BuildContext context) =>
 Widget buildRequestMobileComposeMessageUseCase(BuildContext context) =>
     _mobileCompose(_amountWithMessageRequest);
 
+Widget buildRequestMobileComposeExpandedMessageUseCase(BuildContext context) =>
+    _mobileCompose(_amountWithMessageRequest, messageExpanded: true);
+
+Widget buildRequestMobileComposeExpandedMessageKeyboardUseCase(
+  BuildContext context,
+) => MediaQuery(
+  data: MediaQuery.of(
+    context,
+  ).copyWith(viewInsets: const EdgeInsets.only(bottom: 332.0889)),
+  child: _mobileCompose(_amountWithMessageRequest, messageExpanded: true),
+);
+
 Widget buildRequestMobileComposeAmountErrorUseCase(BuildContext context) =>
     _mobileCompose(_amountErrorRequest);
 
@@ -174,12 +186,17 @@ Widget _desktop(
   );
 }
 
-Widget _mobileCompose(ZecRequestView request, {bool toggleEnabled = true}) {
+Widget _mobileCompose(
+  ZecRequestView request, {
+  bool toggleEnabled = true,
+  bool messageExpanded = false,
+}) {
   return _frame(
     const Size(393, 852),
     RequestAmountSheetSurface(
       child: RequestAmountSheetCompose(
         request: request,
+        messageExpanded: messageExpanded,
         onClose: _noop,
         onToggleAmountUnit: toggleEnabled ? _noop : null,
         onAddMessage: _noop,

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:zcash_wallet/src/rust/api/wallet.dart' show AccountViewingKeys;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +22,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 const _ufvk =
     'uview1qthqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
     'previewonly';
+const _uivk = 'uivk1incomingpreviewonly';
+const _keys = AccountViewingKeys(ufvk: _ufvk, uivk: _uivk);
 
 const _accountState = AccountState(
   accounts: [
@@ -80,9 +84,9 @@ void main() {
         _harness(
           privacyController: privacyController,
           accountUuid: 'account-2',
-          ufvkLoader: (uuid) async {
+          viewingKeysLoader: (uuid) async {
             requestedUuids.add(uuid);
-            return _ufvk;
+            return _keys;
           },
         ),
       );
@@ -94,35 +98,49 @@ void main() {
       await tester.pump();
 
       expect(requestedUuids, ['account-2']);
-      expect(find.text(_ufvk), findsOneWidget);
-      expect(find.text('Full Viewing Key'), findsOneWidget);
-      expect(find.text(viewingKeyExplanation), findsOneWidget);
-      expect(find.text(viewingKeyPrivacyNotice), findsOneWidget);
-      final explanationText = tester.widget<Text>(
-        find.byKey(const ValueKey('viewing_key_explanation')),
-      );
-      final explanationSpans =
-          (explanationText.textSpan! as TextSpan).children!;
-      final explanationContext = tester.element(
-        find.byKey(const ValueKey('viewing_key_explanation')),
+      expect(
+        find.byKey(const ValueKey('viewing_key_choose_incoming')),
+        findsOneWidget,
       );
       expect(
-        (explanationSpans.first as TextSpan).style,
-        AppTypography.bodyLarge.copyWith(
-          color: AppTheme.of(explanationContext).colors.text.accent,
-          fontWeight: FontWeight.w600,
-        ),
+        find.byKey(const ValueKey('settings_viewing_key_copy_button')),
+        findsNothing,
       );
-      expect((explanationSpans.last as TextSpan).style, isNull);
-      final keyText = tester.widget<Text>(find.text(_ufvk));
-      final keyContext = tester.element(find.text(_ufvk));
+      await _selectFullIfNeeded(tester);
+      if (find
+          .byKey(const ValueKey('viewing_key_format_text'))
+          .evaluate()
+          .isNotEmpty) {
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('viewing_key_format_text')),
+        );
+        await tester.tap(find.byKey(const ValueKey('viewing_key_format_text')));
+        await tester.pump();
+      }
+      expect(find.text(_ufvk), findsOneWidget);
+      expect(find.text('Full viewing key'), findsOneWidget);
+      expect(find.text(viewingKeyExplanation), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('viewing_key_account_name')),
+            )
+            .data,
+        'Other',
+      );
+      final keyText = tester.widget<SelectableText>(
+        find.byKey(const ValueKey('viewing_key_raw_text')),
+      );
+      final keyContext = tester.element(
+        find.byKey(const ValueKey('viewing_key_raw_text')),
+      );
       expect(keyText.style?.color, AppTheme.of(keyContext).colors.text.accent);
 
       final copyButton = tester.widget<AppButton>(
         find.byKey(const ValueKey('settings_viewing_key_copy_button')),
       );
-      expect(copyButton.variant, AppButtonVariant.secondary);
-      expect(find.text('Copy'), findsOneWidget);
+      expect(copyButton.variant, AppButtonVariant.primary);
+      expect(find.text('Copy viewing key'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey('settings_viewing_key_copy_button')),
@@ -131,6 +149,89 @@ void main() {
       await tester.pump();
       expect(copiedText, [_ufvk]);
       expect(find.text('Copied'), findsOneWidget);
+      await _selectIncoming(tester);
+      await _selectFullIfNeeded(tester);
+      if (find
+          .byKey(const ValueKey('viewing_key_format_text'))
+          .evaluate()
+          .isNotEmpty) {
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('viewing_key_format_text')),
+        );
+        await tester.tap(find.byKey(const ValueKey('viewing_key_format_text')));
+        await tester.pump();
+      }
+      expect(find.text(_uivk), findsOneWidget);
+      expect(find.text(_ufvk), findsNothing);
+      expect(find.text('Copied'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('settings_viewing_key_copy_button')),
+      );
+      await tester.pump();
+      expect(copiedText, [_ufvk, _uivk]);
+    },
+  );
+
+  testWidgets(
+    'retry requires authentication before loading the same account again',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final privacy = SensitivePrivacyOverlayController(initiallySafe: true);
+      addTearDown(privacy.dispose);
+      var attempts = 0;
+      await tester.pumpWidget(
+        _harness(
+          privacyController: privacy,
+          accountUuid: 'account-2',
+          viewingKeysLoader: (uuid) async {
+            expect(uuid, 'account-2');
+            if (++attempts == 1) {
+              throw StateError('private implementation detail');
+            }
+            return _keys;
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.enterText(find.byType(EditableText), 'Correct123!');
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Confirm password'));
+      await tester.pump();
+      expect(
+        find.textContaining('private implementation detail'),
+        findsNothing,
+      );
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      expect(find.text('Confirm access'), findsOneWidget);
+      expect(find.text(_ufvk), findsNothing);
+      expect(attempts, 1);
+      await tester.enterText(find.byType(EditableText), 'Correct123!');
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Confirm password'));
+      await tester.pump();
+      expect(attempts, 2);
+      await _selectFullIfNeeded(tester);
+      if (find
+          .byKey(const ValueKey('viewing_key_format_text'))
+          .evaluate()
+          .isNotEmpty) {
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('viewing_key_format_text')),
+        );
+        await tester.tap(find.byKey(const ValueKey('viewing_key_format_text')));
+        await tester.pump();
+      }
+      expect(find.text(_ufvk), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('viewing_key_account_name')),
+            )
+            .data,
+        'Other',
+      );
     },
   );
 
@@ -148,7 +249,7 @@ void main() {
       _harness(
         privacyController: privacyController,
         accountUuid: 'account-3',
-        ufvkLoader: (uuid) async => _ufvk,
+        viewingKeysLoader: (uuid) async => _keys,
       ),
     );
     await tester.pump();
@@ -158,6 +259,17 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Confirm password'));
     await tester.pump();
 
+    await _selectFullIfNeeded(tester);
+    if (find
+        .byKey(const ValueKey('viewing_key_format_text'))
+        .evaluate()
+        .isNotEmpty) {
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('viewing_key_format_text')),
+      );
+      await tester.tap(find.byKey(const ValueKey('viewing_key_format_text')));
+      await tester.pump();
+    }
     expect(find.text(_ufvk), findsOneWidget);
   });
 
@@ -177,7 +289,7 @@ void main() {
       _harness(
         privacyController: privacyController,
         accountUuid: 'account-2',
-        ufvkLoader: (uuid) async => throw StateError('boom'),
+        viewingKeysLoader: (uuid) async => throw StateError('boom'),
       ),
     );
     await tester.pump();
@@ -188,7 +300,7 @@ void main() {
     await tester.pump();
 
     expect(
-      find.textContaining('Viewing key is not available for this account'),
+      find.text('Confirm access again to try loading this key.'),
       findsOneWidget,
     );
     expect(find.text(_ufvk), findsNothing);
@@ -211,7 +323,7 @@ void main() {
       _harness(
         privacyController: privacyController,
         accountUuid: 'account-2',
-        ufvkLoader: (uuid) async => _ufvk,
+        viewingKeysLoader: (uuid) async => _keys,
         accountNotifier: () => accountNotifier = _FakeAccountNotifier(),
       ),
     );
@@ -221,6 +333,21 @@ void main() {
     await tester.pump();
     await tester.tap(find.bySemanticsLabel('Confirm password'));
     await tester.pump();
+    await _selectIncoming(tester);
+    await _selectFullIfNeeded(tester);
+    if (find
+        .byKey(const ValueKey('viewing_key_format_text'))
+        .evaluate()
+        .isNotEmpty) {
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('viewing_key_format_text')),
+      );
+      await tester.tap(find.byKey(const ValueKey('viewing_key_format_text')));
+      await tester.pump();
+    }
+    expect(find.text(_uivk), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('viewing_key_format_qr')));
+    await tester.pump();
     accountNotifier.removeRequestedAccount();
     await tester.pump();
 
@@ -228,13 +355,16 @@ void main() {
       find.text('Selected account changed. Enter your password again.'),
       findsOneWidget,
     );
+    expect(find.text('Incoming only'), findsNothing);
+    expect(find.bySemanticsLabel('Incoming viewing key QR code'), findsNothing);
   });
 }
 
 Widget _harness({
   required SensitivePrivacyOverlayController privacyController,
   required String accountUuid,
-  required Future<String> Function(String accountUuid) ufvkLoader,
+  required Future<AccountViewingKeys> Function(String accountUuid)
+  viewingKeysLoader,
   AccountNotifier Function()? accountNotifier,
 }) {
   final router = GoRouter(
@@ -245,7 +375,7 @@ Widget _harness({
         builder: (_, _) => SettingsViewingKeyScreen(
           accountUuid: accountUuid,
           privacyOverlayController: privacyController,
-          ufvkLoader: ufvkLoader,
+          viewingKeysLoader: viewingKeysLoader,
         ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const SizedBox()),
@@ -304,4 +434,29 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
 class _FakeSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => SyncState();
+}
+
+Future<void> _selectFullIfNeeded(WidgetTester tester) async {
+  final choice = find.byKey(const ValueKey('viewing_key_choose_full'));
+  if (choice.evaluate().isNotEmpty) {
+    await tester.ensureVisible(choice);
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.tap(choice);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+  }
+}
+
+Future<void> _selectIncoming(WidgetTester tester) async {
+  final choice = find.byKey(const ValueKey('viewing_key_choose_incoming'));
+  if (choice.evaluate().isEmpty) {
+    await tester.tap(find.bySemanticsLabel('Back to Viewing key'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+  }
+  await tester.ensureVisible(choice);
+  await tester.pump(const Duration(milliseconds: 220));
+  await tester.tap(choice);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 220));
 }

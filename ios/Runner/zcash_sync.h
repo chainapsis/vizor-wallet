@@ -30,30 +30,24 @@ int32_t zcash_lightwalletd_latest_block_height(
     void* cancellation
 );
 
+/// Public lookups are authorized against the wallet at db_path under the
+/// private queries preference. Returns ZCASH_STATUS_RESULT_INCONCLUSIVE when
+/// the wallet cannot be read, and ZCASH_STATUS_RESULT_UNSUPPORTED when the
+/// preference or the wallet's policy withholds the lookup. Both send nothing
+/// and leave output untouched.
 int32_t zcash_lightwalletd_observe_transaction(
     const char* lightwalletd_url,
+    const char* db_path,
+    const char* network,
+    bool private_preference,
     const uint8_t* transaction_id,
     uintptr_t transaction_id_len,
     CLightwalletdTransactionObservation* output,
     void* cancellation
 );
 
-bool zcash_status_pir_is_enabled(const char* network, bool private_preference);
-int32_t zcash_status_pir_observe_transaction(
-    const char* db_path,
-    const uint8_t* transaction_id,
-    uintptr_t transaction_id_len,
-    CLightwalletdTransactionObservation* output,
-    void* cancellation
-);
 #define ZCASH_STATUS_RESULT_UNSUPPORTED 5
 #define ZCASH_STATUS_RESULT_INCONCLUSIVE 4
-int32_t zcash_status_pir_observe_transaction_v2(
-    const char* db_path, const uint8_t* transaction_id, uintptr_t transaction_id_len,
-    const char* network, bool private_preference,
-    bool has_required_through, uint32_t required_through,
-    CLightwalletdTransactionObservation* output,
-    const void* cancellation);
 
 
 int32_t zcash_lightwalletd_send_transaction(
@@ -85,6 +79,27 @@ int32_t zcash_list_migration_preparation_txids(
     uintptr_t output_capacity,
     uintptr_t* output_len
 );
+
+/// NU7 activation height for network ("main", "test", "regtest"), or 0 when
+/// it is unscheduled or the network is unknown.
+uint64_t zcash_nu7_activation_height(const char* network);
+
+/// The first upgrade activation after height on network, or 0 when none is
+/// scheduled or the network is unknown.
+uint64_t zcash_next_upgrade_activation_height(const char* network,
+                                              uint64_t height);
+
+/// Whether the iOS outbox holds a migration part signed for target_height at
+/// remote_height on network, as the foreground judges it. A target of 0 (a
+/// part saved by an older build) is held by the tip alone.
+bool zcash_migration_broadcast_held(const char* network, uint64_t target_height,
+                                    uint64_t remote_height);
+
+/// ZIP 318 canonical expiry for a part scheduled at height, or 0.
+uint64_t zcash_zip318_canonical_expiry_height(const char* network, uint64_t height);
+
+/// Blocks per ZIP 318 reference block at height: 1 before NU7, 3 from it.
+uint64_t zcash_zip318_blocks_per_reference_block(const char* network, uint64_t height);
 
 int32_t zcash_inspect_migration_proof_readiness(
     const char* db_path,

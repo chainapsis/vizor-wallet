@@ -31,8 +31,10 @@ pub(crate) enum SyncError {
     Network(String),
 
     /// Private Status PIR could not prove that its snapshot covered the
-    /// transaction-status decision. This is retryable for publication lag,
-    /// but changing lightwalletd endpoints cannot repair it.
+    /// transaction-status decision. A later block can repair publication lag,
+    /// but changing lightwalletd endpoints cannot. The sync is not retried at
+    /// the same tip: the reply was about one transaction, and asking again
+    /// seconds later would show the service what it said.
     PrivateStatusCoverageIncomplete,
 
     /// Local SQLite / `WalletDb` failure. Usually non-retryable (permissions,
@@ -139,12 +141,7 @@ impl SyncError {
     /// (no rewind, no caller intervention).
     #[allow(dead_code)] // currently unused outside recovery_strategy itself
     pub(crate) fn is_transient(&self) -> bool {
-        matches!(
-            self,
-            SyncError::Network(_)
-                | SyncError::PrivateStatusCoverageIncomplete
-                | SyncError::Other(_)
-        )
+        matches!(self, SyncError::Network(_) | SyncError::Other(_))
     }
 
     /// The height at which a continuity break was detected, if this is a
@@ -163,10 +160,10 @@ impl SyncError {
             SyncError::Continuity { at_height, .. } => RecoveryStrategy::Rewind {
                 to_height: at_height.saturating_sub(REWIND_DISTANCE),
             },
-            SyncError::Network(_)
-            | SyncError::PrivateStatusCoverageIncomplete
-            | SyncError::Other(_) => RecoveryStrategy::RetryWithBackoff,
-            SyncError::Db(_) | SyncError::Parse(_) => RecoveryStrategy::Fatal,
+            SyncError::Network(_) | SyncError::Other(_) => RecoveryStrategy::RetryWithBackoff,
+            SyncError::PrivateStatusCoverageIncomplete | SyncError::Db(_) | SyncError::Parse(_) => {
+                RecoveryStrategy::Fatal
+            }
         }
     }
 
@@ -322,9 +319,16 @@ mod tests {
             SyncError::Other("???".into()).recovery_strategy(),
             RecoveryStrategy::RetryWithBackoff,
         );
+    }
+
+    /// A row without the transaction's status record is a reply about that
+    /// transaction. Retrying the sync seconds later at the same block would
+    /// show the service what it said, so the sync fails without a retry.
+    #[test]
+    fn private_status_coverage_is_not_retried_at_the_same_tip() {
         assert_eq!(
             SyncError::PrivateStatusCoverageIncomplete.recovery_strategy(),
-            RecoveryStrategy::RetryWithBackoff,
+            RecoveryStrategy::Fatal,
         );
     }
 

@@ -22,17 +22,17 @@ const _supportingValueShadows = <Shadow>[
 
 /// Artwork choices exported from the Figma `_CARD BG IMAGE` component set.
 enum PaymentLinkCardArtwork {
-  knight('payment_link_card_knight.png', 'Knight'),
-  chestLava('payment_link_card_chest_lava.png', 'Chest in lava cave'),
-  chestCave('payment_link_card_chest_cave.png', 'Chest in crystal cave'),
-  dragon('payment_link_card_dragon.png', 'Dragon'),
-  knightMagic('payment_link_card_knight_magic.png', 'Magic knight'),
-  gandalf('payment_link_card_gandalf.png', 'Wizard'),
-  crystal('payment_link_card_crystal.png', 'Crystal'),
-  diamond('payment_link_card_diamond.png', 'Diamond'),
-  ruby('payment_link_card_ruby.png', 'Ruby'),
-  coin('payment_link_card_coin.png', 'Zcash coin'),
-  gift('payment_link_card_gift.png', 'Gift box');
+  knight('payment_link_card_knight.webp', 'Knight'),
+  chestLava('payment_link_card_chest_lava.webp', 'Chest in lava cave'),
+  chestCave('payment_link_card_chest_cave.webp', 'Chest in crystal cave'),
+  dragon('payment_link_card_dragon.webp', 'Dragon'),
+  knightMagic('payment_link_card_knight_magic.webp', 'Magic knight'),
+  gandalf('payment_link_card_gandalf.webp', 'Wizard'),
+  crystal('payment_link_card_crystal.webp', 'Crystal'),
+  diamond('payment_link_card_diamond.webp', 'Diamond'),
+  ruby('payment_link_card_ruby.webp', 'Ruby'),
+  coin('payment_link_card_coin.webp', 'Zcash coin'),
+  gift('payment_link_card_gift.webp', 'Gift box');
 
   const PaymentLinkCardArtwork(this.fileName, this.semanticLabel);
 
@@ -113,6 +113,7 @@ class PaymentLinkGiftCard extends StatefulWidget {
     this.onUseMax,
     this.showMaxButton = false,
     this.supportingText,
+    this.supportingTextBuilder,
     this.supportingLoading = false,
     this.currencySymbol = 'ZEC',
     this.emptyAmountLabel = 'Enter amount',
@@ -174,6 +175,9 @@ class PaymentLinkGiftCard extends StatefulWidget {
   final VoidCallback? onUseMax;
   final bool showMaxButton;
   final String? supportingText;
+
+  /// Wraps the styled supporting value independently of the amount editor.
+  final TransitionBuilder? supportingTextBuilder;
   final bool supportingLoading;
   final String currencySymbol;
   final String emptyAmountLabel;
@@ -402,6 +406,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 onUseMax: widget.onUseMax,
                 showInlineMax: !showMaxButton,
                 supportingText: widget.supportingText,
+                supportingTextBuilder: widget.supportingTextBuilder,
                 supportingLoading: widget.supportingLoading,
                 currencySymbol: widget.currencySymbol,
                 emptyAmountLabel: widget.emptyAmountLabel,
@@ -571,6 +576,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
     required this.onUseMax,
     required this.showInlineMax,
     required this.supportingText,
+    required this.supportingTextBuilder,
     required this.supportingLoading,
     required this.currencySymbol,
     required this.emptyAmountLabel,
@@ -590,6 +596,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
   final VoidCallback? onUseMax;
   final bool showInlineMax;
   final String? supportingText;
+  final TransitionBuilder? supportingTextBuilder;
   final bool supportingLoading;
   final String currencySymbol;
   final String emptyAmountLabel;
@@ -649,15 +656,7 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xs),
             ] else if (visibleSupportingText case final supporting?) ...[
-              Text(
-                supporting,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: cardTextColor,
-                  shadows: _supportingValueShadows,
-                ),
-              ),
+              _buildSupportingText(context, supporting, cardTextColor),
               const SizedBox(height: AppSpacing.xs),
             ] else if (showInlineMax && maxAmount != null) ...[
               if (onUseMax == null)
@@ -723,6 +722,19 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildSupportingText(BuildContext context, String value, Color color) {
+    final text = Text(
+      value,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.labelLarge.copyWith(
+        color: color,
+        shadows: _supportingValueShadows,
+      ),
+    );
+    return supportingTextBuilder?.call(context, text) ?? text;
   }
 }
 
@@ -979,7 +991,7 @@ class _PaymentLinkGiftCardBackBackground extends StatelessWidget {
       children: [
         ColoredBox(color: context.colors.background.brandCrimsonStrong),
         Image.asset(
-          'assets/illustrations/payment_links/payment_link_message_pattern.png',
+          'assets/illustrations/payment_links/payment_link_message_pattern.webp',
           key: const ValueKey('payment_link_message_pattern'),
           fit: BoxFit.cover,
           excludeFromSemantics: true,

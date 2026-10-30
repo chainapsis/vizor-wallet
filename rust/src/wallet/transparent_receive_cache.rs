@@ -6,6 +6,7 @@ use std::{
 
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
+use zcash_protocol::{consensus::BlockHeight, zip318::BlockSpacing};
 
 use crate::wallet::{keys, network::WalletNetwork};
 
@@ -14,7 +15,8 @@ pub(crate) const RECEIVE_CACHE_SIDECAR_SUFFIX: &str = ".receive.redb";
 const CACHE_VERSION: u32 = 3;
 const CACHE_TABLE: TableDefinition<&str, &str> = TableDefinition::new("transparent_receive");
 const TRANSPARENT_UTXO_REQUERY_LOOKBACK: u64 = 100;
-const INTERNAL_UTXO_REFRESH_INTERVAL: u64 = 20;
+/// The internal UTXO refresh interval in 75-second blocks, about 25 minutes.
+const INTERNAL_UTXO_REFRESH_INTERVAL: u32 = 20;
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 const REDB_CACHE_SIZE_BYTES: usize = 256 * 1024;
@@ -192,6 +194,56 @@ pub(crate) fn mark_account_dirty(db_path: &str, account_uuid: &str) -> Result<()
     })
 }
 
+/// Marks every cached account dirty, so reads fall back to the wallet DB
+/// until a refresh rewrites each record clean. Reads only the sidecar, never
+/// creates one, and marks all records in one write or none.
+pub(crate) fn mark_all_dirty(db_path: &str) -> Result<(), String> {
+    with_cache_lock(|| {
+        let path = sidecar_path(db_path);
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let db = open_existing_db(&path)?;
+        let write_txn = db
+            .begin_write()
+            .map_err(|e| format!("transparent receive cache write txn: {e}"))?;
+        {
+            let mut table = match write_txn.open_table(CACHE_TABLE) {
+                Ok(table) => table,
+                Err(redb::TableError::TableDoesNotExist(_)) => return Ok(()),
+                Err(e) => return Err(format!("transparent receive cache open table: {e}")),
+            };
+            let mut records = Vec::new();
+            for entry in table
+                .iter()
+                .map_err(|e| format!("transparent receive cache iterate: {e}"))?
+            {
+                let (key, value) =
+                    entry.map_err(|e| format!("transparent receive cache entry: {e}"))?;
+                records.push((key.value().to_string(), value.value().to_string()));
+            }
+            for (account_uuid, encoded_record) in records {
+                let mut record: CacheRecord = serde_json::from_str(&encoded_record)
+                    .map_err(|e| format!("transparent receive cache decode: {e}"))?;
+                if record.dirty {
+                    continue;
+                }
+                retire_legacy_completion(&mut record);
+                record.dirty = true;
+                let encoded = serde_json::to_string(&record)
+                    .map_err(|e| format!("transparent receive cache encode: {e}"))?;
+                table
+                    .insert(account_uuid.as_str(), encoded.as_str())
+                    .map_err(|e| format!("transparent receive cache insert: {e}"))?;
+            }
+        }
+        write_txn
+            .commit()
+            .map_err(|e| format!("transparent receive cache commit: {e}"))
+    })
+}
+
 pub(crate) fn delete_account(db_path: &str, account_uuid: &str) -> Result<(), String> {
     with_cache_lock(|| {
         let path = sidecar_path(db_path);
@@ -350,6 +402,14 @@ pub(crate) fn mark_utxo_refresh_batch_complete(
     write_record(db_path, account_uuid, &record)
 }
 
+/// Whether [`INTERNAL_UTXO_REFRESH_INTERVAL`] has passed since the completion
+/// height `checked` (a past tip + 1), measured in time across NU7 activation.
+fn internal_refresh_due(network: WalletNetwork, checked: u64, tip: u64) -> bool {
+    let checked = BlockHeight::from_u32(u32::try_from(checked).unwrap_or(u32::MAX));
+    let due = BlockSpacing::for_network(&network).advance(checked, INTERNAL_UTXO_REFRESH_INTERVAL);
+    u64::from(u32::from(due)) <= tip.saturating_add(1)
+}
+
 /// Internal/change receivers have their own completion map. A v3 record without
 /// this optional field deliberately treats them as unchecked; external progress
 /// is retained. Completion is written only after wallet outputs are committed.
@@ -382,9 +442,7 @@ pub(crate) fn plan_non_external_utxo_refresh(
         .filter(|address| internal_addresses.contains(*address))
         .filter_map(|address| record.non_external_checked_heights.get(address))
         .min()
-        .is_some_and(|height| {
-            tip.saturating_add(1).saturating_sub(*height) >= INTERNAL_UTXO_REFRESH_INTERVAL
-        });
+        .is_some_and(|height| internal_refresh_due(network, *height, tip));
     let mut unchecked = Vec::new();
     let mut checked = Vec::new();
     for address in addresses {
@@ -1085,6 +1143,20 @@ mod tests {
         .unwrap();
         assert_eq!(plan(&grown, 1019), vec![(vec![other.clone()], 950)]);
         assert_eq!(plan(&grown, 1020), vec![(vec![other, old, new], 950)]);
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn internal_refresh_interval_keeps_its_duration_across_nu7() {
+        const NU7: u64 = 3_543_405;
+        let due = |checked, tip| internal_refresh_due(WalletNetwork::Main, checked, tip);
+        // 20 blocks before activation, 60 from it, prorated across it.
+        assert!(!due(1_000, 1_018) && due(1_000, 1_019));
+        assert!(!due(NU7, NU7 + 58) && due(NU7, NU7 + 59));
+        assert!(!due(NU7 - 5, NU7 + 43) && due(NU7 - 5, NU7 + 44));
+        assert!(!due(NU7 - 20, NU7 - 2) && due(NU7 - 20, NU7 - 1));
+        // Regtest leaves NU7 unscheduled.
+        assert!(internal_refresh_due(WalletNetwork::Regtest, NU7, NU7 + 19));
     }
 
     #[test]

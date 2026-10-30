@@ -118,8 +118,8 @@ void main() {
       expect(
         find.text(
           checkpointGate == null && !cached
-              ? 'Finishing transaction'
-              : 'Finishing transaction',
+              ? 'Sending transaction'
+              : 'Finish transaction',
         ),
         findsOneWidget,
       );
@@ -128,8 +128,8 @@ void main() {
       expect(
         find.text(
           checkpointGate == null && !cached
-              ? 'Finishing transaction'
-              : 'Finishing transaction',
+              ? 'Sending transaction'
+              : 'Finish transaction',
         ),
         findsOneWidget,
       );
@@ -175,76 +175,70 @@ void main() {
       expect(find.text('Open signing'), findsOneWidget);
     });
   }
-  testWidgets(
-    'mobile Ledger swap explains unavailable legacy Orchard recovery',
-    (tester) async {
-      final operationService = _OperationService(
-        Completer<LedgerSignedOperationBroadcastResult>().future,
-      );
-      final router = GoRouter(
-        routes: [
-          GoRoute(
-            path: '/',
-            builder: (context, _) => TextButton(
-              onPressed: () => context.push('/sign'),
-              child: const Text('Open signing'),
-            ),
+  testWidgets('mobile Ledger swap asks for an app update it can retry after', (
+    tester,
+  ) async {
+    final operationService = _OperationService(
+      Completer<LedgerSignedOperationBroadcastResult>().future,
+    );
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, _) => TextButton(
+            onPressed: () => context.push('/sign'),
+            child: const Text('Open signing'),
           ),
-          GoRoute(
-            path: '/sign',
-            builder: (context, _) => SwapLedgerSigningOverlay(
-              mobile: true,
-              intent: _intent,
-              onCancel: () => context.pop(),
-              onDepositBroadcast: (_) async {},
+        ),
+        GoRoute(
+          path: '/sign',
+          builder: (context, _) => SwapLedgerSigningOverlay(
+            mobile: true,
+            intent: _intent,
+            onCancel: () => context.pop(),
+            onDepositBroadcast: (_) async {},
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap),
+          ledgerPcztSignerProvider.overrideWithValue(
+            (_, _) async => throw StateError(ledgerAppUpdateRequiredError),
+          ),
+          ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+          ledgerSignedOperationServiceProvider.overrideWithValue(
+            operationService,
+          ),
+          swapHardwareSigningServiceProvider.overrideWithValue(
+            _HardwareSigningService(),
+          ),
+          syncProvider.overrideWith(
+            () => FakeSyncNotifier(
+              SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
             ),
           ),
         ],
-      );
-      addTearDown(router.dispose);
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appBootstrapProvider.overrideWithValue(_bootstrap),
-            ledgerPcztSignerProvider.overrideWithValue(
-              (_, _) async => throw StateError(
-                '$kLedgerLegacyOrchardRecoveryErrorCode: test fixture',
-              ),
-            ),
-            ledgerOperationCancellerProvider.overrideWithValue(() async {}),
-            ledgerSignedOperationServiceProvider.overrideWithValue(
-              operationService,
-            ),
-            swapHardwareSigningServiceProvider.overrideWithValue(
-              _HardwareSigningService(),
-            ),
-            syncProvider.overrideWith(
-              () => FakeSyncNotifier(
-                SyncState(accountUuid: 'account-1', hasAccountScopedData: true),
-              ),
-            ),
-          ],
-          child: MaterialApp.router(
-            routerConfig: router,
-            builder: (_, child) =>
-                AppTheme(data: AppThemeData.light, child: child!),
-          ),
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
         ),
-      );
-      await tester.tap(find.text('Open signing'));
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.tap(find.text('Open signing'));
+    await tester.pumpAndSettle();
 
-      expect(find.text('Ledger app update required'), findsOneWidget);
-      expect(
-        find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
-        findsOneWidget,
-      );
-      expect(find.text('Try again'), findsNothing);
-      expect(operationService.checkpointCalls, 0);
-      expect(operationService.broadcastCalls, 0);
-    },
-  );
+    expect(find.text('Ledger app update required'), findsOneWidget);
+    expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(operationService.checkpointCalls, 0);
+    expect(operationService.broadcastCalls, 0);
+  });
 }
 
 final _intent = SwapIntent(

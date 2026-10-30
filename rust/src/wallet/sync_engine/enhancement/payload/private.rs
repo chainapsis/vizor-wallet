@@ -4,26 +4,39 @@
 //! deferred-failure state, and rediscovery attempts for one full sync. The
 //! sibling scheduler owns transport selection; this module never converts a
 //! private failure or suspension into public transaction-ID retrieval.
+use super::super::content_failures;
 use super::{
     super::{
         super::SyncError,
         transport::{client_protocol_error, RoutedHttpError},
-        DEFAULT_MAINNET_ENDPOINT,
     },
     coordinator::{EnhancementEffects, RecoveryWallet, RoutedWork},
     diagnostics::{mark_routing_refresh, routing_refresh_due, set_phase, RecoveryPhase},
 };
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::pir_config::{client_origin, PirProduct};
 use futures::StreamExt;
-use zakura_pir_enhance::transport::{self, PendingClient};
-use zakura_pir_enhance::wallet::Acceptance;
-use zakura_pir_enhance::{ClientError, Manifest};
+use std::collections::BTreeSet;
+use zakura_pir_client::enhance::transport::{self, PendingClient};
+use zakura_pir_client::enhance::wallet::{Acceptance, PreparedWork};
+use zakura_pir_client::enhance::{ClientError, Manifest, RECORDS_PER_ROW};
 use zcash_client_backend::data_api::enhance_pir::{
     EnhancePirStoreResult, IronwoodEnhanceDiscoveryRequest,
 };
+use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
-const ENDPOINT_ENV: &str = "VIZOR_ENHANCE_PIR_URL";
-const LEGACY_ENDPOINT_ENV: &str = "VIZOR_MEMO_PIR_URL";
+use zcash_protocol::zip318::BlockSpacing;
+/// The Enhance PIR endpoint: the selected wallet PIR server.
+///
+/// With no server selected the endpoint is empty. Private Enhance stays
+/// enabled, so the empty endpoint fails URI validation before any request and
+/// the sync defers exactly as for an unreachable service. It never turns
+/// into public transaction retrieval.
+fn enhance_endpoint() -> String {
+    client_origin(PirProduct::Enhance).unwrap_or_default()
+}
+
+/// The rediscovery cover size in 75-second blocks, about two hours.
 const REDISCOVERY_COVER_BLOCKS: u32 = 100;
 fn routing_is_current_or_newer(current: &Manifest, candidate: &Manifest) -> bool {
     current_or_newer_routing_revision(
@@ -49,36 +62,46 @@ fn is_stale_routing_status(status: u16) -> bool {
     matches!(status, 409 | 410)
 }
 
-/// A cover range of up to [`REDISCOVERY_COVER_BLOCKS`] blocks containing `height`.
-/// `offset` (drawn uniformly below the cover size) shifts the window past the target
-/// so it is not always the range endpoint; `tip` caps the end at known chain state.
+/// A cover range of up to [`REDISCOVERY_COVER_BLOCKS`] reference blocks containing
+/// `height`. `draw_offset(cover)` (uniform below the cover size) shifts the window past
+/// the target so it is not always the range endpoint; `tip` caps the end at known chain
+/// state. The size follows the tip's spacing, not the target's, so a window that spans
+/// NU7 activation does not tell on which side of it the target lies.
 pub(super) fn rediscovery_cover_range(
+    network: WalletNetwork,
     height: BlockHeight,
     tip: Option<BlockHeight>,
-    offset: u32,
+    draw_offset: impl FnOnce(u32) -> u32,
 ) -> (BlockHeight, BlockHeight) {
     let height = u32::from(height);
     let tip = tip.map_or(height, |tip| u32::from(tip).max(height));
+    let cover = REDISCOVERY_COVER_BLOCKS
+        * BlockSpacing::for_network(&network)
+            .blocks_per_reference_block(BlockHeight::from_u32(tip));
     let end = height
-        .saturating_add(offset.min(REDISCOVERY_COVER_BLOCKS - 1))
+        .saturating_add(draw_offset(cover).min(cover - 1))
         .min(tip);
-    let start = end.saturating_sub(REDISCOVERY_COVER_BLOCKS - 1);
+    let start = end.saturating_sub(cover - 1);
     (BlockHeight::from_u32(start), BlockHeight::from_u32(end))
 }
 
-pub(super) fn random_rediscovery_offset() -> u32 {
+pub(super) fn random_rediscovery_offset(cover: u32) -> u32 {
     use rand::Rng;
-    rand::thread_rng().gen_range(0..REDISCOVERY_COVER_BLOCKS)
+    rand::thread_rng().gen_range(0..cover)
 }
 
 pub(in crate::wallet::sync_engine) struct RoutedPayloadEnhancement {
     network: WalletNetwork,
-    db_path: String,
+    pub(super) db_path: String,
     pub(super) endpoint: Option<String>,
     pending_routing: Option<PendingClient>,
     pub(super) accepted_routing: Option<transport::Client>,
     pub(super) private_failed_for_sync: bool,
     rediscovery_attempts: Vec<IronwoodEnhanceDiscoveryRequest>,
+    /// The private work this drain may ask: the queries and rediscovery jobs
+    /// that existed when its drain point began. Work a status, history or
+    /// Enhance reply created since waits for the next block.
+    pub(in crate::wallet::sync_engine) snapshot: Option<content_failures::PrivateWork>,
 }
 #[derive(Debug)]
 pub(in crate::wallet::sync_engine) enum EnhancePirRunError {
@@ -117,17 +140,20 @@ impl RoutedPayloadEnhancement {
         Self {
             network,
             db_path: db_path.into(),
-            endpoint: (enabled && network == WalletNetwork::Main).then(|| {
-                std::env::var(ENDPOINT_ENV)
-                    .or_else(|_| std::env::var(LEGACY_ENDPOINT_ENV))
-                    .unwrap_or_else(|_| DEFAULT_MAINNET_ENDPOINT.into())
-            }),
+            endpoint: (enabled && network == WalletNetwork::Main).then(enhance_endpoint),
             pending_routing: None,
             accepted_routing: None,
             private_failed_for_sync: false,
             rediscovery_attempts: Vec::new(),
+            snapshot: None,
         }
     }
+    /// Test seam for a private Enhance endpoint on a network without one.
+    #[cfg(test)]
+    pub(in crate::wallet::sync_engine) fn set_endpoint(&mut self, endpoint: &str) {
+        self.endpoint = Some(endpoint.to_owned());
+    }
+
     pub(in crate::wallet::sync_engine) fn enabled(&self) -> bool {
         self.endpoint.is_some()
     }
@@ -250,7 +276,10 @@ impl RoutedPayloadEnhancement {
         if should_exit() {
             return Err(EnhancePirRunError::ExitRequested);
         }
-        let work = db.work()?.prepared();
+        let work = db
+            .work()?
+            .askable(&self.db_path, self.snapshot.as_ref())
+            .prepared();
         if work.query_count() == 0 {
             return Ok(());
         }
@@ -295,8 +324,13 @@ impl RoutedPayloadEnhancement {
         }
         for attempt in 0..=1 {
             // Re-read after a partial batch: successfully stored rows are no
-            // longer pending, and only the durable remainder is retried.
-            let work = db.work()?.prepared();
+            // longer pending, and only the durable remainder is retried. Rows
+            // that failed on content stay out of the retry, as an honest
+            // reply would have completed them.
+            let work = db
+                .work()?
+                .askable(&self.db_path, self.snapshot.as_ref())
+                .prepared();
             if work.query_count() == 0 {
                 break;
             }
@@ -312,6 +346,12 @@ impl RoutedPayloadEnhancement {
                     Ok(results) => {
                         futures::pin_mut!(results);
                         let mut stale = None;
+                        let mut unreadable = BTreeSet::new();
+                        // A request outcome inside the batch defers the
+                        // rest of the sync once the batch has been asked to
+                        // its end. The client stops dispatch on HTTP 429/503;
+                        // stale routing and cancellation also stop below.
+                        let mut refused = None;
                         while let Some(result) = results.next().await {
                             if should_exit() {
                                 return Err(EnhancePirRunError::ExitRequested);
@@ -324,17 +364,62 @@ impl RoutedPayloadEnhancement {
                                     stale = Some(status);
                                     break;
                                 }
-                                result => result?,
+                                Err(ClientError::Cancelled) => {
+                                    return Err(EnhancePirRunError::ExitRequested)
+                                }
+                                // The reply arrived for this session, but its
+                                // row, or this record in it, did not decode: a
+                                // content failure, which a service could aim
+                                // at chosen rows. Count it against the
+                                // requests of its transaction in that row,
+                                // once per row, and keep going so the rest of
+                                // the batch is asked exactly as an honest
+                                // reply would have it.
+                                Err(error) if is_unreadable(&error) => {
+                                    report_unreadable(
+                                        db,
+                                        &self.db_path,
+                                        &work,
+                                        result.position,
+                                        &mut unreadable,
+                                    )?;
+                                    continue;
+                                }
+                                // A request outcome: the service chose it
+                                // without knowing which row was asked.
+                                Err(error) => {
+                                    refused.get_or_insert(error);
+                                    continue;
+                                }
+                                Ok(record) => record,
                             };
                             for (request, record) in work.map_record(result.position, record) {
-                                let result = db.apply(request, &record)?;
-                                if result == EnhancePirStoreResult::Rejected {
-                                    return Err(SyncError::parse(
-                                        "PIR record failed wallet authentication",
-                                    )
-                                    .into());
+                                match db.apply(request, &record)? {
+                                    // The wallet rolled the record back and
+                                    // counted it; it stops asking after three.
+                                    // Like an unreadable record, it does not
+                                    // stop the rest of the batch.
+                                    EnhancePirStoreResult::Rejected => {
+                                        content_failures::enhance(&self.db_path, [request]);
+                                        log::warn!(
+                                            "sync: a private Ironwood enhancement record failed wallet authentication"
+                                        );
+                                    }
+                                    // Mixed transaction under a private transparent
+                                    // policy: financial facts are kept and the
+                                    // transparent details stay pending. Never a
+                                    // retry or a public fallback.
+                                    EnhancePirStoreResult::PrivateDetailsUnsupported => {
+                                        log::info!(
+                                            "sync: transparent details of a mixed transaction are unavailable under the private transparent policy"
+                                        );
+                                    }
+                                    _ => {}
                                 }
                             }
+                        }
+                        if let Some(error) = refused {
+                            return Err(error.into());
                         }
                         stale
                     }
@@ -358,7 +443,7 @@ impl RoutedPayloadEnhancement {
         }
         let remaining = db.work()?.prepared();
         log::info!(
-            "sync: private recovery has {} active queries, {} rediscovery jobs, and {} suspended obligations",
+            "sync: private recovery has {} active queries, {} rediscovery jobs, {} suspended obligations",
             remaining.query_count(),
             remaining.rediscover.len(),
             remaining.suspended
@@ -366,6 +451,67 @@ impl RoutedPayloadEnhancement {
         Ok(())
     }
 }
+/// Whether a row result failed on content: the reply matched the session,
+/// but its row did not decrypt (`Pir`) or decode, or a record in it did not
+/// (`Response`). A body over the size limit, or a reply whose length or
+/// session binding does not match, is a request outcome like an HTTP
+/// refusal, a transport or JSON error, or a rotated generation: the service
+/// chooses those without knowing which row was asked.
+fn is_unreadable(error: &ClientError) -> bool {
+    match error {
+        ClientError::Row(error) => match error.as_ref() {
+            ClientError::Pir(_) => true,
+            ClientError::Response(message) => !is_envelope_failure(message),
+            _ => false,
+        },
+        // A record of a decoded row.
+        ClientError::Response(_) => true,
+        _ => false,
+    }
+}
+
+/// `ClientError::Response` messages the Enhance client gives a row reply
+/// before it reads the row: the body size, the framing and binding header,
+/// and the expected length. The client has no typed error for these.
+fn is_envelope_failure(message: &str) -> bool {
+    matches!(
+        message,
+        "HTTP body exceeds limit"
+            | "invalid query framing"
+            | "PIR response binding or length mismatch"
+            | "invalid PIR dimensions"
+            | "unqualified native column count"
+    )
+}
+
+/// Reports the requests whose record at `position` arrived but did not decode:
+/// for each transaction with a request there, every request of that
+/// transaction in the position's row, as the wallet counts content failures
+/// per row reply. `reported` holds the (transaction, row) pairs already
+/// counted in this batch, so a row with several bad records counts once.
+fn report_unreadable(
+    db: &mut impl RecoveryWallet,
+    db_path: &str,
+    work: &PreparedWork,
+    position: u64,
+    reported: &mut BTreeSet<(TxId, u64)>,
+) -> Result<(), EnhancePirRunError> {
+    let row = position / RECORDS_PER_ROW as u64;
+    for ((txid, batch_row), requests) in work.batches_by_tx_and_row() {
+        if batch_row == row
+            && requests
+                .iter()
+                .any(|request| u64::from(request.position()) == position)
+            && reported.insert((txid, row))
+        {
+            log::warn!("sync: a private Ironwood enhancement record did not decode");
+            db.record_unreadable(&requests)?;
+            content_failures::enhance(db_path, requests);
+        }
+    }
+    Ok(())
+}
+
 /// A bad candidate cannot invalidate a separately revalidated current session.
 /// Cancellation always wins, even when old coverage remains usable. A local
 /// database failure is never a bad candidate: it is returned so the sync fails
@@ -421,6 +567,35 @@ mod tests {
     }
 
     #[test]
+    fn only_a_row_that_fails_to_decode_is_unreadable() {
+        let row = |error| ClientError::Row(Arc::new(error));
+        for unreadable in [
+            row(ClientError::Pir("decryption failed".into())),
+            row(ClientError::Response("short row".into())),
+            ClientError::Response("invalid record flags".into()),
+        ] {
+            assert!(is_unreadable(&unreadable), "{unreadable}");
+        }
+        for refused in [
+            row(ClientError::Response("HTTP body exceeds limit".into())),
+            row(ClientError::Response("invalid query framing".into())),
+            row(ClientError::Response(
+                "PIR response binding or length mismatch".into(),
+            )),
+            row(ClientError::Transport("connection reset".into())),
+            row(ClientError::HttpStatus(500)),
+            row(ClientError::Generation("session rotated".into())),
+            row(ClientError::Json(
+                serde_json::from_str::<u8>("x").unwrap_err(),
+            )),
+            ClientError::HttpStatus(503),
+            ClientError::Transport("connection reset".into()),
+        ] {
+            assert!(!is_unreadable(&refused), "{refused}");
+        }
+    }
+
+    #[test]
     fn routed_http_status_is_preserved_for_recovery() {
         for status in [409, 410, 429, 502] {
             assert!(matches!(
@@ -472,12 +647,13 @@ mod tests {
 
     #[test]
     fn every_route_requires_an_https_endpoint() {
-        assert!(secure_endpoint_uri(DEFAULT_MAINNET_ENDPOINT).is_ok());
+        assert!(secure_endpoint_uri("https://wallet-pir.example").is_ok());
         for url in [
             "http://enhance-pir.valargroup.dev",
             "http://127.0.0.1:8080",
             "enhance-pir.valargroup.dev",
             "not a url",
+            "",
         ] {
             assert!(secure_endpoint_uri(url).is_err(), "accepted {url}");
         }
@@ -491,51 +667,102 @@ mod tests {
         assert!(!RoutedPayloadEnhancement::new(WalletNetwork::Regtest, true, "test").enabled());
     }
 
+    #[cfg(not(ironwood_masquerade))]
+    const NU7_ACTIVATION: u32 = 3_543_405;
+
+    fn cover_range(
+        network: WalletNetwork,
+        height: u32,
+        tip: Option<u32>,
+        offset: u32,
+    ) -> (u32, u32) {
+        let (start, end) = rediscovery_cover_range(
+            network,
+            BlockHeight::from_u32(height),
+            tip.map(BlockHeight::from_u32),
+            |_| offset,
+        );
+        (u32::from(start), u32::from(end))
+    }
+
+    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn rediscovery_cover_range_hides_the_target_position() {
-        let h = BlockHeight::from_u32(1_000);
-        let tip = Some(BlockHeight::from_u32(2_000));
-        let mut target_positions = std::collections::HashSet::new();
-        for offset in 0..REDISCOVERY_COVER_BLOCKS {
-            let (start, end) = rediscovery_cover_range(h, tip, offset);
-            assert!(start <= h && h <= end, "offset {offset}");
+        // About two hours of blocks in either era.
+        for (h, tip, cover) in [
+            (1_000, 2_000, REDISCOVERY_COVER_BLOCKS),
+            (
+                NU7_ACTIVATION + 1_000,
+                NU7_ACTIVATION + 2_000,
+                3 * REDISCOVERY_COVER_BLOCKS,
+            ),
+        ] {
+            let mut target_positions = std::collections::HashSet::new();
+            for offset in 0..cover {
+                let (start, end) = cover_range(WalletNetwork::Main, h, Some(tip), offset);
+                assert!(start <= h && h <= end, "offset {offset}");
+                assert_eq!(end - start, cover - 1);
+                assert!(start >= h - (cover - 1));
+                target_positions.insert(end - h);
+            }
+            assert_eq!(target_positions.len(), cover as usize);
+            // Out-of-range offsets are clamped to the cover size.
             assert_eq!(
-                u32::from(end) - u32::from(start),
-                REDISCOVERY_COVER_BLOCKS - 1
+                cover_range(WalletNetwork::Main, h, Some(tip), u32::MAX),
+                (h, h + cover - 1),
             );
-            assert!(u32::from(start) >= 1_000 - (REDISCOVERY_COVER_BLOCKS - 1));
-            target_positions.insert(u32::from(end) - 1_000);
         }
-        assert_eq!(target_positions.len(), REDISCOVERY_COVER_BLOCKS as usize);
-        // Out-of-range offsets are clamped to the cover size.
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn rediscovery_cover_size_follows_the_tip_spacing() {
+        let sizes = |h, tip| {
+            let mut covers = Vec::new();
+            rediscovery_cover_range(
+                WalletNetwork::Main,
+                BlockHeight::from_u32(h),
+                Some(BlockHeight::from_u32(tip)),
+                |cover| {
+                    covers.push(cover);
+                    0
+                },
+            );
+            covers
+        };
+        // A target before activation with a later tip gets the wider window, the
+        // same as a target just after it, so a window across activation does not
+        // tell the two apart.
+        assert_eq!(sizes(NU7_ACTIVATION - 10, NU7_ACTIVATION - 1), vec![100]);
+        assert_eq!(sizes(NU7_ACTIVATION - 10, NU7_ACTIVATION + 500), vec![300]);
+        assert_eq!(sizes(NU7_ACTIVATION + 10, NU7_ACTIVATION + 500), vec![300]);
         assert_eq!(
-            rediscovery_cover_range(h, tip, u32::MAX),
-            (h, BlockHeight::from_u32(1_099)),
+            cover_range(
+                WalletNetwork::Main,
+                NU7_ACTIVATION + 10,
+                Some(NU7_ACTIVATION + 500),
+                0
+            ),
+            (NU7_ACTIVATION - 289, NU7_ACTIVATION + 10),
         );
+        // Regtest leaves NU7 unscheduled.
+        assert_eq!(
+            cover_range(WalletNetwork::Regtest, 1_000, Some(2_000), 0),
+            (901, 1_000)
+        );
+        for cover in [100, 300] {
+            assert!(random_rediscovery_offset(cover) < cover);
+        }
     }
 
     #[test]
     fn rediscovery_cover_range_never_passes_the_known_tip() {
-        let h = BlockHeight::from_u32(1_000);
-        assert_eq!(
-            rediscovery_cover_range(h, Some(BlockHeight::from_u32(1_010)), 50),
-            (BlockHeight::from_u32(911), BlockHeight::from_u32(1_010)),
-        );
-        assert_eq!(
-            rediscovery_cover_range(h, None, 50),
-            (BlockHeight::from_u32(901), h),
-        );
+        let network = WalletNetwork::Regtest;
+        assert_eq!(cover_range(network, 1_000, Some(1_010), 50), (911, 1_010));
+        assert_eq!(cover_range(network, 1_000, None, 50), (901, 1_000));
         // A tip below the target (stale chain state) never excludes the target.
-        assert_eq!(
-            rediscovery_cover_range(h, Some(BlockHeight::from_u32(900)), 50),
-            (BlockHeight::from_u32(901), h),
-        );
-        assert_eq!(
-            rediscovery_cover_range(BlockHeight::from_u32(50), None, 0),
-            (BlockHeight::from_u32(0), BlockHeight::from_u32(50)),
-        );
-        let offset = random_rediscovery_offset();
-        assert!(offset < REDISCOVERY_COVER_BLOCKS);
+        assert_eq!(cover_range(network, 1_000, Some(900), 50), (901, 1_000));
+        assert_eq!(cover_range(network, 50, None, 0), (0, 50));
     }
 
     #[test]

@@ -1,0 +1,6 @@
+# Symbols the iOS Rust framework exports. Dart looks up the FRB entry points
+# by name and Swift links the zcash_* C functions; everything else stays
+# internal so the linker can drop unused Rust code.
+_frb*
+_zcash_*
+_store_dart_post_cobject

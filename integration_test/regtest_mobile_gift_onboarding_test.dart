@@ -63,10 +63,10 @@ void main() {
       expect(account.name, 'Gift recipient');
       expect(account.setupPending, isTrue);
       expect(account.giftEducationPending, isTrue);
-      expect(
-        (await AppSecureStore.instance.readAccountMnemonic(uuid))?.isNotEmpty,
-        isTrue,
-      );
+      final recipientMnemonic = await AppSecureStore.instance
+          .readAccountMnemonic(uuid);
+      expect(recipientMnemonic?.split(' '), hasLength(24));
+      expect(recipientMnemonic, isNot(link.mnemonic));
       await _assertClaimReceived(tester, link, uuid);
 
       // Home has two manually selected setup banners, and no Gift banner.
@@ -238,9 +238,10 @@ void main() {
         network: mobileE2eNetwork,
       );
       await openAddAccountFlow(tester);
+      // Gift activation is also available when adding an account.
       expect(
         find.byKey(const ValueKey('mobile_welcome_redeem_card')),
-        findsNothing,
+        findsOneWidget,
       );
       await importWalletViaPaste(
         tester,
@@ -300,6 +301,7 @@ Future<VizorPaymentLink> _newGift() async {
   final gift = await rust_wallet.generateSoftwareAccount(
     network: mobileE2eNetwork,
   );
+  expect(gift.mnemonic.split(' '), hasLength(12));
   return VizorPaymentLink(
     network: mobileE2eNetwork,
     address: gift.unifiedAddress,
@@ -318,7 +320,7 @@ Future<void> _fundGift(
 }) async {
   await postDriver('/fund-confirmed', {
     'address': link.address,
-    // Recipient value plus the actual Orchard claim fee.
+    // Recipient value plus the actual Ironwood claim fee.
     'amount': '0.1001',
     'confirmations': confirmations,
   }, timeout: const Duration(minutes: 5));
@@ -326,7 +328,9 @@ Future<void> _fundGift(
 
 Future<void> _inspectGift(WidgetTester tester, VizorPaymentLink link) async {
   await tapWidget(tester, const ValueKey('mobile_welcome_redeem_card'));
-  await Clipboard.setData(ClipboardData(text: link.toUri().toString()));
+  final uri = link.toShareUri();
+  expect(uri.fragment, startsWith('v3='));
+  await Clipboard.setData(ClipboardData(text: uri.toString()));
   await tapAppButton(
     tester,
     const ValueKey('payment_link_mobile_paste_button'),
@@ -340,6 +344,9 @@ Future<void> _inspectGift(WidgetTester tester, VizorPaymentLink link) async {
     description: 'real Gift inspection',
     timeout: const Duration(minutes: 3),
   );
+  final inspected = _container(tester).read(giftClaimFlowProvider)!.inspection!;
+  expect(inspected.link.mnemonic, link.mnemonic);
+  expect(inspected.link.address, link.address);
 }
 
 Future<void> _createGiftWallet(
@@ -350,11 +357,7 @@ Future<void> _createGiftWallet(
     tester,
     const ValueKey('gift_claim_create_a_wallet_to_claim'),
   );
-  await enterPasscode(tester, mobileE2ePasscode);
-  await enterPasscode(tester, mobileE2ePasscode);
-  // Cupertino keeps the outgoing passcode page mounted during its transition.
-  // Finish that transition before bringing up the name field's native keyboard.
-  await settle(tester, const Duration(milliseconds: 600));
+
   await enterText(
     tester,
     const ValueKey('mobile_customise_account_name_field'),
@@ -365,6 +368,8 @@ Future<void> _createGiftWallet(
     const ValueKey('mobile_customise_account_continue'),
     timeout: const Duration(minutes: 2),
   );
+  await enterPasscode(tester, mobileE2ePasscode);
+  await enterPasscode(tester, mobileE2ePasscode);
   await tapWidget(
     tester,
     const ValueKey('mobile_biometrics_not_now'),

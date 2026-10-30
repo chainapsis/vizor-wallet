@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/primitives.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import 'send_review_layout.dart';
@@ -19,8 +21,8 @@ enum SendStatusPhase { inProgress, completed, failed }
 /// * failed extras — strikethrough on the recipient headline and the wrap
 ///   card pinned to the dark `#1b1f1f` surface in BOTH themes.
 ///
-/// No in-content CTA exists on any phase per the specs — navigation is the
-/// page-toolbar back button only.
+/// Navigation uses the page-toolbar back button. A retained signed batch
+/// can supply a Retry action without changing ordinary terminal receipts.
 class SendStatusContentView extends StatelessWidget {
   const SendStatusContentView({
     required this.phase,
@@ -32,24 +34,28 @@ class SendStatusContentView extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
+    this.feeLabel = 'Tx fee',
+    this.feeHelpText = kTxFeeHelpTooltip,
     this.memoText,
     this.memoExpanded = false,
+    this.memoLoading = false,
     this.noticeText,
     this.titleOverride,
     this.recipientRow,
     this.onShowFullAddress,
     this.onExpandMemo,
     this.onOpenExplorer,
+    this.onRetry,
     this.onFeeHelp,
     super.key,
-  });
+  }) : assert(recipient != null || recipientRow != null);
 
   final SendStatusPhase phase;
 
   /// Formatted send amount ("123.12 ZEC").
   final String amountText;
 
-  final SendReviewRecipient recipient;
+  final SendReviewRecipient? recipient;
 
   /// Pool badge for raw-address recipients.
   final bool isShieldedRecipient;
@@ -71,10 +77,15 @@ class SendStatusContentView extends StatelessWidget {
   final String? fiatText;
 
   /// Optional memo; the Message row is omitted when null.
+  final String feeLabel;
+  final String feeHelpText;
   final String? memoText;
 
   /// Whether the Message row shows the full memo (see [ReviewMemoRows]).
   final bool memoExpanded;
+
+  /// Reserves the collapsed message row until the detail read completes.
+  final bool memoLoading;
 
   /// Optional status detail under the wrap card — the partial/offline
   /// broadcast guidance or the failure reason. Hidden when null.
@@ -89,6 +100,9 @@ class SendStatusContentView extends StatelessWidget {
   final VoidCallback? onShowFullAddress;
   final VoidCallback? onExpandMemo;
   final VoidCallback? onOpenExplorer;
+
+  /// Reuses the signed transaction after Rust retained a retryable failure.
+  final VoidCallback? onRetry;
   final VoidCallback? onFeeHelp;
 
   bool get _failed => phase == SendStatusPhase.failed;
@@ -128,6 +142,10 @@ class SendStatusContentView extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        if (onRetry != null)
+          Center(
+            child: AppButton(onPressed: onRetry, child: const Text('Retry')),
           ),
       ],
     );
@@ -170,7 +188,9 @@ class SendStatusContentView extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (memoText != null)
+                if (memoLoading)
+                  const ReceiptMemoSkeleton()
+                else if (memoText != null)
                   ReviewMemoRows(
                     memoText: memoText!,
                     expanded: memoExpanded,
@@ -188,11 +208,11 @@ class SendStatusContentView extends StatelessWidget {
             ),
             const ReviewWrapDivider(),
             ReviewListRow(
-              label: 'Tx fee',
+              label: feeLabel,
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,
-              trailingIconTooltip: kTxFeeHelpTooltip,
+              trailingIconTooltip: feeHelpText,
               onPressed: onFeeHelp,
             ),
           ],

@@ -2,8 +2,7 @@ import 'package:flutter/widgets.dart';
 
 /// Artwork variants for the etched full-window settings backdrop.
 enum SettingsBackdropArt {
-  castle('assets/illustrations/settings_backdrop_castle.png'),
-  vault('assets/illustrations/settings_backdrop_vault.png');
+  castle('assets/illustrations/desktop/settings_backdrop_castle.webp');
 
   const SettingsBackdropArt(this.assetPath);
 

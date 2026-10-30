@@ -98,12 +98,11 @@ class PayActivityStatusContent extends StatelessWidget {
       height: reviewInfoHeight,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        child: ReviewInfoFlow(
+          rows: [
             ReviewInfoRow(
               key: const ValueKey('pay_status_amount_row'),
-              label: 'Amount',
+              label: payActivityStatusAmountLabel(status.phase),
               value: amountText,
               leading: SwapAssetIcon(
                 asset: amountAsset,
@@ -111,19 +110,6 @@ class PayActivityStatusContent extends StatelessWidget {
                 showChainBadge: true,
               ),
               bottomLeftText: amountFiatText,
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                width: AppAssetSize.size,
-                child: Center(
-                  child: AppIcon(
-                    AppIcons.arrowDown,
-                    size: AppIconSize.large,
-                    color: context.colors.text.accent,
-                  ),
-                ),
-              ),
             ),
             ReviewInfoRow(
               key: const ValueKey('pay_status_recipient_row'),

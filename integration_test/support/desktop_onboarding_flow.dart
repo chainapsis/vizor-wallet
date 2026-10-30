@@ -4,10 +4,8 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 
 var _nextDesktopOnboardingPointer = 9000;
 
-/// Completes the account name/profile step that finalizes desktop onboarding.
-///
-/// Password submission only routes to this screen; the wallet is not created
-/// or imported until the user finishes account customisation.
+/// Completes personalisation before the first wallet's password step.
+/// Additional accounts finish here using the existing unlocked session.
 Future<void> finishDesktopAccountCustomisation(
   WidgetTester tester, {
   Duration timeout = const Duration(minutes: 4),

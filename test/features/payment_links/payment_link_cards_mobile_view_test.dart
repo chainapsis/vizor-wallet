@@ -63,6 +63,55 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('large refresh keeps scroll position and updates row content', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 773));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    List<PaymentLinkCardsSection> sections({
+      bool reversed = false,
+      String status = 'Old',
+    }) => [
+      PaymentLinkCardsSection(
+        label: 'Cards',
+        cards: [
+          for (final index
+              in reversed
+                  ? List.generate(300, (i) => 299 - i)
+                  : List.generate(300, (i) => i))
+            SizedBox(
+              key: ValueKey('bulk-$index'),
+              height: 56,
+              child: Text('$status $index'),
+            ),
+        ],
+      ),
+    ];
+    await tester.pumpWidget(_cardsApp(sections: sections()));
+    await tester.pumpAndSettle();
+    final list = find.byKey(const ValueKey('payment_links_mobile_cards_list'));
+    await tester.drag(list, const Offset(0, -700));
+    await tester.pumpAndSettle();
+    ScrollPosition position() => tester
+        .state<ScrollableState>(
+          find.descendant(of: list, matching: find.byType(Scrollable)),
+        )
+        .position;
+    final offset = position().pixels;
+    expect(offset, greaterThan(0));
+    await tester.pumpWidget(_cardsApp(sections: sections(status: 'Updated')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Updated'), findsWidgets);
+    expect(position().pixels, offset);
+    await tester.pumpWidget(
+      _cardsApp(sections: sections(reversed: true, status: 'Moved')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Moved'), findsWidgets);
+    expect(position().pixels, offset);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('an empty tab keeps the create and redeem actions reachable', (
     tester,
   ) async {
@@ -104,18 +153,17 @@ void main() {
     await _pumpCards(
       tester,
       activeTab: PaymentLinkCardsTab.received,
-      sections: [
-        PaymentLinkCardsSection(label: 'Received', cards: rows),
-      ],
+      sections: [PaymentLinkCardsSection(label: 'Received', cards: rows)],
     );
 
-    final list = find.byKey(
-      const ValueKey('payment_links_mobile_cards_list'),
-    );
+    final list = find.byKey(const ValueKey('payment_links_mobile_cards_list'));
     final redeem = find.byKey(
       const ValueKey('payment_links_mobile_redeem_button'),
     );
-    expect(tester.getRect(list).bottom, greaterThan(tester.getRect(redeem).top));
+    expect(
+      tester.getRect(list).bottom,
+      greaterThan(tester.getRect(redeem).top),
+    );
 
     await tester.drag(list, const Offset(0, -1000));
     await tester.pumpAndSettle();

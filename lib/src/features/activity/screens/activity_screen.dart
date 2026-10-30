@@ -1,31 +1,36 @@
 import 'dart:async';
 
+import '../activity_history_pager.dart';
+import '../activity_scroll_anchor.dart';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../main.dart' show log;
 import '../../../core/config/swap_feature_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
-import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../activity_eta_provider.dart';
 import '../activity_row_mapper.dart';
 import '../gift_card_activity_index.dart';
 import '../models/activity_row_data.dart';
 import '../swap_activity_row_items_provider.dart';
 import '../swap_activity_row_mapper.dart';
 import '../widgets/activity_feed.dart';
+import '../widgets/deferred_gift_card_recovery.dart';
 import 'activity_transaction_status_screen.dart';
 
 /// Loads the full transaction history for one account; injectable so
@@ -34,9 +39,10 @@ typedef ActivityHistoryLoader =
     Future<List<rust_sync.TransactionInfo>> Function(String accountUuid);
 
 class ActivityScreen extends ConsumerStatefulWidget {
-  const ActivityScreen({this.historyLoader, super.key});
+  const ActivityScreen({this.historyLoader, this.historySource, super.key});
 
   final ActivityHistoryLoader? historyLoader;
+  final ActivityHistorySource? historySource;
 
   @override
   ConsumerState<ActivityScreen> createState() => _ActivityScreenState();
@@ -45,19 +51,39 @@ class ActivityScreen extends ConsumerStatefulWidget {
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   List<rust_sync.TransactionInfo>? _transactions;
   String? _transactionsAccountUuid;
+  (int?, int?, DateTime?)? _transactionsSnapshot;
+  bool _hasFreshTransactionHistory = false;
   bool _isLoading = true;
   String? _error;
   String? _activeAccountUuid;
-  int _transactionLoadGeneration = 0;
-  bool _pendingTransactionRefresh = false;
   Timer? _swapActivityRefreshTimer;
   String? _swapActivityRefreshAccountUuid;
+  ActivityHistoryPager? _pager;
+  String? _pagerNetwork;
+  final _scrollAnchor = ActivityScrollAnchor(topInset: 48);
+
+  GiftCardActivityIndex _gifts() {
+    final uuid = _activeAccountUuid;
+    return uuid == null
+        ? GiftCardActivityIndex.empty
+        : ref.read(giftCardActivityIndexProvider(uuid)).value ??
+              GiftCardActivityIndex.empty;
+  }
+
+  List<SwapActivityRowItem> _swaps() {
+    final uuid = _activeAccountUuid;
+    if (!ref.read(swapFeatureEnabledProvider)) return const [];
+    return uuid == null
+        ? const []
+        : ref.read(swapActivityRowItemsProvider(uuid)).value ?? const [];
+  }
 
   @override
   void initState() {
     super.initState();
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    _loadTransactions(showLoading: true, clearExisting: true);
+    _scrollAnchor.controller.addListener(_loadNearEnd);
+    unawaited(_loadTransactions(showLoading: true));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -65,125 +91,126 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     });
   }
 
-  @override
-  void dispose() {
-    _swapActivityRefreshTimer?.cancel();
-    super.dispose();
-  }
-
-  Future<List<rust_sync.TransactionInfo>> _loadHistory(
-    String accountUuid,
-  ) async {
-    final loader = widget.historyLoader;
-    if (loader != null) return loader(accountUuid);
-    final dbPath = await getWalletDbPath();
-    final endpoint = ref.read(rpcEndpointProvider);
-    return rust_sync.getTransactionHistory(
-      dbPath: dbPath,
-      network: endpoint.networkName,
-      accountUuid: accountUuid,
-    );
-  }
-
-  Future<void> _loadTransactions({
-    bool showLoading = false,
-    bool clearExisting = false,
-  }) async {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final generation = ++_transactionLoadGeneration;
-    _pendingTransactionRefresh = false;
-    _activeAccountUuid = accountUuid;
-
-    if ((showLoading || clearExisting) && mounted) {
-      setState(() {
-        if (showLoading) {
-          _isLoading = true;
-          _error = null;
-        }
-        if (clearExisting) {
-          _transactions = null;
-          _transactionsAccountUuid = accountUuid;
-        }
-      });
-    }
-
-    if (accountUuid == null) {
-      if (!mounted) return;
-      setState(() {
-        _transactions = const [];
-        _transactionsAccountUuid = null;
-        _isLoading = false;
-        _error = null;
-      });
+  void _loadNearEnd() {
+    final pager = _pager;
+    if (!_scrollAnchor.controller.hasClients ||
+        pager == null ||
+        pager.isLoading ||
+        !pager.hasMore ||
+        pager.error != null) {
       return;
     }
-
-    try {
-      final txs = await _loadHistory(accountUuid);
-      if (!_isCurrentTransactionLoad(generation, accountUuid)) {
-        return;
-      }
-      setState(() {
-        _transactions = txs;
-        _transactionsAccountUuid = accountUuid;
-        _isLoading = false;
-        _error = null;
-      });
-      _runPendingTransactionRefreshIfNeeded(generation, accountUuid);
-    } catch (e, st) {
-      log('Activity: transaction load failed: $e\n$st');
-      if (!_isCurrentTransactionLoad(generation, accountUuid)) {
-        return;
-      }
-      final hasExistingTransactions =
-          _transactionsAccountUuid == accountUuid && _transactions != null;
-      if (hasExistingTransactions && !clearExisting) return;
-      setState(() {
-        _transactionsAccountUuid = accountUuid;
-        _error = 'Activity could not be loaded.';
-        _isLoading = false;
-      });
-      _runPendingTransactionRefreshIfNeeded(generation, accountUuid);
+    if (_scrollAnchor.controller.position.extentAfter < 300) {
+      unawaited(pager.load(more: true));
     }
   }
 
-  bool _isCurrentTransactionLoad(int generation, String? accountUuid) {
-    return mounted &&
-        generation == _transactionLoadGeneration &&
-        accountUuid == ref.read(accountProvider).value?.activeAccountUuid;
+  void _publishPage() {
+    if (!mounted) return;
+    final pager = _pager!;
+    final restoreAnchor = _scrollAnchor.capture();
+    setState(() {
+      _transactions = pager.transactions;
+      _transactionsAccountUuid = _activeAccountUuid;
+      _hasFreshTransactionHistory = pager.fresh;
+      if (!pager.isLoading && pager.fresh) {
+        _transactionsSnapshot = activityHistorySnapshot(
+          ref.read(syncProvider).value,
+        );
+      }
+      _isLoading = pager.transactions == null && pager.isLoading;
+      _error = pager.error == null ? null : 'Activity could not be loaded.';
+    });
+    restoreAnchor();
+    if (!pager.isLoading && pager.error == null && pager.transactions != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadNearEnd();
+      });
+    }
   }
 
-  void _runPendingTransactionRefreshIfNeeded(
-    int generation,
-    String accountUuid,
-  ) {
-    if (!_pendingTransactionRefresh) return;
-    if (!_isCurrentTransactionLoad(generation, accountUuid)) return;
-    _pendingTransactionRefresh = false;
-    unawaited(_loadTransactions());
+  Future<void> _loadTransactions({bool showLoading = false}) async {
+    final uuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final network = ref.read(rpcEndpointProvider).networkName;
+    if (uuid != _activeAccountUuid ||
+        network != _pagerNetwork ||
+        _pager == null) {
+      _pager?.removeListener(_publishPage);
+      _pager?.dispose();
+      _pager = null;
+      _activeAccountUuid = uuid;
+      _pagerNetwork = network;
+      _transactions = null;
+      _hasFreshTransactionHistory = false;
+      if (uuid != null) {
+        final loader = widget.historyLoader;
+        _pager = ActivityHistoryPager(
+          source:
+              widget.historySource ??
+              (loader == null
+                  ? ref.read(activityHistorySourceFactoryProvider)(
+                      uuid,
+                      network,
+                    )
+                  : FixtureActivityHistorySource(() => loader(uuid))),
+          gifts: _gifts,
+          swaps: _swaps,
+          mobile: false,
+        )..addListener(_publishPage);
+      }
+      if (_scrollAnchor.controller.hasClients) {
+        _scrollAnchor.controller.jumpTo(0);
+      }
+    }
+    if (showLoading && mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
+    final pager = _pager;
+    if (pager == null) {
+      if (mounted) {
+        setState(() {
+          _transactions = const [];
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+    // Local business metadata determines sorting, grouping and hidden legs.
+    // Existing test fixtures provide their metadata synchronously.
+    if (widget.historyLoader == null && widget.historySource == null) {
+      try {
+        await ref.read(giftCardActivityIndexProvider(uuid!).future);
+      } catch (_) {}
+      if (!mounted || !identical(pager, _pager)) return;
+      try {
+        await ref.read(swapActivityRowItemsProvider(uuid!).future);
+      } catch (_) {}
+      if (!mounted || !identical(pager, _pager)) return;
+    }
+    await pager.load(refresh: true);
   }
 
   void _refreshTransactionsAfterSyncChange() {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return;
-    final hasLoadedTransactions =
-        _transactionsAccountUuid == accountUuid && _transactions != null;
-    if (hasLoadedTransactions) {
-      unawaited(_loadTransactions());
-      return;
-    }
-    if (_isLoading) {
-      _pendingTransactionRefresh = true;
-      return;
-    }
-    unawaited(_loadTransactions(showLoading: true, clearExisting: true));
+    unawaited(_loadTransactions());
+  }
+
+  @override
+  void dispose() {
+    _swapActivityRefreshTimer?.cancel();
+    _pager?.removeListener(_publishPage);
+    _pager?.dispose();
+    _scrollAnchor.dispose();
+    super.dispose();
   }
 
   void _openTransactionStatus(
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
   }) {
-    unawaited(_pushTransactionStatus(transaction, giftCard: giftCard));
+    _pushTransactionStatus(transaction, giftCard: giftCard);
   }
 
   String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
@@ -233,18 +260,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         .refreshOpenActivities(accountUuid: accountUuid, force: force);
   }
 
-  Future<void> _pushTransactionStatus(
+  void _pushTransactionStatus(
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
-  }) async {
+  }) {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    final detail = await _loadTransactionDetail(transaction);
-    if (!mounted) return;
-    // The receipt takes this transaction and its Gift Card metadata as the
-    // active account's, so a switch during the load has to cancel the handoff.
-    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-      return;
-    }
+    if (accountUuid == null) return;
     context.push(
       Uri(
         path: '/activity/tx/${transaction.txidHex}',
@@ -254,46 +275,17 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
-        initialDetail: detail,
+        sourceAccountUuid: accountUuid,
         giftCard: giftCard,
       ),
     );
   }
 
-  Future<rust_sync.TransactionDetail?> _loadTransactionDetail(
-    rust_sync.TransactionInfo transaction,
-  ) async {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return null;
-
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      if (!mounted ||
-          accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-        return null;
-      }
-      return await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
-    } catch (e, st) {
-      log('Activity: transaction detail load failed: $e\n$st');
-      return null;
-    }
-  }
-
   String _recentSignature(SyncState? sync) {
-    return sync?.recentTransactions
-            .map(
-              (tx) =>
-                  '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:${tx.displayAmount}',
-            )
-            .join('|') ??
-        '';
+    final recent = activityHistoryStatusSignature(
+      sync?.recentTransactions ?? const [],
+    );
+    return '${sync?.lastSyncCompletedAt}|$recent';
   }
 
   @override
@@ -301,19 +293,41 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != _activeAccountUuid) {
-        unawaited(_loadTransactions(showLoading: true, clearExisting: true));
+        unawaited(_loadTransactions(showLoading: true));
         _syncSwapActivityStatusRefresh();
       }
     });
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
       final prevSig = _recentSignature(previous?.value);
       final nextSig = _recentSignature(next.value);
-      if (prevSig != nextSig) {
+      // Enhancement can change older rows outside the ten recent transactions.
+      final syncCompleted =
+          next.value?.isSyncComplete == true &&
+          previous?.value?.isSyncComplete != true;
+      if (prevSig != nextSig || syncCompleted) {
         _refreshTransactionsAfterSyncChange();
       }
     });
 
+    // Recovery and detail updates can change rows outside recent history.
+    ref.listen<int>(syncFollowupProvider, (_, _) {
+      _refreshTransactionsAfterSyncChange();
+    });
+
+    ref.listen(rpcEndpointProvider, (_, next) {
+      if (next.networkName != _pagerNetwork) {
+        unawaited(_loadTransactions(showLoading: true));
+      }
+    });
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    if (accountUuid != null) {
+      ref.listen(giftCardActivityIndexProvider(accountUuid), (_, next) {
+        if (next.hasValue && !next.isLoading) unawaited(_pager?.load());
+      });
+      ref.listen(swapActivityRowItemsProvider(accountUuid), (_, next) {
+        if (next.hasValue && !next.isLoading) unawaited(_pager?.load());
+      });
+    }
     final giftCardActivityIndex = accountUuid == null
         ? GiftCardActivityIndex.empty
         : ref.watch(giftCardActivityIndexProvider(accountUuid)).value ??
@@ -347,7 +361,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     if (accountUuid != null) {
       for (final tx in giftCardActivityIndex.withPendingClaims(transactions)) {
         if (absorption.absorbs(tx)) continue;
-        final giftCard = giftCardActivityIndex.metadataFor(tx);
+        final giftCard = giftCardActivityIndex.metadataFor(
+          tx,
+          transactions: transactions,
+        );
         entries.add(
           _ActivityEntry(
             sortKey: activitySortKeyForTransaction(
@@ -358,6 +375,23 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             row: buildTransactionActivityRow(
               context: context,
               transaction: tx,
+              privateQueriesEnabled: ref.watch(enhancePirProvider),
+              showPendingEstimate: !ref
+                  .watch(activityEtaExcludedTxidsProvider)
+                  .contains(activityTxidKey(tx.txidHex)),
+              pendingLabel:
+                  (_hasFreshTransactionHistory &&
+                          _transactionsSnapshot ==
+                              activityHistorySnapshot(
+                                ref.watch(syncProvider).value,
+                              )
+                      ? activityEtaLabelFor(
+                          transaction: tx,
+                          labels: ref.watch(activityEtaLabelsProvider),
+                          giftCard: giftCard,
+                        )
+                      : null) ??
+                  ref.watch(activityPendingFallbackLabelProvider),
               giftCardKind: giftCard?.kind,
               giftCardAmountZatoshi: giftCard?.amountZatoshi,
               giftCardBatchCount: giftCard?.batchCount,
@@ -393,19 +427,28 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       );
     }
     entries.sort(_compareActivityEntries);
-    final sections = _activityFeedSections(entries);
+    final sections = _activityFeedSections(
+      entries.take(_pager?.visibleCount ?? activityPageSize).toList(),
+    );
 
-    return AppDesktopShell(
+    final content = AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: AppPaneSliverScrollScaffold(
+          controller: _scrollAnchor.controller,
           toolbar: const AppPaneToolbar(backLinkMinWidth: 60),
           padding: const EdgeInsets.only(top: AppSpacing.sm),
           slivers: [
             ActivityFeedSliver(
               sections: sections,
               rowKeyPrefix: 'activity_screen',
+              scrollAnchor: _scrollAnchor,
+              isLoadingMore:
+                  _pager?.isLoading == true && loadedTransactions != null,
+              loadMoreError:
+                  loadedTransactions != null && _pager?.error != null,
+              onRetry: () => _pager?.retry(),
               isLoading:
                   _isLoading && !canRenderTransactions && sections.isEmpty,
               errorText: sections.isEmpty && loadedTransactions == null
@@ -415,6 +458,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           ],
         ),
       ),
+    );
+    return DeferredGiftCardRecovery(
+      accountUuid: accountUuid,
+      sessionKey: _pager,
+      ready: loadedTransactions != null && _pager?.error == null,
+      child: content,
     );
   }
 }

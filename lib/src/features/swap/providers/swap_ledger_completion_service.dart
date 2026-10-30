@@ -43,12 +43,16 @@ final swapLedgerCompletionServiceProvider =
 
 enum LedgerDepositBroadcastDisposition { accepted, expired, invalid }
 
+/// Accepted results can be checkpointed and acknowledged, including partial
+/// batches. Persistence retains their status; partial is not proof that the
+/// provider deposit was funded.
 LedgerDepositBroadcastDisposition classifyLedgerDepositBroadcastResult(
   LedgerSignedOperationBroadcastResult result,
 ) {
   final status = result.status.trim();
   if (status == 'expired') return LedgerDepositBroadcastDisposition.expired;
   final accepted = switch (status) {
+    SwapDepositBroadcastStatus.partialBroadcast ||
     SwapDepositBroadcastStatus.broadcasted ||
     SwapDepositBroadcastStatus.broadcastUnknown ||
     SwapDepositBroadcastStatus.broadcastedStorageFailed => true,

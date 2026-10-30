@@ -61,9 +61,10 @@ class _SyncKeepAwakeNativeHostState
   @override
   Widget build(BuildContext context) {
     if (kAppFormFactor == AppFormFactor.mobile) {
-      _requestNativeState(
-        _isInForeground && ref.watch(syncKeepAwakeActiveProvider),
-      );
+      // Keep observing while inactive; a short-circuit here drops the provider
+      // subscription, and resume's one-time read cannot restore it.
+      final active = ref.watch(syncKeepAwakeActiveProvider);
+      _requestNativeState(_isInForeground && active);
     }
     return widget.child;
   }

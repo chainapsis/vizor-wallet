@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/vizor_payment_link.dart';
@@ -30,7 +32,23 @@ class PaymentLinkIntakeState {
       pendingLinks.isEmpty ? null : pendingLinks.first;
 }
 
+/// An opened preview keeps its intake slot until it is prepared or abandoned.
+/// Unlock can therefore return an accepted Card without evicting another one.
+class PaymentLinkPreviewReservation {
+  PaymentLinkPreviewReservation._(this.link, this._finish);
+
+  final VizorPaymentLink link;
+  final void Function(bool restore) _finish;
+
+  void release() => _finish(false);
+
+  void restoreAfterRouteDisposal() {
+    scheduleMicrotask(() => _finish(true));
+  }
+}
+
 class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
+  final _previewReservations = <PaymentLinkPreviewReservation>{};
   @override
   PaymentLinkIntakeState build() => const PaymentLinkIntakeState();
 
@@ -45,14 +63,19 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
       final pendingLinks = state.pendingLinks;
       // Account and birthday identify a reusable claim wallet, not a duplicate
       // user intent. Only an identical versioned payload can be coalesced.
-      final duplicate = pendingLinks.any(
-        (pending) => pending.hasSameCanonicalPayload(link),
-      );
+      final duplicate =
+          pendingLinks.any(
+            (pending) => pending.hasSameCanonicalPayload(link),
+          ) ||
+          _previewReservations.any(
+            (preview) => preview.link.hasSameCanonicalPayload(link),
+          );
       if (duplicate) {
         state = PaymentLinkIntakeState(pendingLinks: pendingLinks);
         return PaymentLinkIntakeResult.accepted;
       }
-      if (pendingLinks.length >= kPaymentLinkIntakeQueueCapacity) {
+      if (pendingLinks.length + _previewReservations.length >=
+          kPaymentLinkIntakeQueueCapacity) {
         state = PaymentLinkIntakeState(
           pendingLinks: pendingLinks,
           errorMessage: 'Too many payment links are waiting to open.',
@@ -77,7 +100,8 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
       for (final pending in state.pendingLinks)
         if (!pending.hasSameCanonicalPayload(link)) pending,
     ];
-    if (remaining.length == kPaymentLinkIntakeQueueCapacity) {
+    if (remaining.length + _previewReservations.length >=
+        kPaymentLinkIntakeQueueCapacity) {
       state = PaymentLinkIntakeState(
         pendingLinks: state.pendingLinks,
         errorMessage: 'Too many payment links are waiting to open.',
@@ -86,6 +110,27 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
     }
     state = PaymentLinkIntakeState(pendingLinks: [link, ...remaining]);
     return PaymentLinkIntakeResult.accepted;
+  }
+
+  /// Unlock can remove the preview while Navigator is building. Restore its
+  /// unprepared Card after route teardown, while this intake is still alive.
+  void restoreInterruptedPreview(VizorPaymentLink link) {
+    scheduleMicrotask(() {
+      if (ref.mounted) prioritize(link);
+    });
+  }
+
+  PaymentLinkPreviewReservation? takePendingForPreview() {
+    final link = state.pendingLink;
+    if (link == null) return null;
+    late final PaymentLinkPreviewReservation reservation;
+    reservation = PaymentLinkPreviewReservation._(link, (restore) {
+      if (!_previewReservations.remove(reservation) || !ref.mounted) return;
+      if (restore) prioritize(link);
+    });
+    _previewReservations.add(reservation);
+    takePending();
+    return reservation;
   }
 
   VizorPaymentLink? takePending() {

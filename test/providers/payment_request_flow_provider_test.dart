@@ -42,6 +42,10 @@ class _FakeSendApi {
   /// read the balance and before it decides anything.
   void Function()? whileValidating;
 
+  /// Runs right after the check's final balance read, so a test can move the
+  /// wallet between the verdict and the card showing it.
+  void Function()? afterSpendableRead;
+
   /// Set by [makeContainer], so the live balance re-read answers from the
   /// providers the production wiring reads.
   ProviderContainer? container;
@@ -69,12 +73,14 @@ class _FakeSendApi {
     spendableBalanceNow: () {
       final read = container;
       if (read == null) return BigInt.zero;
-      return paymentRequestSpendableOf(
+      final spendable = paymentRequestSpendableOf(
         (read.read(syncProvider).value ?? SyncState()).scopedToAccount(
           read.read(accountProvider).value?.activeAccountUuid,
         ),
         gatedByMigration: read.read(migrationSendGateProvider),
       );
+      afterSpendableRead?.call();
+      return spendable;
     },
     // The production wiring reads this off `rpcEndpointProvider`; these
     // cases never vary it, so the build default stands in.
@@ -184,14 +190,16 @@ SendPrefillArgs request(
 
 /// A sync state whose spendable balance is settled: scanned to a real tip,
 /// nothing running, nothing failed.
-SyncState syncedState({required BigInt spendable}) => SyncState(
-  accountUuid: 'account-1',
-  hasAccountScopedData: true,
-  isSyncComplete: true,
-  chainTipHeight: 3000000,
-  scannedHeight: 3000000,
-  spendableBalance: spendable,
-);
+SyncState syncedState({required BigInt spendable, BigInt? pending}) =>
+    SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      chainTipHeight: 3000000,
+      scannedHeight: 3000000,
+      spendableBalance: spendable,
+      orchardPendingBalance: pending,
+    );
 
 /// Mid-scan: nothing about the balance can be trusted yet.
 SyncState scanningState() => SyncState(
@@ -401,13 +409,96 @@ void main() {
       await pumpEventQueue();
       final state = flowState(container)!;
       expect(state.canReview, isTrue);
-      expect(state.prefill, same(prefill));
+      expect(state.prefill.fingerprint, prefill.fingerprint);
+      expect(state.prefill.requestSource, PaymentRequestSource.qrCode);
       expect(state.view.memo, '  invoice 42  ');
       expect(state.reviewArgs!.amountZatoshi, BigInt.from(50000000));
       expect(state.reviewArgs!.requestedBy, 'Coffee shop');
       expect(api.proposed, [BigInt.one]);
     },
   );
+
+  test('a scan the user asked for replaces the card without a '
+      'notice', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1first'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    notifier.present(request('u1second'), source: PaymentRequestSource.qrCode);
+    await pumpEventQueue();
+
+    final state = flowState(container)!;
+    expect(state.prefill.address, 'u1second');
+    expect(state.view.replacedNotice, isFalse);
+    expect(api.discarded, [BigInt.one]);
+  });
+
+  test(
+    'scanning the original QR over a link says whether they match',
+    () async {
+      final api = _FakeSendApi();
+      final container = makeContainer(api);
+      final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+      notifier.present(request('u1a'), source: PaymentRequestSource.link);
+      await pumpEventQueue();
+      notifier.present(request('u1a'), source: PaymentRequestSource.qrCode);
+      await pumpEventQueue();
+      // Kept once the check lands, not just on the first frame.
+      expect(flowState(container)!.view.status, PaymentRequestStatus.ready);
+      expect(flowState(container)!.view.linkDifferences, isEmpty);
+
+      notifier.present(request('u1a'), source: PaymentRequestSource.link);
+      await pumpEventQueue();
+      notifier.present(
+        request('u1b', amountText: '0.75'),
+        source: PaymentRequestSource.qrCode,
+      );
+      await pumpEventQueue();
+      expect(flowState(container)!.view.linkDifferences, {
+        PaymentRequestLinkDifference.address,
+        PaymentRequestLinkDifference.amount,
+      });
+    },
+  );
+
+  test('a card that checked no link carries no comparison', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.qrCode);
+    await pumpEventQueue();
+    expect(flowState(container)!.view.linkDifferences, isNull);
+
+    notifier.present(request('u1b'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(flowState(container)!.view.linkDifferences, isNull);
+  });
+
+  group('paymentRequestLinkDifferences', () {
+    test('reads amounts by value, not spelling', () {
+      expect(
+        paymentRequestLinkDifferences(
+          link: request('u1a', amountText: '0.5'),
+          qr: request('u1a', amountText: '0.50'),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('compares the memo the payment would carry', () {
+      expect(
+        paymentRequestLinkDifferences(
+          link: request('u1a', memoText: 'Invoice 42'),
+          qr: request('u1a', memoText: 'Invoice 43'),
+        ),
+        {PaymentRequestLinkDifference.memo},
+      );
+    });
+  });
 
   test('a newer link replaces the card, says so, and frees the old '
       'proposal', () async {
@@ -429,11 +520,9 @@ void main() {
     final state = container.read(paymentRequestFlowProvider)!;
     expect(state.prefill.address, 'u1second');
     expect(state.reviewArgs!.proposalId, BigInt.two);
-    expect(
-      api.discarded,
-      [BigInt.one],
-      reason: 'the displaced request must not leave a proposal behind',
-    );
+    expect(api.discarded, [
+      BigInt.one,
+    ], reason: 'the displaced request must not leave a proposal behind');
   });
 
   test('edit clears the card, frees the proposal, and returns the '
@@ -965,6 +1054,155 @@ void main() {
     expect(api.proposed, isEmpty);
   });
 
+  test(
+    'a shortfall clears itself once confirming change is spendable',
+    () async {
+      final api = _FakeSendApi();
+      final container = makeContainer(
+        api,
+        sync: syncedState(
+          spendable: BigInt.from(104000),
+          pending: BigInt.from(7940000),
+        ),
+      );
+
+      container
+          .read(paymentRequestFlowProvider.notifier)
+          .present(
+            request('u1a', amountText: '0.0011'),
+            source: PaymentRequestSource.qrCode,
+          );
+      await pumpEventQueue();
+      expect(
+        flowState(container)!.view.status,
+        PaymentRequestStatus.insufficientFunds,
+      );
+
+      // A new block that confirms nothing yet: a full sync cycle, same balance.
+      syncNotifier(container).emit(scanningState());
+      await pumpEventQueue();
+      syncNotifier(container).emit(
+        syncedState(
+          spendable: BigInt.from(104000),
+          pending: BigInt.from(7940000),
+        ),
+      );
+      await pumpEventQueue();
+      expect(
+        flowState(container)!.view.status,
+        PaymentRequestStatus.insufficientFunds,
+      );
+      expect(api.proposeAttempts, 0, reason: 'nothing moved, nothing to ask');
+
+      // The change reaches its confirmations.
+      syncNotifier(container).emit(
+        syncedState(spendable: BigInt.from(8044000), pending: BigInt.zero),
+      );
+      await pumpEventQueue();
+
+      final state = flowState(container)!;
+      expect(state.view.status, PaymentRequestStatus.ready);
+      expect(state.reviewArgs!.amountZatoshi, BigInt.from(110000));
+    },
+  );
+
+  test(
+    'funds that land while the shortfall is being shown re-check it',
+    () async {
+      final api = _FakeSendApi();
+      final container = makeContainer(
+        api,
+        sync: syncedState(spendable: BigInt.from(21000000)),
+      );
+      // The wallet settles on more right after the check reads the balance,
+      // before the verdict reaches the card.
+      api.afterSpendableRead = () {
+        api.afterSpendableRead = null;
+        syncNotifier(
+          container,
+        ).emit(syncedState(spendable: BigInt.from(100000000)));
+      };
+
+      container
+          .read(paymentRequestFlowProvider.notifier)
+          .present(request('u1a'), source: PaymentRequestSource.link);
+      await pumpEventQueue();
+
+      expect(flowState(container)!.view.status, PaymentRequestStatus.ready);
+      expect(api.proposed, [BigInt.one]);
+    },
+  );
+
+  test('a shortfall that is still short quotes the new balance', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(21000000)),
+    );
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(flowState(container)!.view.spendableText, '0.21 ZEC');
+
+    syncNotifier(container).emit(syncedState(spendable: BigInt.from(30000000)));
+    await pumpEventQueue();
+
+    final view = flowState(container)!.view;
+    expect(view.status, PaymentRequestStatus.insufficientFunds);
+    expect(view.spendableText, '0.30 ZEC');
+    expect(api.proposeAttempts, 0);
+  });
+
+  test('an insufficient card re-checks when funds arrive', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(21000000)),
+    );
+
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    expect(
+      flowState(container)!.view.status,
+      PaymentRequestStatus.insufficientFunds,
+    );
+
+    syncNotifier(
+      container,
+    ).emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    expect(flowState(container)!.view.status, PaymentRequestStatus.ready);
+    expect(api.proposed, [BigInt.one]);
+  });
+
+  test('a shortfall stops watching the balance once the card moves '
+      'on', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(
+      api,
+      sync: syncedState(spendable: BigInt.from(21000000)),
+    );
+    final notifier = container.read(paymentRequestFlowProvider.notifier);
+
+    notifier.present(request('u1a'), source: PaymentRequestSource.link);
+    await pumpEventQueue();
+    notifier.dismiss();
+    await pumpEventQueue();
+
+    syncNotifier(
+      container,
+    ).emit(syncedState(spendable: BigInt.from(100000000)));
+    await pumpEventQueue();
+
+    expect(flowState(container), isNull);
+    expect(api.proposeAttempts, 0);
+  });
+
   test('locking the wallet takes the card down and frees the '
       'proposal', () async {
     final api = _FakeSendApi();
@@ -1329,6 +1567,22 @@ void main() {
     );
   });
 
+  test('locking a scanned request reparks its QR provenance', () async {
+    final api = _FakeSendApi();
+    final container = makeContainer(api);
+    container
+        .read(paymentRequestFlowProvider.notifier)
+        .present(request('u1scanned'), source: PaymentRequestSource.qrCode);
+    await pumpEventQueue();
+    _securityNotifier(container).lockForTest();
+    await pumpEventQueue();
+    expect(flowState(container), isNull);
+    expect(
+      container.read(paymentUriPrefillProvider)?.requestSource,
+      PaymentRequestSource.qrCode,
+    );
+  });
+
   test('locking while syncing clears the card without re-checking', () async {
     final api = _FakeSendApi();
     final container = makeContainer(api, sync: scanningState());
@@ -1486,11 +1740,9 @@ void main() {
     await pumpEventQueue();
 
     expect(container.read(paymentRequestFlowProvider), isNull);
-    expect(
-      api.discarded,
-      [BigInt.one],
-      reason: 'the proposal is still handed back; only the request survives',
-    );
+    expect(api.discarded, [
+      BigInt.one,
+    ], reason: 'the proposal is still handed back; only the request survives');
 
     final claimed = container
         .read(paymentUriPrefillProvider.notifier)

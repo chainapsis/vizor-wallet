@@ -247,7 +247,7 @@ void main() {
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
     expect(find.text('01'), findsOneWidget);
     expect(find.text('Next word'), findsOneWidget);
-    expect(find.text('Finish & review'), findsNothing);
+    expect(find.text('Review & finish'), findsNothing);
   });
 
   testWidgets('mobile import manual typing use case renders suggestions', (
@@ -293,7 +293,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Enter your Secret Passphrase'), findsOneWidget);
     expect(find.text('Accept 12, 15, 18, 21 or 24 words'), findsOneWidget);
-    expect(find.text('Finish & review'), findsOneWidget);
+    expect(find.text('Review & finish'), findsOneWidget);
     expect(find.text('Next word'), findsOneWidget);
     expect(find.text('12'), findsOneWidget);
     expect(find.text('Age'), findsOneWidget);

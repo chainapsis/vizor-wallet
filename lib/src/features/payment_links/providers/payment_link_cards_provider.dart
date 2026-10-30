@@ -38,7 +38,7 @@ Future<PaymentLinkCardsSnapshot> loadPaymentLinkCardsSnapshot(
   PaymentLinkOperations operations,
 ) async {
   final results = await Future.wait<Object>([
-    operations.loadCreatedLinkRecoveries(),
+    operations.loadCreatedLinks(),
     operations.loadReceivedLinkRecoveries(),
   ]);
   final created = List<PaymentLinkRecoveryRecord>.of(

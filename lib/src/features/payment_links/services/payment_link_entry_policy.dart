@@ -7,12 +7,10 @@
 /// whichever link happens to arrive second wins by accident.
 library;
 
-import '../../../core/navigation/app_route_predicates.dart';
+import '../../../core/navigation/incoming_link_entry_policy.dart';
 
-const kPaymentLinkDeferredByActiveFlowMessage =
-    'Finish or cancel your current task to open this gift card.';
-const kPaymentLinkDeferredByAccountSetupMessage =
-    'Finish account setup to open this gift card.';
+const kPaymentLinkDeferredByActiveFlowMessage = kIncomingGiftBusyMessage;
+const kPaymentLinkDeferredByAccountSetupMessage = kIncomingGiftSetupMessage;
 
 /// Routes whose in-progress user input or signing state must not be replaced
 /// by an incoming Gift Card.
@@ -36,31 +34,9 @@ String? paymentLinkEntryDeferredMessageAtLocation(
   String matchedLocation, {
   bool paymentRequestCardPresented = false,
 }) {
-  // The onboarding/import/add-account set is the same one the payment-URI
-  // drain drops on; `/import` covers `/import-keystone` and its children.
-  if (isOnboardingLocation(matchedLocation)) {
-    return kPaymentLinkDeferredByAccountSetupMessage;
-  }
-  // A live payment-request card is a task in progress even though it owns no
-  // route, so it reads as one.
-  if (paymentRequestCardPresented) {
-    return kPaymentLinkDeferredByActiveFlowMessage;
-  }
-  if (matchedLocation == '/lost-password' ||
-      isRouteOrChild(matchedLocation, '/send') ||
-      isRouteOrChild(matchedLocation, '/swap') ||
-      isRouteOrChild(matchedLocation, '/pay') ||
-      isRouteOrChild(matchedLocation, '/migration') ||
-      isRouteOrChild(matchedLocation, '/home/keystone-shield') ||
-      isRouteOrChild(matchedLocation, '/voting/poll') ||
-      isRouteOrChild(matchedLocation, '/voting/keystone/scan') ||
-      isRouteOrChild(matchedLocation, '/settings/change-password') ||
-      isRouteOrChild(matchedLocation, '/settings/secret-passphrase') ||
-      isRouteOrChild(matchedLocation, '/setup/backup') ||
-      isRouteOrChild(matchedLocation, '/setup/education') ||
-      isRouteOrChild(matchedLocation, '/settings/viewing-key') ||
-      isRouteOrChild(matchedLocation, '/settings/uninstall')) {
-    return kPaymentLinkDeferredByActiveFlowMessage;
-  }
-  return null;
+  return decideIncomingLinkEntry(
+    kind: IncomingLinkKind.giftCard,
+    location: matchedLocation,
+    paymentRequestPresented: paymentRequestCardPresented,
+  ).message;
 }

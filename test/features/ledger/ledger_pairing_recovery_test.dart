@@ -227,20 +227,23 @@ void main() {
         find.text(declined ? 'Request declined' : 'Request failed'),
         findsOneWidget,
       );
-      expect(find.text('Ledger Flex'), findsOneWidget);
+      expect(find.text('Ledger Flex · Bluetooth'), findsOneWidget);
       expect(find.text('Did you reset pairing?'), findsNothing);
-      expect(find.text('Remove the old pairing'), findsNothing);
+      expect(
+        find.text('Your Ledger no longer recognizes this Bluetooth pairing.'),
+        findsNothing,
+      );
       expect(find.text('Open settings'), findsNothing);
       expect(find.text('Native request failed'), findsNothing);
       expect(find.text('USB'), findsNothing);
-      expect(find.text('Ledger · Bluetooth'), findsOneWidget);
+      expect(find.text('Ledger Flex · Bluetooth'), findsOneWidget);
       expect(accounts.writes, 0);
       expect(retries, 0);
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
-      expect(find.text('Select your Ledger'), findsOneWidget);
+      expect(find.text('Find Ledger'), findsOneWidget);
       expect(find.text('Ledger Flex'), findsOneWidget);
-      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.tap(find.text('Cancel'));
       expect(closes, 1);
       expect(tester.takeException(), isNull);
     });
@@ -415,8 +418,15 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Pair your Ledger again'), findsOneWidget);
-      expect(find.text('Remove the old pairing'), findsOneWidget);
+      expect(
+        find.text('Your Ledger no longer recognizes this Bluetooth pairing.'),
+        findsOneWidget,
+      );
       expect(find.text('Did you reset pairing?'), findsNothing);
+      expect(find.text('Remove the old pairing'), findsOneWidget);
+      expect(find.text('Come back and reconnect'), findsOneWidget);
+      expect(find.textContaining('If your Ledger is listed'), findsOneWidget);
+      expect(find.textContaining('Keep your Ledger unlocked'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
     testWidgets(
@@ -447,7 +457,10 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Remove the old pairing'), findsOneWidget);
+        expect(
+          find.text('Your Ledger no longer recognizes this Bluetooth pairing.'),
+          findsOneWidget,
+        );
         expect(
           find.text('Open settings'),
           platform == TargetPlatform.iOS ? findsNothing : findsOneWidget,
@@ -463,20 +476,30 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(retries, 0);
-        await tester.ensureVisible(find.text('Find my Ledger'));
-        await tester.tap(find.text('Find my Ledger'));
+        await tester.ensureVisible(find.text('Find Ledger'));
+        await tester.tap(find.text('Find Ledger'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Ledger Flex'));
         await tester.pumpAndSettle();
-        expect(find.text('Ledger saved'), findsOneWidget);
+        expect(
+          find.text(
+            'This Ledger matches your account. Find it again to continue.',
+          ),
+          findsOneWidget,
+        );
         expect(accounts.savedId, 'new');
         expect(retries, 0);
-        await tester.tap(find.text('Find my Ledger'));
+        await tester.tap(find.text('Find Ledger'));
         await tester.pumpAndSettle();
         expect(retries, 0);
         await tester.tap(find.text('Ledger Flex'));
         await tester.pumpAndSettle();
-        expect(find.text('Your Ledger is connected'), findsOneWidget);
+        expect(
+          find.text(
+            'Your Ledger is ready. Continue signing when you’re ready.',
+          ),
+          findsOneWidget,
+        );
         await tester.tap(find.text('Continue signing'));
         expect(retries, 1);
         expect(tester.takeException(), isNull);
@@ -514,7 +537,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Ledger Flex'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Check your Ledger'), findsOneWidget);
+    expect(
+      find.text(
+        'Complete pairing if prompted, then approve sharing your viewing key.',
+      ),
+      findsOneWidget,
+    );
     await tester.pumpWidget(const SizedBox());
     pending.complete(exported());
     await tester.pumpAndSettle();
@@ -637,7 +665,7 @@ void main() {
       }
       expect(
         find.text(switch (scenario) {
-          'empty' => 'No Ledger devices found',
+          'empty' => 'Find Ledger',
           'permission' => 'Open settings',
           'radio' => 'Turn on Bluetooth',
           _ => 'This Ledger doesn’t match',
@@ -758,7 +786,9 @@ void main() {
             savedId != 'new' && outcome == 'match' ? 1 : 0,
           );
           expect(
-            find.text('Ledger saved'),
+            find.text(
+              'This Ledger matches your account. Find it again to continue.',
+            ),
             outcome == 'match' && savedId != 'new'
                 ? findsOneWidget
                 : findsNothing,
@@ -767,7 +797,9 @@ void main() {
             expect(accounts.savedId, savedId == 'new' ? isNull : 'new');
             expect(
               find.text(
-                savedId == 'new' ? 'Your Ledger is connected' : 'Ledger saved',
+                savedId == 'new'
+                    ? 'Your Ledger is ready. Continue signing when you’re ready.'
+                    : 'This Ledger matches your account. Find it again to continue.',
               ),
               findsOneWidget,
             );
@@ -776,7 +808,12 @@ void main() {
               c.read(accountProvider).value!.accounts.single.ledgerDeviceId,
               savedId,
             );
-            expect(find.text('Your Ledger is connected'), findsNothing);
+            expect(
+              find.text(
+                'Your Ledger is ready. Continue signing when you’re ready.',
+              ),
+              findsNothing,
+            );
           }
           expect(tester.takeException(), isNull);
         },

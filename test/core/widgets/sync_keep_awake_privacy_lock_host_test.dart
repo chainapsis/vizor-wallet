@@ -2,8 +2,11 @@
 library;
 
 import 'dart:async';
+import 'dart:ui' show SemanticsAction, SemanticsActionEvent;
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/navigation/mobile_exit_back_guard.dart';
 import 'package:flutter/services.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_numeric_keyboard_toolbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -88,6 +91,326 @@ const _fingerprintBiometricState = BiometricUnlockState(
 );
 
 void main() {
+  testWidgets(
+    'accessible actions extend idle time but focus notifications do not',
+    (tester) async {
+      _setMobileViewport(tester);
+      final semantics = tester.ensureSemantics();
+      final sendFocus = FocusNode();
+      addTearDown(sendFocus.dispose);
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+          biometricUnlockProvider.overrideWith(
+            () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+          ),
+          syncProvider.overrideWith(
+            () => FakeSyncNotifier(
+              _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _coveredApp(sendFocus: sendFocus),
+        ),
+      );
+      await _settleInitialSync(tester);
+      final node = tester.getSemantics(find.text('Send'));
+      void action(SemanticsAction type) =>
+          tester.binding.platformDispatcher.onSemanticsActionEvent!(
+            SemanticsActionEvent(
+              type: type,
+              viewId: tester.view.viewId,
+              nodeId: node.id,
+            ),
+          );
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(seconds: 15));
+        action(SemanticsAction.tap);
+        await tester.pump();
+      }
+      expect(find.text('Sent 3'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 16));
+      expect(
+        container.read(syncKeepAwakePrivacyLockProvider).isLocked,
+        isFalse,
+      );
+      action(SemanticsAction.didGainAccessibilityFocus);
+      await tester.pump(const Duration(seconds: 45));
+      await tester.pump();
+      expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+      expect(find.semantics.byLabel('Send'), findsNothing);
+      semantics.dispose();
+    },
+  );
+
+  testWidgets('system Back belongs to the lock before cards, routes and exit', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+        ),
+        syncProvider.overrideWith(
+          () => FakeSyncNotifier(
+            _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final navKey = GlobalKey<NavigatorState>();
+    final router = GoRouter(
+      navigatorKey: navKey,
+      initialLocation: '/home',
+      routes: [
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => const Scaffold(body: Text('Home route')),
+        ),
+        GoRoute(
+          path: '/send',
+          builder: (_, _) => const Scaffold(body: Text('Send route')),
+        ),
+      ],
+    );
+    var cardDismissals = 0;
+    var cardVisible = true;
+    final dispatcher = MobileExitBackDispatcher(
+      exitBackGuard: MobileExitBackGuard(platform: TargetPlatform.android),
+      navigatorKey: navKey,
+      canPop: router.canPop,
+      currentLocation: () =>
+          router.routerDelegate.currentConfiguration.uri.path,
+      handleBackAboveRouter: () {
+        if (container.read(syncKeepAwakePrivacyLockBackProvider).handleBack()) {
+          return true;
+        }
+        if (!cardVisible) return false;
+        cardVisible = false;
+        cardDismissals++;
+        return true;
+      },
+    );
+    addTearDown(router.dispose);
+    addTearDown(dispatcher.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          routeInformationProvider: router.routeInformationProvider,
+          routeInformationParser: router.routeInformationParser,
+          routerDelegate: router.routerDelegate,
+          backButtonDispatcher: dispatcher,
+          onNavigationNotification: dispatcher.handleNavigationNotification,
+          builder: (_, child) => AppTheme(
+            data: AppThemeData.dark,
+            child: SyncKeepAwakePrivacyLockHost(child: child!),
+          ),
+        ),
+      ),
+    );
+    await _settleInitialSync(tester);
+    router.push('/send');
+    await tester.pumpAndSettle();
+    expect(router.canPop(), isTrue);
+    container.read(syncKeepAwakePrivacyLockProvider.notifier).lock();
+    await tester.pump();
+    for (var i = 0; i < 2; i++) {
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+    }
+    expect(router.canPop(), isTrue);
+    expect(cardDismissals, 0);
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    await tester.tap(find.text('Unlock Vizor'));
+    await tester.pump();
+    expect(find.text('Welcome Back'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(find.text('Welcome Back'), findsNothing);
+    expect(find.text('Unlock Vizor'), findsOneWidget);
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+    expect(router.canPop(), isTrue);
+    await tester.tap(find.text('Unlock Vizor'));
+    await tester.pump();
+    await _enterPasscode(tester, '123456');
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isFalse);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(cardDismissals, 1);
+    expect(router.canPop(), isTrue);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(router.canPop(), isFalse);
+  });
+
+  testWidgets('system Back keeps an in-flight passcode confirmation intact', (
+    tester,
+  ) async {
+    _setMobileViewport(tester);
+    final pending = Completer<bool>();
+    final security = _PendingSecurityNotifier(pending);
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(() => security),
+        biometricUnlockProvider.overrideWith(
+          () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+        ),
+        syncProvider.overrideWith(
+          () => FakeSyncNotifier(
+            _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _themedApp()),
+    );
+    await _settleInitialSync(tester);
+    container.read(syncKeepAwakePrivacyLockProvider.notifier).lock();
+    await tester.pump();
+    await tester.tap(find.text('Unlock Vizor'));
+    await tester.pump();
+    for (final digit in '123456'.split('')) {
+      await tester.tap(find.text(digit));
+      await tester.pump();
+    }
+    expect(find.text('Checking passcode...'), findsOneWidget);
+    expect(
+      container.read(syncKeepAwakePrivacyLockBackProvider).handleBack(),
+      isTrue,
+    );
+    await tester.pump();
+    expect(find.text('Checking passcode...'), findsOneWidget);
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+    pending.complete(true);
+    await tester.pump();
+    expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isFalse);
+  });
+
+  test(
+    'late back-handler disposal cannot detach a replacement lock screen',
+    () {
+      var visible = true;
+      final controller = SyncKeepAwakePrivacyLockBackController(() => visible);
+      expect(controller.handleBack(), isTrue); // Before the first locked frame.
+      var calls = 0;
+      final detachOld = controller.attach(() => calls += 100);
+      final detachNew = controller.attach(() => calls++);
+      detachOld();
+      expect(controller.handleBack(), isTrue);
+      expect(calls, 1);
+      visible = false;
+      expect(controller.handleBack(), isFalse);
+      expect(calls, 1);
+      detachNew();
+    },
+  );
+
+  setUpAll(() async {
+    final loader = FontLoader('Geist')
+      ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+      ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'))
+      ..addFont(rootBundle.load('assets/fonts/Geist-SemiBold.ttf'));
+    await loader.load();
+  });
+
+  testWidgets(
+    'main scan completion stays done through Checking and unlock confirmation',
+    (tester) async {
+      _setMobileViewport(tester, size: const Size(320, 852));
+      final initial = _sync(
+        percentage: 0.99,
+        lastSyncStartedAt: DateTime.utc(2026, 10, 12),
+      );
+      final notifier = FakeSyncNotifier(initial);
+      await tester.pumpWidget(_app(syncNotifier: notifier));
+      await _settleInitialSync(tester);
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump();
+      expect(find.text('Vizor is syncing'), findsOneWidget);
+
+      final mainDrained = initial.copyWith(
+        percentage: 1,
+        scannedHeight: 200,
+        chainTipHeight: 200,
+        remainingScanBlocks: 0,
+      );
+      notifier.emit(mainDrained);
+      await tester.pump();
+      expect(find.text('Sync Complete'), findsOneWidget);
+      expect(find.text('Vizor is syncing'), findsNothing);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SyncKeepAwakePrivacyLockHost)),
+      );
+      expect(container.read(syncKeepAwakeActiveProvider), isFalse);
+      expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+
+      final checking = mainDrained.copyWith(
+        remainingScanBlocks: 100,
+        checking: const SyncCheckingProgress(
+          cycle: 1,
+          percentage: 0.25,
+          displayTargetPercentage: 0.5,
+        ),
+      );
+      notifier.emit(checking);
+      await tester.pump();
+      expect(find.text('Sync Complete'), findsOneWidget);
+      expect(find.text('Vizor is checking'), findsNothing);
+      expect(find.textContaining('%'), findsNothing);
+      await tester.tap(find.text('Unlock Vizor'));
+      await tester.pumpAndSettle();
+      expect(find.text('Synced'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      notifier.emit(
+        checking.copyWith(
+          checking: const SyncCheckingProgress(
+            cycle: 2,
+            percentage: 0.05,
+            displayTargetPercentage: 0.1,
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Synced'), findsOneWidget);
+      expect(find.textContaining('%'), findsNothing);
+      notifier.emit(checking.withSyncActivityStopped());
+      await tester.pump();
+      expect(find.text('Synced'), findsOneWidget);
+      notifier.emit(
+        mainDrained.copyWith(isSyncing: false, isSyncComplete: true),
+      );
+      await tester.pump();
+      expect(find.text('Synced'), findsOneWidget);
+
+      notifier.emit(
+        initial.copyWith(
+          percentage: 0.25,
+          lastSyncStartedAt: DateTime.utc(2026, 10, 12, 0, 1),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('25% Syncing...'), findsOneWidget);
+      expect(find.text('Synced'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets(
     'idle privacy lock dismisses the numeric keyboard and native control',
     (tester) async {
@@ -192,6 +515,8 @@ void main() {
           _sync(
             scannedHeight: 100,
             chainTipHeight: 102,
+            remainingScanBlocks: 2,
+            pendingScanStartHeight: 101,
             lastSyncStartedAt: DateTime(2026, 7, 9, 12),
           ),
         ),
@@ -209,6 +534,7 @@ void main() {
     _setMobileViewport(tester);
     await tester.pumpWidget(
       _app(
+        child: _themedApp(idleTimeout: const Duration(minutes: 1)),
         syncNotifier: FakeSyncNotifier(
           _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
         ),
@@ -216,15 +542,15 @@ void main() {
     );
     await _settleInitialSync(tester);
 
-    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump(const Duration(seconds: 30));
     await tester.tap(find.byKey(const ValueKey('home_surface')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump(const Duration(seconds: 30));
     await tester.pump();
 
     expect(find.text('Vizor is syncing'), findsNothing);
 
-    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump(const Duration(seconds: 31));
     await tester.pump();
 
     expect(find.text('Vizor is syncing'), findsOneWidget);
@@ -334,6 +660,84 @@ void main() {
     expect(find.text('Welcome Back'), findsNothing);
     expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isFalse);
   });
+
+  testWidgets(
+    'the lock hides the covered app from screen readers and focus until unlock',
+    (tester) async {
+      _setMobileViewport(tester);
+      final semantics = tester.ensureSemantics();
+      final sendFocus = FocusNode(debugLabel: 'covered send');
+      addTearDown(sendFocus.dispose);
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap()),
+          appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+          biometricUnlockProvider.overrideWith(
+            () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+          ),
+          syncProvider.overrideWith(
+            () => FakeSyncNotifier(
+              _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _coveredApp(sendFocus: sendFocus),
+        ),
+      );
+      await _settleInitialSync(tester);
+
+      tester.semantics.tap(find.semantics.byLabel('Send'));
+      await tester.pump();
+      expect(find.text('Sent 1'), findsOneWidget);
+      expect(_routeLabels(), hasLength(1));
+
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+      expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
+
+      // Nothing of the covered app reaches a screen reader, so its focus
+      // cannot stay behind the lock, and the lock is the only route left to
+      // announce.
+      expect(find.semantics.byLabel(_coveredBalance), findsNothing);
+      expect(find.semantics.byLabel('Send'), findsNothing);
+      expect(find.semantics.byLabel(RegExp('Sent 1')), findsNothing);
+      expect(find.semantics.byLabel(RegExp('Unlock Vizor')), findsOneWidget);
+      expect(_routeLabels(), ['Vizor is syncing']);
+      sendFocus.requestFocus();
+      await tester.pump();
+      expect(sendFocus.hasFocus, isFalse);
+      await tester.tap(find.text('Send'), warnIfMissed: false);
+      await tester.pump();
+      expect(find.text('Sent 1'), findsOneWidget);
+
+      await tester.tap(find.text('Unlock Vizor'));
+      await tester.pump();
+      expect(_routeLabels(), ['Confirm passcode to unlock Vizor']);
+      expect(find.semantics.byLabel(_coveredBalance), findsNothing);
+      await _enterPasscode(tester, '123456');
+      expect(
+        container.read(syncKeepAwakePrivacyLockProvider).isLocked,
+        isFalse,
+      );
+
+      // The app comes back as it was left: still mounted, so its state
+      // survived, and reachable again.
+      expect(find.semantics.byLabel(_coveredBalance), findsOneWidget);
+      expect(find.text('Sent 1'), findsOneWidget);
+      tester.semantics.tap(find.semantics.byLabel('Send'));
+      await tester.pump();
+      expect(find.text('Sent 2'), findsOneWidget);
+      sendFocus.requestFocus();
+      await tester.pump();
+      expect(sendFocus.hasFocus, isTrue);
+      semantics.dispose();
+    },
+  );
 
   testWidgets(
     'biometric confirmation clears the virtual lock without passcode UI',
@@ -513,6 +917,93 @@ void main() {
     expect(container.read(syncKeepAwakePrivacyLockProvider).isLocked, isTrue);
   });
 
+  for (final viewport in [
+    (size: const Size(951, 669), insets: const EdgeInsets.only(bottom: 24)),
+    (
+      size: const Size(466, 678),
+      insets: const EdgeInsets.only(right: 84, bottom: 34),
+    ),
+  ]) {
+    testWidgets(
+      'Duo sync-complete passcode fits with an error and large text ${viewport.size}',
+      (tester) async {
+        _setMobileViewport(tester, size: viewport.size);
+        final security = _FakeSecurityNotifier(confirmResult: false);
+        final syncNotifier = FakeSyncNotifier(
+          _sync(lastSyncStartedAt: DateTime(2026, 7, 9, 12)),
+        );
+        final container = ProviderContainer(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrap()),
+            appSecurityProvider.overrideWith(() => security),
+            biometricUnlockProvider.overrideWith(
+              () => _FakeBiometricUnlockNotifier(_disabledBiometricState),
+            ),
+            syncProvider.overrideWith(() => syncNotifier),
+          ],
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              builder: (context, child) => AppTheme(
+                data: AppThemeData.dark,
+                child: MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    textScaler: TextScaler.linear(1.5),
+                    padding: viewport.insets,
+                    viewPadding: viewport.insets,
+                  ),
+                  child: child!,
+                ),
+              ),
+              home: const SyncKeepAwakePrivacyLockHost(
+                idleTimeout: Duration(milliseconds: 50),
+                child: Scaffold(body: Text('Home')),
+              ),
+            ),
+          ),
+        );
+        await _settleInitialSync(tester);
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.pump();
+        syncNotifier.emit(
+          _sync(percentage: 1).copyWith(
+            scannedHeight: 200,
+            chainTipHeight: 200,
+            remainingScanBlocks: 0,
+            isSyncComplete: true,
+            isSyncing: false,
+          ),
+        );
+        await tester.pump();
+        await tester.tap(find.text('Unlock Vizor'));
+        await tester.pumpAndSettle();
+        expect(find.text('Synced'), findsOneWidget);
+        await _enterPasscode(tester, '999999');
+        await tester.pumpAndSettle();
+        expect(find.text('Incorrect Passcode'), findsOneWidget);
+        expect(
+          tester.getRect(find.text('Incorrect Passcode')).bottom,
+          lessThan(tester.getRect(find.bySemanticsLabel('Digit 1')).top),
+        );
+        expect(
+          tester.widget<PasscodeNumpad>(find.byType(PasscodeNumpad)).keySize,
+          lessThan(80),
+        );
+        await tester.ensureVisible(find.bySemanticsLabel('Digit 0'));
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(find.bySemanticsLabel('Digit 0')).bottom,
+          lessThanOrEqualTo(viewport.size.height - viewport.insets.bottom),
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
   testWidgets('wrong passcode keeps the virtual privacy lock visible', (
     tester,
   ) async {
@@ -642,6 +1133,8 @@ void main() {
         percentage: 0,
         scannedHeight: 200,
         chainTipHeight: 202,
+        remainingScanBlocks: 2,
+        pendingScanStartHeight: 201,
         lastSyncStartedAt: DateTime(2026, 7, 9, 12, 2),
       ),
     );
@@ -969,11 +1462,11 @@ Widget _privacyScreenApp({
   );
 }
 
-Widget _themedApp() {
+Widget _themedApp({Duration idleTimeout = const Duration(milliseconds: 50)}) {
   return MaterialApp(
     builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
     home: SyncKeepAwakePrivacyLockHost(
-      idleTimeout: const Duration(milliseconds: 50),
+      idleTimeout: idleTimeout,
       child: SyncKeepAwakeInteractionListener(
         child: Scaffold(
           body: GestureDetector(
@@ -986,6 +1479,71 @@ Widget _themedApp() {
       ),
     ),
   );
+}
+
+const _coveredBalance = 'Shielded 1.25 ZEC';
+
+/// The lock as the app mounts it: in `MaterialApp.builder`, over the
+/// navigator, so the covered screen keeps its own route.
+Widget _coveredApp({required FocusNode sendFocus}) {
+  return MaterialApp(
+    builder: (_, child) => AppTheme(
+      data: AppThemeData.dark,
+      child: SyncKeepAwakePrivacyLockHost(
+        idleTimeout: const Duration(minutes: 1),
+        child: SyncKeepAwakeInteractionListener(child: child!),
+      ),
+    ),
+    home: Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(_coveredBalance),
+            _SendCounter(focusNode: sendFocus),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _SendCounter extends StatefulWidget {
+  const _SendCounter({required this.focusNode});
+
+  final FocusNode focusNode;
+
+  @override
+  State<_SendCounter> createState() => _SendCounterState();
+}
+
+class _SendCounterState extends State<_SendCounter> {
+  var _sent = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextButton(
+          focusNode: widget.focusNode,
+          onPressed: () => setState(() => _sent += 1),
+          child: const Text('Send'),
+        ),
+        Text('Sent $_sent'),
+      ],
+    );
+  }
+}
+
+/// The labels of the routes a screen reader sees, in tree order. A platform
+/// announces the last one that is new and moves its focus into it.
+List<String> _routeLabels() {
+  return find.semantics
+      .byPredicate((node) => node.flagsCollection.scopesRoute)
+      .evaluate()
+      .map((node) => node.label)
+      .toList();
 }
 
 Future<void> _settleInitialSync(WidgetTester tester) async {
@@ -1033,6 +1591,8 @@ SyncState _sync({
   int scannedHeight = 100,
   int chainTipHeight = 200,
   DateTime? lastSyncStartedAt,
+  int? remainingScanBlocks,
+  int? pendingScanStartHeight,
 }) {
   return SyncState(
     isSyncing: isSyncing,
@@ -1040,6 +1600,15 @@ SyncState _sync({
     percentage: percentage,
     scannedHeight: scannedHeight,
     chainTipHeight: chainTipHeight,
+    remainingScanBlocks: remainingScanBlocks,
+    pendingScanStartHeight: pendingScanStartHeight,
     lastSyncStartedAt: lastSyncStartedAt,
   );
+}
+
+class _PendingSecurityNotifier extends _FakeSecurityNotifier {
+  _PendingSecurityNotifier(this.pending);
+  final Completer<bool> pending;
+  @override
+  Future<bool> confirmPassword(String password) => pending.future;
 }

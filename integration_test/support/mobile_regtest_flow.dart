@@ -8,14 +8,19 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show HitTestResult;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_phases.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -74,6 +79,7 @@ Future<void> pumpUntil(
   bool Function() condition, {
   required String description,
   Duration timeout = const Duration(seconds: 20),
+  String Function()? timeoutDiagnostics,
 }) async {
   final end = DateTime.now().add(timeout);
   Object? lastError;
@@ -93,7 +99,15 @@ Future<void> pumpUntil(
   }
 
   final error = lastError == null ? '' : ' Last error: $lastError';
-  fail('Timed out waiting for $description.$error');
+  var diagnostics = '';
+  if (timeoutDiagnostics != null) {
+    try {
+      diagnostics = ' Diagnostics: ${timeoutDiagnostics()}';
+    } catch (diagnosticError) {
+      diagnostics = ' Diagnostics unavailable: ${diagnosticError.runtimeType}';
+    }
+  }
+  fail('Timed out waiting for $description.$error$diagnostics');
 }
 
 Future<void> tapAppButton(
@@ -125,6 +139,29 @@ Future<void> tapAppButton(
         tester.widget<AppButton>(finder).onPressed != null,
     description: '$key button to be tappable',
     timeout: timeout,
+    timeoutDiagnostics: () {
+      final center = tester.getCenter(finder);
+      final hits = HitTestResult();
+      tester.binding.hitTestInView(hits, center, tester.view.viewId);
+      return jsonEncode({
+        'center': center.toString(),
+        'bounds': tester.getRect(finder).toString(),
+        'route_is_current': ModalRoute.of(tester.element(finder))?.isCurrent,
+        'modal_barriers': find.byType(ModalBarrier).evaluate().length,
+        'visible_prompt_keys': [
+          for (final value in [
+            'mobile_sync_keep_awake_prompt_sheet',
+            'mobile_ironwood_announcement_sheet',
+            'mobile_home_migration_attention_host',
+          ])
+            if (tester.any(find.byKey(ValueKey(value)))) value,
+        ],
+        'hit_path': [
+          for (final hit in hits.path.take(12))
+            hit.target.runtimeType.toString(),
+        ],
+      });
+    },
   );
   await tester.tap(hitTestable);
   await tester.pump(const Duration(milliseconds: 250));
@@ -198,11 +235,13 @@ Future<void> enterText(WidgetTester tester, Key key, String text) async {
 /// Passcode/numpad keys are semantics-labeled, not keyed.
 Future<void> enterPasscode(WidgetTester tester, String digits) async {
   for (final digit in digits.split('')) {
-    final finder = find.bySemanticsLabel('Digit $digit');
+    // The keypad slides in with its route. A key that exists but is still
+    // off-screen would miss the tap, so wait until it can be hit.
+    final finder = find.bySemanticsLabel('Digit $digit').hitTestable();
     await pumpUntil(
       tester,
       () => tester.any(finder),
-      description: 'digit $digit key',
+      description: 'digit $digit key to be tappable',
     );
     await tester.tap(finder);
     await tester.pump(const Duration(milliseconds: 150));
@@ -300,59 +339,36 @@ Future<void> stopRustWorkForCleanup() async {
   }
 }
 
-Future<void> snapshotWalletDbToDriver() async {
+/// Ends a process-restart preparation phase. Rust writers stop so the next
+/// process opens the state this phase asserted. The runner keeps the app
+/// installed, so the wallet DB, Keychain and preferences survive the restart.
+Future<void> stopWalletForProcessRestart() async {
   await stopRustWorkForCleanup();
-  final supportDir = await getWalletSupportDirectory();
-  final dbName = await getWalletDbName();
-  final snapshot = <String, Object?>{};
-  for (final entry in {
-    'db': dbName,
-    'wal': '$dbName-wal',
-    'shm': '$dbName-shm',
-  }.entries) {
-    final file = File(
-      '${supportDir.path}${Platform.pathSeparator}${entry.value}',
-    );
-    if (file.existsSync()) {
-      snapshot[entry.key] = base64Encode(await file.readAsBytes());
-    }
-  }
-  if (!snapshot.containsKey('db')) {
-    fail('Wallet database was missing before the process-restart snapshot.');
-  }
-  await postDriver('/wallet-snapshot', {'files': snapshot});
-  logE2e('saved wallet DB snapshot for process restart');
+  await _expectRecordedWalletDb(
+    'Wallet database was missing before the process restart.',
+  );
+  logE2e('stopped wallet writers for the process restart');
 }
 
-Future<void> restoreWalletDbFromDriver() async {
-  await stopRustWorkForCleanup();
-  final response = await getDriver('/wallet-snapshot');
-  final encodedFiles = response['files'];
-  if (encodedFiles is! Map) {
-    fail('E2E driver returned an invalid wallet DB snapshot.');
-  }
+/// Starts a process-restart resume phase. A reinstall between the phases
+/// would clear the Keychain at launch, and with it the wallet DB name.
+Future<void> expectWalletKeptAcrossProcessRestart() async {
+  await _expectRecordedWalletDb(
+    'The wallet database did not survive the process restart.',
+  );
+  logE2e('reopened the installed wallet after the process restart');
+}
 
-  final supportDir = await getWalletSupportDirectory();
-  final dbName = await getWalletDbName();
-  final names = {'db': dbName, 'wal': '$dbName-wal', 'shm': '$dbName-shm'};
-  for (final name in names.values) {
-    final file = File('${supportDir.path}${Platform.pathSeparator}$name');
-    if (file.existsSync()) file.deleteSync();
-  }
-  for (final entry in encodedFiles.entries) {
-    final name = names[entry.key];
-    if (name == null || entry.value is! String) {
-      fail('E2E driver returned an unsupported wallet DB snapshot file.');
-    }
-    final file = File('${supportDir.path}${Platform.pathSeparator}$name');
-    await file.writeAsBytes(base64Decode(entry.value as String), flush: true);
-  }
-  logE2e('restored wallet DB snapshot after test-runner reinstall');
+Future<void> _expectRecordedWalletDb(String reason) async {
+  final path = await getExistingWalletDbPath();
+  if (path == null) fail(reason);
+  final database = File(path);
+  if (!database.existsSync() || database.lengthSync() == 0) fail(reason);
 }
 
 // ── Mobile flow primitives ───────────────────────────────────────────
 
-/// Welcome → create flow → passcode ×2 → customisation → biometrics → home.
+/// Welcome → create flow → customisation → passcode ×2 → biometrics → home.
 Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('creating wallet');
   await tapWidget(tester, const ValueKey('mobile_welcome_get_started'));
@@ -367,13 +383,14 @@ Future<void> createWalletWithPasscode(WidgetTester tester) async {
     tester,
     const ValueKey('mobile_secret_passphrase_primary'),
   );
-  await enterPasscode(tester, mobileE2ePasscode);
-  await enterPasscode(tester, mobileE2ePasscode);
+
   await tapAppButton(
     tester,
     const ValueKey('mobile_customise_account_continue'),
     timeout: const Duration(minutes: 2),
   );
+  await enterPasscode(tester, mobileE2ePasscode);
+  await enterPasscode(tester, mobileE2ePasscode);
   await tapWidget(
     tester,
     const ValueKey('mobile_biometrics_not_now'),
@@ -383,8 +400,8 @@ Future<void> createWalletWithPasscode(WidgetTester tester) async {
   logE2e('wallet created');
 }
 
-/// Welcome → import (clipboard paste) → review → birthday height → passcode
-/// (first wallet only) → customisation → biometrics (first wallet only) → home.
+/// Welcome → import (clipboard paste) → review → birthday height → customisation → passcode
+/// (first wallet only) → biometrics (first wallet only) → home.
 Future<void> importWalletViaPaste(
   WidgetTester tester, {
   required String mnemonic,
@@ -424,15 +441,16 @@ Future<void> importPassphraseViaPaste(
     const ValueKey('mobile_import_birthday_continue'),
     timeout: const Duration(minutes: 1),
   );
-  if (isFirstWallet) {
-    await enterPasscode(tester, mobileE2ePasscode);
-    await enterPasscode(tester, mobileE2ePasscode);
-  }
+
   await tapAppButton(
     tester,
     const ValueKey('mobile_customise_account_continue'),
     timeout: const Duration(minutes: 2),
   );
+  if (isFirstWallet) {
+    await enterPasscode(tester, mobileE2ePasscode);
+    await enterPasscode(tester, mobileE2ePasscode);
+  }
   if (isFirstWallet) {
     await tapWidget(
       tester,
@@ -457,6 +475,39 @@ Future<void> waitForHome(WidgetTester tester) async {
 Future<void> openMobilePrivateMigrationOptions(WidgetTester tester) =>
     openMobileMigrationOptions(tester);
 
+/// Leaves the real completed migration surface through its visible Done action.
+Future<void> finishMobilePrivateMigrationForHome(
+  WidgetTester tester, {
+  Duration timeout = const Duration(minutes: 1),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  final scope = find.byKey(
+    const ValueKey('mobile_ironwood_migration_back_scope'),
+  );
+  final title = find
+      .descendant(of: scope, matching: find.text('You’re all set!'))
+      .hitTestable();
+  await pumpUntil(
+    tester,
+    () => scope.evaluate().length == 1 && title.evaluate().length == 1,
+    description: 'completed migration result before Done',
+    timeout: timeout,
+  );
+  final lifecycle = tester.binding.lifecycleState;
+  if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+    fail('Cannot finish a mobile migration while the app is backgrounded.');
+  }
+  await tapUntilVisible(
+    tester,
+    trigger: find
+        .descendant(of: scope, matching: find.text('Done'))
+        .hitTestable(),
+    outcome: find.byKey(const ValueKey('mobile_home_shielded_balance')),
+    description: 'completed migration result to return home',
+    timeout: deadline.difference(DateTime.now()),
+  );
+}
+
 Future<void> startMobilePrivateMigration(WidgetTester tester) async {
   await tapAppButton(
     tester,
@@ -468,8 +519,14 @@ Future<void> startMobilePrivateMigration(WidgetTester tester) async {
   final loading = find.byKey(
     const ValueKey('mobile_ironwood_migration_start_loading'),
   );
-  final preparing = find.byKey(
-    const ValueKey('mobile_ironwood_migration_status_preparing'),
+  final preparing = find.descendant(
+    of: find.byKey(const ValueKey('mobile_ironwood_migration_back_scope')),
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is MobileTopNav &&
+          widget.title == 'Preparing your migration' &&
+          widget.onBack != null,
+    ),
   );
   await pumpUntil(
     tester,
@@ -518,7 +575,7 @@ Future<void> openMobileMigrationOptions(WidgetTester tester) async {
     const ValueKey('mobile_ironwood_start_migration_button'),
   );
   final homeCta = find.byKey(
-    const ValueKey('mobile_home_ironwood_migration_required_pill'),
+    const ValueKey('mobile_home_ironwood_migration_banner'),
   );
   final intro = find.byKey(
     const ValueKey('mobile_ironwood_intro_continue_button'),
@@ -676,7 +733,7 @@ Future<void> sendViaWizard(
   required String amountDigits,
 }) async {
   logE2e('sending $amountDigits via wizard');
-  await tapWidget(tester, const ValueKey('mobile_home_send'));
+  await tapAppButton(tester, const ValueKey('mobile_home_send'));
   await enterText(tester, const ValueKey('mobile_send_address_field'), address);
   await tapAppButton(
     tester,
@@ -891,6 +948,245 @@ Future<rust_sync.MigrationStatus> waitForMobileRegtestMigrationStatus(
   fail('Timed out waiting for $description.$statusDetail$errorDetail');
 }
 
+/// Follows these software scenarios' proof-approval UI without granting a
+/// coordinator permit directly. The key is shared with Keystone and even its
+/// post-signature preparation action, so the label guard rejects signing
+/// actions; the scenario's imported software account is a caller precondition.
+Future<void> tapMobilePrivateMigrationProofBatch(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  final approval = _MobileProofApprovalAttempt();
+  while (DateTime.now().isBefore(deadline)) {
+    if (await approval.tryTap(tester) == _MobileProofAction.approved) return;
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  fail(
+    'Timed out waiting for an enabled private migration Prepare batch action.',
+  );
+}
+
+enum _MobileProofAction { waiting, busy, approved }
+
+/// One UI observation, not a wait that hides partial durable proof progress.
+class _MobileProofApprovalAttempt {
+  var _dismissed = false;
+
+  Future<_MobileProofAction> tryTap(
+    WidgetTester tester, {
+    bool allowApproval = true,
+  }) async {
+    final lifecycle = tester.binding.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      fail('A private migration proof batch requires the foreground UI.');
+    }
+    if (tester.any(find.text('Preparation is done'))) {
+      if (await _dismissKnownMigrationPreparationModal(
+        tester,
+        alreadyDismissed: _dismissed,
+      )) {
+        _dismissed = true;
+      }
+      return _MobileProofAction.busy;
+    }
+    final action = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
+    );
+    if (action.evaluate().length != 1) return _MobileProofAction.waiting;
+    final texts = tester
+        .widgetList<Text>(
+          find.descendant(of: action, matching: find.byType(Text)),
+        )
+        .map((text) => text.data ?? '');
+    final preparing = texts.any(
+      (text) => RegExp(r'^Preparing batch #[1-9][0-9]*\.\.\.$').hasMatch(text),
+    );
+    if (preparing) return _MobileProofAction.busy;
+    final prepare = texts.any(
+      (text) => RegExp(r'^Prepare batch #[1-9][0-9]*$').hasMatch(text),
+    );
+    if (!prepare) return _MobileProofAction.waiting;
+    if (tester.widget<AppButton>(action).onPressed == null) {
+      return _MobileProofAction.busy;
+    }
+    await tester.ensureVisible(action);
+    if (!tester.any(action.hitTestable())) return _MobileProofAction.busy;
+    if (!allowApproval) return _MobileProofAction.waiting;
+    await tester.tap(action.hitTestable());
+    await tester.pump(const Duration(milliseconds: 250));
+    logE2e('approved a private migration proof batch through the UI');
+    return _MobileProofAction.approved;
+  }
+}
+
+Future<bool> _dismissKnownMigrationPreparationModal(
+  WidgetTester tester, {
+  required bool alreadyDismissed,
+}) async {
+  final title = find.text('Preparation is done');
+  final modal = find.ancestor(of: title, matching: find.byType(Column)).first;
+  final explanation = find.descendant(
+    of: modal,
+    matching: find.text(
+      'Preparation is complete. Check your migration status for '
+      'progress and any action needed.',
+    ),
+  );
+  if (!tester.any(explanation)) {
+    fail('Unrecognized private migration preparation modal.');
+  }
+  final done = find.descendant(
+    of: modal,
+    matching: find.widgetWithText(AppButton, 'Done'),
+  );
+  if (alreadyDismissed ||
+      !tester.any(done.hitTestable()) ||
+      tester.widget<AppButton>(done).onPressed == null) {
+    return false;
+  }
+  await tester.tap(done.hitTestable());
+  await tester.pump(const Duration(milliseconds: 250));
+  logE2e('dismissed the private migration preparation-complete modal');
+  return true;
+}
+
+/// Leaves the current migration status through its actual top-nav Back control.
+/// No proof approval, coordinator permit or direct route operation is performed.
+Future<void> leaveMobilePrivateMigrationStatusForHome(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 45),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  final scope = find.byKey(
+    const ValueKey('mobile_ironwood_migration_back_scope'),
+  );
+  final navigation = find.descendant(
+    of: scope,
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is MobileTopNav &&
+          widget.onBack != null &&
+          (widget.title == 'Preparing your migration' ||
+              widget.title == 'Ironwood Migration'),
+    ),
+  );
+  final back = find.descendant(
+    of: navigation,
+    matching: find.bySemanticsLabel('Back'),
+  );
+  var dismissed = false;
+  var tapped = false;
+  while (DateTime.now().isBefore(deadline)) {
+    final lifecycle = tester.binding.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      fail('Leaving a private migration status requires the foreground UI.');
+    }
+    if (tapped &&
+        tester.any(
+          find
+              .byKey(const ValueKey('mobile_home_shielded_balance'))
+              .hitTestable(),
+        )) {
+      logE2e('left private migration status through its top-nav Back');
+      return;
+    }
+    if (tester.any(find.text('Preparation is done'))) {
+      dismissed =
+          await _dismissKnownMigrationPreparationModal(
+            tester,
+            alreadyDismissed: dismissed,
+          ) ||
+          dismissed;
+    } else if (!tapped &&
+        navigation.evaluate().length == 1 &&
+        back.hitTestable().evaluate().length == 1) {
+      await tester.tap(back.hitTestable());
+      tapped = true;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  fail('Timed out leaving private migration status through its top-nav Back.');
+}
+
+/// An explicit proof-producing workflow. The generic status observer above
+/// remains read-only; only callers intending to prepare a schedule use this.
+Future<rust_sync.MigrationStatus> prepareMobilePrivateMigrationSchedule(
+  WidgetTester tester,
+  String accountUuid,
+  bool Function(rust_sync.MigrationStatus status) condition, {
+  required String description,
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  return prepareMobilePrivateMigrationScheduleWithReader(
+    tester,
+    () => mobileRegtestMigrationStatus(accountUuid),
+    condition,
+    description: description,
+    timeout: timeout,
+  );
+}
+
+/// Injects only the read-only status reader for deterministic helper regressions.
+@visibleForTesting
+Future<rust_sync.MigrationStatus>
+prepareMobilePrivateMigrationScheduleWithReader(
+  WidgetTester tester,
+  Future<rust_sync.MigrationStatus> Function() readStatus,
+  bool Function(rust_sync.MigrationStatus status) condition, {
+  required String description,
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  rust_sync.MigrationStatus? lastStatus;
+  Object? lastError;
+  final approval = _MobileProofApprovalAttempt();
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      final status = lastStatus = await readStatus();
+      lastError = null;
+      if (condition(status)) return status;
+      if ((status.phase == kIronwoodMigrationReadyToMigratePhase ||
+              (status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+                  status.signedChildPcztCount > 0)) &&
+          status.proofReady == true) {
+        await approval.tryTap(tester);
+      }
+    } catch (error) {
+      if (error is TestFailure) rethrow;
+      lastError = error;
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+  }
+  fail(
+    'Timed out waiting for $description after explicit proof approval. '
+    'Last phase: ${lastStatus?.phase}, run: ${lastStatus?.activeRunId}. '
+    'Last error: $lastError',
+  );
+}
+
+/// Reads the actual status-screen coordinator, without approving or advancing it.
+@visibleForTesting
+bool mobilePrivateMigrationCoordinatorBusy(
+  WidgetTester tester,
+  String accountUuid,
+) {
+  final scope = find.byKey(
+    const ValueKey('mobile_ironwood_migration_back_scope'),
+  );
+  if (scope.evaluate().length != 1) {
+    fail('Expected exactly one mobile migration status scope before mining.');
+  }
+  final container = ProviderScope.containerOf(tester.element(scope));
+  return container
+      .read(ironwoodMigrationCoordinatorProvider)
+      .advancingAccounts
+      .contains(accountUuid);
+}
+
 Future<rust_sync.MigrationStatus> advanceMobileRegtestMigrationSchedule(
   WidgetTester tester,
   String accountUuid, {
@@ -898,11 +1194,30 @@ Future<rust_sync.MigrationStatus> advanceMobileRegtestMigrationSchedule(
   Duration timeout = const Duration(minutes: 6),
 }) async {
   final deadline = DateTime.now().add(timeout);
+  final approval = _MobileProofApprovalAttempt();
   while (DateTime.now().isBefore(deadline)) {
     final status = await mobileRegtestMigrationStatus(accountUuid);
     final submitted = status.broadcastedTxCount + status.confirmedTxCount;
     final target = submittedTarget ?? status.totalCount;
     if (target > 0 && submitted >= target) return status;
+
+    final action = await approval.tryTap(
+      tester,
+      allowApproval:
+          (status.phase == kIronwoodMigrationReadyToMigratePhase ||
+              (status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+                  status.signedChildPcztCount > 0)) &&
+          status.proofReady == true,
+    );
+    if (action != _MobileProofAction.waiting ||
+        mobilePrivateMigrationCoordinatorBusy(tester, accountUuid)) {
+      // A single approved batch persists proofs individually. Do not mine
+      // its partially visible schedule while that foreground action is busy,
+      // even if the raw DB proof-readiness value already changed.
+      await tester.pump(const Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      continue;
+    }
 
     final scheduled =
         status.scheduledBroadcasts

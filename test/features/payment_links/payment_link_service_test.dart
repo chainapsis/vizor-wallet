@@ -11,6 +11,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/gift_claim_import_store.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -33,6 +34,103 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
+  for (final exactPool in ['orchard', 'sapling', 'ironwood']) {
+    test(
+      'claim details persist the exact $exactPool pool instead of the legacy label',
+      () {
+        expect(
+          paymentLinkClaimDestinationPoolFromDetails(
+            claimTxids: 'a',
+            destinationAddress: 'destination',
+            expectedAmountZatoshi: BigInt.one,
+            details: [
+              rust_sync.TransactionDetail(
+                transparentOmissions: const [],
+                detailsComplete: true,
+                provisional: false,
+                txidHex: 'a',
+                txKind: 'sent',
+                outputs: [
+                  rust_sync.TransactionDetailOutput(
+                    address: 'destination',
+                    amountZatoshi: BigInt.one,
+                    pool: 'shielded',
+                    activityPool: exactPool,
+                    usesOrchardReceiver: exactPool != 'sapling',
+                  ),
+                ],
+                transparentRecipients: const [],
+              ),
+            ],
+          ),
+          exactPool,
+        );
+      },
+    );
+  }
+
+  test('split destination outputs in one claim leg show Mixed', () {
+    expect(
+      paymentLinkClaimDestinationPoolFromDetails(
+        claimTxids: 'a',
+        destinationAddress: 'destination',
+        expectedAmountZatoshi: BigInt.from(100),
+        details: [
+          rust_sync.TransactionDetail(
+            transparentOmissions: const [],
+            detailsComplete: true,
+            provisional: false,
+            txidHex: 'a',
+            txKind: 'sent',
+            outputs: [
+              for (final pool in ['orchard', 'sapling'])
+                rust_sync.TransactionDetailOutput(
+                  address: 'destination',
+                  amountZatoshi: BigInt.from(50),
+                  pool: 'shielded',
+                  activityPool: pool,
+                  usesOrchardReceiver: pool == 'orchard',
+                ),
+            ],
+            transparentRecipients: const [],
+          ),
+        ],
+      ),
+      'mixed',
+    );
+  });
+
+  test('a generic shielded pool cannot prove a mix with Orchard', () {
+    expect(
+      paymentLinkClaimDestinationPoolFromDetails(
+        claimTxids: 'a,b',
+        destinationAddress: 'destination',
+        expectedAmountZatoshi: BigInt.from(100),
+        details: [
+          for (final (txid, pool) in [('a', 'orchard'), ('b', null)])
+            rust_sync.TransactionDetail(
+              transparentOmissions: const [],
+              detailsComplete: true,
+              provisional: false,
+              txidHex: txid,
+              txKind: 'sent',
+              outputs: [
+                rust_sync.TransactionDetailOutput(
+                  address: 'destination',
+                  amountZatoshi: BigInt.from(50),
+                  pool: 'shielded',
+                  activityPool: pool,
+                  usesOrchardReceiver: true,
+                ),
+              ],
+              transparentRecipients: const [],
+            ),
+        ],
+      ),
+      isNull,
+    );
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('address-free gifts reuse a retained legacy address identity', () async {
@@ -294,7 +392,10 @@ void main() {
         claimTxids: displayTxid,
         details: [
           rust_sync.TransactionDetail(
+            transparentOmissions: const [],
             txidHex: storageTxid,
+            detailsComplete: true,
+            provisional: false,
             txKind: 'sent',
             sourcePool: 'shielded',
             outputs: [
@@ -311,6 +412,7 @@ void main() {
                 pool: 'ironwood',
               ),
             ],
+            transparentRecipients: const [],
           ),
         ],
         destinationAddress: 'destination-ua',
@@ -346,7 +448,10 @@ void main() {
         String pool, {
         String address = 'destination',
       }) => rust_sync.TransactionDetail(
+        transparentOmissions: const [],
         txidHex: txid,
+        detailsComplete: true,
+        provisional: false,
         txKind: 'sent',
         outputs: [
           rust_sync.TransactionDetailOutput(
@@ -356,6 +461,7 @@ void main() {
             pool: pool,
           ),
         ],
+        transparentRecipients: const [],
       );
       String? pool(List<rust_sync.TransactionDetail> details) =>
           paymentLinkClaimDestinationPoolFromDetails(
@@ -375,7 +481,7 @@ void main() {
         isNull,
       );
       expect(pool([detail('a', 'ironwood'), detail('a', 'ironwood')]), isNull);
-      expect(pool([detail('a', 'ironwood'), detail('b', 'orchard')]), isNull);
+      expect(pool([detail('a', 'ironwood'), detail('b', 'orchard')]), 'mixed');
       expect(pool([detail('a', 'ironwood'), detail('b', '')]), isNull);
       expect(
         pool([
@@ -415,7 +521,10 @@ void main() {
           claimTxids: 'claim',
           details: [
             rust_sync.TransactionDetail(
+              transparentOmissions: const [],
               txidHex: 'claim',
+              detailsComplete: true,
+              provisional: false,
               txKind: 'sent',
               outputs: [
                 rust_sync.TransactionDetailOutput(
@@ -425,6 +534,7 @@ void main() {
                   usesOrchardReceiver: usesOrchard,
                 ),
               ],
+              transparentRecipients: const [],
             ),
           ],
           destinationAddress: projection,
@@ -501,6 +611,71 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(pathChannel, null);
       await supportDirectory.delete(recursive: true);
+    });
+
+    test(
+      'new card reserves follow Rust and an old quote is rejected',
+      () async {
+        api.feePolicyRate = 5000;
+        expect(await service.claimFeeReserve(), BigInt.from(10000));
+        api.feePolicyRate = 1000;
+        expect(await service.claimFeeReserve(), BigInt.from(2000));
+        await expectLater(
+          service.validateFundingReserve(BigInt.from(10000)),
+          throwsA(isA<PaymentLinkBatchQuoteChanged>()),
+        );
+        await service.validateFundingReserve(BigInt.from(2000));
+        api.feePolicyRate = 5000;
+      },
+    );
+
+    test('an upgrade hold while proposing a group drops its drafts', () async {
+      accounts.select('account-1', 'u1account-1address');
+      api.proposeBatchError = StateError(_sendHoldRefusal);
+      final store = container.read(paymentLinkRecoveryStoreProvider);
+      final links = [
+        for (final address in ['u1batchcardone', 'u1batchcardtwo'])
+          VizorPaymentLink(
+            network: 'main',
+            address: address,
+            amountZatoshi: BigInt.from(100000),
+            mnemonic: _link().mnemonic,
+            birthdayHeight: 3_456_789,
+            label: 'Payment link',
+            createdAt: DateTime.utc(2026, 8, 5, 12),
+          ),
+      ];
+      await store.saveBatchDrafts(
+        batchId: 'batch-1',
+        links: links,
+        sourceAccountUuid: 'account-1',
+        claimFeeReserveZatoshi: BigInt.from(10000),
+      );
+
+      await expectLater(
+        container
+            .read(paymentLinkBatchOperationsProvider)
+            .fundBatch(
+              PaymentLinkBatchDraft(
+                id: 'batch-1',
+                links: links,
+                quote: PaymentLinkBatchQuote(
+                  sourceAccountUuid: 'account-1',
+                  count: 2,
+                  recipientAmountZatoshi: BigInt.from(100000),
+                  fundingFeeZatoshi: BigInt.from(15000),
+                ),
+              ),
+            ),
+        throwsA(
+          isA<PaymentLinkBatchPreSubmissionFailure>().having(
+            (failure) => failure.message,
+            'message',
+            kNetworkUpgradeHoldMessage,
+          ),
+        ),
+      );
+      expect(await store.load(), isEmpty);
     });
 
     test(
@@ -640,31 +815,30 @@ void main() {
           uuid: 'claim-wallet',
           birthdayHeight: 0,
           name: 'Gift Card claim',
-          unifiedAddress: 'u1orchardatlegacyindex',
           isSeedAnchor: true,
           isHardware: false,
         );
-        api.validGiftAddresses.addAll({
-          _link().address,
-          migratedProjection.unifiedAddress,
-        });
+        api.validGiftAddresses.addAll({_link().address, 'u1legacy-projection'});
 
+        api.claimWalletAddress = 'u1legacy-projection';
         expect(
           await wallet.matchesLink(
+            dbPath: 'claim-wallet.db',
             link: _link(),
             accounts: [migratedProjection],
           ),
           isTrue,
         );
+        api.claimWalletAddress = 'u1wrong-wallet';
         expect(
           await wallet.matchesLink(
+            dbPath: 'claim-wallet.db',
             link: _link(),
             accounts: [
               rust_wallet.AccountInfo(
                 uuid: 'claim-wallet',
                 birthdayHeight: 0,
                 name: 'Gift Card claim',
-                unifiedAddress: 'u1same-receiver-but-noncanonical',
                 isSeedAnchor: true,
                 isHardware: false,
               ),
@@ -674,6 +848,7 @@ void main() {
         );
         expect(
           await wallet.matchesLink(
+            dbPath: 'claim-wallet.db',
             link: _link().withResolvedMetadata(address: 'u1wrong-advertised'),
             accounts: [migratedProjection],
           ),
@@ -682,6 +857,7 @@ void main() {
         expect(
           await wallet.matchesLink(
             link: _link(),
+            dbPath: 'claim-wallet.db',
             accounts: [migratedProjection, migratedProjection],
           ),
           isFalse,
@@ -767,10 +943,11 @@ void main() {
       expect(await store.find(record.address), isNotNull);
 
       await service.removeReceivedCard(record.address);
-      expect(api.cancelledClaimSyncs, [
-        paymentLinkClaimWalletDirectoryName(_link()),
-        paymentLinkClaimWalletDirectoryName(_link()),
-      ]);
+      expect(api.cancelledClaimSyncs, isNotEmpty);
+      expect(
+        api.cancelledClaimSyncs,
+        everyElement(paymentLinkClaimWalletDirectoryName(_link())),
+      );
       expect(await directory.exists(), isFalse);
       expect(await store.find(record.address), isNull);
     });
@@ -1047,53 +1224,181 @@ void main() {
         expect(restored.status, PaymentLinkReceivedStatus.readyToClaim);
         expect(restored.availability, PaymentLinkAvailability.failed);
         expect(restored.claimLink, isNotNull);
-        expect(api.claimSyncModes, [false]);
+        expect(api.claimSyncModes, isEmpty);
         expect(await store.countReceivingForAccount('receiver'), 0);
       },
     );
 
+    test('an unreadable card does not block another observed receipt', () async {
+      api.poolFixture = true;
+      api.observedConfirmations = 1;
+      api.unreadableClaims.add('broken');
+      final store = container.read(paymentLinkReceivedStoreProvider);
+      final links = [
+        _link(),
+        _link().withResolvedMetadata(address: 'u1secondcard'),
+      ];
+      api.validGiftAddresses.add('u1secondcard');
+      for (var i = 0; i < links.length; i++) {
+        await store.saveReady(links[i]);
+        await store.markReceiving(
+          address: links[i].address,
+          destinationAccountUuid: 'receiver',
+          claimTxids: i == 0 ? 'broken' : 'good',
+          claimSubmittedAt: DateTime.utc(2026, 10, 6),
+        );
+      }
+      final directory = Directory(
+        '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(_link())}',
+      );
+      await directory.create();
+      await File('${directory.path}/zcash_wallet.db').writeAsString('retained');
+      final records = await service.inspectReceivedLinkClaims(
+        await store.load(),
+        allowResubmit: false,
+      );
+      expect(
+        records.firstWhere((r) => r.claimTxids == 'broken').status,
+        PaymentLinkReceivedStatus.receiving,
+      );
+      expect(
+        records.firstWhere((r) => r.claimTxids == 'good').status,
+        PaymentLinkReceivedStatus.received,
+      );
+    });
+
+    for (final unreadable in [false, true]) {
+      test(
+        'legacy receiving reconciles its receipt with unreadable cache=$unreadable',
+        () async {
+          api.poolFixture = true;
+          if (unreadable) api.unreadableClaims.add('a,b');
+          api.localClaimTxids = ['a', 'b'];
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markClaimStarted(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+          );
+          await store.markReceiving(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            claimTxids: 'a,b',
+          );
+          final payload =
+              jsonDecode(receivedStorage.value!) as Map<String, dynamic>;
+          final row =
+              (payload['records'] as List).single as Map<String, dynamic>;
+          for (final field in ['availability', 'archived', 'claimPriorTxids']) {
+            row.remove(field);
+          }
+          receivedStorage.value = jsonEncode(payload);
+          final directory = Directory(
+            '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+          );
+          await directory.create();
+          await File(
+            '${directory.path}/zcash_wallet.db',
+          ).writeAsString('keep claim wallet');
+          await container.read(syncProvider.future);
+          final restored = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+            allowResubmit: false,
+          )).single;
+          expect(restored.status, PaymentLinkReceivedStatus.received);
+          expect(restored.claimTxids, 'a,b');
+          expect(restored.claimPriorTxids, isNull);
+          expect(
+            restored.claimLink,
+            isNotNull,
+          ); // Only one confirmation so far.
+          expect(api.claimSyncModes, unreadable ? isEmpty : [false]);
+          expect(await store.countReceivingForAccount('receiver'), 0);
+        },
+      );
+    }
+
+    for (final observation in [null, -1]) {
+      test(
+        'receipt fallback distinguishes legacy from incomplete observation: $observation',
+        () async {
+          api.poolFixture = true;
+          api.observedConfirmations = observation;
+          api.localClaimTxids = ['a', 'b'];
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markReceiving(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            claimTxids: 'a,b',
+            claimSubmittedAt: DateTime.utc(2026, 10, 7),
+          );
+          final directory = Directory(
+            '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
+          );
+          await directory.create();
+          final db = File('${directory.path}/zcash_wallet.db');
+          await db.writeAsString('keep claim wallet');
+          await container.read(syncProvider.future);
+          final restored = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+            allowResubmit: false,
+          )).single;
+          expect(
+            restored.status,
+            observation == null
+                ? PaymentLinkReceivedStatus.received
+                : PaymentLinkReceivedStatus.receiving,
+          );
+          expect(restored.claimLink, isNotNull);
+          expect(await db.exists(), isTrue);
+        },
+      );
+    }
+
     test(
-      'legacy receiving with saved txids still reconciles its receipt',
+      'unreadable legacy cache cleans up only after six verified confirmations',
       () async {
         api.poolFixture = true;
         api.localClaimTxids = ['a', 'b'];
+        api.unreadableClaims.add('a,b');
         final store = container.read(paymentLinkReceivedStoreProvider);
         final link = _link();
         await store.saveReady(link);
-        await store.markClaimStarted(
-          address: link.address,
-          destinationAccountUuid: 'receiver',
-        );
         await store.markReceiving(
           address: link.address,
           destinationAccountUuid: 'receiver',
           claimTxids: 'a,b',
+          claimSubmittedAt: DateTime.utc(2026, 10, 7),
         );
-        final payload =
-            jsonDecode(receivedStorage.value!) as Map<String, dynamic>;
-        final row = (payload['records'] as List).single as Map<String, dynamic>;
-        for (final field in ['availability', 'archived', 'claimPriorTxids']) {
-          row.remove(field);
-        }
-        receivedStorage.value = jsonEncode(payload);
         final directory = Directory(
           '${supportDirectory.path}/${paymentLinkClaimWalletDirectoryName(link)}',
         );
         await directory.create();
-        await File(
-          '${directory.path}/zcash_wallet.db',
-        ).writeAsString('keep claim wallet');
+        final db = File('${directory.path}/zcash_wallet.db');
+        await db.writeAsString('keep claim wallet');
         await container.read(syncProvider.future);
-        final restored = (await service.inspectReceivedLinkClaims(
+        final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+        // Tip alone must not authorize destruction of recovery data.
+        sync.emit(SyncState(scannedHeight: 104, chainTipHeight: 105));
+        final waiting = (await service.inspectReceivedLinkClaims(
           await store.load(),
           allowResubmit: false,
         )).single;
-        expect(restored.status, PaymentLinkReceivedStatus.received);
-        expect(restored.claimTxids, 'a,b');
-        expect(restored.claimPriorTxids, isNull);
-        expect(restored.claimLink, isNotNull); // Only one confirmation so far.
-        expect(api.claimSyncModes, [false]);
-        expect(await store.countReceivingForAccount('receiver'), 0);
+        expect(waiting.status, PaymentLinkReceivedStatus.received);
+        expect(waiting.claimLink, isNotNull);
+        expect(await db.exists(), isTrue);
+        sync.emit(SyncState(scannedHeight: 105, chainTipHeight: 105));
+        final settled = (await service.inspectReceivedLinkClaims(
+          await store.load(),
+          allowResubmit: false,
+        )).single;
+        expect(settled.status, PaymentLinkReceivedStatus.received);
+        expect(settled.claimTxids, 'a,b');
+        expect(settled.claimLink, isNull);
+        expect(await db.exists(), isFalse);
       },
     );
 
@@ -1417,6 +1722,62 @@ void main() {
       },
     );
 
+    for (final exactPool in ['orchard', 'sapling']) {
+      test(
+        'settled legacy card enriches $exactPool from receiver history without claim cache',
+        () async {
+          api.poolFixture = true;
+          api.recipientHistory = [
+            rust_sync.TransactionInfo(
+              amountIncludesFee: false,
+              detailsComplete: true,
+              provisional: false,
+              feeState: rust_sync.TransactionFeeState.notApplicable,
+              txidHex: 'a',
+              minedHeight: BigInt.from(100),
+              expiredUnmined: false,
+              accountBalanceDelta: 50000,
+              fee: BigInt.zero,
+              blockTime: BigInt.one,
+              isTransparent: false,
+              txKind: 'received',
+              displayAmount: BigInt.from(50000),
+              displayPool: 'shielded',
+              activityPool: exactPool,
+              createdTime: BigInt.one,
+            ),
+          ];
+          final store = container.read(paymentLinkReceivedStoreProvider);
+          final link = _link();
+          await store.saveReady(link);
+          await store.markClaimStarted(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+          );
+          await store.markReceiving(
+            address: link.address,
+            destinationAccountUuid: 'receiver',
+            claimTxids: 'a',
+            claimDestinationPool: 'shielded',
+          );
+          await store.markReceived(address: link.address);
+          await store.markClaimRecoveryConfirmed((await store.load()).single);
+          await store.clearConfirmedClaimSecret(address: link.address);
+          final before = (await store.load()).single;
+          final after = (await service.inspectReceivedLinkClaims(
+            await store.load(),
+          )).single;
+          expect(after.claimDestinationPool, exactPool);
+          expect(after.status, PaymentLinkReceivedStatus.received);
+          expect(after.claimLink, isNull);
+          expect(after.updatedAt, before.updatedAt);
+          expect(after.claimSubmittedAt, before.claimSubmittedAt);
+          expect(api.claimSyncCalls, 0);
+          expect(api.detailLookups, 0);
+        },
+      );
+    }
+
     for (final missing in ['history', 'detail']) {
       test(
         'retries incomplete $missing after receipt without restarting the claim',
@@ -1629,6 +1990,29 @@ void main() {
     },
   );
 
+  test(
+    'an upgrade hold after the submission marker was not submitted',
+    () async {
+      final failure = StateError(_sendHoldRefusal);
+
+      await expectLater(
+        runPaymentLinkFundingSubmission<String>((markSubmissionStarted) {
+          markSubmissionStarted();
+          throw failure;
+        }),
+        throwsA(
+          isA<PaymentLinkFundingNotSubmittedException>()
+              .having((error) => error.error, 'error', same(failure))
+              .having(
+                (error) => error.afterSubmissionMarker,
+                'afterSubmissionMarker',
+                isTrue,
+              ),
+        ),
+      );
+    },
+  );
+
   test('a funding whose broadcast result is lost stays recoverable', () async {
     final storage = _FakePaymentLinkRecoveryStorage();
     final store = PaymentLinkRecoveryStore(storage);
@@ -1686,6 +2070,36 @@ void main() {
     },
   );
 
+  test(
+    'a funding Rust refused for the upgrade after its marker leaves nothing',
+    () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final failure = StateError(_sendHoldRefusal);
+
+      // The composition `createFundedLink` uses, with the refusal Rust raises
+      // before building the transaction.
+      await expectLater(
+        PaymentLinkFundingRecovery(store).fund<String>(
+          claimFeeReserveZatoshi: BigInt.from(10000),
+          link: _link(),
+          sourceAccountUuid: 'source-account',
+          currentChainHeight: () async => 3456800,
+          createTransaction: (markSubmissionStarted) =>
+              runPaymentLinkFundingSubmission((markLocalSubmission) async {
+                await markSubmissionStarted();
+                markLocalSubmission();
+                throw failure;
+              }),
+          fundingTxids: (txid) => txid,
+        ),
+        throwsA(same(failure)),
+      );
+
+      expect(await PaymentLinkRecoveryStore(storage).load(), isEmpty);
+    },
+  );
+
   test('funding covers the exact recipient amount and claim fee', () {
     final recipientAmount = BigInt.from(100000000);
 
@@ -1714,6 +2128,33 @@ void main() {
       expect(quote.totalDeductedZatoshi, BigInt.from(100025000));
     },
   );
+
+  test('NU7 funding quotes reserve 2000 per card and keep the snapshot', () {
+    final reserve = BigInt.from(2000);
+    expect(
+      paymentLinkFundingAmountZatoshi(
+        BigInt.from(100000000),
+        claimFeeReserveZatoshi: reserve,
+      ),
+      BigInt.from(100002000),
+    );
+    final quote = paymentLinkMaxFundingQuote(
+      sourceAccountUuid: 'a',
+      maxSpendAmountZatoshi: BigInt.from(100000000),
+      fundingFeeZatoshi: reserve,
+      claimFeeReserveZatoshi: reserve,
+    );
+    expect(quote.recipientAmountZatoshi, BigInt.from(99998000));
+    final batch = PaymentLinkBatchQuote(
+      sourceAccountUuid: 'a',
+      count: 2,
+      recipientAmountZatoshi: BigInt.from(100000),
+      fundingFeeZatoshi: BigInt.from(3000),
+      perCardClaimFeeReserveZatoshi: reserve,
+    );
+    expect(batch.claimFeeReserveZatoshi, BigInt.from(4000));
+    expect(batch.totalDeductedZatoshi, BigInt.from(207000));
+  });
 
   test('max funding quote reserves deposit and redeem fees', () {
     final quote = paymentLinkMaxFundingQuote(
@@ -1799,6 +2240,25 @@ void main() {
       0,
     );
   });
+
+  for (final reserve in [2000, 10000]) {
+    test('external card with $reserve reserve remains recognizable', () {
+      final tx = _transaction(
+        txid: 'funding',
+        txKind: 'received',
+        minedHeight: 100,
+        accountBalanceDelta: 100000 + reserve,
+      );
+      expect(
+        paymentLinkFundingConfirmationCountForClaim(
+          recipientAmountZatoshi: BigInt.from(100000),
+          transactions: [tx],
+          chainTipHeight: BigInt.from(101),
+        ),
+        2,
+      );
+    });
+  }
 
   test('claim confirmation count follows the matching funding receive', () {
     final expectedFunding = paymentLinkFundingAmountZatoshi(
@@ -2217,6 +2677,57 @@ void main() {
 
       expect(completed, isFalse);
       expect((await store.load()).single.claimLink, isNotNull);
+    },
+  );
+
+  test(
+    'card observation finalizes independently and retries partial cleanup after restart',
+    () async {
+      final storage = _PaymentLinkServiceReceivedStorage();
+      var store = PaymentLinkReceivedStore(storage);
+      final link = _link();
+      await store.saveReady(link);
+      await store.markReceiving(
+        address: link.address,
+        destinationAccountUuid: 'receiver',
+        claimTxids: 'a,b',
+        claimSubmittedAt: DateTime.utc(2026, 10, 6),
+      );
+      var failDeletion = true;
+      var calls = 0;
+      Future<void> reconcile(int confirmations) async {
+        await reconcileObservedPaymentLinkClaimReceipt(
+          record: (await store.load()).single,
+          confirmationCount: confirmations,
+          store: store,
+          deleteRetainedWallet: (_) async {
+            calls++;
+            return !failDeletion;
+          },
+        );
+      }
+
+      await reconcile(1);
+      expect(
+        (await store.load()).single.status,
+        PaymentLinkReceivedStatus.received,
+      );
+      expect((await store.load()).single.claimLink, isNotNull);
+      await reconcile(5);
+      expect(calls, 0);
+      await reconcile(6);
+      expect((await store.load()).single.claimRecoveryConfirmed, isTrue);
+      expect((await store.load()).single.claimLink, isNotNull);
+      store = PaymentLinkReceivedStore(
+        storage,
+      ); // Persisted checkpoint outlives DB deletion failure.
+      failDeletion = false;
+      await reconcile(
+        0,
+      ); // No new chain data is needed to retry confirmed cleanup.
+      expect(calls, 2);
+      expect((await store.load()).single.claimLink, isNull);
+      expect((await store.load()).single.claimTxids, 'a,b');
     },
   );
 
@@ -2744,6 +3255,10 @@ const _legacyClaimDirectory =
     'payment_link_claim_main_'
     'df3533c3dc54740770e230053a1f1962724f8653ec41b84e4d53164d46733494';
 
+const _sendHoldRefusal =
+    "Transactions can't be sent this close to the network upgrade. "
+    'Try again after it activates.';
+
 VizorPaymentLink _link() {
   return VizorPaymentLink(
     network: 'main',
@@ -2774,6 +3289,10 @@ rust_sync.TransactionInfo _transaction({
     expiredUnmined: expiredUnmined,
     accountBalanceDelta: accountBalanceDelta,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(blockTime),
     isTransparent: false,
     txKind: txKind,
@@ -2788,7 +3307,19 @@ rust_sync.TransactionInfo _transaction({
 class _DestinationValidated implements Exception {}
 
 class _ClaimDestinationRustApi implements RustLibApi {
+  int feePolicyRate = 5000;
+  @override
+  Future<rust_sync.WalletFeePolicy> crateApiSyncGetWalletFeePolicy({
+    required String dbPath,
+    required String network,
+  }) async => rust_sync.WalletFeePolicy(
+    targetHeight: 3500001,
+    marginalFeeZatoshi: BigInt.from(feePolicyRate),
+    minimumFeeZatoshi: BigInt.from(2 * feePolicyRate),
+  );
+
   final requestedAccounts = <String>[];
+  Object? proposeBatchError;
   final validatedAddresses = <String>[];
   var lookupStarted = Completer<void>();
   Completer<String>? lookupGate;
@@ -2798,18 +3329,33 @@ class _ClaimDestinationRustApi implements RustLibApi {
   List<String> localClaimTxids = [];
   List<String> conflictedTxids = [];
   List<rust_sync.TransactionInfo>? claimHistory;
+  List<rust_sync.TransactionInfo>? recipientHistory;
+  String? detailActivityPool;
   Set<String> failingDetailTxids = {};
   int detailLookups = 0;
   Completer<rust_sync.SendMaxEstimateResult>? estimateGate;
   var estimateStarted = Completer<void>();
   Completer<void>? syncGate;
   var syncStarted = Completer<void>();
+  int? observedConfirmations;
+  final unreadableClaims = <String>{};
+  int claimCheckCalls = 0;
   int claimSyncCalls = 0;
   List<bool> claimSyncModes = [];
   final cancelledClaimSyncs = <String>[];
   final claimSyncDbPaths = <String>[];
   final validGiftAddresses = <String>{};
   int giftVariantLookups = 0;
+
+  @override
+  Future<rust_sync.ProposalResult> crateApiSyncProposePaymentLinkBatch({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String sendFlowId,
+    required List<String> addresses,
+    required BigInt amountZatoshi,
+  }) async => throw proposeBatchError ?? UnimplementedError();
 
   @override
   Future<rust_sync.SendMaxEstimateResult>
@@ -2838,7 +3384,9 @@ class _ClaimDestinationRustApi implements RustLibApi {
     required String network,
     required String accountUuid,
   }) async => rust_sync.WalletBalance(
+    transparentAuthority: rust_sync.TransparentBalanceAuthority.current,
     availability: rust_sync.WalletBalanceAvailability.available,
+    transparentPrivate: false,
     transparent: BigInt.zero,
     sapling: BigInt.zero,
     orchard: BigInt.zero,
@@ -2873,7 +3421,6 @@ class _ClaimDestinationRustApi implements RustLibApi {
         uuid: isClaimWallet ? 'claim-wallet' : 'receiver',
         birthdayHeight: 0,
         name: 'Test',
-        unifiedAddress: isClaimWallet ? _link().address : 'u1receiveraddress',
         isSeedAnchor: true,
         isHardware: false,
       ),
@@ -2899,6 +3446,42 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }
 
   @override
+  Future<int?> crateApiSyncGetPaymentLinkClaimConfirmations({
+    required String dbPath,
+    required String claimTxids,
+  }) async {
+    if (unreadableClaims.contains(claimTxids)) {
+      throw StateError('Unreadable retained DB');
+    }
+    return observedConfirmations; // null preserves deliberate legacy fixtures.
+  }
+
+  @override
+  Stream<rust_sync.ApiGiftCardCheckProgress>
+  crateApiSyncRunPaymentLinkClaimCheck({
+    required bool allowResubmit,
+    required String claimId,
+    required String dbPath,
+    required String lightwalletdUrl,
+    required List<String> fallbackUrls,
+    required String network,
+  }) async* {
+    claimCheckCalls++;
+    if (!syncStarted.isCompleted) syncStarted.complete();
+    await syncGate?.future;
+    yield rust_sync.ApiGiftCardCheckProgress(
+      phase: 'complete',
+      completed: BigInt.one,
+      total: BigInt.one,
+      fundingHeight: 0,
+      checkedHeight: _link().birthdayHeight + 1,
+      totalZatoshi: BigInt.zero,
+      unspentZatoshi: BigInt.zero,
+      complete: true,
+    );
+  }
+
+  @override
   Future<void> crateApiSyncRunPaymentLinkClaimSync({
     required bool allowResubmit,
     required String claimId,
@@ -2915,6 +3498,19 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }
 
   @override
+  Future<List<rust_sync.TransactionInfo>>
+  crateApiSyncGetTransactionRowsForTxids({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required List<String> txidHexes,
+  }) async => (await crateApiSyncGetTransactionHistory(
+    dbPath: dbPath,
+    network: network,
+    accountUuid: accountUuid,
+  )).where((row) => txidHexes.contains(row.txidHex)).toList();
+
+  @override
   Future<List<rust_sync.TransactionInfo>> crateApiSyncGetTransactionHistory({
     required String dbPath,
     required String network,
@@ -2924,6 +3520,7 @@ class _ClaimDestinationRustApi implements RustLibApi {
     if (!poolFixture) throw StateError('Unexpected history lookup');
     final isClaimWallet = accountUuid == 'claim-wallet';
     if (isClaimWallet && claimHistory != null) return claimHistory!;
+    if (!isClaimWallet && recipientHistory != null) return recipientHistory!;
     return [
       for (final txid in isClaimWallet ? localClaimTxids : ['a', 'b'])
         _transaction(
@@ -2948,7 +3545,10 @@ class _ClaimDestinationRustApi implements RustLibApi {
       throw StateError('Detail unavailable');
     }
     return rust_sync.TransactionDetail(
+      transparentOmissions: const [],
       txidHex: txidHex,
+      detailsComplete: true,
+      provisional: false,
       txKind: txKind,
       outputs: [
         rust_sync.TransactionDetailOutput(
@@ -2956,8 +3556,10 @@ class _ClaimDestinationRustApi implements RustLibApi {
           address: 'u1receiveraddress',
           amountZatoshi: BigInt.from(50000),
           pool: 'ironwood',
+          activityPool: detailActivityPool,
         ),
       ],
+      transparentRecipients: const [],
     );
   }
 
@@ -2969,7 +3571,9 @@ class _ClaimDestinationRustApi implements RustLibApi {
   }) async {}
 
   void reset() {
+    claimWalletAddress = _link().address;
     requestedAccounts.clear();
+    proposeBatchError = null;
     cancelledClaimSyncs.clear();
     validatedAddresses.clear();
     lookupStarted = Completer<void>();
@@ -2980,12 +3584,17 @@ class _ClaimDestinationRustApi implements RustLibApi {
     localClaimTxids = [];
     conflictedTxids = [];
     claimHistory = null;
+    recipientHistory = null;
+    detailActivityPool = null;
     failingDetailTxids = {};
     detailLookups = 0;
     estimateGate = null;
     estimateStarted = Completer<void>();
     syncGate = null;
     syncStarted = Completer<void>();
+    observedConfirmations = null;
+    unreadableClaims.clear();
+    claimCheckCalls = 0;
     claimSyncCalls = 0;
     claimSyncModes = [];
     claimSyncDbPaths.clear();
@@ -3020,12 +3629,15 @@ class _ClaimDestinationRustApi implements RustLibApi {
     }
   }
 
+  String claimWalletAddress = _link().address;
+
   @override
   Future<String> crateApiWalletGetUnifiedAddress({
     required String dbPath,
     required String network,
     String? accountUuid,
   }) async {
+    if (accountUuid == 'claim-wallet') return claimWalletAddress;
     requestedAccounts.add(accountUuid!);
     if (!lookupStarted.isCompleted) lookupStarted.complete();
     if (failures > 0) {

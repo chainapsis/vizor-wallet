@@ -466,6 +466,26 @@ class _PricingSwapProvider extends _FakeSwapProvider
   }
 }
 
+class _DeferredCatalogPricingSwapProvider extends _FakeSwapProvider
+    implements SwapPricingProvider {
+  _DeferredCatalogPricingSwapProvider({
+    required super.supportedAssets,
+    required this.usdPrices,
+  });
+
+  final Map<SwapAsset, double> usdPrices;
+  final _pricingCompleter = Completer<SwapPricingSnapshot>();
+
+  void completePricing() {
+    _pricingCompleter.complete(SwapPricingSnapshot(usdPrices: usdPrices));
+  }
+
+  @override
+  Future<SwapPricingSnapshot> loadPricingSnapshot({bool forceRefresh = false}) {
+    return _pricingCompleter.future;
+  }
+}
+
 class _TorBlockedPricingSwapProvider extends _FakeSwapProvider
     implements SwapPricingProvider {
   @override
@@ -1196,6 +1216,26 @@ class _FakeSwapPersistenceStore
     savePayAssetCount++;
     savedPayAsset = asset;
     _payAssetByAccount[accountUuid] = asset;
+  }
+}
+
+class _DelayedComposerPreferencesStore extends _FakeSwapPersistenceStore {
+  _DelayedComposerPreferencesStore({
+    super.initialPreferences,
+    super.initialPayAsset,
+  });
+
+  final _preferencesGate = Completer<void>();
+
+  void completePreferencesLoad() => _preferencesGate.complete();
+
+  @override
+  Future<SwapComposerPreferences?> loadPreferences({
+    required String accountUuid,
+  }) async {
+    final preferences = await super.loadPreferences(accountUuid: accountUuid);
+    await _preferencesGate.future;
+    return preferences;
   }
 }
 

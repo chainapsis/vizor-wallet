@@ -45,6 +45,7 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
     this.onRemove,
     this.archived = false,
     this.busy = false,
+    this.embedded = false,
     super.key,
   });
   final PaymentLinkAvailability availability;
@@ -57,6 +58,9 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
   final bool archived;
   final bool busy;
 
+  /// Share the owning claim stage instead of adding another scroll surface.
+  final bool embedded;
+
   @override
   Widget build(BuildContext context) {
     final isError = switch (availability) {
@@ -65,45 +69,48 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
       PaymentLinkAvailability.failed => true,
       _ => false,
     };
+    final details = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      child: Column(
+        key: const ValueKey('payment_link_claim_outcome_content'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            availability.label,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: isError
+                  ? context.colors.text.destructive
+                  : context.colors.text.primary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            availability.description,
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
+          if (onCheck != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            AppButton(
+              onPressed: busy ? null : onCheck,
+              growWithContent: embedded,
+              child: Text(busy ? 'Checking…' : 'Check status'),
+            ),
+          ],
+        ],
+      ),
+    );
     final content = SingleChildScrollView(
       key: const ValueKey('payment_link_claim_outcome_scroll'),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        child: Column(
-          key: const ValueKey('payment_link_claim_outcome_content'),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              availability.label,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: isError
-                    ? context.colors.text.destructive
-                    : context.colors.text.primary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              availability.description,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-            if (onCheck != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              AppButton(
-                onPressed: busy ? null : onCheck,
-                child: Text(busy ? 'Checking…' : 'Check status'),
-              ),
-            ],
-          ],
-        ),
-      ),
+      child: details,
     );
     final archiveAction = onRemove != null
         ? AppButton(
             onPressed: busy ? null : onRemove,
+            growWithContent: embedded,
             variant: AppButtonVariant.secondary,
             child: const Text(kPaymentLinkRemoveCardLabel),
           )
@@ -111,9 +118,22 @@ class PaymentLinkClaimOutcomeView extends StatelessWidget {
         ? null
         : AppButton(
             onPressed: busy ? null : onArchive,
+            growWithContent: embedded,
             variant: AppButtonVariant.secondary,
             child: Text(archived ? 'Restore card' : 'Hide card'),
           );
+    if (embedded) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          details,
+          if (archiveAction != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            archiveAction,
+          ],
+        ],
+      );
+    }
     if (kAppFormFactor == AppFormFactor.mobile) {
       return PaymentLinkRedeemMobileView(
         state: PaymentLinkRedeemMobileState.paste,

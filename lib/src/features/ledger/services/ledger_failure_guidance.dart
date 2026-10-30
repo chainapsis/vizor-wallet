@@ -57,6 +57,15 @@ LedgerFailureGuidance? ledgerFailureGuidance(
   if (isLedgerMemoHashUnsupported(error)) {
     return const LedgerFailureGuidance(ledgerMemoHashUnsupportedError);
   }
+  if (isLedgerAppUpdateRequired(error)) {
+    return const LedgerFailureGuidance(ledgerAppUpdateRequiredError);
+  }
+  if (isLedgerOrchardChangeUnsupported(error)) {
+    return const LedgerFailureGuidance(
+      ledgerOrchardChangeUnsupportedError,
+      retryable: false,
+    );
+  }
   if (error.toString().contains(ledgerAppChangedError)) {
     return const LedgerFailureGuidance(ledgerAppChangedError);
   }
@@ -82,7 +91,7 @@ LedgerFailureGuidance? ledgerFailureGuidance(
       retryable: false,
     ),
     // Only a running other app is fixed by opening Zcash; install and update
-    // failures need Ledger Live, so the open-app card would contradict them.
+    // failures need Ledger Wallet, so the open-app card would contradict them.
     LedgerRequestFailure.wrongApp => LedgerFailureGuidance(
       failure.message,
       showDeviceAppPrompt: true,
@@ -234,7 +243,7 @@ enum LedgerRequestFailure {
     deviceLocked => 'Unlock your Ledger, then try again.',
     pinNotSet => 'Set up a PIN on your Ledger, then try again.',
     wrongApp => 'Open the Zcash app on your Ledger.',
-    appNotInstalled => 'Install the Zcash app with Ledger Live.',
+    appNotInstalled => 'Install the Zcash app with Ledger Wallet.',
     appUpdateRequired =>
       'Update the Zcash app to $kMinimumLedgerZcashAppVersion or newer.',
     appWrongState => 'Close and reopen the Zcash app.',
@@ -335,5 +344,5 @@ String? ledgerUsbErrorMessage(
   if (text.contains('initialize ledger hid')) {
     return 'Vizor could not start USB access for your Ledger. Reconnect the device, then try again.';
   }
-  return 'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger, then try again.';
+  return 'The USB connection to your Ledger was interrupted. Reconnect and unlock your Ledger. $appInstruction';
 }

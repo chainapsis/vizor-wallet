@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/review_info_row.dart';
+import '../../../core/widgets/receipt_loading_skeleton.dart';
 import '../../../core/widgets/review_list_row.dart';
 import '../../../core/widgets/review_wrap_card.dart';
 import '../../send/widgets/send_review_layout.dart';
@@ -36,12 +37,14 @@ class ReceivedReceiptView extends StatelessWidget {
     required this.txIdText,
     this.status = ReceivedReceiptStatus.completed,
     this.fromRecipient,
+    this.fromAccount,
     this.unknownFromKind,
     this.isShieldedSource = false,
     this.receivingAddress,
     this.isShieldedReceivingAddress = false,
     this.memoText,
     this.memoExpanded = false,
+    this.detailsLoading = false,
     this.onShowFullAddress,
     this.onExpandMemo,
     this.onTxIdPressed,
@@ -64,6 +67,12 @@ class ReceivedReceiptView extends StatelessWidget {
   /// when null unless [unknownFromKind] is present.
   final SendReviewRecipient? fromRecipient;
 
+  /// The wallet account the receive came from when no exact source address
+  /// is known: its name, avatar, and source pool (`null` when the pool is
+  /// unknown). The row offers no address to show.
+  final ({String name, String profilePictureId, bool? shieldedPool})?
+  fromAccount;
+
   /// Why the exact source address is unavailable.
   final ReceivedReceiptUnknownFromKind? unknownFromKind;
 
@@ -85,6 +94,9 @@ class ReceivedReceiptView extends StatelessWidget {
   /// Inline Message row expansion state.
   final bool memoExpanded;
 
+  /// Awaiting detail, rather than a completed read with missing fields.
+  final bool detailsLoading;
+
   /// "Show full address" ghost action on the From row.
   final VoidCallback? onShowFullAddress;
 
@@ -99,7 +111,10 @@ class ReceivedReceiptView extends StatelessWidget {
     final colors = context.colors;
     final memo = memoText?.trim();
     final fromRecipient = this.fromRecipient;
-    final unknownFromKind = fromRecipient == null ? this.unknownFromKind : null;
+    final fromAccount = fromRecipient == null ? this.fromAccount : null;
+    final unknownFromKind = fromRecipient == null && fromAccount == null
+        ? this.unknownFromKind
+        : null;
     final title = switch (status) {
       ReceivedReceiptStatus.inProgress => 'Receive in progress...',
       ReceivedReceiptStatus.completed => 'Received successfully',
@@ -138,23 +153,46 @@ class ReceivedReceiptView extends StatelessWidget {
         const SizedBox(height: AppSpacing.base),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (fromRecipient != null || unknownFromKind != null) ...[
-                if (fromRecipient != null)
+          child: ReviewInfoFlow(
+            connectorColor: context.colors.text.secondary,
+            rows: [
+              if (detailsLoading ||
+                  fromRecipient != null ||
+                  fromAccount != null ||
+                  unknownFromKind != null)
+                if (detailsLoading)
+                  const ReceiptCounterpartySkeleton(label: 'From')
+                else if (fromRecipient != null)
                   _fromRow(context, fromRecipient)
+                else if (fromAccount != null)
+                  ReviewInfoRow(
+                    key: const ValueKey('received_from_account'),
+                    label: 'From',
+                    value: fromAccount.name,
+                    leading: AppProfilePicture(
+                      profilePictureId: fromAccount.profilePictureId,
+                      size: AppProfilePictureSize.large,
+                    ),
+                    bottomLeftIconName: fromAccount.shieldedPool == null
+                        ? null
+                        : _poolIconName(fromAccount.shieldedPool!),
+                    bottomLeftIconColor: fromAccount.shieldedPool == null
+                        ? null
+                        : _poolIconColor(context, fromAccount.shieldedPool!),
+                    bottomLeftText: switch (fromAccount.shieldedPool) {
+                      null => null,
+                      true => 'Shielded',
+                      false => 'Transparent',
+                    },
+                  )
                 else
                   _unknownFromRow(context, unknownFromKind!),
-                const _ReceivedArrowSeparator(),
-              ],
               ReviewInfoRow(
                 label: 'Amount',
                 value: amountText,
                 leading: ClipOval(
                   child: Image.asset(
-                    'assets/icons/network_zec.png',
+                    'assets/icons/desktop/network_zec.png',
                     width: AppAssetSize.size,
                     height: AppAssetSize.size,
                     fit: BoxFit.cover,
@@ -168,6 +206,12 @@ class ReceivedReceiptView extends StatelessWidget {
                     : null,
                 bottomLeftText: receivingAddress != null
                     ? truncatedAddress(receivingAddress!)
+                    : null,
+                bottomLeftPlaceholder: detailsLoading
+                    ? const Align(
+                        alignment: Alignment.centerLeft,
+                        child: ReceiptValueSkeleton(),
+                      )
                     : null,
               ),
             ],
@@ -188,7 +232,9 @@ class ReceivedReceiptView extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (memo != null && memo.isNotEmpty)
+                if (detailsLoading)
+                  const ReceiptMemoSkeleton()
+                else if (memo != null && memo.isNotEmpty)
                   ReviewMemoRows(
                     memoText: memo,
                     expanded: memoExpanded,
@@ -262,29 +308,6 @@ class ReceivedReceiptView extends StatelessWidget {
           ? _poolIconColor(context, true)
           : null,
       bottomLeftText: isShieldedSender ? 'Shielded' : null,
-    );
-  }
-}
-
-/// The 24px arrow-down connector between the From and Amount rows, centered
-/// under the 32px leading-icon column.
-class _ReceivedArrowSeparator extends StatelessWidget {
-  const _ReceivedArrowSeparator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: SizedBox(
-        width: AppAssetSize.size,
-        child: Center(
-          child: AppIcon(
-            AppIcons.arrowDown,
-            size: AppIconSize.large,
-            color: context.colors.text.secondary,
-          ),
-        ),
-      ),
     );
   }
 }

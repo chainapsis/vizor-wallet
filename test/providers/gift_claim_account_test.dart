@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -50,6 +51,7 @@ void main() {
 
   setUp(() async {
     _rust.reset();
+    SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     storage = _FailingStorage();
     store = AppSecureStore.testing(
@@ -488,19 +490,14 @@ void main() {
           accountMayExist: failure is WalletAccountSetupInterruptedException,
         );
         expect(await store.verifyPassword(_passcode), isTrue);
-        final metadata = await store.readString('zcash_accounts');
+        store.clearSessionPassword();
+        final bootstrap = await loadAppBootstrap(secureStore: store);
+        expect(bootstrap.hasBlockingFailure, isFalse);
+        expect(bootstrap.initialLocation, '/unlock');
+        expect(bootstrap.initialAccountState.activeAccountUuid, 'uuid-1');
         final restarted = ProviderContainer(
           overrides: [
-            appBootstrapProvider.overrideWithValue(
-              _bootstrappedGiftAccount(
-                account: metadata == null
-                    ? null
-                    : AccountInfo.fromJson(
-                        (jsonDecode(metadata) as List).single
-                            as Map<String, dynamic>,
-                      ),
-              ),
-            ),
+            appBootstrapProvider.overrideWithValue(bootstrap),
             accountProvider.overrideWith(
               () => AccountNotifier.testing(store: store),
             ),
@@ -511,6 +508,10 @@ void main() {
         );
         addTearDown(restarted.dispose);
         await restarted.read(accountProvider.future);
+        expect(
+          await restarted.read(appSecurityProvider.notifier).unlock(_passcode),
+          isTrue,
+        );
         await restarted.read(accountProvider.notifier).restoreAfterUnlock();
         expect(_rust.importCalls, 1);
         expect(await store.readAccountMnemonic('uuid-1'), _mnemonic);
@@ -909,6 +910,38 @@ void main() {
     );
     expect(container.read(accountProvider).value!.accounts, isEmpty);
   });
+
+  test(
+    'a created account keeps its recovery outcome when its address is unavailable',
+    () async {
+      _rust
+        ..importError = StateError('interrupted')
+        ..createDbBeforeImportError = true
+        ..failAddress = true
+        ..listedAccounts = [_listed('uuid-1')];
+      await expectLater(
+        accounts().createGiftClaimAccount(
+          name: _name,
+          profilePictureId: _profile,
+          link: incomingLink,
+        ),
+        throwsA(
+          isA<GiftClaimAccountCreatedException>().having(
+            (error) => error.accountUuid,
+            'accountUuid',
+            'uuid-1',
+          ),
+        ),
+      );
+      expect(
+        await store.readSecretStringWithOptions(
+          kPendingAccountMnemonicStorageKey,
+          requireUnlockedSession: true,
+        ),
+        isNotNull,
+      );
+    },
+  );
 
   test('a create whose outcome is unknown keeps the password', () async {
     _rust
@@ -1524,7 +1557,6 @@ void main() {
 rust_wallet.AccountInfo _listed(String uuid) => rust_wallet.AccountInfo(
   uuid: uuid,
   name: 'Account 1',
-  unifiedAddress: 'u1$uuid',
   birthdayHeight: 3000000,
   isSeedAnchor: true,
   isHardware: false,
@@ -1578,6 +1610,7 @@ class _GiftAccountRustApi implements RustLibApi {
   Object? importError;
   Object? listError;
   bool createDbBeforeImportError = false;
+  bool failAddress = false;
   bool lockAfterImport = false;
   bool walletExists = false;
   List<rust_wallet.AccountInfo> listedAccounts = const [];
@@ -1596,6 +1629,7 @@ class _GiftAccountRustApi implements RustLibApi {
     importError = null;
     listError = null;
     createDbBeforeImportError = false;
+    failAddress = false;
     lockAfterImport = false;
     walletExists = false;
     listedAccounts = const [];
@@ -1610,6 +1644,12 @@ class _GiftAccountRustApi implements RustLibApi {
     hardwareUfvks.clear();
     listCalls = 0;
   }
+
+  @override
+  Future<void> crateApiWalletEnsureWalletDbMigrated({
+    required String dbPath,
+    required String network,
+  }) async {}
 
   @override
   String crateApiWalletGenerateMnemonic() => _mnemonic;
@@ -1670,7 +1710,6 @@ class _GiftAccountRustApi implements RustLibApi {
       rust_wallet.AccountInfo(
         uuid: 'hardware',
         name: _name,
-        unifiedAddress: 'u1hardware',
         birthdayHeight: 3000000,
         isSeedAnchor: false,
         isHardware: true,
@@ -1806,7 +1845,10 @@ class _GiftAccountRustApi implements RustLibApi {
     required String dbPath,
     required String network,
     String? accountUuid,
-  }) async => 'u1$accountUuid';
+  }) async {
+    if (failAddress) throw StateError('address unavailable');
+    return 'u1$accountUuid';
+  }
 
   @override
   Future<String?> crateApiWalletFindSoftwareAccountForMnemonic({

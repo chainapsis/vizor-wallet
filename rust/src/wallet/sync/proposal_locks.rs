@@ -362,6 +362,27 @@ pub(crate) fn checkpoint_owner(
     Ok(())
 }
 
+/// Restores an old signed shield checkpoint in the caller's SQLite transaction.
+/// It has no process-local unlock capability and survives restart until settled.
+pub(crate) fn restore_signed_owner(
+    conn: &Connection,
+    owner: LockOwner,
+    inputs: &[OutputRef],
+    expiry: BlockHeight,
+    operation_id: &str,
+) -> Result<(), String> {
+    for input in inputs {
+        conn.execute(&format!("INSERT INTO {TABLE}
+            (owner, session_id, txid, pool, output_index, expiry_height, retain_until_expiry, phase, operation_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 'signed', ?7)"),
+            params![owner.as_bytes().as_slice(), PROCESS_SESSION_ID.as_slice(),
+                input.txid().as_ref(), pool_code(input.pool()), input.output_index(),
+                u32::from(expiry), operation_id],
+        ).map_err(|e| format!("Restore signed shielding reservation: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Must be committed with removal/terminalization of the outbox operation.
 pub(crate) fn release_operation(conn: &Connection, operation_id: &str) -> Result<(), String> {
     ensure_schema(conn)?;
@@ -479,7 +500,9 @@ fn should_release_after_restart(
     target_height: Option<u32>,
     expiry_height: u32,
 ) -> bool {
-    !retain_until_expiry || target_height.is_some_and(|height| height >= expiry_height)
+    // The next block may still mine the transaction at its expiry height.
+    // Match the backend's input-selection and locked-balance boundary.
+    !retain_until_expiry || target_height.is_some_and(|height| height > expiry_height)
 }
 
 /// Releases only recoverable send locks left by an earlier process. Migration
@@ -706,6 +729,51 @@ mod tests {
         assert_eq!(count, 3);
         // Re-running before any network request is idempotent.
         recover_before_balance(path, network).unwrap();
+
+        // A broadcast may still be mined in its expiry block. Recovery must
+        // preserve its real input lock through that block's target height,
+        // matching the backend's locked-balance and input-selection boundary.
+        for (tip, expected_locked_owners, expected_locked_value) in [
+            (2_000_098, vec![owners[2], owners[3], owners[4]], 300_000),
+            (2_000_099, vec![owners[2], owners[3], owners[4]], 300_000),
+            (2_000_100, vec![owners[3], owners[4]], 0),
+        ] {
+            let mut db = open_wallet_db(path, network).unwrap();
+            db.update_chain_tip(BlockHeight::from_u32(tip)).unwrap();
+            drop(db);
+            recover_previous_process(path, network).unwrap();
+            let locked: Vec<Vec<u8>> = conn
+                .prepare("SELECT lock_owner FROM transparent_received_outputs WHERE lock_owner IS NOT NULL ORDER BY lock_owner")
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(
+                locked,
+                expected_locked_owners
+                    .iter()
+                    .map(|owner| owner.as_bytes().to_vec())
+                    .collect::<Vec<_>>(),
+                "chain tip {tip}"
+            );
+            let db = open_wallet_db(path, network).unwrap();
+            let balances = db
+                .get_transparent_balances(
+                    account,
+                    BlockHeight::from_u32(tip + 1).into(),
+                    crate::wallet::confirmations_policy(),
+                )
+                .unwrap();
+            assert_eq!(
+                balances
+                    .values()
+                    .map(|(_, balance)| u64::from(balance.locked_value()))
+                    .sum::<u64>(),
+                expected_locked_value,
+                "chain tip {tip}"
+            );
+        }
     }
 
     #[test]
@@ -784,7 +852,7 @@ mod tests {
                     None,
                     BlockHeight::from_u32(1),
                     TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
-                    super::super::send::ConservativeZip317FeeRule,
+                    super::super::send::ConservativeZip317FeeRule::for_target(&crate::wallet::network::WalletNetwork::Regtest, zcash_protocol::consensus::BlockHeight::from_u32(120)),
                     BlockHeight::from_u32(2).into(),
                     ConfirmationsPolicy::default(),
                     false,
@@ -802,7 +870,7 @@ mod tests {
                     PROPOSAL_STORE.lock().unwrap().locks.insert(
                         id,
                         StoredProposalLock {
-                            proposal: proposal.clone(),
+                            inputs: crate::wallet::sync::send::proposal_input_refs(&proposal),
                             network: WalletNetwork::Test,
                             db_path: writer_path.clone(),
                             owner,
@@ -973,7 +1041,7 @@ mod tests {
         assert!(should_release_after_restart(false, Some(50), 100));
         assert!(!should_release_after_restart(true, None, 100));
         assert!(!should_release_after_restart(true, Some(99), 100));
-        assert!(should_release_after_restart(true, Some(100), 100));
+        assert!(!should_release_after_restart(true, Some(100), 100));
         assert!(should_release_after_restart(true, Some(101), 100));
     }
 
@@ -1175,9 +1243,11 @@ mod tests {
         assert_eq!(remaining, vec![submitted.as_bytes().to_vec()]);
     }
 
-    #[test]
-    fn discarding_a_signing_request_returns_its_ephemeral_address() {
-        use super::super::{discard_stored_proposal, StoredProposalLock, PROPOSAL_STORE};
+    /// A transparent single-step proposal for tests that store a lock.
+    fn stored_proposal_fixture() -> zcash_client_backend::proposal::Proposal<
+        super::super::send::WalletFeeRule,
+        zcash_client_sqlite::ReceivedNoteId,
+    > {
         use transparent::{
             address::TransparentAddress,
             bundle::{OutPoint, TxOut},
@@ -1192,9 +1262,6 @@ mod tests {
         use zcash_keys::address::Address;
         use zcash_protocol::value::Zatoshis;
 
-        let wallet = ephemeral_wallet();
-        let owner = LockOwner::new([61; 32]);
-        let address = reserve_for(&wallet, owner).unwrap();
         let recipient = TransparentAddress::PublicKeyHash([7; 20]);
         let utxo = WalletTransparentOutput::from_parts(
             OutPoint::new([9; 32], 0),
@@ -1214,26 +1281,36 @@ mod tests {
             vec![],
         )
         .unwrap();
-        let proposal = Proposal::single_step(
+        Proposal::single_step(
             TransactionRequest::new(vec![payment]).unwrap(),
             BTreeMap::from([(0, PoolType::TRANSPARENT)]),
             vec![utxo],
             None,
             BlockHeight::from_u32(1),
             TransactionBalance::new(vec![], Zatoshis::const_from_u64(10_000)).unwrap(),
-            super::super::send::ConservativeZip317FeeRule,
+            super::super::send::ConservativeZip317FeeRule::for_target(&crate::wallet::network::WalletNetwork::Regtest, zcash_protocol::consensus::BlockHeight::from_u32(120)),
             BlockHeight::from_u32(2).into(),
             ConfirmationsPolicy::default(),
             false,
             false,
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn discarding_a_signing_request_returns_its_ephemeral_address() {
+        use super::super::{discard_stored_proposal, StoredProposalLock, PROPOSAL_STORE};
+
+        let wallet = ephemeral_wallet();
+        let owner = LockOwner::new([61; 32]);
+        let address = reserve_for(&wallet, owner).unwrap();
+        let proposal = stored_proposal_fixture();
         let id = 9_200_001u64;
         let flow = "ephemeral-return-flow";
         PROPOSAL_STORE.lock().unwrap().locks.insert(
             id,
             StoredProposalLock {
-                proposal,
+                inputs: crate::wallet::sync::send::proposal_input_refs(&proposal),
                 network: WalletNetwork::Test,
                 db_path: wallet.path.clone(),
                 owner,
@@ -1245,6 +1322,38 @@ mod tests {
 
         assert!(!PROPOSAL_STORE.lock().unwrap().locks.contains_key(&id));
         assert!(!is_reserved(&wallet, &address));
+    }
+
+    /// A receipt left while a hardware batch waits for a retry discards its
+    /// proposal; that release is safe only because a submission that started
+    /// keeps the inputs locked.
+    #[test]
+    fn discarding_after_a_submission_started_keeps_the_reservation() {
+        use super::super::{discard_stored_proposal, StoredProposalLock, PROPOSAL_STORE};
+
+        let wallet = ephemeral_wallet();
+        let owner = LockOwner::new([62; 32]);
+        let address = reserve_for(&wallet, owner).unwrap();
+        let id = 9_200_002u64;
+        let flow = "submitted-retry-flow";
+        PROPOSAL_STORE.lock().unwrap().locks.insert(
+            id,
+            StoredProposalLock {
+                inputs: crate::wallet::sync::send::proposal_input_refs(&stored_proposal_fixture()),
+                network: WalletNetwork::Test,
+                db_path: wallet.path.clone(),
+                owner,
+                send_flow_id: flow.to_string(),
+            },
+        );
+        mark_retain_until_expiry(&wallet.path, owner).unwrap();
+
+        discard_stored_proposal(id, flow).unwrap();
+
+        assert!(PROPOSAL_STORE.lock().unwrap().locks.contains_key(&id));
+        assert!(is_reserved(&wallet, &address));
+        assert!(is_durable(&wallet.path, owner).unwrap());
+        PROPOSAL_STORE.lock().unwrap().locks.remove(&id);
     }
 
     #[test]

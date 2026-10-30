@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/navigation/payment_uri_drain_policy.dart';
+import 'package:zcash_wallet/src/core/navigation/incoming_link_entry_policy.dart';
 import 'package:zcash_wallet/src/core/zcash/zip321_payment_request.dart';
 
 /// Calls [decidePaymentUriDrain] with the "healthy, unlocked, on /home, link
@@ -54,7 +55,7 @@ void main() {
     test('the expired notice says the link can just be opened again', () {
       expect(
         kPaymentUriExpiredMessage,
-        'That payment link timed out. Open it again to pay.',
+        'That request link timed out. Open it again to pay.',
       );
     });
 
@@ -118,6 +119,13 @@ void main() {
         '/add-account',
         '/onboarding/create',
         '/import/seed',
+        '/gift',
+        '/gift/set-password',
+        '/gift/customise',
+        '/setup/backup',
+        '/setup/education/intro',
+        '/setup/education/address-types',
+        '/setup/education/things-to-know',
       ]) {
         final decision = decide(matchedLocation: location);
         expect(
@@ -151,7 +159,7 @@ void main() {
     test('waits rather than dropping while a signing session is up', () {
       final decision = decide(hasBusySurface: true);
       expect(decision.action, PaymentUriDrainAction.wait);
-      expect(decision.message, isNull);
+      expect(decision.message, kIncomingPaymentBusyMessage);
     });
 
     test('presents once the hold is given back', () {
@@ -210,7 +218,7 @@ void main() {
         sendIsInFlight: true,
       );
       expect(decision.action, PaymentUriDrainAction.wait);
-      expect(decision.message, isNull);
+      expect(decision.message, kIncomingPaymentBusyMessage);
     });
 
     test('presents once the receipt is on screen', () {
@@ -374,7 +382,7 @@ void main() {
     test('the unavailable notice states the recovery, not the cause', () {
       expect(
         kPaymentUriUnavailableMessage,
-        "Vizor couldn't open this payment link. "
+        "Vizor couldn't open this request link. "
         'Open it again once your wallet has loaded.',
       );
     });
@@ -382,7 +390,7 @@ void main() {
     test('the replaced notice says how to get the earlier link back', () {
       expect(
         kPaymentUriReplacedMessage,
-        'Only the newest payment link was kept. Open the earlier one again to '
+        'Only the newest request link was kept. Open the earlier one again to '
         'pay it.',
       );
     });
@@ -390,7 +398,7 @@ void main() {
     test('the migration notice names the migration the user is in', () {
       expect(
         kPaymentUriMigrationSendGateMessage,
-        'Finish your Ironwood migration before opening payment links.',
+        'Finish your Ironwood migration before opening request links.',
       );
     });
   });

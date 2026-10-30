@@ -9,12 +9,16 @@ import '../../../core/storage/app_secure_store.dart';
 import '../../../core/storage/linux_keyring_coordinator.dart';
 import '../../../core/storage/linux_secret_operation_guard.dart';
 import '../../../core/storage/wallet_paths.dart';
+import '../../../core/zcash/transparent_ledger_errors.dart';
+import '../../../core/zcash/wallet_error_code.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 const shieldBalancePendingBroadcastMessage =
     'Shielding queued for retry. Check Activity.';
@@ -27,7 +31,23 @@ String? shieldBalanceBroadcastStatusMessage(
 }
 
 String friendlyShieldBalanceError(Object error) {
+  switch (walletErrorCode(error)) {
+    case rust_sync.ApiWalletErrorCode.optOutUnfinished:
+      return privateQueriesOptOutUnfinishedMessage;
+    case rust_sync.ApiWalletErrorCode.recoveryIncomplete:
+      return transparentRecoveryIncompleteMessage;
+    default:
+      break;
+  }
+  final upgradeHold = networkUpgradeHoldMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
+  if (isTransparentLedgerNeedsNewerBuildError(message)) {
+    return transparentLedgerNeedsNewerBuildMessage;
+  }
+  if (isTransparentRecoveryIncompleteError(message)) {
+    return transparentRecoveryIncompleteMessage;
+  }
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {
     return "Secret Passphrase isn't available for this account.";
@@ -55,6 +75,17 @@ String? shieldBalanceErrorDetails(Object error) {
   }
   return message.isEmpty ? null : message;
 }
+
+typedef SoftwareTransparentShieldRunner =
+    Future<rust_sync.ShieldTransparentResult> Function({
+      required WidgetRef ref,
+      required String accountUuid,
+      String logContext,
+    });
+final softwareTransparentShieldRunnerProvider =
+    Provider<SoftwareTransparentShieldRunner>(
+      (_) => shieldTransparentSoftwareBalance,
+    );
 
 Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
   required WidgetRef ref,
@@ -127,6 +158,12 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
       'broadcasted=${result.broadcastedCount}/${result.totalCount} '
       'fee=${result.feeZatoshi} shielded=${result.shieldedZatoshi}',
     );
+    observeShieldingBroadcast(
+      ref: ref,
+      accountUuid: accountUuid,
+      status: result.status,
+      txids: result.txids.split(','),
+    );
 
     final broadcastStatusMessage = shieldBalanceBroadcastStatusMessage(result);
     final broadcastDetailMessage = result.message?.trim();
@@ -172,9 +209,38 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
   }
 }
 
+/// Seed the existing activity ETA only from a confirmed successful broadcast.
+/// Keep the proposal's account identity even if the user switches accounts.
+/// Partial/unknown batches cannot identify which txids propagated, so they
+/// wait for independent mempool evidence instead.
+void observeShieldingBroadcast({
+  required WidgetRef ref,
+  required String? accountUuid,
+  required String status,
+  required Iterable<String> txids,
+}) {
+  if (status != 'broadcasted' ||
+      accountUuid == null ||
+      !ref.context.mounted ||
+      ref.read(appSecurityProvider).requiresUnlock ||
+      !(ref
+              .read(accountProvider)
+              .value
+              ?.accounts
+              .any((account) => account.uuid == accountUuid) ??
+          false)) {
+    return;
+  }
+  ref
+      .read(pendingActivityEvidenceProvider.notifier)
+      .observe(accountUuid: accountUuid, txids: txids);
+}
+
 String shieldPcztBroadcastStatusMessage(
   rust_sync.ExtractAndBroadcastPcztResult result,
 ) {
+  final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
+  if (upgradeHold != null) return upgradeHold;
   if (result.status == 'broadcast_unknown') {
     return result.message ??
         'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
@@ -186,6 +252,18 @@ String shieldPcztBroadcastStatusMessage(
   return result.message ??
       'The shield transaction status is uncertain. Check activity before trying again.';
 }
+
+/// Whether a hardware broadcast failed only because private recovery has not
+/// yet covered the wallet's latest block, so the same signature can be sent
+/// again once it has. Only Rust can say so, with its retry code.
+bool isHardwareBroadcastRetryable(Object error) =>
+    walletErrorCode(error) == rust_sync.ApiWalletErrorCode.retryAfterRecovery;
+
+/// Shown when a Keystone shield waits for private recovery, with the signature
+/// kept for another try.
+const kShieldWaitingForPrivateRecoveryMessage =
+    'Private recovery is catching up with the latest block. Try again in a '
+    'moment; your Keystone signature is kept.';
 
 String? postBroadcastShieldErrorMessage(Object error) {
   final raw = error.toString();

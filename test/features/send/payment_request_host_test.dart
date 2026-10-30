@@ -4,11 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:zcash_wallet/src/core/config/network_config.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
+import 'package:zcash_wallet/src/features/send/services/payment_request_scanner.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
@@ -22,6 +26,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/payment_request_scan_expectations.dart';
 
 const _address =
     'u1950915183f0fed838d6d2dd92d6f4111ed3c6dd4e3eb19a3702b'
@@ -114,6 +119,7 @@ PaymentRequestPrecheck _readyPrecheck() => PaymentRequestPrecheck(
         amountZatoshi: amountZatoshi,
         feeZatoshi: BigInt.from(10000),
         needsSaplingParams: false,
+        memo: memo,
         isPaymentRequest: isPaymentRequest,
         requestedBy: requestedBy,
         requestedAmountZatoshi: requestedAmountZatoshi,
@@ -194,6 +200,14 @@ class _StallingSendApi {
   );
 }
 
+class _TestRpcEndpoint extends RpcEndpointNotifier {
+  @override
+  RpcEndpointConfig build() => const RpcEndpointConfig(
+    networkName: 'main',
+    lightwalletdUrl: 'https://example.invalid:443',
+  );
+}
+
 Future<ProviderContainer> _pumpHost(
   WidgetTester tester, {
   List<AddressBookContact> contacts = const [],
@@ -201,6 +215,7 @@ Future<ProviderContainer> _pumpHost(
   bool addressBookPending = false,
   PaymentRequestPrecheck? precheck,
   WidgetBuilder? homeScreen,
+  PaymentRequestScanner? scanner,
 }) async {
   tester.view.physicalSize = const Size(1280, 900);
   tester.view.devicePixelRatio = 1.0;
@@ -210,7 +225,12 @@ Future<ProviderContainer> _pumpHost(
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
-      for (final path in ['/home', '/send', '/send/review'])
+      for (final path in [
+        '/home',
+        '/send',
+        '/send/review',
+        '/send/request-scan',
+      ])
         GoRoute(
           path: path,
           builder: (context, _) => path == '/home' && homeScreen != null
@@ -225,6 +245,9 @@ Future<ProviderContainer> _pumpHost(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        rpcEndpointProvider.overrideWith(_TestRpcEndpoint.new),
+        if (scanner != null)
+          paymentRequestScannerProvider.overrideWithValue(scanner),
         paymentRequestPrecheckProvider.overrideWithValue(
           precheck ?? _readyPrecheck(),
         ),
@@ -264,7 +287,9 @@ Future<ProviderContainer> _pumpHost(
             routerConfig: router,
             builder: (context, child) => AppTheme(
               data: AppThemeData.light,
-              child: PaymentRequestHost(router: router, child: child!),
+              child: AppToastHost(
+                child: PaymentRequestHost(router: router, child: child!),
+              ),
             ),
           );
         },
@@ -346,6 +371,10 @@ String _location(ProviderContainer container) =>
     _routers[container]!.routerDelegate.currentConfiguration.uri.path;
 
 void main() {
+  registerPaymentRequestScannerTests((tester, scanner) async {
+    final container = await _pumpHost(tester, scanner: scanner);
+    return (container, _routers[container]!);
+  }, holdRelease: (gate) => _discardGate = gate);
   setUp(() {
     _discarded.clear();
     _discardGate = null;
@@ -357,11 +386,11 @@ void main() {
     final container = await _pumpHost(tester);
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(find.text('Payment request'), findsOneWidget);
-    expect(find.text('Requester'), findsOneWidget);
+    expect(find.text('Request from'), findsOneWidget);
     expect(find.text('Coffee shop'), findsOneWidget);
     expect(find.text('Requested by Coffee shop'), findsNothing);
     expect(
@@ -390,7 +419,7 @@ void main() {
 
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(find.text('Payment request'), findsOneWidget);
@@ -439,25 +468,27 @@ void main() {
     final semantics = tester.ensureSemantics();
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_replacementRequest, source: PaymentRequestSource.link);
+        .present(_replacementRequest, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(
       tester
-          .getSemantics(find.bySemanticsLabel('Show requester details'))
+          .getSemantics(
+            find.bySemanticsLabel('Show requester information for Bakery'),
+          )
           .value,
-      'Label from link, Bakery',
+      'Name supplied in the request.',
       reason: 'the summary announces a link label, not a verified sender',
     );
 
     await tester.tap(
-      find.byKey(const ValueKey('payment_request_requester_help')),
+      find.byKey(const ValueKey('payment_request_requester_toggle')),
     );
     await tester.pumpAndSettle();
 
     expect(
       find.text(
-        "Name supplied by the payment link. Vizor can't verify who sent it.",
+        "This name comes from the request. It doesn't confirm who owns the receiving address.",
       ),
       findsOneWidget,
     );
@@ -480,7 +511,7 @@ void main() {
             label: 'Coffee shop',
             message: 'First request note',
           ),
-          source: PaymentRequestSource.link,
+          source: PaymentRequestSource.qrCode,
         );
     await tester.pumpAndSettle();
 
@@ -495,7 +526,7 @@ void main() {
 
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_replacementRequest, source: PaymentRequestSource.link);
+        .present(_replacementRequest, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(find.text('Bakery'), findsOneWidget);
@@ -507,16 +538,51 @@ void main() {
     expect(_location(container), '/home');
   });
 
+  for (final label in ['Review', 'Edit']) {
+    testWidgets('captured $label action rejects protected navigation', (
+      tester,
+    ) async {
+      final container = await _pumpHost(tester);
+      container
+          .read(paymentRequestFlowProvider.notifier)
+          .present(_request, source: PaymentRequestSource.qrCode);
+      await tester.pumpAndSettle();
+      final action = tester
+          .widget<AppButton>(
+            find.widgetWithText(
+              AppButton,
+              label == 'Review' ? 'Review payment' : label,
+            ),
+          )
+          .onPressed!;
+      final lease = container
+          .read(externalActionGuardProvider.notifier)
+          .tryProtect()!;
+      action();
+      await tester.pumpAndSettle();
+      expect(_location(container), '/home');
+      expect(container.read(paymentRequestFlowProvider), isNotNull);
+      expect(_discarded, isEmpty);
+      lease.release();
+      action();
+      await tester.pumpAndSettle();
+      expect(
+        _location(container),
+        label == 'Review' ? '/send/review' : '/send',
+      );
+    });
+  }
+
   testWidgets('Review routes to the review screen and keeps the proposal', (
     tester,
   ) async {
     final container = await _pumpHost(tester);
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Review'));
+    await tester.tap(find.text('Review payment'));
     await tester.pumpAndSettle();
 
     expect(_location(container), '/send/review');
@@ -534,7 +600,7 @@ void main() {
     final container = await _pumpHost(tester);
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Edit'));
@@ -553,7 +619,7 @@ void main() {
     final container = await _pumpHost(tester);
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Edit'));
@@ -564,11 +630,19 @@ void main() {
     expect(container.read(paymentRequestFlowProvider), isNull);
     expect(_discarded, [BigInt.from(11)]);
     expect(_location(container), '/home');
+    expect(
+      container.read(externalActionGuardProvider.notifier).tryProtect(),
+      isNull,
+    );
 
     gate.complete();
     await tester.pumpAndSettle();
 
     expect(_location(container), '/send');
+    expect(
+      container.read(externalActionGuardProvider).pendingNavigationCount,
+      0,
+    );
   });
 
   testWidgets('Cancel dismisses the card and releases the proposal', (
@@ -577,7 +651,7 @@ void main() {
     final container = await _pumpHost(tester);
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('payment_request_close')));
@@ -597,7 +671,7 @@ void main() {
     );
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(
@@ -627,7 +701,7 @@ void main() {
     );
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(
@@ -653,7 +727,7 @@ void main() {
     );
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(find.text('Your account'), findsNothing);
@@ -673,7 +747,7 @@ void main() {
     final container = await _pumpHost(tester, addressBookPending: true);
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
@@ -695,7 +769,7 @@ void main() {
     final container = await _pumpHost(tester);
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(find.text(r'$50.00'), findsNothing);
@@ -717,7 +791,7 @@ void main() {
     );
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(
@@ -736,7 +810,7 @@ void main() {
     final container = await _pumpHost(tester, precheck: api.precheck);
     container
         .read(paymentRequestFlowProvider.notifier)
-        .present(_request, source: PaymentRequestSource.link);
+        .present(_request, source: PaymentRequestSource.qrCode);
     await tester.pumpAndSettle();
 
     expect(
@@ -744,7 +818,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Check again'), findsOneWidget);
-    expect(find.text('Review'), findsNothing);
+    expect(find.text('Review payment'), findsNothing);
     final primary = tester.widget<AppButton>(
       find.byKey(const ValueKey('payment_request_continue')),
     );
@@ -761,7 +835,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.proposeAttempts, asked + 1);
-    expect(find.text('Review'), findsOneWidget);
+    expect(find.text('Review payment'), findsOneWidget);
     expect(find.text('Check again'), findsNothing);
     expect(
       container.read(paymentRequestFlowProvider)!.canReview,

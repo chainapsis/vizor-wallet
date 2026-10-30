@@ -9,6 +9,63 @@ import 'package:zcash_wallet/src/rust/api/network_privacy.dart'
     as rust_network_privacy;
 
 void main() {
+  test('direct body budget aborts a chunked reply before EOF', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final client = NetworkHttpClient(torDesired: () => false);
+    addTearDown(() async {
+      client.close();
+      await server.close(force: true);
+    });
+    final headers = Completer<void>();
+    final finish = Completer<void>();
+    final serving = Completer<void>();
+    server.listen((request) async {
+      request.response.bufferOutput = false;
+      request.response.add(List.filled(33, 1));
+      await request.response.flush();
+      headers.complete();
+      await finish.future;
+      try {
+        await request.response.close();
+      } catch (_) {}
+      serving.complete();
+    });
+    final request = client.request(
+      'GET',
+      Uri.parse('http://127.0.0.1:${server.port}/'),
+      maxBodyBytes: 32,
+    );
+    final rejected = expectLater(request, throwsA(isA<HttpException>()));
+    await headers.future;
+    try {
+      await rejected.timeout(const Duration(seconds: 2));
+    } finally {
+      finish.complete();
+      await serving.future;
+    }
+  });
+
+  test('Tor body budget reaches both ordinary requests', () async {
+    final bridge = _RecordingTorBridge([
+      NetworkHttpResponse(statusCode: 200, bodyBytes: Uint8List(0)),
+      NetworkHttpResponse(statusCode: 200, bodyBytes: Uint8List(0)),
+    ]);
+    final client = NetworkHttpClient(
+      torDesired: () => true,
+      torBootstrapping: () => false,
+      torBridge: bridge,
+    );
+    addTearDown(client.close);
+    for (final method in ['GET', 'POST']) {
+      await client.request(
+        method,
+        Uri.parse('https://example.com'),
+        maxBodyBytes: 32,
+      );
+    }
+    expect(bridge.bodyLimits, [32, 32]);
+  });
+
   test('Tor mode routes GET through the Rust bridge', () async {
     final bridge = _RecordingTorBridge([
       NetworkHttpResponse(
@@ -670,6 +727,7 @@ class _RecordingTorBridge implements TorHttpBridge {
   final List<Object> responses;
   final requests = <_RecordedRequest>[];
   final timeouts = <Duration?>[];
+  final bodyLimits = <int?>[];
 
   @override
   Future<NetworkHttpResponse> download(
@@ -699,8 +757,10 @@ class _RecordingTorBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     timeouts.add(timeout);
+    bodyLimits.add(maxBodyBytes);
     requests.add(
       _RecordedRequest(
         method: 'GET',
@@ -718,8 +778,10 @@ class _RecordingTorBridge implements TorHttpBridge {
     required List<int> bodyBytes,
     required Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     timeouts.add(timeout);
+    bodyLimits.add(maxBodyBytes);
     requests.add(
       _RecordedRequest(
         method: 'POST',
@@ -752,6 +814,7 @@ class _HeldFirstResponseTorBridge extends _RecordingTorBridge {
     required Map<String, String> headers,
     required Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) async {
     if (requests.isEmpty) await _firstResponse.future;
     return super.get(
@@ -779,6 +842,7 @@ class _FailingTorBridge implements TorHttpBridge {
     required Map<String, String> headers,
     required Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) => throw StateError('Tor is not ready');
 
   @override
@@ -788,6 +852,7 @@ class _FailingTorBridge implements TorHttpBridge {
     required List<int> bodyBytes,
     required Duration? timeout,
     Future<void>? cancelSignal,
+    int? maxBodyBytes,
   }) => throw StateError('Tor is not ready');
 }
 

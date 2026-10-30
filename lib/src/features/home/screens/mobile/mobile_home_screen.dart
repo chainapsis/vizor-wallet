@@ -1,3 +1,6 @@
+import '../../providers/home_activity_state.dart';
+import '../../widgets/home_activity_skeleton.dart';
+import '../../../activity/widgets/deferred_gift_card_recovery.dart';
 import 'dart:async';
 
 import '../../../../providers/app_security_provider.dart';
@@ -8,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../../../main.dart' show log;
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/feedback/app_review.dart';
@@ -18,14 +20,19 @@ import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
+import '../../../../core/layout/mobile/mobile_top_nav.dart';
+import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
+import '../../../../core/navigation/mobile_sidebar_route_observer.dart';
+import '../../../../core/navigation/route_stack.dart';
 import '../../../../core/privacy/privacy_mask.dart';
-import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/block_spacing_provider.dart';
+import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
 import '../../../../providers/voting/voting_config_source_provider.dart';
@@ -36,11 +43,13 @@ import '../../../../providers/sync_failure.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_display_progress_provider.dart';
 import '../../../../providers/sync_provider.dart';
+import '../../../../providers/pending_activity_evidence_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
 import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/gift_card_activity_index.dart';
+import '../../../activity/activity_eta_provider.dart';
 import '../../../activity/activity_row_mapper.dart';
 import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
@@ -55,11 +64,12 @@ import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
+import '../../services/transparent_balance_display.dart';
+import '../../widgets/mobile/shield/mobile_shield_backdrop.dart';
 import '../../providers/backup_reminder_provider.dart';
+import '../../providers/nu7_announcement_provider.dart';
+import '../../widgets/nu7_announcement.dart';
 import '../../widgets/mobile_home_carousel.dart';
-import '../../services/transparent_shielding_service.dart';
-import 'mobile_keystone_shield_screen.dart';
-import 'mobile_ledger_shield_screen.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
 /// up to ten recent activity rows — Figma `HOME` section frames
@@ -83,10 +93,7 @@ class MobileHomeScreen extends ConsumerWidget {
     );
     final isCurrentHomeRoute = GoRouterState.of(context).uri.path == '/home';
 
-    final isImporting =
-        activeAccountUuid != null &&
-        !sync.hasAccountScopedData &&
-        sync.failure == null;
+    final isImporting = activeAccountUuid != null && sync.isImportingAccount;
 
     return SwapActivityStatusAutoRefresh(
       child: Stack(
@@ -99,10 +106,13 @@ class MobileHomeScreen extends ConsumerWidget {
               children: [
                 const SizedBox(height: AppSpacing.s),
                 Builder(
-                  builder: (context) => MobileTopNavAccount(
-                    showSyncStatus: !isImporting,
-                    onAccountTap: () => showMobileAccountsSheet(context),
-                  ),
+                  builder: (context) =>
+                      MobileNavigationScope.isSidebarOf(context)
+                      ? const MobileTopNav.back(title: 'Home')
+                      : MobileTopNavAccount(
+                          showSyncStatus: !isImporting,
+                          onAccountTap: () => showMobileAccountsSheet(context),
+                        ),
                 ),
                 Expanded(
                   // VZR-74: dissolve scrolled content under the top nav
@@ -125,6 +135,7 @@ class MobileHomeScreen extends ConsumerWidget {
           ),
           const _SyncKeepAwakePromptHost(),
           const _IronwoodMigrationAnnouncementHost(),
+          const _Nu7AnnouncementHost(),
           _IronwoodMigrationAttentionMountGate(
             isHomeCurrent: isCurrentHomeRoute,
           ),
@@ -340,9 +351,10 @@ class _IronwoodMigrationAttentionHostState
     if (!mounted || _showing || _resumeRefreshInProgress) return;
     if (GoRouterState.of(context).uri.path != '/home') return;
     final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
-    if (cta.mode != IronwoodHomeMigrationCtaMode.resume) return;
+    final stopped = cta.mode == IronwoodHomeMigrationCtaMode.stopped;
+    if (cta.mode != IronwoodHomeMigrationCtaMode.resume && !stopped) return;
     final accountUuid = cta.accountUuid;
-    final runId = cta.status?.activeRunId;
+    final runId = mobileIronwoodMigrationAttentionRunId(cta.status);
     final sync = ref.read(syncProvider).value;
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(
@@ -352,6 +364,7 @@ class _IronwoodMigrationAttentionHostState
       isKeystone: ref
           .read(accountProvider.notifier)
           .isKeystoneAccount(accountUuid),
+      blockSpacing: ref.read(blockSpacingProvider),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -409,9 +422,9 @@ class _IronwoodMigrationAttentionHostState
           return MobileIronwoodMigrationAttentionSheetBody(
             kind: attention.kind,
             count: attention.count,
-            onOpenMigration: () =>
-                Navigator.of(sheetContext)
-                    .pop(_IronwoodAttentionAction.openMigration),
+            onOpenMigration: () => Navigator.of(
+              sheetContext,
+            ).pop(_IronwoodAttentionAction.openMigration),
             onLater: () =>
                 Navigator.of(sheetContext).pop(_IronwoodAttentionAction.later),
           );
@@ -419,10 +432,16 @@ class _IronwoodMigrationAttentionHostState
       );
       if (!mounted) return;
       if (action == _IronwoodAttentionAction.openMigration) {
-        context.push(
-          '/migration/private/status',
-          extra: const MobileIronwoodMigrationStatusEntry(),
-        );
+        // The stopped sheet's button says "Move remaining balance".
+        if (attention.kind ==
+            MobileIronwoodMigrationAttentionKind.upgradeStopped) {
+          context.push('/migration/options');
+        } else {
+          context.push(
+            '/migration/private/status',
+            extra: const MobileIronwoodMigrationStatusEntry(),
+          );
+        }
       }
     } finally {
       _showing = false;
@@ -479,9 +498,9 @@ class _IronwoodMigrationAnnouncementHostState
       final action = await showAppMobileSheet<_IronwoodAnnouncementAction>(
         context: context,
         builder: (sheetContext) => MobileIronwoodMigrationAnnouncementSheet(
-          onStartMigration: () =>
-              Navigator.of(sheetContext)
-                  .pop(_IronwoodAnnouncementAction.startMigration),
+          onStartMigration: () => Navigator.of(
+            sheetContext,
+          ).pop(_IronwoodAnnouncementAction.startMigration),
           onOpenReleaseNotes: () => unawaited(_openReleaseNotes()),
         ),
       );
@@ -517,6 +536,98 @@ class _IronwoodMigrationAnnouncementHostState
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       // The announcement remains open so the user can retry.
+    }
+  }
+}
+
+/// Shows the NU7 announcement once per network while home is visible and
+/// uncovered.
+class _Nu7AnnouncementHost extends ConsumerStatefulWidget {
+  const _Nu7AnnouncementHost();
+
+  @override
+  ConsumerState<_Nu7AnnouncementHost> createState() =>
+      _Nu7AnnouncementHostState();
+}
+
+class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
+  bool _showing = false;
+  String? _shownFor;
+  GoRouter? _router;
+  late final MobileSidebarRouteObserver _popups;
+
+  @override
+  void initState() {
+    super.initState();
+    // Root sheets and dialogs do not change the router's location.
+    _popups = ref.read(mobileSidebarRouteObserverProvider)
+      ..addListener(_scheduleEvaluate);
+    _scheduleEvaluate();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (identical(_router, router)) return;
+    _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    _router = router;
+    router.routerDelegate.addListener(_scheduleEvaluate);
+  }
+
+  @override
+  void dispose() {
+    _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    _popups.removeListener(_scheduleEvaluate);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(nu7AnnouncementProvider, (_, _) => _evaluate());
+    return const SizedBox.shrink();
+  }
+
+  void _scheduleEvaluate() {
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (mounted) _evaluate();
+      })
+      ..ensureVisualUpdate();
+  }
+
+  void _evaluate() {
+    final network = ref.read(nu7AnnouncementProvider).value?.network;
+    if (network == null || _showing || _shownFor == network) return;
+    // This branch stays mounted behind other tabs, pushed routes and sheets.
+    if (_router?.routerDelegate.currentConfiguration.uri.path != '/home' ||
+        !isRouteTopmost(context)) {
+      return;
+    }
+    _shownFor = network;
+    unawaited(_show(network));
+  }
+
+  Future<void> _show(String network) async {
+    _showing = true;
+    try {
+      await showAppMobileSheet<void>(
+        context: context,
+        builder: (sheetContext) => SingleChildScrollView(
+          child: Nu7AnnouncementContent(
+            onClose: () => Navigator.of(sheetContext).pop(),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      try {
+        await ref.read(nu7AnnouncementStoreProvider).markSeen(network);
+      } catch (_) {
+        return;
+      }
+      if (mounted) ref.invalidate(nu7AnnouncementProvider);
+    } finally {
+      _showing = false;
     }
   }
 }
@@ -779,14 +890,9 @@ class _ImportingBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.appTheme == AppThemeData.dark;
-    final assetName = isDark
-        ? 'assets/illustrations/home_importing_background_dark.png'
-        : 'assets/illustrations/home_importing_background_light.png';
-
     return Positioned.fill(
       child: Image.asset(
-        assetName,
+        'assets/illustrations/home_importing_background.webp',
         key: const ValueKey('mobile_home_importing_background'),
         fit: BoxFit.cover,
         alignment: Alignment.topCenter,
@@ -835,34 +941,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
   bool _isShieldingBalance = false;
 
-  Future<void> _openTransactionStatus(
+  void _openTransactionStatus(
     BuildContext context,
     WidgetRef ref,
     rust_sync.TransactionInfo transaction, {
     GiftCardActivityMetadata? giftCard,
-  }) async {
+  }) {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-
-    rust_sync.TransactionDetail? detail;
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      detail = await rust_sync.getTransactionDetail(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        txidHex: transaction.txidHex,
-        txKind: transaction.txKind,
-      );
-    } catch (e, st) {
-      log('MobileHome: transaction detail load failed: $e\n$st');
-    }
-    if (!mounted) return;
-    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
-      return;
-    }
-    if (!context.mounted) return;
 
     _pushUsedScreen(
       Uri(
@@ -873,7 +959,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
-        initialDetail: detail,
+        sourceAccountUuid: accountUuid,
         giftCard: giftCard,
       ),
     );
@@ -893,6 +979,17 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       row: buildTransactionActivityRow(
         context: context,
         transaction: transaction,
+        privateQueriesEnabled: ref.watch(enhancePirProvider),
+        showPendingEstimate: !ref
+            .watch(activityEtaExcludedTxidsProvider)
+            .contains(activityTxidKey(transaction.txidHex)),
+        pendingLabel:
+            activityEtaLabelFor(
+              transaction: transaction,
+              labels: ref.watch(activityEtaLabelsProvider),
+              giftCard: giftCard,
+            ) ??
+            ref.watch(activityPendingFallbackLabelProvider),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,
@@ -902,15 +999,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         privacyModeEnabled: privacyModeEnabled,
         dateOnlyTimestamp: true,
         onTap: () => unawaited(
-          duringAppReviewBusy(
-            ref,
-            () => _openTransactionStatus(
+          duringAppReviewBusy(ref, () async {
+            _openTransactionStatus(
               context,
               ref,
               transaction,
               giftCard: giftCard,
-            ),
-          ),
+            );
+          }),
         ),
       ),
     );
@@ -926,6 +1022,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
         initialTransaction: transaction,
+        sourceAccountUuid: ref.read(accountProvider).value?.activeAccountUuid,
       ),
     );
   }
@@ -963,68 +1060,26 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
   Future<void> _shieldTransparentBalance() async {
     if (_isShieldingBalance) return;
-
-    late final String accountUuid;
-    try {
-      accountUuid = activeShieldingAccountUuid(ref);
-    } catch (_) {
-      _showShieldToast('No active account.');
-      return;
-    }
-
-    final accountNotifier = ref.read(accountProvider.notifier);
-    final hardwareSignerKind = accountNotifier.hardwareSignerKindForAccount(
-      accountUuid,
-    );
-    if (hardwareSignerKind == HardwareSignerKind.ledger) {
-      final result = await context.push<MobileLedgerShieldResult>(
-        '/home/ledger-shield',
-      );
-      if (mounted && result != null) {
-        showAppToast(context, 'Shielding complete');
-      }
-      return;
-    }
-    if (hardwareSignerKind == HardwareSignerKind.keystone) {
-      final result = await context.push<MobileKeystoneShieldResult>(
-        '/home/keystone-shield',
-      );
-      if (!mounted || result == null) return;
-      final message = result.message;
-      if (message != null && message.isNotEmpty) {
-        _showShieldToast(message);
-      } else if (result.succeeded) {
-        showAppToast(context, 'Shielding complete');
-      }
-      return;
-    }
-
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    final kind = ref
+        .read(accountProvider.notifier)
+        .hardwareSignerKindForAccount(accountUuid);
+    final route = switch (kind) {
+      HardwareSignerKind.ledger => '/home/ledger-shield',
+      HardwareSignerKind.keystone => '/home/keystone-shield',
+      _ => '/home/shield',
+    };
+    final backdrop = MobileShieldBackdropHost.capture(context);
     setState(() => _isShieldingBalance = true);
     try {
-      final result = await shieldTransparentSoftwareBalance(
-        ref: ref,
-        accountUuid: accountUuid,
-        logContext: 'MobileHome',
-      );
-      if (!mounted) return;
-      final warning = shieldBalanceBroadcastStatusMessage(result);
-      if (warning != null) {
-        _showShieldToast(warning);
-      } else {
-        showAppToast(context, 'Shielding complete');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      _showShieldToast(friendlyShieldBalanceError(e));
+      await context.push<void>(route, extra: backdrop);
     } finally {
+      backdrop?.dispose();
       if (mounted) {
         setState(() => _isShieldingBalance = false);
       }
     }
-  }
-
-  void _showShieldToast(String message) {
-    showAppToast(context, message, iconName: AppIcons.warning);
   }
 
   String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
@@ -1048,17 +1103,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     // button does.
     final sendDisabled = ref.watch(migrationSendGateProvider);
     final shieldedBalance = migrationRequired
-        ? sync.orchardBalance + sync.orchardPendingBalance
-        : sync.saplingBalance +
-              sync.orchardBalance +
-              sync.ironwoodBalance +
-              sync.saplingPendingBalance +
-              sync.orchardPendingBalance +
-              sync.ironwoodPendingBalance;
-    final transparentBalance =
-        sync.transparentBalance + sync.transparentPendingBalance;
+        ? sync.displayOrchardBalance + sync.displayOrchardPendingBalance
+        : sync.displayShieldedBalance;
+    final transparentBalance = TransparentBalanceDisplay.of(sync);
     final hasBalance =
-        shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
+        shieldedBalance > BigInt.zero ||
+        (transparentBalance.amount ?? BigInt.zero) > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final fiatBalanceText = _mobileHomeFiatTextForZatoshi(
       shieldedBalance,
@@ -1082,17 +1132,19 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           ref
               .read(accountProvider.notifier)
               .isKeystoneAccount(activeAccountUuid),
+      blockSpacing: ref.watch(blockSpacingProvider),
     );
 
     final uuid = activeAccountUuid;
-    final giftCardActivityIndex = uuid == null
-        ? GiftCardActivityIndex.empty
-        : ref.watch(giftCardActivityIndexProvider(uuid)).value ??
-              GiftCardActivityIndex.empty;
-    final swapItems = uuid == null
-        ? const <SwapActivityRowItem>[]
-        : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
-              const <SwapActivityRowItem>[];
+    final giftCardSource = uuid == null
+        ? null
+        : ref.watch(giftCardActivityIndexProvider(uuid));
+    final swapSource = uuid == null
+        ? null
+        : ref.watch(swapActivityRowItemsProvider(uuid));
+    final giftCardActivityIndex =
+        giftCardSource?.value ?? GiftCardActivityIndex.empty;
+    final swapItems = swapSource?.value ?? const <SwapActivityRowItem>[];
     final absorption = sync.recentTransactions.isEmpty
         ? SwapActivityLegAbsorption.empty
         : matchSwapActivityLegAbsorption(
@@ -1109,7 +1161,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             context,
             ref,
             tx,
-            giftCardActivityIndex.metadataFor(tx),
+            giftCardActivityIndex.metadataFor(
+              tx,
+              transactions: sync.recentTransactions,
+            ),
             privacyModeEnabled: privacyModeEnabled,
           ),
       for (final item in swapItems)
@@ -1141,35 +1196,53 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         entry.row,
     ];
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(
+    final activityState = homeActivityState(
+      accountUuid: activeAccountUuid,
+      sync: sync,
+      hasRows: recentRows.isNotEmpty,
+      localSources: [?giftCardSource, ?swapSource],
+    );
+    final activityLoading = activityState == HomeActivityState.loading;
+
+    final content = ListView(
+      padding: EdgeInsets.fromLTRB(
         AppSpacing.sm,
         AppSpacing.sm,
         AppSpacing.sm,
-        kMobileTabBarHeight + AppSpacing.lg,
+        MobileNavigationScope.bottomClearanceOf(
+          context,
+          kMobileTabBarHeight + AppSpacing.lg,
+        ),
       ),
       children: [
         if (sync.failure?.kind == SyncFailureKind.privateStatusCoverage) ...[
           _PrivateStatusCoverageNotice(
             message: sync.failure!.userMessage,
-            onSettings: () => _pushUsedScreen('/settings'),
+            onSettings: () {
+              _expectReviewVisit('/settings');
+              context.go('/settings');
+            },
           ),
           const SizedBox(height: AppSpacing.s),
         ],
         Column(
           children: [
             _BalanceCard(
-              balanceText: privacyModeEnabled
+              balanceText: !sync.hasDisplayBalance
+                  ? '—'
+                  : privacyModeEnabled
                   ? fixedPrivacyMask()
-                  : ZecAmount.fromZatoshi(shieldedBalance)
-                        .compactBalance
-                        .amountText,
+                  : ZecAmount.fromZatoshi(
+                      shieldedBalance,
+                    ).compactBalance.amountText,
               fiatBalanceText: shieldedFiatBalanceText,
               priceChange24hPct: priceChange24hPct,
-              transparentBalanceText: ZecAmount.fromZatoshi(transparentBalance)
-                  .compactBalance
-                  .amountText,
-              hasTransparentBalance: transparentBalance > BigInt.zero,
+              transparentBalanceText: transparentBalance.text(
+                (amount) =>
+                    ZecAmount.fromZatoshi(amount).compactBalance.amountText,
+              ),
+              transparentBalanceHint: transparentBalance.hint,
+              hasTransparentBalance: transparentBalance.visible,
               canShieldBalance: sync.canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
               privacyModeEnabled: privacyModeEnabled,
@@ -1179,7 +1252,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               onIronwoodMigrationTap: () {
                 final target = switch (widget.ironwoodMigrationCta.mode) {
                   IronwoodHomeMigrationCtaMode.start => '/migration/intro',
-                  IronwoodHomeMigrationCtaMode.resume =>
+                  IronwoodHomeMigrationCtaMode.resume ||
+                  IronwoodHomeMigrationCtaMode.stopped =>
                     '/migration/private/status',
                   IronwoodHomeMigrationCtaMode.hidden => null,
                 };
@@ -1190,7 +1264,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               ),
             ),
             const SizedBox(height: AppSpacing.s),
-            if (hasBalance)
+            if (hasBalance || !sync.hasDisplayBalance)
               Row(
                 children: [
                   Expanded(
@@ -1297,10 +1371,13 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        if (recentRows.isEmpty)
-          const _EmptyActivity()
+        if (recentRows.isEmpty && !activityLoading)
+          _EmptyActivity(
+            isUnavailable: activityState == HomeActivityState.unavailable,
+          )
         else
           Padding(
+            key: const ValueKey('mobile_home_activity_list'),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.xs,
               vertical: AppSpacing.s,
@@ -1315,17 +1392,43 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   },
                 ),
                 const SizedBox(height: AppSpacing.md),
-                for (var i = 0; i < recentRows.length; i++) ...[
-                  if (i > 0) const SizedBox(height: AppSpacing.s),
-                  KeyedSubtree(
-                    key: ValueKey('mobile_home_activity_row_$i'),
-                    child: ActivityFeedRowGroup(row: recentRows[i]),
+                Semantics(
+                  label: activityLoading ? 'Loading activity' : null,
+                  child: Column(
+                    children: [
+                      for (
+                        var i = 0;
+                        i <
+                            (activityLoading
+                                ? homeActivitySkeletonCount
+                                : recentRows.length);
+                        i++
+                      ) ...[
+                        if (i > 0) const SizedBox(height: AppSpacing.s),
+                        if (activityLoading)
+                          HomeActivitySkeletonRow(
+                            key: ValueKey('mobile_home_activity_skeleton_$i'),
+                          )
+                        else
+                          KeyedSubtree(
+                            key: ValueKey('mobile_home_activity_row_$i'),
+                            child: ActivityFeedRowGroup(row: recentRows[i]),
+                          ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               ],
             ),
           ),
       ],
+    );
+    return DeferredGiftCardRecovery(
+      accountUuid: activeAccountUuid,
+      ready:
+          activityState == HomeActivityState.rows ||
+          activityState == HomeActivityState.empty,
+      child: content,
     );
   }
 }
@@ -1739,6 +1842,7 @@ class _BalanceCard extends StatelessWidget {
     required this.fiatBalanceText,
     required this.priceChange24hPct,
     required this.transparentBalanceText,
+    this.transparentBalanceHint,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
     required this.isShieldingBalance,
@@ -1754,6 +1858,9 @@ class _BalanceCard extends StatelessWidget {
   final String? fiatBalanceText;
   final double? priceChange24hPct;
   final String transparentBalanceText;
+
+  /// Why private transparent recovery stopped, shown on the transparent row.
+  final String? transparentBalanceHint;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
   final bool isShieldingBalance;
@@ -1910,6 +2017,7 @@ class _BalanceCard extends StatelessWidget {
             _AnimatedMobileTransparentBalanceStrip(
               visible: hasTransparentBalance,
               balanceText: transparentBalanceText,
+              balanceHint: transparentBalanceHint,
               canShieldBalance: canShieldBalance,
               isShieldingBalance: isShieldingBalance,
               privacyModeEnabled: privacyModeEnabled,
@@ -1992,6 +2100,7 @@ class _AnimatedMobileTransparentBalanceStrip extends StatefulWidget {
   const _AnimatedMobileTransparentBalanceStrip({
     required this.visible,
     required this.balanceText,
+    this.balanceHint,
     required this.canShieldBalance,
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
@@ -2000,6 +2109,7 @@ class _AnimatedMobileTransparentBalanceStrip extends StatefulWidget {
 
   final bool visible;
   final String balanceText;
+  final String? balanceHint;
   final bool canShieldBalance;
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
@@ -2019,6 +2129,7 @@ class _AnimatedMobileTransparentBalanceStripState
   late final Animation<Offset> _offset;
 
   late String _balanceText;
+  String? _balanceHint;
   late bool _canShieldBalance;
   late bool _isShieldingBalance;
   late bool _privacyModeEnabled;
@@ -2084,6 +2195,7 @@ class _AnimatedMobileTransparentBalanceStripState
 
   void _cacheVisibleStrip() {
     _balanceText = widget.balanceText;
+    _balanceHint = widget.balanceHint;
     _canShieldBalance = widget.canShieldBalance;
     _isShieldingBalance = widget.isShieldingBalance;
     _privacyModeEnabled = widget.privacyModeEnabled;
@@ -2118,6 +2230,7 @@ class _AnimatedMobileTransparentBalanceStripState
               ignoring: !widget.visible,
               child: _MobileTransparentBalanceStrip(
                 balanceText: _balanceText,
+                balanceHint: _balanceHint,
                 canShieldBalance: _canShieldBalance,
                 isShieldingBalance: _isShieldingBalance,
                 privacyModeEnabled: _privacyModeEnabled,
@@ -2134,6 +2247,7 @@ class _AnimatedMobileTransparentBalanceStripState
 class _MobileTransparentBalanceStrip extends StatelessWidget {
   const _MobileTransparentBalanceStrip({
     required this.balanceText,
+    this.balanceHint,
     required this.canShieldBalance,
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
@@ -2141,6 +2255,9 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
   });
 
   final String balanceText;
+
+  /// Why private recovery stopped, shown when the balance text is tapped.
+  final String? balanceHint;
   final bool canShieldBalance;
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
@@ -2149,9 +2266,20 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final hint = balanceHint;
     final displayedBalance = hideAmountIfPrivacyMode(
       '$balanceText $kZcashDefaultCurrencyTicker',
       privacyModeEnabled: privacyModeEnabled,
+    );
+    final balanceLabel = Text(
+      'Transparent: $displayedBalance',
+      key: const ValueKey('mobile_home_transparent_balance_text'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: _mobileHomeLabelMStyle.copyWith(
+        color: colors.text.primary,
+        fontWeight: FontWeight.w500,
+      ),
     );
 
     return SizedBox(
@@ -2174,18 +2302,16 @@ class _MobileTransparentBalanceStrip extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Flexible(
-                    child: Text(
-                      'Transparent: $displayedBalance',
-                      key: const ValueKey(
-                        'mobile_home_transparent_balance_text',
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _mobileHomeLabelMStyle.copyWith(
-                        color: colors.text.primary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    child: hint == null
+                        ? balanceLabel
+                        : AppTooltip(
+                            key: const ValueKey(
+                              'mobile_home_transparent_balance_hint',
+                            ),
+                            message: hint,
+                            tapToShow: true,
+                            child: balanceLabel,
+                          ),
                   ),
                 ],
               ),
@@ -2359,7 +2485,9 @@ class _RecentActivityHeader extends StatelessWidget {
 }
 
 class _EmptyActivity extends StatelessWidget {
-  const _EmptyActivity();
+  const _EmptyActivity({this.isUnavailable = false});
+
+  final bool isUnavailable;
 
   @override
   Widget build(BuildContext context) {
@@ -2370,27 +2498,31 @@ class _EmptyActivity extends StatelessWidget {
         vertical: AppSpacing.s,
       ),
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: Alignment.topCenter,
         child: SizedBox(
           width: _MobileRestImage.canvasWidth,
           child: Column(
             children: [
               Text(
-                'No activity, yet...',
+                isUnavailable
+                    ? 'Unable to load activity.'
+                    : 'No activity, yet...',
                 style: AppTypography.headlineSmall.copyWith(
                   color: colors.text.accent,
                 ),
               ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                'How about running your\nfirst ZEC tx?',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
+              if (!isUnavailable) ...[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'How about running your\nfirst ZEC tx?',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              const _MobileRestImage(),
+                const SizedBox(height: AppSpacing.xxs),
+                const _MobileRestImage(),
+              ],
             ],
           ),
         ),
@@ -2427,7 +2559,7 @@ class _MobileRestImage extends StatelessWidget {
                 left: _imageLeft * scale,
                 top: _imageTop * scale,
                 child: Image.asset(
-                  'assets/illustrations/home_rest_character.png',
+                  'assets/illustrations/home_rest_character.webp',
                   key: const ValueKey('mobile_home_rest_image'),
                   width: _imageWidth * scale,
                   height: _imageHeight * scale,
@@ -2504,11 +2636,11 @@ class _ImportingView extends StatelessWidget {
     );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         _horizontalPadding,
         _topGap,
         _horizontalPadding,
-        _bottomClearance,
+        MobileNavigationScope.bottomClearanceOf(context, _bottomClearance),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {

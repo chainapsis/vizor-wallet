@@ -2,17 +2,24 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
+import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:flutter/services.dart'
+    show FontLoader, LogicalKeyboardKey, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/customise_account_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/create/onboarding_split_view.dart';
+import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_connect_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
-import 'package:zcash_wallet/src/features/onboarding/shared/set_password_screen.dart';
 
 void main() {
   testWidgets('Ledger duplicate error preserves branding and permits retry', (
@@ -52,9 +59,185 @@ void main() {
     expect(attempts, 2);
   });
 
+  for (final ledger in [false, true]) {
+    for (final uncertain in [false, true]) {
+      testWidgets(
+        'interrupted setup retries bootstrap, ledger=$ledger uncertain=$uncertain',
+        (tester) async {
+          await _setDesktopViewport(tester);
+          var imports = 0;
+          var reloads = 0;
+          final security = _RecoverySecurity();
+          Future<void> fail(String _, String _) async {
+            imports++;
+            if (uncertain) {
+              throw WalletAccountStateUncertainException(
+                StateError('DB unavailable'),
+              );
+            }
+            throw WalletAccountSetupInterruptedException(
+              null,
+              StateError('save failed'),
+            );
+          }
+
+          await tester.pumpWidget(
+            _screenHarness(
+              ledger
+                  ? CustomiseAccountScreen.ledger(
+                      onFinish: fail,
+                      ledgerBackTarget: const OnboardingBackTarget.route(
+                        label: 'Set Password',
+                        routePath: '/onboarding/ledger/set-password',
+                      ),
+                    )
+                  : CustomiseAccountScreen(
+                      args: const CustomiseAccountArgs(
+                        setupArgs: SetPasswordScreenArgs.create(
+                          mnemonic: _mnemonic,
+                        ),
+                        pendingPassword: 'Password1!',
+                      ),
+                      onFinish: fail,
+                    ),
+              overrides: [
+                appSecurityProvider.overrideWith(() => security),
+                appBootstrapRetryProvider.overrideWithValue(() async {
+                  reloads++;
+                  expect(security.state.requiresUnlock, isTrue);
+                  if (reloads == 1) {
+                    throw StateError('temporary reload failure');
+                  }
+                }),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey('customise_account_finish_button')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('Retry setup'), findsOneWidget);
+          expect(
+            find.text('Setup interrupted. Retry to recover your wallet.'),
+            findsOneWidget,
+          );
+          expect(
+            tester
+                .renderObject<RenderParagraph>(
+                  find.text('Setup interrupted. Retry to recover your wallet.'),
+                )
+                .didExceedMaxLines,
+            isFalse,
+          );
+          if (!ledger) {
+            expect(
+              tester
+                  .widget<OnboardingTrailingPane>(
+                    find.byType(OnboardingTrailingPane),
+                  )
+                  .backTarget,
+              isNull,
+            );
+          } else {
+            expect(
+              tester
+                  .widget<LedgerOnboardingShell>(
+                    find.byType(LedgerOnboardingShell),
+                  )
+                  .backTarget,
+              isNull,
+            );
+          }
+
+          expect(
+            tester.widget<TextField>(find.byType(TextField)).enabled,
+            isFalse,
+          );
+          expect(
+            tester
+                .widget<AppButton>(
+                  find.byKey(const ValueKey('customise_account_randomise')),
+                )
+                .onPressed,
+            isNull,
+          );
+          await tester.tap(find.text('Retry setup'));
+          await tester.pumpAndSettle();
+          expect(
+            find.text("Couldn't resume setup. Please try again."),
+            findsOneWidget,
+          );
+          await tester.tap(find.text('Retry setup'));
+          await tester.pumpAndSettle();
+          expect(imports, 1);
+          expect(reloads, 2);
+          expect(find.text('Recovering wallet...'), findsOneWidget);
+          expect(_finishButton(tester).onPressed, isNull);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets(
+    'lock during setup reloads before router refresh exposes unlock',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final security = _RecoverySecurity();
+      final refresh = RouterRefreshController();
+      addTearDown(refresh.dispose);
+      final reload = Completer<void>();
+      var reloads = 0;
+      var refreshes = 0;
+      refresh.addListener(() => refreshes++);
+      await tester.pumpWidget(
+        _screenHarness(
+          CustomiseAccountScreen(
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+              pendingPassword: 'Password1!',
+            ),
+            onFinish: (_, _) async {
+              security.lock();
+              refresh.requestRefresh();
+              throw WalletAccountSetupInterruptedException(
+                null,
+                StateError('locked'),
+              );
+            },
+          ),
+          overrides: [
+            appSecurityProvider.overrideWith(() => security),
+            routerRefreshProvider.overrideWithValue(refresh),
+            appBootstrapRetryProvider.overrideWithValue(() async {
+              reloads++;
+              await reload.future;
+            }),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      ProviderScope.containerOf(
+        tester.element(find.byType(CustomiseAccountScreen)),
+      ).read(appSecurityProvider);
+      await tester.tap(
+        find.byKey(const ValueKey('customise_account_finish_button')),
+      );
+      await tester.pump();
+      expect(reloads, 1);
+      expect(refreshes, 0);
+      expect(find.text('Recovering wallet...'), findsOneWidget);
+      reload.complete();
+      await tester.pumpAndSettle();
+      expect(refreshes, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   setUpAll(_loadAppFonts);
 
-  test('customise account is the final create-onboarding step', () {
+  test('customise account keeps its route and sidebar label', () {
     expect(OnboardingStep.customiseAccount.label, 'Customise wallet');
     expect(
       OnboardingStep.customiseAccount.routePath,
@@ -101,91 +284,68 @@ void main() {
     });
   }
 
-  testWidgets('set password continues to customise without creating a wallet', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    CustomiseAccountArgs? routedArgs;
-    final router = GoRouter(
-      initialLocation: '/onboarding/set-password',
-      routes: [
-        GoRoute(
-          path: '/onboarding/set-password',
-          builder: (_, _) => const SetPasswordScreen(
-            args: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
-          ),
-        ),
-        GoRoute(
-          path: '/onboarding/customise-account',
-          builder: (_, state) {
-            routedArgs = state.extra! as CustomiseAccountArgs;
-            return const Text('Customise destination');
-          },
-        ),
-      ],
+  for (final setup in _setupArgsByFlow) {
+    testWidgets(
+      'personalisation forwards its draft and survives back for ${setup.flow.name}',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        SetPasswordScreenArgs? routedArgs;
+        final router = GoRouter(
+          initialLocation: '/customise',
+          routes: [
+            GoRoute(
+              path: '/customise',
+              builder: (_, state) => CustomiseAccountScreen(
+                args:
+                    state.extra as CustomiseAccountArgs? ??
+                    CustomiseAccountArgs(setupArgs: setup),
+                random: _SequenceRandom([0, 1, 2]),
+              ),
+            ),
+            GoRoute(
+              path: setup.desktopPasswordRoutePath,
+              builder: (context, state) {
+                routedArgs = state.extra as SetPasswordScreenArgs;
+                return TextButton(
+                  onPressed: () => context.go(
+                    '/customise',
+                    extra: CustomiseAccountArgs(setupArgs: routedArgs!),
+                  ),
+                  child: const Text('Back to persona'),
+                );
+              },
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await tester.pumpWidget(_routerHarness(router));
+        await tester.enterText(
+          find.byKey(const ValueKey('customise_account_name_field')),
+          'My savings',
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('customise_account_finish_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(routedArgs?.persona?.name, 'My savings');
+        expect(routedArgs?.persona?.profilePictureId, 'pfp-03');
+        expect(routedArgs?.mnemonic, setup.mnemonic);
+        expect(routedArgs?.bip39Passphrase, setup.bip39Passphrase);
+        expect(routedArgs?.birthdayHeight, setup.birthdayHeight);
+        expect(
+          routedArgs?.selectedAdditionalAccountIndices,
+          setup.selectedAdditionalAccountIndices,
+        );
+        await tester.tap(find.text('Back to persona'));
+        await tester.pumpAndSettle();
+        expect(find.text('My savings'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('customise_account_card')),
+          findsOneWidget,
+        );
+      },
     );
-
-    await tester.pumpWidget(_routerHarness(router));
-    expect(
-      tester
-          .widget<OnboardingTrailingPane>(find.byType(OnboardingTrailingPane))
-          .backTarget,
-      isNull,
-    );
-    await tester.enterText(find.byType(TextField).at(0), 'Password1!');
-    await tester.enterText(find.byType(TextField).at(1), 'Password1!');
-    await tester.pump();
-
-    expect(find.text('Set password & continue'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('set_password_submit_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Customise destination'), findsOneWidget);
-    expect(routedArgs?.mnemonic, _mnemonic);
-    expect(routedArgs?.pendingPassword, 'Password1!');
-  });
-
-  testWidgets('import password forwards its complete draft to customise', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    CustomiseAccountArgs? routedArgs;
-    const setupArgs = SetPasswordScreenArgs.importWallet(
-      mnemonic: _mnemonic,
-      bip39Passphrase: 'hidden words',
-      birthdayHeight: 2500000,
-      selectedAdditionalAccountIndices: [1, 2],
-    );
-    final router = GoRouter(
-      initialLocation: '/import/set-password',
-      routes: [
-        GoRoute(
-          path: '/import/set-password',
-          builder: (_, _) => const SetPasswordScreen(args: setupArgs),
-        ),
-        GoRoute(
-          path: '/import/customise-account',
-          builder: (_, state) {
-            routedArgs = state.extra! as CustomiseAccountArgs;
-            return const Text('Import customise destination');
-          },
-        ),
-      ],
-    );
-
-    await tester.pumpWidget(_routerHarness(router));
-    await tester.enterText(find.byType(TextField).at(0), 'Password1!');
-    await tester.enterText(find.byType(TextField).at(1), 'Password1!');
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('set_password_submit_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Import customise destination'), findsOneWidget);
-    expect(routedArgs?.flow, SetPasswordFlow.importWallet);
-    expect(routedArgs?.pendingPassword, 'Password1!');
-    expect(routedArgs?.setupArgs.bip39Passphrase, 'hidden words');
-    expect(routedArgs?.setupArgs.selectedAdditionalAccountIndices, [1, 2]);
-  });
+  }
 
   testWidgets('generates its draft once and keeps it across rebuilds', (
     tester,
@@ -238,6 +398,166 @@ void main() {
           .backTarget,
       isNotNull,
     );
+  });
+
+  for (final flow in ['create', 'import', 'gift', 'ledger']) {
+    testWidgets('renews the name and picture together for $flow setup', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      final random = _SequenceRandom([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+      String? submittedName;
+      String? submittedPicture;
+      Future<void> finish(String name, String picture) async {
+        submittedName = name;
+        submittedPicture = picture;
+      }
+
+      final screen = switch (flow) {
+        'gift' => CustomiseAccountScreen.gift(
+          onFinish: finish,
+          configuresPassword: true,
+          random: random,
+        ),
+        'ledger' => CustomiseAccountScreen.ledger(
+          onFinish: finish,
+          ledgerBackTarget: null,
+          random: random,
+        ),
+        _ => CustomiseAccountScreen(
+          args: CustomiseAccountArgs(
+            setupArgs: flow == 'create'
+                ? const SetPasswordScreenArgs.create(mnemonic: _mnemonic)
+                : const SetPasswordScreenArgs.importWallet(
+                    mnemonic: _mnemonic,
+                    birthdayHeight: 2500000,
+                  ),
+          ),
+          onFinish: finish,
+          random: random,
+        ),
+      };
+      await tester.pumpWidget(_screenHarness(screen));
+      await tester.pump();
+
+      final card = find.byKey(const ValueKey('customise_account_card'));
+      final button = find.byKey(const ValueKey('customise_account_randomise'));
+      final visual = find.byKey(
+        const ValueKey('customise_account_randomise_visual'),
+      );
+      final field = find.byKey(const ValueKey('customise_account_name_field'));
+      final cardRect = tester.getRect(card);
+      final fieldRect = tester.getRect(field);
+      expect(cardRect.size, const Size(396, 140));
+      expect(tester.getSize(button), const Size.square(44));
+      expect(tester.getSize(visual), const Size.square(28));
+      expect(cardRect.contains(tester.getTopLeft(visual)), isTrue);
+      expect(cardRect.contains(tester.getBottomRight(visual)), isTrue);
+      expect(find.text('Windborne Wardbearer'), findsOneWidget);
+
+      await tester.tapAt(tester.getTopLeft(button) + const Offset(2, 22));
+      await tester.pump();
+      expect(find.text('Valiant Wayfinder'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppProfilePicture>(find.byType(AppProfilePicture))
+            .profilePictureId,
+        'pfp-06',
+      );
+
+      await tester.tap(button);
+      await tester.pump();
+      expect(find.text('Resolute Herald'), findsOneWidget);
+      expect(tester.getRect(card), cardRect);
+      expect(tester.getRect(field), fieldRect);
+      final controller = tester.widget<TextField>(field).controller!;
+      expect(
+        controller.selection,
+        TextSelection.collapsed(offset: controller.text.length),
+      );
+      expect(controller.value.composing, TextRange.empty);
+
+      await tester.tap(
+        find.byKey(const ValueKey('customise_account_finish_button')),
+      );
+      await tester.pump();
+      expect(submittedName, 'Resolute Herald');
+      expect(submittedPicture, 'pfp-09');
+      expect(random.nextIntCallCount, 9);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('renews the desktop persona with Shift+Tab and Space', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(
+        _screenHarness(
+          CustomiseAccountScreen(
+            args: const CustomiseAccountArgs(
+              setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+            ),
+            random: _SequenceRandom([0, 1, 2, 3, 4, 5]),
+            onFinish: (_, _) async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.bySemanticsLabel('Randomise account name and profile picture'),
+        findsOneWidget,
+      );
+      // Renew is visually above the name field; preserve the default reading
+      // order, including Tab from the name field directly to Finish setup.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(
+        FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<AppButton>()
+            ?.key,
+        const ValueKey('customise_account_randomise'),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(find.text('Valiant Wayfinder'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('renew replaces an invalid edited name and clears its error', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _screenHarness(
+        CustomiseAccountScreen(
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
+          random: _SequenceRandom([0, 1, 2, 3, 4, 5]),
+          onFinish: (_, _) async {},
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('customise_account_name_field')),
+      '123456789012345678901',
+    );
+    await tester.pump();
+    expect(find.text('Name can be up to 20 characters.'), findsOneWidget);
+    expect(_finishButton(tester).onPressed, isNull);
+    await tester.tap(find.byKey(const ValueKey('customise_account_randomise')));
+    await tester.pump();
+    expect(find.text('Valiant Wayfinder'), findsOneWidget);
+    expect(find.text('Name can be up to 20 characters.'), findsNothing);
+    expect(_finishButton(tester).onPressed, isNotNull);
   });
 
   testWidgets('submits the trimmed edited account name', (tester) async {
@@ -305,6 +625,7 @@ void main() {
     await tester.pumpWidget(
       _screenHarness(
         CustomiseAccountScreen(
+          random: _SequenceRandom([0, 0, 0]),
           args: const CustomiseAccountArgs(
             setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
           ),
@@ -367,8 +688,25 @@ void main() {
       isNull,
     );
 
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('customise_account_randomise')),
+          )
+          .onPressed,
+      isNull,
+    );
+
     finish.complete();
     await tester.pump();
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('customise_account_randomise')),
+          )
+          .onPressed,
+      isNotNull,
+    );
 
     expect(
       tester
@@ -418,10 +756,11 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
   addTearDown(() async => tester.binding.setSurfaceSize(null));
 }
 
-Widget _screenHarness(Widget child) {
+Widget _screenHarness(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ...overrides,
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -466,3 +805,12 @@ const _setupArgsByFlow = <SetPasswordScreenArgs>[
     birthdayHeight: 2500000,
   ),
 ];
+
+class _RecoverySecurity extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+
+  @override
+  void lock() => state = state.copyWith(isUnlocked: false);
+}

@@ -8,7 +8,7 @@ import '../../providers/app_security_provider.dart';
 import '../../providers/payment_request_flow_provider.dart';
 import '../../providers/sync_keep_awake_provider.dart';
 import '../../providers/wallet_provider.dart';
-import '../navigation/payment_uri_busy_surface_provider.dart';
+import '../navigation/external_action_guard_provider.dart';
 import 'app_review.dart';
 
 /// Root sheets/dialogs and imperative routes must not be covered by a review.
@@ -68,7 +68,7 @@ final appReviewSurfaceSafeProvider = Provider<bool>((ref) {
       (ref.watch(walletProvider).value?.hasWallet ?? false) &&
       ref.watch(paymentRequestFlowProvider) == null &&
       !ref.watch(syncKeepAwakePrivacyLockProvider).isLocked &&
-      ref.watch(paymentUriBusySurfaceProvider) == 0;
+      !ref.watch(externalActionGuardProvider).blocks(ExternalAction.appReview);
 });
 
 /// Lives above the router to observe tab-bar interactions as well as home.

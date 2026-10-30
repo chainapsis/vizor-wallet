@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
-import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -129,36 +128,7 @@ void main() {
         ),
         description: 'dismissed announcement to disappear',
       );
-      await tapAppButton(
-        tester,
-        const ValueKey('home_desktop_ironwood_migration_cta_button'),
-      );
-
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_intro_continue_button'),
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_how_it_works_continue_button'),
-      );
-
-      await tapAppWidget(
-        tester,
-        const ValueKey('ironwood_migration_fast_option'),
-      );
-      final selectButton = tester.widget<AppButton>(
-        find.byKey(const ValueKey('ironwood_migration_select_review_button')),
-      );
-      expect(selectButton.onPressed, isNull);
-      await tapAppWidget(
-        tester,
-        const ValueKey('ironwood_migration_private_option'),
-      );
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_select_review_button'),
-      );
+      await openPrivateMigrationReview(tester);
       final approvedPlan = await providerContainer.read(
         ironwoodMigrationPrivatePlanProvider.future,
       );
@@ -178,20 +148,13 @@ void main() {
         const ValueKey('ironwood_migration_authorize_start_button'),
       );
 
-      await pumpUntil(
+      final started = await waitForDesktopRegtestMigrationStatus(
         tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
-        description: 'denomination confirmation status',
-        timeout: const Duration(minutes: 5),
+        accountUuid,
+        (status) => status.phase == 'waiting_denom_confirmations',
+        description: 'denomination preparation',
       );
-
-      final started = await _migrationStatus(accountUuid);
+      await waitForDesktopActiveMigrationStatus(tester, preparing: true);
       expect(started.activeRunId, isNotNull);
       expect(started.denominationSplitTotalCount, greaterThan(0));
       expect(started.denominationSplitCompletedCount, 0);
@@ -208,44 +171,16 @@ void main() {
         tester,
         const ValueKey('home_desktop_ironwood_migration_cta_button'),
       );
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
-        ),
-        description: 'active migration status after unlock',
-      );
+      await waitForDesktopActiveMigrationStatus(tester, preparing: true);
       final resumed = await _migrationStatus(accountUuid);
       expect(resumed.activeRunId, started.activeRunId);
-      await tapAppButton(
-        tester,
-        const ValueKey('ironwood_migration_status_action_button'),
-      );
-      await pumpUntil(
-        tester,
-        () => tester.any(
-          find.byKey(const ValueKey('home_desktop_balance_amount_text')),
-        ),
-        description: 'home while migration continues',
-      );
+      await leaveDesktopMigrationStatusForHome(tester);
 
       e2eLog('confirming denomination split');
-      await ironwoodDriverPost(
-        _driverUrl,
-        '/mine',
-        payload: const {'blocks': 12},
-      );
-
-      final scheduled = await waitForDesktopRegtestMigrationStatus(
+      final scheduled = await prepareDesktopRegtestMigrationSchedule(
         tester,
+        _driverUrl,
         accountUuid,
-        (status) => status.scheduledBroadcasts.isNotEmpty,
-        description: 'persisted migration broadcast schedule',
-        timeout: const Duration(minutes: 12),
       );
       expect(scheduled.parts, isNotEmpty);
       expect(

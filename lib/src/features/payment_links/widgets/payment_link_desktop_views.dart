@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -14,6 +13,8 @@ import 'payment_link_action.dart';
 import 'payment_link_card_motion.dart';
 import 'payment_link_cards_layout.dart';
 import 'payment_link_copy.dart';
+import 'payment_link_received_desktop_view.dart';
+export 'payment_link_received_desktop_view.dart';
 import 'payment_link_gift_card.dart';
 import 'payment_link_group_entry.dart';
 import 'payment_link_qr_share_card.dart';
@@ -40,7 +41,7 @@ enum PaymentLinkAmountVisualState {
 
 enum PaymentLinkMessageVisualState { empty, filled }
 
-enum PaymentLinkReadyVisualState { waiting, ready }
+enum PaymentLinkReadyVisualState { checking, waiting, ready }
 
 enum PaymentLinkRedeemVisualState { paste, loading, invalid }
 
@@ -48,6 +49,10 @@ enum PaymentLinkRedeemVisualState { paste, loading, invalid }
 /// The pane width from which the **For a group** tile sits beside the
 /// content instead of below it, on the empty home and the card list alike.
 const _kGroupTileBesideMinWidth = 740.0;
+// Keep a gap between the centered 390px list and the wider Ledger entry.
+const _kLedgerListTileBesideMinWidth =
+    390 +
+    2 * (PaymentLinkGroupEntry.ledgerWidth + AppSpacing.base + AppSpacing.sm);
 
 class PaymentLinksHomeDesktopView extends StatelessWidget {
   const PaymentLinksHomeDesktopView({
@@ -57,6 +62,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
     required this.onCreate,
     required this.onRedeem,
     this.onCreateMultiple,
+    this.isLedger = false,
     this.backLabel = 'Home',
     this.title = kPaymentLinkEmptyTitle,
     this.helpLabel = 'How gift cards work',
@@ -71,6 +77,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
   final VoidCallback onCreate;
   final VoidCallback onRedeem;
   final VoidCallback? onCreateMultiple;
+  final bool isLedger;
   final String backLabel;
   final String title;
   final String helpLabel;
@@ -163,6 +170,7 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
                   child: PaymentLinkGroupEntry(
                     fullWidth: true,
                     onPressed: onCreateGroup,
+                    isLedger: isLedger,
                   ),
                 ),
               ],
@@ -176,7 +184,10 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
                 Positioned(
                   top: 208,
                   right: AppSpacing.base,
-                  child: PaymentLinkGroupEntry(onPressed: onCreateGroup),
+                  child: PaymentLinkGroupEntry(
+                    onPressed: onCreateGroup,
+                    isLedger: isLedger,
+                  ),
                 ),
               ],
             ),
@@ -418,7 +429,7 @@ class PaymentLinkMessageDesktopView extends StatelessWidget {
     this.subtitle = 'Enter amount & select the design.',
     this.skipLabel = 'Skip message',
     this.emptyContinueLabel = 'Continue',
-    this.continueLabel = 'Confirm & review',
+    this.continueLabel = 'Review & confirm',
     super.key,
   });
 
@@ -746,7 +757,8 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final waiting = state == PaymentLinkReadyVisualState.waiting;
+    final checking = state == PaymentLinkReadyVisualState.checking;
+    final waiting = state != PaymentLinkReadyVisualState.ready;
     final canFlip = !waiting && onCardTap != null;
     final motionCard = PaymentLinkCardMotion(
       celebrate: !waiting,
@@ -763,6 +775,15 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
             ),
           )
         : motionCard;
+    if (checking) {
+      return PaymentLinkReceivedDesktopView(
+        state: PaymentLinkClaimDesktopState.checking,
+        card: card,
+        onBack: onBack,
+        backLabel: backLabel,
+        waitingStatusLabel: waitingStatusLabel,
+      );
+    }
     return PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
@@ -864,158 +885,6 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
                       ),
                     ],
                   ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class PaymentLinkReceivedDesktopView extends StatelessWidget {
-  const PaymentLinkReceivedDesktopView({
-    required this.card,
-    required this.onBack,
-    this.onClaim,
-    this.onRevealMessage,
-    this.decoration,
-    this.backLabel = 'Cards',
-    this.title = 'You’ve received\na gift card!',
-    this.messageTitle = kPaymentLinkMessageAttachedTitle,
-    this.messageHint = 'Click on the card to reveal',
-    this.claimLabel = 'Claim the gift card',
-    this.cardActionLabel = kPaymentLinkRevealMessageSemanticLabel,
-    super.key,
-  });
-
-  final Widget card;
-  final Widget? decoration;
-  final VoidCallback onBack;
-  final VoidCallback? onClaim;
-  final VoidCallback? onRevealMessage;
-  final String backLabel;
-  final String title;
-  final String messageTitle;
-  final String messageHint;
-  final String claimLabel;
-  final String cardActionLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final canRevealMessage = onRevealMessage != null;
-    final motionCard = PaymentLinkCardMotion(
-      celebrate: true,
-      child: canRevealMessage ? IgnorePointer(child: card) : card,
-    );
-    return PaymentLinkPane(
-      backLabel: backLabel,
-      onBack: onBack,
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: SizedBox(
-          width: 520,
-          height: 624,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              if (decoration != null) Positioned.fill(child: decoration!),
-              Positioned(
-                top: 42.5,
-                left: 0,
-                right: 0,
-                child: Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displayLarge.copyWith(
-                    color: context.colors.text.accent,
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 186.5,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: canRevealMessage
-                      ? PaymentLinkAction(
-                          key: const ValueKey(
-                            'payment_link_reveal_message_action',
-                          ),
-                          onPressed: onRevealMessage,
-                          semanticLabel: cardActionLabel,
-                          builder: (context, _, focused) =>
-                              PaymentLinkActionFocusRing(
-                                focused: focused,
-                                borderRadius: AppRadii.large,
-                                child: ExcludeSemantics(child: motionCard),
-                              ),
-                        )
-                      : motionCard,
-                ),
-              ),
-              Positioned(
-                top: 440,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: SizedBox(
-                    key: const ValueKey('payment_link_received_message_block'),
-                    width: 165,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (onRevealMessage != null) ...[
-                          SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: Center(
-                              child: SvgPicture.asset(
-                                'assets/illustrations/payment_links/'
-                                'payment_link_envelope.svg',
-                                key: const ValueKey(
-                                  'payment_link_received_message_icon',
-                                ),
-                                width: 20,
-                                height: 16,
-                                semanticsLabel: kPaymentLinkGiftMessageLabel,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          Text(
-                            messageTitle,
-                            textAlign: TextAlign.center,
-                            style: AppTypography.bodyMediumStrong.copyWith(
-                              color: context.colors.text.brandCrimson,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          Text(
-                            messageHint,
-                            textAlign: TextAlign.center,
-                            style: AppTypography.bodyMedium.copyWith(
-                              color: context.colors.text.secondary,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 558,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: AppButton(
-                    key: const ValueKey('payment_link_claim_button'),
-                    onPressed: onClaim,
-                    size: AppButtonSize.mediumLarge,
-                    child: Text(claimLabel),
-                  ),
                 ),
               ),
             ],
@@ -1248,6 +1117,7 @@ class PaymentLinkBatchListRow extends StatelessWidget {
     required this.statusText,
     required this.onOpen,
     this.backThumbnail,
+    this.showLoader = false,
     super.key,
   });
 
@@ -1262,6 +1132,7 @@ class PaymentLinkBatchListRow extends StatelessWidget {
   final String dateText;
   final String statusText;
   final VoidCallback onOpen;
+  final bool showLoader;
 
   @override
   Widget build(BuildContext context) {
@@ -1278,12 +1149,23 @@ class PaymentLinkBatchListRow extends StatelessWidget {
       ),
     );
     final date = Text(dateText, style: secondaryStyle);
-    final status = Text(
-      statusText,
-      textAlign: largeText ? TextAlign.start : TextAlign.end,
-      style: secondaryStyle.copyWith(
-        fontFeatures: const [FontFeature.tabularFigures()],
-      ),
+    final status = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            statusText,
+            textAlign: largeText ? TextAlign.start : TextAlign.end,
+            style: secondaryStyle.copyWith(
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        if (showLoader) ...[
+          const SizedBox(width: AppSpacing.xxs),
+          AppIcon(AppIcons.loader, size: 16, color: colors.icon.regular),
+        ],
+      ],
     );
     return PaymentLinkAction(
       semanticLabel: [
@@ -1291,6 +1173,7 @@ class PaymentLinkBatchListRow extends StatelessWidget {
         '$amountText each',
         'created $dateText',
         if (statusText.isNotEmpty) statusText,
+        if (showLoader) 'Checking',
       ].join(', '),
       onPressed: onOpen,
       builder: (context, hovered, focused) => Stack(
@@ -1427,6 +1310,7 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
     required this.onCreate,
     required this.onRedeem,
     this.onCreateMultiple,
+    this.isLedger = false,
     this.activeTab = PaymentLinkCardsTab.created,
     this.onTabSelected,
     this.backLabel = 'Home',
@@ -1439,6 +1323,7 @@ class PaymentLinkCardsDesktopView extends StatefulWidget {
   final VoidCallback onCreate;
   final VoidCallback onRedeem;
   final VoidCallback? onCreateMultiple;
+  final bool isLedger;
   final PaymentLinkCardsTab activeTab;
   final ValueChanged<PaymentLinkCardsTab>? onTabSelected;
   final String backLabel;
@@ -1551,7 +1436,10 @@ class _PaymentLinkCardsDesktopViewState
             ),
             const SizedBox(height: AppSpacing.base),
             if (widget.onCreateMultiple case final onCreateGroup?
-                when constraints.maxWidth >= _kGroupTileBesideMinWidth &&
+                when constraints.maxWidth >=
+                        (widget.isLedger
+                            ? _kLedgerListTileBesideMinWidth
+                            : _kGroupTileBesideMinWidth) &&
                     !paymentLinkUsesLargeText(context))
               Stack(
                 children: [
@@ -1563,7 +1451,10 @@ class _PaymentLinkCardsDesktopViewState
                     alignment: Alignment.topRight,
                     child: Padding(
                       padding: const EdgeInsets.only(right: AppSpacing.base),
-                      child: PaymentLinkGroupEntry(onPressed: onCreateGroup),
+                      child: PaymentLinkGroupEntry(
+                        onPressed: onCreateGroup,
+                        isLedger: widget.isLedger,
+                      ),
                     ),
                   ),
                 ],
@@ -1577,6 +1468,7 @@ class _PaymentLinkCardsDesktopViewState
                     child: PaymentLinkGroupEntry(
                       fullWidth: true,
                       onPressed: onCreateGroup,
+                      isLedger: widget.isLedger,
                     ),
                   ),
                 ),
@@ -1615,6 +1507,8 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
     required this.state,
     required this.onBack,
     this.onPaste,
+    this.onScan,
+    this.scanEnabled = true,
     this.onClearClipboard,
     this.loadingPlaceholder,
     this.statusContent,
@@ -1632,6 +1526,8 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
   final PaymentLinkRedeemVisualState state;
   final VoidCallback onBack;
   final VoidCallback? onPaste;
+  final VoidCallback? onScan;
+  final bool scanEnabled;
   final VoidCallback? onClearClipboard;
   final Widget? loadingPlaceholder;
   final Widget? statusContent;
@@ -1648,6 +1544,15 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
   Widget build(BuildContext context) {
     final loading = state == PaymentLinkRedeemVisualState.loading;
     final invalid = state == PaymentLinkRedeemVisualState.invalid;
+    if (loading) {
+      return PaymentLinkReceivedDesktopView(
+        state: PaymentLinkClaimDesktopState.loading,
+        card: loadingPlaceholder ?? const PaymentLinkLoadingCard(),
+        onBack: onBack,
+        backLabel: backLabel,
+      );
+    }
+
     return PaymentLinkPane(
       backLabel: backLabel,
       onBack: onBack,
@@ -1719,11 +1624,28 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
                                               label: pasteLabel,
                                               onPressed: onPaste,
                                             ),
+                                            if (onScan != null) ...[
+                                              const SizedBox(
+                                                height: AppSpacing.s,
+                                              ),
+                                              _scanButton(),
+                                            ],
                                           ],
                                         )
-                                      : PaymentLinkPasteButton(
-                                          label: pasteLabel,
-                                          onPressed: onPaste,
+                                      : Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            PaymentLinkPasteButton(
+                                              label: pasteLabel,
+                                              onPressed: onPaste,
+                                            ),
+                                            if (onScan != null) ...[
+                                              const SizedBox(
+                                                height: AppSpacing.s,
+                                              ),
+                                              _scanButton(),
+                                            ],
+                                          ],
                                         )),
                             ),
                     ),
@@ -1770,4 +1692,13 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
       ),
     );
   }
+
+  Widget _scanButton() => AppButton(
+    key: const ValueKey('payment_link_desktop_scan_button'),
+    onPressed: scanEnabled ? onScan : null,
+    size: AppButtonSize.mediumLarge,
+    variant: AppButtonVariant.secondary,
+    leading: const AppIcon(AppIcons.qr),
+    child: const Text('Scan QR code'),
+  );
 }

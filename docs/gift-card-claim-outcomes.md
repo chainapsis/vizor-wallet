@@ -13,9 +13,10 @@ chain, not by the order of taps in Vizor.
   conflicted with a spend covered by six scanned confirmations, or itself
   covered by six scanned confirmations. Mixed outcomes settle as failed only
   when at least one leg failed.
-- A card is labelled `Claimed elsewhere` only when all its observed shielded
-  outputs have settled spends outside its locally created/recorded claims.
-  Unspent positive-value top-ups prevent that conclusion; zero-value change
+- A card is labelled `Claimed elsewhere` only when all positive Ironwood
+  outputs of its first funding transaction have settled spends outside its
+  locally created/recorded claims. Unspent positive-value funding outputs
+  prevent that conclusion; zero-value change
   outputs do not represent remaining funds. Pending scan ranges limit the
   confirmation height. `sent_notes` plus the local `transactions.created`
   marker identifies transactions eligible for metadata recovery. OVK-recovered
@@ -77,6 +78,22 @@ Rust API or database schema change is introduced by optional-field support.
 
 The separate sender-side ambiguous draft export/account-deletion flow remains
 outside this change.
+
+## Settled card recovery
+
+After every positive output of the first funding transaction has an observed
+spend with six confirmations, inspection finishes without a wallet-wide SDK
+rewind or resubmission. Chain continuity and the configured endpoint's boundary
+hash must still agree, and cancellation prevents publishing completion.
+
+Observer-confirmed local claims update their SDK mined heights so mixed
+success/conflict outcomes can settle. A conflicting claim's obsolete SDK mined
+receipt may remain until the temporary wallet is removed; positive observer
+conflict evidence decides its failure. Card receipt confirmations also use the
+observer. Unrelated cached receipts beyond an early-stop boundary are preserved.
+
+Before all funding spends reach six confirmations, the existing stale-receipt
+recovery, input reservations, and proof-anchor checks continue to apply.
 
 ## Validation
 

@@ -27,6 +27,8 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
   IronwoodMigrationBackgroundLifecycle? migrationLifecycle,
 }) => ref
     .read(linuxKeyringCoordinatorProvider)
+    // Serialized against a reset, another account mutation and the private
+    // queries toggle on every platform, not only Linux.
     .runMutation(
       () => _runWithSyncPausedForAccountMutation(
         ref,

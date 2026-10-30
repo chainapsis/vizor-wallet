@@ -1,32 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../services/qr_scanner.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../models/vizor_payment_link.dart';
-
-typedef PaymentLinkScanner =
-    Future<VizorPaymentLink?> Function(
-      BuildContext context, {
-      required String networkName,
-    });
-
-final paymentLinkScannerProvider = Provider<PaymentLinkScanner>((ref) {
-  return (context, {required networkName}) {
-    return showAppMobileSheet<VizorPaymentLink>(
-      context: context,
-      builder: (context) => PaymentLinkScanSheet(
-        networkName: networkName,
-        onScanned: (link) => Navigator.of(context).pop(link),
-        onClose: () => Navigator.of(context).pop(),
-      ),
-    );
-  };
-});
+import '../../models/payment_link_scan_payload.dart';
 
 class PaymentLinkScanSheet extends StatefulWidget {
   const PaymentLinkScanSheet({
@@ -61,6 +41,7 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
     _controller =
         widget.controller ??
         MobileScannerController(
+          facing: defaultQrScannerFacing,
           formats: QrScanner.formats,
           detectionSpeed: QrScanner.detectionSpeed,
         );
@@ -70,16 +51,6 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
   void dispose() {
     if (widget.controller == null) unawaited(_controller.dispose());
     super.dispose();
-  }
-
-  void _accept(VizorPaymentLink link) {
-    if (!_canScan) return;
-    if (link.network != widget.networkName) {
-      _reject('This gift card is for a different network.');
-      return;
-    }
-    _finished = true;
-    widget.onScanned(link);
   }
 
   void _reject(String message) {
@@ -92,9 +63,11 @@ class _PaymentLinkScanSheetState extends State<PaymentLinkScanSheet> {
   void _scan(String raw) {
     if (!_canScan) return;
     try {
-      _accept(VizorPaymentLink.parse(raw));
-    } on FormatException {
-      _reject("This isn't a gift card QR code.");
+      final link = decodePaymentLinkQr(raw, networkName: widget.networkName);
+      _finished = true;
+      widget.onScanned(link);
+    } on FormatException catch (error) {
+      _reject(error.message);
     }
   }
 

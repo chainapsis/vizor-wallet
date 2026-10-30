@@ -201,6 +201,7 @@ class _MobileIronwoodMigrationStartScreenState
   var _messageIndex = 0;
   var _isPreparing = false;
   var _keystoneHandedOff = false;
+  var _approvedPlanRefused = false;
   late final IronwoodMigrationService _migrationService;
 
   @override
@@ -226,27 +227,31 @@ class _MobileIronwoodMigrationStartScreenState
   }
 
   Future<void> _discardKeystoneCombinedRequest(
-    MobileIronwoodMigrationKeystoneCombinedSignEntry entry,
-  ) async {
+    MobileIronwoodMigrationKeystoneCombinedSignEntry entry, {
+    bool propagateError = false,
+  }) async {
     try {
       await _migrationService.discardKeystonePrivateMigrationRequest(
         accountUuid: entry.accountUuid,
         requestId: entry.request.requestId,
       );
     } catch (error) {
+      if (propagateError) rethrow;
       debugPrint('Failed to discard the Keystone signing request: $error');
     }
   }
 
-  Future<void> _cancelKeystoneSigning() async {
+  Future<void> _cancelKeystoneSigning({bool navigate = true}) async {
     if (_phase != _MobileMigrationStartPhase.keystoneReady) return;
     final entry = _keystoneCombinedEntry;
+    if (entry != null) {
+      await _discardKeystoneCombinedRequest(entry, propagateError: !navigate);
+    }
     _keystoneCombinedEntry = null;
     _destination = null;
     _messageTimer?.cancel();
-    if (entry != null) await _discardKeystoneCombinedRequest(entry);
     if (!mounted) return;
-    context.go('/migration/options');
+    if (navigate) context.go('/migration/options');
   }
 
   void _startMessageRotation() {
@@ -279,7 +284,7 @@ class _MobileIronwoodMigrationStartScreenState
 
     try {
       final plan =
-          widget.approvedPlan ??
+          (_approvedPlanRefused ? null : widget.approvedPlan) ??
           await ref.read(ironwoodMigrationPrivatePlanProvider.future);
       if (plan == null) {
         throw StateError('Migration plan is unavailable.');
@@ -364,6 +369,13 @@ class _MobileIronwoodMigrationStartScreenState
       }
       _messageTimer?.cancel();
       _isPreparing = false;
+      // A schedule drawn before the upgrade can never start; Retry draws a
+      // new one.
+      if (networkUpgradeHoldMessage(error) ==
+          kNetworkUpgradeScheduleChangedMessage) {
+        ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+        _approvedPlanRefused = true;
+      }
       setState(() {
         _phase = _MobileMigrationStartPhase.error;
         _error = _mobilePrivateMigrationStartErrorMessage(error);
@@ -396,6 +408,12 @@ class _MobileIronwoodMigrationStartScreenState
     final loading = _phase == _MobileMigrationStartPhase.loading;
     final ready = _phase == _MobileMigrationStartPhase.keystoneReady;
     return _MobileIronwoodMigrationBackScope(
+      onSidebarExit: _phase == _MobileMigrationStartPhase.keystoneReady
+          ? () async {
+              await _cancelKeystoneSigning(navigate: false);
+              return true;
+            }
+          : null,
       // Loading is mid-preparation and stays put. keystoneReady leaves through
       // the same cancel path as its on-screen button, so the prepared signing
       // request is discarded instead of orphaned.

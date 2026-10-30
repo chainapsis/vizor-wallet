@@ -3,6 +3,7 @@ import '../../../providers/account_provider.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../ledger/services/ledger_account_service.dart';
 import '../ledger/ledger_setup_args.dart';
+import 'account_persona_draft.dart';
 
 enum SetPasswordFlow {
   create,
@@ -76,6 +77,7 @@ class ImportBirthdayArgs {
 class SetPasswordScreenArgs {
   const SetPasswordScreenArgs._({
     required this.flow,
+    this.persona,
     this.mnemonic,
     this.bip39Passphrase = '',
     this.birthdayHeight,
@@ -124,7 +126,7 @@ class SetPasswordScreenArgs {
          keystoneZip32Index: zip32Index,
        );
 
-  /// Shared mobile passcode flow; desktop retains LedgerSetPasswordArgs.
+  /// Shared personalised Ledger setup for desktop and mobile.
   const SetPasswordScreenArgs.importLedger({
     required LedgerDeviceAccount account,
     required int birthdayHeight,
@@ -150,6 +152,45 @@ class SetPasswordScreenArgs {
          walletLinkCompletionToken: completionToken,
          walletLinkKeyBytes: keyBytes,
        );
+
+  /// Present only after personalisation. Never serialized into route restoration.
+  final AccountPersona? persona;
+
+  SetPasswordScreenArgs withPersona(AccountPersona value) =>
+      SetPasswordScreenArgs._(
+        flow: flow,
+        persona: value,
+        mnemonic: mnemonic,
+        bip39Passphrase: bip39Passphrase,
+        birthdayHeight: birthdayHeight,
+        selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
+        ledgerAccount: ledgerAccount,
+        keystoneAccountName: keystoneAccountName,
+        keystoneUfvk: keystoneUfvk,
+        keystoneSeedFingerprint: keystoneSeedFingerprint,
+        keystoneZip32Index: keystoneZip32Index,
+        walletLinkNetwork: walletLinkNetwork,
+        walletLinkAccounts: walletLinkAccounts,
+        walletLinkContacts: walletLinkContacts,
+        walletLinkPackageId: walletLinkPackageId,
+        walletLinkCompletionToken: walletLinkCompletionToken,
+        walletLinkKeyBytes: walletLinkKeyBytes,
+      );
+
+  String get desktopPasswordRoutePath => switch (flow) {
+    SetPasswordFlow.create => '/onboarding/set-password',
+    SetPasswordFlow.importWallet => '/import/set-password',
+    SetPasswordFlow.importKeystone => '/onboarding/keystone/set-password',
+    SetPasswordFlow.importLedger => '/onboarding/ledger/set-password',
+    SetPasswordFlow.importWalletLink => throw StateError(
+      'Wallet Link has its own setup.',
+    ),
+  };
+
+  String get desktopCustomiseRoutePath => switch (flow) {
+    SetPasswordFlow.importLedger => '/onboarding/ledger/customise-account',
+    _ => CustomiseAccountArgs(setupArgs: this).routePath,
+  };
 
   final LedgerDeviceAccount? ledgerAccount;
   final SetPasswordFlow flow;

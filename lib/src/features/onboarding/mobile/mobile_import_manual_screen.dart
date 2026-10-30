@@ -167,7 +167,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
   int get _pendingCount => _accepted.length + (_hasTyped ? 1 : 0);
 
   /// A valid-length phrase (12/15/18/21/24) is reachable, so offer
-  /// "Finish & review" beside "Next word" (Figma 4746:83516).
+  /// "Review & finish" beside "Next word" (Figma 4746:83516).
   bool get _showFinish => kMnemonicWordCounts.contains(_pendingCount);
 
   /// Accept the typed word and advance to the next slot.
@@ -357,7 +357,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
   }
 
   /// The CTA block: a single "Next word" until a valid-length phrase is
-  /// reachable, then "Finish & review" plus a
+  /// reachable, then "Review & finish" plus a
   /// secondary "Next word" to continue toward longer standard phrases.
   Widget _buildButtonRow() {
     final nextEnabled = _hasTyped && !_atMax;
@@ -395,7 +395,7 @@ class _MobileImportManualScreenState extends State<MobileImportManualScreen>
             onPressed: _finish,
             trailing: const AppIcon(AppIcons.chevronForward),
             child: const Text(
-              'Finish & review',
+              'Review & finish',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

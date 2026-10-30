@@ -274,7 +274,7 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
         Align(
           alignment: Alignment.center,
           child: Image.asset(
-            'assets/illustrations/keystone_qr_scan_error.png',
+            'assets/illustrations/keystone_qr_scan_error.webp',
             width: 48,
             height: 48,
             filterQuality: FilterQuality.high,
@@ -444,7 +444,7 @@ enum _KeystoneDenominationSignStage {
 // no card lands between the two halves of a round.
 class _IronwoodMigrationKeystonePrivateSignScreenState
     extends ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   _KeystoneDenominationSignStage _stage =
       _KeystoneDenominationSignStage.preparing;
   late final IronwoodMigrationService _migrationService;
@@ -467,6 +467,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   int _scanProgress = 0;
   bool _requestCompleted = false;
   Future<void>? _completionOperation;
+  Future<bool>? _cancellationOperation;
+  bool _cancelling = false;
+  int _requestEpoch = 0;
   IronwoodMigrationPrivacyLockSuppressionNotifier?
   _privacyLockSuppressionNotifier;
   IronwoodMigrationPrivacyLockSuppression? _privacyLockSuppression;
@@ -541,7 +544,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     }
     _privacyLockSuppression = null;
     _privacyLockSuppressionNotifier = null;
-    if (!_requestCompleted) {
+    if (!_requestCompleted && _cancellationOperation == null) {
       final requestId = _request?.requestId;
       final accountUuid = _accountUuid;
       if (requestId != null && accountUuid != null) {
@@ -555,6 +558,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     rust_sync.KeystoneMigrationSigningRequest? preparedRequest,
     String? preparedAccountUuid,
   }) async {
+    if (_cancelling) return;
+    final epoch = ++_requestEpoch;
     _stopProofPolling();
     setState(() {
       _stage = _KeystoneDenominationSignStage.preparing;
@@ -601,7 +606,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             approvedImmediatePlan: widget.approvedImmediatePlan,
           );
       requestIdToDiscard = request.requestId;
-      if (!mounted) {
+      if (!mounted || epoch != _requestEpoch) {
         await _discardRequest(accountUuid, request.requestId);
         return;
       }
@@ -619,7 +624,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 maxMessages: request.signingBatchLimit,
               ),
             );
-      if (!mounted) return;
+      if (!mounted || epoch != _requestEpoch) return;
       _signingRounds = signingRounds;
       if (request.messages.isEmpty) {
         if (widget.step != _KeystonePrivateSignStep.denominations) {
@@ -644,7 +649,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
         );
       }
-      if (!mounted) return;
+      if (!mounted || epoch != _requestEpoch) return;
       setState(() {
         _stage = _KeystoneDenominationSignStage.showQr;
         _signingBatchRequests = signingBatchRequests;
@@ -655,6 +660,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
         'prepare error: $e\n$st',
       );
+      if (epoch != _requestEpoch) return;
       _stopProofPolling();
       final requestId = _request?.requestId ?? requestIdToDiscard;
       _request = null;
@@ -721,7 +727,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _requiresSigningPlanConfirmation && !_signingPlanConfirmed;
 
   void _beginSigning() {
-    if (_urParts.isEmpty ||
+    if (_cancelling ||
+        _urParts.isEmpty ||
         ironwoodMigrationKeystoneProofFailed(_proofStatus)) {
       return;
     }
@@ -731,7 +738,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   Future<void> _handleScanComplete(ScanResult result) async {
-    if (_decoding ||
+    if (_cancelling ||
+        _decoding ||
         _stage != _KeystoneDenominationSignStage.scanning ||
         _pendingSignedMessages != null) {
       return;
@@ -820,11 +828,16 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   Future<void> _refreshProofStatus(String requestId) async {
+    final epoch = _requestEpoch;
     try {
       final status = await _migrationService.keystoneProofStatus(
         requestId: requestId,
       );
-      if (!mounted || _requestCompleted || _request?.requestId != requestId) {
+      if (!mounted ||
+          _cancelling ||
+          epoch != _requestEpoch ||
+          _requestCompleted ||
+          _request?.requestId != requestId) {
         return;
       }
 
@@ -861,7 +874,11 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
         'proof status error: $e\n$st',
       );
-      if (!mounted || _requestCompleted || _request?.requestId != requestId) {
+      if (!mounted ||
+          _cancelling ||
+          epoch != _requestEpoch ||
+          _requestCompleted ||
+          _request?.requestId != requestId) {
         return;
       }
       setState(() {
@@ -891,7 +908,12 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   ) async {
     final request = _request;
     final accountUuid = _accountUuid;
-    if (request == null || accountUuid == null || _requestCompleted) return;
+    if (_cancelling ||
+        request == null ||
+        accountUuid == null ||
+        _requestCompleted) {
+      return;
+    }
 
     _stopProofPolling();
     setState(() {
@@ -938,7 +960,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           _request = null;
           _pendingSignedMessages = null;
           _decoding = false;
+          // Rust drops a request held for the upgrade; say why.
           _error =
+              networkUpgradeHoldMessage(e) ??
               'This Keystone signing request can no longer be used. Prepare it again.';
         });
         return;
@@ -1054,13 +1078,18 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     );
   }
 
-  Future<void> _discardRequest(String accountUuid, String requestId) async {
+  Future<void> _discardRequest(
+    String accountUuid,
+    String requestId, {
+    bool propagateError = false,
+  }) async {
     try {
       await _migrationService.discardKeystonePrivateMigrationRequest(
         accountUuid: accountUuid,
         requestId: requestId,
       );
     } catch (e, st) {
+      if (propagateError) rethrow;
       log(
         'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
         'discard error: $e\n$st',
@@ -1069,6 +1098,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   Future<void> _retryRequest() async {
+    if (_cancelling) return;
     final requestId = _request?.requestId;
     final accountUuid = _accountUuid;
     setState(() {
@@ -1084,29 +1114,99 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     await _prepareRequest();
   }
 
-  Future<void> _returnToReview() async {
-    if (_stage == _KeystoneDenominationSignStage.completing) return;
-    final requestId = _request?.requestId;
-    final accountUuid = _accountUuid;
-    _stopProofPolling();
-    _request = null;
-    if (!_requestCompleted && requestId != null && accountUuid != null) {
-      await _discardRequest(accountUuid, requestId);
+  Future<bool> _returnToReview({bool navigate = true}) {
+    final pending = _cancellationOperation;
+    if (pending != null) return pending;
+    if (_stage == _KeystoneDenominationSignStage.completing) {
+      return Future.value(false);
     }
-    if (!mounted) return;
+    late final Future<bool> tracked;
+    tracked = _cancelAndReturnToReview(navigate: navigate).whenComplete(() {
+      if (identical(_cancellationOperation, tracked)) {
+        _cancellationOperation = null;
+      }
+    });
+    _cancellationOperation = tracked;
+    return tracked;
+  }
+
+  Future<bool> _cancelAndReturnToReview({required bool navigate}) async {
+    final request = _request;
+    final requestId = request?.requestId;
+    final accountUuid = _accountUuid;
+    final wasPolling = _proofPollTimer != null;
+    final wasPreparing = _stage == _KeystoneDenominationSignStage.preparing;
+    // Keep ownership until discard succeeds, while fencing already-started
+    // proof callbacks as well as new camera/pointer input.
+    _requestEpoch++;
+    _stopProofPolling();
+    setState(() {
+      _cancelling = true;
+      _error = null;
+    });
+    try {
+      if (!_requestCompleted && requestId != null && accountUuid != null) {
+        await _discardRequest(accountUuid, requestId, propagateError: true);
+      }
+    } catch (error, stack) {
+      log('IronwoodMigrationKeystoneSign: cancellation failed: $error\n$stack');
+      if (!mounted) {
+        // The owner was removed externally while cancellation was running.
+        // Retain the previous best-effort dispose cleanup behavior.
+        if (requestId != null && accountUuid != null) {
+          unawaited(_discardRequest(accountUuid, requestId));
+        }
+        return false;
+      }
+      setState(() {
+        _cancelling = false;
+        _error = 'Could not cancel the signing request. Try again.';
+      });
+      showAppToast(
+        context,
+        _error!,
+        tone: AppToastTone.destructive,
+        iconName: AppIcons.warningCircle,
+      );
+      if (wasPreparing && request != null && accountUuid != null) {
+        // Cancellation also fences an in-flight QR encoder. Restart that
+        // presentation work with the same owned request, not a new proposal.
+        unawaited(
+          _prepareRequest(
+            preparedRequest: request,
+            preparedAccountUuid: accountUuid,
+          ),
+        );
+      } else if (wasPolling && requestId != null && !_requestCompleted) {
+        _startProofPolling(requestId);
+      }
+      return false;
+    }
+    if (!mounted) return false;
+    setState(() {
+      _request = null;
+      _pendingSignedMessages = null;
+      _cancelling = false;
+      if (!navigate) {
+        // If the caller cannot finish navigation after cleanup, this screen
+        // remains recoverable instead of displaying an unusable request QR.
+        _stage = _KeystoneDenominationSignStage.failed;
+        _error = 'This signing request was cancelled. Prepare it again.';
+      }
+    });
     final previousRoute = switch ((widget.mobileLayout, widget.step)) {
       (true, _KeystonePrivateSignStep.immediate) => '/migration/fast/review',
-      // Combined signing creates the durable run only at completion, so a
-      // cancelled mobile session has no draft for the status screen to show.
       (true, _KeystonePrivateSignStep.combined) => '/migration/options',
       (true, _KeystonePrivateSignStep.denominations) =>
         '/migration/private/status',
       _ => widget.step.previousRoute,
     };
-    context.go(previousRoute);
+    if (navigate) context.go(previousRoute);
+    return true;
   }
 
   void _handleBack() {
+    if (_cancelling) return;
     if (_stage == _KeystoneDenominationSignStage.scanning) {
       _showRequestQrAgain();
       return;
@@ -1115,7 +1215,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   void _handleDecodeError(Object error) {
-    if (!mounted || _decoding) return;
+    if (!mounted || _cancelling || _decoding) return;
     final message = ironwoodMigrationKeystoneScanErrorMessage(error);
     if (_error == message) return;
     setState(() {
@@ -1142,7 +1242,18 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope<void>(
+    canPop: !_cancelling,
+    child: ExcludeFocus(
+      excluding: _cancelling,
+      child: AbsorbPointer(
+        absorbing: _cancelling,
+        child: _buildScreen(context),
+      ),
+    ),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     if (widget.mobileLayout) return _buildMobileScreen(context);
     if (widget.step == _KeystonePrivateSignStep.immediate) {
       return _buildImmediateDesktopScreen(context);
@@ -1258,43 +1369,51 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     final round = widget.step == _KeystonePrivateSignStep.denominations
         ? MobileIronwoodKeystoneSigningRound.denominationSplit
         : MobileIronwoodKeystoneSigningRound.migrationBatch;
-    return PopScope<void>(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && !completing) _handleBack();
-      },
-      child: KeyedSubtree(
-        key: const ValueKey('mobile_ironwood_keystone_sign_screen'),
-        child: switch (_stage) {
-          _KeystoneDenominationSignStage.preparing =>
-            MobileIronwoodKeystoneSigningView(
-              state: MobileIronwoodKeystoneSigningViewState.loading,
+    return MobileSidebarExitScope(
+      canNavigate:
+          !_cancelling &&
+          !completing &&
+          !_decoding &&
+          _stage != _KeystoneDenominationSignStage.preparing,
+      onExit: () => _returnToReview(navigate: false),
+      child: PopScope<void>(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !completing) _handleBack();
+        },
+        child: KeyedSubtree(
+          key: const ValueKey('mobile_ironwood_keystone_sign_screen'),
+          child: switch (_stage) {
+            _KeystoneDenominationSignStage.preparing =>
+              MobileIronwoodKeystoneSigningView(
+                state: MobileIronwoodKeystoneSigningViewState.loading,
+                round: round,
+                onCancel: () => unawaited(_returnToReview()),
+              ),
+            _KeystoneDenominationSignStage.showQr => _buildMobileQrContent(
+              context,
               round: round,
-              onCancel: () => unawaited(_returnToReview()),
             ),
-          _KeystoneDenominationSignStage.showQr => _buildMobileQrContent(
-            context,
-            round: round,
-          ),
-          _KeystoneDenominationSignStage.scanning ||
-          _KeystoneDenominationSignStage.waitingForProofs ||
-          _KeystoneDenominationSignStage.completing =>
-            _buildMobileScannerContent(context, round: round),
-          _KeystoneDenominationSignStage.failed => Scaffold(
-            backgroundColor: context.colors.background.window,
-            body: SafeArea(
-              child: Column(
-                children: [
-                  MobileTopNav.back(
-                    title: 'Keystone migration',
-                    onBack: () => unawaited(_returnToReview()),
-                  ),
-                  Expanded(child: _buildMobileFailureContent(context)),
-                ],
+            _KeystoneDenominationSignStage.scanning ||
+            _KeystoneDenominationSignStage.waitingForProofs ||
+            _KeystoneDenominationSignStage.completing =>
+              _buildMobileScannerContent(context, round: round),
+            _KeystoneDenominationSignStage.failed => Scaffold(
+              backgroundColor: context.colors.background.window,
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    MobileTopNav.back(
+                      title: 'Keystone migration',
+                      onBack: () => unawaited(_returnToReview()),
+                    ),
+                    Expanded(child: _buildMobileFailureContent(context)),
+                  ],
+                ),
               ),
             ),
-          ),
-        },
+          },
+        ),
       ),
     );
   }
@@ -1365,7 +1484,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           decoding: _decoding || waitingForProofs,
           error: null,
           onProgress: (progress) {
-            if (_pendingSignedMessages != null || !mounted) return;
+            if (_cancelling || _pendingSignedMessages != null || !mounted) {
+              return;
+            }
             if (_error == null && _scanProgress == progress) return;
             setState(() {
               _error = null;
@@ -1418,7 +1539,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   void _showRequestQrAgain() {
-    if (!mounted) return;
+    if (!mounted || _cancelling) return;
     setState(() {
       _stage = _KeystoneDenominationSignStage.showQr;
       _error = null;
@@ -2151,6 +2272,8 @@ bool _keystoneMigrationRequestMissingError(Object error) {
 
 @visibleForTesting
 String ironwoodMigrationKeystoneSigningErrorMessage(Object error) {
+  final upgradeHold = networkUpgradeHoldMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('batch result request id') &&

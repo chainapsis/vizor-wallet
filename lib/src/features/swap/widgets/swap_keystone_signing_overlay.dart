@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/services/keystone_batch_signing.dart';
@@ -17,6 +17,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/swap_hardware_signing_service.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 class SwapKeystoneSigningOverlay extends ConsumerStatefulWidget {
   const SwapKeystoneSigningOverlay({
@@ -42,7 +43,7 @@ enum _SwapKeystonePhase { preparing, ready, broadcasting, failed }
 // tell the payment-URI drain that this surface is mid-session.
 class _SwapKeystoneSigningOverlayState
     extends ConsumerState<SwapKeystoneSigningOverlay>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   _SwapKeystonePhase _phase = _SwapKeystonePhase.preparing;
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPromptCompleter;
@@ -260,6 +261,7 @@ class _SwapKeystoneSigningOverlayState
         setState(() {
           _phase = _SwapKeystonePhase.failed;
           _error =
+              networkUpgradeHoldMessage(result.message ?? '') ??
               result.message ??
               'The transaction status is uncertain. Refresh activity before trying again.';
         });
@@ -397,6 +399,8 @@ class _SwapKeystoneSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {
       return 'Keystone does not support TEX sends yet.';

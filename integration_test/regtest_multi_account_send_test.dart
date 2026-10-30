@@ -189,7 +189,14 @@ void main() {
 
 Future<void> _importFirstWallet(WidgetTester tester) async {
   _log('importing first wallet');
-  await _tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await _tapAppButton(
+    tester,
+    const ValueKey('welcome_import_wallet_button'),
+  );
+  await _tapWidget(
+    tester,
+    const ValueKey('desktop_import_secret_passphrase_card'),
+  );
   await _enterText(
     tester,
     const ValueKey('import_mnemonic_first_word_field'),
@@ -201,6 +208,7 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
     tester,
     const ValueKey('unknown_birthday_confirm_button'),
   );
+  await finishDesktopAccountCustomisation(tester);
   await _enterText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -212,14 +220,21 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
     _password,
   );
   await _tapAppButton(tester, const ValueKey('set_password_submit_button'));
-  await finishDesktopAccountCustomisation(tester);
+
   await _waitForHome(tester);
   _log('first wallet imported');
 }
 
 Future<void> _importAdditionalWallet(WidgetTester tester) async {
   _log('importing second wallet');
-  await _tapAppButton(tester, const ValueKey('welcome_import_wallet_button'));
+  await _tapAppButton(
+    tester,
+    const ValueKey('welcome_import_wallet_button'),
+  );
+  await _tapWidget(
+    tester,
+    const ValueKey('desktop_import_secret_passphrase_card'),
+  );
   await _enterText(
     tester,
     const ValueKey('import_mnemonic_first_word_field'),

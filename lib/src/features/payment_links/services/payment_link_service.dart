@@ -10,16 +10,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/config/swap_feature_config.dart';
+import '../../../core/config/rpc_endpoint_config.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/pending_activity_evidence_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../send/services/sapling_params.dart';
 import '../models/vizor_payment_link.dart';
 import '../providers/gift_card_tracking_provider.dart';
+import '../providers/gift_card_check_progress_provider.dart';
 import '../providers/payment_link_claim_coordinator_provider.dart';
 import 'payment_link_received_store.dart';
 import 'gift_claim_import_store.dart';
@@ -28,6 +32,7 @@ import 'payment_link_recovery_reconciler.dart';
 import 'payment_link_recovery_store.dart';
 import 'payment_link_sharing.dart';
 import 'payment_link_transaction_matching.dart';
+import 'payment_link_transaction_lookup.dart';
 
 part 'payment_link_claim_receipt.dart';
 part 'payment_link_claim_math.dart';
@@ -41,6 +46,15 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
     ref.read(paymentLinkRecoveryReconcilerProvider),
   );
 });
+
+typedef WalletFeePolicyGetter =
+    Future<rust_sync.WalletFeePolicy> Function({
+      required String dbPath,
+      required String network,
+    });
+final walletFeePolicyGetterProvider = Provider<WalletFeePolicyGetter>(
+  (ref) => rust_sync.getWalletFeePolicy,
+);
 
 const kPaymentLinkShareConfirmationTarget = 1;
 const _paymentLinkClaimMetadataWriteAttempts = 2;
@@ -68,8 +82,10 @@ PaymentLinkFundingQuote paymentLinkMaxFundingQuote({
   required String sourceAccountUuid,
   required BigInt maxSpendAmountZatoshi,
   required BigInt fundingFeeZatoshi,
+  BigInt? claimFeeReserveZatoshi,
 }) {
-  final claimFeeReserve = BigInt.from(kPaymentLinkClaimFeeReserveZatoshi);
+  final claimFeeReserve =
+      claimFeeReserveZatoshi ?? BigInt.from(kPaymentLinkClaimFeeReserveZatoshi);
   if (maxSpendAmountZatoshi <= claimFeeReserve) {
     throw StateError(
       'Insufficient balance to fund a Gift Card and its claim fee.',
@@ -124,6 +140,7 @@ abstract interface class PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   });
 
   Future<void> retryFundingMetadata({
@@ -131,7 +148,13 @@ abstract interface class PaymentLinkOperations {
     required String fundingTxids,
   });
 
+  /// Reads persisted cards without cleanup, chain queries, or recovery.
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinks();
+
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries();
+
+  /// Deferred management recovery, owned by the lock/reset preparation lifecycle.
+  Future<List<PaymentLinkRecoveryRecord>> recoverCreatedLinks();
 
   Future<PaymentLinkRecoveryRecord> markCreatedLinkShared(
     VizorPaymentLink link,
@@ -203,15 +226,19 @@ class PaymentLinkBatchQuote {
     required this.count,
     required this.recipientAmountZatoshi,
     required this.fundingFeeZatoshi,
+    this.perCardClaimFeeReserveZatoshi,
   });
 
   final String sourceAccountUuid;
   final int count;
   final BigInt recipientAmountZatoshi;
   final BigInt fundingFeeZatoshi;
+  final BigInt? perCardClaimFeeReserveZatoshi;
 
   BigInt get claimFeeReserveZatoshi =>
-      BigInt.from(count * kPaymentLinkClaimFeeReserveZatoshi);
+      BigInt.from(count) *
+      (perCardClaimFeeReserveZatoshi ??
+          BigInt.from(kPaymentLinkClaimFeeReserveZatoshi));
   BigInt get totalDeductedZatoshi =>
       BigInt.from(count) * recipientAmountZatoshi +
       claimFeeReserveZatoshi +
@@ -249,7 +276,11 @@ class PaymentLinkBatchQuoteChanged implements Exception {
 }
 
 class PaymentLinkBatchPreSubmissionFailure implements Exception {
-  const PaymentLinkBatchPreSubmissionFailure();
+  const PaymentLinkBatchPreSubmissionFailure([this.message]);
+
+  /// User copy when a later attempt can pass, such as the network upgrade
+  /// hold; null for the generic retry copy.
+  final String? message;
 }
 
 /// A batch the wallet cannot fund as asked (a signer limit or the
@@ -429,7 +460,49 @@ List<String> paymentLinkClaimDetailTxids({
   }.toList();
 }
 
-/// Chooses a destination output pool only when all matching claim legs agree.
+/// Exact recipient history can enrich old metadata after the claim cache is gone.
+/// Missing, expired, or unresolved legs must not be inferred from another leg.
+String? paymentLinkClaimDestinationPoolFromHistory({
+  required String claimTxids,
+  required Iterable<rust_sync.TransactionInfo> transactions,
+}) {
+  final txids = claimTxids
+      .split(',')
+      .map((id) => id.trim())
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  if (txids.isEmpty) return null;
+  final history = transactions.toList();
+  final pools = <String>{};
+  for (final txid in txids) {
+    final matches = history.where(
+      (tx) =>
+          (tx.txKind == 'received' || tx.txKind == 'receiving') &&
+          !tx.expiredUnmined &&
+          paymentLinkTxidsMatch(txid, tx.txidHex),
+    );
+    if (matches.isEmpty) return null;
+    for (final tx in matches) {
+      final pool = tx.activityPool ?? tx.displayPool;
+      if (!{
+        'ironwood',
+        'orchard',
+        'sapling',
+        'transparent',
+        'mixed',
+      }.contains(pool)) {
+        return null;
+      }
+      pools.add(pool);
+    }
+  }
+  return pools.length == 1 ? pools.single : 'mixed';
+}
+
+bool paymentLinkClaimPoolNeedsEnrichment(String? pool) =>
+    pool == null || pool == 'shielded' || pool == 'unknown';
+
+/// Chooses a destination output pool only after observing every claim leg.
 /// This keeps a partial/multi-leg claim from displaying a pool inferred from
 /// an unrelated input or an arbitrary output.
 @visibleForTesting
@@ -447,7 +520,7 @@ String? paymentLinkClaimDestinationPoolFromDetails({
       .toSet();
   if (expectedTxids.isEmpty) return null;
   final availableDetails = details.toList();
-  String? observedPool;
+  final observedPools = <String>{};
   for (final txid in expectedTxids) {
     final matchingDetails = availableDetails.where(
       (detail) => paymentLinkTxidsMatch(txid, detail.txidHex),
@@ -464,19 +537,22 @@ String? paymentLinkClaimDestinationPoolFromDetails({
           sameOrchardReceiver?.call(outputAddress, destinationAddress) == true;
     }).toList();
     if (matchingOutputs.isEmpty) return null;
-    var selectedOutput = matchingOutputs.first;
-    for (final output in matchingOutputs) {
-      if (output.amountZatoshi == expectedAmountZatoshi) {
-        selectedOutput = output;
-        break;
-      }
+    final fullAmountOutputs = matchingOutputs
+        .where((output) => output.amountZatoshi == expectedAmountZatoshi)
+        .toList();
+    // A split claim may have no output carrying the full Card amount. In that
+    // case every matching destination output contributes to the pool label.
+    for (final output
+        in fullAmountOutputs.isEmpty ? matchingOutputs : fullAmountOutputs) {
+      final pool = (output.activityPool ?? output.pool).trim();
+      if (pool.isEmpty || pool == 'unknown') return null;
+      observedPools.add(pool);
     }
-    final pool = selectedOutput.pool.trim();
-    if (pool.isEmpty) return null;
-    if (observedPool != null && observedPool != pool) return null;
-    observedPool = pool;
   }
-  return observedPool;
+  if (observedPools.length > 1 && observedPools.contains('shielded')) {
+    return null;
+  }
+  return observedPools.length == 1 ? observedPools.single : 'mixed';
 }
 
 @visibleForTesting
@@ -586,10 +662,51 @@ class PaymentLinkService
   final Ref _ref;
   final Set<String> _activeClaims = {};
   Future<void> _claimInspectionTail = Future<void>.value();
+  Future<List<PaymentLinkRecoveryRecord>>? _createdRecoveryInFlight;
   final PaymentLinkRecoveryStore _recoveryStore;
   final PaymentLinkReceivedStore _receivedStore;
   final PaymentLinkRecoveryReconciler _recoveryReconciler;
   late final PaymentLinkClaimWallet _claimWallet = PaymentLinkClaimWallet(_ref);
+
+  Future<BigInt> claimFeeReserve({String? network}) async {
+    final selectedNetwork =
+        network ?? _ref.read(rpcEndpointFailoverProvider).current.networkName;
+    final policy = await _ref.read(walletFeePolicyGetterProvider)(
+      dbPath: await getWalletDbPath(),
+      network: selectedNetwork,
+    );
+    return policy.minimumFeeZatoshi;
+  }
+
+  Future<void> validateFundingReserve(BigInt reserve, {String? network}) async {
+    if (await claimFeeReserve(network: network) != reserve) {
+      throw const PaymentLinkBatchQuoteChanged();
+    }
+  }
+
+  Future<BigInt> fundingAmountForDraft(VizorPaymentLink link) async {
+    final record = (await _recoveryStore.load())
+        .where((r) => r.link.address == link.address)
+        .first;
+    return paymentLinkFundingAmountZatoshi(
+      link.amountZatoshi,
+      claimFeeReserveZatoshi: record.claimFeeReserveZatoshi,
+    );
+  }
+
+  void _validateReviewedQuote(
+    PaymentLinkFundingQuote? quote,
+    String account,
+    BigInt amount,
+    BigInt reserve,
+  ) {
+    if (quote != null &&
+        (quote.sourceAccountUuid != account ||
+            quote.recipientAmountZatoshi != amount ||
+            quote.claimFeeReserveZatoshi != reserve)) {
+      throw const PaymentLinkBatchQuoteChanged();
+    }
+  }
 
   @override
   Future<PaymentLinkFundingQuote> quoteMaxFunding({
@@ -610,16 +727,24 @@ class PaymentLinkService
               network: endpoint.networkName,
               accountUuid: sourceAccountUuid,
             );
+            final reserve = await claimFeeReserve(
+              network: endpoint.networkName,
+            );
             final estimate = await rust_sync.estimateSendMax(
               dbPath: dbPath,
               network: endpoint.networkName,
               accountUuid: sourceAccountUuid,
               toAddress: estimateAddress,
             );
+            await validateFundingReserve(
+              reserve,
+              network: endpoint.networkName,
+            );
             return paymentLinkMaxFundingQuote(
               sourceAccountUuid: sourceAccountUuid,
               maxSpendAmountZatoshi: estimate.amountZatoshi,
               fundingFeeZatoshi: estimate.feeZatoshi,
+              claimFeeReserveZatoshi: reserve,
             );
           },
         );
@@ -633,7 +758,6 @@ class PaymentLinkService
     if (sourceAccountUuid.isEmpty) {
       throw StateError('No active account.');
     }
-    final fundingAmount = paymentLinkFundingAmountZatoshi(amountZatoshi);
     return _ref
         .read(syncProvider.notifier)
         .runWithAuthoritativeSpendable(
@@ -646,6 +770,13 @@ class PaymentLinkService
               network: endpoint.networkName,
               accountUuid: sourceAccountUuid,
             );
+            final reserve = await claimFeeReserve(
+              network: endpoint.networkName,
+            );
+            final fundingAmount = paymentLinkFundingAmountZatoshi(
+              amountZatoshi,
+              claimFeeReserveZatoshi: reserve,
+            );
             final fundingFee = await rust_sync.estimateFee(
               dbPath: dbPath,
               network: endpoint.networkName,
@@ -654,13 +785,15 @@ class PaymentLinkService
               amountZatoshi: fundingAmount,
               memo: null,
             );
+            await validateFundingReserve(
+              reserve,
+              network: endpoint.networkName,
+            );
             return PaymentLinkFundingQuote(
               sourceAccountUuid: sourceAccountUuid,
               recipientAmountZatoshi: amountZatoshi,
               fundingFeeZatoshi: fundingFee,
-              claimFeeReserveZatoshi: BigInt.from(
-                kPaymentLinkClaimFeeReserveZatoshi,
-              ),
+              claimFeeReserveZatoshi: reserve,
             );
           },
         );
@@ -688,6 +821,7 @@ class PaymentLinkService
     final birthdayHeight = await _ref
         .read(rpcEndpointFailoverProvider.notifier)
         .getLatestBlockHeight();
+    final reserve = await claimFeeReserve(network: endpoint.networkName);
     final links = <VizorPaymentLink>[];
     for (var index = 0; index < count; index++) {
       links.add(
@@ -718,7 +852,10 @@ class PaymentLinkService
               network: endpoint.networkName,
               accountUuid: sourceAccountUuid,
               addresses: [for (final link in links) link.address],
-              amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+              amountZatoshi: paymentLinkFundingAmountZatoshi(
+                amountZatoshi,
+                claimFeeReserveZatoshi: reserve,
+              ),
             ),
           );
     } catch (error) {
@@ -727,12 +864,13 @@ class PaymentLinkService
       }
       rethrow;
     }
+    await validateFundingReserve(reserve, network: endpoint.networkName);
     final batchId = _newSendFlowId();
     await _recoveryStore.saveBatchDrafts(
       batchId: batchId,
       links: links,
       sourceAccountUuid: sourceAccountUuid,
-      claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
+      claimFeeReserveZatoshi: reserve,
     );
     return PaymentLinkBatchDraft(
       id: batchId,
@@ -742,6 +880,7 @@ class PaymentLinkService
         count: count,
         recipientAmountZatoshi: amountZatoshi,
         fundingFeeZatoshi: fee,
+        perCardClaimFeeReserveZatoshi: reserve,
       ),
     );
   }
@@ -767,10 +906,15 @@ class PaymentLinkService
         }
         return _proposeAndExecute(
           fromAccountUuid: accountUuid,
-          propose: (dbPath, network, sendFlowId) {
+          propose: (dbPath, network, sendFlowId) async {
             if (draft.links.any((link) => link.network != network)) {
               throw StateError('The Gift Card network changed.');
             }
+            await validateFundingReserve(
+              draft.quote.claimFeeReserveZatoshi ~/
+                  BigInt.from(draft.quote.count),
+              network: network,
+            );
             return rust_sync.proposePaymentLinkBatch(
               dbPath: dbPath,
               network: network,
@@ -779,6 +923,9 @@ class PaymentLinkService
               addresses: [for (final link in draft.links) link.address],
               amountZatoshi: paymentLinkFundingAmountZatoshi(
                 draft.quote.recipientAmountZatoshi,
+                claimFeeReserveZatoshi:
+                    draft.quote.claimFeeReserveZatoshi ~/
+                    BigInt.from(draft.quote.count),
               ),
             );
           },
@@ -800,14 +947,22 @@ class PaymentLinkService
       // Nothing reached the network, so the drafts hold no funds. If removing
       // them fails, stale-draft recovery does it later; this still was not sent.
       try {
-        await _recoveryStore.removeUnsubmittedBatch(draft.id);
+        await _recoveryStore.removeUnsubmittedBatch(
+          draft.id,
+          refusedAfterMarker: failure.afterSubmissionMarker,
+        );
       } catch (cleanupError) {
         log('PaymentLinkService: unsent batch cleanup failed: $cleanupError');
       }
       final error = failure.error;
       if (error is PaymentLinkBatchQuoteChanged) throw error;
       throw PaymentLinkBatchRejected.from(error) ??
-          const PaymentLinkBatchPreSubmissionFailure();
+          PaymentLinkBatchPreSubmissionFailure(
+            networkUpgradeHoldMessage(error),
+          );
+    }
+    if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
+      observeActivityBroadcast(accountUuid: accountUuid, txids: result.txids);
     }
     final funding = await PaymentLinkFundingRecovery(_recoveryStore)
         .completeBatch(
@@ -856,6 +1011,7 @@ class PaymentLinkService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     if (_ref
         .read(accountProvider.notifier)
@@ -864,6 +1020,13 @@ class PaymentLinkService
         'Keystone payment links require the hardware signing flow.',
       );
     }
+    final reserve = await claimFeeReserve();
+    _validateReviewedQuote(
+      expectedQuote,
+      sourceAccountUuid,
+      amountZatoshi,
+      reserve,
+    );
     final link = await _createFundingLink(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,
@@ -875,9 +1038,7 @@ class PaymentLinkService
     // card creation support. Revisit activity and fee aggregation if this changes.
     final funding = await PaymentLinkFundingRecovery(_recoveryStore)
         .fund<rust_sync.ExecuteProposalResult>(
-          claimFeeReserveZatoshi: BigInt.from(
-            kPaymentLinkClaimFeeReserveZatoshi,
-          ),
+          claimFeeReserveZatoshi: reserve,
           link: link,
           sourceAccountUuid: sourceAccountUuid,
           createTransaction: (markSubmissionStarted) async {
@@ -886,8 +1047,12 @@ class PaymentLinkService
               (markLocalSubmission) => _sendShielded(
                 fromAccountUuid: sourceAccountUuid,
                 toAddress: link.address,
-                amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+                amountZatoshi: paymentLinkFundingAmountZatoshi(
+                  amountZatoshi,
+                  claimFeeReserveZatoshi: reserve,
+                ),
                 memo: null,
+                expectedFeeZatoshi: expectedQuote?.fundingFeeZatoshi,
                 onSubmissionStarted: () async {
                   // The durable trace has to land before the broadcast, and
                   // the local marker only after it: a failed write leaves
@@ -907,6 +1072,12 @@ class PaymentLinkService
           fundingTxids: (result) => result.txids,
         );
     final fundingResult = funding.transaction;
+    if (isPaymentLinkFundingBroadcastAccepted(fundingResult.status)) {
+      observeActivityBroadcast(
+        accountUuid: sourceAccountUuid,
+        txids: fundingResult.txids,
+      );
+    }
     if (!funding.fundingMetadataSaved) {
       log(
         'PaymentLinkService: funding was submitted but recovery metadata '
@@ -924,6 +1095,24 @@ class PaymentLinkService
         fundingResult.status,
       ),
     );
+  }
+
+  void observeActivityBroadcast({
+    required String accountUuid,
+    required String txids,
+  }) {
+    if (!_ref.mounted || _ref.read(appSecurityProvider).requiresUnlock) return;
+    if (!(_ref
+            .read(accountProvider)
+            .value
+            ?.accounts
+            .any((a) => a.uuid == accountUuid) ??
+        false)) {
+      return;
+    }
+    _ref
+        .read(pendingActivityEvidenceProvider.notifier)
+        .observe(accountUuid: accountUuid, txids: txids.split(','));
   }
 
   @override
@@ -950,14 +1139,22 @@ class PaymentLinkService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
+    final reserve = await claimFeeReserve();
+    _validateReviewedQuote(
+      expectedQuote,
+      sourceAccountUuid,
+      amountZatoshi,
+      reserve,
+    );
     final link = await _createFundingLink(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
     );
     await _recoveryStore.saveDraft(
-      claimFeeReserveZatoshi: BigInt.from(kPaymentLinkClaimFeeReserveZatoshi),
+      claimFeeReserveZatoshi: reserve,
       link: link,
       sourceAccountUuid: sourceAccountUuid,
     );
@@ -1044,8 +1241,52 @@ class PaymentLinkService
   }
 
   @override
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinks() =>
+      _recoveryStore.load();
+
+  @override
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() =>
       _recoveryReconciler.load();
+
+  @override
+  Future<List<PaymentLinkRecoveryRecord>> recoverCreatedLinks() {
+    final existing = _createdRecoveryInFlight;
+    if (existing != null) return existing;
+    final coordinator = _ref.read(paymentLinkClaimCoordinatorProvider);
+    late final Future<List<PaymentLinkRecoveryRecord>> tracked;
+    tracked = coordinator
+        .trackPreparation(() async {
+          final generation = coordinator.beginPreparation();
+          void ensureActive() => coordinator.requirePreparation(generation);
+          final unregister = coordinator.registerCheckCancellation(
+            _claimWallet.cancelAllSyncs,
+          );
+          try {
+            await _recoveryReconciler.load(
+              ensureActive: ensureActive,
+              loadLinkFundingHistory: (link) => _claimWallet.loadFundingHistory(
+                link,
+                ensureActive: ensureActive,
+              ),
+            );
+            ensureActive();
+            // A user can create/share cards while deferred chain checks run.
+            // Publish the persisted result, never the pass's initial snapshot.
+            final records = await _recoveryStore.load();
+            ensureActive();
+            return records;
+          } finally {
+            unregister();
+          }
+        })
+        .whenComplete(() {
+          if (identical(_createdRecoveryInFlight, tracked)) {
+            _createdRecoveryInFlight = null;
+          }
+        });
+    _createdRecoveryInFlight = tracked;
+    return tracked;
+  }
 
   @override
   Future<PaymentLinkRecoveryRecord> markCreatedLinkShared(
@@ -1073,17 +1314,23 @@ class PaymentLinkService
     }
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final dbPath = await getWalletDbPath();
-    final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
-    for (final accountUuid
-        in needsHistory.map((record) => record.sourceAccountUuid).toSet()) {
-      transactionsByAccount[accountUuid] = await rust_sync
-          .getTransactionHistory(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            limit: null,
-          );
+    final requested = <String, Set<String>>{};
+    for (final record in needsHistory) {
+      addPaymentLinkTransactionIds(
+        requested,
+        record.sourceAccountUuid,
+        record.fundingTxids,
+      );
     }
+    final rowsByAccount = await loadPaymentLinkTransactionRows(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      txidsByAccount: requested,
+    );
+    final transactionsByAccount = {
+      for (final entry in rowsByAccount.entries)
+        entry.key: PaymentLinkTransactionIndex(entry.value),
+    };
     final cachedTip = _ref.read(syncProvider).value?.chainTipHeight ?? 0;
     final chainTipHeight = cachedTip > 0
         ? BigInt.from(cachedTip)
@@ -1097,7 +1344,10 @@ class PaymentLinkService
           !paymentLinkFundingExpired(
             fundingTxids: fundingTxids,
             transactions:
-                transactionsByAccount[record.sourceAccountUuid] ?? const [],
+                transactionsByAccount[record.sourceAccountUuid]?.matching(
+                  record.fundingTxids,
+                ) ??
+                const [],
           )) {
         continue;
       }
@@ -1117,7 +1367,9 @@ class PaymentLinkService
               : _fundingProgressForRecord(
                   record: record,
                   transactions:
-                      transactionsByAccount[record.sourceAccountUuid] ??
+                      transactionsByAccount[record.sourceAccountUuid]?.matching(
+                        record.fundingTxids,
+                      ) ??
                       const [],
                   chainTipHeight: chainTipHeight,
                 ),
@@ -1211,7 +1463,10 @@ class PaymentLinkService
           (record) =>
               (record.status == PaymentLinkReceivedStatus.receiving ||
                   record.status == PaymentLinkReceivedStatus.received &&
-                      record.needsClaimRecovery) &&
+                      (record.needsClaimRecovery ||
+                          paymentLinkClaimPoolNeedsEnrichment(
+                            record.claimDestinationPool,
+                          ))) &&
               record.destinationAccountUuid != null &&
               record.claimTxids != null &&
               record.claimTxids!.trim().isNotEmpty,
@@ -1227,7 +1482,21 @@ class PaymentLinkService
     final retryableAddresses = <String>{};
     await Future.wait(
       currentNetworkRecords.map((record) async {
+        if (record.status == PaymentLinkReceivedStatus.received &&
+            !record.needsClaimRecovery) {
+          return;
+        }
         try {
+          if (record.claimRecoveryConfirmed) {
+            await reconcileObservedPaymentLinkClaimReceipt(
+              record: record,
+              confirmationCount: 6,
+              store: _receivedStore,
+              deleteRetainedWallet: _claimWallet.deleteRetained,
+            );
+            retryableAddresses.add(record.address);
+            return;
+          }
           final outcome = await _claimWallet.syncRetained(
             record: record,
             network: endpoint.networkName,
@@ -1260,14 +1529,26 @@ class PaymentLinkService
     // must never alter the claim's lifecycle status.
     await Future.wait(
       awaitingReceipt
-          .where((record) => record.claimDestinationPool == null)
+          .where(
+            (record) => paymentLinkClaimPoolNeedsEnrichment(
+              record.claimDestinationPool,
+            ),
+          )
           .map((record) async {
             try {
-              final pool = await _loadRetainedClaimDestinationPool(
+              final retainedPool = await _loadRetainedClaimDestinationPool(
                 record: record,
                 network: endpoint.networkName,
               );
-              if (pool == null) return;
+              final pool = paymentLinkClaimPoolNeedsEnrichment(retainedPool)
+                  ? await _loadRecipientClaimDestinationPool(
+                          record: record,
+                          dbPath: dbPath,
+                          network: endpoint.networkName,
+                        ) ??
+                        retainedPool
+                  : retainedPool;
+              if (pool == null || pool == record.claimDestinationPool) return;
               await _receivedStore.updateClaimDestinationPool(
                 address: record.address,
                 claimDestinationPool: pool,
@@ -1281,19 +1562,79 @@ class PaymentLinkService
           }),
     );
 
-    final transactionsByAccount = <String, List<rust_sync.TransactionInfo>>{};
-    for (final accountUuid
-        in awaitingReceipt
-            .map((record) => record.destinationAccountUuid!)
-            .toSet()) {
-      transactionsByAccount[accountUuid] = await rust_sync
-          .getTransactionHistory(
-            dbPath: dbPath,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            limit: null,
+    final legacyAwaitingReceipt = <PaymentLinkReceivedRecord>[];
+    for (final record in awaitingReceipt) {
+      if (record.status == PaymentLinkReceivedStatus.received &&
+          !record.needsClaimRecovery) {
+        continue;
+      }
+      int? confirmations;
+      try {
+        final link = record.claimLink;
+        if (link == null) {
+          legacyAwaitingReceipt.add(record);
+          continue;
+        }
+        final location = await _claimWallet.locate(link);
+        if (!await File(location.dbPath).exists()) {
+          // Lost legacy/local cache can still settle from authoritative inbound
+          // recipient history. Never infer failure from the missing file.
+          legacyAwaitingReceipt.add(record);
+          continue;
+        }
+        confirmations = await rust_sync.getPaymentLinkClaimConfirmations(
+          dbPath: location.dbPath,
+          claimTxids: record.claimTxids!,
+        );
+      } catch (error, stackTrace) {
+        log(
+          'PaymentLinkService: receipt observation failed for '
+          '${record.address}: $error\n$stackTrace',
+        );
+        // An unreadable retained cache has the same recovery path as a
+        // missing legacy cache: verify the saved txids in recipient history.
+        legacyAwaitingReceipt.add(record);
+        continue;
+      }
+      if (confirmations == null) {
+        legacyAwaitingReceipt.add(record);
+      } else if (confirmations >= 0) {
+        try {
+          await reconcileObservedPaymentLinkClaimReceipt(
+            record: record,
+            confirmationCount: confirmations,
+            store: _receivedStore,
+            deleteRetainedWallet: _claimWallet.deleteRetained,
           );
+        } catch (error, stackTrace) {
+          // Persistence/cleanup failures retry their own checkpoint. They
+          // must not be mistaken for observer read failures.
+          log(
+            'PaymentLinkService: observed receipt reconciliation failed for '
+            '${record.address}: $error\n$stackTrace',
+          );
+        }
+      }
     }
+    if (legacyAwaitingReceipt.isEmpty) return _receivedStore.load();
+
+    final requested = <String, Set<String>>{};
+    for (final record in legacyAwaitingReceipt) {
+      addPaymentLinkTransactionIds(
+        requested,
+        record.destinationAccountUuid!,
+        record.claimTxids,
+      );
+    }
+    final rowsByAccount = await loadPaymentLinkTransactionRows(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      txidsByAccount: requested,
+    );
+    final transactionsByAccount = {
+      for (final entry in rowsByAccount.entries)
+        entry.key: PaymentLinkTransactionIndex(entry.value),
+    };
     final syncState = _ref.read(syncProvider).value;
     // A polled tip can advance before the main wallet DB has scanned it. In
     // particular, after a reorg the DB can still expose a transaction's old
@@ -1305,11 +1646,14 @@ class PaymentLinkService
       chainTipHeight: syncState?.chainTipHeight ?? 0,
     );
 
-    for (final record in awaitingReceipt) {
+    for (final record in legacyAwaitingReceipt) {
       await reconcilePaymentLinkClaimReceipt(
         record: record,
         transactions:
-            transactionsByAccount[record.destinationAccountUuid!] ?? const [],
+            transactionsByAccount[record.destinationAccountUuid!]?.matching(
+              record.claimTxids,
+            ) ??
+            const [],
         verifiedHeight: chainTipHeight,
         store: _receivedStore,
         deleteRetainedWallet: _claimWallet.deleteRetained,
@@ -1368,8 +1712,22 @@ class PaymentLinkService
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
+    return _ref
+        .read(paymentLinkClaimCoordinatorProvider)
+        .trackPreparation(
+          () => _prepareClaim(link, allowLongSync: allowLongSync),
+        );
+  }
+
+  Future<PaymentLinkClaimSession> _prepareClaim(
+    VizorPaymentLink link, {
+    required bool allowLongSync,
+  }) async {
+    final coordinator = _ref.read(paymentLinkClaimCoordinatorProvider);
+    final generation = coordinator.beginPreparation();
     _requireWalletUnlocked();
     final records = await _receivedStore.load();
+    coordinator.requirePreparation(generation);
     final saved = records
         .where(
           (record) =>
@@ -1381,6 +1739,7 @@ class PaymentLinkService
     final setupAccountUuid = saved?.setupAccountUuid;
     if (setupAccountUuid != null) {
       link = await paymentLinkWithRetainedAddress(link, [saved!]);
+      coordinator.requirePreparation(generation);
       return _ref
           .read(paymentLinkClaimCoordinatorProvider)
           .prepareSetupClaim(
@@ -1427,6 +1786,7 @@ class PaymentLinkService
     // Locking preserves the active UUID but clears its address. Do not restore
     // that sensitive state from a lookup that completed after the wallet locked.
     _requireWalletUnlocked();
+    coordinator.requirePreparation(generation);
     if (_ref.read(accountProvider).value?.activeAccountUuid !=
         receiverAccountUuid) {
       throw const PaymentLinkClaimDestinationChangedException();
@@ -1443,6 +1803,7 @@ class PaymentLinkService
       link,
       allowLongSync: allowLongSync,
       estimateDestinationAddress: receiverAddress,
+      preparationGeneration: generation,
     );
     return _sessionFromInspection(
       inspection,
@@ -1458,8 +1819,10 @@ class PaymentLinkService
     VizorPaymentLink link, {
     bool allowLongSync = false,
   }) async {
-    _requireWalletUnlocked();
-    return _inspectClaim(link, allowLongSync: allowLongSync);
+    return _ref.read(paymentLinkClaimCoordinatorProvider).trackPreparation(() {
+      _requireWalletUnlocked();
+      return _inspectClaim(link, allowLongSync: allowLongSync);
+    });
   }
 
   @override
@@ -1567,7 +1930,12 @@ class PaymentLinkService
     VizorPaymentLink link, {
     required bool allowLongSync,
     String? estimateDestinationAddress,
+    int? preparationGeneration,
   }) async {
+    final coordinator = _ref.read(paymentLinkClaimCoordinatorProvider);
+    final generation = preparationGeneration ?? coordinator.beginPreparation();
+    void requirePreparation() => coordinator.requirePreparation(generation);
+    requirePreparation();
     log('PaymentLinkClaim: preparation started');
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     if (link.network != endpoint.networkName) {
@@ -1581,27 +1949,22 @@ class PaymentLinkService
     final currentTipHeight = await _ref
         .read(rpcEndpointFailoverProvider.notifier)
         .getLatestBlockHeight();
+    requirePreparation();
     final claimBirthdayHeight = validatePaymentLinkClaimBirthday(
       advertisedBirthdayHeight: link.birthdayHeight,
       currentTipHeight: currentTipHeight.toInt(),
     );
     log('PaymentLinkClaim: birthday validated');
-    if (!allowLongSync &&
-        isLongPaymentLinkSync(
-          birthdayHeight: claimBirthdayHeight,
-          currentTipHeight: currentTipHeight.toInt(),
-        )) {
-      log('PaymentLinkClaim: long sync confirmation required');
-      throw const PaymentLinkLongSyncConfirmationRequired();
-    }
-
     final retainedRecords = await _receivedStore.load();
+    requirePreparation();
     link = await paymentLinkWithRetainedAddress(link, retainedRecords);
 
+    requirePreparation();
     final tempWallet = await _claimWallet.createOrOpen(link);
     log('PaymentLinkClaim: temporary wallet opened');
     var deleteOnError = !tempWallet.existed;
     try {
+      requirePreparation();
       final String importedAddress;
       final String importedAccountUuid;
       if (tempWallet.existed) {
@@ -1617,8 +1980,14 @@ class PaymentLinkService
             'recreating it: $e\n$st',
           );
         }
+        requirePreparation();
         if (accounts == null ||
-            !await _claimWallet.matchesLink(link: link, accounts: accounts)) {
+            !await _claimWallet.matchesLink(
+              link: link,
+              accounts: accounts,
+              dbPath: tempWallet.dbPath,
+            )) {
+          requirePreparation();
           if (accounts != null) {
             log(
               'PaymentLinkService: recreating incomplete payment-link claim '
@@ -1627,6 +1996,7 @@ class PaymentLinkService
           }
           deleteOnError = true;
           await _claimWallet.resetDb(tempWallet.directory);
+          requirePreparation();
           final imported = await _claimWallet.importClaimAccount(
             link: link,
             birthdayHeight: claimBirthdayHeight,
@@ -1636,7 +2006,11 @@ class PaymentLinkService
           importedAddress = imported.address;
           importedAccountUuid = imported.accountUuid;
         } else {
-          importedAddress = accounts.single.unifiedAddress;
+          importedAddress = await rust_wallet.getUnifiedAddress(
+            dbPath: tempWallet.dbPath,
+            network: endpoint.networkName,
+            accountUuid: accounts.single.uuid,
+          );
           importedAccountUuid = accounts.single.uuid;
         }
       } else {
@@ -1649,6 +2023,7 @@ class PaymentLinkService
         importedAddress = imported.address;
         importedAccountUuid = imported.accountUuid;
       }
+      requirePreparation();
       final advertisedAddress = link.knownAddress;
       if (advertisedAddress != null) {
         try {
@@ -1668,30 +2043,32 @@ class PaymentLinkService
           );
         }
       }
+      requirePreparation();
       link = link.withResolvedMetadata(
         address: advertisedAddress ?? importedAddress,
       );
       final existingRecord = await _receivedStore.find(link.address);
+      requirePreparation();
       if (existingRecord?.isClaimInFlight ?? false) {
         throw const PaymentLinkClaimInFlightException();
       }
       log('PaymentLinkClaim: recovery address validated');
 
-      await _claimWallet.runClaimSync(link: link, dbPath: tempWallet.dbPath);
-      log('PaymentLinkClaim: temporary wallet sync completed');
-      final balance = await rust_sync.getBalance(
+      final check = await _claimWallet.runClaimCheck(
+        link: link,
         dbPath: tempWallet.dbPath,
-        network: endpoint.networkName,
-        accountUuid: importedAccountUuid,
       );
+      log('PaymentLinkClaim: independent check completed');
       // Before wallet setup, use the card's own receiver only for the preview
       // estimate. This address is never used as a submitted claim destination.
+      requirePreparation();
       final estimate = await _estimateClaim(
         dbPath: tempWallet.dbPath,
         network: endpoint.networkName,
         accountUuid: importedAccountUuid,
         toAddress: estimateDestinationAddress ?? importedAddress,
       );
+      requirePreparation();
       final claimableZatoshi = paymentLinkClaimableAmountZatoshi(
         recipientAmountZatoshi: link.amountZatoshi,
         maxSpendableZatoshi: estimate?.amountZatoshi ?? BigInt.zero,
@@ -1703,6 +2080,7 @@ class PaymentLinkService
         accountUuid: importedAccountUuid,
         limit: null,
       );
+      requirePreparation();
       link = resolvePaymentLinkCreatedAt(
         link: link,
         transactions: transactions,
@@ -1713,17 +2091,23 @@ class PaymentLinkService
           createdAt: link.createdAt,
         );
       }
-      final fundingConfirmationCount =
-          paymentLinkFundingConfirmationCountForClaim(
-            recipientAmountZatoshi: link.amountZatoshi,
-            transactions: transactions,
-            chainTipHeight: currentTipHeight,
-          );
+      requirePreparation();
+      final fundingConfirmationCount = check.fundingHeight > 0
+          ? (check.checkedHeight - check.fundingHeight + 1).clamp(
+              0,
+              kPaymentLinkClaimConfirmationTarget,
+            )
+          : paymentLinkFundingConfirmationCountForClaim(
+              recipientAmountZatoshi: link.amountZatoshi,
+              transactions: transactions,
+              chainTipHeight: currentTipHeight,
+            );
       final evidence = await rust_sync.getPaymentLinkSpendEvidence(
         dbPath: tempWallet.dbPath,
         accountUuid: importedAccountUuid,
         claimTxids: existingRecord?.claimTxids ?? '',
       );
+      requirePreparation();
       final availability = claimableZatoshi > BigInt.zero
           ? PaymentLinkAvailability.available
           : evidence.allFundsSpentElsewhere
@@ -1737,9 +2121,10 @@ class PaymentLinkService
               existingRecord.setupAccountUuid != null)) {
         await _receivedStore.setAvailability(link.address, availability);
       }
+      requirePreparation();
       final waitingForFundingConfirmations = paymentLinkShouldWaitForFunding(
         recipientAmountZatoshi: link.amountZatoshi,
-        totalZatoshi: balance.total,
+        totalZatoshi: check.unspentZatoshi,
         fundingConfirmationCount: fundingConfirmationCount,
         birthdayHeight: claimBirthdayHeight,
         currentTipHeight: currentTipHeight.toInt(),
@@ -1756,7 +2141,7 @@ class PaymentLinkService
         directory: tempWallet.directory,
         dbPath: tempWallet.dbPath,
         accountUuid: importedAccountUuid,
-        totalZatoshi: balance.total,
+        totalZatoshi: check.unspentZatoshi,
         claimableZatoshi: claimableZatoshi,
         feeZatoshi: estimate?.feeZatoshi ?? BigInt.zero,
         fundingConfirmationCount: fundingConfirmationCount,
@@ -1819,6 +2204,12 @@ class PaymentLinkService
         session,
         onSubmissionStarted: () => submissionStarted = true,
       );
+      if (result.status == PaymentLinkClaimBroadcastStatus.broadcasted) {
+        observeActivityBroadcast(
+          accountUuid: session.destinationAccountUuid,
+          txids: result.txids,
+        );
+      }
       // The local claim wallet is authoritative for the destination output
       // pool. Enrichment is deliberately best-effort: a successful broadcast
       // must remain recoverable even when detail lookup is temporarily
@@ -1857,8 +2248,10 @@ class PaymentLinkService
       // Keep the claim database for rebroadcast/reorg recovery. Reconciliation
       // deletes it only after every claim transaction reaches six confirmations.
       return result;
-    } catch (_) {
-      if (!submissionStarted) {
+    } catch (error) {
+      // Rust raises the upgrade hold before it builds the claim, so the card
+      // is still ready even after the submission marker.
+      if (!submissionStarted || networkUpgradeHoldMessage(error) != null) {
         await _receivedStore.markReadyToClaim(
           address: session.link.address,
           expected: startedRecord,
@@ -1900,6 +2293,11 @@ class PaymentLinkService
         'using ${endpoint.networkName}.',
       );
     }
+    await _claimWallet.runClaimCheck(
+      link: session.link,
+      dbPath: session.dbPath,
+    );
+    _requireWalletUnlocked();
     final estimate = await rust_sync.estimatePaymentLinkClaimMax(
       dbPath: session.dbPath,
       network: endpoint.networkName,
@@ -2115,6 +2513,7 @@ class PaymentLinkService
     required BigInt amountZatoshi,
     String? memo,
     String? mnemonic,
+    BigInt? expectedFeeZatoshi,
     bool paymentLinkClaim = false,
     Future<void> Function()? beforeExecute,
     FutureOr<void> Function()? onSubmissionStarted,
@@ -2144,6 +2543,12 @@ class PaymentLinkService
               amountZatoshi: amountZatoshi,
               memo: memo,
             ),
+      checkProposal: (proposal) {
+        if (expectedFeeZatoshi != null &&
+            proposal.feeZatoshi != expectedFeeZatoshi) {
+          throw const PaymentLinkBatchQuoteChanged();
+        }
+      },
       mnemonic: mnemonic,
       beforeExecute: beforeExecute,
       onSubmissionStarted: onSubmissionStarted,
@@ -2300,12 +2705,15 @@ class PaymentLinkService
     final tempWallet = await _claimWallet.locate(link);
     if (!await File(tempWallet.dbPath).exists()) return;
 
-    await _claimWallet.runClaimSync(link: link, dbPath: tempWallet.dbPath);
     final accounts = await rust_wallet.listAccounts(
       dbPath: tempWallet.dbPath,
       network: network,
     );
-    if (!await _claimWallet.matchesLink(link: link, accounts: accounts)) {
+    if (!await _claimWallet.matchesLink(
+      link: link,
+      accounts: accounts,
+      dbPath: tempWallet.dbPath,
+    )) {
       return;
     }
     final evidence = await rust_sync.getPaymentLinkSpendEvidence(
@@ -2419,6 +2827,26 @@ class PaymentLinkService
     return pool;
   }
 
+  Future<String?> _loadRecipientClaimDestinationPool({
+    required PaymentLinkReceivedRecord record,
+    required String dbPath,
+    required String network,
+  }) async {
+    final accountUuid = record.destinationAccountUuid;
+    final txids = record.claimTxids;
+    if (accountUuid == null || txids == null) return null;
+    final history = await rust_sync.getTransactionHistory(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      limit: null,
+    );
+    return paymentLinkClaimDestinationPoolFromHistory(
+      claimTxids: txids,
+      transactions: history,
+    );
+  }
+
   Future<String?> _loadRetainedClaimDestinationPool({
     required PaymentLinkReceivedRecord record,
     required String network,
@@ -2439,7 +2867,11 @@ class PaymentLinkService
         dbPath: tempWallet.dbPath,
         network: network,
       );
-      if (!await _claimWallet.matchesLink(link: link, accounts: accounts)) {
+      if (!await _claimWallet.matchesLink(
+        link: link,
+        accounts: accounts,
+        dbPath: tempWallet.dbPath,
+      )) {
         return null;
       }
       final claimAccount = accounts.single;
@@ -2480,9 +2912,11 @@ class PaymentLinkService
   }
 
   void _requireWalletUnlocked() {
-    requireUnlockedPaymentLinkWallet(
-      requiresUnlock: _ref.read(appSecurityProvider).requiresUnlock,
-    );
+    if (_ref.read(appSecurityProvider).requiresUnlock) {
+      throw GiftCardPreparationInterrupted(
+        GiftCardPreparationPauseReason.locked,
+      );
+    }
   }
 
   String _newSendFlowId() {

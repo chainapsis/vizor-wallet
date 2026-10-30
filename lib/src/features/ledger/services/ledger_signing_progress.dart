@@ -78,15 +78,11 @@ extension LedgerSigningStageCopy on LedgerSigningStage {
     LedgerSigningStage.reviewing => 'Check your Ledger',
     LedgerSigningStage.finishing => 'Finishing transaction',
   };
-  String get message => messageForDevice(null);
-
-  String messageForDevice(String? deviceModel) => switch (this) {
+  String get message => switch (this) {
     LedgerSigningStage.preparing =>
       'Please wait while Vizor prepares your transaction.',
     LedgerSigningStage.sending =>
-      ledgerHasShortSigningWait(deviceModel)
-          ? 'Your Ledger is preparing to sign. It may seem unresponsive for about 10 seconds. Keep your Ledger connected.'
-          : 'Your Ledger is preparing to sign. It may seem unresponsive for about 30 seconds. Keep your Ledger connected.',
+      '$kLedgerSigningWaitInstruction Keep your Ledger connected.',
     LedgerSigningStage.reviewing =>
       'Review and approve when prompted on your Ledger.',
     LedgerSigningStage.finishing => 'Keep Vizor open.',
@@ -98,18 +94,7 @@ extension LedgerSigningStageCopy on LedgerSigningStage {
   };
 }
 
-/// Accept model identifiers exposed by USB and native Bluetooth discovery.
-/// Unknown and future models use the longer guidance.
-bool ledgerHasShortSigningWait(String? deviceModel) {
-  final model = (deviceModel ?? '')
-      .toLowerCase()
-      .replaceAll(RegExp('[^a-z0-9]'), '')
-      .replaceFirst(RegExp('^ledger'), '');
-  return const {
-    'stax',
-    'flex',
-    'staxflex',
-    'flexstax',
-    'europa',
-  }.contains(model);
-}
+/// Shared by mobile and desktop so preparation explains the device's expected
+/// apparent inactivity.
+const kLedgerSigningWaitInstruction =
+    'Ledger is preparing to sign. It may seem unresponsive for a few seconds.';

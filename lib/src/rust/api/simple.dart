@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 String greet({required String name}) =>
@@ -13,6 +14,13 @@ String greet({required String name}) =>
 /// node. Production builds leave the default activation-at-height-1 behavior.
 Future<void> configureRegtestIronwoodActivationHeight({required int height}) =>
     RustLib.instance.api.crateApiSimpleConfigureRegtestIronwoodActivationHeight(
+      height: height,
+    );
+
+/// Activates NU7 on regtest at the local node's height. Call after the NU6.3
+/// height; production builds leave NU7 inactive on regtest.
+Future<void> configureRegtestNu7ActivationHeight({required int height}) =>
+    RustLib.instance.api.crateApiSimpleConfigureRegtestNu7ActivationHeight(
       height: height,
     );
 

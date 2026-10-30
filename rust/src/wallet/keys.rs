@@ -181,8 +181,12 @@ pub fn mnemonic_to_seed_with_passphrase(
         );
     }
 
-    let mnemonic =
-        Mnemonic::<English>::from_phrase(phrase).map_err(|e| format!("Invalid mnemonic: {e}"))?;
+    // bip0039's `UnknownWord` carries the typed word, and this error is logged
+    // by its Dart callers (e.g. `createAccountFromMnemonic: ERROR: $e`).
+    let mnemonic = Mnemonic::<English>::from_phrase(phrase).map_err(|e| match e {
+        bip0039::Error::UnknownWord(_) => "Invalid mnemonic: unknown word".to_string(),
+        other => format!("Invalid mnemonic: {other}"),
+    })?;
     let seed = Zeroizing::new(mnemonic.to_seed(bip39_passphrase));
     drop(mnemonic);
     let secret_seed = SecretVec::new(seed.to_vec());
@@ -271,6 +275,7 @@ pub fn ensure_db_migrated_once(db_path: &str, network: WalletNetwork) -> Result<
     log::info!("wallet DB migration gate: ensuring schema for {db_path}");
     ensure_db_initialized(db_path, network)?;
     crate::wallet::sync::proposal_locks::recover_before_balance(db_path, network)?;
+    crate::wallet::ledger::recover_shield_reservations(db_path, network)?;
     migrated.insert(key);
     Ok(())
 }
@@ -395,6 +400,20 @@ pub fn software_account_first_external_transparent_address(
     seed: &SecretVec<u8>,
     account_index: u32,
 ) -> Result<String, String> {
+    let taddr = software_account_first_external_transparent_receiver(network, seed, account_index)?;
+    Ok(encode_transparent_address(
+        &network.b58_pubkey_address_prefix(),
+        &network.b58_script_address_prefix(),
+        &taddr,
+    ))
+}
+
+/// The transparent receiver at `m/44'/coin_type'/account'/0/0`, unencoded.
+pub(crate) fn software_account_first_external_transparent_receiver(
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    account_index: u32,
+) -> Result<transparent::address::TransparentAddress, String> {
     let ufvk = software_account_ufvk(network, seed, account_index)?;
     let transparent_key = ufvk
         .transparent()
@@ -402,15 +421,9 @@ pub fn software_account_first_external_transparent_address(
     let external_ivk = transparent_key
         .derive_external_ivk()
         .map_err(|e| format!("Failed to derive transparent external IVK: {e}"))?;
-    let taddr = external_ivk
+    external_ivk
         .derive_address(NonHardenedChildIndex::ZERO)
-        .map_err(|e| format!("Failed to derive transparent address index 0: {e}"))?;
-
-    Ok(encode_transparent_address(
-        &network.b58_pubkey_address_prefix(),
-        &network.b58_script_address_prefix(),
-        &taddr,
-    ))
+        .map_err(|e| format!("Failed to derive transparent address index 0: {e}"))
 }
 
 /// Return the standard transparent receivers for `account'` across the first
@@ -709,7 +722,6 @@ pub fn import_derived_account_at_index(
 pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
-    pub unified_address: String,
     pub birthday_height: u32,
     pub zip32_account_index: Option<u32>,
     pub is_seed_anchor: bool,
@@ -726,6 +738,8 @@ pub struct AccountExportMetadata {
 pub(crate) struct LedgerAccountSigningMetadata {
     pub account_index: u32,
     pub seed_fingerprint: [u8; 32],
+    /// First external BIP-44 public key, used to check the device before signing.
+    pub device_public_key: [u8; 33],
 }
 
 pub struct SoftwareSeedAccountState {
@@ -809,42 +823,58 @@ pub fn software_account_uuid_for_seed(
 }
 
 /// List all accounts in the wallet database.
-pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<AccountInfo>, String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
-
-    let account_ids = db
-        .get_account_ids()
-        .map_err(|e| format!("Failed to list accounts: {e}"))?;
-
-    let mut accounts = Vec::new();
-    for id in account_ids {
-        let account = db
-            .get_account(id)
-            .map_err(|e| format!("Failed to get account: {e}"))?
-            .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
-
-        let address = match account.ufvk() {
-            Some(ufvk) => addresses::current_receive_address(&db, db_path, network, id, ufvk)?,
-            None => String::new(),
-        };
-
-        let source = account.source();
-        let hardware_signer_kind = hardware_signer_kind(source);
-        accounts.push(AccountInfo {
-            uuid: id.expose_uuid().to_string(),
-            name: account.name().unwrap_or("").to_string(),
-            unified_address: address,
-            birthday_height: u32::from(account.birthday_height()),
-            zip32_account_index: source
-                .key_derivation()
-                .map(|derivation| u32::from(derivation.account_index())),
-            is_seed_anchor: matches!(source, AccountSource::Derived { .. }),
-            is_hardware: hardware_signer_kind.is_some(),
-            hardware_signer_kind,
-        });
-    }
-
-    Ok(accounts)
+pub fn list_accounts(db_path: &str, _network: WalletNetwork) -> Result<Vec<AccountInfo>, String> {
+    // A list needs metadata, not decoded viewing keys or receive addresses.
+    // Keep this projection aligned with the pinned wallet schema. In particular,
+    // imported view-only accounts do not expose a spending derivation.
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT uuid, name, birthday_height, account_kind, key_source,
+                CASE WHEN account_kind = 0 OR has_spend_key
+                     THEN hd_account_index END AS account_index
+         FROM accounts ORDER BY id",
+        )
+        .map_err(|e| format!("Failed to prepare account metadata: {e}"))?;
+    let accounts = stmt
+        .query_map([], |row| {
+            let uuid: Vec<u8> = row.get(0)?;
+            let key_source: Option<String> = row.get(4)?;
+            let signer = match key_source.as_deref() {
+                Some(KEY_SOURCE_KEYSTONE) => Some(HardwareSignerKind::Keystone),
+                Some(KEY_SOURCE_LEDGER) => Some(HardwareSignerKind::Ledger),
+                _ => None,
+            };
+            Ok((
+                uuid,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, u32>(3)?,
+                row.get::<_, Option<u32>>(5)?,
+                signer,
+            ))
+        })
+        .map_err(|e| format!("Failed to list account metadata: {e}"))?;
+    accounts
+        .map(|row| {
+            let (uuid, name, birthday_height, kind, index, signer) =
+                row.map_err(|e| format!("Failed to read account metadata: {e}"))?;
+            if kind > 1 || index.is_some_and(|i| i >= (1 << 31)) {
+                return Err("Invalid account metadata".to_string());
+            }
+            Ok(AccountInfo {
+                uuid: uuid::Uuid::from_slice(&uuid)
+                    .map_err(|e| e.to_string())?
+                    .to_string(),
+                name: name.unwrap_or_default(),
+                birthday_height,
+                zip32_account_index: index,
+                is_seed_anchor: kind == 0,
+                is_hardware: signer.is_some(),
+                hardware_signer_kind: signer,
+            })
+        })
+        .collect()
 }
 
 /// Preserve stored hardware accounts while moving signer identity into the
@@ -861,11 +891,35 @@ pub fn backfill_legacy_hardware_accounts(
         return Ok(0);
     }
 
+    // Stored UI metadata may keep offering already-migrated hardware accounts
+    // on every launch. Filter with metadata before opening/decoding any key.
+    let missing_signers = {
+        let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+        let mut stmt = conn
+            .prepare("SELECT uuid FROM accounts WHERE key_source IS NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<std::collections::HashSet<_>, _>>()
+            .map_err(|e| e.to_string())?
+    };
+    let accounts: Vec<_> = accounts
+        .iter()
+        .filter(|(uuid, _)| {
+            uuid::Uuid::parse_str(uuid)
+                .is_ok_and(|id| missing_signers.contains(id.as_bytes().as_slice()))
+        })
+        .collect();
+    if accounts.is_empty() {
+        return Ok(0);
+    }
+
     with_wallet_db_write_lock("keys.backfill_legacy_hardware_accounts", || {
         let db = open_wallet_db_for_mutation(db_path, network)?;
         let mut validated_account_ids = Vec::new();
 
-        for (account_uuid, hardware_signer_kind) in accounts {
+        for (account_uuid, hardware_signer_kind) in &accounts {
             let Ok(account_id) = parse_account_uuid(account_uuid) else {
                 continue;
             };
@@ -972,9 +1026,20 @@ pub(crate) fn get_ledger_account_signing_metadata(
         .key_derivation()
         .ok_or("Ledger account derivation metadata is unavailable")?;
 
+    let device_public_key = account
+        .ufvk()
+        .and_then(|ufvk| ufvk.transparent())
+        .ok_or("Ledger account has no transparent viewing key")?
+        .derive_address_pubkey(
+            transparent::keys::TransparentKeyScope::EXTERNAL,
+            NonHardenedChildIndex::ZERO,
+        )
+        .map_err(|e| format!("Derive Ledger account public key: {e}"))?
+        .serialize();
     Ok(LedgerAccountSigningMetadata {
         account_index: u32::from(derivation.account_index()),
         seed_fingerprint: derivation.seed_fingerprint().to_bytes(),
+        device_public_key,
     })
 }
 
@@ -997,7 +1062,18 @@ pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> 
     Ok(uuids)
 }
 
-/// Delete an account from the wallet database.
+/// Delete an existing account and its lifecycle state atomically.
+///
+/// The library checks durable policy compatibility before deleting wallet-owned
+/// rows. Vizor cleanup shares the caller-owned transaction; any refusal or cleanup
+/// failure rolls back both. Cache eviction and process-local cleanup follow commit.
+/// The UI handles deleting the last account as a full wallet reset.
+///
+/// The account's transparent PIR companions are deleted after the wallet write
+/// lock is released: a recovery source holding one may be waiting for that lock
+/// to apply its commits. A companion left behind is deleted at the next sync
+/// start (`remove_orphan_companions`) or when another account's companion is
+/// next opened.
 pub fn delete_account(
     db_path: &str,
     network: WalletNetwork,
@@ -1010,13 +1086,10 @@ pub fn delete_account(
             .map_err(|e| format!("Failed to load account: {e}"))?
             .ok_or_else(|| format!("Account not found: {}", account_id.expose_uuid()))?;
 
-        // zcash_client_sqlite 0.19.5 has a named-parameter bug in
-        // wallet::delete_account: the sent_notes rewrite binds `:address`
-        // while the SQL expects `:to_address`. Keep this local copy aligned
-        // with upstream except for that binding until the dependency is fixed.
         drop(db);
         delete_account_rows(db_path, network, account_id)?;
         crate::wallet::wallet_summary_cache::evict_db(db_path);
+        crate::wallet::sync::history_pages::evict_db(db_path);
         if let Err(error) = crate::wallet::sync::discard_keystone_migration_requests_for_account(
             account_uuid,
             network,
@@ -1025,8 +1098,15 @@ pub fn delete_account(
                 "Failed to discard Keystone migration requests after deleting account: {error}"
             );
         }
-        Ok(())
-    })
+        Ok::<_, String>(())
+    })?;
+    if let Err(error) = crate::wallet::sync_engine::transparent_ledger::pir::remove_companions(
+        db_path,
+        account_uuid,
+    ) {
+        log::warn!("Failed to delete transparent PIR companions after deleting account: {error}");
+    }
+    Ok(())
 }
 
 fn delete_account_rows(
@@ -1050,90 +1130,24 @@ fn delete_account_rows(
     let account_uuid_text = account_uuid.to_string();
     let account_uuid_bytes = account_uuid.as_bytes().as_slice();
 
+    // The library owns wallet deletion and its compatibility/lifecycle checks. Borrow
+    // our transaction so all Vizor cleanup either commits with it or rolls back with it.
     {
-        let mut to_account_tx = tx
-            .prepare(
-                r#"
-                SELECT
-                    sn.id AS sent_note_id,
-                    COALESCE(addresses.address, addresses.cached_transparent_receiver_address) AS to_address
-                FROM sent_notes sn
-                JOIN v_received_outputs ro ON ro.sent_note_id = sn.id
-                JOIN addresses ON addresses.id = ro.address_id
-                JOIN accounts ta ON ta.id = sn.to_account_id
-                WHERE ta.uuid = :account_uuid
-                "#,
-            )
-            .map_err(|e| format!("Failed to prepare sent note rewrite query: {e}"))?;
-
-        let mut update_sent_note = tx
-            .prepare(
-                r#"
-                UPDATE sent_notes
-                SET to_address = :to_address, to_account_id = NULL
-                WHERE id = :sent_note_id
-                "#,
-            )
-            .map_err(|e| format!("Failed to prepare sent note rewrite update: {e}"))?;
-
-        let mut rows = to_account_tx
-            .query(named_params![":account_uuid": account_uuid_bytes])
-            .map_err(|e| format!("Failed to query sent notes for account deletion: {e}"))?;
-        while let Some(row) = rows
-            .next()
-            .map_err(|e| format!("Failed to read sent notes for account deletion: {e}"))?
-        {
-            if let Some(address) = row
-                .get::<_, Option<String>>("to_address")
-                .map_err(|e| format!("Failed to read sent note destination address: {e}"))?
-            {
-                update_sent_note
-                    .execute(named_params![
-                        ":sent_note_id": row
-                            .get::<_, i64>("sent_note_id")
-                            .map_err(|e| format!("Failed to read sent note id: {e}"))?,
-                        ":to_address": address,
-                    ])
-                    .map_err(|e| format!("Failed to rewrite sent note destination: {e}"))?;
-            }
-        }
+        use crate::wallet::sync_engine::enhancement::transparent_ledger_mode_for;
+        let mut db = zcash_client_sqlite::WalletDb::from_connection(
+            zcash_client_sqlite::SqlTransaction::new(&tx),
+            network,
+            zcash_client_sqlite::util::SystemClock,
+            voting_crypto_deps::rand::rngs::OsRng,
+        )
+        .with_transparent_ledger_mode(transparent_ledger_mode_for(db_path, network));
+        use zcash_client_backend::data_api::WalletWrite;
+        db.delete_account(account_id)
+            .map_err(|e| format!("Failed to delete account: {e}"))?;
     }
 
-    tx.execute(
-        r#"
-        WITH account_transactions AS (
-            SELECT ro.transaction_id
-            FROM v_received_outputs ro
-            JOIN accounts a ON a.id = ro.account_id
-            WHERE a.uuid = :account_uuid
-            UNION
-            SELECT ros.transaction_id
-            FROM v_received_output_spends ros
-            JOIN accounts sa ON sa.id = ros.account_id
-            WHERE sa.uuid = :account_uuid
-        ),
-        non_account_transactions AS (
-            SELECT ro.transaction_id
-            FROM v_received_outputs ro
-            JOIN accounts a ON a.id = ro.account_id
-            WHERE a.uuid != :account_uuid
-            UNION
-            SELECT ros.transaction_id
-            FROM v_received_output_spends ros
-            JOIN accounts sa ON sa.id = ros.account_id
-            WHERE sa.uuid != :account_uuid
-        )
-        DELETE FROM transactions WHERE id_tx IN (
-            SELECT transaction_id FROM account_transactions
-            EXCEPT
-            SELECT transaction_id FROM non_account_transactions
-        )
-        "#,
-        named_params![":account_uuid": account_uuid_bytes],
-    )
-    .map_err(|e| format!("Failed to delete account-only transactions: {e}"))?;
-
     addresses::delete_account(&tx, account_uuid_bytes)?;
+    crate::wallet::balance_cache::delete_account(&tx, account_uuid_bytes)?;
     crate::wallet::sync_engine::ledger_discovery::delete_account(&tx, account_uuid_bytes)?;
     crate::wallet::sync::delete_account_migration_rows_with_tx(&tx, &account_uuid_text)?;
     crate::wallet::ledger::delete_signed_operations_for_account_with_tx(
@@ -1141,12 +1155,6 @@ fn delete_account_rows(
         network,
         &account_uuid_text,
     )?;
-
-    tx.execute(
-        "DELETE FROM accounts WHERE uuid = :account_uuid",
-        named_params![":account_uuid": account_uuid_bytes],
-    )
-    .map_err(|e| format!("Failed to delete account: {e}"))?;
 
     // Restore the "below the wallet birthday = Ignored" invariant for any
     // historical scan range that only the just-deleted account required. See
@@ -1351,17 +1359,17 @@ pub fn get_receive_address_aliases(
     addresses::receive_address_aliases(&db, db_path, network, account_id, ufvk)
 }
 
-/// Export a single account's Unified Full Viewing Key (UFVK), encoded for
+/// Export a single account's full and incoming viewing keys, encoded for
 /// the given network. Works for every account source (`Derived`, software
 /// `Imported`, and hardware/Keystone `Imported`) — unlike
 /// `get_account_export_metadata`'s `hardware_ufvk` field, this is not gated
 /// on hardware detection, since any account's UFVK is safe to display back
 /// to the account's own owner regardless of how the key was derived.
-pub fn get_account_ufvk(
+pub fn get_account_viewing_keys(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
-) -> Result<String, String> {
+) -> Result<(String, String), String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
 
@@ -1372,7 +1380,10 @@ pub fn get_account_ufvk(
 
     let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
 
-    Ok(ufvk.encode(&network))
+    Ok((
+        ufvk.encode(&network),
+        ufvk.to_unified_incoming_viewing_key().encode(&network),
+    ))
 }
 
 fn is_hardware_style_ufvk(ufvk: &UnifiedFullViewingKey) -> bool {
@@ -1679,6 +1690,19 @@ mod tests {
     }
 
     #[test]
+    fn invalid_mnemonic_errors_do_not_repeat_the_unknown_word() {
+        let phrase = std::iter::repeat_n("abandon", 11)
+            .chain(["vizorpassword"])
+            .collect::<Vec<_>>()
+            .join(" ");
+        let error = match mnemonic_to_seed(&phrase) {
+            Ok(_) => panic!("an unknown word should be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "Invalid mnemonic: unknown word");
+    }
+
+    #[test]
     fn test_parse_network() {
         assert!(matches!(parse_network("main"), Ok(WalletNetwork::Main)));
         assert!(matches!(parse_network("test"), Ok(WalletNetwork::Test)));
@@ -1714,28 +1738,27 @@ mod tests {
     }
 
     #[test]
-    fn test_get_account_ufvk_matches_derived_account() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("wallet.db");
-        let db_path_str = db_path.to_str().unwrap();
-
-        let phrase = generate_mnemonic();
-        let seed = mnemonic_to_seed(&phrase).unwrap();
-
-        let (uuid, _address) =
-            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
-                .unwrap();
-
-        let ufvk = get_account_ufvk(db_path_str, WalletNetwork::Main, &uuid).unwrap();
-
-        // Mainnet UFVKs use the "uview" HRP.
-        assert!(
-            ufvk.starts_with("uview"),
-            "Expected uview prefix, got: {ufvk}"
-        );
-
-        let expected = software_account_ufvk(WalletNetwork::Main, &seed, 0).unwrap();
-        assert_eq!(ufvk, expected.encode(&WalletNetwork::Main));
+    fn test_get_account_viewing_keys_matches_derived_account() {
+        for network in [WalletNetwork::Main, WalletNetwork::Test] {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let db_path = temp_dir.path().join("wallet.db");
+            let db_path_str = db_path.to_str().unwrap();
+            let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+            let (uuid, _) =
+                init_db_and_create_account(db_path_str, network, &seed, None, "test").unwrap();
+            let (ufvk, uivk) = get_account_viewing_keys(db_path_str, network, &uuid).unwrap();
+            let expected = software_account_ufvk(network, &seed, 0).unwrap();
+            assert_eq!(ufvk, expected.encode(&network));
+            assert_eq!(
+                uivk,
+                expected.to_unified_incoming_viewing_key().encode(&network)
+            );
+            assert!(uivk.starts_with(if network == WalletNetwork::Main {
+                "uivk1"
+            } else {
+                "uivktest1"
+            }));
+        }
     }
 
     #[test]
@@ -1759,7 +1782,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_account_ufvk_round_trips_hardware_account() {
+    fn test_get_account_viewing_keys_round_trips_hardware_account() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path_str = db_path.to_str().unwrap();
@@ -1767,15 +1790,7 @@ mod tests {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
         let account_index = zip32::AccountId::ZERO;
-        let usk = UnifiedSpendingKey::from_seed(
-            &WalletNetwork::Main,
-            seed.expose_secret(),
-            account_index,
-        )
-        .unwrap();
-        let ufvk_string = usk
-            .to_unified_full_viewing_key()
-            .encode(&WalletNetwork::Main);
+        let ufvk_string = hardware_style_ufvk(&seed, account_index);
         let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
             .unwrap()
             .to_bytes();
@@ -1792,12 +1807,17 @@ mod tests {
         )
         .unwrap();
 
-        let exported = get_account_ufvk(db_path_str, WalletNetwork::Main, &uuid).unwrap();
-        assert_eq!(exported, ufvk_string);
+        let (full, incoming) =
+            get_account_viewing_keys(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+        assert_eq!(full, ufvk_string);
+        let expected = UnifiedFullViewingKey::decode(&WalletNetwork::Main, &ufvk_string)
+            .unwrap()
+            .to_unified_incoming_viewing_key();
+        assert_eq!(incoming, expected.encode(&WalletNetwork::Main));
     }
 
     #[test]
-    fn test_get_account_ufvk_rejects_unknown_account() {
+    fn test_get_account_viewing_keys_rejects_unknown_account() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path_str = db_path.to_str().unwrap();
@@ -1807,7 +1827,7 @@ mod tests {
         init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test").unwrap();
 
         let unknown_uuid = uuid::Uuid::new_v4().to_string();
-        let result = get_account_ufvk(db_path_str, WalletNetwork::Main, &unknown_uuid);
+        let result = get_account_viewing_keys(db_path_str, WalletNetwork::Main, &unknown_uuid);
         assert!(result.is_err());
     }
 
@@ -1913,15 +1933,6 @@ mod tests {
         assert_eq!(
             renewed_address,
             get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
-        );
-        assert_eq!(
-            renewed_address,
-            list_accounts(db_path_str, WalletNetwork::Main)
-                .unwrap()
-                .into_iter()
-                .find(|account| account.uuid == uuid)
-                .unwrap()
-                .unified_address
         );
     }
 
@@ -2284,6 +2295,18 @@ mod tests {
             get_ledger_account_signing_metadata(db_path_str, WalletNetwork::Main, &uuid).unwrap();
         assert_eq!(signing.account_index, 7);
         assert_eq!(signing.seed_fingerprint, seed_fingerprint);
+        assert_eq!(
+            signing.device_public_key,
+            usk.to_unified_full_viewing_key()
+                .transparent()
+                .unwrap()
+                .derive_address_pubkey(
+                    transparent::keys::TransparentKeyScope::EXTERNAL,
+                    transparent::keys::NonHardenedChildIndex::ZERO,
+                )
+                .unwrap()
+                .serialize()
+        );
     }
 
     #[test]
@@ -2370,6 +2393,17 @@ mod tests {
             .unwrap(),
             2
         );
+        // Already-migrated keys are not even decoded on a later startup.
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        conn.execute(
+            "UPDATE accounts SET ufvk = 'invalid' WHERE uuid = ?1",
+            [uuid::Uuid::parse_str(&keystone_uuid)
+                .unwrap()
+                .as_bytes()
+                .as_slice()],
+        )
+        .unwrap();
+        drop(conn);
         assert_eq!(
             backfill_legacy_hardware_accounts(
                 db_path_str,
@@ -2538,7 +2572,10 @@ mod tests {
         assert_eq!(accounts.len(), 1);
         assert!(accounts.iter().all(|account| account.uuid != second_uuid));
         assert_eq!(accounts[0].uuid, first_uuid);
-        assert_eq!(accounts[0].unified_address, first_address);
+        assert_eq!(
+            get_address_from_db(db_path_str, WalletNetwork::Main, Some(&accounts[0].uuid)).unwrap(),
+            first_address
+        );
     }
 
     #[test]
@@ -3486,6 +3523,80 @@ mod tests {
     }
 
     #[test]
+    fn test_list_accounts_does_not_decode_viewing_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (uuid, _) =
+            init_db_and_create_account(path, WalletNetwork::Main, &seed, None, "test").unwrap();
+        let conn = rusqlite::Connection::open(path).unwrap();
+        conn.execute("UPDATE accounts SET ufvk = 'not-a-viewing-key'", [])
+            .unwrap();
+        let listed = list_accounts(path, WalletNetwork::Main).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].uuid, uuid);
+        assert!(listed[0].is_seed_anchor);
+        assert_eq!(listed[0].zip32_account_index, Some(0));
+        assert!(get_address_from_db(path, WalletNetwork::Main, Some(&uuid)).is_err());
+    }
+
+    #[test]
+    fn test_startup_metadata_and_cache_reads_with_many_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db");
+        let path = path.to_str().unwrap();
+        let mut conn = rusqlite::Connection::open(path).unwrap();
+        // Deliberately omit viewing keys and address tables: listing must not
+        // depend on either. This measures only our startup SQL, not full unlock.
+        conn.execute_batch(
+            "CREATE TABLE accounts (
+            id INTEGER PRIMARY KEY, uuid BLOB UNIQUE, name TEXT,
+            birthday_height INTEGER, account_kind INTEGER, key_source TEXT,
+            hd_account_index INTEGER, has_spend_key INTEGER)",
+        )
+        .unwrap();
+        let first = uuid::Uuid::new_v4();
+        let mut inserted = 0;
+        for count in [1, 10, 100, 1000] {
+            let tx = conn.transaction().unwrap();
+            for i in inserted..count {
+                let uuid = if i == 0 { first } else { uuid::Uuid::new_v4() };
+                tx.execute(
+                    "INSERT INTO accounts VALUES (?1, ?2, 'Account', 3000000, ?3, NULL, 0, 1)",
+                    rusqlite::params![
+                        i + 1,
+                        uuid.as_bytes().as_slice(),
+                        if i == 0 { 0 } else { 1 }
+                    ],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+            inserted = count;
+            crate::wallet::balance_cache::save(path, "main", &first.to_string(), "snapshot")
+                .unwrap();
+            let start = std::time::Instant::now();
+            for _ in 0..20 {
+                let accounts = list_accounts(path, WalletNetwork::Main).unwrap();
+                assert_eq!(accounts.len(), count as usize);
+                assert_eq!(accounts[0].uuid, first.to_string());
+            }
+            let metadata_us = start.elapsed().as_micros() / 20;
+            let start = std::time::Instant::now();
+            for _ in 0..20 {
+                assert_eq!(
+                    crate::wallet::balance_cache::load(path, "main", &first.to_string())
+                        .unwrap()
+                        .as_deref(),
+                    Some("snapshot")
+                );
+            }
+            eprintln!("startup SQL fixture: accounts={count}, metadata_mean_us={metadata_us}, cache_mean_us={}", start.elapsed().as_micros() / 20);
+        }
+    }
+
+    #[test]
     fn test_receive_address_is_orchard_only() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -3520,7 +3631,6 @@ mod tests {
             "UA should NOT contain transparent receiver"
         );
 
-        assert_eq!(listed_account.unified_address, address);
         assert_eq!(
             get_address_from_db(db_path_str, WalletNetwork::Main, Some(&listed_account.uuid))
                 .unwrap(),

@@ -7,6 +7,7 @@
 /// file is left with the state machine plus one render tree instead of two.
 library;
 
+import '../../../core/navigation/mobile_sidebar_exit.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,7 @@ import '../models/vizor_payment_link.dart';
 import '../services/payment_link_service.dart';
 import '../widgets/mobile/payment_link_mobile_views.dart';
 import '../widgets/payment_link_card_flip.dart';
+import '../widgets/payment_link_amount_card.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
 import '../widgets/payment_link_confetti.dart';
 import '../widgets/payment_link_copy.dart';
@@ -36,18 +38,25 @@ class PaymentLinksMobileBody extends StatelessWidget {
     required this.redeemState,
     this.claimOutcome,
     required this.operationInProgress,
+    this.claimPreparationLabel,
     required this.redeemActionLabel,
     required this.redeemFromQrCode,
     required this.keystoneOverlay,
     required this.onCancelKeystone,
     required this.navigationLocked,
+    this.onSidebarExit,
     required this.hasCards,
     required this.cardsSections,
     required this.activeCardsTab,
     required this.selectedArtwork,
     required this.amountController,
     required this.amountFocusNode,
-    required this.amountInputFormatters,
+    required this.amountCurrency,
+    required this.onAmountCurrencyChanged,
+    required this.usdEnabled,
+    required this.usdDisabledReason,
+    required this.amountZecText,
+    required this.amountConversionText,
     required this.amountFiatText,
     required this.amountFiatLoading,
     required this.maxAmountText,
@@ -101,6 +110,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final PaymentLinkRedeemVisualState redeemState;
   final Widget? claimOutcome;
   final bool operationInProgress;
+  final String? claimPreparationLabel;
   final String redeemActionLabel;
   final bool redeemFromQrCode;
 
@@ -111,6 +121,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final Widget? keystoneOverlay;
   final VoidCallback onCancelKeystone;
   final bool navigationLocked;
+  final Future<bool> Function()? onSidebarExit;
 
   /// Whether any created or received Card exists, which is what decides the
   /// home page between the empty landing surface and the cards list.
@@ -124,7 +135,12 @@ class PaymentLinksMobileBody extends StatelessWidget {
   final PaymentLinkCardArtwork selectedArtwork;
   final TextEditingController amountController;
   final FocusNode amountFocusNode;
-  final List<TextInputFormatter> amountInputFormatters;
+  final PaymentLinkAmountCurrency amountCurrency;
+  final ValueChanged<PaymentLinkAmountCurrency> onAmountCurrencyChanged;
+  final bool usdEnabled;
+  final String? usdDisabledReason;
+  final String amountZecText;
+  final String? amountConversionText;
   final String? amountFiatText;
   final bool amountFiatLoading;
   final String? maxAmountText;
@@ -222,7 +238,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
     }
     return PaymentLinksHomeMobileView(
       illustration: Image.asset(
-        'assets/illustrations/payment_links/payment_link_empty_card.png',
+        'assets/illustrations/payment_links/payment_link_empty_card.webp',
         fit: BoxFit.contain,
         semanticLabel: 'Gift box',
       ),
@@ -260,21 +276,23 @@ class PaymentLinksMobileBody extends StatelessWidget {
   Widget _buildAmount() {
     final maxAmount = maxAmountText;
     return PaymentLinkAmountMobileView(
-      card: PaymentLinkGiftCard(
+      card: PaymentLinkAmountCard(
         artwork: selectedArtwork,
         cardWidth: kPaymentLinkMobileCardWidth,
         cardHeight: kPaymentLinkMobileCardHeight,
         amountController: amountController,
         amountFocusNode: amountFocusNode,
-        amountEditorKey: const ValueKey('payment_link_amount_editor'),
-        amountInputFormatters: amountInputFormatters,
+        currency: amountCurrency,
+        onCurrencyChanged: onAmountCurrencyChanged,
+        usdEnabled: usdEnabled,
+        usdDisabledReason: usdDisabledReason,
         onAmountChanged: onAmountChanged,
-        supportingText: amountFiatText,
-        supportingLoading: amountFiatLoading,
+        supportingText: amountConversionText,
+        supportingLoading:
+            amountCurrency == PaymentLinkAmountCurrency.zec &&
+            amountFiatLoading,
         maxAmountText: maxAmount,
         onUseMax: maxAmount == null ? null : onUseMax,
-        showMaxButton: true,
-        semanticLabel: 'Gift card amount input',
       ),
       cardSelector: PaymentLinkCardSelectorRail(
         loop: true,
@@ -336,7 +354,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
       artwork: selectedArtwork,
       cardWidth: kPaymentLinkMobileCardWidth,
       cardHeight: kPaymentLinkMobileCardHeight,
-      amountText: amountController.text,
+      amountText: amountZecText,
       supportingText: amountFiatText,
       supportingLoading: amountFiatLoading,
       showCaret: false,
@@ -478,6 +496,14 @@ class PaymentLinksMobileBody extends StatelessWidget {
           )
         : front;
     final session = receivedClaimSession;
+    if (claimPreparationLabel != null) {
+      return PaymentLinkReadyMobileView(
+        state: PaymentLinkReadyMobileState.checking,
+        card: card,
+        onHome: onAbandonReceivedPreview,
+        waitingStatusLabel: claimPreparationLabel!,
+      );
+    }
     if (session?.waitingForFundingConfirmations ?? false) {
       final remaining =
           kPaymentLinkClaimConfirmationTarget -
@@ -506,11 +532,11 @@ class PaymentLinksMobileBody extends StatelessWidget {
       decoration: const PaymentLinkConfetti(),
       onRevealMessage: hasCardMessage ? onToggleReceivedBack : null,
       onClaim: operationInProgress ? null : onClaimReceivedLink,
-      claimLabel: operationInProgress
+      claimLabel: (operationInProgress
           ? 'Claiming…'
           : receivedClaimSession == null
           ? 'Try again'
-          : 'Claim the gift',
+          : 'Claim the gift'),
     );
   }
 }
@@ -598,58 +624,71 @@ class _PaymentLinksMobileNavigatorState
     }
     final hasInnerBack = steps.length > 1 || signing != null;
     final outerRoute = ModalRoute.of(context);
-    return PopScope<Object?>(
-      canPop:
-          !hasInnerBack &&
+    return MobileSidebarExitScope(
+      canNavigate:
           !body.navigationLocked &&
-          outerRoute?.isFirst != true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        if (hasInnerBack) {
-          _navigatorKey.currentState?.maybePop();
-        } else if (!body.navigationLocked) {
-          body._leavePaymentLinks(context);
-        }
-      },
-      child: Scaffold(
-        key: const ValueKey('payment_links_mobile_screen'),
-        backgroundColor: context.colors.background.window,
-        body: Navigator(
-          key: _navigatorKey,
-          onDidRemovePage: _didRemovePage,
-          pages: [
-            for (final step in steps)
-              CupertinoPage<Object?>(
-                key: _stepKeys[step],
-                child: PopScope<Object?>(
-                  canPop: !body.navigationLocked,
-                  child: Scaffold(
-                    backgroundColor: context.colors.background.window,
-                    body: AppToastHost(
-                      child: SafeArea(child: body._buildPage(context, step)),
+          !body.operationInProgress &&
+          signing == null,
+      canSwitchAccount:
+          !body.navigationLocked &&
+          !body.operationInProgress &&
+          signing == null &&
+          (body.page == PaymentLinksLocalPage.home ||
+              body.page == PaymentLinksLocalPage.ready),
+      onExit: body.onSidebarExit,
+      child: PopScope<Object?>(
+        canPop:
+            !hasInnerBack &&
+            !body.navigationLocked &&
+            outerRoute?.isFirst != true,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          if (hasInnerBack) {
+            _navigatorKey.currentState?.maybePop();
+          } else if (!body.navigationLocked) {
+            body._leavePaymentLinks(context);
+          }
+        },
+        child: Scaffold(
+          key: const ValueKey('payment_links_mobile_screen'),
+          backgroundColor: context.colors.background.window,
+          body: Navigator(
+            key: _navigatorKey,
+            onDidRemovePage: _didRemovePage,
+            pages: [
+              for (final step in steps)
+                CupertinoPage<Object?>(
+                  key: _stepKeys[step],
+                  child: PopScope<Object?>(
+                    canPop: !body.navigationLocked,
+                    child: Scaffold(
+                      backgroundColor: context.colors.background.window,
+                      body: AppToastHost(
+                        child: SafeArea(child: body._buildPage(context, step)),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            if (signing is PaymentLinkLedgerSigningOverlay)
-              CustomTransitionPage<Object?>(
-                key: _signingKey,
-                opaque: false,
-                transitionsBuilder:
-                    (context, animation, secondaryAnimation, child) =>
-                        FadeTransition(opacity: animation, child: child),
-                child: AppToastHost(child: signing),
-              )
-            else if (signing != null)
-              CupertinoPage<Object?>(
-                key: _signingKey,
-                // The shared signing flow owns its decode/finalization guard.
-                child: Scaffold(
-                  backgroundColor: context.colors.background.window,
-                  body: AppToastHost(child: SafeArea(child: signing)),
+              if (signing is PaymentLinkLedgerSigningOverlay)
+                CustomTransitionPage<Object?>(
+                  key: _signingKey,
+                  opaque: false,
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) =>
+                          FadeTransition(opacity: animation, child: child),
+                  child: AppToastHost(child: signing),
+                )
+              else if (signing != null)
+                CupertinoPage<Object?>(
+                  key: _signingKey,
+                  // The shared signing flow owns its decode/finalization guard.
+                  child: Scaffold(
+                    backgroundColor: context.colors.background.window,
+                    body: AppToastHost(child: SafeArea(child: signing)),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

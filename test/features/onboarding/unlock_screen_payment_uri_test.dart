@@ -59,6 +59,10 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
 }
 
 class _FakeAccountNotifier extends AccountNotifier {
+  _FakeAccountNotifier({this.failRecoveryOnce = false});
+  final bool failRecoveryOnce;
+  int recoveryAttempts = 0;
+
   @override
   FutureOr<AccountState> build() => const AccountState(
     accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
@@ -67,7 +71,13 @@ class _FakeAccountNotifier extends AccountNotifier {
   );
 
   @override
-  Future<void> restoreAfterUnlock() async {}
+  Future<void> restoreAfterUnlock() async {
+    recoveryAttempts++;
+    if (failRecoveryOnce && recoveryAttempts == 1) {
+      ref.read(appSecurityProvider.notifier).lock();
+      throw StateError('setup journal write failed');
+    }
+  }
 }
 
 /// The post-unlock sync hooks are the awaits the claim deliberately sits
@@ -79,7 +89,7 @@ class _FakeUnlockSyncNotifier extends FakeSyncNotifier {
   Future<void> refreshAfterUnlock() async {}
 
   @override
-  Future<void> startSyncAnyway() async {}
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {}
 }
 
 /// Ends the card's pre-check without touching Rust: the claim is what these
@@ -130,10 +140,13 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-List<Override> _overrides({required bool migrationGate}) => [
+List<Override> _overrides({
+  required bool migrationGate,
+  _FakeAccountNotifier? account,
+}) => [
   appBootstrapProvider.overrideWithValue(_bootstrap()),
   appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
-  accountProvider.overrideWith(_FakeAccountNotifier.new),
+  accountProvider.overrideWith(() => account ?? _FakeAccountNotifier()),
   syncProvider.overrideWith(_FakeUnlockSyncNotifier.new),
   migrationSendGateProvider.overrideWithValue(migrationGate),
   paymentRequestPrecheckProvider.overrideWithValue(_stubPrecheck()),
@@ -145,6 +158,7 @@ Future<ProviderContainer> _pumpUnlock(
   WidgetTester tester, {
   bool migrationGate = false,
   AppPasswordInputSource? inputSource,
+  _FakeAccountNotifier? account,
 }) async {
   tester.view.physicalSize = const Size(1440, 1024);
   tester.view.devicePixelRatio = 1.0;
@@ -153,7 +167,7 @@ Future<ProviderContainer> _pumpUnlock(
 
   final container = ProviderContainer(
     overrides: [
-      ..._overrides(migrationGate: migrationGate),
+      ..._overrides(migrationGate: migrationGate, account: account),
       if (inputSource != null)
         appPasswordInputSourceProvider.overrideWithValue(inputSource),
     ],
@@ -204,6 +218,25 @@ Future<void> _unlock(WidgetTester tester) async {
 String _location() => _router.routerDelegate.currentConfiguration.uri.path;
 
 void main() {
+  testWidgets('failed setup recovery stays on unlock and retries before Home', (
+    tester,
+  ) async {
+    final account = _FakeAccountNotifier(failRecoveryOnce: true);
+    final container = await _pumpUnlock(tester, account: account);
+    await _unlock(tester);
+    expect(_location(), '/unlock');
+    expect(container.read(appSecurityProvider).requiresUnlock, isTrue);
+    expect(
+      find.text("Couldn't open your wallet. Please try again."),
+      findsOneWidget,
+    );
+    expect(find.text('home-route'), findsNothing);
+    await _unlock(tester);
+    expect(account.recoveryAttempts, 2);
+    expect(_location(), '/home');
+    expect(find.text('home-route'), findsOneWidget);
+  });
+
   testWidgets(
     'only successful password unlock remembers the submission source',
     (tester) async {
@@ -242,6 +275,21 @@ void main() {
     // Claimed, so a later drain cannot deliver the same link a second time.
     expect(container.read(paymentUriPrefillProvider), isNull);
     expect(find.text(kPaymentUriExpiredMessage), findsNothing);
+  });
+
+  testWidgets('a scanned request retains its provenance after unlock', (
+    tester,
+  ) async {
+    final container = await _pumpUnlock(tester);
+    container
+        .read(paymentUriPrefillProvider.notifier)
+        .set(_parkedRequest.withRequestSource(PaymentRequestSource.qrCode));
+    await _unlock(tester);
+    expect(
+      container.read(paymentRequestFlowProvider)?.view.source,
+      PaymentRequestSource.qrCode,
+    );
+    expect(container.read(paymentUriPrefillProvider), isNull);
   });
 
   testWidgets('a link parked past the TTL is dropped and said out loud', (

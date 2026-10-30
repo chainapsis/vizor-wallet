@@ -4,7 +4,12 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+
+import '../wallet/ledger.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+
+import 'sync.dart';
 
 // These functions are ignored because they are not marked as `pub`: `expected_ledger_account`, `ledger_account_fingerprint`, `parse_ledger_db_network`, `require_mainnet`, `to_action_sigs`, `to_apdu_command`, `to_device_app`, `to_signed_operation`
 
@@ -23,11 +28,6 @@ void ledgerCancelOperation() =>
 /// Reject a PCZT shape that the currently supported Ledger Zcash app cannot
 /// sign correctly. This release gate intentionally sits above the raw
 /// transport signer so a future app build can still be exercised by canaries.
-Future<void> ledgerValidateSupportedPczt({required List<int> pcztBytes}) =>
-    RustLib.instance.api.crateApiLedgerLedgerValidateSupportedPczt(
-      pcztBytes: pcztBytes,
-    );
-
 /// Export a Unified Full Viewing Key for `m/32'/133'/account'` after the user
 /// approves the request on the Ledger device.
 Future<String> ledgerExportUfvk({
@@ -73,20 +73,20 @@ Future<LedgerAccountExport> ledgerParseMobileUfvkResponses({
 );
 
 /// Build the transport-neutral compact shielded PCZT signing exchange.
-/// `memo_hash_supported` comes from the connected app's version; see
-/// `ledgerSupportsMemoHash` in `lib/src/features/ledger/ledger_capability.dart`.
+/// `app_support` comes from the connected app's version; see
+/// `ledgerAppSupport` in `lib/src/features/ledger/ledger_capability.dart`.
 Future<LedgerPcztApduPlan> ledgerBuildPcztSigningApduPlan({
   required String dbPath,
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
 }) => RustLib.instance.api.crateApiLedgerLedgerBuildPcztSigningApduPlan(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
 );
 
 /// Build the transport-neutral full PCZT signing exchange.
@@ -95,13 +95,24 @@ Future<LedgerPcztApduPlan> ledgerBuildPcztFullSigningApduPlan({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
 }) => RustLib.instance.api.crateApiLedgerLedgerBuildPcztFullSigningApduPlan(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
+);
+
+/// Refuse a different seed/account before the mobile transport sends PCZT bytes.
+/// `expected_public_key` comes from the signing plan's stored-account UFVK.
+/// This is an account-key check, not hardware attestation.
+Future<void> ledgerValidateDeviceAccountResponse({
+  required List<int> expectedPublicKey,
+  required List<int> response,
+}) => RustLib.instance.api.crateApiLedgerLedgerValidateDeviceAccountResponse(
+  expectedPublicKey: expectedPublicKey,
+  response: response,
 );
 
 /// Validate raw compact-signing responses and return shielded signatures.
@@ -141,14 +152,14 @@ Future<List<LedgerActionSig>> ledgerSignPczt({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
   String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPczt(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
   appVersion: appVersion,
 );
 
@@ -159,14 +170,14 @@ Future<Uint8List> ledgerSignPcztFull({
   required String accountUuid,
   required List<int> pcztBytes,
   required String network,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
   String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignPcztFull(
   dbPath: dbPath,
   accountUuid: accountUuid,
   pcztBytes: pcztBytes,
   network: network,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
   appVersion: appVersion,
 );
 
@@ -259,7 +270,7 @@ Stream<LedgerSigningEvent> ledgerSignWithProgress({
   required List<int> pcztBytes,
   required String network,
   required bool compact,
-  required bool memoHashSupported,
+  required LedgerAppSupport appSupport,
   String? appVersion,
 }) => RustLib.instance.api.crateApiLedgerLedgerSignWithProgress(
   dbPath: dbPath,
@@ -267,7 +278,7 @@ Stream<LedgerSigningEvent> ledgerSignWithProgress({
   pcztBytes: pcztBytes,
   network: network,
   compact: compact,
-  memoHashSupported: memoHashSupported,
+  appSupport: appSupport,
   appVersion: appVersion,
 );
 
@@ -377,18 +388,30 @@ class LedgerDeviceApp {
 
 /// Complete ordered APDU exchange for one PCZT signing operation.
 class LedgerPcztApduPlan {
+  /// Exchange and verify this probe before sending any command below.
+  final LedgerApduCommand deviceAccountKeyRequest;
+  final Uint8List expectedDevicePublicKey;
   final List<LedgerApduCommand> commands;
 
-  const LedgerPcztApduPlan({required this.commands});
+  const LedgerPcztApduPlan({
+    required this.deviceAccountKeyRequest,
+    required this.expectedDevicePublicKey,
+    required this.commands,
+  });
 
   @override
-  int get hashCode => commands.hashCode;
+  int get hashCode =>
+      deviceAccountKeyRequest.hashCode ^
+      expectedDevicePublicKey.hashCode ^
+      commands.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is LedgerPcztApduPlan &&
           runtimeType == other.runtimeType &&
+          deviceAccountKeyRequest == other.deviceAccountKeyRequest &&
+          expectedDevicePublicKey == other.expectedDevicePublicKey &&
           commands == other.commands;
 }
 
@@ -399,6 +422,7 @@ class LedgerSignedOperation {
   final String kind;
   final String? externalRef;
   final int? expiryHeight;
+  final BigInt? shieldedZatoshi;
   final String state;
   final String? txid;
   final String? status;
@@ -412,6 +436,7 @@ class LedgerSignedOperation {
     required this.kind,
     this.externalRef,
     this.expiryHeight,
+    this.shieldedZatoshi,
     required this.state,
     this.txid,
     this.status,
@@ -427,6 +452,7 @@ class LedgerSignedOperation {
       kind.hashCode ^
       externalRef.hashCode ^
       expiryHeight.hashCode ^
+      shieldedZatoshi.hashCode ^
       state.hashCode ^
       txid.hashCode ^
       status.hashCode ^
@@ -444,6 +470,7 @@ class LedgerSignedOperation {
           kind == other.kind &&
           externalRef == other.externalRef &&
           expiryHeight == other.expiryHeight &&
+          shieldedZatoshi == other.shieldedZatoshi &&
           state == other.state &&
           txid == other.txid &&
           status == other.status &&

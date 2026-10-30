@@ -1,14 +1,17 @@
 import Flutter
 import UIKit
 
-/// Geometry only: this view is never inserted into Flutter's view hierarchy.
-/// Unavailable or ambiguous host geometry returns nil so Dart keeps its radius.
+/// Geometry only. Sidebar queries bind a transparent, non-interactive probe
+/// to the actual window and remove it synchronously before returning.
+/// Unavailable or ambiguous hosts return nil so Dart keeps its fallback.
 final class ModalCornerHandler {
   private let probe = UIView()
   private let cache = ModalCornerCache()
+  private let sidebarCache = ModalCornerCache(count: 4, minimum: 24)
 
   func handle(_ call: FlutterMethodCall, result: FlutterResult) {
-    guard call.method == "resolve" else { result(FlutterMethodNotImplemented); return }
+    guard call.method == "resolve" || call.method == "resolveSidebar"
+    else { result(FlutterMethodNotImplemented); return }
     guard #available(iOS 26.0, *), Thread.isMainThread,
       UIApplication.shared.applicationState == .active,
       let args = call.arguments as? [String: Any]
@@ -44,6 +47,10 @@ final class ModalCornerHandler {
 
     let rect = root.convert(CGRect(x: x, y: y, width: width, height: height), to: window)
     guard window.bounds.insetBy(dx: -0.5, dy: -0.5).contains(rect) else { result(nil); return }
+    if call.method == "resolveSidebar" {
+      resolveSidebar(rect: rect, window: window, scene: scene, result: result)
+      return
+    }
     // Normalize only the top edge. Content height must not affect the probe
     // or cache identity; preserve the actual left/right/bottom screen insets.
     let reference = ModalCornerGeometry.referenceRect(for: rect, in: window.bounds)
@@ -76,6 +83,66 @@ final class ModalCornerHandler {
     cache.store(radii, for: key, limit: Double(limit))
     result(["bottomLeft": left, "bottomRight": right, "cacheHit": false])
   }
+
+  @available(iOS 26.0, *)
+  private func resolveSidebar(rect: CGRect, window: UIWindow, scene: UIWindowScene,
+                              result: FlutterResult) {
+    let scale = window.screen.scale
+    let numbers = [rect.minX, rect.minY, rect.width, rect.height,
+      window.bounds.width, window.bounds.height, scale,
+      window.screen.nativeBounds.width, window.screen.nativeBounds.height,
+      window.screen.nativeScale]
+    let key = ([String(describing: ObjectIdentifier(window)),
+      String(scene.interfaceOrientation.rawValue)] + numbers.map { String(Double($0)) })
+      .joined(separator: "|")
+    let limit = Double(min(window.bounds.width, window.bounds.height) / 2)
+    let names = ["topLeft", "topRight", "bottomLeft", "bottomRight"]
+    func response(_ radii: [Double], hit: Bool) -> [String: Any] {
+      var values = Dictionary(uniqueKeysWithValues: zip(names, radii.map { $0 as Any }))
+      values["cacheHit"] = hit
+      return values
+    }
+    if let radii = sidebarCache.radii(for: key, limit: limit),
+      SidebarCornerGeometry.supports(rect, radii: radii) {
+      result(response(radii, hit: true))
+      return
+    }
+    guard SidebarCornerGeometry.supports(rect, radii: [24, 24, 24, 24])
+    else { result(nil); return }
+
+    // Bind the calculation to this actual window, including on multi-display
+    // phones. This transparent, non-interactive probe never paints or owns UI.
+    let panel = UIView(frame: rect)
+    panel.alpha = 0
+    panel.isUserInteractionEnabled = false
+    panel.accessibilityElementsHidden = true
+    window.addSubview(panel)
+    defer { panel.removeFromSuperview() }
+    panel.cornerConfiguration = .corners(
+      topLeftRadius: .containerConcentric(minimum: 24),
+      topRightRadius: .fixed(24),
+      bottomLeftRadius: .containerConcentric(minimum: 24),
+      bottomRightRadius: .fixed(24))
+    panel.setNeedsLayout()
+    panel.layoutIfNeeded()
+    let radii = [UIRectCorner.topLeft, .topRight, .bottomLeft, .bottomRight]
+      .map { Double(panel.effectiveRadius(corner: $0)) }
+    guard radii.allSatisfy({ $0.isFinite && $0 >= 24 && $0 <= limit }),
+      SidebarCornerGeometry.supports(rect, radii: radii)
+    else { result(nil); return }
+    sidebarCache.store(radii, for: key, limit: limit)
+    result(response(radii, hit: false))
+  }
+}
+
+enum SidebarCornerGeometry {
+  static func supports(_ rect: CGRect, radii: [Double]) -> Bool {
+    guard radii.count == 4, radii.allSatisfy({ $0.isFinite && $0 >= 24 }) else { return false }
+    return radii[0] + radii[1] <= Double(rect.width) &&
+      radii[2] + radii[3] <= Double(rect.width) &&
+      radii[0] + radii[2] <= Double(rect.height) &&
+      radii[1] + radii[3] <= Double(rect.height)
+  }
 }
 
 /// Conservative app policy, not a UIKit formula. Keep generous separation
@@ -96,8 +163,15 @@ enum ModalCornerGeometry {
 /// Engine-owned, bounded memory LRU. No disk reads/writes and no modal lifetime
 /// coupling. A new engine/process starts empty; failed queries are never stored.
 final class ModalCornerCache {
+  private let count: Int
+  private let minimum: Double
   private var entries: [String: [Double]] = [:]
   private var order: [String] = []
+
+  init(count: Int = 2, minimum: Double = 32) {
+    self.count = count
+    self.minimum = minimum
+  }
 
   func radii(for key: String, limit: Double) -> [Double]? {
     guard let value = entries[key], valid(value, limit: limit) else { return nil }
@@ -115,7 +189,7 @@ final class ModalCornerCache {
   }
 
   private func valid(_ value: [Double], limit: Double) -> Bool {
-    value.count == 2 && limit.isFinite &&
-      value.allSatisfy { $0.isFinite && $0 >= 32 && $0 <= limit }
+    value.count == count && limit.isFinite &&
+      value.allSatisfy { $0.isFinite && $0 >= minimum && $0 <= limit }
   }
 }

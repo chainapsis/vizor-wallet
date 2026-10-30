@@ -92,8 +92,9 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
         _check!();
         if (!mounted) return;
         if (!opened) {
-          error =
-              'Could not open Settings. Open your device settings manually and allow access for Vizor.';
+          error = _status?.permission == LedgerBluetoothPermission.restricted
+              ? 'Could not open Settings. Open your device settings manually to review access for Vizor.'
+              : 'Could not open Settings. Open your device settings manually and allow access for Vizor.';
         }
       }
       final status = await access.bluetoothAccessStatus();
@@ -165,7 +166,9 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
               ? 'Allow location in Settings'
               : 'Allow Bluetooth in Settings');
     final message =
-        _error ??
+        (restricted && _error != null
+            ? '${status!.message}\n\n$_error'
+            : _error) ??
         (ready
             ? 'Turn on your Ledger and unlock it to continue.'
             : requestable
@@ -184,10 +187,10 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
                   'Checking whether Vizor can connect to your Ledger.');
     final label = _busy
         ? 'Checking access'
-        : _error != null || status == null
-        ? 'Check again'
         : restricted
         ? 'Close'
+        : _error != null || status == null
+        ? 'Check again'
         : radioOff || locationOff
         ? 'Check again'
         : ready
@@ -195,11 +198,23 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
         : requestable
         ? 'Allow access'
         : 'Open settings';
+    bool canAct() {
+      if (!mounted || !widget.enabled || _busy || _invalidated) return false;
+      try {
+        _check?.call();
+        return true;
+      } catch (_) {
+        _invalidated = true;
+        return false;
+      }
+    }
+
     void action() {
-      if (_error != null || status == null || radioOff || locationOff) {
-        unawaited(_refresh());
-      } else if (restricted) {
+      if (!canAct()) return;
+      if (restricted) {
         widget.onClose?.call();
+      } else if (_error != null || status == null || radioOff || locationOff) {
+        unawaited(_refresh());
       } else if (ready) {
         widget.onRetry?.call();
       } else {
@@ -214,6 +229,14 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
         message: message,
         label: label,
         busy: _busy,
+        ready: ready,
+        hasError: _error != null,
+        access: status,
+        onOpenSettings: restricted && widget.enabled && !_busy && !_invalidated
+            ? () {
+                if (canAct()) unawaited(_refresh(settings: true));
+              }
+            : null,
         onAction:
             !widget.enabled ||
                 _busy ||
@@ -234,10 +257,20 @@ class LedgerBluetoothPresentation {
     required this.label,
     required this.busy,
     required this.onAction,
+    required this.ready,
+    required this.hasError,
+    required this.access,
+    this.onOpenSettings,
   });
   final String title;
   final String message;
   final String label;
   final bool busy;
   final VoidCallback? onAction;
+  final bool ready;
+  final bool hasError;
+  final LedgerBluetoothAccessStatus? access;
+  final VoidCallback? onOpenSettings;
+  bool get restricted =>
+      access?.permission == LedgerBluetoothPermission.restricted;
 }

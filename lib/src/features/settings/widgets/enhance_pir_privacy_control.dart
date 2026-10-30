@@ -1,8 +1,10 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/config/private_transparent_recovery_config.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'network_privacy_control.dart';
+import 'wallet_pir_server_popup.dart';
 
 class EnhancePirPrivacyControl extends StatelessWidget {
   const EnhancePirPrivacyControl({
@@ -20,6 +22,8 @@ class EnhancePirPrivacyControl extends StatelessWidget {
   /// can never complete (dummy actions, outputs the wallet cannot open), so
   /// they read as failures the user is expected to act on.
   final String? transition;
+
+  /// Whether this build's private queries also recover transparent funds.
 
   @override
   Widget build(BuildContext context) {
@@ -51,13 +55,23 @@ class EnhancePirPrivacyControl extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        'Private queries',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Private queries',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                          WalletPirServerSettingsButton(
+                            enabled: enabled && onToggle != null,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
@@ -99,7 +113,8 @@ class EnhancePirPrivacyControl extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           child: Text(
-            'Experimental. Looks up supported transactions without revealing their IDs to servers. Transaction details may take longer to appear.',
+            kPrivateQueriesSettingsCopy,
+            key: const ValueKey('settings_enhance_pir_description'),
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
             ),

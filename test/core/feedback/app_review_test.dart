@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zcash_wallet/src/core/navigation/external_action_guard_provider.dart';
 import 'package:zcash_wallet/src/core/feedback/app_review_host.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
@@ -428,6 +429,29 @@ void main() {
       expect(controller.isDue, true);
     },
   );
+  test('review eligibility resumes only after all owned holds end', () {
+    final container = ProviderContainer(
+      overrides: [
+        appSecurityProvider.overrideWith(_UnlockedSecurity.new),
+        walletProvider.overrideWith(_ExistingWallet.new),
+      ],
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      appReviewSurfaceSafeProvider,
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    final guard = container.read(externalActionGuardProvider.notifier);
+    final signing = guard.acquire();
+    final persistence = guard.tryProtect()!;
+    expect(container.read(appReviewSurfaceSafeProvider), isFalse);
+    persistence.release();
+    expect(container.read(appReviewSurfaceSafeProvider), isFalse);
+    signing.release();
+    expect(container.read(appReviewSurfaceSafeProvider), isTrue);
+  });
+
   test('sync privacy lock blocks home while the wallet remains unlocked', () {
     final container = ProviderContainer(
       overrides: [

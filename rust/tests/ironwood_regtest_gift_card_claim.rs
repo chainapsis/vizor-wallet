@@ -166,9 +166,10 @@ fn gift_card_claims_at_two_confirmations_and_discards_the_card_ovk() {
             .any(|output| output.address.is_some() && output.amount_zatoshi == GIFT_ZATOSHI),
         "control: the sender OVK must recover the recipient output: {sender_view:?}"
     );
-    // Without a recoverable output the spend cannot even be classified as a
-    // send; the link holder sees only that the card's note was spent.
-    assert_ne!(discard_view.tx_kind, "sent", "{discard_view:?}");
+    // The link holder's history shows the card's note leaving as a send, but
+    // none of the claim's outputs can be recovered from the link's seed.
+    assert_eq!(discard_view.tx_kind, "sent", "{discard_view:?}");
+    assert!(discard_view.outputs.is_empty(), "{discard_view:?}");
     assert!(
         discard_view
             .outputs

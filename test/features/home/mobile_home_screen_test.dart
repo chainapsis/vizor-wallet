@@ -2,7 +2,10 @@
 library;
 
 import 'dart:async';
+import 'package:zcash_wallet/src/features/home/widgets/home_activity_skeleton.dart';
+import 'package:zcash_wallet/src/features/activity/swap_activity_row_items_provider.dart';
 import 'dart:convert';
+
 import 'package:zcash_wallet/src/providers/voting/voting_home_cache_provider.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
@@ -14,6 +17,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_participation_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -26,8 +30,12 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
+import 'package:zcash_wallet/src/core/navigation/mobile_sidebar_route_observer.dart';
+import 'package:zcash_wallet/src/features/home/providers/nu7_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
+import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -41,10 +49,13 @@ import 'package:zcash_wallet/src/providers/privacy_mode_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_keep_awake_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
+import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
@@ -78,6 +89,16 @@ class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
     required String accountUuid,
     required SwapAsset asset,
   }) async {}
+}
+
+class _MemoryNu7AnnouncementStore implements Nu7AnnouncementStore {
+  final seen = <String>{};
+
+  @override
+  Future<bool> isSeen(String network) async => seen.contains(network);
+
+  @override
+  Future<void> markSeen(String network) async => seen.add(network);
 }
 
 class _FakeIronwoodAnnouncementStore
@@ -209,6 +230,7 @@ class _HomeParticipationRecorder extends VotingParticipationCoordinator {
 
 Widget _app(
   SyncState syncState, {
+  Map<String, String>? etaLabels,
   ZecMarketData? marketData = const ZecMarketData(
     usdPrice: 70,
     change24hPct: 13.12,
@@ -234,12 +256,20 @@ Widget _app(
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex? giftCardActivityIndex,
+  Future<GiftCardActivityIndex>? giftCardActivityFuture,
   AppThemeData theme = AppThemeData.dark,
   AccountState accountState = _accountState,
+  Widget Function(GoRouterState)? receiptBuilder,
+  Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
+  _MemoryNu7AnnouncementStore? nu7AnnouncementStore,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
+  final ironwoodAnnouncementStore = _FakeIronwoodAnnouncementStore();
+  final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
+  final popupObserver = MobileSidebarRouteObserver();
   final router = GoRouter(
     initialLocation: '/home',
+    observers: [popupObserver],
     routes: [
       if (useShellRouter)
         // The production mobile shell keeps every branch mounted, so a widget
@@ -296,6 +326,7 @@ Widget _app(
       GoRoute(
         path: '/activity/tx/:txid',
         builder: (_, state) =>
+            receiptBuilder?.call(state) ??
             Text('activity tx route ${state.pathParameters['txid']}'),
       ),
       GoRoute(
@@ -326,6 +357,8 @@ Widget _app(
 
   return ProviderScope(
     overrides: [
+      if (etaLabels != null)
+        activityEtaLabelsProvider.overrideWithValue(etaLabels),
       if (participationGuards != null)
         votingParticipationProvider.overrideWith(
           (ref) => _HomeParticipationRecorder(ref, participationGuards),
@@ -391,11 +424,21 @@ Widget _app(
         migrationPresentationCta ?? migrationCta,
       ),
       ironwoodMigrationAnnouncementProvider.overrideWith(
-        (ref) async => announcement,
+        (ref) async => ironwoodAnnouncementStore.seen
+            ? const IronwoodMigrationAnnouncementState.hidden()
+            : announcement,
       ),
       ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
-        _FakeIronwoodAnnouncementStore(),
+        ironwoodAnnouncementStore,
       ),
+      nu7AnnouncementProvider.overrideWith(
+        (ref) async => nu7Store.seen.contains(nu7Announcement.network)
+            ? const Nu7AnnouncementState.hidden()
+            : nu7Announcement,
+      ),
+      nu7AnnouncementStoreProvider.overrideWithValue(nu7Store),
+      mobileSidebarRouteObserverProvider.overrideWithValue(popupObserver),
+      nu7AnnouncementMotionEnabledProvider.overrideWithValue(false),
       if (migrationCoordinator != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(migrationCoordinator),
       mobileIronwoodMigrationAttentionSessionProvider.overrideWith(
@@ -405,9 +448,15 @@ Widget _app(
       ),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
-      if (giftCardActivityIndex != null)
-        giftCardActivityIndexProvider.overrideWith(
-          (ref, accountUuid) async => giftCardActivityIndex,
+      giftCardActivityIndexProvider.overrideWith(
+        (ref, accountUuid) async =>
+            giftCardActivityFuture ??
+            giftCardActivityIndex ??
+            GiftCardActivityIndex.empty,
+      ),
+      if (swapActivityStore == null)
+        swapActivityRowItemsProvider.overrideWith(
+          (ref, accountUuid) async => const [],
         ),
     ],
     child: MaterialApp.router(
@@ -551,6 +600,10 @@ rust_sync.TransactionInfo _tx(int index) {
     expiredUnmined: false,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
+    amountIncludesFee: false,
     blockTime: seconds,
     isTransparent: false,
     txKind: 'received',
@@ -567,6 +620,10 @@ rust_sync.TransactionInfo _sentZecTx({required String txidHex}) {
     expiredUnmined: false,
     accountBalanceDelta: -19540000,
     fee: BigInt.from(15000),
+    feeState: rust_sync.TransactionFeeState.known,
+    detailsComplete: true,
+    provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'sent',
@@ -611,6 +668,10 @@ rust_sync.TransactionInfo _receivedZecTx({
     expiredUnmined: false,
     accountBalanceDelta: zatoshi.toInt(),
     fee: BigInt.zero,
+    feeState: rust_sync.TransactionFeeState.notApplicable,
+    detailsComplete: true,
+    provisional: false,
+    amountIncludesFee: false,
     blockTime: BigInt.from(1800000000),
     isTransparent: false,
     txKind: 'received',
@@ -658,6 +719,46 @@ class _DeferredVotingStore implements VotingHomeCacheStore {
 }
 
 void main() {
+  testWidgets('Home displays ETA in place of the pool subtitle', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final pending = rust_sync.TransactionInfo(
+      amountIncludesFee: false,
+      detailsComplete: true,
+      feeState: rust_sync.TransactionFeeState.known,
+      provisional: false,
+      txidHex: 'pending-receive',
+      minedHeight: BigInt.zero,
+      expiredUnmined: false,
+      accountBalanceDelta: 100000000,
+      fee: BigInt.zero,
+      blockTime: BigInt.zero,
+      isTransparent: false,
+      txKind: 'receiving',
+      displayAmount: BigInt.from(100000000),
+      displayPool: 'shielded',
+      createdTime: BigInt.zero,
+    );
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+        ).copyWith(recentTransactions: [pending]),
+        showVoting: false,
+        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Receiving...'), findsOneWidget);
+    expect(find.text('Est. 1–3 min'), findsOneWidget);
+    expect(find.text('Shielded'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Home offers only pending backup and opens its account route', (
     tester,
   ) async {
@@ -725,7 +826,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('mobile_settings_route')), findsOneWidget);
+    final settings = find.byKey(const ValueKey('mobile_settings_route'));
+    expect(settings, findsOneWidget);
+    expect(GoRouter.of(tester.element(settings)).canPop(), isFalse);
   });
 
   testWidgets(
@@ -963,6 +1066,50 @@ void main() {
     expect(find.text('voting route'), findsOneWidget);
   });
 
+  testWidgets('Checking never prompts to keep the screen awake', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final initial = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      isSyncing: true,
+      percentage: 1,
+      scannedHeight: 200,
+      chainTipHeight: 200,
+      remainingScanBlocks: 1000,
+      lastSyncStartedAt: DateTime.now().subtract(const Duration(minutes: 10)),
+      checking: const SyncCheckingProgress(
+        cycle: 1,
+        percentage: 0.25,
+        displayTargetPercentage: 0.5,
+      ),
+    );
+    final notifier = FakeSyncNotifier(initial);
+    await tester.pumpWidget(
+      _app(
+        initial,
+        syncNotifier: notifier,
+        syncKeepAwakeNotifier: _FakeSyncKeepAwakeNotifier(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Stay awake to sync?'), findsNothing);
+    notifier.emit(
+      initial.copyWith(
+        checking: const SyncCheckingProgress(
+          cycle: 2,
+          percentage: 0.05,
+          displayTargetPercentage: 0.1,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Stay awake to sync?'), findsNothing);
+  });
+
   testWidgets('shows the Figma sync keep-awake prompt copy', (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
     addTearDown(() async {
@@ -1084,6 +1231,160 @@ void main() {
     );
   });
 
+  testWidgets(
+    'cache miss keeps Home visible with an unloaded balance and activity',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 852));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(_app(SyncState(accountUuid: 'account-1')));
+      await tester.pump();
+      final amount = tester.widget<Text>(
+        find.byKey(const ValueKey('mobile_home_shielded_balance')),
+      );
+      expect(amount.textSpan!.toPlainText(), contains('—'));
+      expect(find.byType(HomeActivitySkeletonRow), findsNWidgets(5));
+      expect(
+        find.byKey(const ValueKey('mobile_home_importing_background')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('cached balance is visible while activity is still loading', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasCachedBalance: true,
+          displayShieldedBalance: BigInt.from(250000000),
+        ),
+      ),
+    );
+    await tester.pump();
+    final amount = tester.widget<Text>(
+      find.byKey(const ValueKey('mobile_home_shielded_balance')),
+    );
+    expect(amount.textSpan!.toPlainText(), contains('2.5'));
+    expect(find.byType(HomeActivitySkeletonRow), findsNWidgets(5));
+    expect(find.text('No activity, yet...'), findsNothing);
+  });
+
+  for (final width in [320.0, 393.0, 440.0]) {
+    testWidgets('five skeleton rows match loaded mobile geometry at $width', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(Size(width, 852));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final initial = _syncedState(
+        orchardBalance: BigInt.from(250000000),
+      ).copyWith(hasRecentTransactionsData: false);
+      final sync = FakeSyncNotifier(initial);
+      await tester.pumpWidget(
+        _app(initial, syncNotifier: sync, showVoting: false),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byKey(const ValueKey('mobile_home_activity_list'));
+      final before = tester.getRect(list);
+      final rows = [
+        for (var i = 0; i < 5; i++)
+          tester.getRect(
+            find.byKey(ValueKey('mobile_home_activity_skeleton_$i')),
+          ),
+      ];
+      final header = tester.getRect(find.text('Recent activity'));
+      final seeAll = tester.getRect(find.text('See all'));
+      final balance = tester.getRect(
+        find.byKey(const ValueKey('mobile_home_shielded_balance')),
+      );
+      sync.emit(
+        initial.copyWith(
+          hasRecentTransactionsData: true,
+          recentTransactions: [for (var i = 0; i < 5; i++) _tx(i + 1)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getRect(list), before);
+      expect(tester.getRect(find.text('Recent activity')), header);
+      expect(tester.getRect(find.text('See all')), seeAll);
+      expect(
+        tester.getRect(
+          find.byKey(const ValueKey('mobile_home_shielded_balance')),
+        ),
+        balance,
+      );
+      for (var i = 0; i < 5; i++) {
+        expect(
+          tester.getRect(find.byKey(ValueKey('mobile_home_activity_row_$i'))),
+          rows[i],
+        );
+      }
+      // Mobile still displays ten real rows. Loading reserves five, and
+      // later rows extend below the prefix without moving its existing rows.
+      sync.emit(
+        initial.copyWith(
+          hasRecentTransactionsData: true,
+          recentTransactions: [for (var i = 0; i < 10; i++) _tx(i + 1)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.text('Recent activity')), header);
+      expect(tester.getRect(find.text('See all')), seeAll);
+      for (var i = 0; i < 5; i++) {
+        expect(
+          tester.getRect(find.byKey(ValueKey('mobile_home_activity_row_$i'))),
+          rows[i],
+        );
+      }
+      expect(tester.getRect(list).topLeft, before.topLeft);
+      expect(
+        tester.getRect(list).height,
+        before.height + 5 * (44 + AppSpacing.s),
+      );
+      expect(find.byType(HomeActivitySkeletonRow), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('local card records finish before mobile empty illustration', (
+    tester,
+  ) async {
+    final cards = Completer<GiftCardActivityIndex>();
+    await tester.pumpWidget(
+      _app(_syncedState(), giftCardActivityFuture: cards.future),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(HomeActivitySkeletonRow), findsNWidgets(5));
+    expect(find.text('No activity, yet...'), findsNothing);
+    cards.complete(GiftCardActivityIndex.empty);
+    await tester.pumpAndSettle();
+    expect(find.byType(HomeActivitySkeletonRow), findsNothing);
+    expect(find.text('No activity, yet...'), findsOneWidget);
+  });
+
+  testWidgets('mobile keeps real rows while card metadata loads', (
+    tester,
+  ) async {
+    final cards = Completer<GiftCardActivityIndex>();
+    await tester.pumpWidget(
+      _app(
+        _syncedState().copyWith(recentTransactions: [_tx(1)]),
+        giftCardActivityFuture: cards.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile_home_activity_row_0')),
+      findsOneWidget,
+    );
+    expect(find.byType(HomeActivitySkeletonRow), findsNothing);
+    cards.complete(GiftCardActivityIndex.empty);
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('shows the importing state before account data exists', (
     tester,
   ) async {
@@ -1094,7 +1395,12 @@ void main() {
 
     await tester.pumpWidget(
       _app(
-        SyncState(accountUuid: 'account-1', isSyncing: true, percentage: 0.32),
+        SyncState(
+          accountUuid: 'account-1',
+          isSyncing: true,
+          percentage: 0.32,
+          remainingScanBlocks: 68,
+        ),
       ),
     );
     await tester.pump();
@@ -1122,7 +1428,13 @@ void main() {
     expect(imageRect.size, const Size(246, 192));
     expect(canvasRect.bottom, moreOrLessEquals(744));
 
-    for (final size in const [Size(360, 800), Size(412, 915), Size(430, 932)]) {
+    for (final size in const [
+      Size(360, 800),
+      Size(412, 915),
+      Size(430, 932),
+      Size(690, 829),
+      Size(829, 690),
+    ]) {
       await tester.binding.setSurfaceSize(size);
       await tester.pump();
       expect(
@@ -1131,6 +1443,12 @@ void main() {
         ),
         size,
       );
+      for (final key in ['mobile_home_rest_canvas', 'mobile_home_rest_image']) {
+        expect(
+          tester.getCenter(find.byKey(ValueKey(key))).dx,
+          moreOrLessEquals(size.width / 2, epsilon: 0.1),
+        );
+      }
     }
   });
 
@@ -1151,7 +1469,9 @@ void main() {
     expect(find.text('No activity, yet...'), findsOneWidget);
   });
 
-  testWidgets('empty activity uses the Figma inner inset', (tester) async {
+  testWidgets('empty activity is centered with the original vertical spacing', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -1173,8 +1493,8 @@ void main() {
     );
 
     expect(
-      canvasRect.left,
-      moreOrLessEquals(receiveRect.left + AppSpacing.xs, epsilon: 0.1),
+      canvasRect.center.dx,
+      moreOrLessEquals(receiveRect.center.dx, epsilon: 0.1),
     );
     expect(
       titleRect.top,
@@ -1189,6 +1509,46 @@ void main() {
       moreOrLessEquals(AppSpacing.xxs, epsilon: 0.1),
     );
   });
+
+  for (final width in [320.0, 393.0, 440.0, 690.0, 829.0]) {
+    for (final funded in [false, true]) {
+      testWidgets(
+        'empty activity stays centered at $width width (funded: $funded)',
+        (tester) async {
+          await tester.binding.setSurfaceSize(Size(width, 1200));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          await tester.pumpWidget(
+            _app(
+              _syncedState(
+                orchardBalance: funded ? BigInt.from(14312000000) : BigInt.zero,
+              ),
+            ),
+          );
+          await tester.pump();
+
+          // The full-width voting card shares the balance card's center,
+          // including when Send and Receive split the action row.
+          final contentCenter = tester
+              .getCenter(
+                find.byKey(const ValueKey('mobile_home_coinholder_voting')),
+              )
+              .dx;
+          for (final finder in [
+            find.text('No activity, yet...'),
+            find.text('How about running your\nfirst ZEC tx?'),
+            find.byKey(const ValueKey('mobile_home_rest_canvas')),
+            find.byKey(const ValueKey('mobile_home_rest_image')),
+          ]) {
+            expect(
+              tester.getCenter(finder).dx,
+              moreOrLessEquals(contentCenter, epsilon: 0.1),
+            );
+          }
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('empty activity keeps its illustration visible at 320 width', (
     tester,
@@ -2215,6 +2575,7 @@ void main() {
         currentHeight: currentHeight,
         broadcastHeight: currentHeight,
         isKeystone: false,
+        blockSpacing: BlockSpacing.preNu7,
       )!;
       final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
         accountUuid: 'account-1',
@@ -2244,6 +2605,148 @@ void main() {
       expect(find.text('Migration needs attention'), findsOneWidget);
     },
   );
+
+  testWidgets('shows the NU7 announcement once and remembers it', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _MemoryNu7AnnouncementStore();
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.text('NU7 Update is live.\nWhat does this mean?'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('nu7_announcement_got_it_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+    expect(store.seen, {'main'});
+  });
+
+  testWidgets('does not stack the NU7 announcement on an Ironwood sheet', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        announcement: IronwoodMigrationAnnouncementState.visible(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(kIronwoodMigrationReadyPhase),
+        ),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_close_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
+
+  testWidgets('holds the NU7 announcement until home is visible', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // Seen until the test clears it, standing in for activation arriving later.
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        useShellRouter: true,
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final home = tester.element(find.byType(MobileHomeScreen));
+    final router = GoRouter.of(home);
+    router.go('/shell-activity');
+    await tester.pumpAndSettle();
+
+    store.seen.clear();
+    ProviderScope.containerOf(home).invalidate(nu7AnnouncementProvider);
+    await tester.pumpAndSettle();
+
+    expect(find.text('shell activity route'), findsOneWidget);
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    router.go('/home');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
+
+  testWidgets('holds the NU7 announcement while another sheet is open', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final home = tester.element(find.byType(MobileHomeScreen));
+    unawaited(
+      showAppMobileSheet<void>(
+        context: home,
+        builder: (_) => const Text('other sheet'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    store.seen.clear();
+    ProviderScope.containerOf(home).invalidate(nu7AnnouncementProvider);
+    await tester.pumpAndSettle();
+
+    expect(find.text('other sheet'), findsOneWidget);
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    Navigator.of(home, rootNavigator: true).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('other sheet'), findsNothing);
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
 
   testWidgets('shows the mobile Ironwood announcement sheet', (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -2447,15 +2950,78 @@ void main() {
     expect(find.text('Shield'), findsOneWidget);
   });
 
-  testWidgets('Ledger shielding opens the dedicated mobile Ledger route', (
+  testWidgets('keeps transparent funds a pending spend holds in the tray', (
     tester,
   ) async {
     await tester.pumpWidget(
       _app(
         _syncedState(
-          transparentBalance: BigInt.from(242000000),
-          canShieldTransparentBalance: true,
+          orchardBalance: BigInt.from(14312000000),
+        ).copyWith(transparentLockedBalance: BigInt.from(242000000)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('mobile_home_transparent_balance_strip')),
+      findsOneWidget,
+    );
+    expect(find.text('Transparent: 2.42 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('shows a stopped recovery with its reason on tap', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          percentage: 1.0,
+          orchardBalance: BigInt.from(14312000000),
+          transparentAuthority: rust_sync.TransparentBalanceAuthority.stopped,
+          transparentLastKnownBalance: BigInt.from(242000000),
+          transparentStop: rust_sync.TransparentStopReason.legacyDiscrepancy,
+          transparentPrivate: true,
         ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text('Transparent: 2.42 (last known, recovery stopped) ZEC'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_home_shield_balance_button')),
+      findsNothing,
+    );
+    final hint = tester.widget<AppTooltip>(
+      find.byKey(const ValueKey('mobile_home_transparent_balance_hint')),
+    );
+    expect(
+      hint.message,
+      contains("Earlier public records don't match private recovery"),
+    );
+    expect(hint.tapToShow, isTrue);
+  });
+
+  testWidgets('Ledger shielding returns Home with immediate balance updates', (
+    tester,
+  ) async {
+    final syncNotifier = FakeSyncNotifier(
+      _syncedState(
+        orchardBalance: BigInt.from(1492000000),
+        transparentBalance: BigInt.from(1412000000),
+        canShieldTransparentBalance: true,
+      ),
+    );
+    await tester.pumpWidget(
+      _app(
+        syncNotifier.initialState!,
+        syncNotifier: syncNotifier,
         accountState: const AccountState(
           accounts: [
             AccountInfo(
@@ -2473,6 +3039,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
+    // The transparent tray enters when the asynchronous balance arrives.
+    await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_home_shield_balance_button')),
@@ -2483,6 +3051,27 @@ void main() {
       find.byKey(const ValueKey('mobile_ledger_shield_route')),
       findsOneWidget,
     );
+
+    syncNotifier.setSyncState(
+      _syncedState(orchardBalance: BigInt.from(2904000000)),
+    );
+    GoRouter.of(
+      tester.element(find.byKey(const ValueKey('mobile_ledger_shield_route'))),
+    ).pop();
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text('29.04 ZEC', findRichText: true, skipOffstage: false),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
+
+    syncNotifier.setSyncState(
+      _syncedState(orchardBalance: BigInt.from(3004000000)),
+    );
+    await tester.pump();
+    expect(find.text('30.04 ZEC', findRichText: true), findsOneWidget);
   });
 
   testWidgets('animates transparent balance tray away before removal', (
@@ -2500,6 +3089,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
+    // The transparent tray enters when the asynchronous balance arrives.
+    await tester.pump(const Duration(milliseconds: 500));
 
     final stripFinder = find.byKey(
       const ValueKey('mobile_home_transparent_balance_strip'),
@@ -2819,6 +3410,10 @@ void main() {
           expiredUnmined: false,
           accountBalanceDelta: 445000000,
           fee: BigInt.zero,
+          feeState: rust_sync.TransactionFeeState.notApplicable,
+          detailsComplete: true,
+          provisional: false,
+          amountIncludesFee: false,
           blockTime: height == BigInt.zero
               ? BigInt.zero
               : BigInt.from(1800000100),
@@ -2883,7 +3478,7 @@ void main() {
       for (final row in [placeholder, actualUnmined, actualMined]) {
         expect(row.row.stableId, 'gift-card:home-continuity-card');
         expect(row.row.timestampText, isNot('--'));
-        expect(row.row.subtitle, 'Ironwood');
+        expect(row.row.subtitle, 'Checking status');
         expect(row.row.amountText, '+4.45 ZEC');
       }
       expect(actualUnmined.row.timestampText, placeholder.row.timestampText);
@@ -2983,6 +3578,53 @@ void main() {
     expect(find.text('Sending...'), findsNothing);
     expect(find.text('Sent'), findsNothing);
     expect(find.text('Transparent'), findsNothing);
+  });
+
+  testWidgets('home activity opens before receipt loading completes', (
+    tester,
+  ) async {
+    final history = Completer<List<rust_sync.TransactionInfo>>();
+    final tx = _tx(1);
+    MobileTransactionStatusArgs? suppliedArgs;
+    await tester.binding.setSurfaceSize(const Size(393, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _app(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          percentage: 1,
+          recentTransactions: [tx],
+        ),
+        showVoting: false,
+        swapEnabled: false,
+        receiptBuilder: (state) {
+          suppliedArgs = state.extra as MobileTransactionStatusArgs;
+          return MobileTransactionStatusScreen(
+            args: suppliedArgs!,
+            historyLoader: (_, _) => history.future,
+            detailLoader: (_, _) async => null,
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    WalletPathReadBlocker();
+    await tester.tap(find.text('Received'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(MobileTransactionStatusScreen), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(MobileTransactionStatusScreen),
+        matching: find.text('Received'),
+      ),
+      findsOneWidget,
+    );
+    expect(history.isCompleted, isFalse);
+    expect(suppliedArgs!.sourceAccountUuid, _accountState.activeAccountUuid);
+    expect(suppliedArgs!.initialTransaction, same(tx));
+    expect(suppliedArgs!.initialDetail, isNull);
   });
 
   testWidgets('recent activity keeps absorbed receive amount and tap-through', (

@@ -9,8 +9,7 @@ require_command python3
 validate_activation_height
 pin_activation_height
 
-mkdir -p "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
-chmod 0777 "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
+ensure_ironwood_mount_dirs
 
 compose up -d --build zcashd lightwalletd
 wait_for_zcashd

@@ -19,6 +19,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/wallet_provider.dart';
 import 'package:zcash_wallet/src/providers/router_refresh_provider.dart';
 
+import '../../support/go_route_descendants.dart';
+
 const accounts = AccountState(
   accounts: [
     AccountInfo(
@@ -106,9 +108,9 @@ void main() {
                       ? SwapActivityReturnTarget.pay
                       : SwapActivityReturnTarget.swap,
                 );
-          final route = buildMobileRoutes(
-            entryRoutes: [],
-          ).whereType<GoRoute>().singleWhere((r) => r.path == path);
+          final route = goRouteDescendants(
+            buildMobileRoutes(entryRoutes: []),
+          ).singleWhere((r) => r.path == path);
           Object? livePayload;
           // Inspect real production page selection without starting Rust/native IO.
           final router = GoRouter(

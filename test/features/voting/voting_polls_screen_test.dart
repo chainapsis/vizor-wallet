@@ -88,7 +88,7 @@ void main() {
     );
     expect(
       (betaImage.image as AssetImage).assetName,
-      'assets/illustrations/voting_beta_label.png',
+      'assets/illustrations/desktop/voting_beta_label.webp',
     );
   });
 

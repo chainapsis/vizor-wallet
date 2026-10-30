@@ -23,17 +23,22 @@ use crate::wallet::{
 };
 
 mod broadcast;
-mod payment_link;
+pub(crate) mod payment_link;
 pub(crate) use payment_link::{payment_link_resubmit_exclusions, payment_link_spend_evidence};
+pub(crate) mod hardware_authority;
 mod migration;
 mod migration_wallet_ops;
 mod pczt;
 pub(crate) use pczt::{check_orchard_spend_auth_signatures, SpendAuthSignatureError};
 pub(crate) mod proposal_locks;
 mod send;
+pub(crate) use send::fee_policy_target;
 mod transactions;
 pub(crate) use transactions::has_recovered_status_work;
+#[cfg(test)]
+pub(crate) use transactions::private_shielding_tests;
 pub(crate) use transactions::resolve_recovered_nonmined_status;
+pub(crate) use transactions::ResubmittableTx;
 
 // Keep the existing address API path while its implementation lives with address policy.
 pub use crate::wallet::addresses::{
@@ -53,9 +58,9 @@ pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx,
     denomination_confirmations_required, migration_preparation_snapshot_read_only,
     migration_status, observable_denomination_transaction_ids, proof_retry_height,
-    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationPreparationOutputKind,
-    MigrationPreparationTransactionState, MigrationScheduleEntry, MigrationStatus,
-    PreparationTimingPolicy,
+    reconcile_wallet_locks_after_sync, zip318_blocks_at, zip318_canonical_migration_expiry_height,
+    MigrationPartState, MigrationPreparationOutputKind, MigrationPreparationTransactionState,
+    MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
 };
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, create_tex_pczts_from_proposal,
@@ -104,7 +109,6 @@ pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migratio
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::migration_anchor_retention_required;
-pub(crate) use send::resubmit_pending_transactions;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ProposalResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
@@ -115,19 +119,25 @@ pub(crate) use send::ShieldTransparentPcztResult;
 pub(crate) use send::ShieldTransparentResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ShieldTransparentStatus;
+pub(crate) use send::{resubmit_pending_transactions, resubmit_transactions};
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
+#[cfg(test)]
+pub(crate) use transactions::read_wallet_balances;
 pub use transactions::{
     decrypt_and_store_transaction, get_previous_transaction_count_for_address,
     set_transaction_status,
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
-    get_export_birthday_anchor, get_local_block_time,
-    get_oldest_mined_transaction_anchor, get_transaction_data_requests, get_transaction_detail,
-    get_transaction_history, get_unmined_txids_with_mined_output_evidence, get_wallet_balance,
-    get_wallet_balances, ExportBirthdayAnchor, TransactionDetail, TransactionDetailOutput,
-    TransactionInfo, TxDataRequest, WalletBalance, WalletBalanceAvailability,
+    get_export_birthday_anchor, get_local_block_time, get_oldest_mined_transaction_anchor,
+    get_transaction_data_requests, get_transaction_detail, get_transaction_history,
+    get_transaction_rows, get_transaction_rows_for_txids,
+    get_unmined_txids_with_mined_output_evidence, get_wallet_balance, get_wallet_balances,
+    history_pages, ExportBirthdayAnchor, TransactionDetail, TransactionDetailOutput,
+    TransactionFeeState, TransactionInfo, TransparentBalanceAuthority, TransparentDetailsView,
+    TransparentRecipientRow, TransparentStopReason, TxDataRequest, WalletBalance,
+    WalletBalanceAvailability,
 };
 
 pub(super) fn open_wallet_db(
@@ -609,14 +619,61 @@ pub(super) fn wallet_target_height(
 
 #[derive(Clone)]
 pub(super) struct StoredProposalLock {
-    pub proposal: zcash_client_backend::proposal::Proposal<
-        send::WalletFeeRule,
-        zcash_client_sqlite::ReceivedNoteId,
-    >,
+    pub inputs: Vec<zcash_client_backend::wallet::OutputRef>,
     pub network: WalletNetwork,
     pub db_path: String,
     pub owner: zcash_client_backend::wallet::LockOwner,
     pub send_flow_id: String,
+}
+
+/// Caller holds the wallet write lock. Recovery metadata precedes wallet locks
+/// so a process killed during creation can release only its own inputs.
+pub(super) fn reserve_proposal_inputs(
+    db: &mut WalletDatabase,
+    db_path: &str,
+    network: WalletNetwork,
+    inputs: Vec<zcash_client_backend::wallet::OutputRef>,
+    expiry: BlockHeight,
+    flow_id: &str,
+) -> Result<(u64, zcash_client_backend::wallet::LockOwner), String> {
+    use zcash_client_backend::{data_api::OutputLockStore, wallet::LockOwner};
+    proposal_locks::require_active_session()?;
+    if flow_id.trim().is_empty() {
+        return Err("Signing flow ID must not be empty".into());
+    }
+    let owner = LockOwner::random(&mut voting_crypto_deps::rand::rngs::OsRng);
+    proposal_locks::persist(db_path, owner, &inputs, expiry)?;
+    if let Err(error) = db.lock_outputs(&inputs, owner, expiry) {
+        let cleanup = proposal_locks::remove(db_path, owner);
+        return Err(format!(
+            "Lock proposal inputs: {error:?}; cleanup: {cleanup:?}"
+        ));
+    }
+    let mut store = match PROPOSAL_STORE.lock() {
+        Ok(store) => store,
+        Err(error) => {
+            // Keep recovery rows if releasing an input fails.
+            for input in &inputs {
+                db.unlock_output(input, owner)
+                    .map_err(|e| format!("Release proposal after poisoned store: {e}"))?;
+            }
+            proposal_locks::release_with_timeout(db_path, owner, READ_DB_BUSY_TIMEOUT)?;
+            return Err(format!("Lock proposal store: {error}"));
+        }
+    };
+    let id = store.next_id;
+    store.next_id += 1;
+    store.locks.insert(
+        id,
+        StoredProposalLock {
+            inputs,
+            network,
+            db_path: db_path.to_string(),
+            owner,
+            send_flow_id: flow_id.to_string(),
+        },
+    );
+    Ok((id, owner))
 }
 
 pub(super) static PROPOSAL_STORE: std::sync::LazyLock<Mutex<ProposalStore>> =
@@ -732,12 +789,11 @@ fn unlock_stored_proposal_locked(
     {
         return Ok(());
     }
-    zcash_client_backend::data_api::wallet::unlock_proposal_inputs(
-        &mut db,
-        &current.proposal,
-        current.owner,
-    )
-    .map_err(|e| format!("Unlock abandoned send proposal inputs: {e}"))?;
+    use zcash_client_backend::data_api::OutputLockStore;
+    for input in &current.inputs {
+        db.unlock_output(input, current.owner)
+            .map_err(|e| format!("Unlock abandoned proposal input: {e}"))?;
+    }
     proposal_locks::release_with_timeout(&current.db_path, current.owner, metadata_timeout)?;
     store.locks.remove(&proposal_id);
     Ok(())

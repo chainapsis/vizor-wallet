@@ -3,12 +3,14 @@
 //! Scanning a new account starts with the tree state just below its first
 //! block. Fetching it with `GetTreeState(birthday - 1)` told lightwalletd the
 //! account's exact birthday, re-sent on every rescan. Restored birthdays are
-//! instead rounded down to one past a point on a fixed 10,000-block grid
-//! ([`restore_birthday`]), so lightwalletd learns only the bucket. When the
-//! grid point is a checkpoint in this table, the sync engine reads its state
-//! locally ([`mainnet_chain_state`]) and sends no `GetTreeState` at all; a
-//! restore newer than the table fetches the grid point's state, which reveals
-//! the same bucket the first `GetBlockRange` already does.
+//! instead rounded down to one past a point on a fixed height grid
+//! ([`restore_birthday`]), so lightwalletd learns only the bucket. The grid is
+//! every 10,000 blocks before NU7 and every 30,000 from it, about 8.7 days in
+//! both eras. When the grid point is a checkpoint in this table, the sync
+//! engine reads its state locally ([`mainnet_chain_state`]) and sends no
+//! `GetTreeState` at all; a restore newer than the table fetches the grid
+//! point's state, which reveals the same bucket the first `GetBlockRange`
+//! already does.
 //!
 //! Newly created accounts keep their exact birthday (the chain tip), which
 //! reveals only that a wallet was created now; rounding would scan up to a
@@ -25,7 +27,7 @@ mod mainnet_data;
 use mainnet_data::{CHECKPOINTS, START_HEIGHT, STEP};
 use zcash_client_backend::data_api::chain::ChainState;
 use zcash_client_backend::proto::service::TreeState;
-use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+use zcash_protocol::consensus::{NetworkUpgrade, Parameters, NU7_POW_TARGET_SPACING_RATIO};
 
 use crate::wallet::block_times::table_covers;
 use crate::wallet::network::WalletNetwork;
@@ -92,19 +94,20 @@ pub(crate) fn mainnet_chain_state(network: WalletNetwork, height: u64) -> Option
 /// The birthday to store for a restored account whose requested birthday is
 /// `birthday`, so that scanning starts right after a grid point.
 ///
-/// On real mainnet the birthday moves down to one past the highest multiple of
-/// `STEP` (counted from `START_HEIGHT`) below it, or to Sapling activation when
-/// no grid point is below it. An earlier birthday only scans more blocks, and
-/// never misses funds. Birthdays at or before Sapling activation and all other
-/// networks are unchanged.
+/// On real mainnet the birthday moves down to one past the highest grid point
+/// below it, or to Sapling activation when no grid point is below it. An
+/// earlier birthday only scans more blocks, and never misses funds. Birthdays
+/// at or before Sapling activation and all other networks are unchanged.
 pub(crate) fn restore_birthday(network: WalletNetwork, birthday: u64) -> u64 {
     if !table_covers(network) {
         return birthday;
     }
-    let Some(sapling_activation) = network
-        .activation_height(NetworkUpgrade::Sapling)
-        .map(|height| u64::from(u32::from(height)))
-    else {
+    let activation = |upgrade| {
+        network
+            .activation_height(upgrade)
+            .map(|height| u64::from(u32::from(height)))
+    };
+    let Some(sapling_activation) = activation(NetworkUpgrade::Sapling) else {
         return birthday;
     };
     if birthday <= sapling_activation {
@@ -114,7 +117,29 @@ pub(crate) fn restore_birthday(network: WalletNetwork, birthday: u64) -> u64 {
     if prior < START_HEIGHT {
         return sapling_activation;
     }
-    START_HEIGHT + (prior - START_HEIGHT) / STEP * STEP + 1
+    grid_point_at_or_below(prior, activation(NetworkUpgrade::Nu7)) + 1
+}
+
+/// The highest grid point at or below `height`, where `height >= START_HEIGHT`.
+///
+/// Grid points are every `STEP` blocks from `START_HEIGHT` before NU7, and
+/// every `STEP` times the NU7 spacing ratio from it, so buckets keep their
+/// duration and every grid point is a checkpoint height. The bucket that
+/// contains the activation starts at the last grid point before it. A height
+/// grid rather than a calendar keeps the buckets identical across app versions.
+fn grid_point_at_or_below(height: u64, nu7: Option<u64>) -> u64 {
+    let step_at = |height| match nu7 {
+        Some(activation) if height >= activation => STEP * u64::from(NU7_POW_TARGET_SPACING_RATIO),
+        _ => STEP,
+    };
+    let round_down = |height: u64| height - (height - START_HEIGHT) % step_at(height);
+    let point = round_down(height);
+    match nu7 {
+        Some(activation) if point < activation && activation <= height => {
+            round_down(activation - 1)
+        }
+        _ => point,
+    }
 }
 
 #[cfg(test)]
@@ -124,6 +149,7 @@ mod tests {
     const SAPLING_ACTIVATION: u64 = 419_200;
     const NU5_ACTIVATION: u64 = 1_687_104;
     const NU6_3_ACTIVATION: u64 = 3_428_143;
+    const NU7_ACTIVATION: u64 = 3_543_405;
 
     #[test]
     fn every_checkpoint_parses_at_its_height() {
@@ -205,12 +231,64 @@ mod tests {
         assert_eq!(restore_birthday(main, 1), 1);
         // Past the table: still on the grid, whose point's state is then
         // fetched from lightwalletd and reveals only the bucket.
-        let last = last_checkpoint_height();
-        assert_eq!(restore_birthday(main, last + 1), last + 1);
-        assert_eq!(restore_birthday(main, last + 5_000), last + 1);
-        assert_eq!(restore_birthday(main, last + 25_000), last + 2 * STEP + 1);
-        assert_eq!(restore_birthday(main, last), last - STEP + 1);
-        assert!(mainnet_chain_state(main, last + 2 * STEP).is_none());
+        assert_eq!(restore_birthday(main, 9_000_123), 9_000_001);
+        assert!(mainnet_chain_state(main, 9_000_000).is_none());
+    }
+
+    #[cfg(not(ironwood_masquerade))]
+    #[test]
+    fn restore_birthday_grid_widens_at_nu7() {
+        let main = WalletNetwork::Main;
+        assert_eq!(
+            main.activation_height(NetworkUpgrade::Nu7)
+                .map(|height| u64::from(u32::from(height))),
+            Some(NU7_ACTIVATION)
+        );
+        // Before NU7: every 10,000 blocks.
+        assert_eq!(restore_birthday(main, 3_539_999), 3_530_001);
+        assert_eq!(restore_birthday(main, 3_540_000), 3_530_001);
+        // The bucket containing the activation starts at the last grid point
+        // before it and ends at the first 30,000-block point after it.
+        for birthday in [
+            3_540_001,
+            NU7_ACTIVATION - 1,
+            NU7_ACTIVATION,
+            NU7_ACTIVATION + 1,
+            3_560_001,
+            3_570_000,
+        ] {
+            assert_eq!(restore_birthday(main, birthday), 3_540_001, "{birthday}");
+        }
+        // From NU7: every 30,000 blocks.
+        assert_eq!(restore_birthday(main, 3_570_001), 3_570_001);
+        assert_eq!(restore_birthday(main, 3_600_000), 3_570_001);
+        assert_eq!(restore_birthday(main, 3_600_001), 3_600_001);
+    }
+
+    #[test]
+    fn grid_points_are_checkpoint_heights_and_keep_their_spacing() {
+        let wide = STEP * u64::from(NU7_POW_TARGET_SPACING_RATIO);
+        for activation in [NU7_ACTIVATION, 3_540_000, 3_540_001, START_HEIGHT + 1] {
+            let mut previous = START_HEIGHT;
+            for height in (START_HEIGHT..activation + 3 * wide).step_by(7) {
+                let point = grid_point_at_or_below(height, Some(activation));
+                assert!(
+                    previous <= point && point <= height,
+                    "{activation} {height}"
+                );
+                assert_eq!((point - START_HEIGHT) % STEP, 0, "{activation} {height}");
+                let step = if point >= activation { wide } else { STEP };
+                assert_eq!((point - START_HEIGHT) % step, 0, "{activation} {height}");
+                if height < activation {
+                    assert!(height - point < STEP, "{activation} {height}");
+                } else if height >= activation + wide {
+                    assert!(height - point < wide, "{activation} {height}");
+                }
+                previous = point;
+            }
+        }
+        assert_eq!(grid_point_at_or_below(9_000_123, None), 9_000_000);
+        assert_eq!(grid_point_at_or_below(3_569_999, None), 3_560_000);
     }
 
     #[cfg(not(ironwood_masquerade))]

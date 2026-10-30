@@ -238,11 +238,17 @@ class _MobileSendPrefillHarness extends StatelessWidget {
 ///
 /// `initialReview` is the screen's own preview seam, so the whole step is
 /// reachable from a single static frame — no taps, storage, network, or Rust.
+/// The same production review used after either external-request choice.
+Widget buildMobilePaymentRequestReviewPreview(SendPrefillArgs prefill) =>
+    _MobileSendReviewRequestHarness(prefill: prefill);
+
 class _MobileSendReviewRequestHarness extends StatelessWidget {
-  const _MobileSendReviewRequestHarness();
+  const _MobileSendReviewRequestHarness({this.prefill});
+  final SendPrefillArgs? prefill;
 
   @override
   Widget build(BuildContext context) {
+    final request = prefill ?? _zip321Prefill;
     return _captureScope(
       child: SizedBox(
         width: 393,
@@ -251,12 +257,16 @@ class _MobileSendReviewRequestHarness extends StatelessWidget {
           initialReview: true,
           initialAmountReady: true,
           refreshReviewFeeOnInit: false,
-          initialRecipient: _zip321Prefill.address,
+          initialRecipient: request.address,
           initialAddressType: 'unified',
-          initialAmount: _zip321Prefill.amountText,
+          initialAmount: request.amountText,
           initialFeeZatoshi: BigInt.from(10000),
           isPaymentRequest: true,
-          paymentRequestLabel: 'Coinbase Support',
+          paymentRequestLabel: prefill == null
+              ? 'Coinbase Support'
+              : request.label,
+          initialMemo: prefill?.memoText,
+          preserveInitialMemoWhitespace: true,
           requestedAmountZatoshi: BigInt.from(50000000),
           loadWalletDbPath: () async => '/tmp/capture.db',
           validateAddress: _captureValidateAddress,

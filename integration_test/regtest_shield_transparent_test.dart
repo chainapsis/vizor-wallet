@@ -145,7 +145,14 @@ void main() {
 
 Future<void> _createFirstWallet(WidgetTester tester) async {
   _log('creating first wallet');
-  await _tapAppButton(tester, const ValueKey('welcome_create_wallet_button'));
+  await _tapAppButton(
+    tester,
+    const ValueKey('welcome_create_wallet_button'),
+    action: find.descendant(
+      of: find.byKey(const ValueKey('welcome_create_wallet_button')),
+      matching: find.byType(AppButton),
+    ),
+  );
   await _tapText(tester, 'I know how to use Zcash');
   await _tapAppButton(
     tester,
@@ -156,6 +163,7 @@ Future<void> _createFirstWallet(WidgetTester tester) async {
     tester,
     const ValueKey('create_secret_phrase_primary_button'),
   );
+  await finishDesktopAccountCustomisation(tester);
   await _enterText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -171,7 +179,7 @@ Future<void> _createFirstWallet(WidgetTester tester) async {
     const ValueKey('set_password_submit_button'),
     timeout: const Duration(minutes: 4),
   );
-  await finishDesktopAccountCustomisation(tester);
+
   await _waitForHome(tester, timeout: const Duration(minutes: 4));
   _log('first wallet created');
 }
@@ -445,9 +453,10 @@ bool _activityRowMatches(
 Future<void> _tapAppButton(
   WidgetTester tester,
   Key key, {
+  Finder? action,
   Duration timeout = const Duration(seconds: 20),
 }) async {
-  final finder = find.byKey(key);
+  final finder = action ?? find.byKey(key);
   await _pumpUntil(
     tester,
     () =>

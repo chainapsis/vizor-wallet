@@ -4,9 +4,11 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
+// These functions are ignored because they are not marked as `pub`: `accounts_within_used_batches`, `block_height_from_u64`, `catch`, `discover_privately`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_error`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_gate`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`, `restored_birthday`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Probe`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({
@@ -23,6 +25,13 @@ Future<String> getLightwalletdChainName({required String lightwalletdUrl}) =>
       lightwalletdUrl: lightwalletdUrl,
     );
 
+/// Time connection establishment and the chain-info RPC on the selected route.
+Future<LightwalletdEndpointProbe> probeLightwalletdEndpoint({
+  required String lightwalletdUrl,
+}) => RustLib.instance.api.crateApiWalletProbeLightwalletdEndpoint(
+  lightwalletdUrl: lightwalletdUrl,
+);
+
 /// Get the connected chain upgrade state used to decide whether Ironwood is active.
 Future<ChainUpgradeStatus> getChainUpgradeStatus({
   required String lightwalletdUrl,
@@ -37,6 +46,22 @@ Future<ChainUpgradeActivationStatus> getChainUpgradeStatusAtHeight({
   required String network,
   required BigInt tipHeight,
 }) => RustLib.instance.api.crateApiWalletGetChainUpgradeStatusAtHeight(
+  network: network,
+  tipHeight: tipHeight,
+);
+
+/// Target block spacing for `network`; the NU7 height is absent until scheduled.
+BlockSpacingSchedule getBlockSpacingSchedule({required String network}) =>
+    RustLib.instance.api.crateApiWalletGetBlockSpacingSchedule(
+      network: network,
+    );
+
+/// The upgrade window after `tip_height` on `network`, or none when no
+/// upgrade is scheduled after it.
+NetworkUpgradeWindow? getNetworkUpgradeWindow({
+  required String network,
+  required BigInt tipHeight,
+}) => RustLib.instance.api.crateApiWalletGetNetworkUpgradeWindow(
   network: network,
   tipHeight: tipHeight,
 );
@@ -100,9 +125,9 @@ Future<AccountCreationResult> addAccount({
   birthdayHeight: birthdayHeight,
 );
 
-/// Generate a software account mnemonic and shielded address without touching
-/// the wallet DB. Used for an external one-time recipient controlled by a
-/// fresh seed, such as payment-link funding.
+/// Generate a 12-word BIP-39 mnemonic and shielded address for Gift Card funding
+/// without touching the wallet DB. Regular wallets and Gift Card recipients
+/// continue using the 24-word [`keys::generate_mnemonic`] generator.
 Future<GeneratedSoftwareAccount> generateSoftwareAccount({
   required String network,
 }) => RustLib.instance.api.crateApiWalletGenerateSoftwareAccount(
@@ -176,22 +201,30 @@ discoverSoftwareWalletImportAccounts({
 
 /// Preview the spendable transparent UTXO balance for a software ZIP32 account.
 ///
-/// This does not import the account or touch the wallet DB. It checks a bounded
-/// standard BIP44 transparent address range so the onboarding modal can update
-/// balance rows after discovery has already returned.
+/// This does not import the account. It checks a bounded standard BIP44
+/// transparent address range so the onboarding modal can update balance rows
+/// after discovery has already returned.
+///
+/// Importing into an existing wallet reads that wallet's durably applied
+/// transparent policy, like discovery; only a first account, which has no
+/// wallet database, is limited to the captured mode.
 Future<BigInt> previewSoftwareAccountTransparentBalance({
   required String mnemonic,
   required String bip39Passphrase,
   required String network,
+  required String dbPath,
   required String lightwalletdUrl,
   required int zip32AccountIndex,
+  required bool isFirstWalletAccount,
 }) =>
     RustLib.instance.api.crateApiWalletPreviewSoftwareAccountTransparentBalance(
       mnemonic: mnemonic,
       bip39Passphrase: bip39Passphrase,
       network: network,
+      dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
       zip32AccountIndex: zip32AccountIndex,
+      isFirstWalletAccount: isFirstWalletAccount,
     );
 
 /// Import a software mnemonic. `account'=0` must be imported successfully;
@@ -366,13 +399,23 @@ Future<String?> findSoftwareAccountForMnemonic({
   zip32AccountIndex: zip32AccountIndex,
 );
 
-/// Export a single account's Unified Full Viewing Key (UFVK). Works for both
-/// software and hardware (Keystone) accounts.
+/// Export a single account's Unified Full Viewing Key (UFVK).
 Future<String> getAccountUfvk({
   required String dbPath,
   required String network,
   required String accountUuid,
 }) => RustLib.instance.api.crateApiWalletGetAccountUfvk(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
+/// Export full and incoming viewing keys for a software or hardware account.
+Future<AccountViewingKeys> getAccountViewingKeys({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletGetAccountViewingKeys(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
@@ -483,7 +526,6 @@ class AccountExportMetadata {
 class AccountInfo {
   final String uuid;
   final String name;
-  final String unifiedAddress;
   final int birthdayHeight;
   final int? zip32AccountIndex;
   final bool isSeedAnchor;
@@ -493,7 +535,6 @@ class AccountInfo {
   const AccountInfo({
     required this.uuid,
     required this.name,
-    required this.unifiedAddress,
     required this.birthdayHeight,
     this.zip32AccountIndex,
     required this.isSeedAnchor,
@@ -505,7 +546,6 @@ class AccountInfo {
   int get hashCode =>
       uuid.hashCode ^
       name.hashCode ^
-      unifiedAddress.hashCode ^
       birthdayHeight.hashCode ^
       zip32AccountIndex.hashCode ^
       isSeedAnchor.hashCode ^
@@ -519,12 +559,58 @@ class AccountInfo {
           runtimeType == other.runtimeType &&
           uuid == other.uuid &&
           name == other.name &&
-          unifiedAddress == other.unifiedAddress &&
           birthdayHeight == other.birthdayHeight &&
           zip32AccountIndex == other.zip32AccountIndex &&
           isSeedAnchor == other.isSeedAnchor &&
           isHardware == other.isHardware &&
           hardwareSignerKind == other.hardwareSignerKind;
+}
+
+/// The full and incoming viewing keys for the same account and network.
+class AccountViewingKeys {
+  final String ufvk;
+  final String uivk;
+
+  const AccountViewingKeys({required this.ufvk, required this.uivk});
+
+  @override
+  int get hashCode => ufvk.hashCode ^ uivk.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountViewingKeys &&
+          runtimeType == other.runtimeType &&
+          ufvk == other.ufvk &&
+          uivk == other.uivk;
+}
+
+/// Target block spacing before and from NU7, for time estimates in the UI.
+class BlockSpacingSchedule {
+  final BigInt? nu7ActivationHeight;
+  final int preNu7BlockSeconds;
+  final int nu7BlockSeconds;
+
+  const BlockSpacingSchedule({
+    this.nu7ActivationHeight,
+    required this.preNu7BlockSeconds,
+    required this.nu7BlockSeconds,
+  });
+
+  @override
+  int get hashCode =>
+      nu7ActivationHeight.hashCode ^
+      preNu7BlockSeconds.hashCode ^
+      nu7BlockSeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BlockSpacingSchedule &&
+          runtimeType == other.runtimeType &&
+          nu7ActivationHeight == other.nu7ActivationHeight &&
+          preNu7BlockSeconds == other.preNu7BlockSeconds &&
+          nu7BlockSeconds == other.nu7BlockSeconds;
 }
 
 /// Chain upgrade activation state computed from a known chain tip height.
@@ -662,6 +748,52 @@ class LegacyHardwareAccount {
           runtimeType == other.runtimeType &&
           accountUuid == other.accountUuid &&
           hardwareSignerKind == other.hardwareSignerKind;
+}
+
+/// A chain-info response timed inside Rust, excluding bridge execution queues.
+class LightwalletdEndpointProbe {
+  final String chainName;
+  final int latencyMs;
+
+  const LightwalletdEndpointProbe({
+    required this.chainName,
+    required this.latencyMs,
+  });
+
+  @override
+  int get hashCode => chainName.hashCode ^ latencyMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LightwalletdEndpointProbe &&
+          runtimeType == other.runtimeType &&
+          chainName == other.chainName &&
+          latencyMs == other.latencyMs;
+}
+
+/// The next network upgrade after a chain tip and the tip from which the
+/// wallet refuses transactions before it. The refusal holds while the next
+/// block is still before the upgrade.
+class NetworkUpgradeWindow {
+  final BigInt nextActivationHeight;
+  final BigInt sendHoldFromTip;
+
+  const NetworkUpgradeWindow({
+    required this.nextActivationHeight,
+    required this.sendHoldFromTip,
+  });
+
+  @override
+  int get hashCode => nextActivationHeight.hashCode ^ sendHoldFromTip.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NetworkUpgradeWindow &&
+          runtimeType == other.runtimeType &&
+          nextActivationHeight == other.nextActivationHeight &&
+          sendHoldFromTip == other.sendHoldFromTip;
 }
 
 /// A higher ZIP32 software account that can be imported by user choice.

@@ -192,6 +192,15 @@ impl LedgerTransport {
         Ok(())
     }
 
+    pub(super) fn verify_account(
+        &self,
+        account_key: &super::device_account::DeviceAccountKey,
+    ) -> Result<(), String> {
+        let command = account_key.request()?;
+        let response = self.exchange(command.ins, command.p1, command.p2, command.data)?;
+        account_key.verify(&response)
+    }
+
     pub(super) fn ufvk(&self, account_index: u32) -> Result<String, String> {
         let (first, continuation) = ufvk_commands(account_index)?;
         let mut chunks = vec![self.exchange(first.ins, first.p1, first.p2, first.data)?];

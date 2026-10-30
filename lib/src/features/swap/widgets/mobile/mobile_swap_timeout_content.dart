@@ -12,7 +12,7 @@ class MobileSwapTimeoutContent extends StatelessWidget {
   const MobileSwapTimeoutContent({required this.onRestart, super.key});
 
   static const _illustration =
-      'assets/illustrations/swap_failed_illustration.png';
+      'assets/illustrations/swap_failed_illustration.webp';
   static const _contentWidth = 340.0;
   static const _messageWidth = 300.0;
   static const _headlineWidth = 217.0;

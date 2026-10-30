@@ -17,6 +17,7 @@ typedef _SyncDisplayTarget = ({
   double percentage,
   double targetPercentage,
   int targetBlocks,
+  int checkingCycle,
   int phaseCompletedUnits,
   int phaseTotalUnits,
   String phase,
@@ -28,12 +29,14 @@ _SyncDisplayTarget _displayTarget(AsyncValue<SyncState> value) {
   return (
     isSyncing: sync.isSyncing,
     isSyncComplete: sync.isSyncComplete,
-    percentage: sync.percentage,
-    targetPercentage: sync.displayTargetPercentage,
+    percentage: sync.checking?.percentage ?? sync.percentage,
+    targetPercentage:
+        sync.checking?.displayTargetPercentage ?? sync.displayTargetPercentage,
     targetBlocks: sync.displayTargetBlocks,
+    checkingCycle: sync.checking?.cycle ?? 0,
     phaseCompletedUnits: sync.phaseCompletedUnits,
     phaseTotalUnits: sync.phaseTotalUnits,
-    phase: sync.phase,
+    phase: sync.isChecking ? 'checking' : sync.phase,
     startedAt: sync.lastSyncStartedAt,
   );
 }
@@ -56,11 +59,24 @@ final syncDisplayWholePercentageProvider = Provider.autoDispose<int>((ref) {
   return (progress.clamp(0.0, _scanCeiling) * 100).round();
 });
 
+/// Stage/queue changes only; never notified by the display interpolation timer.
+/// The cycle is internal: a retry's discovered queue may reset Checking to a
+/// lower fraction, while ordinary events retain the smooth predicted floor.
+final syncDisplayCheckingCycleProvider = Provider.autoDispose<int>((ref) {
+  return ref.watch(
+    syncProvider.select((value) {
+      final sync = value.asData?.value;
+      return sync?.isChecking == true ? sync!.checking!.cycle : 0;
+    }),
+  );
+});
+
 class SyncDisplayPercentageNotifier extends Notifier<double> {
   Timer? _timer;
   _SyncDisplayTarget? _target;
   DateTime? _sessionStartedAt;
   String _phase = '';
+  int _checkingCycle = 0;
   Stopwatch? _phaseStopwatch;
   double _displayValue = 0;
 
@@ -71,20 +87,24 @@ class SyncDisplayPercentageNotifier extends Notifier<double> {
         input.isSyncing &&
         input.startedAt != null &&
         input.startedAt != _sessionStartedAt;
-    if (isNewSession) {
+    final isNewStage = input.isSyncing && input.checkingCycle != _checkingCycle;
+    if (isNewSession || isNewStage) {
       _stopTimer();
       _displayValue = 0;
       _phase = '';
       _phaseStopwatch = null;
     }
     _target = input;
+    _checkingCycle = input.checkingCycle;
     _sessionStartedAt = input.startedAt;
     ref.onDispose(_stopTimer);
     Future<void>.microtask(() {
       if (ref.mounted && identical(_target, input)) _applyTarget(input);
     });
     final next = _initialValue(input);
-    _displayValue = isNewSession ? next : math.max(_displayValue, next);
+    _displayValue = isNewSession || isNewStage
+        ? next
+        : math.max(_displayValue, next);
     return _displayValue;
   }
 

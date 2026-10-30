@@ -45,7 +45,7 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
                       const Image(
                         image: AssetImage(
                           'assets/illustrations/'
-                          'ironwood_migration_modal_background.png',
+                          'ironwood_migration_modal_background.webp',
                         ),
                         fit: BoxFit.cover,
                       ),
@@ -58,7 +58,7 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
                           child: Image(
                             image: AssetImage(
                               'assets/illustrations/'
-                              'ironwood_migration_modal_symbol.png',
+                              'ironwood_migration_modal_symbol.webp',
                             ),
                             width: 140,
                             height: 152,

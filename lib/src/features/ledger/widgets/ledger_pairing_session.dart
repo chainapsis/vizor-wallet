@@ -69,10 +69,12 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   bool _accessRecovery = false;
   bool _invalidated = false;
   bool _settingsBusy = false;
+  bool _helpBusy = false;
   String? _error;
   List<LedgerBleDevice> _devices = const [];
   StreamSubscription<LedgerDiscoveryUpdate>? _subscription;
   int _generation = 0;
+  bool _discoveryStopped = false;
   ValueListenable<bool>? _pairingEvidence;
   late final LedgerMobileBleService _mobile;
   late final LedgerOperationCanceller _cancel;
@@ -82,7 +84,8 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
       _stage == LedgerPairingStage.scanning ||
       _stage == LedgerPairingStage.verifying ||
       _stage == LedgerPairingStage.saving ||
-      _settingsBusy;
+      _settingsBusy ||
+      _helpBusy;
 
   @override
   void initState() {
@@ -173,6 +176,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
     unawaited(_subscription?.cancel());
     if ((_stage == LedgerPairingStage.scanning ||
             _stage == LedgerPairingStage.devices) &&
+        !_discoveryStopped &&
         widget.selectionRequest?.discoveryStopped != true) {
       unawaited(_stopQuietly());
     }
@@ -181,6 +185,66 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
       unawaited(_cancelQuietly());
     }
     super.dispose();
+  }
+
+  /// Drain discovery before the host replaces this picker with transport options.
+  Future<void> stopSearch() => _stopSearch(invalidateOnFailure: true);
+
+  Future<void> _stopSearch({required bool invalidateOnFailure}) async {
+    _generation++;
+    final subscription = _subscription;
+    _subscription = null;
+    try {
+      // A discovery stream may finish cancellation only after the native scan
+      // stops. Observe and drain both before enabling a new connection.
+      await Future.wait<void>([
+        subscription?.cancel() ?? Future<void>.value(),
+        widget.selectionRequest?.stop() ?? _mobile.stopDiscovery(),
+      ], eagerError: true);
+      _discoveryStopped = true;
+    } catch (_) {
+      if (mounted && invalidateOnFailure) {
+        setState(() => _invalidated = true);
+      }
+      rethrow;
+    }
+  }
+
+  /// Pause this picker without completing/cancelling its owning operation.
+  Future<bool> pauseForHelp() async {
+    if (_busy || !widget.enabled || _invalidated) return false;
+    final generation = _generation + 1;
+    setState(() {
+      _helpBusy = true;
+      _error = null;
+    });
+    _notifyBusy();
+    try {
+      _check(_generation);
+      await _stopSearch(invalidateOnFailure: false);
+      _check(generation);
+      return true;
+    } catch (_) {
+      if (mounted) {
+        try {
+          _epoch();
+          if (generation == _generation) {
+            setState(
+              () => _error =
+                  'Could not stop the search. Try opening connection help again.',
+            );
+          }
+        } catch (_) {
+          setState(() => _invalidated = true);
+        }
+      }
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() => _helpBusy = false);
+        _notifyBusy();
+      }
+    }
   }
 
   Future<void> _cancelQuietly() async {
@@ -241,6 +305,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
       _error = null;
       _devices = const [];
       _accessRecovery = false;
+      _discoveryStopped = false;
     });
     _notifyBusy();
     try {
@@ -290,9 +355,9 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
         },
         onError: (Object error) => _fail(generation, error),
         onDone: () {
-          if (mounted &&
-              generation == _generation &&
-              _stage == LedgerPairingStage.scanning) {
+          if (!mounted || generation != _generation) return;
+          _subscription = null;
+          if (_stage == LedgerPairingStage.scanning) {
             setState(() => _stage = LedgerPairingStage.devices);
             _notifyBusy();
           }
@@ -404,6 +469,7 @@ class LedgerPairingSessionState extends ConsumerState<LedgerPairingSession> {
   LedgerPairingStage get stage => _stage;
   String get failureMessage => _nonRetryableMessage ?? requestFailure.message;
   bool get busy => _busy;
+  bool get preparingHelp => _helpBusy;
   bool get invalidated => _invalidated;
   bool get accessRecovery => _accessRecovery;
   bool get sameSavedDevice => _sameSavedDevice;

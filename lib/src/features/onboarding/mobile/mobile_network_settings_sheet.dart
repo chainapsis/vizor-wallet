@@ -10,8 +10,11 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/mobile_text_field.dart';
 import '../../../providers/network_privacy_provider.dart';
+import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../settings/widgets/mobile/mobile_private_queries_control.dart';
 import '../../settings/widgets/mobile/mobile_tor_control.dart';
+import '../../settings/widgets/private_queries_turn_off.dart';
 import '../providers/welcome_network_settings_provider.dart';
 
 Future<void> showMobileWelcomeNetworkSettings(
@@ -24,7 +27,8 @@ Future<void> showMobileWelcomeNetworkSettings(
   );
   presentation.setPresented(true);
   final dismissal = ValueNotifier(
-    welcomeNetworkReady(ref.read(networkPrivacyProvider)),
+    welcomeNetworkReady(ref.read(networkPrivacyProvider)) &&
+        ref.read(enhancePirTransitionProvider) != kEnhancePirChangingMessage,
   );
   try {
     await showAppMobileSheet<void>(
@@ -63,6 +67,7 @@ class _MobileNetworkSettingsSheetState
   final _fieldRegion = GlobalKey();
   bool _submitting = false;
   bool _torRequestPending = false;
+  bool _privateQueriesRequestPending = false;
   int _torRequestGeneration = 0;
   String? _error;
 
@@ -77,6 +82,10 @@ class _MobileNetworkSettingsSheetState
     ref.listenManual(
       networkPrivacyProvider,
       (_, next) => _updateDismissal(next),
+    );
+    ref.listenManual(
+      enhancePirTransitionProvider,
+      (_, _) => _updateDismissal(),
     );
   }
 
@@ -94,11 +103,38 @@ class _MobileNetworkSettingsSheetState
     widget.dismissal.value =
         !_submitting &&
         !_torRequestPending &&
+        !_privateQueriesRequestPending &&
+        !_changingPrivateQueries &&
         welcomeNetworkReady(state ?? ref.read(networkPrivacyProvider));
+  }
+
+  bool get _changingPrivateQueries =>
+      ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage;
+
+  Future<void> _requestPrivateQueries() async {
+    if (_submitting ||
+        _torRequestPending ||
+        _privateQueriesRequestPending ||
+        _changingPrivateQueries ||
+        ref.read(networkPrivacyProvider).isBusy) {
+      return;
+    }
+    setState(() => _privateQueriesRequestPending = true);
+    _updateDismissal();
+    try {
+      await togglePrivateQueries(context, ref);
+    } finally {
+      if (mounted) {
+        setState(() => _privateQueriesRequestPending = false);
+        _updateDismissal();
+      }
+    }
   }
 
   Future<void> _requestTor(bool enabled) async {
     if (_submitting ||
+        _privateQueriesRequestPending ||
+        _changingPrivateQueries ||
         (_torRequestPending && !ref.read(networkPrivacyProvider).isBusy)) {
       return;
     }
@@ -183,13 +219,27 @@ class _MobileNetworkSettingsSheetState
   Widget build(BuildContext context) {
     final state = ref.watch(networkPrivacyProvider);
     final current = ref.watch(rpcEndpointProvider);
+    final changingPrivateQueries =
+        ref.watch(enhancePirTransitionProvider) == kEnhancePirChangingMessage;
     return ValueListenableBuilder<bool>(
       valueListenable: widget.dismissal,
       builder: (context, canDismiss, _) => MobileNetworkSettingsContent(
         torControl: MobileTorControl(
           useGeneralDescription: true,
-          enabled: !_submitting && !(_torRequestPending && !state.isBusy),
+          enabled:
+              !_submitting &&
+              !_privateQueriesRequestPending &&
+              !changingPrivateQueries &&
+              !(_torRequestPending && !state.isBusy),
           onRequest: _requestTor,
+        ),
+        privateQueriesControl: MobilePrivateQueriesControl(
+          enabled:
+              !_submitting &&
+              !_torRequestPending &&
+              !_privateQueriesRequestPending &&
+              !state.isBusy,
+          onRequest: _requestPrivateQueries,
         ),
         current: current,
         controller: _controller,
@@ -210,6 +260,7 @@ class _MobileNetworkSettingsSheetState
 class MobileNetworkSettingsContent extends StatelessWidget {
   const MobileNetworkSettingsContent({
     required this.torControl,
+    required this.privateQueriesControl,
     required this.current,
     required this.controller,
     required this.focusNode,
@@ -224,6 +275,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
   });
 
   final Widget torControl;
+  final Widget privateQueriesControl;
   final RpcEndpointConfig current;
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -253,6 +305,7 @@ class MobileNetworkSettingsContent extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   torControl,
+                  privateQueriesControl,
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       vertical: AppSpacing.md,

@@ -2,6 +2,7 @@
 // Preview boundaries are in memory; no wallet, network, storage or Rust calls.
 import 'dart:async';
 import '../src/features/payment_links/providers/gift_card_entry_price_provider.dart';
+import '../src/features/payment_links/providers/gift_card_check_progress_provider.dart';
 import 'dart:io';
 import 'dart:math';
 
@@ -27,7 +28,7 @@ import '../src/features/payment_links/widgets/gift_claim_failure_toast_listener.
 import '../src/core/widgets/app_toast.dart';
 import '../src/features/payment_links/models/vizor_payment_link.dart';
 import '../src/features/payment_links/widgets/payment_link_gift_card.dart';
-import '../src/features/payment_links/widgets/mobile/payment_link_scan_sheet.dart';
+import '../src/features/payment_links/providers/payment_link_scanner_provider.dart';
 import '../src/features/payment_links/services/payment_link_clipboard.dart';
 import '../src/features/payment_links/providers/gift_claim_flow_provider.dart';
 import '../src/features/payment_links/screens/gift_claim_screen.dart';
@@ -38,6 +39,7 @@ import '../src/features/payment_links/services/payment_link_recovery_store.dart'
 import '../src/features/payment_links/services/payment_link_received_store.dart';
 import '../src/features/payment_links/services/payment_link_service.dart';
 import '../src/providers/account_provider.dart';
+import '../src/features/onboarding/shared/account_persona_draft.dart';
 import '../src/core/profile_pictures.dart';
 import '../src/app_bootstrap.dart';
 import '../src/providers/app_security_provider.dart';
@@ -73,6 +75,12 @@ Widget buildMobileGiftAddAccountInspected(BuildContext context) =>
     );
 Widget buildMobileGiftOnboardingChecking(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift', checking: true);
+Widget buildMobileGiftOnboardingFundingFound(BuildContext context) =>
+    const _GiftPreview(
+      initialLocation: '/gift',
+      checking: true,
+      fundingFound: true,
+    );
 Widget buildMobileGiftOnboardingLongSyncWarning(BuildContext context) =>
     const _GiftPreview(initialLocation: '/gift', longSyncWarning: true);
 
@@ -140,6 +148,7 @@ class _GiftPreview extends StatefulWidget {
   const _GiftPreview({
     this.initialLocation = '/welcome',
     this.checking = false,
+    this.fundingFound = false,
     this.inspected = false,
     this.longSyncWarning = false,
     this.failCreation = false,
@@ -150,6 +159,7 @@ class _GiftPreview extends StatefulWidget {
   });
   final String initialLocation;
   final bool checking;
+  final bool fundingFound;
   final bool inspected;
   final bool longSyncWarning;
   final bool failCreation;
@@ -242,11 +252,13 @@ class _GiftPreviewState extends State<_GiftPreview> {
                 loadChainMetadata: false,
                 onHeightConfirmed: (height) async {
                   context.pushOnboarding(
-                    '/onboarding/set-passcode',
-                    extra: SetPasswordScreenArgs.importWallet(
-                      mnemonic: args.mnemonic,
-                      bip39Passphrase: args.bip39Passphrase,
-                      birthdayHeight: height,
+                    '/onboarding/customise-account',
+                    extra: CustomiseAccountArgs(
+                      setupArgs: SetPasswordScreenArgs.importWallet(
+                        mnemonic: args.mnemonic,
+                        bip39Passphrase: args.bip39Passphrase,
+                        birthdayHeight: height,
+                      ),
                     ),
                   );
                 },
@@ -303,7 +315,7 @@ class _GiftPreviewState extends State<_GiftPreview> {
             key: state.pageKey,
             child: GiftCustomiseAccountScreen(
               args: GiftCustomiseAccountArgs(
-                passcode: setup.setupPasscode!,
+                passcode: setup.setupPasscode,
                 inspection: setup.inspection!,
               ),
               random: Random(1234),
@@ -334,6 +346,10 @@ class _GiftPreviewState extends State<_GiftPreview> {
       child: ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          if (widget.fundingFound)
+            giftCardCheckProgressProvider.overrideWith(
+              _FundingFoundProgress.new,
+            ),
           paymentLinkSetupJournalPendingProvider.overrideWithValue(
             () async => false,
           ),
@@ -350,8 +366,12 @@ class _GiftPreviewState extends State<_GiftPreview> {
               widget.initialLocation.startsWith('/gift/'))
             giftClaimFlowProvider.overrideWith(
               () => _InspectedGiftFlow(
-                setupPasscode: widget.initialLocation == '/gift/customise'
-                    ? '123456'
+                settingUp: widget.initialLocation.startsWith('/gift/'),
+                persona: widget.initialLocation == '/gift/passcode'
+                    ? const AccountPersona(
+                        name: 'Gift wallet',
+                        profilePictureId: 'pfp-03',
+                      )
                     : null,
               ),
             ),
@@ -727,6 +747,10 @@ class _GiftPreviewSync extends SyncNotifier {
             displayAmount: record.amountZatoshi,
             displayPool: 'orchard',
             createdTime: BigInt.from(1788220800),
+            feeState: rust_sync.TransactionFeeState.notApplicable,
+            detailsComplete: true,
+            provisional: false,
+            amountIncludesFee: false,
           ),
       ],
     );
@@ -785,6 +809,13 @@ class _GiftPreviewOperations implements PaymentLinkOperations {
   final PaymentLinkReceivedStore store;
   static const claimTxid =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  @override
+  Future<List<PaymentLinkRecoveryRecord>> recoverCreatedLinks() =>
+      loadCreatedLinkRecoveries();
+
+  @override
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinks() async => const [];
+
   @override
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() async =>
       const [];
@@ -881,6 +912,25 @@ class _CheckingGiftFlow extends GiftClaimFlowNotifier {
       GiftClaimFlowState(link: _link, phase: GiftClaimPhase.checking);
 }
 
+class _FundingFoundProgress extends GiftCardCheckProgressNotifier {
+  @override
+  Map<String, GiftCardCheckProgress> build() => {
+    paymentLinkClaimWalletDirectoryName(_link): GiftCardCheckProgress(
+      _link,
+      rust_sync.ApiGiftCardCheckProgress(
+        phase: 'checking',
+        completed: BigInt.from(50),
+        total: BigInt.from(100),
+        fundingHeight: _link.birthdayHeight + 1,
+        checkedHeight: _link.birthdayHeight + 50,
+        totalZatoshi: _link.amountZatoshi + BigInt.from(10000),
+        unspentZatoshi: _link.amountZatoshi + BigInt.from(10000),
+        complete: false,
+      ),
+    ),
+  };
+}
+
 class _LongSyncGiftFlow extends GiftClaimFlowNotifier {
   @override
   GiftClaimFlowState build() => GiftClaimFlowState(
@@ -907,16 +957,17 @@ PaymentLinkClaimInspection _previewInspection(VizorPaymentLink link) =>
     );
 
 class _InspectedGiftFlow extends GiftClaimFlowNotifier {
-  _InspectedGiftFlow({this.setupPasscode});
-  final String? setupPasscode;
+  _InspectedGiftFlow({this.settingUp = false, this.persona});
+  final bool settingUp;
+  final AccountPersona? persona;
 
   @override
   GiftClaimFlowState build() => GiftClaimFlowState(
     link: _link,
     phase: GiftClaimPhase.inspected,
     inspection: _previewInspection(_link),
-    setupPasscode: setupPasscode,
-    walletSetupInProgress: setupPasscode != null,
+    setupPersona: persona,
+    walletSetupInProgress: settingUp,
   );
 }
 

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_welcome_screen.dart';
@@ -16,10 +18,62 @@ import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_network_setti
 import 'package:zcash_wallet/src/features/onboarding/providers/welcome_network_settings_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
+import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/services/incoming_uri_service.dart';
+
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../support/payment_link_navigation_support.dart';
+
+class _QueriesApi extends RustLibApi {
+  final enabled = <bool>[];
+  @override
+  void crateApiSyncSetEnhancePirEnabled({required bool enabled}) =>
+      this.enabled.add(enabled);
+  @override
+  void crateApiSyncSetEnhancePirPreferenceConfirmed({
+    required bool confirmed,
+  }) {}
+  @override
+  bool crateApiSyncIsSyncRunning() => false;
+  @override
+  bool crateApiSyncIsMempoolObserverRunning() => false;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _QueriesStore implements EnhancePirPreferenceStore {
+  bool value = false;
+  bool fail = false;
+  int writes = 0;
+  Completer<void>? pending;
+  @override
+  Future<bool?> readEnabled() async => value;
+  @override
+  Future<void> writeEnabled(bool enabled) async {
+    writes++;
+    if (pending != null) await pending!.future;
+    if (fail) throw StateError('storage unavailable');
+    value = enabled;
+  }
+}
+
+class _OptOutStore implements TransparentOptOutStore {
+  bool pending = false;
+  @override
+  Future<bool> readPending() async => pending;
+  @override
+  Future<void> writePending(bool value) async => pending = value;
+}
+
+class _OnboardingSync extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState();
+  @override
+  void startSync({int? latestTipHeight}) => fail('No wallet exists to sync');
+}
 
 class _Privacy extends NetworkPrivacyNotifier {
   _Privacy([this.initial = const NetworkPrivacyState.off()]);
@@ -71,6 +125,7 @@ Future<(ProviderContainer, GoRouter)> _pump(
   bool incoming = false,
   double keyboard = 0,
   double scale = 1,
+  _QueriesStore? queriesStore,
 }) async {
   final router = GoRouter(
     initialLocation: additional ? '/add-account' : '/welcome',
@@ -102,6 +157,15 @@ Future<(ProviderContainer, GoRouter)> _pump(
     ProviderScope(
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        enhancePirPreferenceStoreProvider.overrideWithValue(
+          queriesStore ?? _QueriesStore(),
+        ),
+        transparentOptOutStoreProvider.overrideWithValue(_OptOutStore()),
+        enhancePirBackgroundSinkProvider.overrideWithValue((_) async {}),
+        transparentPolicyReconcilerProvider.overrideWithValue(
+          (_) async => null,
+        ),
+        syncProvider.overrideWith(_OnboardingSync.new),
         networkPrivacyProvider.overrideWith(() => privacy),
         rpcEndpointProvider.overrideWith(() => endpoint),
         incomingUriServiceProvider.overrideWithValue(_Uris()),
@@ -156,7 +220,136 @@ Future<void> _tryDismiss(WidgetTester tester) async {
 }
 
 void main() {
-  setUpAll(loadFigmaCompareFonts);
+  final api = _QueriesApi();
+  setUpAll(() async {
+    await loadFigmaCompareFonts();
+    RustLib.initMock(api: api);
+  });
+  tearDownAll(RustLib.dispose);
+  setUp(() => api.enabled.clear());
+
+  testWidgets('private queries save immediately without an account and survive '
+      'reopening the sheet', (tester) async {
+    final store = _QueriesStore();
+    final endpoint = _Endpoint();
+    final (container, _) = await _pump(
+      tester,
+      _Privacy(),
+      endpoint,
+      queriesStore: store,
+    );
+    await _open(tester);
+    final row = find.byKey(const ValueKey('mobile_settings_enhance_pir_row'));
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(store.value, isTrue);
+    expect(container.read(enhancePirProvider), isTrue);
+    expect(api.enabled, [true]);
+    expect(endpoint.submissions, 0);
+    await tester.tap(find.bySemanticsLabel('Close'));
+    await tester.pumpAndSettle();
+    await _open(tester);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_settings_enhance_pir_status')),
+          )
+          .data,
+      'On',
+    );
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(store.value, isFalse);
+    expect(api.enabled, [true, false]);
+    expect(
+      find.byKey(const ValueKey('private_queries_turn_off_sheet')),
+      findsNothing,
+    );
+    expect(endpoint.submissions, 0);
+  });
+
+  testWidgets(
+    'private queries save blocks exits and competing changes',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final store = _QueriesStore()..pending = Completer<void>();
+      final privacy = _Privacy();
+      final endpoint = _Endpoint();
+      final (container, _) = await _pump(
+        tester,
+        privacy,
+        endpoint,
+        queriesStore: store,
+      );
+      await _open(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('welcome_endpoint_input')),
+        'rpc.example:443',
+      );
+      final row = find.byKey(const ValueKey('mobile_settings_enhance_pir_row'));
+      await tester.ensureVisible(row);
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(find.text(kEnhancePirChangingMessage), findsOneWidget);
+      await _tryDismiss(tester);
+      expect(find.byType(MobileNetworkSettingsSheet), findsOneWidget);
+      expect(container.read(welcomeNetworkSettingsPresentedProvider), isTrue);
+      await tester.ensureVisible(row);
+      await tester.tap(row);
+      final tor = find.byKey(const ValueKey('mobile_settings_tor_row'));
+      await tester.ensureVisible(tor);
+      await tester.tap(tor);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('welcome_endpoint_update')),
+      );
+      await tester.tap(find.byKey(const ValueKey('welcome_endpoint_update')));
+      await tester.pumpAndSettle();
+      expect(store.writes, 1);
+      expect(endpoint.submissions, 0);
+      expect(privacy.state.torEnabled, isFalse);
+      expect(api.enabled, isEmpty);
+      store.pending!.complete();
+      await tester.pumpAndSettle();
+      expect(store.value, isTrue);
+      expect(api.enabled, [true]);
+      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MobileNetworkSettingsSheet), findsNothing);
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    }),
+  );
+
+  testWidgets('private queries save failure stays off and can retry', (
+    tester,
+  ) async {
+    final store = _QueriesStore()..fail = true;
+    await _pump(tester, _Privacy(), _Endpoint(), queriesStore: store);
+    await _open(tester);
+    final row = find.byKey(const ValueKey('mobile_settings_enhance_pir_row'));
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(find.text(kEnhancePirUnchangedMessage), findsOneWidget);
+    expect(store.value, isFalse);
+    expect(api.enabled, isEmpty);
+    store.fail = false;
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(store.value, isTrue);
+    expect(find.text(kEnhancePirUnchangedMessage), findsNothing);
+    await tester.tap(find.bySemanticsLabel('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileNetworkSettingsSheet), findsNothing);
+  });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
     testWidgets(
@@ -169,7 +362,7 @@ void main() {
         final privacy = _Privacy();
         final (container, _) = await _pump(tester, privacy, _Endpoint());
         await _open(tester);
-        expect(find.text('Private queries'), findsNothing);
+        expect(find.text('Private queries'), findsOneWidget);
         await tester.tap(find.byKey(const ValueKey('mobile_settings_tor_row')));
         await tester.pumpAndSettle();
         expect(container.read(welcomeNetworkSettingsPresentedProvider), isTrue);
@@ -227,6 +420,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('welcome_endpoint_update')));
     await tester.pumpAndSettle();
     expect(find.text('Checking endpoint…'), findsOneWidget);
+    final queries = find.byKey(
+      const ValueKey('mobile_settings_enhance_pir_row'),
+    );
+    await tester.ensureVisible(queries);
+    await tester.tap(queries);
+    await tester.pumpAndSettle();
+    expect(api.enabled, isEmpty);
     await _tryDismiss(tester);
     expect(find.byType(MobileNetworkSettingsSheet), findsOneWidget);
     expect(endpoint.submissions, 1);

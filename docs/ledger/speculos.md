@@ -3,6 +3,8 @@
 Run from the repository root with Docker running. The runner builds a Zcash Nano
 S+ ELF and creates one fresh, headless Speculos instance per scenario.
 
+Read [device-app limits](limitations.md) before changing a Ledger product flow.
+
 ## Requirements
 
 - Bash, Docker, Git, curl, jq.
@@ -26,6 +28,10 @@ scripts/e2e/ledger-speculos-docker.sh desktop
 VIZOR_LEDGER_E2E_SCENARIO='shields transparent balance with Ledger through Speculos' \
   scripts/e2e/ledger-speculos-docker.sh desktop
 
+# Gift Card UI, four-recipient signing, and fifth-card rejection.
+VIZOR_LEDGER_E2E_SCENARIO='creates four gift cards with Ledger through Speculos' \
+  scripts/e2e/ledger-speculos-docker.sh desktop
+
 # Mobile; the runner supplies the mobile design-token define.
 FLUTTER_DEVICE='<simulator-device-id>' scripts/e2e/ledger-speculos-docker.sh mobile
 
@@ -36,8 +42,8 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 
 ## Environment and results
 
-- App: Zcash 3.9.4, `LedgerHQ/app-zcash` commit
-  `1a0f6495458ecb77abf97c8cff25b0a1a344daaa`.
+- App: Zcash 3.10.0, `LedgerHQ/app-zcash` commit
+  `2db9d5a900f27074ba19b90a7217dcc4318a5f24`, the build Ledger deployed.
 - Official builder and Speculos image digests are pinned in
   [`ledger-speculos-docker.sh`](../../scripts/e2e/ledger-speculos-docker.sh).
   Overrides: `VIZOR_LEDGER_BUILDER_IMAGE`, `VIZOR_LEDGER_SPECULOS_IMAGE`.
@@ -57,13 +63,33 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 
 ## Test boundaries
 
+- Signing smoke checks the account public key before any PCZT APDU, rejects a
+  mismatched expected key, and then signs/finalizes through the production API.
+- Its pre-Ironwood fixture activates NU6.2 and leaves NU6.3/NU7 inactive, so a
+  newly added SDK upgrade cannot silently turn this V5 smoke into an unsupported
+  future-branch transaction.
 - UFVK export needs a four-second status-screen wait in the Rust harness and
   Flutter import/send scenario. This adds no delay to production UFVK handling.
 - The synthetic DB includes a transparent UTXO and completed external/change
   discovery checkpoints (`complete=2`). Preparation checks the production
   shielding-progress API for one shieldable input; it does not run live discovery.
-- `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=true` adds the compatibility canary.
-  Zcash 3.9.4 has not been run against it; retain the production compatibility guard.
+  Its tip sits after NU7, so shielding builds an NU7 transaction, and its trees
+  are checkpointed one block below the tip, where anchors are read.
+- The desktop Gift Card scenario uses a separate DB with a synthetic Ironwood
+  note scanned through the SDK after NU6.3 and before NU7. The real Dart service and Rust proposal reject
+  five cards before saving secrets or signing. The UI clamps the count to four,
+  then uses production fee estimation, PCZT creation, proof generation, Ledger
+  approval, signed-outbox broadcast, and recovery storage to create four cards
+  with one transaction. Wallet-path resolution and secure storage are isolated;
+  a loopback lightwalletd stub accepts the transaction without chain mining.
+- The compatibility canary runs by default; `VIZOR_LEDGER_RUN_ORCHARD_TO_IRONWOOD_CANARY=false`
+  skips it. It first signs a synthetic V6 transaction on the NU7 branch with the
+  full signer. On 2026-10-29 Zcash 3.10.0 signed it on both NU6.3 and NU7, and
+  3.9.4 rejected it on both. It then runs Immediate migration through the real
+  Dart service on a separate DB, with an Orchard note scanned through the SDK
+  before NU6.3. The plan, the Rust PCZT and its Ledger signer view, the compact
+  signature, proofs and broadcast are production code; a loopback lightwalletd
+  stub accepts the transaction.
 - Voting builds two real SDK `PreparedDelegationBundle::keystone_request`
   requests from synthetic eligible Ironwood notes. It verifies the zero-value
   foreign-hotkey output, then signs the SDK-redacted bytes through the production
@@ -74,6 +100,12 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 - Saved signing contexts are reused unchanged; enabling output review does not
   repair an old failed PCZT. Account-OVK holders can recover the hotkey output
   and memo from published effects when Ledger output review is enabled.
+- Mobile Send rejects the first review on the emulated device, retries from
+  the approval step, and checks that PCZT creation and proving run only once.
+- The mobile TEX proof-failure case injects a failure after the first device
+  signature while the second request is in support validation. It exercises
+  production cancellation and device reselection, retains the first signature,
+  and completes native checkpointing and both broadcasts after one retry.
 - Speculos validates device-app/APDU behavior, not physical USB/Bluetooth or
   production broadcast. Externally managed mobile endpoints need their own
   forwarding; the Docker runner keeps APIs on host loopback, not the LAN.
@@ -82,10 +114,13 @@ VIZOR_LEDGER_SPECULOS_ELF='/absolute/path/zcash-nanosplus.elf' \
 ### Desktop voting through final tally
 
 Run `scripts/e2e/ledger-speculos-docker.sh voting-tally` with Docker and the
-regtest voting prerequisites available. This lane builds the pinned app with
-`--features testnet` and changes its install paths to `44'/1'` and `32'/1'` in a
-disposable checkout. `VIZOR_LEDGER_SPECULOS_TESTNET_ELF` can reuse that build;
-the mainnet `VIZOR_LEDGER_SPECULOS_ELF` is not used by this lane.
+regtest voting prerequisites available. This lane builds Zcash 3.9.4
+(`1a0f6495458ecb77abf97c8cff25b0a1a344daaa`) with `--features testnet` and
+changes its install paths to `44'/1'` and `32'/1'` in a disposable checkout.
+3.10.0 replaces that feature with a `variant_testnet` build named "Zcash Test",
+which Vizor does not open; voting needs only NU6.3.
+`VIZOR_LEDGER_SPECULOS_TESTNET_ELF` can reuse that build; the mainnet
+`VIZOR_LEDGER_SPECULOS_ELF` is not used by this lane.
 
 The distributed Zcash app uses coin type 133. Its source has a testnet feature
 for coin type 1, but the install paths do not change automatically. Vizor's

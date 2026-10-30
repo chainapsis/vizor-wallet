@@ -11,25 +11,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:grpc/grpc.dart' as grpc;
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_ledger_shield_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_device_label.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_immediate_migration_service.dart';
+import 'package:zcash_wallet/src/features/ledger/services/ledger_device_request.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_device_selection.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
-import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/ledger_signing_modal.dart';
 import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_access_content.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_ledger_send_sign_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_status_screen.dart';
@@ -60,6 +66,7 @@ import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import 'package:zcash_wallet/src/services/biometric_unlock.dart';
+import '../test/support/wallet_path_read_blocker.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -87,6 +94,13 @@ void main() {
   testWidgets(
     'sends to TEX with two Ledger approvals through Speculos',
     _runMobileTexSendScenario,
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+
+  testWidgets(
+    'retries TEX after proof failure through Speculos',
+    (tester) =>
+        _runMobileTexSendScenario(tester, failProofAfterFirstApproval: true),
     timeout: const Timeout(Duration(minutes: 5)),
   );
 
@@ -141,7 +155,7 @@ Future<void> _runMobilePostIronwoodOrchardSigningScenario(
   await container.read(accountProvider.future);
 
   final unsigned = fixture.orchardToIronwoodV6Pczt;
-  final signed = container.read(ledgerPcztTransportSignerProvider)(
+  final signed = container.read(ledgerPcztSignerProvider)(
     fixture.accountUuid,
     unsigned,
   );
@@ -153,6 +167,86 @@ Future<void> _runMobilePostIronwoodOrchardSigningScenario(
   final signedBytes = await signed;
   expect(signedBytes, isNotEmpty);
   expect(signedBytes, isNot(equals(unsigned)));
+
+  // One app lifecycle: the gate keeps the next stream behind the device's
+  // status screen after these signatures.
+  await _migrateOrchardImmediately(
+    tester,
+    fixture,
+    ble,
+    container.read(ledgerMobileSigningStatusGateProvider),
+  );
+}
+
+/// Immediate migration of a scanned Orchard note: the app builds the PCZT,
+/// Speculos signs it with the compact signer, and the transaction is sent.
+Future<void> _migrateOrchardImmediately(
+  WidgetTester tester,
+  _Fixture fixture,
+  _SpeculosLedgerMobileBleService ble,
+  LedgerMobileSigningStatusGate gate,
+) async {
+  const dbBase64 = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_MIGRATION_DB_GZIP_BASE64',
+  );
+  const accountUuid = String.fromEnvironment(
+    'VIZOR_LEDGER_E2E_MIGRATION_ACCOUNT_UUID',
+  );
+  expect(dbBase64, isNotEmpty);
+  expect(accountUuid, isNotEmpty);
+  final sandbox = await Directory.systemTemp.createTemp(
+    'vizor-ledger-immediate-e2e.',
+  );
+  addTearDown(() => sandbox.delete(recursive: true));
+  final dbPath = '${sandbox.path}/wallet.db';
+  await File(
+    dbPath,
+  ).writeAsBytes(gzip.decode(base64Decode(dbBase64)), flush: true);
+  WalletPathReadBlocker().complete(sandbox.path);
+  FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: 'wallet.db'});
+  addTearDown(() => FlutterSecureStorage.setMockInitialValues({}));
+  final status = await rust_sync.getSyncStatus(dbPath: dbPath, network: 'main');
+  final lightwalletd = _AcceptingLightwalletd(
+    chainHeight: status.chainTipHeight.toInt(),
+  );
+  await lightwalletd.start();
+  addTearDown(lightwalletd.stop);
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        _ledgerBootstrap(fixture, lightwalletd.url, accountUuid: accountUuid),
+      ),
+      networkPrivacyProvider.overrideWith(_DirectNetworkPrivacyNotifier.new),
+      ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
+      ledgerMobileBleServiceProvider.overrideWithValue(ble),
+      ledgerMobileSigningStatusGateProvider.overrideWithValue(gate),
+      ledgerWalletDbPathProvider.overrideWithValue(() async => dbPath),
+    ],
+  );
+  addTearDown(container.dispose);
+  await container.read(accountProvider.future);
+
+  final plan = await container
+      .read(ironwoodMigrationServiceProvider)
+      .immediatePlan(network: 'main', accountUuid: accountUuid);
+  expect(plan, isNotNull);
+  final migration = container
+      .read(ledgerImmediateMigrationServiceProvider)
+      .migrate(
+        accountUuid: accountUuid,
+        approvedPlan: plan!,
+        cancellation: LedgerImmediateMigrationCancellation(),
+        onPhaseChanged: (_) {},
+      );
+  await _selectDeviceForHeadlessSigning(container);
+  expect(
+    await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
+    isTrue,
+  );
+  final result = await migration;
+  expect(result.broadcastedCount, 1);
+  expect(result.migratedZatoshi, plan.migratedZatoshi);
+  expect(lightwalletd.sendTransactionCount, 1);
 }
 
 Future<void> _runMobileVotingSigningScenario(WidgetTester tester) async {
@@ -266,9 +360,7 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   await tester.tap(ledgerEntry);
   await tester.pumpAndSettle();
 
-  await tester.tap(
-    find.byKey(const ValueKey('mobile_ledger_select_device_button')),
-  );
+  await tester.tap(find.byKey(const ValueKey('mobile_ledger_import_button')));
   await _pumpUntil(
     tester,
     () =>
@@ -277,27 +369,6 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
     timeout: const Duration(seconds: 30),
   );
   await tester.tap(find.byKey(const ValueKey('mobile_ledger_device_speculos')));
-  await _pumpUntil(
-    tester,
-    () => !tester.any(find.byKey(const ValueKey('mobile_ledger_device_sheet'))),
-    description: 'Speculos Ledger selection',
-    timeout: const Duration(seconds: 30),
-  );
-
-  final importButton = find.byKey(
-    const ValueKey('mobile_ledger_import_button'),
-  );
-  await tester.tap(importButton);
-  await tester.pump();
-  final importSpinner = find.byKey(
-    const ValueKey('mobile_ledger_import_spinner'),
-  );
-  expect(importSpinner, findsOneWidget);
-  expect(
-    tester.getCenter(importSpinner).dx,
-    greaterThan(tester.getCenter(importButton).dx),
-  );
-
   final importApproval = _approveNextReview(fixture.ufvkApiUrl);
   await _pumpUntil(
     tester,
@@ -323,11 +394,6 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   );
   await tester.pumpAndSettle();
 
-  expect(find.text('Create Passcode'), findsOneWidget);
-  await _enterMobilePasscode(tester, '123456');
-  await _enterMobilePasscode(tester, '123456');
-  await tester.pumpAndSettle();
-
   await tester.enterText(
     find.byKey(const ValueKey('mobile_customise_account_name_field')),
     'Speculos Ledger',
@@ -335,6 +401,12 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   await tester.tap(
     find.byKey(const ValueKey('mobile_customise_account_continue')),
   );
+  await tester.pumpAndSettle();
+  expect(find.text('Create Passcode'), findsOneWidget);
+  await _enterMobilePasscode(tester, '123456');
+  await _enterMobilePasscode(tester, '123456');
+  await tester.pumpAndSettle();
+
   await _pumpUntil(
     tester,
     () => tester.any(find.byKey(const ValueKey('mobile_biometrics_not_now'))),
@@ -353,7 +425,7 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   expect(exported!.ufvk, fixture.ufvk);
   expect(exported.seedFingerprint, fixture.seedFingerprint);
   expect(exported.accountIndex, fixture.accountIndex);
-  expect(exported.appVersion, '3.9.4');
+  expect(exported.appVersion, '3.10.0');
   expect(exported.transport, LedgerConnectionTransport.bluetooth);
   expect(exported.device?.id, 'speculos');
   expect(firstAccountImport.name, 'Speculos Ledger');
@@ -371,7 +443,12 @@ Future<void> _runMobileImportScenario(WidgetTester tester) async {
   expect(storedAccounts.single.isHardware, isTrue);
   expect(storedAccounts.single.hardwareSignerKind, 'ledger');
   expect(storedAccounts.single.zip32AccountIndex, fixture.accountIndex);
-  expect(storedAccounts.single.birthdayHeight, 2500000);
+  expect(
+    storedAccounts.single.birthdayHeight,
+    2490001,
+    reason:
+        'Restored mainnet accounts scan from the prior 10,000-block tree-state grid point.',
+  );
 }
 
 Future<void> _enterMobilePasscode(WidgetTester tester, String passcode) async {
@@ -424,7 +501,19 @@ Future<void> _runMobileShieldScenario(WidgetTester tester) async {
   );
   await _pumpUntil(
     tester,
-    () => tester.any(_ledgerSigningText(LedgerSigningStage.sending.status)),
+    () => tester.any(find.byKey(const ValueKey('mobile_shield_slide'))),
+    description: 'mobile shielding review',
+    timeout: const Duration(minutes: 2),
+  );
+  final shieldSlide = find.byKey(const ValueKey('mobile_shield_slide'));
+  await tester.dragFrom(
+    tester.getTopLeft(shieldSlide) + const Offset(35, 30),
+    const Offset(300, 0),
+  );
+  await tester.pump(const Duration(milliseconds: 500));
+  await _pumpUntil(
+    tester,
+    () => tester.any(_ledgerPendingApproval()),
     description: 'mobile Ledger shield approval prompt',
     timeout: const Duration(minutes: 2),
   );
@@ -433,6 +522,17 @@ Future<void> _runMobileShieldScenario(WidgetTester tester) async {
     findsOneWidget,
   );
   expect(await approval, isTrue);
+  // Complete appears as it fades in and accepts a tap only once it has.
+  final complete = find.byKey(const ValueKey('mobile_shield_complete'));
+  await _pumpUntil(
+    tester,
+    () =>
+        tester.any(complete) &&
+        tester.widget<AppButton>(complete).onPressed != null,
+    description: 'mobile shielding result',
+    timeout: const Duration(minutes: 2),
+  );
+  await tester.tap(complete);
   await _pumpUntil(
     tester,
     () =>
@@ -478,6 +578,7 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
     feeZatoshi: BigInt.from(10000),
     needsSaplingParams: false,
   );
+  var creates = 0, proves = 0;
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
@@ -498,9 +599,19 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
                 required network,
                 required proposalId,
                 required sendFlowId,
-              }) async => fixture.pcztBytes,
+              }) async {
+                creates++;
+                return fixture.pcztBytes;
+              },
           redactPczt: rust_sync.redactPcztForSigner,
-          addProofs: rust_sync.addProofsToPczt,
+          addProofs: ({required pcztBytes, spendParamsPath, outputParamsPath}) {
+            proves++;
+            return rust_sync.addProofsToPczt(
+              pcztBytes: pcztBytes,
+              spendParamsPath: spendParamsPath,
+              outputParamsPath: outputParamsPath,
+            );
+          },
           discardProposal: () async => true,
         ),
       ),
@@ -518,7 +629,6 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
     ],
   );
   addTearDown(router.dispose);
-  final approval = _approveNextReview(fixture.signingApiUrl);
 
   await tester.pumpWidget(
     _mobileLedgerHarness(
@@ -532,11 +642,47 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
   );
   await _pumpUntil(
     tester,
-    () => tester.any(_ledgerSigningText(LedgerSigningStage.sending.status)),
+    () => tester.any(_ledgerPendingApproval()),
     description: 'mobile Send Ledger approval prompt',
     timeout: const Duration(minutes: 2),
   );
-  expect(await approval, isTrue);
+  expect(
+    await _approveNextReviewWhilePumping(
+      tester,
+      fixture.signingApiUrl,
+      reject: true,
+    ),
+    isTrue,
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.text('Request declined')),
+    description: 'mobile Send rejected on Ledger',
+    timeout: const Duration(seconds: 30),
+  );
+  expect(
+    tester.widget<LedgerProcedure>(find.byType(LedgerProcedure)).currentStep,
+    1,
+  );
+  expect(operationService.checkpointCount, 0);
+  expect(lightwalletd.sendTransactionCount, 0);
+  await tester.tap(find.text('Try again'));
+  await tester.pump();
+  expect(
+    tester.widget<LedgerProcedure>(find.byType(LedgerProcedure)).currentStep,
+    1,
+    reason: 'Retry must retain the completed preparation step.',
+  );
+  await _pumpUntil(
+    tester,
+    () => tester.any(_ledgerPendingApproval()),
+    description: 'mobile Send retry approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(
+    await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
+    isTrue,
+  );
   await _pumpUntil(
     tester,
     () =>
@@ -562,6 +708,8 @@ Future<void> _runMobileSendScenario(WidgetTester tester) async {
     timeout: const Duration(seconds: 10),
   );
 
+  expect(creates, 1);
+  expect(proves, 1);
   expect(operationService.checkpointCount, 1);
   expect(operationService.broadcastCount, 1);
   expect(lightwalletd.sendTransactionCount, 1);
@@ -581,7 +729,11 @@ Future<void> _runMobileRecoveredOrchardBlockScenario(
       loadWalletDbPath: () async => dbPath,
     ),
   );
-  final ble = _SpeculosLedgerMobileBleService(fixture.signingApiUrl);
+  // 3.10.0 signs this crossing; an older app must be stopped before it.
+  final ble = _SpeculosLedgerMobileBleService(
+    fixture.signingApiUrl,
+    reportedAppVersion: '3.9.4',
+  );
   final args = SendReviewArgs(
     proposalId: BigInt.one,
     sendFlowId: 'ledger-mobile-recovered-orchard',
@@ -637,21 +789,45 @@ Future<void> _runMobileRecoveredOrchardBlockScenario(
   await _pumpUntil(
     tester,
     () => tester.any(find.text('Ledger app update required')),
-    description: 'mobile recovered Orchard compatibility message',
+    description: 'mobile recovered Orchard app update message',
     timeout: const Duration(minutes: 2),
   );
 
-  expect(
-    find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
-    findsOneWidget,
-  );
-  expect(find.text('Try again'), findsNothing);
-  expect(ble.connectedDeviceId, isNull);
+  expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
+  expect(find.text('Try again'), findsOneWidget);
+  expect(ble.signingExchanges, 0);
   expect(operationService.checkpointCount, 0);
   expect(operationService.broadcastCount, 0);
+
+  // After the update the retry reaches the device, and its signatures verify
+  // before the checkpoint. The synthetic crossing is not meant to broadcast.
+  ble.reportedAppVersion = null;
+  await tester.tap(find.text('Try again'));
+  await tester.pump();
+  await _pumpUntil(
+    tester,
+    () => tester.any(_ledgerPendingApproval()),
+    description: 'mobile recovered Orchard retry approval prompt',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(
+    await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
+    isTrue,
+  );
+  await _pumpUntil(
+    tester,
+    () => operationService.checkpointCount > 0,
+    description: 'mobile recovered Orchard signed checkpoint',
+    timeout: const Duration(minutes: 1),
+  );
+  expect(ble.signingExchanges, greaterThan(0));
+  expect(find.text(ledgerAppUpdateRequiredError), findsNothing);
 }
 
-Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
+Future<void> _runMobileTexSendScenario(
+  WidgetTester tester, {
+  bool failProofAfterFirstApproval = false,
+}) async {
   final fixture = _Fixture.load();
   final dbPath = await _copyFixtureDb(fixture);
   final lightwalletd = _AcceptingLightwalletd();
@@ -664,14 +840,13 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
       loadWalletDbPath: () async => dbPath,
     ),
   );
-  final ble = _SpeculosLedgerMobileBleService(fixture.signingApiUrl);
   final args = SendReviewArgs(
     proposalId: BigInt.two,
     sendFlowId: 'ledger-mobile-speculos-tex-send',
     proposalAccountUuid: fixture.accountUuid,
     address: fixture.texAddress,
     addressType: 'tex',
-    amountZatoshi: BigInt.from(1980000),
+    amountZatoshi: BigInt.from(980000),
     feeZatoshi: BigInt.from(20000),
     needsSaplingParams: false,
   );
@@ -679,6 +854,34 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
   String? requestedNetwork;
   BigInt? requestedProposalId;
   String? requestedSendFlowId;
+  var creates = 0, proves = 0, appChecks = 0;
+  final secondAppCheck = Completer<void>();
+  final releaseAppCheck = Completer<void>();
+  final requests = LedgerDeviceRequests();
+  void releaseCancelledAppCheck() {
+    if (!releaseAppCheck.isCompleted) releaseAppCheck.complete();
+  }
+
+  if (failProofAfterFirstApproval) {
+    requests.addCancellationListener(releaseCancelledAppCheck);
+    addTearDown(() {
+      releaseCancelledAppCheck();
+      requests.removeCancellationListener(releaseCancelledAppCheck);
+    });
+  }
+  // Readiness checks the app once per signing request, after the request has
+  // claimed its connection.
+  final ble = _SpeculosLedgerMobileBleService(
+    fixture.signingApiUrl,
+    onCurrentApp: failProofAfterFirstApproval
+        ? () async {
+            if (++appChecks == 2) {
+              secondAppCheck.complete();
+              await releaseAppCheck.future;
+            }
+          }
+        : null,
+  );
   final router = GoRouter(
     initialLocation: '/send',
     routes: [
@@ -700,6 +903,7 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
                 required proposalId,
                 required sendFlowId,
               }) async {
+                creates++;
                 requestedLightwalletdUrl = lightwalletdUrl;
                 requestedNetwork = network;
                 requestedProposalId = proposalId;
@@ -713,7 +917,20 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
                 );
               },
           redactPczt: rust_sync.redactPcztForSigner,
-          addProofs: rust_sync.addProofsToPczt,
+          addProofs:
+              ({required pcztBytes, spendParamsPath, outputParamsPath}) async {
+                if (++proves == 2 && failProofAfterFirstApproval) {
+                  // Fail after the first real firmware signature, while the
+                  // next public signer has captured its connection guard.
+                  await secondAppCheck.future;
+                  throw StateError('Injected second TEX proof failure.');
+                }
+                return rust_sync.addProofsToPczt(
+                  pcztBytes: pcztBytes,
+                  spendParamsPath: spendParamsPath,
+                  outputParamsPath: outputParamsPath,
+                );
+              },
           discardProposal: () async => true,
         ),
       ),
@@ -740,6 +957,12 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
       ble: ble,
       operationService: operationService,
       walletDbPath: dbPath,
+      useProductionCancellation: failProofAfterFirstApproval,
+      extraOverrides: [
+        if (failProofAfterFirstApproval) ...[
+          ledgerDeviceRequestsProvider.overrideWithValue(requests),
+        ],
+      ],
     ),
   );
   await _pumpUntil(
@@ -756,6 +979,20 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
     await _approveNextReviewWhilePumping(tester, fixture.signingApiUrl),
     isTrue,
   );
+
+  if (failProofAfterFirstApproval) {
+    await _pumpUntil(
+      tester,
+      () => tester.any(find.text('Could not finish transaction')),
+      description: 'TEX proof failure drains the pending second signer',
+      timeout: const Duration(minutes: 2),
+    );
+    expect(appChecks, 2);
+    expect(operationService.checkpointCount, 0);
+    expect(lightwalletd.sendTransactionCount, 0);
+    await tester.tap(find.text('Try again'));
+    await tester.pump();
+  }
 
   await _pumpUntil(
     tester,
@@ -792,6 +1029,15 @@ Future<void> _runMobileTexSendScenario(WidgetTester tester) async {
     timeout: const Duration(seconds: 10),
   );
 
+  expect(creates, 1);
+  expect(proves, failProofAfterFirstApproval ? 4 : 2);
+  if (failProofAfterFirstApproval) {
+    expect(
+      appChecks,
+      3,
+      reason: 'Retry must retain the first signed TEX transaction.',
+    );
+  }
   expect(operationService.checkpointCount, 1);
   expect(operationService.batchCheckpointCount, 1);
   expect(operationService.broadcastCount, 1);
@@ -922,7 +1168,7 @@ Future<void> _runMobileSwapScenario(
   );
   await _pumpUntil(
     tester,
-    () => tester.any(_ledgerSigningText(LedgerSigningStage.sending.status)),
+    () => tester.any(_ledgerPendingApproval()),
     description: 'mobile ${scenario.label} Ledger approval prompt',
     timeout: const Duration(minutes: 2),
   );
@@ -996,6 +1242,7 @@ Widget _mobileLedgerHarness({
   required _TrackingLedgerSignedOperationService operationService,
   required String walletDbPath,
   List<Override> extraOverrides = const [],
+  bool useProductionCancellation = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -1007,7 +1254,8 @@ Widget _mobileLedgerHarness({
       ledgerTargetPlatformProvider.overrideWithValue(TargetPlatform.iOS),
       ledgerMobileBleServiceProvider.overrideWithValue(ble),
       ledgerWalletDbPathProvider.overrideWithValue(() async => walletDbPath),
-      ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+      if (!useProductionCancellation)
+        ledgerOperationCancellerProvider.overrideWithValue(() async {}),
       ledgerSignedOperationServiceProvider.overrideWithValue(operationService),
       ...extraOverrides,
     ],
@@ -1026,13 +1274,17 @@ Widget _mobileLedgerHarness({
   );
 }
 
-AppBootstrapState _ledgerBootstrap(_Fixture fixture, String lightwalletdUrl) {
+AppBootstrapState _ledgerBootstrap(
+  _Fixture fixture,
+  String lightwalletdUrl, {
+  String? accountUuid,
+}) {
   return AppBootstrapState(
     initialLocation: '/home',
     initialAccountState: AccountState(
       accounts: [
         AccountInfo(
-          uuid: fixture.accountUuid,
+          uuid: accountUuid ?? fixture.accountUuid,
           name: 'Speculos Ledger',
           order: 0,
           isHardware: true,
@@ -1043,7 +1295,7 @@ AppBootstrapState _ledgerBootstrap(_Fixture fixture, String lightwalletdUrl) {
           ledgerDeviceModel: _SpeculosLedgerMobileBleService.device.model,
         ),
       ],
-      activeAccountUuid: fixture.accountUuid,
+      activeAccountUuid: accountUuid ?? fixture.accountUuid,
       activeAddress: fixture.transparentAddress,
     ),
     initialSyncSnapshot: AppSyncSnapshot.empty,
@@ -1736,6 +1988,9 @@ class _TrackingLedgerSignedOperationService
 }
 
 class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
+  _AcceptingLightwalletd({this.chainHeight = 1});
+
+  final int chainHeight;
   grpc.Server? _server;
   int sendTransactionCount = 0;
   List<int> lastRawTransaction = const [];
@@ -1761,7 +2016,7 @@ class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
     grpc.ServiceCall call,
     service.ChainSpec request,
   ) async {
-    return service.BlockID(height: Int64(1));
+    return service.BlockID(height: Int64(chainHeight));
   }
 
   @override
@@ -1779,7 +2034,11 @@ class _AcceptingLightwalletd extends service_grpc.CompactTxStreamerServiceBase {
 }
 
 class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
-  _SpeculosLedgerMobileBleService(this.apiUrl);
+  _SpeculosLedgerMobileBleService(
+    this.apiUrl, {
+    this.reportedAppVersion,
+    this.onCurrentApp,
+  });
 
   static const device = LedgerBleDevice(
     id: 'speculos',
@@ -1788,6 +2047,13 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
   );
 
   final String apiUrl;
+
+  /// Reports this version instead of the emulated app's own.
+  String? reportedAppVersion;
+
+  /// Runs before each app check, which readiness makes once per request.
+  final Future<void> Function()? onCurrentApp;
+  var signingExchanges = 0;
 
   @override
   String? connectedDeviceId;
@@ -1803,6 +2069,7 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
   @override
   Future<LedgerMobileAppInfo> currentApp() async {
     _requireConnected();
+    await onCurrentApp?.call();
     final response = await _exchangeRaw(
       rust_ledger.LedgerApduCommand(
         cla: 0xb0,
@@ -1841,7 +2108,12 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
       return value;
     }
 
-    return LedgerMobileAppInfo(name: readString(), version: readString());
+    final name = readString();
+    final version = readString();
+    return LedgerMobileAppInfo(
+      name: name,
+      version: reportedAppVersion ?? version,
+    );
   }
 
   @override
@@ -1859,6 +2131,7 @@ class _SpeculosLedgerMobileBleService implements LedgerMobileBleService {
     List<rust_ledger.LedgerApduCommand> commands,
   ) async {
     _requireConnected();
+    signingExchanges++;
     final responses = <Uint8List>[];
     for (final command in commands) {
       final response = await _exchangeRaw(command);
@@ -1971,14 +2244,24 @@ void _requireSuccess(List<int> response) {
   }
 }
 
-// The Speculos BLE double emits no native review boundary, so single-round
-// signing stays in the sending stage until the device approval returns.
 Finder _ledgerSigningText(String text) => find.descendant(
   of: find.byType(LedgerSigningModal),
   matching: find.text(text),
 );
 
-Future<bool> _approveNextReview(String apiUrl) async {
+// The HTTP transport emits no native review boundary. Assert the visible
+// approval step while the real firmware is processing or awaiting approval.
+Finder _ledgerPendingApproval() => find.descendant(
+  of: find.byType(LedgerSigningModal),
+  matching: find.byWidgetPredicate(
+    (widget) =>
+        widget is LedgerProcedure &&
+        widget.currentStep == 1 &&
+        widget.steps[1].busy,
+  ),
+);
+
+Future<bool> _approveNextReview(String apiUrl, {bool reject = false}) async {
   final client = HttpClient();
   final deadline = DateTime.now().add(const Duration(minutes: 2));
   var reviewStarted = false;
@@ -1992,17 +2275,20 @@ Future<bool> _approveNextReview(String apiUrl) async {
         reviewStarted = true;
       }
       if (reviewStarted) {
-        if (normalized.contains('approve') ||
-            normalized.contains('accept') ||
-            normalized.contains('confirm') ||
-            normalized.contains('sign transaction')) {
+        final actionable = reject
+            ? normalized.contains('reject') || normalized.contains('cancel')
+            : normalized.contains('approve') ||
+                  normalized.contains('accept') ||
+                  normalized.contains('confirm') ||
+                  normalized.contains('sign transaction');
+        if (actionable) {
           await _pressButton(client, apiUrl, 'both');
           return true;
         }
         await _pressButton(
           client,
           apiUrl,
-          normalized.contains('cancel') ? 'left' : 'right',
+          !reject && normalized.contains('cancel') ? 'left' : 'right',
         );
       }
       await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -2015,13 +2301,14 @@ Future<bool> _approveNextReview(String apiUrl) async {
 
 Future<bool> _approveNextReviewWhilePumping(
   WidgetTester tester,
-  String apiUrl,
-) async {
+  String apiUrl, {
+  bool reject = false,
+}) async {
   bool? approved;
   Object? failure;
   StackTrace? failureStackTrace;
   unawaited(
-    _approveNextReview(apiUrl).then<void>(
+    _approveNextReview(apiUrl, reject: reject).then<void>(
       (value) => approved = value,
       onError: (Object error, StackTrace stackTrace) {
         failure = error;

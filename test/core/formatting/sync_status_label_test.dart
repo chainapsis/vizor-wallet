@@ -5,6 +5,63 @@ import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 void main() {
+  test(
+    'Checking uses additional work and still respects failure and Tor priority',
+    () {
+      final sync = SyncState(
+        isSyncing: true,
+        percentage: 1,
+        checking: const SyncCheckingProgress(
+          cycle: 1,
+          percentage: 0.25,
+          displayTargetPercentage: 0.5,
+        ),
+      );
+      expect(SyncStatusLabel.from(sync).label, '25% checking');
+      expect(
+        SyncStatusLabel.from(sync, displayWholePercentage: 40).label,
+        '40% checking',
+      );
+      expect(SyncStatusLabel.from(sync).semanticsLabel, 'Checking 25 percent');
+      expect(
+        SyncStatusLabel.from(
+          sync,
+          networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connecting),
+        ).label,
+        kSyncStatusConnectingToTorLabel,
+      );
+      expect(
+        SyncStatusLabel.from(
+          sync.copyWith(failure: _networkFailure('connection refused')),
+        ).kind,
+        SyncStatusKind.failed,
+      );
+    },
+  );
+
+  test(
+    'paused Checking cannot claim completion from the original scan percentage',
+    () {
+      final sync = SyncState(
+        percentage: 1,
+        scannedHeight: 200,
+        chainTipHeight: 200,
+        remainingScanBlocks: 100,
+        checking: const SyncCheckingProgress(
+          cycle: 1,
+          percentage: 0.25,
+          displayTargetPercentage: 0.25,
+        ),
+      );
+      expect(SyncStatusLabel.from(sync).label, '25% checking');
+      expect(
+        SyncStatusLabel.from(
+          sync.copyWith(isSyncComplete: true, clearChecking: true),
+        ).kind,
+        SyncStatusKind.synced,
+      );
+    },
+  );
   test('synced state when complete and idle', () {
     final status = SyncStatusLabel.from(
       SyncState(percentage: 1.0, isSyncing: false),

@@ -158,8 +158,8 @@ void main() {
         AccountInfo.fromJson(json.first as Map<String, dynamic>).setupPending,
         isFalse,
       );
-      expect(notifier.snoozeBackupReminder('a'), throwsStateError);
-      expect(notifier.markBackedUp('missing'), throwsStateError);
+      await expectLater(notifier.snoozeBackupReminder('a'), throwsStateError);
+      await expectLater(notifier.markBackedUp('missing'), throwsStateError);
     },
   );
 

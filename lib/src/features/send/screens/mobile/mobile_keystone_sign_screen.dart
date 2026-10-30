@@ -1,3 +1,4 @@
+import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -6,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
-import '../../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
@@ -18,6 +19,7 @@ import '../../../keystone/widgets/mobile_keystone_pczt_signing_flow.dart';
 import '../../services/sapling_params.dart';
 import '../../services/send_flow.dart';
 import 'mobile_send_screen.dart' show MobileSaplingParamsSheet;
+import '../../../../core/zcash/network_upgrade_hold.dart';
 
 /// Mobile Keystone signing. The send-specific work here is only PCZT
 /// preparation and the result payload; the QR display and signed-PCZT scan are
@@ -73,7 +75,7 @@ class MobileKeystoneSigningRounds {
 // rounds and let a parked link through in the gap.
 class _MobileKeystoneSignScreenState
     extends ConsumerState<MobileKeystoneSignScreen>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   bool _proposalOwnershipTransferred = false;
   bool _cancelRequested = false;
   Future<Object?>? _proposalConsumption;
@@ -107,34 +109,61 @@ class _MobileKeystoneSignScreenState
 
   @override
   Widget build(BuildContext context) {
-    return PopScope<void>(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _proposalOwnershipTransferred = true;
-      },
-      child: AbsorbPointer(
-        absorbing: _cancelRequested,
-        child: MobileKeystonePcztSigningFlow(
-          key: ValueKey('mobile_keystone_sign_round_${_rounds.index}'),
-          title: _cancelRequested ? 'Cancelling…' : _rounds.title,
-          description: widget.args.addressType == 'tex'
-              ? 'This TEX send requires two Keystone approvals. Scan transaction ${_rounds.index + 1} of 2.'
-              : 'Use your Keystone wallet to scan this transaction QR code. '
-                    'Follow the steps on your device.',
-          preparePczt: _preparePczt,
-          onSigned: _handleSignedPczt,
-          signedPcztDecoder: _decodeKeystoneResponse,
-          expectedSignedUrType: widget.args.addressType == 'tex'
-              ? 'zcash-pczt'
-              : 'zcash-batch-sig-result',
-          friendlyError: _friendlyError,
-          keyPrefix: 'mobile_keystone_sign',
-          scanCaption: 'Scan the QR code on your Keystone to finish sending',
-          logTag: 'MobileKeystoneSign',
-          onCancel: _cancelSigning,
+    return MobileSidebarExitScope(
+      canNavigate: !_cancelRequested && !_proposalOwnershipTransferred,
+      onExit: _leaveViaSidebar,
+      child: PopScope<void>(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) _proposalOwnershipTransferred = true;
+        },
+        child: AbsorbPointer(
+          absorbing: _cancelRequested,
+          child: MobileKeystonePcztSigningFlow(
+            key: ValueKey('mobile_keystone_sign_round_${_rounds.index}'),
+            title: _cancelRequested ? 'Cancelling…' : _rounds.title,
+            description: widget.args.addressType == 'tex'
+                ? 'This TEX send requires two Keystone approvals. Scan transaction ${_rounds.index + 1} of 2.'
+                : 'Use your Keystone wallet to scan this transaction QR code. '
+                      'Follow the steps on your device.',
+            preparePczt: _preparePczt,
+            onSigned: _handleSignedPczt,
+            signedPcztDecoder: _decodeKeystoneResponse,
+            expectedSignedUrType: widget.args.addressType == 'tex'
+                ? 'zcash-pczt'
+                : 'zcash-batch-sig-result',
+            friendlyError: _friendlyError,
+            keyPrefix: 'mobile_keystone_sign',
+            scanCaption: 'Scan the QR code on your Keystone to finish sending',
+            logTag: 'MobileKeystoneSign',
+            onCancel: _cancelSigning,
+          ),
         ),
       ),
     );
+  }
+
+  Future<bool> _leaveViaSidebar() async {
+    if (_cancelRequested || _proposalOwnershipTransferred) return false;
+    setState(() => _cancelRequested = true);
+    try {
+      await _proposalConsumption;
+    } catch (_) {
+      /* Cleanup is idempotent. */
+    }
+    final released = await discardSendProposal(
+      syncNotifier: _syncNotifier,
+      accountUuid: widget.args.proposalAccountUuid,
+      proposalId: widget.args.proposalId,
+      sendFlowId: widget.args.sendFlowId,
+      logContext: 'MobileKeystoneSign(sidebar)',
+    );
+    if (!mounted) return false;
+    setState(() {
+      _cancelRequested = false;
+      _proposalOwnershipTransferred = released;
+    });
+    return released;
   }
 
   Future<void> _cancelSigning() async {
@@ -301,6 +330,8 @@ class _MobileKeystoneSignScreenState
   }
 
   String _friendlyError(Object error) {
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {

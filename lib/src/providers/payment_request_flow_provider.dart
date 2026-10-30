@@ -25,7 +25,11 @@ import 'sync_provider.dart';
 import 'zec_price_change_provider.dart';
 
 export '../features/send/widgets/payment_request_card.dart'
-    show PaymentRequestSource, PaymentRequestStatus, PaymentRequestView;
+    show
+        PaymentRequestLinkDifference,
+        PaymentRequestSource,
+        PaymentRequestStatus,
+        PaymentRequestView;
 
 /// Everything the host needs to render and act on the current card.
 class PaymentRequestFlowState {
@@ -165,6 +169,13 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// How many immediate re-checks one card gets.
   static const _kImmediateRecheckBudget = 2;
 
+  /// Open only while the card is sitting on
+  /// [PaymentRequestStatus.insufficientFunds]; see [_watchBalanceForRecheck].
+  ProviderSubscription<AsyncValue<SyncState>>? _balanceWatch;
+
+  /// The spendable balance the shortfall on screen was decided on.
+  BigInt? _shortfallSpendable;
+
   /// The pre-check currently asking Rust, if any.
   ///
   /// A check displaced mid-flight still gets its proposal — Rust does not
@@ -216,6 +227,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     });
     ref.onDispose(() {
       _stopWatchingSync();
+      _stopWatchingBalance();
       final proposal = _liveProposal;
       _liveProposal = null;
       if (proposal != null) {
@@ -233,6 +245,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     var published = next;
     final status = published?.view.status;
     if (_isWaitingOnSync(status)) {
+      _stopWatchingBalance();
       // `syncing` copy promises the card will update itself. When the watch
       // reports that nothing is coming — the sync state is already settled
       // and the immediate budget is spent — that promise cannot be kept, so
@@ -246,6 +259,11 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
       }
     } else {
       _stopWatchingSync();
+      if (status == PaymentRequestStatus.insufficientFunds) {
+        _watchBalanceForRecheck();
+      } else {
+        _stopWatchingBalance();
+      }
     }
     _liveProposal = published?.proposal;
     state = published;
@@ -296,6 +314,69 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     _syncWasSettled = false;
   }
 
+  /// Re-checks an insufficient-funds verdict once the spendable balance it was
+  /// decided on moves — change from a recent send confirming, or a payment
+  /// arriving — so the card follows the balance instead of holding a stale
+  /// shortfall. The verdict holds no proposal, so re-asking costs only the
+  /// check.
+  ///
+  /// Keyed on the balance rather than on each finished sync, because a
+  /// re-check publishes `checking` first — re-asking every block would flash
+  /// the card back to the same answer.
+  ///
+  /// [decidedOn] is the balance the verdict was computed from. The check reads
+  /// it before an await, so the wallet may already have moved past it by the
+  /// time the verdict is shown; a watch keyed on the current balance would
+  /// then never fire, so that case re-checks at once.
+  void _watchBalanceForRecheck({BigInt? decidedOn}) {
+    final sync = ref.read(syncProvider).value;
+    _shortfallSpendable = decidedOn ?? _spendableOf(sync);
+    _balanceWatch ??= ref.listen<AsyncValue<SyncState>>(syncProvider, (
+      _,
+      next,
+    ) {
+      final sync = next.value;
+      if (!_spendableIsSettled(sync)) return;
+      if (_spendableOf(sync) == _shortfallSpendable) return;
+      final current = state;
+      if (current == null ||
+          current.view.status != PaymentRequestStatus.insufficientFunds) {
+        _stopWatchingBalance();
+        return;
+      }
+      _restartPrecheck(current);
+    });
+    if (decidedOn == null ||
+        !_spendableIsSettled(sync) ||
+        _spendableOf(sync) == decidedOn) {
+      return;
+    }
+    final generation = _generation;
+    scheduleMicrotask(() {
+      final current = state;
+      if (generation != _generation ||
+          current == null ||
+          current.view.status != PaymentRequestStatus.insufficientFunds) {
+        return;
+      }
+      _restartPrecheck(current);
+    });
+  }
+
+  void _stopWatchingBalance() {
+    _balanceWatch?.close();
+    _balanceWatch = null;
+    _shortfallSpendable = null;
+  }
+
+  /// The spendable figure the pre-check reads, for the active account.
+  BigInt _spendableOf(SyncState? sync) => paymentRequestSpendableOf(
+    (sync ?? SyncState()).scopedToAccount(
+      ref.read(accountProvider).value?.activeAccountUuid,
+    ),
+    gatedByMigration: ref.read(migrationSendGateProvider),
+  );
+
   /// Re-runs the same pre-check on the same request now that the wallet can
   /// answer it.
   void _recheckAfterSync() {
@@ -334,16 +415,25 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     _restartPrecheck(current);
   }
 
-  /// Shows [prefill] as a payment request and starts the pre-check.
+  /// Shows [prefill] immediately and completes after its initial pre-check.
   ///
   /// A card already on screen is replaced — latest link wins, matching the
   /// single-slot park in `paymentUriPrefillProvider` — and the replacement says
   /// so rather than silently swapping under the user.
-  void present(
+  Future<void> present(
     SendPrefillArgs prefill, {
     required PaymentRequestSource source,
   }) {
+    prefill = prefill.withRequestSource(source);
     final replaced = state;
+    // "Scan original QR": a scan replacing an incoming link's card is the user
+    // checking that link, so say whether the two ask for the same payment.
+    final checkedLink = replaced?.prefill;
+    final linkDifferences =
+        source == PaymentRequestSource.qrCode &&
+            checkedLink?.requestSource == PaymentRequestSource.link
+        ? paymentRequestLinkDifferences(link: checkedLink!, qr: prefill)
+        : null;
     if (replaced?.proposal != null) {
       _track(
         replaced!.proposal!.discard(logContext: 'PaymentRequest(replaced)'),
@@ -364,11 +454,12 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
           prefill: prefill,
           source: source,
           status: PaymentRequestStatus.checking,
-          replacedNotice: replaced != null,
+          replacedNotice: replaced != null && _replacesUnasked(source),
+          linkDifferences: linkDifferences,
         ),
       ),
     );
-    unawaited(_runPrecheck(generation, after: after));
+    return _runPrecheck(generation, after: after);
   }
 
   /// Hands the proposal *back* rather than on, for the mobile review step,
@@ -405,6 +496,12 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     return PaymentRequestReviewReady(proposal.reviewArgs);
   }
 
+  /// Whether a request from [source] can take over the card without the user
+  /// asking. A link arrives from outside the app; a scan or a paste is the
+  /// user's own action, so the replacement needs no notice.
+  static bool _replacesUnasked(PaymentRequestSource source) =>
+      source == PaymentRequestSource.link;
+
   /// Puts the standard "replaced an earlier link" notice on the card that is
   /// up now.
   ///
@@ -413,7 +510,11 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
   /// hand-back, so the replacement had nothing to replace.
   void _noteReplacedRequest() {
     final current = state;
-    if (current == null || current.view.replacedNotice) return;
+    if (current == null ||
+        current.view.replacedNotice ||
+        !_replacesUnasked(current.view.source)) {
+      return;
+    }
     // Written straight to `state`: the status is unchanged, so the sync watch
     // that `_publish` owns must not be re-evaluated — re-entering it would
     // spend an immediate re-check the card never asked for.
@@ -633,7 +734,10 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
             ),
           ),
         );
-      case PaymentRequestPrecheckInsufficientFunds(:final spendableText):
+      case PaymentRequestPrecheckInsufficientFunds(
+        :final spendableText,
+        :final spendable,
+      ):
         _publish(
           live.copyWith(
             view: live.view.copyWithStatus(
@@ -642,6 +746,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
             ),
           ),
         );
+        if (spendable != null) _watchBalanceForRecheck(decidedOn: spendable);
       case PaymentRequestPrecheckSyncing():
         _publish(
           live.copyWith(
@@ -692,6 +797,7 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
     required PaymentRequestSource source,
     required PaymentRequestStatus status,
     required bool replacedNotice,
+    Set<PaymentRequestLinkDifference>? linkDifferences,
   }) {
     final amountZatoshi = parseZecAmount(prefill.amountText?.trim() ?? '');
     final hasAmount = amountZatoshi != null && amountZatoshi > BigInt.zero;
@@ -713,8 +819,27 @@ class PaymentRequestFlowNotifier extends Notifier<PaymentRequestFlowState?> {
       note: prefill.message,
       status: status,
       replacedNotice: replacedNotice,
+      linkDifferences: linkDifferences,
     );
   }
+}
+
+/// The parts of the payment [link] asked for differently from [qr]: the
+/// recipient, the amount, and the memo the payment would carry. The requester
+/// label and note are not compared — neither changes where the money goes.
+Set<PaymentRequestLinkDifference> paymentRequestLinkDifferences({
+  required SendPrefillArgs link,
+  required SendPrefillArgs qr,
+}) {
+  BigInt? amountOf(SendPrefillArgs prefill) =>
+      parseZecAmount(prefill.amountText?.trim() ?? '');
+  return {
+    if (link.address.trim() != qr.address.trim())
+      PaymentRequestLinkDifference.address,
+    if (amountOf(link) != amountOf(qr)) PaymentRequestLinkDifference.amount,
+    if (link.outgoingMemoText != qr.outgoingMemoText)
+      PaymentRequestLinkDifference.memo,
+  };
 }
 
 /// The fiat sub-line for a request's amount, or null when the request carried

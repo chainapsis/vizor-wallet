@@ -2,10 +2,13 @@
 library;
 
 import 'dart:async';
+import '../../support/ledger_discovery_channel.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidance.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_onboarding_progress_scope.dart';
@@ -15,14 +18,18 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/navigation/mobile_onboarding_routes.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/mobile/mobile_ledger_sheet_content.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 import 'package:zcash_wallet/src/features/ledger/ledger_capability.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_account_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_app_readiness_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/ledger_procedure.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_connect_screen.dart';
+import 'package:zcash_wallet/src/features/ledger/widgets/mobile_ledger_signing_surface.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_ledger_device_sheet.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/mobile_hardware_selection_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/ledger/ledger_setup_args.dart';
@@ -30,11 +37,15 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/ledger.dart' as rust_ledger;
 
+const _captureDirectory = String.fromEnvironment('LEDGER_CAPTURE_DIR');
+const _captureKey = ValueKey('mobile_ledger_connect_capture');
+
 void main() {
+  setUpAll(loadFigmaCompareFonts);
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.platformDispatcher.views.first
-      ..physicalSize = const Size(520, 1100)
+      ..physicalSize = const Size(393, 852)
       ..devicePixelRatio = 1;
   });
 
@@ -191,7 +202,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Connect Ledger'), findsOneWidget);
+      expect(find.text('Connect Ledger'), findsNWidgets(2));
     });
   }
 
@@ -284,124 +295,923 @@ void main() {
     );
   }
 
-  testWidgets('discovers, connects, and exports the selected Ledger', (
-    tester,
-  ) async {
-    final ble = _FakeBleService(failCleanupStopsAfter: 2);
-    final accountApproval = Completer<LedgerDeviceAccount>();
-    var connectorCalls = 0;
-    int? requestedIndex;
-
-    await tester.pumpWidget(
-      _ledgerHarness(
-        ble: ble,
-        connector: (index) async {
-          connectorCalls++;
-          requestedIndex = index;
-          return accountApproval.future;
-        },
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final importButton = tester.widget<AppButton>(
-      find.byKey(const ValueKey('mobile_ledger_import_button')),
-    );
-    expect(importButton.onPressed, isNull);
-    expect(connectorCalls, 0);
-
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_ledger_select_device_button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    ble.emit(
-      const LedgerDevicesDiscovered([
-        LedgerBleDevice(id: 'nano-x', name: 'Rowan Ledger', model: 'Nano X'),
-      ]),
-    );
-    await tester.pump();
-
-    final deviceRow = find.byKey(const ValueKey('mobile_ledger_device_nano-x'));
-    expect(deviceRow, findsOneWidget);
-    expect(tester.getSize(deviceRow).height, greaterThanOrEqualTo(44));
-    await tester.tap(find.text('Ledger Nano X · Rowan Ledger'));
-    await tester.pump();
-    expect(
-      find.text('Connecting to Ledger Nano X · Rowan Ledger'),
-      findsOneWidget,
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(ble.connectedIds, ['nano-x']);
-    expect(find.text('Ledger Nano X · Rowan Ledger'), findsOneWidget);
-
-    final advanced = find.byKey(
-      const ValueKey('mobile_ledger_advanced_options_disclosure'),
-    );
-    await tester.ensureVisible(advanced);
-    await tester.tap(advanced);
-    await tester.pumpAndSettle();
-    for (final invalid in ['101', '', '999999999999999999999999']) {
-      await tester.enterText(
-        find.byKey(const ValueKey('mobile_ledger_account_index_field')),
-        invalid,
+  testWidgets(
+    'validates index before discovery and exports immediately after selection',
+    (tester) async {
+      final ble = _FakeBleService(failCleanupStopsAfter: 2);
+      final accountApproval = Completer<LedgerDeviceAccount>();
+      var connectorCalls = 0;
+      int? requestedIndex;
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (index) async {
+            connectorCalls++;
+            requestedIndex = index;
+            return accountApproval.future;
+          },
+        ),
       );
-      final submit = find.byKey(const ValueKey('mobile_ledger_import_button'));
-      await tester.ensureVisible(submit);
-      await tester.tap(submit);
       await tester.pumpAndSettle();
+      await _capture(tester, 'connect-ready');
+      final submit = find.byKey(const ValueKey('mobile_ledger_import_button'));
+      final button = tester.widget<AppButton>(submit);
+      expect(button.onPressed, isNotNull);
+      expect((button.trailing! as AppIcon).name, AppIcons.chevronForward);
+      expect(ble.permissionCalls, 0);
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ledger_advanced_options_disclosure')),
+      );
+      await tester.pumpAndSettle();
+      await _capture(tester, 'connect-advanced');
+      final field = find.byKey(
+        const ValueKey('mobile_ledger_account_index_field'),
+      );
+      final fieldBeforeError = tester.getRect(field);
+      final actionBeforeError = tester.getRect(submit);
+      for (final invalid in ['101', '102', '', '999999999999999999999999']) {
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile_ledger_account_index_field')),
+          invalid,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Account index must be between 0 and 100.'),
+          findsOneWidget,
+        );
+        expect(ble.permissionCalls, 0);
+        expect(connectorCalls, 0);
+        expect(tester.getRect(field), fieldBeforeError);
+        expect(tester.getRect(submit), actionBeforeError);
+        expect(
+          tester
+              .widget<AppTextField>(
+                find.byKey(const ValueKey('mobile_ledger_account_index_field')),
+              )
+              .tone,
+          AppTextFieldTone.destructive,
+        );
+        if (invalid == '101') {
+          await _capture(tester, 'connect-advanced-invalid');
+        }
+        await tester.tap(submit);
+        await tester.pumpAndSettle();
+        expect(ble.permissionCalls, 0);
+        expect(tester.getRect(field), fieldBeforeError);
+      }
+      for (final valid in ['0', '100']) {
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile_ledger_account_index_field')),
+          valid,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Account index must be between 0 and 100.'),
+          findsNothing,
+        );
+        expect(ble.permissionCalls, 0);
+      }
+      await _capture(tester, 'connect-advanced-corrected');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await _selectLedger(tester, ble);
+      await _capture(tester, 'connect-approval');
+      expect(ble.connectedIds, ['nano-x']);
+      expect(connectorCalls, 1);
+      expect(requestedIndex, 100);
+      expect(find.text('Add Ledger account'), findsOneWidget);
+      expect(find.text('Add account'), findsOneWidget);
+      expect(find.text('Continue'), findsNothing);
+      expect(
+        find.text('Approve sharing the viewing key for Account #101.'),
+        findsOneWidget,
+      );
+      expect(
+        ble.stopCalls,
+        2,
+        reason: 'Picker stays mounted during the viewing-key request.',
+      );
+      accountApproval.complete(
+        const LedgerDeviceAccount(
+          ufvk: 'uview-100',
+          seedFingerprint: [1, 2, 3],
+          accountIndex: 100,
+          appVersion: '3.9.4',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('birthday-route-bluetooth-Nano X'), findsOneWidget);
+      expect(connectorCalls, 1);
+      expect(ble.stopCalls, greaterThanOrEqualTo(3));
+    },
+  );
+
+  for (final failure in ['locked', 'rejected']) {
+    for (final dropped in [false, true]) {
+      testWidgets(
+        'account retry reconnects after $failure (dropped: $dropped)',
+        (tester) async {
+          final native = LedgerDiscoveryChannel();
+          native.currentAppError = PlatformException(code: failure);
+          var reads = 0;
+          await tester.pumpWidget(
+            _ledgerHarness(
+              ble: native.service,
+              connector: (index) async {
+                reads++;
+                await native.service.currentApp();
+                return LedgerDeviceAccount(
+                  ufvk: 'test',
+                  seedFingerprint: const [],
+                  accountIndex: index,
+                  appVersion: '3.9.4',
+                );
+              },
+            ),
+          );
+          await tester.pump();
+          await tester.tap(
+            find.byKey(const ValueKey('mobile_ledger_import_button')),
+          );
+          await pumpLedgerDiscovery(tester);
+          await native.devices();
+          await pumpLedgerDiscovery(tester);
+          await tester.tap(find.text('Ledger Stax · A37E'));
+          await pumpLedgerDiscovery(tester);
+          expect(reads, 1);
+          expect(native.calls.where((c) => c == 'connect'), hasLength(1));
+          expect(find.text('Try again'), findsOneWidget);
+          if (dropped) native.dropConnection();
+          expect(native.service.connectedDeviceId, 'stax');
+          native.currentAppError = null;
+          final cleanup = Completer<void>();
+          native.disconnecting = cleanup.future;
+          await tester.tap(find.text('Try again'));
+          await pumpLedgerDiscovery(tester);
+          // No account request may start until native cleanup finishes.
+          expect(reads, 1);
+          expect(native.calls.where((c) => c == 'connect'), hasLength(1));
+          final procedure = tester.widget<LedgerProcedure>(
+            find.byType(LedgerProcedure),
+          );
+          expect(procedure.currentStep, 0);
+          expect(procedure.steps.first.busy, isTrue);
+          cleanup.complete();
+          await pumpLedgerDiscovery(tester);
+          expect(reads, 2);
+          expect(native.calls.where((c) => c == 'connect'), hasLength(2));
+          expect(
+            find.text('birthday-route-bluetooth-Ledger Stax'),
+            findsOneWidget,
+          );
+          // Retry the selected device without reopening discovery.
+          expect(
+            native.calls.where((c) => c == 'startDiscovery'),
+            hasLength(1),
+          );
+          await tester.pumpWidget(const SizedBox());
+          await pumpLedgerDiscovery(tester);
+          await tester.runAsync(native.dispose);
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.iOS,
+          TargetPlatform.android,
+        }),
+      );
+    }
+  }
+
+  for (final action in ['cancel', 'cleanup failure']) {
+    testWidgets(
+      'account retry stops after $action during reconnection',
+      (tester) async {
+        final native = LedgerDiscoveryChannel();
+        native.currentAppError = PlatformException(code: 'locked');
+        var reads = 0;
+        await tester.pumpWidget(
+          _ledgerHarness(
+            ble: native.service,
+            cancel: native.service.cancelSigning,
+            connector: (index) async {
+              reads++;
+              await native.service.currentApp();
+              return LedgerDeviceAccount(
+                ufvk: 'test',
+                seedFingerprint: const [],
+                accountIndex: index,
+                appVersion: '3.9.4',
+              );
+            },
+          ),
+        );
+        await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('mobile_ledger_import_button')),
+        );
+        await pumpLedgerDiscovery(tester);
+        await native.devices();
+        await pumpLedgerDiscovery(tester);
+        await tester.tap(find.text('Ledger Stax · A37E'));
+        await pumpLedgerDiscovery(tester);
+        expect(reads, 1);
+        native.currentAppError = null;
+        final cleanup = Completer<void>();
+        if (action == 'cancel') {
+          native.disconnecting = cleanup.future;
+        } else {
+          native.disconnectError = PlatformException(code: 'busy');
+        }
+        await tester.tap(find.text('Try again'));
+        await pumpLedgerDiscovery(tester);
+        expect(reads, 1);
+        expect(native.calls.where((c) => c == 'connect'), hasLength(1));
+        if (action == 'cancel') {
+          await tester.tap(_closeButton);
+          await pumpLedgerDiscovery(tester);
+          cleanup.complete();
+          await pumpLedgerDiscovery(tester);
+          expect(reads, 1);
+          expect(native.calls.where((c) => c == 'connect'), hasLength(1));
+          expect(find.byType(LedgerProcedure), findsNothing);
+        } else {
+          expect(find.text('Try again'), findsOneWidget);
+          native.disconnectError = null;
+          await tester.tap(find.text('Try again'));
+          await pumpLedgerDiscovery(tester);
+          expect(reads, 2);
+          expect(native.calls.where((c) => c == 'connect'), hasLength(2));
+          expect(
+            find.text('birthday-route-bluetooth-Ledger Stax'),
+            findsOneWidget,
+          );
+        }
+        await tester.pumpWidget(const SizedBox());
+        await pumpLedgerDiscovery(tester);
+        await tester.runAsync(native.dispose);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.iOS,
+        TargetPlatform.android,
+      }),
+    );
+  }
+
+  testWidgets(
+    'declined viewing key stays in the sheet and retries without discovery',
+    (tester) async {
+      final ble = _FakeBleService();
+      var exports = 0;
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) async {
+            exports++;
+            throw const LedgerMobileException(
+              LedgerMobileFailure.rejected,
+              'declined',
+            );
+          },
+        ),
+      );
+      await _selectLedger(tester, ble);
+      await _capture(tester, 'connect-declined');
+      expect(find.text('Request declined'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is AppIcon && w.name == AppIcons.loader,
+        ),
+        findsNothing,
+      );
+      expect(find.text('Add account'), findsOneWidget);
+      expect(exports, 1);
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      expect(exports, 2);
+      expect(ble.connectedIds, ['nano-x', 'nano-x']);
+      expect(ble.permissionCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'closing an account request ignores its late result and can start a fresh session',
+    (tester) async {
+      final ble = _FakeBleService();
+      final pending = Completer<LedgerDeviceAccount>();
+      var exports = 0;
+      var cancellations = 0;
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) {
+            exports++;
+            return exports == 1
+                ? pending.future
+                : Completer<LedgerDeviceAccount>().future;
+          },
+          cancel: () async {
+            cancellations++;
+          },
+        ),
+      );
+      await _selectLedger(tester, ble);
+      await tester.tap(_closeButton);
+      await tester.pump();
+      expect(cancellations, 1);
+      expect(find.text('Add Ledger account'), findsNothing);
+      await _selectLedger(tester, ble);
+      expect(exports, 2);
+      pending.complete(
+        const LedgerDeviceAccount(
+          ufvk: 'late',
+          seedFingerprint: [1],
+          accountIndex: 0,
+          appVersion: '3.9.4',
+        ),
+      );
+      await tester.pump();
+      expect(find.text('birthday-route-bluetooth-Nano X'), findsNothing);
+      expect(find.text('Add Ledger account'), findsOneWidget);
+      expect(
+        find.text('Approve sharing the viewing key for Account #1.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  for (final action in ['button', 'system']) {
+    testWidgets(
+      '$action Back drains the request and selects another Ledger in the same sheet',
+      (tester) async {
+        final ble = _FakeBleService();
+        final first = Completer<LedgerDeviceAccount>();
+        final second = Completer<LedgerDeviceAccount>();
+        final cancellation = Completer<void>();
+        final disconnect = Completer<void>();
+        final requestedIndices = <int>[];
+        var cancellations = 0;
+        await tester.pumpWidget(
+          _ledgerHarness(
+            ble: ble,
+            connector: (index) {
+              requestedIndices.add(index);
+              return requestedIndices.length == 1
+                  ? first.future
+                  : second.future;
+            },
+            cancel: () {
+              cancellations++;
+              return cancellation.future;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(
+            const ValueKey('mobile_ledger_advanced_options_disclosure'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('mobile_ledger_account_index_field')),
+          '7',
+        );
+        await _selectLedger(tester, ble);
+        final surface = tester.element(find.byType(MobileLedgerSigningSurface));
+        final back = find.byKey(const ValueKey('mobile_modal_back_button'));
+        expect(back, findsOneWidget);
+        final backRect = tester.getRect(back);
+        final sheet = tester.getRect(find.byType(MobileLedgerSheetContent));
+        expect(backRect.size, const Size(44, 44));
+        expect(backRect.bottom, closeTo(sheet.top - 8, .1));
+        ble.pendingDisconnect = disconnect.future;
+        if (action == 'button') {
+          await tester.tap(back);
+        } else {
+          await tester.binding.handlePopRoute();
+        }
+        await tester.pump();
+        expect(cancellations, 1);
+        expect(tester.widget<AppButton>(back).onPressed, isNull);
+        expect(ble.permissionCalls, 1);
+        await tester.binding.handlePopRoute();
+        await tester.tapAt(const Offset(10, 10));
+        await tester.pump();
+        expect(cancellations, 1);
+        if (action == 'button') {
+          await _capture(tester, 'connect-changing-device');
+        }
+        cancellation.complete();
+        await tester.pump();
+        expect(ble.disconnectCalls, 2);
+        expect(
+          ble.permissionCalls,
+          1,
+          reason: 'Discovery waits for native cleanup.',
+        );
+        // An approval that arrives during cleanup must not open the birthday page.
+        first.complete(
+          const LedgerDeviceAccount(
+            ufvk: 'late',
+            seedFingerprint: [1],
+            accountIndex: 7,
+            appVersion: '3.9.4',
+          ),
+        );
+        await tester.pump();
+        expect(find.text('birthday-route-bluetooth-Nano X'), findsNothing);
+        expect(
+          tester.element(find.byType(MobileLedgerSigningSurface)),
+          same(surface),
+        );
+        ble.pendingDisconnect = null;
+        disconnect.complete();
+        await tester.pump();
+        await tester.pump();
+        expect(back, findsNothing);
+        expect(ble.permissionCalls, 2);
+        expect(
+          find.byKey(const ValueKey('mobile_ledger_device_sheet')),
+          findsOneWidget,
+        );
+        expect(
+          tester.element(find.byType(MobileLedgerSigningSurface)),
+          same(surface),
+        );
+        ble.emit(
+          const LedgerDevicesDiscovered([
+            LedgerBleDevice(id: 'stax', name: 'Other Ledger', model: 'Stax'),
+          ]),
+        );
+        await tester.pump();
+        if (action == 'button') {
+          await _capture(tester, 'connect-reselect-device');
+        }
+        await tester.tap(find.text('Ledger Stax · Other Ledger'));
+        await tester.pump();
+        expect(requestedIndices, [7, 7]);
+        expect(ble.connectedIds, ['nano-x', 'stax']);
+        expect(find.text('Ledger Stax · Other Ledger'), findsOneWidget);
+        second.complete(
+          const LedgerDeviceAccount(
+            ufvk: 'other',
+            seedFingerprint: [2],
+            accountIndex: 7,
+            appVersion: '3.9.4',
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('birthday-route-bluetooth-Stax'), findsOneWidget);
+      },
+    );
+  }
+
+  for (final failure in [
+    'cancellation',
+    'disconnect',
+    'pending device request',
+  ]) {
+    testWidgets('Back retries failed $failure before returning to selection', (
+      tester,
+    ) async {
+      final ble = _FakeBleService();
+      var cancellations = 0;
+      var exports = 0;
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) {
+            exports++;
+            return Completer<LedgerDeviceAccount>().future;
+          },
+          cancel: () async {
+            if (++cancellations == 1 && failure == 'cancellation') {
+              throw StateError('cleanup');
+            }
+          },
+        ),
+      );
+      await _selectLedger(tester, ble);
+      if (failure != 'cancellation') ble.failDisconnectOnCall = 2;
+      if (failure == 'pending device request') {
+        ble.disconnectFailure = const LedgerMobileException(
+          LedgerMobileFailure.busy,
+          'Finish the pending request.',
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('mobile_modal_back_button')));
+      await tester.pump();
+      expect(find.text('Could not cancel Ledger request'), findsOneWidget);
+      if (failure == 'pending device request') {
+        expect(
+          find.text(
+            'Another Ledger request is still active. Complete or reject it on your Ledger, then try again.',
+          ),
+          findsOneWidget,
+        );
+        await _capture(tester, 'connect-back-pending-request');
+      }
+      expect(ble.permissionCalls, 1);
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      await tester.pump();
+      expect(cancellations, 2);
+      expect(exports, 1);
+      expect(
+        find.byKey(const ValueKey('mobile_ledger_device_sheet')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_modal_back_button')),
+        findsNothing,
+      );
+      expect(ble.permissionCalls, 2);
+      // X still leaves the entire connection flow from the picker.
+      await tester.tap(_closeButton);
+      await tester.pump();
+      expect(find.byType(MobileLedgerSigningSurface), findsNothing);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_ledger_import_button')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+    });
+  }
+
+  testWidgets(
+    'Back and current guidance stay reachable at 320px with 2x text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 24);
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetPadding);
+      final ble = _FakeBleService();
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) => Completer<LedgerDeviceAccount>().future,
+          textScale: 2,
+        ),
+      );
+      await _selectLedger(tester, ble);
+      final back = find.byKey(const ValueKey('mobile_modal_back_button'));
+      await _capture(tester, 'connect-back-320-2x');
+      expect(back.hitTestable(), findsOneWidget);
+      expect(_closeButton.hitTestable(), findsOneWidget);
+      final viewport = tester.getRect(
+        find.descendant(
+          of: find.byType(MobileLedgerSheetContent),
+          matching: find.byType(SingleChildScrollView),
+        ),
+      );
+      expect(
+        tester.getTopLeft(find.text('Add account')).dy,
+        greaterThanOrEqualTo(viewport.top - 1),
+      );
+      expect(
+        tester.getTopLeft(find.text('Add account')).dy,
+        lessThan(viewport.bottom),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(back);
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('mobile_ledger_device_sheet')),
+        findsOneWidget,
+      );
+      expect(back, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'failed cancellation retries cleanup instead of exporting again',
+    (tester) async {
+      final ble = _FakeBleService();
+      var exports = 0;
+      var cancellations = 0;
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) {
+            exports++;
+            return Completer<LedgerDeviceAccount>().future;
+          },
+          cancel: () async {
+            if (++cancellations == 1) throw StateError('cleanup');
+          },
+        ),
+      );
+      await _selectLedger(tester, ble);
+      await tester.tap(_closeButton);
+      await tester.pump();
+      expect(find.text('Could not cancel Ledger request'), findsOneWidget);
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      expect(cancellations, 2);
+      expect(exports, 1);
+      expect(find.text('Add Ledger account'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'collapsed options keep the index and reopen an invalid field before discovery',
+    (tester) async {
+      final ble = _FakeBleService();
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) => Completer<LedgerDeviceAccount>().future,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final disclosure = find.byKey(
+        const ValueKey('mobile_ledger_advanced_options_disclosure'),
+      );
+      final field = find.byKey(
+        const ValueKey('mobile_ledger_account_index_field'),
+      );
+      await tester.tap(disclosure);
+      await tester.pumpAndSettle();
+      await tester.enterText(field, '7');
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(field).bottom,
+        lessThanOrEqualTo(
+          tester
+              .getRect(
+                find.byKey(const ValueKey('mobile_ledger_import_button')),
+              )
+              .top,
+        ),
+      );
+      await tester.enterText(field, '101');
+      await tester.pumpAndSettle();
+      final error = find.text('Account index must be between 0 and 100.');
+      expect(error, findsOneWidget);
+      expect(error.hitTestable(), findsOneWidget);
+      expect(
+        tester.getRect(error).bottom,
+        lessThanOrEqualTo(
+          tester
+              .getRect(
+                find.byKey(const ValueKey('mobile_ledger_import_button')),
+              )
+              .top,
+        ),
+      );
+      expect(
+        tester.getRect(field).bottom,
+        lessThanOrEqualTo(
+          tester
+              .getRect(
+                find.byKey(const ValueKey('mobile_ledger_import_button')),
+              )
+              .top,
+        ),
+      );
+      await _capture(tester, 'connect-advanced-invalid-keyboard');
+      await tester.enterText(field, '7');
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(disclosure);
+      await tester.tap(disclosure);
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(field, findsNothing);
+      expect(tester.testTextInput.isVisible, isFalse);
+      await tester.tap(disclosure);
+      await tester.pumpAndSettle();
+      expect(tester.widget<AppTextField>(field).controller!.text, '7');
+      await tester.enterText(field, '101');
+      await tester.tap(disclosure);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ledger_import_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(field, findsOneWidget);
       expect(
         find.text('Account index must be between 0 and 100.'),
         findsOneWidget,
       );
-      expect(connectorCalls, 0);
-    }
-    await tester.enterText(
-      find.byKey(const ValueKey('mobile_ledger_account_index_field')),
-      '100',
-    );
-    final enabledImport = find.byKey(
-      const ValueKey('mobile_ledger_import_button'),
-    );
-    await tester.ensureVisible(enabledImport);
-    await tester.tap(enabledImport);
-    await tester.pump();
+      expect(ble.permissionCalls, 0);
+      await tester.enterText(field, '7');
+      await tester.pump();
+      expect(
+        find.text('Account index must be between 0 and 100.'),
+        findsNothing,
+      );
+    },
+  );
 
-    final busyImport = tester.widget<AppButton>(enabledImport);
-    final spinner = find.byKey(const ValueKey('mobile_ledger_import_spinner'));
-    expect(busyImport.leading, isNull);
-    expect(busyImport.trailing, isA<AppIcon>());
-    expect((busyImport.trailing! as AppIcon).name, AppIcons.loader);
-    expect(spinner, findsOneWidget);
-    expect(
-      tester.getCenter(spinner).dx,
-      greaterThan(tester.getCenter(enabledImport).dx),
-    );
+  testWidgets(
+    'advanced account index and primary action remain reachable at 320px and 2x text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      final ble = _FakeBleService();
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) => Completer<LedgerDeviceAccount>().future,
+          textScale: 2,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final disclosure = find.byKey(
+        const ValueKey('mobile_ledger_advanced_options_disclosure'),
+      );
+      await tester.ensureVisible(disclosure);
+      await tester.tap(disclosure);
+      await tester.pumpAndSettle();
+      final field = find.byKey(
+        const ValueKey('mobile_ledger_account_index_field'),
+      );
+      final action = find.byKey(const ValueKey('mobile_ledger_import_button'));
+      expect(
+        tester.getRect(field).bottom,
+        lessThanOrEqualTo(tester.getRect(action).top),
+      );
+      expect(action.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _capture(tester, 'connect-advanced-320-2x');
+      await tester.enterText(field, '101');
+      await tester.pumpAndSettle();
+      final error = find.text('Account index must be between 0 and 100.');
+      expect(error, findsOneWidget);
+      expect(error.hitTestable(), findsOneWidget);
+      expect(
+        tester.getRect(error).bottom,
+        lessThanOrEqualTo(tester.getRect(action).top),
+      );
+      expect(
+        tester.getRect(field).bottom,
+        lessThanOrEqualTo(tester.getRect(action).top),
+      );
+      await _capture(tester, 'connect-advanced-invalid-320-2x');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(error).bottom,
+        lessThanOrEqualTo(tester.getRect(action).top),
+      );
+      expect(ble.permissionCalls, 0);
+    },
+  );
 
-    accountApproval.complete(
-      const LedgerDeviceAccount(
-        ufvk: 'uview-100',
-        seedFingerprint: [1, 2, 3],
-        accountIndex: 100,
-        appVersion: '3.9.3',
+  testWidgets(
+    'app readiness and viewing-key approval advance inside the same sheet',
+    (tester) async {
+      final ble = _FakeBleService();
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) => Completer<LedgerDeviceAccount>().future,
+        ),
+      );
+      await tester.pump();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileLedgerConnectScreen)),
+      );
+      final readiness = container.read(
+        ledgerAppReadinessStateProvider.notifier,
+      );
+      readiness.update(
+        const LedgerAppReadinessState.inProgress(
+          LedgerAppReadinessPhase.checkingDevice,
+        ),
+      );
+      await _selectLedger(tester, ble);
+      final surface = tester.element(find.byType(MobileLedgerSigningSurface));
+      final pending = find.byWidgetPredicate(
+        (w) => w is AppIcon && w.name == AppIcons.loader,
+      );
+      expect(
+        find.text('Keep Ledger connected while Vizor checks the app.'),
+        findsOneWidget,
+      );
+      await _capture(tester, 'connect-checking');
+      expect(pending, findsOneWidget);
+      readiness.update(
+        const LedgerAppReadinessState.inProgress(
+          LedgerAppReadinessPhase.confirmOpening,
+        ),
+      );
+      await tester.pump();
+      expect(
+        tester.element(find.byType(MobileLedgerSigningSurface)),
+        same(surface),
+      );
+      expect(find.text('Confirm opening Zcash on Ledger.'), findsOneWidget);
+      expect(find.text('Keep Zcash open.'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.text('Confirm opening Zcash on Ledger.'))
+            .style
+            ?.fontWeight,
+        AppTypography.bodyMediumStrong.fontWeight,
+      );
+      expect(pending, findsOneWidget);
+      await _capture(tester, 'connect-opening');
+      readiness.update(const LedgerAppReadinessState.ready('3.9.4'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        tester.element(find.byType(MobileLedgerSigningSurface)),
+        same(surface),
+      );
+      expect(
+        find.text('Approve sharing the viewing key for Account #0.'),
+        findsOneWidget,
+      );
+      expect(find.text('Continue'), findsNothing);
+      expect(pending, findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.text('Approve sharing the viewing key for Account #0.'),
+            )
+            .style
+            ?.fontWeight,
+        AppTypography.bodyMediumStrong.fontWeight,
+      );
+      await _capture(tester, 'connect-approval');
+    },
+  );
+
+  testWidgets('device rows support keyboard focus and activation', (
+    tester,
+  ) async {
+    final ble = _FakeBleService();
+    var selections = 0;
+    await tester.pumpWidget(
+      AppTheme(
+        data: AppThemeData.light,
+        child: MaterialApp(
+          home: MobileLedgerDeviceSheet(
+            service: ble,
+            onSelected: (_) => selections++,
+            onClose: () {},
+          ),
+        ),
       ),
     );
-    await tester.pumpAndSettle();
-
-    expect(find.text('birthday-route-bluetooth-Nano X'), findsOneWidget);
-    expect(connectorCalls, 1);
-    expect(requestedIndex, 100);
-    expect(
-      find.byKey(const ValueKey('mobile_ledger_account_name_field')),
-      findsNothing,
+    await tester.pump();
+    ble.emit(
+      const LedgerDevicesDiscovered([
+        LedgerBleDevice(id: 'flex', name: '', model: 'Flex'),
+      ]),
     );
-    expect(
-      find.byKey(const ValueKey('mobile_ledger_birthday_height_field')),
-      findsNothing,
-    );
-    expect(ble.stopCalls, greaterThanOrEqualTo(1));
+    await tester.pump();
+    final device = find.text('Ledger Flex');
+    for (
+      var i = 0;
+      i < 8 && !Focus.of(tester.element(device)).hasPrimaryFocus;
+      i++
+    ) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+    }
+    expect(Focus.of(tester.element(device)).hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(ble.connectedIds, ['flex']);
+    expect(selections, 1);
   });
+
+  testWidgets(
+    'access failures retain guidance when the transport handles its own permissions',
+    (tester) async {
+      final ble = _FakeBleService();
+      await tester.pumpWidget(
+        _ledgerHarness(
+          ble: ble,
+          connector: (_) async => throw const LedgerMobileException(
+            LedgerMobileFailure.permissionDenied,
+            'permission',
+          ),
+        ),
+      );
+      await _selectLedger(tester, ble);
+      expect(find.text('Could not add Ledger account'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+      expect(
+        find.text(
+          ledgerFailureGuidance(
+            const LedgerMobileException(
+              LedgerMobileFailure.permissionDenied,
+              'permission',
+            ),
+          )!.message,
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('status 0x6a80 does not read as a device rejection', (
     tester,
@@ -421,9 +1231,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_ledger_select_device_button')),
-    );
+    await tester.tap(find.byKey(const ValueKey('mobile_ledger_import_button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     ble.emit(
@@ -432,15 +1240,12 @@ void main() {
       ]),
     );
     await tester.pump();
+    await _capture(tester, 'connect-picker');
     await tester.tap(find.text('Ledger Nano X · Rowan Ledger'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    final submit = find.byKey(const ValueKey('mobile_ledger_import_button'));
-    await tester.ensureVisible(submit);
-    await tester.tap(submit);
-    await tester.pumpAndSettle();
-
+    await tester.pump();
     expect(connectorCalls, 1);
     expect(find.text(kLedgerViewingKeyRequestRejectedMessage), findsOneWidget);
     expect(find.textContaining('rejected on your Ledger'), findsNothing);
@@ -505,9 +1310,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_ledger_select_device_button')),
-    );
+    await tester.tap(find.byKey(const ValueKey('mobile_ledger_import_button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -572,7 +1375,7 @@ void main() {
         }
         await tester.tap(find.text('Ledger Stax · Rowan Ledger'));
         await tester.pump();
-        await tester.tap(find.bySemanticsLabel('Close'));
+        await tester.tap(_closeButton);
         await tester.pump();
         expect(closes, 1);
         expect(ble.cancelCalls, 1);
@@ -621,7 +1424,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+        find.byKey(const ValueKey('mobile_ledger_import_button')),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -633,7 +1436,8 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('Ledger Stax · Rowan Ledger'));
       await tester.pump();
-      Navigator.of(tester.element(find.byType(MobileLedgerDeviceSheet))).pop();
+      await tester.binding.handlePopRoute();
+      await tester.pump();
       expect(ble.cancelCalls, 1);
       pending.complete();
       await tester.pump();
@@ -650,12 +1454,10 @@ void main() {
       _ledgerHarness(ble: ble, connector: (_) => throw StateError('unused')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_ledger_select_device_button')),
-    );
+    await tester.tap(find.byKey(const ValueKey('mobile_ledger_import_button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.bySemanticsLabel('Close'));
+    await tester.tap(_closeButton);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -677,7 +1479,7 @@ void main() {
 
     Future<void> openPickerAndDiscover() async {
       await tester.tap(
-        find.byKey(const ValueKey('mobile_ledger_select_device_button')),
+        find.byKey(const ValueKey('mobile_ledger_import_button')),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -701,6 +1503,8 @@ void main() {
     expect(ble.connectedIds, ['stax']);
     expect(ble.cancelCalls, 0);
 
+    await tester.tap(_closeButton);
+    await tester.pump();
     await openPickerAndDiscover();
     expect(
       find.byKey(const ValueKey('mobile_ledger_device_stax')),
@@ -708,6 +1512,33 @@ void main() {
     );
     expect(ble.disconnectCalls, 2);
   });
+}
+
+Future<void> _capture(WidgetTester tester, String name) async {
+  if (_captureDirectory.isEmpty) return;
+  await tester.pump(const Duration(milliseconds: 300));
+  await expectLater(
+    find.byKey(_captureKey),
+    matchesGoldenFile('$_captureDirectory/$name.png'),
+  );
+}
+
+final _closeButton = find.bySemanticsLabel('Close');
+
+Future<void> _selectLedger(WidgetTester tester, _FakeBleService ble) async {
+  await tester.pump();
+  await tester.tap(find.byKey(const ValueKey('mobile_ledger_import_button')));
+  await tester.pump();
+  ble.emit(
+    const LedgerDevicesDiscovered([
+      LedgerBleDevice(id: 'nano-x', name: 'Rowan Ledger', model: 'Nano X'),
+    ]),
+  );
+  await tester.pump();
+  await _capture(tester, 'connect-picker');
+  await tester.tap(find.text('Ledger Nano X · Rowan Ledger'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
 }
 
 Widget _hardwareHarness({
@@ -726,8 +1557,10 @@ Widget _hardwareHarness({
 );
 
 Widget _ledgerHarness({
-  required _FakeBleService ble,
+  required LedgerMobileBleService ble,
   required LedgerAccountConnector connector,
+  LedgerOperationCanceller? cancel,
+  double textScale = 1,
 }) {
   final router = GoRouter(
     initialLocation: '/onboarding/ledger',
@@ -774,16 +1607,25 @@ Widget _ledgerHarness({
           device: device,
         );
       }),
-      ledgerOperationCancellerProvider.overrideWithValue(() async {}),
+      ledgerOperationCancellerProvider.overrideWithValue(cancel ?? () async {}),
       ledgerAppReadinessStateProvider.overrideWith(
         _FakeReadinessController.new,
       ),
     ],
-    child: MaterialApp.router(
-      routerConfig: router,
-      builder: (_, child) => AppTheme(
-        data: AppThemeData.light,
-        child: MobileOnboardingProgressFrame(child: child!),
+    child: RepaintBoundary(
+      key: _captureKey,
+      child: MaterialApp.router(
+        debugShowCheckedModeBanner: false,
+        routerConfig: router,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: AppTheme(
+            data: AppThemeData.light,
+            child: MobileOnboardingProgressFrame(child: child!),
+          ),
+        ),
       ),
     ),
   );
@@ -814,7 +1656,8 @@ class _FakeSyncNotifier extends SyncNotifier {
 
 class _FakeReadinessController extends LedgerAppReadinessController {
   @override
-  LedgerAppReadinessState build() => const LedgerAppReadinessState.idle();
+  LedgerAppReadinessState build() =>
+      const LedgerAppReadinessState.ready('3.10.0');
 }
 
 class _FakeBleService implements LedgerMobileBleService {
@@ -835,6 +1678,9 @@ class _FakeBleService implements LedgerMobileBleService {
   int disconnectCalls = 0;
   int cancelCalls = 0;
   Future<void>? pendingConnect;
+  Future<void>? pendingDisconnect;
+  int? failDisconnectOnCall;
+  Object? disconnectFailure;
   Future<void>? pendingStop;
 
   @override
@@ -864,6 +1710,10 @@ class _FakeBleService implements LedgerMobileBleService {
   Future<void> disconnect() async {
     calls.add('disconnect');
     disconnectCalls++;
+    if (pendingDisconnect != null) await pendingDisconnect;
+    if (disconnectCalls == failDisconnectOnCall) {
+      throw disconnectFailure ?? StateError('disconnect cleanup');
+    }
     connectedDeviceId = null;
   }
 

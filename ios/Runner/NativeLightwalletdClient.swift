@@ -188,12 +188,13 @@ enum NativeLightwalletdClient {
     throw NativeLightwalletdError.missingHeight
   }
 
+  /// Rust authorizes the lookup against the wallet at `dbPath` and the
+  /// private queries preference: under private recovery it sends nothing.
   static func transaction(
     endpoint: String,
     dbPath: String,
-    privateStatus: Bool,
     network: String,
-    requiredThrough: UInt32,
+    privatePreference: Bool,
     transactionId: Data,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<
@@ -201,7 +202,7 @@ enum NativeLightwalletdClient {
     NativeLightwalletdError
   > {
     guard transactionId.count == 32,
-      (privateStatus || rpcURL(endpoint: endpoint, methodPath: getTransactionPath) != nil)
+      rpcURL(endpoint: endpoint, methodPath: getTransactionPath) != nil
     else {
       return .failure(.invalidEndpoint)
     }
@@ -213,31 +214,21 @@ enum NativeLightwalletdClient {
       mined_height: 0
     )
     let code = transactionId.withUnsafeBytes { transactionPointer in
-      if privateStatus {
-        return dbPath.withCString { dbPathPointer in
+      endpoint.withCString { endpointPointer in
+        dbPath.withCString { dbPathPointer in
           network.withCString { networkPointer in
-            zcash_status_pir_observe_transaction_v2(
+            zcash_lightwalletd_observe_transaction(
+              endpointPointer,
               dbPathPointer,
+              networkPointer,
+              privatePreference,
               transactionPointer.bindMemory(to: UInt8.self).baseAddress,
               UInt(transactionId.count),
-              networkPointer,
-              privateStatus,
-              true,
-              requiredThrough,
               &nativeObservation,
               cancellation.lightwalletdCancellationHandle
             )
           }
         }
-      }
-      return endpoint.withCString { endpointPointer in
-        zcash_lightwalletd_observe_transaction(
-          endpointPointer,
-          transactionPointer.bindMemory(to: UInt8.self).baseAddress,
-          UInt(transactionId.count),
-          &nativeObservation,
-          cancellation.lightwalletdCancellationHandle
-        )
       }
     }
     guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
@@ -246,9 +237,11 @@ enum NativeLightwalletdClient {
       return .failure(.cancelled)
     }
     if code == ZCASH_STATUS_RESULT_INCONCLUSIVE { return .failure(.coverageIncomplete) }
+    // Private queries, or the wallet's policy, withhold the lookup, or the
+    // wallet routes this status privately. Nothing was sent.
+    if code == ZCASH_STATUS_RESULT_UNSUPPORTED { return .failure(.coverageIncomplete) }
     guard code == 0 else {
-      let source = privateStatus ? "Status PIR" : "lightwalletd"
-      return .failure(.transport("Rust \(source) transaction lookup failed (code \(code))"))
+      return .failure(.transport("Rust lightwalletd transaction lookup failed (code \(code))"))
     }
     switch nativeObservation.state {
     case 0:

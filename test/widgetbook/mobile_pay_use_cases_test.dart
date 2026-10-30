@@ -154,7 +154,7 @@ void main() {
             widget is Image &&
             widget.image is AssetImage &&
             (widget.image as AssetImage).assetName ==
-                'assets/illustrations/mobile_send_status_background.png',
+                'assets/illustrations/mobile_send_status_background.webp',
       ),
       findsOneWidget,
     );

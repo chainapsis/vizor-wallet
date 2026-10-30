@@ -173,10 +173,17 @@ final class PaymentRequestPrecheckInvalidAddress
 /// The requested amount is above what the account can spend.
 final class PaymentRequestPrecheckInsufficientFunds
     extends PaymentRequestPrecheckResult {
-  const PaymentRequestPrecheckInsufficientFunds({this.spendableText});
+  const PaymentRequestPrecheckInsufficientFunds({
+    this.spendableText,
+    this.spendable,
+  });
 
   /// Preformatted spendable balance (`0.21 ZEC`) for the card's message.
   final String? spendableText;
+
+  /// The spendable balance this verdict was decided on, in zatoshi, so the
+  /// card can tell when the wallet has moved past it.
+  final BigInt? spendable;
 }
 
 /// Balances are not trustworthy yet, so "not enough" would be a lie.
@@ -337,6 +344,7 @@ class PaymentRequestPrecheck {
       if (amountZatoshi > spendableNow) {
         return PaymentRequestPrecheckInsufficientFunds(
           spendableText: _formatZec(spendableNow),
+          spendable: spendableNow,
         );
       }
     }
@@ -400,8 +408,10 @@ class PaymentRequestPrecheck {
       // from is a wait for an authoritative spendable, so the balance the
       // check started with is the one number guaranteed to predate whatever
       // the wallet settled on.
+      final spendableNow = _spendableNow(spendableBalance);
       return PaymentRequestPrecheckInsufficientFunds(
-        spendableText: _formatZec(_spendableNow(spendableBalance)),
+        spendableText: _formatZec(spendableNow),
+        spendable: spendableNow,
       );
     }
     // Wrong-network addresses are refused up front by the validation above;

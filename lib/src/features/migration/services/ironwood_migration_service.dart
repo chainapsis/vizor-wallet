@@ -370,6 +370,7 @@ class IronwoodMigrationOutboxRunResult {
     this.observedHeight,
     this.accountUuid,
     this.retryDelay,
+    this.heldForUpgradeTxids = const {},
   });
 
   factory IronwoodMigrationOutboxRunResult.fromMap(
@@ -392,6 +393,11 @@ class IronwoodMigrationOutboxRunResult {
       nextHeight: (values['nextHeight'] as num?)?.toInt(),
       observedHeight: (values['observedHeight'] as num?)?.toInt(),
       accountUuid: values['accountUuid'] as String?,
+      heldForUpgradeTxids: {
+        for (final txid
+            in (values['heldForUpgradeTxids'] as List<Object?>?) ?? const [])
+          if (txid is String) txid.toLowerCase(),
+      },
       retryDelay: switch (values['delaySeconds']) {
         final num seconds when seconds > 0 => Duration(
           milliseconds: (seconds * Duration.millisecondsPerSecond).ceil(),
@@ -406,6 +412,9 @@ class IronwoodMigrationOutboxRunResult {
   final int? observedHeight;
   final String? accountUuid;
   final Duration? retryDelay;
+
+  /// Due parts that wait for the network upgrade rather than a retry.
+  final Set<String> heldForUpgradeTxids;
 }
 
 typedef IronwoodMigrationKeystoneDenominationPreparer =
@@ -431,6 +440,7 @@ typedef IronwoodMigrationKeystoneImmediatePreparer =
       required BigInt approvedFeeZatoshi,
       required BigInt approvedMigratedZatoshi,
       required int approvedInputNoteCount,
+      required bool keystoneBatch,
     });
 typedef IronwoodMigrationKeystoneImmediateCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
@@ -2055,19 +2065,33 @@ class IronwoodMigrationService {
   prepareKeystoneImmediateMigrationRequest({
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
-  }) => prepareHardwareImmediateMigrationRequest(
+  }) => _prepareHardwareImmediateMigrationRequest(
     accountUuid: accountUuid,
     approvedPlan: approvedPlan,
+    keystoneBatch: true,
+  );
+
+  /// Ledger signs the standard signer view: Keystone's batch view drops the
+  /// `alpha` of preauthorized padding spends, which Ledger needs.
+  Future<rust_sync.KeystoneMigrationSigningRequest>
+  prepareLedgerImmediateMigrationRequest({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) => _prepareHardwareImmediateMigrationRequest(
+    accountUuid: accountUuid,
+    approvedPlan: approvedPlan,
+    keystoneBatch: false,
   );
 
   /// Prepares the single Immediate-migration PCZT for an external signer.
   ///
-  /// The Rust bridge still uses the historical `Keystone*` wire structs, but
-  /// the payload is signer-neutral and is also consumed by Ledger accounts.
+  /// The Rust bridge still uses the historical `Keystone*` wire structs for
+  /// both hardware signers.
   Future<rust_sync.KeystoneMigrationSigningRequest>
-  prepareHardwareImmediateMigrationRequest({
+  _prepareHardwareImmediateMigrationRequest({
     required String accountUuid,
     required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+    required bool keystoneBatch,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -2082,6 +2106,7 @@ class IronwoodMigrationService {
         approvedFeeZatoshi: approvedPlan.feeZatoshi,
         approvedMigratedZatoshi: approvedPlan.migratedZatoshi,
         approvedInputNoteCount: approvedPlan.inputNoteCount,
+        keystoneBatch: keystoneBatch,
       ),
     );
   }
@@ -2820,6 +2845,7 @@ class IronwoodMigrationService {
               'scheduledHeight': item.scheduledHeight,
               'scheduleStartHeight': item.scheduleStartHeight,
               'expiryHeight': item.expiryHeight,
+              'targetHeight': item.targetHeight,
             },
           )
           .toList(growable: false),
@@ -2858,9 +2884,14 @@ class IronwoodMigrationService {
     required Set<String> reconciledTxids,
   }) {
     final observedHeight = run.observedHeight;
+    // Parts the network upgrade holds wait like the desktop's do.
     final hadDueItem =
         observedHeight != null &&
-        batch.items.any((item) => item.scheduledHeight <= observedHeight);
+        batch.items.any(
+          (item) =>
+              item.scheduledHeight <= observedHeight &&
+              !run.heldForUpgradeTxids.contains(item.txidHex.toLowerCase()),
+        );
 
     switch (run.outcome) {
       case IronwoodMigrationOutboxRunOutcome.accepted:
@@ -3337,7 +3368,9 @@ Future<bool> _defaultRecordVerifiedProofReadiness({
 }
 
 bool _isTerminalCredentialCleanupPhase(String phase) =>
-    phase == 'complete' || phase == 'abandoned';
+    phase == 'complete' ||
+    phase == 'abandoned' ||
+    phase == kIronwoodMigrationStoppedByUpgradePhase;
 
 class _MigrationCredentialContext {
   const _MigrationCredentialContext({

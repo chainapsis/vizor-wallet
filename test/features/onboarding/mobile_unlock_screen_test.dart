@@ -53,6 +53,9 @@ class FakeBiometricUnlock extends BiometricUnlock {
   BiometricUnlockErrorKind? readError;
   Completer<BiometricAvailability>? availabilityCompleter;
   Completer<String>? readCompleter;
+  Completer<void>? enableCompleter;
+  BiometricUnlockErrorKind? enableError;
+  var enables = 0;
   var reads = 0;
 
   @override
@@ -63,7 +66,12 @@ class FakeBiometricUnlock extends BiometricUnlock {
   }
 
   @override
-  Future<void> enable(String passcode) async => escrow = passcode;
+  Future<void> enable(String passcode) async {
+    enables += 1;
+    if (enableCompleter != null) await enableCompleter!.future;
+    if (enableError != null) throw BiometricUnlockException(enableError!);
+    escrow = passcode;
+  }
 
   @override
   Future<void> disable() async => escrow = null;
@@ -134,6 +142,20 @@ class _RestoringAccountNotifier extends AccountNotifier {
   Future<void> restoreAfterUnlock() async {}
 }
 
+class _FailingRestoringAccountNotifier extends _RestoringAccountNotifier {
+  @override
+  Future<void> restoreAfterUnlock() async =>
+      throw StateError('recovery failed');
+}
+
+Future<void> _enterPasscode(WidgetTester tester, String passcode) async {
+  for (final digit in passcode.split('')) {
+    await tester.tap(find.bySemanticsLabel('Digit $digit'));
+    await tester.pump();
+  }
+  await tester.pumpAndSettle();
+}
+
 class _UnlockSyncNotifier extends SyncNotifier {
   @override
   Future<SyncState> build() async => SyncState();
@@ -142,7 +164,7 @@ class _UnlockSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterUnlock() async {}
 
   @override
-  Future<void> startSyncAnyway() async {}
+  Future<void> startSyncAnyway({int? latestTipHeight}) async {}
 }
 
 AppBootstrapState _bootstrap({required bool biometricEnabled}) =>
@@ -186,6 +208,8 @@ Widget _app({
 ({Widget app, GoRouter router}) _routedUnlockApp({
   FakeBiometricUnlock? biometric,
   bool autoPromptBiometric = false,
+  bool useRealSecurity = false,
+  AccountNotifier Function()? accountNotifier,
 }) {
   final router = GoRouter(
     initialLocation: '/unlock',
@@ -214,8 +238,19 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(
         _bootstrap(biometricEnabled: biometric != null),
       ),
-      appSecurityProvider.overrideWith(_SuccessfulSecurityNotifier.new),
-      accountProvider.overrideWith(_RestoringAccountNotifier.new),
+      if (useRealSecurity)
+        appSecurityProvider.overrideWith(
+          () => AppSecurityNotifier.testing(
+            store: AppSecureStore.testing(
+              storage: const FlutterSecureStorage(),
+            ),
+          ),
+        )
+      else
+        appSecurityProvider.overrideWith(_SuccessfulSecurityNotifier.new),
+      accountProvider.overrideWith(
+        accountNotifier ?? _RestoringAccountNotifier.new,
+      ),
       syncProvider.overrideWith(_UnlockSyncNotifier.new),
       if (biometric != null)
         biometricUnlockServiceProvider.overrideWithValue(biometric),
@@ -571,6 +606,292 @@ void main() {
       expect(find.text('Payment link destination'), findsOneWidget);
       expect(find.text('Home destination'), findsNothing);
     });
+  });
+
+  group('biometric opt-in', () {
+    setUp(() async {
+      FlutterSecureStorage.setMockInitialValues({});
+      await AppSecureStore.instance.configurePassword('123456');
+      AppSecureStore.instance.clearSessionPassword();
+    });
+
+    tearDown(AppSecureStore.instance.clearSessionPassword);
+
+    for (final kind in [
+      BiometricKind.face,
+      BiometricKind.touchId,
+      BiometricKind.fingerprint,
+    ]) {
+      testWidgets('offers ${kind.inlineLabel} only as an unchecked option', (
+        tester,
+      ) async {
+        final biometric = FakeBiometricUnlock(
+          avail: BiometricAvailability(
+            supported: true,
+            enrolled: true,
+            kind: kind,
+          ),
+        );
+        await tester.pumpWidget(_app(biometric: biometric));
+        await tester.pumpAndSettle();
+
+        final option = find.byType(PasscodeBiometricOptIn);
+        expect(option, findsOneWidget);
+        expect(tester.widget<PasscodeBiometricOptIn>(option).selected, isFalse);
+        expect(find.bySemanticsLabel(kind.useNextTimeLabel), findsOneWidget);
+        expect(find.byType(PasscodeBiometricButton), findsNothing);
+        expect(biometric.enables, 0);
+        expect(biometric.reads, 0);
+      });
+    }
+
+    for (final availability in [
+      BiometricAvailability.unavailable,
+      const BiometricAvailability(
+        supported: true,
+        enrolled: false,
+        kind: BiometricKind.face,
+      ),
+    ]) {
+      testWidgets('hides opt-in when enrollment is ${availability.enrolled}', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _app(biometric: FakeBiometricUnlock(avail: availability)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(PasscodeBiometricOptIn), findsNothing);
+      });
+    }
+
+    testWidgets('does not offer opt-in before availability resolves', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          bootstrap: _bootstrap(biometricEnabled: false),
+          biometricNotifier: _PendingBiometricNotifier.new,
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(PasscodeBiometricOptIn), findsNothing);
+    });
+
+    testWidgets('unchecked unlock does not enable biometrics', (tester) async {
+      final biometric = FakeBiometricUnlock(avail: faceAvailability);
+      final routed = _routedUnlockApp(
+        biometric: biometric,
+        useRealSecurity: true,
+      );
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+      await tester.pumpAndSettle();
+      await _enterPasscode(tester, '123456');
+      expect(routed.router.state.uri.path, '/home');
+      expect(biometric.enables, 0);
+      expect(
+        await AppSecureStore.instance.readPlain(kBiometricUnlockEnabledKey),
+        isNot('true'),
+      );
+    });
+
+    testWidgets('keeps opt-in after a wrong passcode and enables on success', (
+      tester,
+    ) async {
+      final biometric = FakeBiometricUnlock(avail: faceAvailability);
+      final routed = _routedUnlockApp(
+        biometric: biometric,
+        useRealSecurity: true,
+        autoPromptBiometric: true,
+      );
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(PasscodeBiometricOptIn));
+      await tester.pump();
+      expect(biometric.enables, 0);
+
+      await _enterPasscode(tester, '999999');
+      expect(routed.router.state.uri.path, '/unlock');
+      expect(find.text('Incorrect Passcode'), findsOneWidget);
+      expect(
+        tester
+            .widget<PasscodeBiometricOptIn>(find.byType(PasscodeBiometricOptIn))
+            .selected,
+        isTrue,
+      );
+      expect(biometric.enables, 0);
+
+      await _enterPasscode(tester, '123456');
+      expect(routed.router.state.uri.path, '/home');
+      expect(biometric.enables, 1);
+      expect(biometric.escrow, '123456');
+      expect(biometric.reads, 0);
+      expect(
+        await AppSecureStore.instance.readPlain(kBiometricUnlockEnabledKey),
+        'true',
+      );
+
+      // Re-entering unlock uses the durable flag and escrow without a new
+      // opt-in, including the production auto-prompt path.
+      await tester.pumpWidget(const SizedBox.shrink());
+      AppSecureStore.instance.clearSessionPassword();
+      final reopened = _routedUnlockApp(
+        biometric: biometric,
+        useRealSecurity: true,
+        autoPromptBiometric: true,
+      );
+      addTearDown(reopened.router.dispose);
+      await tester.pumpWidget(reopened.app);
+      await _pumpUntilBiometricRead(tester, biometric);
+      await tester.pumpAndSettle();
+      expect(biometric.reads, 1);
+      expect(reopened.router.state.uri.path, '/home');
+    });
+
+    testWidgets('does not enable when wallet recovery fails', (tester) async {
+      final biometric = FakeBiometricUnlock(avail: faceAvailability);
+      final routed = _routedUnlockApp(
+        biometric: biometric,
+        useRealSecurity: true,
+        accountNotifier: _FailingRestoringAccountNotifier.new,
+      );
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(PasscodeBiometricOptIn));
+      await _enterPasscode(tester, '123456');
+      expect(routed.router.state.uri.path, '/unlock');
+      expect(biometric.enables, 0);
+      expect(
+        find.text("Couldn't open your wallet. Please try again."),
+        findsOneWidget,
+      );
+    });
+
+    for (final error in [
+      BiometricUnlockErrorKind.cancelled,
+      BiometricUnlockErrorKind.failed,
+      BiometricUnlockErrorKind.unavailable,
+    ]) {
+      testWidgets('$error during enable preserves the Gift Card destination', (
+        tester,
+      ) async {
+        final biometric = FakeBiometricUnlock(avail: faceAvailability)
+          ..enableError = error;
+        final routed = _routedUnlockApp(
+          biometric: biometric,
+          useRealSecurity: true,
+        );
+        addTearDown(routed.router.dispose);
+        await tester.pumpWidget(routed.app);
+        await tester.pumpAndSettle();
+        _queuePendingPaymentLink(tester);
+        await tester.tap(find.byType(PasscodeBiometricOptIn));
+        await _enterPasscode(tester, '123456');
+        expect(routed.router.state.uri.path, '/payment-links');
+        expect(biometric.enables, 1);
+        expect(biometric.escrow, isNull);
+        expect(
+          await AppSecureStore.instance.readPlain(kBiometricUnlockEnabledKey),
+          isNot('true'),
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('waits for enable without accepting another input or prompt', (
+      tester,
+    ) async {
+      final biometric = FakeBiometricUnlock(avail: faceAvailability)
+        ..enableCompleter = Completer<void>();
+      final routed = _routedUnlockApp(
+        biometric: biometric,
+        useRealSecurity: true,
+        autoPromptBiometric: true,
+      );
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+      await tester.pumpAndSettle();
+      _queuePendingPaymentLink(tester);
+      await tester.tap(find.byType(PasscodeBiometricOptIn));
+      await _enterPasscode(tester, '123456');
+      expect(biometric.enables, 1);
+      expect(routed.router.state.uri.path, '/unlock');
+      expect(
+        tester
+            .widget<PasscodeBiometricOptIn>(find.byType(PasscodeBiometricOptIn))
+            .onChanged,
+        isNull,
+      );
+      expect(
+        tester.widget<PasscodeNumpad>(find.byType(PasscodeNumpad)).enabled,
+        isFalse,
+      );
+      expect(biometric.reads, 0);
+      biometric.enableCompleter!.complete();
+      await tester.pumpAndSettle();
+      expect(routed.router.state.uri.path, '/payment-links');
+      expect(biometric.reads, 0);
+    });
+
+    testWidgets('a session locked during enable stays on unlock', (
+      tester,
+    ) async {
+      final biometric = FakeBiometricUnlock(avail: faceAvailability)
+        ..enableCompleter = Completer<void>();
+      final routed = _routedUnlockApp(
+        biometric: biometric,
+        useRealSecurity: true,
+      );
+      addTearDown(routed.router.dispose);
+      await tester.pumpWidget(routed.app);
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MobileUnlockScreen)),
+      );
+      await tester.tap(find.byType(PasscodeBiometricOptIn));
+      await _enterPasscode(tester, '123456');
+      container.read(appSecurityProvider.notifier).lock();
+      biometric.enableCompleter!.complete();
+      await tester.pumpAndSettle();
+      expect(routed.router.state.uri.path, '/unlock');
+      expect(container.read(appSecurityProvider).isUnlocked, isFalse);
+      expect(
+        tester.widget<PasscodeNumpad>(find.byType(PasscodeNumpad)).enabled,
+        isTrue,
+      );
+    });
+
+    testWidgets(
+      'small screen keeps a three-column keypad and scrollable opt-in',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 568);
+        addTearDown(tester.view.resetPhysicalSize);
+        await tester.pumpWidget(
+          _app(biometric: FakeBiometricUnlock(avail: fingerprintAvailability)),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getTopLeft(find.bySemanticsLabel('Digit 1')).dy,
+          tester.getTopLeft(find.bySemanticsLabel('Digit 3')).dy,
+        );
+        await tester.ensureVisible(find.byType(PasscodeBiometricOptIn));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(PasscodeBiometricOptIn));
+        await tester.pump();
+        expect(
+          tester
+              .widget<PasscodeBiometricOptIn>(
+                find.byType(PasscodeBiometricOptIn),
+              )
+              .selected,
+          isTrue,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 
   group('haptics', () {

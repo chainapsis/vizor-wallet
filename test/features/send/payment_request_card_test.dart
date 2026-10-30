@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart';
 
 const _address =
@@ -9,6 +10,110 @@ const _address =
     '73d57f73c6dc05121591a83861cd190591';
 
 void main() {
+  group('external link warning', () {
+    PaymentRequestView external(PaymentRequestSource source) =>
+        PaymentRequestView(
+          source: source,
+          address: _address,
+          amountZecText: '0.5 ZEC',
+        );
+
+    testWidgets('an incoming link offers to scan the original QR', (
+      tester,
+    ) async {
+      await _pump(tester, external(PaymentRequestSource.link));
+
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsOneWidget,
+      );
+      expect(find.text('Scan original QR'), findsOneWidget);
+      expect(
+        find.text('Scan the original QR code directly in Vizor.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a pasted link is reviewed instead', (tester) async {
+      await _pump(tester, external(PaymentRequestSource.pastedLink));
+
+      expect(
+        find.byKey(const ValueKey('external_request_warning')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('payment_request_scan')), findsNothing);
+      expect(
+        find.text('Confirm the details with the person who sent it.'),
+        findsOneWidget,
+      );
+      final review = tester.widget<AppButton>(
+        find.byKey(const ValueKey('payment_request_link_details')),
+      );
+      expect(review.variant, AppButtonVariant.primary);
+    });
+  });
+
+  group('original QR check', () {
+    PaymentRequestView scanned(
+      Set<PaymentRequestLinkDifference>? differences,
+    ) => PaymentRequestView(
+      source: PaymentRequestSource.qrCode,
+      address: _address,
+      amountZecText: '0.5 ZEC',
+      linkDifferences: differences,
+    );
+
+    testWidgets('a matching QR says so', (tester) async {
+      await _pump(tester, scanned(const {}));
+
+      expect(find.text('Matches the link'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('payment_request_link_mismatch')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a different QR names what the link changed', (tester) async {
+      await _pump(
+        tester,
+        scanned(const {PaymentRequestLinkDifference.address}),
+      );
+
+      expect(find.text('The link had a different address'), findsOneWidget);
+      expect(
+        find.text('Using the QR instead — the link may have been changed.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('several differences read as different details', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        scanned(const {
+          PaymentRequestLinkDifference.amount,
+          PaymentRequestLinkDifference.memo,
+        }),
+      );
+
+      expect(find.text('The link had different details'), findsOneWidget);
+    });
+
+    testWidgets('a card that checked no link shows neither', (tester) async {
+      await _pump(tester, scanned(null));
+
+      expect(
+        find.byKey(const ValueKey('payment_request_link_match')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('payment_request_link_mismatch')),
+        findsNothing,
+      );
+    });
+  });
+
   group('transaction memo row', () {
     testWidgets('renders a padded memo exactly as the payment carries it', (
       tester,
@@ -87,7 +192,7 @@ void main() {
 }
 
 PaymentRequestView _view({String? memo}) => PaymentRequestView(
-  source: PaymentRequestSource.link,
+  source: PaymentRequestSource.qrCode,
   address: _address,
   amountZecText: '0.5 ZEC',
   memo: memo,
@@ -96,7 +201,7 @@ PaymentRequestView _view({String? memo}) => PaymentRequestView(
 Future<void> _pump(
   WidgetTester tester,
   PaymentRequestView request, {
-  bool initialMessageExpanded = false,
+  bool initialMessageExpanded = true,
 }) async {
   tester.view.physicalSize = const Size(1080, 1200);
   tester.view.devicePixelRatio = 1.0;

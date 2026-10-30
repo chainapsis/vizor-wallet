@@ -11,6 +11,8 @@ import 'package:zcash_wallet/src/features/settings/screens/mobile/mobile_endpoin
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_latency_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/wallet.dart'
+    show LightwalletdEndpointProbe;
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -44,7 +46,10 @@ Widget _app() {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
-      rpcEndpointChainNameGetterProvider.overrideWithValue((_) async => 'main'),
+      rpcEndpointProbeGetterProvider.overrideWithValue(
+        (_) async =>
+            const LightwalletdEndpointProbe(chainName: 'main', latencyMs: 123),
+      ),
     ],
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),

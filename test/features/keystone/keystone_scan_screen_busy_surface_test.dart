@@ -14,7 +14,7 @@ import '../../support/payment_uri_busy_surface_expectations.dart';
 
 /// Both desktop scan screens point a camera at a QR the Keystone is holding on
 /// its own screen. A payment-request card over that is exactly the
-/// interruption `paymentUriBusySurfaceProvider` exists to park.
+/// interruption `externalActionGuardProvider` exists to park.
 void main() {
   testWidgets('the send scan screen holds the payment-URI busy latch', (
     tester,

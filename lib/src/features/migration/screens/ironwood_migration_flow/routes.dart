@@ -20,11 +20,6 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activeAccount = ref.watch(accountProvider).value?.activeAccount;
-    if ((activeAccount?.isLedger ?? false) &&
-        !ledgerAutomaticOrchardMigrationCapability.supported) {
-      return const _RedirectTo('/home');
-    }
     final data =
         previewData ??
         ref.watch(ironwoodMigrationFlowDataProvider) ??
@@ -45,18 +40,15 @@ class IronwoodMigrationEntryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final inputs = ref.watch(ironwoodMigrationInputsProvider);
-    if (!inputs.automaticOrchardMigrationCapability.supported) {
-      return const _RedirectTo('/home');
-    }
     final presentationCta = ref.watch(
       ironwoodHomeMigrationPresentationProvider,
     );
     final routeCta = ref.watch(ironwoodMigrationRouteCtaProvider).asData?.value;
-    final cta = presentationCta.mode == IronwoodHomeMigrationCtaMode.resume
-        ? presentationCta
-        : routeCta;
-    final target = cta?.mode == IronwoodHomeMigrationCtaMode.resume
+    bool showsStatus(IronwoodHomeMigrationCtaState? cta) =>
+        cta?.mode == IronwoodHomeMigrationCtaMode.resume ||
+        cta?.mode == IronwoodHomeMigrationCtaMode.stopped;
+    final cta = showsStatus(presentationCta) ? presentationCta : routeCta;
+    final target = showsStatus(cta)
         ? '/migration/private/status'
         : '/migration/prepare';
     return _RedirectTo(target);
@@ -90,12 +82,6 @@ class _IronwoodMigrationPrepareScreenState
   @override
   Widget build(BuildContext context) {
     final inputs = ref.watch(ironwoodMigrationInputsProvider);
-    if (!inputs.automaticOrchardMigrationCapability.supported) {
-      _go('/home', toast: inputs.automaticOrchardMigrationCapability.reason);
-      return const _IronwoodMigrationLoadingShell(
-        step: IronwoodMigrationFlowStep.prepare,
-      );
-    }
     final request = inputs.statusRequest;
     if (!inputs.ironwoodActiveAtTip || request == null) {
       _go('/home', toast: 'Migration is not available for this account.');

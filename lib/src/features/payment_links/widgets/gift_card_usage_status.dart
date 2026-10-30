@@ -64,6 +64,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
     this.inline = false,
     this.dateText,
     this.hideStableLabel = false,
+    this.savedUsage = const GiftCardUsage(),
     super.key,
   });
   final String address;
@@ -76,11 +77,12 @@ class GiftCardUsageStatusView extends ConsumerWidget {
   /// Hides status text already expressed by a surrounding grouped section.
   /// Transient checking and failure labels remain visible.
   final bool hideStableLabel;
+  final GiftCardUsage savedUsage;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final usage =
-        ref.watch(giftCardUsageProvider(address)).value ??
-        const GiftCardUsage();
+    final usage = savedUsage.withLatestObservation(
+      ref.watch(giftCardUsageProvider(address)).value,
+    );
     final state = ref.watch(giftCardTrackingStateProvider);
     final checking = !usage.cleaned && state.checking;
     final failed = !usage.cleaned && !checking && state.failedFor(address);

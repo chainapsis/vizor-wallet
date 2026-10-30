@@ -36,7 +36,10 @@ import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
+import 'wallet_balance_cache_provider.dart';
 import 'app_security_provider.dart';
+import 'enhance_pir_provider.dart';
+import 'public_details_loads_provider.dart';
 import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
@@ -569,12 +572,25 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
       final uuid = matchingAccount?.uuid;
       if (matchingAccount != null) {
-        _publishCreatedGiftAccount(
-          matchingAccount.uuid,
-          matchingAccount.unifiedAddress,
-          accountName,
-          giftProfilePictureId,
-        );
+        try {
+          final address = await rust_wallet.getUnifiedAddress(
+            dbPath: dbPath,
+            network: network,
+            accountUuid: matchingAccount.uuid,
+          );
+          _publishCreatedGiftAccount(
+            matchingAccount.uuid,
+            address,
+            accountName,
+            giftProfilePictureId,
+          );
+        } catch (addressError) {
+          // The account already exists. Preserve its journal and the original
+          // created-account outcome so the caller cannot retry as a new import.
+          log(
+            'createGiftClaimAccount: recovery address unavailable: $addressError',
+          );
+        }
       }
       log('createGiftClaimAccount: account state unknown after: $error');
       Error.throwWithStackTrace(
@@ -1320,6 +1336,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required int accountIndex,
   }) async {
     try {
+      final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
@@ -1327,12 +1344,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? endpoint.networkName
           : await _getNetwork();
 
+      // An existing wallet's durable transparent policy gates the preview.
       return await rust_wallet.previewSoftwareAccountTransparentBalance(
         mnemonic: mnemonic,
         bip39Passphrase: bip39Passphrase,
         network: network,
+        dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         zip32AccountIndex: accountIndex,
+        isFirstWalletAccount: isFirstWalletAccount,
       );
     } catch (e, st) {
       log('previewSoftwareAccountTransparentBalance: ERROR: $e\n$st');
@@ -1644,8 +1664,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
+    final publicLoads = ref.read(publicDetailsLoadsProvider);
+    final balanceCache = ref.read(walletBalanceCacheProvider);
+    final cacheDrained = balanceCache.suspendAndDrain();
     try {
+      await cacheDrained;
       await ledgerLifecycle.quiesceAndDrain();
+      await publicLoads.quiesceAndDrain();
       _storage.invalidatePendingSecretOperations();
       // Gift Card claims first, and before the in-flight count below: that
       // count is a one-shot read, and a claim that enters `submitting` right
@@ -1663,7 +1688,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       ], confirmedUnsharedGiftCardCount);
       await _removeAccountWithShareTrackingStopped(uuid);
     } finally {
+      balanceCache.resume();
       ledgerLifecycle.resume();
+      publicLoads.resume();
       claimLifecycle.resume();
       giftTracking.resume();
       shareTracking.resume(accountUuid: uuid);
@@ -1868,11 +1895,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final giftTracking = ref.read(giftCardTrackingLifecycleProvider);
     final shareTracking = ref.read(votingShareTrackingRegistryProvider);
     final ledgerLifecycle = ref.read(ledgerOperationLifecycleProvider);
+    final publicLoads = ref.read(publicDetailsLoadsProvider);
+    final balanceCache = ref.read(walletBalanceCacheProvider);
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
     var resetCompleted = false;
+    final cacheDrained = balanceCache.suspendAndDrain();
     try {
+      await cacheDrained;
       await ledgerLifecycle.quiesceAndDrain();
+      await publicLoads.quiesceAndDrain();
       _storage.invalidatePendingSecretOperations();
       await giftTracking.quiesceAndDrain();
       await claimLifecycle.quiesceAndDrain();
@@ -1889,7 +1921,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       resumeClaimLifecycle = restoreAfterFailure;
       rethrow;
     } finally {
+      balanceCache.resume();
       ledgerLifecycle.resume();
+      publicLoads.resume();
       if (resumeClaimLifecycle) claimLifecycle.resume();
       // Release only after all destructive work has finished. New onboarding
       // reuses this registry; stale registrations re-read the now-empty store.
@@ -2043,6 +2077,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         recordError('gift-card observer db cleanup', e, st);
       }
       try {
+        // The wallet's own companions went with it. No wallet is current
+        // now, so any left by an earlier one go too.
+        await deleteOrphanCompanionDirectories(null);
+      } catch (e, st) {
+        recordError('transparent recovery companion cleanup', e, st);
+      }
+      try {
         ref.read(votingHomeCacheProvider.notifier).clearForReset();
         await clearVotingCachesForReset();
       } catch (e, st) {
@@ -2054,9 +2095,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       } catch (e, st) {
         recordError('secure storage wipe', e, st);
       }
-      // Private queries are install-scoped and are deliberately NOT
-      // cleared here: it lives outside the secure-store bucket the wipe above
-      // destroyed, so the next wallet starts on the route the user chose. The
+      // The saved Private queries choice is install-scoped and survives this
+      // wipe. After the reset succeeds, its runtime is reapplied below and the
+      // deleted wallet's pending transition is cleared. The
       // Tor route preference below is the opposite case — it is removed as
       // anti-forensics, because it is durable evidence of Tor use.
       final privacyRuntime = ref.read(networkPrivacyRuntimeProvider);
@@ -2080,6 +2121,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       Error.throwWithStackTrace(
         WalletResetException(cause: error, dbDeleted: dbDeleted),
         firstStackTrace ?? StackTrace.current,
+      );
+    }
+    try {
+      await ref.read(enhancePirProvider.notifier).restoreAfterWalletReset();
+    } catch (e, st) {
+      // The database is gone, but onboarding must wait until the old wallet's
+      // runtime policy is replaced by the saved choice. A retry can finish it.
+      Error.throwWithStackTrace(
+        WalletResetException(cause: e, dbDeleted: dbDeleted),
+        st,
       );
     }
     // Clear the account state BEFORE flipping security back to locked: the
@@ -2339,7 +2390,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ),
       );
       if (firstWalletDbPath != null) await _clearPendingAccountSetup();
-      log('importKeystoneAccount: uuid=$accountUuid, address=$address');
+      log('importKeystoneAccount: uuid=$accountUuid');
     } catch (e, st) {
       if (firstWalletDbPath != null) {
         await _preservePartialFirstWalletSetup(
@@ -2486,7 +2537,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ),
       );
       if (firstWalletDbPath != null) await _clearPendingAccountSetup();
-      log('importLedgerAccount: uuid=$accountUuid, address=$address');
+      log('importLedgerAccount: uuid=$accountUuid');
     } catch (e, st) {
       if (firstWalletDbPath != null) {
         await _preservePartialFirstWalletSetup(
@@ -2877,7 +2928,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return normalizedNetwork;
   }
 
+  /// Deletes the wallet database at [dbPath] and everything kept beside it.
+  /// Directories go first: when one cannot be deleted the database is still
+  /// intact, so the caller keeps its stored name and a retry finds it.
   Future<void> _deleteExistingDb(String dbPath) async {
+    // Activity caches keep a read connection between pages. Close it before
+    // deleting the database, including on platforms that disallow unlinking
+    // an open SQLite file.
+    if (File(dbPath).existsSync()) {
+      await rust_wallet.evictWalletSummaryCache(dbPath: dbPath);
+    }
+    for (final path in walletDbCleanupDirectories(dbPath)) {
+      final directory = Directory(path);
+      if (directory.existsSync()) {
+        directory.deleteSync(recursive: true);
+      }
+    }
     for (final path in walletDbCleanupPaths(dbPath)) {
       final file = File(path);
       if (file.existsSync()) {
@@ -3007,6 +3073,13 @@ Future<void> clearTorPrivacyStateForReset({
     log('resetWallet: tor route preference cleanup failed: $e\n$st');
   }
 }
+
+/// Directories kept beside the wallet database at [dbPath], deleted with it:
+/// private transparent recovery's companions.
+@visibleForTesting
+List<String> walletDbCleanupDirectories(String dbPath) => [
+  transparentRecoveryCompanionDirectory(dbPath),
+];
 
 @visibleForTesting
 List<String> walletDbCleanupPaths(String dbPath) {

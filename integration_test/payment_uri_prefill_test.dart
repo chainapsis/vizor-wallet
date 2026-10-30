@@ -59,6 +59,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
+    // A link opens on a warning; the requested terms are behind its details.
+    await tester.tap(
+      find.byKey(const ValueKey('payment_request_link_details')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
     expect(
       find.byKey(const ValueKey('payment_request_continue')),
       findsOneWidget,

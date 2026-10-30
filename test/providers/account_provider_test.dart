@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/core/storage/enhance_pir_preference_store.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/linux_keyring_coordinator.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
@@ -35,7 +36,10 @@ void main() {
 
   setUpAll(() => RustLib.initMock(api: _rustApi));
   tearDownAll(RustLib.dispose);
-  setUp(_rustApi.reset);
+  setUp(() {
+    _rustApi.reset();
+    SharedPreferences.setMockInitialValues({});
+  });
 
   for (final reset in [false, true]) {
     test(
@@ -130,7 +134,7 @@ void main() {
       for (final change in changes) {
         await expectLater(
           change(),
-          throwsA(isA<LinuxWalletMutationBusyException>()),
+          throwsA(isA<WalletMutationBusyException>()),
         );
       }
       expect(
@@ -281,6 +285,118 @@ void main() {
       '.receive.redb',
     ]);
   });
+
+  test('wallet db cleanup directories hold the recovery companions', () {
+    expect(walletDbCleanupDirectories('/tmp/zcash_wallet.db'), [
+      '/tmp/zcash_wallet.db.tpir',
+    ]);
+  });
+
+  test(
+    'the orphan sweep deletes only non-current companion directories',
+    () async {
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-companion-sweep',
+      );
+      addTearDown(() => supportDirectory.deleteSync(recursive: true));
+      String at(String name) =>
+          '${supportDirectory.path}${Platform.pathSeparator}$name';
+      final current = Directory(at('zcash_wallet_a.db.tpir'))..createSync();
+      final orphan = Directory(at('zcash_wallet_b.db.tpir'))..createSync();
+      File(
+        '${orphan.path}${Platform.pathSeparator}account.sqlite',
+      ).writeAsStringSync('companion');
+      final notADirectory = File(at('zcash_wallet_c.db.tpir'))
+        ..writeAsStringSync('');
+      final unrelated = Directory(at('tor'))..createSync();
+
+      await deleteOrphanCompanionDirectories(
+        at('zcash_wallet_a.db'),
+        resolveSupportDirectory: () async => supportDirectory,
+      );
+      expect(current.existsSync(), isTrue);
+      expect(orphan.existsSync(), isFalse);
+      expect(notADirectory.existsSync(), isTrue);
+      expect(unrelated.existsSync(), isTrue);
+
+      // With no current wallet, every companion directory is an orphan.
+      await deleteOrphanCompanionDirectories(
+        null,
+        resolveSupportDirectory: () async => supportDirectory,
+      );
+      expect(current.existsSync(), isFalse);
+      expect(unrelated.existsSync(), isTrue);
+    },
+  );
+
+  test(
+    'a reset with undeletable companions keeps the wallet and its name',
+    () async {
+      const dbName = 'zcash_wallet_companions.db';
+      FlutterSecureStorage.setMockInitialValues({kWalletDbNameKey: dbName});
+      final supportDirectory = Directory.systemTemp.createTempSync(
+        'vizor-companion-reset',
+      );
+      String at(String name) =>
+          '${supportDirectory.path}${Platform.pathSeparator}$name';
+      final database = File(at(dbName))..writeAsStringSync('wallet');
+      final companions = Directory(at('$dbName.tpir'))..createSync();
+      File(
+        '${companions.path}${Platform.pathSeparator}account.sqlite',
+      ).writeAsStringSync('companion');
+      final orphan = Directory(at('zcash_wallet_old.db.tpir'))..createSync();
+      // Without write permission its entries cannot be deleted.
+      expect(Process.runSync('chmod', ['500', companions.path]).exitCode, 0);
+      addTearDown(() {
+        Process.runSync('chmod', ['700', companions.path]);
+        supportDirectory.deleteSync(recursive: true);
+      });
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (call) async {
+            if (call.method == 'getApplicationSupportDirectory') {
+              return supportDirectory.path;
+            }
+            throw MissingPluginException('Unexpected path provider call.');
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, null);
+      });
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrapWithAccounts()),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container.read(accountProvider.notifier).resetWallet(),
+        throwsA(
+          isA<WalletResetException>().having(
+            (error) => error.dbDeleted,
+            'dbDeleted',
+            isFalse,
+          ),
+        ),
+      );
+      // Companions go before the database, so the wallet is intact and its
+      // stored name still finds it.
+      expect(database.existsSync(), isTrue);
+      expect(_rustApi.evictionFilePresent, [true]);
+      expect(await AppSecureStore.instance.readPlain(kWalletDbNameKey), dbName);
+
+      // Once they can be deleted, a retry removes the wallet, its companions
+      // and any left by an earlier wallet.
+      Process.runSync('chmod', ['700', companions.path]);
+      await container.read(accountProvider.notifier).resetWallet();
+      expect(database.existsSync(), isFalse);
+      expect(_rustApi.evictionFilePresent, [true, true, false]);
+      expect(companions.existsSync(), isFalse);
+      expect(orphan.existsSync(), isFalse);
+    },
+  );
 
   test(
     'wallet reset cleanup removes only payment-link claim directories',
@@ -526,47 +642,91 @@ void main() {
     );
   });
 
-  test('wallet reset keeps the install-scoped private recovery setting', () async {
-    FlutterSecureStorage.setMockInitialValues({});
-    final supportDirectory = Directory.systemTemp.createTempSync(
-      'vizor-enhance-pir-reset',
-    );
-    addTearDown(() {
-      if (supportDirectory.existsSync()) {
-        supportDirectory.deleteSync(recursive: true);
-      }
-    });
-    const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(pathProvider, (call) async {
-          if (call.method == 'getApplicationSupportDirectory') {
-            return supportDirectory.path;
-          }
-          throw MissingPluginException('Unexpected path provider call.');
+  for (final (saved, failClear) in [
+    (false, false),
+    (true, false),
+    (false, true),
+  ]) {
+    test(
+      'wallet reset reapplies saved private queries ($saved), retrying marker failure ($failClear)',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          kEnhancePirEnabledPreferenceKey: saved,
+          kTransparentOptOutPendingKey: true,
         });
-    addTearDown(() {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(pathProvider, null);
-    });
+        final native = <bool>[];
+        final optOut = _ResetOptOutStore()..failClear = failClear;
+        FlutterSecureStorage.setMockInitialValues({});
+        final supportDirectory = Directory.systemTemp.createTempSync(
+          'vizor-enhance-pir-reset',
+        );
+        addTearDown(() {
+          if (supportDirectory.existsSync()) {
+            supportDirectory.deleteSync(recursive: true);
+          }
+        });
+        const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProvider, (call) async {
+              if (call.method == 'getApplicationSupportDirectory') {
+                return supportDirectory.path;
+              }
+              throw MissingPluginException('Unexpected path provider call.');
+            });
+        addTearDown(() {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(pathProvider, null);
+        });
 
-    final container = ProviderContainer(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(
-          _bootstrapWithAccounts(enhancePirEnabled: true),
-        ),
-      ],
+        final container = ProviderContainer(
+          overrides: [
+            transparentOptOutStoreProvider.overrideWithValue(optOut),
+            enhancePirBackgroundSinkProvider.overrideWithValue((enabled) async {
+              native.add(enabled);
+            }),
+            transparentPolicyStartupProvider.overrideWithValue(
+              const TransparentPolicyStartup(optOutPending: true),
+            ),
+            appBootstrapProvider.overrideWithValue(
+              _bootstrapWithAccounts(enhancePirEnabled: true),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        expect(container.read(enhancePirProvider), isTrue);
+        if (failClear) {
+          await expectLater(
+            container.read(accountProvider.notifier).resetWallet(),
+            throwsA(
+              isA<WalletResetException>().having(
+                (error) => error.dbDeleted,
+                'deleted database',
+                isTrue,
+              ),
+            ),
+          );
+          expect(container.read(accountProvider).value!.accounts, isNotEmpty);
+          expect(_rustApi.enhancePirEnabledValues, isEmpty);
+          expect(native, isEmpty);
+          expect(container.read(enhancePirProvider), isTrue);
+          optOut.failClear = false;
+        }
+        await container.read(accountProvider.notifier).resetWallet();
+
+        // The saved choice survives; the pending transition belonged to the
+        // deleted wallet and must not change a replacement wallet's policy.
+        expect(container.read(enhancePirProvider), saved);
+        expect(_rustApi.enhancePirEnabledValues, [saved]);
+        expect(native, [saved]);
+        expect(container.read(transparentOptOutPendingProvider), isFalse);
+        final preferences = await SharedPreferences.getInstance();
+        expect(preferences.getBool(kEnhancePirEnabledPreferenceKey), saved);
+        expect(preferences.getBool(kTransparentOptOutPendingKey), isNull);
+      },
     );
-    addTearDown(container.dispose);
-    await container.read(accountProvider.future);
-
-    expect(container.read(enhancePirProvider), isTrue);
-    await container.read(accountProvider.notifier).resetWallet();
-
-    // The preference lives outside the wiped secure-store bucket, so neither
-    // the published state nor the Rust route is touched by the reset.
-    expect(container.read(enhancePirProvider), isTrue);
-    expect(_rustApi.enhancePirEnabledValues, isEmpty);
-  });
+  }
 
   test('private recovery ignores stale enabled state off mainnet', () {
     final container = ProviderContainer(
@@ -1527,6 +1687,7 @@ class _SwitchTestSecurityNotifier extends AppSecurityNotifier {
 }
 
 class _AccountMutationRustApiFake implements RustLibApi {
+  final evictionFilePresent = <bool>[];
   final deletedAccountUuids = <String>[];
   final requestedAccounts = <String>[];
   final enhancePirEnabledValues = <bool>[];
@@ -1534,11 +1695,19 @@ class _AccountMutationRustApiFake implements RustLibApi {
   Completer<String>? lookupGate;
 
   void reset() {
+    evictionFilePresent.clear();
     deletedAccountUuids.clear();
     requestedAccounts.clear();
     enhancePirEnabledValues.clear();
     lookupStarted = Completer<void>();
     lookupGate = null;
+  }
+
+  @override
+  Future<void> crateApiWalletEvictWalletSummaryCache({
+    required String dbPath,
+  }) async {
+    evictionFilePresent.add(File(dbPath).existsSync());
   }
 
   @override
@@ -1556,6 +1725,11 @@ class _AccountMutationRustApiFake implements RustLibApi {
   void crateApiSyncSetEnhancePirEnabled({required bool enabled}) {
     enhancePirEnabledValues.add(enabled);
   }
+
+  @override
+  void crateApiSyncSetEnhancePirPreferenceConfirmed({
+    required bool confirmed,
+  }) {}
 
   @override
   Future<void> crateApiWalletDeleteAccount({
@@ -1779,4 +1953,16 @@ void _mockAccountRemovalPlatform() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(pathProvider, null);
   });
+}
+
+class _ResetOptOutStore implements TransparentOptOutStore {
+  bool failClear = false;
+  final _store = const SharedPreferencesTransparentOptOutStore();
+  @override
+  Future<bool> readPending() => _store.readPending();
+  @override
+  Future<void> writePending(bool pending) async {
+    if (!pending && failClear) throw StateError('marker clear failed');
+    await _store.writePending(pending);
+  }
 }

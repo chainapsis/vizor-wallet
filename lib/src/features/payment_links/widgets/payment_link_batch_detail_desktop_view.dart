@@ -236,25 +236,15 @@ class PaymentLinkBatchDetailDesktopView extends StatelessWidget {
             color: colors.text.accent,
           ),
         ),
-        if (ready) _UsageActivityLine(activity: usageActivity),
+        _UsageActivityLine(activity: usageActivity),
       ],
     );
-    // Cards cannot be shared until the payment is settled.
-    if (!ready) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(padding: inset, child: heading),
-          const SizedBox(height: AppSpacing.sm),
-          Padding(
-            padding: inset,
-            child: _PendingLine(kind: pendingKind),
-          ),
-        ],
-      );
-    }
     final rows = <Widget>[
+      if (!ready)
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: _PendingLine(kind: pendingKind),
+        ),
       for (final (index, section)
           in sections.where((section) => section.cards.isNotEmpty).indexed) ...[
         Semantics(

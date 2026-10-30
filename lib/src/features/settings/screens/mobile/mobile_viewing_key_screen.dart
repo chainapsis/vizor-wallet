@@ -1,3 +1,4 @@
+import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
@@ -12,10 +13,10 @@ import '../../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/biometric_icon.dart';
+import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
-import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/app_security_provider.dart';
 import '../../../../providers/biometric_unlock_provider.dart';
@@ -25,7 +26,8 @@ import '../../../../services/biometric_unlock.dart';
 import '../../../onboarding/mobile/mobile_passcode_screen.dart'
     show kMobilePasscodeLength;
 import '../../../onboarding/mobile/passcode_widgets.dart';
-import '../../viewing_key_copy.dart';
+import '../../../onboarding/mobile/adaptive_passcode_layout.dart';
+import '../../widgets/viewing_key_content.dart';
 
 enum _ViewingKeyStage { confirmAccess, reveal }
 
@@ -38,7 +40,7 @@ class MobileViewingKeyScreen extends ConsumerStatefulWidget {
   const MobileViewingKeyScreen({
     this.accountUuid,
     this.privacyOverlayController,
-    this.ufvkLoader,
+    this.viewingKeysLoader,
     super.key,
   });
 
@@ -47,9 +49,10 @@ class MobileViewingKeyScreen extends ConsumerStatefulWidget {
   @visibleForTesting
   final SensitivePrivacyOverlayController? privacyOverlayController;
 
-  /// Test seam — production calls `rust_wallet.getAccountUfvk` directly.
+  /// Test seam — production calls `rust_wallet.getAccountViewingKeys` directly.
   @visibleForTesting
-  final Future<String> Function(String accountUuid)? ufvkLoader;
+  final Future<rust_wallet.AccountViewingKeys> Function(String accountUuid)?
+  viewingKeysLoader;
 
   @override
   ConsumerState<MobileViewingKeyScreen> createState() =>
@@ -60,10 +63,28 @@ class MobileViewingKeyScreen extends ConsumerStatefulWidget {
 ///
 /// Keeping this separate from [MobileViewingKeyScreen] ensures production
 /// navigation cannot bypass the passcode or biometric confirmation gate.
-class MobileViewingKeyRevealPreview extends StatelessWidget {
-  const MobileViewingKeyRevealPreview({required this.ufvk, super.key});
+class MobileViewingKeyRevealPreview extends StatefulWidget {
+  const MobileViewingKeyRevealPreview({
+    required this.viewingKeys,
+    required this.account,
+    this.initialType = ViewingKeyType.full,
+    this.initialFormat = ViewingKeyFormat.qr,
+    super.key,
+  });
 
-  final String ufvk;
+  final rust_wallet.AccountViewingKeys viewingKeys;
+  final AccountInfo account;
+  final ViewingKeyType? initialType;
+  final ViewingKeyFormat initialFormat;
+
+  @override
+  State<MobileViewingKeyRevealPreview> createState() =>
+      _MobileViewingKeyRevealPreviewState();
+}
+
+class _MobileViewingKeyRevealPreviewState
+    extends State<MobileViewingKeyRevealPreview> {
+  late ViewingKeyType? _selectedType = widget.initialType;
 
   @override
   Widget build(BuildContext context) {
@@ -73,11 +94,19 @@ class MobileViewingKeyRevealPreview extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            MobileTopNav.back(title: 'Viewing Key', onBack: () {}),
+            _ViewingKeyMobileHeader(
+              title: _selectedType?.title ?? 'Viewing key',
+              onBack: () => setState(() => _selectedType = null),
+            ),
             Expanded(
               child: _MobileViewingKeyRevealView(
-                ufvk: ufvk,
-                onCopyUfvk: _noopPreviewCopy,
+                viewingKeys: widget.viewingKeys,
+                initialType: _selectedType,
+                onSelectType: (type) => setState(() => _selectedType = type),
+                initialFormat: widget.initialFormat,
+                account: widget.account,
+                onRetry: () {},
+                onCopy: _noopPreviewCopy,
               ),
             ),
           ],
@@ -87,7 +116,7 @@ class MobileViewingKeyRevealPreview extends StatelessWidget {
   }
 }
 
-Future<void> _noopPreviewCopy() async {}
+Future<void> _noopPreviewCopy(String value) async {}
 
 class _MobileViewingKeyScreenState
     extends ConsumerState<MobileViewingKeyScreen> {
@@ -97,8 +126,9 @@ class _MobileViewingKeyScreenState
   String? _gateError;
   int _accessCheckGeneration = 0;
 
-  String? _ufvk;
+  rust_wallet.AccountViewingKeys? _viewingKeys;
   String? _revealError;
+  ViewingKeyType? _selectedType;
 
   late final bool _ownsPrivacyController;
   late final SensitivePrivacyOverlayController _privacyController;
@@ -118,7 +148,7 @@ class _MobileViewingKeyScreenState
   @override
   void dispose() {
     if (_ownsPrivacyController) _privacyController.dispose();
-    _ufvk = null;
+    _viewingKeys = null;
     super.dispose();
   }
 
@@ -248,7 +278,7 @@ class _MobileViewingKeyScreenState
     _accessCheckGeneration += 1;
     if (_stage == _ViewingKeyStage.confirmAccess &&
         !_checking &&
-        _ufvk == null) {
+        _viewingKeys == null) {
       return;
     }
     _showTargetAccountChangedError();
@@ -257,10 +287,11 @@ class _MobileViewingKeyScreenState
   void _showTargetAccountChangedError() {
     setState(() {
       _stage = _ViewingKeyStage.confirmAccess;
+      _selectedType = null;
       _entry = '';
       _checking = false;
       _gateError = 'Selected account changed. Enter your passcode again.';
-      _ufvk = null;
+      _viewingKeys = null;
       _revealError = null;
     });
   }
@@ -273,28 +304,28 @@ class _MobileViewingKeyScreenState
       return;
     }
     String? revealError;
-    String? ufvk;
+    rust_wallet.AccountViewingKeys? viewingKeys;
     if (account == null) {
       revealError = widget.accountUuid == null
           ? 'No active account is selected.'
           : 'The selected account is no longer available.';
     } else {
       try {
-        final loader = widget.ufvkLoader;
+        final loader = widget.viewingKeysLoader;
         if (loader != null) {
-          ufvk = await loader(account.uuid);
+          viewingKeys = await loader(account.uuid);
         } else {
           final dbPath = await getWalletDbPath();
           final endpoint = ref.read(rpcEndpointProvider);
-          ufvk = await rust_wallet.getAccountUfvk(
+          viewingKeys = await rust_wallet.getAccountViewingKeys(
             dbPath: dbPath,
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
         }
       } catch (e, st) {
-        log('MobileViewingKey: getAccountUfvk failed: $e\n$st');
-        revealError = 'Viewing key is not available for this account.';
+        log('MobileViewingKey: getAccountViewingKeys failed: $e\n$st');
+        revealError = 'Confirm access again to try loading this key.';
       }
     }
     if (!mounted) return;
@@ -303,19 +334,30 @@ class _MobileViewingKeyScreenState
       return;
     }
     setState(() {
-      _ufvk = ufvk;
+      _viewingKeys = viewingKeys;
       _revealError = revealError;
       _stage = _ViewingKeyStage.reveal;
       _checking = false;
     });
   }
 
-  Future<void> _copyUfvk() async {
-    final ufvk = _ufvk;
-    if (ufvk == null || ufvk.isEmpty) return;
-    await SensitiveClipboard.copyText(ufvk);
+  void _retryReveal() {
+    setState(() {
+      _accessCheckGeneration += 1;
+      _stage = _ViewingKeyStage.confirmAccess;
+      _selectedType = null;
+      _entry = '';
+      _checking = false;
+      _gateError = null;
+      _viewingKeys = null;
+      _revealError = null;
+    });
+  }
+
+  Future<void> _copyViewingKey(String value) async {
+    if (_stage != _ViewingKeyStage.reveal || _viewingKeys == null) return;
+    await SensitiveClipboard.copyText(value);
     unawaited(AppHaptics.copy());
-    if (mounted) showAppToast(context, 'Viewing key copied');
   }
 
   @override
@@ -328,33 +370,62 @@ class _MobileViewingKeyScreenState
       },
     );
     final colors = context.colors;
-    return Scaffold(
-      backgroundColor: colors.background.window,
-      body: AppToastHost(
-        child: SensitivePrivacyOverlay(
-          sensitiveContentVisible:
-              _stage == _ViewingKeyStage.reveal && _ufvk != null,
-          controller: _privacyController,
-          child: SafeArea(
-            child: Column(
-              children: [
-                MobileTopNav.back(
-                  title: _stage == _ViewingKeyStage.confirmAccess
-                      ? ''
-                      : 'Viewing Key',
-                  onBack: () => context.pop(),
-                ),
-                Expanded(
-                  child: switch (_stage) {
-                    _ViewingKeyStage.confirmAccess => _buildGate(colors),
-                    _ViewingKeyStage.reveal => _MobileViewingKeyRevealView(
-                      ufvk: _ufvk,
-                      errorText: _revealError,
-                      onCopyUfvk: _copyUfvk,
+    final accounts = ref.watch(accountProvider).value;
+    final targetAccount = _targetAccount(accounts);
+    return MobileSidebarExitScope(
+      canNavigate: !_checking,
+      child: PopScope(
+        canPop: _selectedType == null,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop && _selectedType != null) {
+            setState(() => _selectedType = null);
+          }
+        },
+        child: Scaffold(
+          backgroundColor: colors.background.window,
+          body: AppToastHost(
+            child: SensitivePrivacyOverlay(
+              sensitiveContentVisible:
+                  _stage == _ViewingKeyStage.reveal && _viewingKeys != null,
+              controller: _privacyController,
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    _ViewingKeyMobileHeader(
+                      title: _stage == _ViewingKeyStage.confirmAccess
+                          ? ''
+                          : _selectedType?.title ?? 'Viewing key',
+                      onBack: () {
+                        if (_selectedType != null) {
+                          setState(() => _selectedType = null);
+                        } else {
+                          context.pop();
+                        }
+                      },
                     ),
-                  },
+                    Expanded(
+                      child: switch (_stage) {
+                        _ViewingKeyStage.confirmAccess => _buildGate(colors),
+                        _ViewingKeyStage.reveal => _MobileViewingKeyRevealView(
+                          viewingKeys: _viewingKeys,
+                          initialType: _selectedType,
+                          onSelectType: (type) =>
+                              setState(() => _selectedType = type),
+                          account: targetAccount,
+                          showAccountName:
+                              targetAccount != null &&
+                              targetAccount.uuid != accounts?.activeAccountUuid,
+                          onRetry: targetAccount == null
+                              ? () => context.go('/accounts')
+                              : _retryReveal,
+                          errorText: _revealError,
+                          onCopy: _copyViewingKey,
+                        ),
+                      },
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -367,224 +438,258 @@ class _MobileViewingKeyScreenState
         ref.watch(biometricUnlockProvider).value ??
         BiometricUnlockState.initial;
     final showBiometric = !_checking && biometric.usable;
-    return Column(
-      children: [
-        Expanded(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Enter Passcode',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displayLarge.copyWith(
-                    color: colors.text.accent,
+    return AdaptivePasscodeLayout(
+      title: 'Enter Passcode',
+      subtitle: 'Confirm your access',
+      prompt: PasscodePromptField(
+        length: kMobilePasscodeLength,
+        filled: _entry.length,
+        error: _gateError,
+        minGap: 0,
+      ),
+      keypad: PasscodeNumpad(
+        onDigit: _onDigit,
+        onBackspace: _onBackspace,
+        canDelete: _entry.isNotEmpty,
+        enabled: !_checking,
+      ),
+      footer: showBiometric
+          ? SizedBox(
+              key: const ValueKey('mobile_viewing_key_biometric_footer'),
+              height: 36,
+              child: Center(
+                child: PasscodeBiometricButton(
+                  label: biometric.availability.kind.signInLabel,
+                  icon: Center(
+                    child: BiometricIcon(
+                      kind: biometric.availability.kind,
+                      size: 13.5,
+                      fingerprintSize: 16,
+                    ),
                   ),
+                  onPressed: () => unawaited(_tryBiometricGate()),
                 ),
-                const SizedBox(height: AppSpacing.s),
-                Text(
-                  'Confirm your access',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                SizedBox(
-                  height: kPasscodePromptDigitsHeight,
-                  child: PasscodePromptField(
-                    length: kMobilePasscodeLength,
-                    filled: _entry.length,
-                    error: _gateError,
-                    minGap: 0,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        PasscodeNumpad(
-          onDigit: _onDigit,
-          onBackspace: _onBackspace,
-          canDelete: _entry.isNotEmpty,
-          enabled: !_checking,
-        ),
-        if (showBiometric) ...[
-          const SizedBox(height: AppSpacing.md),
-          SizedBox(
-            key: const ValueKey('mobile_viewing_key_biometric_footer'),
-            height: 36,
+              ),
+            )
+          : null,
+      footerHeight: showBiometric ? 36 : 0,
+      legacy: Column(
+        children: [
+          Expanded(
             child: Center(
-              child: PasscodeBiometricButton(
-                label: biometric.availability.kind.signInLabel,
-                icon: Center(
-                  child: BiometricIcon(
-                    kind: biometric.availability.kind,
-                    size: 13.5,
-                    fingerprintSize: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Enter Passcode',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.displayLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
                   ),
-                ),
-                onPressed: () => unawaited(_tryBiometricGate()),
+                  const SizedBox(height: AppSpacing.s),
+                  Text(
+                    'Confirm your access',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.primary,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  SizedBox(
+                    height: kPasscodePromptDigitsHeight,
+                    child: PasscodePromptField(
+                      length: kMobilePasscodeLength,
+                      filled: _entry.length,
+                      error: _gateError,
+                      minGap: 0,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+          PasscodeNumpad(
+            onDigit: _onDigit,
+            onBackspace: _onBackspace,
+            canDelete: _entry.isNotEmpty,
+            enabled: !_checking,
+          ),
+          if (showBiometric) ...[
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              key: const ValueKey('mobile_viewing_key_biometric_footer'),
+              height: 36,
+              child: Center(
+                child: PasscodeBiometricButton(
+                  label: biometric.availability.kind.signInLabel,
+                  icon: Center(
+                    child: BiometricIcon(
+                      kind: biometric.availability.kind,
+                      size: 13.5,
+                      fingerprintSize: 16,
+                    ),
+                  ),
+                  onPressed: () => unawaited(_tryBiometricGate()),
+                ),
+              ),
+            ),
+          ],
+          if (!showBiometric) const SizedBox(height: AppSpacing.md),
         ],
-        if (!showBiometric) const SizedBox(height: AppSpacing.md),
-      ],
+      ),
     );
   }
 }
 
 class _MobileViewingKeyRevealView extends StatelessWidget {
   const _MobileViewingKeyRevealView({
-    required this.ufvk,
-    required this.onCopyUfvk,
+    required this.account,
+    required this.viewingKeys,
+    required this.onCopy,
+    required this.onRetry,
+    this.showAccountName = false,
+    this.initialType,
+    required this.onSelectType,
+    this.initialFormat = ViewingKeyFormat.qr,
     this.errorText,
   });
 
-  final String? ufvk;
+  final AccountInfo? account;
+  final rust_wallet.AccountViewingKeys? viewingKeys;
   final String? errorText;
-  final VoidCallback onCopyUfvk;
+  final Future<void> Function(String) onCopy;
+  final VoidCallback onRetry;
+  final bool showAccountName;
+  final ViewingKeyType? initialType;
+  final ValueChanged<ViewingKeyType> onSelectType;
+  final ViewingKeyFormat initialFormat;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.s,
-        AppSpacing.sm,
-        AppSpacing.lg,
-      ),
-      children: [
-        Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: viewingKeyAccessSummary,
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-              const TextSpan(text: ' $viewingKeyAccessDetails'),
-            ],
-          ),
-          key: const ValueKey('viewing_key_explanation'),
-          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          viewingKeyPrivacyNotice,
-          style: AppTypography.bodyMediumStrong.copyWith(
-            color: colors.text.accent,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        if (errorText != null || ufvk == null)
-          MobileSurfaceCard(
-            child: Text(
-              errorText ?? 'Viewing key is not available for this account.',
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.destructive,
-              ),
+    return ViewingKeyContent(
+      account: account,
+      showAccountName: showAccountName,
+      viewingKeys: viewingKeys,
+      type: initialType,
+      onSelectType: onSelectType,
+      initialFormat: initialFormat,
+      errorText: errorText,
+      onCopy: onCopy,
+      onRetry: onRetry,
+      copyButtonKey: const ValueKey('mobile_viewing_key_copy'),
+      keyValueKey: const ValueKey('mobile_viewing_key_value'),
+      layoutBuilder: (context, content, footer) {
+        if (footer == null) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.sm,
+              AppSpacing.sm,
+              AppSpacing.lg,
             ),
-          )
-        else
-          MobileSurfaceCard(
-            cornerRadius: AppRadii.xLarge,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+            children: [content],
+          );
+        }
+        return CustomScrollView(
+          key: const ValueKey('mobile_viewing_key_reveal_scroll'),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.sm,
+                AppSpacing.sm,
+                0,
+              ),
+              sliver: SliverToBoxAdapter(child: content),
+            ),
+            // Match mobile review pages: spare space belongs above the
+            // bottom actions. When content grows, the whole page scrolls.
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                  AppSpacing.sm,
+                  AppSpacing.s,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: Text(
-                        'Full Viewing Key',
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: colors.text.accent,
-                        ),
-                      ),
-                    ),
-                    _CopyChip(
-                      key: const ValueKey('mobile_viewing_key_copy'),
-                      label: 'Copy',
-                      onTap: onCopyUfvk,
+                    KeyedSubtree(
+                      key: const ValueKey('mobile_viewing_key_footer'),
+                      child: footer,
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                Container(
-                  key: const ValueKey('mobile_viewing_key_value'),
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: colors.background.ground,
-                    borderRadius: BorderRadius.circular(AppRadii.medium),
-                  ),
-                  child: Text(
-                    ufvk!,
-                    style: AppTypography.codeSmall.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
 
-/// Dark "Copy ⧉" chip in the card header — matches the secret passphrase
-/// screen's reveal-card treatment.
-class _CopyChip extends StatelessWidget {
-  const _CopyChip({required this.label, required this.onTap, super.key});
-
-  final String label;
-  final VoidCallback onTap;
+class _ViewingKeyMobileHeader extends StatelessWidget {
+  const _ViewingKeyMobileHeader({required this.title, required this.onBack});
+  final String title;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      label: 'Copy viewing key',
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 96, minHeight: 36),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s,
-              vertical: AppSpacing.xs,
-            ),
-            decoration: ShapeDecoration(
-              color: colors.background.inverse,
-              shape: const StadiumBorder(),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  label,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.inverse,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: kMobileTopNavHeight),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s,
+          vertical: AppSpacing.s,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 44,
+              child: Semantics(
+                container: true,
+                button: true,
+                label: 'Back',
+                child: AppButton(
+                  onPressed: onBack,
+                  variant: AppButtonVariant.ghost,
+                  size: AppButtonSize.medium,
+                  height: 44,
+                  contentPadding: EdgeInsets.zero,
+                  child: ExcludeSemantics(
+                    child: AppIcon(
+                      AppIcons.chevronBackward,
+                      size: 24,
+                      color: context.colors.icon.accent,
+                    ),
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xxs),
-                AppIcon(
-                  AppIcons.copy,
-                  size: AppIconSize.medium,
-                  color: colors.text.inverse,
-                ),
-              ],
+              ),
             ),
-          ),
+            Expanded(
+              child: Semantics(
+                header: true,
+                liveRegion: true,
+                child: ViewingKeyTransition(
+                  value: title,
+                  child: Text(
+                    title,
+                    key: const ValueKey('viewing_key_mobile_title'),
+                    textAlign: TextAlign.center,
+                    style: AppTypography.headlineLarge.copyWith(
+                      color: context.colors.text.accent,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 44),
+          ],
         ),
       ),
     );

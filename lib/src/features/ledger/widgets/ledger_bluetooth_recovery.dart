@@ -6,6 +6,7 @@ import '../../../core/widgets/app_button.dart';
 import '../services/ledger_mobile_ble_service.dart';
 
 import 'ledger_bluetooth_session.dart';
+import 'ledger_bluetooth_restricted_help.dart';
 
 class LedgerBluetoothRecovery extends StatelessWidget {
   const LedgerBluetoothRecovery({
@@ -63,6 +64,7 @@ class LedgerBluetoothRecovery extends StatelessWidget {
             ],
           ),
         ),
+        LedgerBluetoothRestrictedHelp(model: model),
         const SizedBox(height: AppSpacing.md),
         if (model.busy)
           const LedgerProgressStatus(label: 'Checking Bluetooth access…')

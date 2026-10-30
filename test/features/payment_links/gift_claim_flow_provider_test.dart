@@ -71,6 +71,102 @@ void main() {
     },
   );
 
+  test(
+    'an unopened card waits for resume without owning active work',
+    () async {
+      final container = makeContainer();
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      coordinator.pauseForLifecycle();
+      flow(container).open(incomingLink);
+      expect(operations.inspected, isEmpty);
+      expect(
+        container.read(giftClaimFlowProvider)!.phase,
+        GiftClaimPhase.checking,
+      );
+      // Reset must finish while the unstarted preview is still waiting.
+      await coordinator.quiesceAndDrain();
+      coordinator.resumeForLifecycle();
+      coordinator.resumeAfterReset();
+      await pumpEventQueue();
+      expect(operations.inspected, [incomingLink]);
+      operations.completeNext(_inspection(incomingLink));
+      await pumpEventQueue();
+      expect(
+        container.read(giftClaimFlowProvider)!.phase,
+        GiftClaimPhase.inspected,
+      );
+    },
+  );
+
+  test(
+    'interrupted inspection resumes once after its old task settles',
+    () async {
+      final container = makeContainer();
+      flow(container).open(incomingLink);
+      final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+      coordinator.pauseForLifecycle();
+      coordinator.resumeForLifecycle();
+      await pumpEventQueue();
+      expect(operations.inspected, hasLength(1));
+      operations.failNext(
+        GiftCardPreparationInterrupted(
+          GiftCardPreparationPauseReason.lifecycle,
+        ),
+      );
+      await pumpEventQueue();
+      expect(operations.inspected, [incomingLink, incomingLink]);
+      expect(container.read(giftClaimFlowProvider)!.failure, isNull);
+      operations.completeNext(_inspection(incomingLink));
+      await pumpEventQueue();
+      expect(
+        container.read(giftClaimFlowProvider)!.phase,
+        GiftClaimPhase.inspected,
+      );
+    },
+  );
+
+  test('closing a waiting preview prevents automatic reopen', () async {
+    final container = makeContainer();
+    final coordinator = container.read(paymentLinkClaimCoordinatorProvider);
+    coordinator.pauseForLifecycle();
+    flow(container).open(incomingLink);
+    await flow(container).close();
+    coordinator.resumeForLifecycle();
+    await pumpEventQueue();
+    expect(operations.inspected, isEmpty);
+    expect(container.read(giftClaimFlowProvider), isNull);
+  });
+
+  test(
+    'a wallet change interruption ends checking and allows manual retry',
+    () async {
+      final container = makeContainer();
+      flow(container).open(incomingLink);
+      operations.failNext(
+        GiftCardPreparationInterrupted(
+          GiftCardPreparationPauseReason.walletChange,
+        ),
+      );
+      await pumpEventQueue();
+      expect(
+        container.read(giftClaimFlowProvider)!.phase,
+        GiftClaimPhase.failed,
+      );
+      expect(
+        container.read(giftClaimFlowProvider)!.failure,
+        GiftClaimFailure.interrupted,
+      );
+      flow(container).recheck();
+      expect(operations.inspected, [incomingLink, incomingLink]);
+      operations.completeNext(_inspection(incomingLink));
+      await pumpEventQueue();
+      expect(
+        container.read(giftClaimFlowProvider)!.phase,
+        GiftClaimPhase.inspected,
+      );
+    },
+  );
+
   test('checks a Card without an account', () async {
     final container = makeContainer();
 

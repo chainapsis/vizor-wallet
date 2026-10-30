@@ -14,9 +14,6 @@ const _mnemonic =
 /// mobile counterpart of regtest_import_sync_test.dart. The funding
 /// script (flutter-ios-regtest-mobile-import-sync.sh) sends 1.25 to
 /// the shielded address before the test runs.
-///
-/// The mobile home has no transparent balance UI yet, so unlike the
-/// desktop test only the shielded balance is asserted through the UI.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 

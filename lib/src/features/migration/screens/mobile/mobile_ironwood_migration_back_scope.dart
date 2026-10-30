@@ -16,6 +16,7 @@ class _MobileIronwoodMigrationBackScope extends StatelessWidget {
   const _MobileIronwoodMigrationBackScope({
     required this.child,
     this.onFallback,
+    this.onSidebarExit,
   });
 
   final Widget child;
@@ -24,19 +25,25 @@ class _MobileIronwoodMigrationBackScope extends StatelessWidget {
   ///
   /// Null blocks the back press entirely.
   final VoidCallback? onFallback;
+  final Future<bool> Function()? onSidebarExit;
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      key: const ValueKey('mobile_ironwood_migration_back_scope'),
-      // A pushed entry (home -> intro, status -> schedule) keeps popping
-      // normally, which is what preserves the iOS edge swipe.
-      canPop: onFallback != null && GoRouter.of(context).canPop(),
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        onFallback?.call();
-      },
-      child: child,
+    return MobileSidebarExitScope(
+      canNavigate: onFallback != null,
+      canSwitchAccount: onFallback != null && onSidebarExit == null,
+      onExit: onSidebarExit,
+      child: PopScope(
+        key: const ValueKey('mobile_ironwood_migration_back_scope'),
+        // A pushed entry (home -> intro, status -> schedule) keeps popping
+        // normally, which is what preserves the iOS edge swipe.
+        canPop: onFallback != null && GoRouter.of(context).canPop(),
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          onFallback?.call();
+        },
+        child: child,
+      ),
     );
   }
 }

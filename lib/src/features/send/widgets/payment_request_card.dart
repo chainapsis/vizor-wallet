@@ -2,19 +2,18 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/formatting/address_display.dart';
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/layout/mobile/mobile_bottom_safe_area.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_icon_hover_button.dart';
-import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/full_address_viewer.dart';
-import '../../../core/widgets/app_tooltip.dart';
 import '../../../core/widgets/pool_badge.dart';
-import '../../../core/widgets/review_list_row.dart'
-    show kPaymentRequestRequesterTooltip;
 import '../../../core/widgets/review_wrap_card.dart';
-import 'send_review_layout.dart';
+import '../models/send_prefill_args.dart' show PaymentRequestSource;
+import 'send_review_layout.dart' show kWhitespaceOnlyMemoPlaceholder;
+export '../models/send_prefill_args.dart' show PaymentRequestSource;
 
 /// Desktop width of the payment-request modal card.
 ///
@@ -36,32 +35,15 @@ const double kPaymentRequestMobileCloseClearance = 40;
 ///
 /// Sheet/modal chrome (title, actions, status line) sits on the outer
 /// edge; everything inside a card — the requester summary, the
-/// transaction label and amount, the To and memo rows — sits exactly this
+/// amount, recipient and memo rows — sits exactly this
 /// far in from that card's edge. One gutter, two left edges.
 const double kPaymentRequestGutter = AppSpacing.sm;
-
-/// Horizontal breathing room inside the two-line disclosure controls.
-/// They stay visually quiet on hover like the existing review rows, while
-/// keeping their labels away from the full-row hit target's edges.
-const _paymentRequestDisclosurePadding = EdgeInsets.symmetric(
-  horizontal: AppSpacing.xs,
-);
 
 /// The scroll region's overlay scrollbar, for tests.
 const kPaymentRequestScrollbarKey = ValueKey('payment_request_scrollbar');
 
 /// The scroll region's scroll view, for tests.
 const kPaymentRequestScrollViewKey = ValueKey('payment_request_scroll_view');
-
-/// The requester note's nested scroll view, for tests.
-const kPaymentRequestRequesterNoteScrollViewKey = ValueKey(
-  'payment_request_requester_note_scroll_view',
-);
-
-/// The requester note's nested scrollbar, for tests.
-const kPaymentRequestRequesterNoteScrollbarKey = ValueKey(
-  'payment_request_requester_note_scrollbar',
-);
 
 /// Which of the two presentations [PaymentRequestCard] lays itself out for.
 ///
@@ -71,12 +53,6 @@ const kPaymentRequestRequesterNoteScrollbarKey = ValueKey(
 /// (the Widgetbook gallery and the figma-compare scenarios), the same
 /// exemption the `*Desktop` / `*Mobile` token sets carry.
 enum PaymentRequestLayout { auto, desktop, mobile }
-
-/// Where a payment request reached the wallet from.
-///
-/// Carried by the view model for the routes and logs that care; the card
-/// itself renders no provenance line.
-enum PaymentRequestSource { link, qrCode }
 
 /// The one condition that decides whether the request can be acted on.
 ///
@@ -282,6 +258,10 @@ class PaymentRequestRecipientIdentity {
   int get hashCode => Object.hash(kind, name, profilePictureId);
 }
 
+/// A part of a payment that the link asked for differently from the QR
+/// scanned to check it.
+enum PaymentRequestLinkDifference { address, amount, memo }
+
 /// Everything [PaymentRequestCard] renders.
 ///
 /// Immutable and free of providers, routing and parsing. The caller
@@ -303,6 +283,7 @@ class PaymentRequestView {
     this.status = PaymentRequestStatus.ready,
     this.statusMessage,
     this.replacedNotice = false,
+    this.linkDifferences,
   });
 
   /// Link or QR code. Kept for callers and logging; nothing renders it.
@@ -356,8 +337,13 @@ class PaymentRequestView {
   /// Overrides [defaultPaymentRequestStatusMessage] for [status].
   final String? statusMessage;
 
-  /// Renders the "Replaced an earlier link" notice above the amount.
+  /// Indicates that this request replaced one already being reviewed.
   final bool replacedNotice;
+
+  /// How this scanned QR compared with the link it was scanned to check
+  /// ("Scan original QR"): empty when they ask for the same payment, the
+  /// fields that differ otherwise. Null when the card was not opened that way.
+  final Set<PaymentRequestLinkDifference>? linkDifferences;
 
   /// Same request, different verdict. The pre-check fills the amount and the
   /// requester in once, up front; only the status (and the two fields the
@@ -379,6 +365,7 @@ class PaymentRequestView {
     status: status,
     statusMessage: statusMessage,
     replacedNotice: replacedNotice,
+    linkDifferences: linkDifferences,
   );
 
   /// Same request, with the "replaced an earlier link" notice shown.
@@ -403,6 +390,7 @@ class PaymentRequestView {
       status: status,
       statusMessage: statusMessage,
       replacedNotice: true,
+      linkDifferences: linkDifferences,
     );
   }
 
@@ -428,6 +416,7 @@ class PaymentRequestView {
       status: status,
       statusMessage: statusMessage,
       replacedNotice: replacedNotice,
+      linkDifferences: linkDifferences,
     );
   }
 
@@ -452,6 +441,7 @@ class PaymentRequestView {
       status: status,
       statusMessage: statusMessage,
       replacedNotice: replacedNotice,
+      linkDifferences: linkDifferences,
     );
   }
 
@@ -543,10 +533,12 @@ class PaymentRequestCard extends StatefulWidget {
     required this.onEdit,
     required this.onCancel,
     this.onRecheck,
+    this.onScan,
     this.layout = PaymentRequestLayout.auto,
     this.bottomSafeArea = false,
     this.initialAddressExpanded = false,
     this.initialMessageExpanded = false,
+    this.initialLinkDetails = false,
     super.key,
   });
 
@@ -567,6 +559,9 @@ class PaymentRequestCard extends StatefulWidget {
   /// Null leaves that status's primary action disabled, which is the honest
   /// answer for a preview or a host that cannot re-run the check.
   final VoidCallback? onRecheck;
+
+  /// Scan the requester's original QR inside Vizor.
+  final VoidCallback? onScan;
 
   /// Applies [MobileBottomSafeArea] under the mobile action stack.
   ///
@@ -591,6 +586,9 @@ class PaymentRequestCard extends StatefulWidget {
   /// Opens the Message row's full text on first build. Tooling-only, for
   /// the same reason as [initialAddressExpanded].
   final bool initialMessageExpanded;
+
+  /// Tooling-only: starts at the parsed link details after the introduction.
+  final bool initialLinkDetails;
 
   /// Resolves [layout] against the build-time form factor.
   bool get isMobileLayout => switch (layout) {
@@ -617,628 +615,792 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
   late bool _addressExpanded = widget.initialAddressExpanded;
   late bool _messageExpanded = widget.initialMessageExpanded;
   bool _requesterExpanded = false;
-
-  void _toggleAddress() => setState(() => _addressExpanded = !_addressExpanded);
-  void _toggleMessage() => setState(() => _messageExpanded = !_messageExpanded);
-  void _toggleRequester() =>
-      setState(() => _requesterExpanded = !_requesterExpanded);
-
-  PaymentRequestView get _request => widget.request;
-
-  bool get _isMobile => widget.isMobileLayout;
+  late bool _linkDetails = widget.initialLinkDetails;
 
   @override
   Widget build(BuildContext context) {
-    final request = _request;
-    final status = request.status;
-    final isMobile = _isMobile;
-
-    // Gap between the card's top-level groups. Mobile runs against a fixed
-    // viewport budget, so it takes the tighter step; both stay at least 2x
-    // the 8px gaps used inside a group.
-    final sectionGap = isMobile ? AppSpacing.sm : AppSpacing.md;
-    final statusMessage = request.resolvedStatusMessage;
-    final amount = request.displayAmount;
-
-    // Header, requester, amount, status and actions stay pinned. The
-    // transaction details scroll only when expanded or unusually long.
-    final rows = _detailRows();
-
-    return LayoutBuilder(
+    final request = widget.request;
+    final gap = widget.isMobileLayout ? AppSpacing.sm : AppSpacing.md;
+    final external = request.source != PaymentRequestSource.qrCode;
+    final introduction = external && !_linkDetails;
+    if (introduction) {
+      return _ExternalRequestIntroduction(
+        // A pasted link rarely comes with its QR, so it is reviewed instead.
+        canScanOriginal: request.source == PaymentRequestSource.link,
+        onScan: widget.onScan,
+        onReview: () => setState(() => _linkDetails = true),
+        onClose: widget.onCancel,
+        isMobileLayout: widget.isMobileLayout,
+        replacedNotice: request.replacedNotice,
+      );
+    }
+    final showDetails =
+        external || request.status != PaymentRequestStatus.checking;
+    final details = LayoutBuilder(
       builder: (context, constraints) {
+        final content = _FadingScrollRegion(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (request.linkDifferences case final differences?) ...[
+                if (differences.isEmpty)
+                  const _LinkMatchNotice()
+                else
+                  _LinkMismatchNotice(differences: differences),
+                SizedBox(height: gap),
+              ],
+              if (request.replacedNotice) ...[
+                const _QuietNotice(
+                  key: ValueKey('payment_request_replaced_notice'),
+                  message: 'Replaced an earlier link',
+                ),
+                SizedBox(height: gap),
+              ],
+              if (showDetails && request.hasRequesterDetails) ...[
+                _RequesterDetails(
+                  request: request,
+                  expanded: _requesterExpanded,
+                  onToggle: () =>
+                      setState(() => _requesterExpanded = !_requesterExpanded),
+                ),
+                SizedBox(height: gap),
+              ],
+              if (!showDetails) ...[
+                SizedBox(height: gap),
+                _RequestSummary(request: request),
+              ] else
+                ReviewWrapCard(
+                  key: const ValueKey('payment_request_transaction_content'),
+                  mainAxisSize: MainAxisSize.min,
+                  padding: const EdgeInsets.all(kPaymentRequestGutter),
+                  children: [
+                    if (request.displayAmount != null)
+                      _AmountHero(
+                        amountText: request.displayAmount!,
+                        fiatText: request.fiatText,
+                      ),
+                    _RecipientDetails(
+                      request: request,
+                      expanded: _addressExpanded,
+                      onToggle: () =>
+                          setState(() => _addressExpanded = !_addressExpanded),
+                    ),
+                    if (request.displayMemo != null) ...[
+                      _PaymentDetailsDisclosure(
+                        expanded: _messageExpanded,
+                        onToggle: () => setState(
+                          () => _messageExpanded = !_messageExpanded,
+                        ),
+                      ),
+                      if (_messageExpanded)
+                        Column(
+                          key: const ValueKey('payment_request_memo'),
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Transaction memo',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: context.colors.text.secondary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              request.memoIsWhitespaceOnly
+                                  ? kWhitespaceOnlyMemoPlaceholder
+                                  : request.displayMemo!,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: request.memoIsWhitespaceOnly
+                                    ? context.colors.text.muted
+                                    : context.colors.text.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ],
+                ),
+              if (request.resolvedStatusMessage != null) ...[
+                SizedBox(height: gap),
+                _StatusMessage(
+                  key: const ValueKey('payment_request_status'),
+                  status: request.status,
+                  message: request.resolvedStatusMessage!,
+                ),
+              ],
+            ],
+          ),
+        );
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _Header(
-              title: request.headerTitle,
-              isMobileLayout: isMobile,
-              onClose: widget.onCancel,
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: kPaymentRequestGutter,
+              ),
+              child: _Header(
+                title: request.headerTitle,
+                isMobileLayout: widget.isMobileLayout,
+                onClose: widget.onCancel,
+              ),
             ),
-            if (request.replacedNotice) ...[
-              const SizedBox(height: AppSpacing.xs),
-              const _QuietNotice(
-                key: ValueKey('payment_request_replaced_notice'),
-                message: 'Replaced an earlier link',
-              ),
-            ],
-            if (request.hasRequesterDetails) ...[
-              SizedBox(height: sectionGap),
-              _RequesterDetailsCard(
-                requester: request.displayRequesterLabel,
-                note: request.displayNote,
-                expanded: _requesterExpanded,
-                onToggle: request.displayNote == null ? null : _toggleRequester,
-              ),
-            ],
-            SizedBox(height: sectionGap),
+            SizedBox(height: gap),
             if (constraints.maxHeight.isFinite)
-              Flexible(
-                child: _TransactionContentFrame(
-                  amountText: amount,
-                  fiatText: request.fiatText,
-                  rows: rows,
-                  bounded: true,
-                ),
-              )
+              Flexible(child: content)
             else
-              _TransactionContentFrame(
-                amountText: amount,
-                fiatText: request.fiatText,
-                rows: rows,
-                bounded: false,
+              content,
+            SizedBox(height: gap),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: kPaymentRequestGutter,
               ),
-            // A request error belongs to the details card, so keep it close
-            // to that surface and leave the full section gap before actions.
-            if (statusMessage != null) ...[
-              SizedBox(height: isMobile ? AppSpacing.xxs : AppSpacing.xs),
-              _StatusMessage(
-                key: const ValueKey('payment_request_status'),
-                status: status,
-                message: statusMessage,
+              child: _Actions(
+                status: request.status,
+                statusMessage: request.resolvedStatusMessage,
+                hasAmount: request.displayAmount != null,
+                isMobileLayout: widget.isMobileLayout,
+                bottomSafeArea: widget.bottomSafeArea,
+                onContinue: widget.onContinue,
+                onEdit: widget.onEdit,
+                onRecheck: widget.onRecheck,
               ),
-              SizedBox(height: sectionGap),
-            ] else
-              SizedBox(height: sectionGap),
-            _Actions(
-              status: status,
-              statusMessage: statusMessage,
-              hasAmount: amount != null,
-              isMobileLayout: isMobile,
-              bottomSafeArea: widget.bottomSafeArea,
-              onContinue: widget.onContinue,
-              onEdit: widget.onEdit,
-              onRecheck: widget.onRecheck,
             ),
           ],
         );
       },
     );
-  }
-
-  /// Transaction content only. Requester metadata lives in its own disclosure
-  /// above this group so off-chain request text is not confused with the memo.
-  List<Widget> _detailRows() {
-    final request = _request;
-    final memo = request.displayMemo;
-    final addressRow = _AddressRow(
-      key: const ValueKey('payment_request_to_row'),
-      address: request.address,
-      identity: request.displayRecipientIdentity,
-      isMobileLayout: _isMobile,
-      expanded: _addressExpanded,
-      onToggle: _toggleAddress,
-    );
-
-    return [
-      addressRow,
-      if (memo != null) ...[
-        const ReviewWrapDivider(),
-        _ProseRows(
-          key: const ValueKey('payment_request_memo'),
-          label: 'Transaction memo',
-          text: memo,
-          // A memo of nothing but whitespace is still bytes the payment
-          // carries, so the row stays — but drawing those bytes draws
-          // nothing, and a row that looks empty is indistinguishable from a
-          // request that asked for no memo at all.
-          placeholder: request.memoIsWhitespaceOnly
-              ? kWhitespaceOnlyMemoPlaceholder
-              : null,
-          expanded: _messageExpanded,
-          onToggle: _toggleMessage,
-        ),
-      ],
-    ];
-  }
-}
-
-/// Off-chain metadata supplied by the payment link's requester.
-///
-/// The name remains visible as the collapsed summary. A requester note is
-/// progressive disclosure because it is context for the request, not content
-/// that will be included in the Zcash transaction.
-class _RequesterDetailsCard extends StatelessWidget {
-  const _RequesterDetailsCard({
-    required this.requester,
-    required this.note,
-    required this.expanded,
-    required this.onToggle,
-  });
-
-  final String? requester;
-  final String? note;
-  final bool expanded;
-  final VoidCallback? onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final transparent = colors.background.ground.withValues(alpha: 0);
-    final summary = requester ?? 'Note from requester';
-    final scaler = MediaQuery.textScalerOf(context);
-    // Label over value, both at body size: the requester is text the link
-    // supplied, not an identity the wallet verified, so it does not take
-    // the headline the address-book name gets in the To row.
-    final labelStyle = AppTypography.bodyMediumStrong;
-    final valueStyle = AppTypography.bodyMediumStrong;
-    final summaryHeight =
-        (scaler.scale(labelStyle.fontSize!) * labelStyle.height! +
-                AppSpacing.xxs +
-                scaler.scale(valueStyle.fontSize!) * valueStyle.height!)
-            .ceilToDouble() +
-        1;
-    final summaryRow = Row(
-      children: [
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      'Requester',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: labelStyle.copyWith(color: colors.text.secondary),
-                    ),
-                  ),
-                  // Only a link-supplied name needs the caveat; a note-only
-                  // card has no name to be mistaken for a verified sender.
-                  if (requester != null) ...[
-                    const SizedBox(width: AppSpacing.xxs),
-                    AppTooltip(
-                      tapToShow: true,
-                      message: kPaymentRequestRequesterTooltip,
-                      child: AppIcon(
-                        AppIcons.help,
-                        key: const ValueKey('payment_request_requester_help'),
-                        size: AppIconSize.medium,
-                        color: colors.icon.regular,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                summary,
-                key: const ValueKey('payment_request_requester'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: valueStyle.copyWith(color: colors.text.accent),
-              ),
-            ],
-          ),
-        ),
-        if (onToggle != null) ...[
-          const SizedBox(width: AppSpacing.xs),
-          AppIcon(
-            expanded ? AppIcons.collapsed : AppIcons.expand,
-            color: colors.icon.regular,
-          ),
-        ],
-      ],
-    );
-
-    final toggle = onToggle;
-    final summaryControl = toggle == null
-        ? summaryRow
-        : Semantics(
-            button: true,
-            expanded: expanded,
-            excludeSemantics: true,
-            label: expanded
-                ? 'Hide requester details'
-                : 'Show requester details',
-            value: requester == null
-                ? 'Requester, $summary'
-                : 'Label from link, $summary',
-            onTap: toggle,
-            child: AppButton(
-              key: const ValueKey('payment_request_requester_toggle'),
-              onPressed: toggle,
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.small,
-              height: summaryHeight,
-              enabledBackgroundColor: transparent,
-              pressedBackgroundColor: transparent,
-              expand: true,
-              constrainContent: true,
-              contentPadding: _paymentRequestDisclosurePadding,
-              child: summaryRow,
-            ),
-          );
-
-    return ReviewWrapCard(
-      key: const ValueKey('payment_request_requester_group'),
-      mainAxisSize: MainAxisSize.min,
-      // The card's content gutter: the same 16 every group on this card
-      // uses, so the label here, the transaction label, and the rows in
-      // the details card all share one left edge.
-      padding: const EdgeInsets.all(kPaymentRequestGutter),
-      children: [
-        summaryControl,
-        if (expanded && note != null) ...[
-          const ReviewWrapDivider(),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Note from requester',
-                style: labelStyle.copyWith(color: colors.text.secondary),
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: AppSpacing.xl3),
-                child: _FadingScrollRegion(
-                  scrollViewKey: kPaymentRequestRequesterNoteScrollViewKey,
-                  scrollbarKey: kPaymentRequestRequesterNoteScrollbarKey,
-                  contentPadding: const EdgeInsetsDirectional.only(
-                    end: kPaymentRequestGutter,
-                  ),
-                  child: Text(
-                    note!,
-                    key: const ValueKey('payment_request_requester_note'),
-                    style: AppTypography.bodyMediumStrong.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-/// The amount and the on-chain destination/memo as one visual group.
-///
-/// Only the inner details region flexes and scrolls. The group label and the
-/// amount being approved remain pinned in every state.
-class _TransactionContentFrame extends StatelessWidget {
-  const _TransactionContentFrame({
-    required this.amountText,
-    required this.fiatText,
-    required this.rows,
-    required this.bounded,
-  });
-
-  final String? amountText;
-  final String? fiatText;
-  final List<Widget> rows;
-  final bool bounded;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    if (amountText == null) {
-      return bounded
-          ? _DetailsFrame(rows: rows)
-          : ReviewWrapCard(
-              padding: const EdgeInsets.all(kPaymentRequestGutter),
-              children: rows,
-            );
+    // Padding belongs to the selected presentation, so the illustrated
+    // introduction can fill the same modal frame as the parsed details.
+    if (widget.isMobileLayout) {
+      return MobileModalScaffold(
+        title: '',
+        showTitle: false,
+        onClose: widget.onCancel,
+        bottomPadding: AppSpacing.base,
+        horizontalPadding: 0,
+        child: Flexible(child: details),
+      );
     }
-    final details = bounded
-        ? Flexible(child: _DetailsFrame(rows: rows))
-        : ReviewWrapCard(
-            padding: const EdgeInsets.all(kPaymentRequestGutter),
-            children: rows,
-          );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: details,
+    );
+  }
+}
 
-    final radius = BorderRadius.circular(AppRadii.large);
-    return Container(
-      key: const ValueKey('payment_request_transaction_content'),
-      width: double.infinity,
-      padding: const EdgeInsets.only(top: kPaymentRequestGutter),
-      decoration: BoxDecoration(borderRadius: radius),
-      // Painted over the content rather than as part of the box so the 1px
-      // stroke does not shift the gutter: content sits exactly 16 in from
-      // the frame edge, the same as inside every other card here.
-      foregroundDecoration: BoxDecoration(
-        border: Border.all(color: colors.border.regular),
-        borderRadius: radius,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+/// Compact input feedback while a scanned request is being checked.
+class _RequestSummary extends StatelessWidget {
+  const _RequestSummary({required this.request});
+  final PaymentRequestView request;
+
+  @override
+  Widget build(BuildContext context) => ReviewWrapCard(
+    key: const ValueKey('payment_request_summary'),
+    mainAxisSize: MainAxisSize.min,
+    padding: const EdgeInsets.all(kPaymentRequestGutter),
+    children: [
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: kPaymentRequestGutter,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Transaction content',
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-                if (amountText != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  _AmountHero(amountText: amountText!, fiatText: fiatText),
-                ],
-              ],
+          Text(
+            request.displayAmount ?? 'Amount not specified',
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: context.colors.text.primary,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          // Flush with the frame: same radius at zero inset keeps the two
-          // corners concentric, and the card's own 16 inset lands its rows
-          // on the frame label's left edge.
-          details,
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            truncatedAddress(request.address),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodySmall.copyWith(
+              color: context.colors.text.secondary,
+            ),
+          ),
         ],
       ),
-    );
-  }
+    ],
+  );
 }
 
-/// The "To" block: pool beside the label, then the address beside its
-/// verification action. Keeping each related pair together saves a row and
-/// makes the privacy status and address action easier to scan.
-///
-/// The full address never leaves this card. "Show full address" swaps the
-/// one-line truncation for a continuous Geist Mono string that wraps
-/// naturally, matching the dedicated verify-address viewer.
-///
-/// When the wallet can put a name to the address ([identity]) the block leads
-/// with that name and an avatar instead, the way the pay and send reviews
-/// render a known recipient, and the address drops to the sub-line. The pool
-/// badge and the expand control are unchanged in both shapes: a name is not a
-/// reason to stop stating the pool, and the full address still has to be
-/// verifiable from inside the card.
-class _AddressRow extends StatelessWidget {
-  const _AddressRow({
-    required this.address,
-    required this.identity,
-    required this.isMobileLayout,
+class _RequesterDetails extends StatelessWidget {
+  const _RequesterDetails({
+    required this.request,
     required this.expanded,
     required this.onToggle,
-    super.key,
   });
-
-  final String address;
-
-  /// The name behind [address], or null for an address this wallet does not
-  /// recognize — which is also the state while the lookup is still running.
-  final PaymentRequestRecipientIdentity? identity;
-
-  final bool isMobileLayout;
+  final PaymentRequestView request;
   final bool expanded;
   final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final isShielded =
-        zcashAddressDisplayKind(address) == ZcashAddressDisplayKind.shielded;
-    final actionLabel = expanded ? 'Hide full address' : 'Show full address';
-    final identity = this.identity;
-    final chunks = _AddressChunks(
-      key: const ValueKey('payment_request_address_chunks'),
-      address: address,
-    );
-
-    final recipient = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (identity != null) ...[
-          const SizedBox(height: AppSpacing.xs),
-          _RecipientIdentityBlock(identity: identity),
-        ],
-        const SizedBox(height: AppSpacing.xxs),
-        if (expanded) ...[
-          chunks,
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: _addressAction(context, actionLabel),
+    final c = context.colors;
+    final name = request.displayRequesterLabel;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: kPaymentRequestGutter),
+      child: Column(
+        key: const ValueKey('payment_request_requester_group'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            button: true,
+            expanded: expanded,
+            excludeSemantics: true,
+            onTap: onToggle,
+            label:
+                '${expanded ? 'Hide' : 'Show'} requester information${name == null ? '' : ' for $name'}',
+            value: name == null
+                ? 'Note from requester'
+                : 'Name supplied in the request.',
+            child: AppButton(
+              key: const ValueKey('payment_request_requester_toggle'),
+              onPressed: onToggle,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.small,
+              height: 48,
+              growWithContent: true,
+              expand: true,
+              constrainContent: true,
+              contentPadding: EdgeInsets.zero,
+              borderRadius: BorderRadius.circular(AppRadii.small),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name == null ? 'Note from requester' : 'Request from',
+                          style: AppTypography.bodySmall.copyWith(
+                            color: c.text.secondary,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          name ?? 'View note',
+                          key: const ValueKey('payment_request_requester'),
+                          maxLines: expanded ? null : 2,
+                          overflow: expanded
+                              ? TextOverflow.visible
+                              : TextOverflow.ellipsis,
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: c.text.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  ExcludeSemantics(
+                    child: AppIcon(
+                      expanded ? AppIcons.collapsed : AppIcons.expand,
+                      color: c.icon.regular,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ] else
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: AppSpacing.xxs,
-            runSpacing: 0,
-            children: [
-              Text(
-                truncatedAddress(address),
-                key: identity == null
-                    ? null
-                    : const ValueKey('payment_request_recipient_address'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.codeMedium.copyWith(
-                  color: identity == null
-                      ? colors.text.accent
-                      : colors.text.secondary,
+          if (expanded) ...[
+            const SizedBox(height: AppSpacing.s),
+            if (name != null)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ExcludeSemantics(
+                    child: AppIcon(
+                      AppIcons.warningCircle,
+                      size: AppIconSize.medium,
+                      color: c.icon.warning,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      "This name comes from the request. It doesn't confirm who owns the receiving address.",
+                      style: AppTypography.bodySmall.copyWith(
+                        color: c.text.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            if (request.displayNote != null) ...[
+              if (name != null) const SizedBox(height: AppSpacing.sm),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: c.background.neutralSubtleOpacity,
+                  borderRadius: BorderRadius.circular(AppRadii.small),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.s),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Note from requester',
+                        style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: c.text.secondary,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        request.displayNote!,
+                        key: const ValueKey('payment_request_requester_note'),
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: c.text.accent,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              _addressAction(context, actionLabel),
             ],
-          ),
-      ],
+          ],
+        ],
+      ),
     );
+  }
+}
 
+class _RecipientDetails extends StatelessWidget {
+  const _RecipientDetails({
+    required this.request,
+    required this.expanded,
+    required this.onToggle,
+  });
+  final PaymentRequestView request;
+  final bool expanded;
+  final VoidCallback onToggle;
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final identity = request.displayRecipientIdentity;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xxs,
-          children: [
+        Semantics(
+          button: true,
+          expanded: expanded,
+          onTap: onToggle,
+          excludeSemantics: true,
+          label: expanded
+              ? 'Hide full recipient address'
+              : 'Show full recipient address',
+          value:
+              '${identity?.displayName ?? ''} ${identity?.isOwnAccount == true ? 'Your account. ' : ''}${request.address}. ${request.addressKind == ZcashAddressDisplayKind.shielded ? 'Shielded' : 'Transparent'}',
+          child: AppButton(
+            key: const ValueKey('payment_request_show_full_address'),
+            onPressed: onToggle,
+            variant: AppButtonVariant.ghost,
+            size: AppButtonSize.small,
+            height: 48,
+            growWithContent: true,
+            expand: true,
+            constrainContent: true,
+            contentPadding: EdgeInsets.zero,
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: AppSpacing.xs,
+                        runSpacing: AppSpacing.xxs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            'Recipient',
+                            style: AppTypography.bodySmall.copyWith(
+                              color: c.text.secondary,
+                            ),
+                          ),
+                          if (identity?.isOwnAccount == true)
+                            Text(
+                              'Your account',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: c.text.secondary,
+                              ),
+                            ),
+                          PoolBadge(
+                            key: const ValueKey('payment_request_pool_badge'),
+                            isShielded:
+                                request.addressKind ==
+                                ZcashAddressDisplayKind.shielded,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        identity?.displayName ??
+                            truncatedAddress(request.address),
+                        key: identity == null
+                            ? null
+                            : const ValueKey('payment_request_recipient_name'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            (identity == null
+                                    ? AppTypography.codeMedium
+                                    : AppTypography.bodyMediumStrong)
+                                .copyWith(color: c.text.accent),
+                      ),
+                      if (identity != null)
+                        Text(
+                          truncatedAddress(request.address),
+                          key: const ValueKey(
+                            'payment_request_recipient_address',
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.codeSmall.copyWith(
+                            color: c.text.secondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                AppIcon(
+                  expanded ? AppIcons.collapsed : AppIcons.chevronForward,
+                  color: c.icon.regular,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (expanded) ...[
+          const SizedBox(height: AppSpacing.xs),
+          if (identity != null)
             Text(
-              'To',
-              maxLines: 1,
+              identity.displayName!,
               style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.secondary,
+                color: c.text.accent,
               ),
             ),
-            // Paying a transparent address is the one detail on this card
-            // with a privacy consequence the review step cannot undo.
-            PoolBadge(
-              key: const ValueKey('payment_request_pool_badge'),
-              isShielded: isShielded,
+          if (identity?.isOwnAccount == true)
+            Text(
+              'Your account',
+              style: AppTypography.bodySmall.copyWith(color: c.text.secondary),
             ),
-          ],
-        ),
-        // On touch the whole recipient block toggles the full address —
-        // address line plus pill is 45px, above the 44px floor — so the
-        // pill keeps its 24px Figma height and no transparent ring has
-        // to be padded into the row rhythm. Translucent: the pill's own
-        // detector still wins inside its bounds.
-        if (isMobileLayout)
-          GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            excludeFromSemantics: true,
-            onTap: onToggle,
-            child: recipient,
-          )
-        else
-          recipient,
+          _AddressChunks(
+            key: const ValueKey('payment_request_address_chunks'),
+            address: request.address,
+          ),
+        ],
       ],
     );
   }
+}
 
-  Widget _addressAction(BuildContext context, String label) {
-    final colors = context.colors;
-    final usesLargeText = MediaQuery.textScalerOf(context).scale(1) >= 1.5;
-    final visibleLabel = usesLargeText ? (expanded ? 'Hide' : 'Show') : label;
+class _PaymentDetailsDisclosure extends StatelessWidget {
+  const _PaymentDetailsDisclosure({
+    required this.expanded,
+    required this.onToggle,
+  });
+  final bool expanded;
+  final VoidCallback onToggle;
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final label = expanded ? 'Hide payment details' : 'Payment details';
     return Semantics(
       button: true,
-      label: label,
+      expanded: expanded,
       onTap: onToggle,
       excludeSemantics: true,
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.5,
-        child: AppButton(
-          key: const ValueKey('payment_request_show_full_address'),
-          onPressed: onToggle,
-          variant: AppButtonVariant.ghost,
-          size: AppButtonSize.small,
-          iconGap: 0,
-          leading: usesLargeText
-              ? null
-              : AppIcon(
-                  expanded ? AppIcons.eyeClosed : AppIcons.eye,
-                  color: colors.button.ghost.label,
-                ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-            child: Text(
-              visibleLabel,
-              maxLines: 1,
-              style: AppTypography.labelSmall,
+      label: label,
+      value: 'Memo included. View the transaction memo.',
+      child: AppButton(
+        key: const ValueKey('payment_request_memo_toggle'),
+        onPressed: onToggle,
+        variant: AppButtonVariant.ghost,
+        size: AppButtonSize.small,
+        height: 48,
+        growWithContent: true,
+        expand: true,
+        constrainContent: true,
+        contentPadding: EdgeInsets.zero,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: c.text.primary,
+                    ),
+                  ),
+                  Text(
+                    'Memo included',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: c.text.secondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+            const SizedBox(width: AppSpacing.xs),
+            AppIcon(
+              expanded ? AppIcons.collapsed : AppIcons.expand,
+              color: c.icon.regular,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Avatar + name for a recipient the wallet recognizes.
-///
-/// The composition is the pay/send review's contact recipient
-/// (`AppProfilePicture` leading, name headline, address sub-line) fitted to
-/// this card's tighter scale: the name takes the sans headline step rather
-/// than the review's serif, because the serif belongs to the amount and the
-/// card title above it and a third serif line would flatten that hierarchy.
-///
-/// An own-account recipient adds one muted line saying so. Paying yourself is
-/// a legitimate thing to do from a link, but it is also exactly what a
-/// swapped-address attack looks like from the other direction, so the card
-/// states the relationship instead of leaving the user to recognize a name.
-class _RecipientIdentityBlock extends StatelessWidget {
-  const _RecipientIdentityBlock({required this.identity});
+/// An illustrated caution screen before any unverified payment values appear.
+/// The background illustration supports the warning without replacing the
+/// app's neutral modal surface or controls.
+class _ExternalRequestIntroduction extends StatelessWidget {
+  const _ExternalRequestIntroduction({
+    required this.canScanOriginal,
+    required this.onScan,
+    required this.onReview,
+    required this.onClose,
+    required this.isMobileLayout,
+    required this.replacedNotice,
+  });
 
-  final PaymentRequestRecipientIdentity identity;
+  final bool canScanOriginal;
+  final VoidCallback? onScan;
+  final VoidCallback onReview;
+  final VoidCallback onClose;
+  final bool isMobileLayout;
+  final bool replacedNotice;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-
-    return Row(
-      // Centered against the whole text block, the way `ReviewInfoRow` seats
-      // its own leading avatar: top-aligning it against the name alone left
-      // the 32px circle visibly high beside a three-line own-account block.
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        AppProfilePicture(
-          key: const ValueKey('payment_request_recipient_avatar'),
-          profilePictureId: identity.profilePictureId,
-          size: AppProfilePictureSize.large,
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                // Non-null: the card only builds this block for an identity
-                // that survived `displayRecipientIdentity`.
-                identity.displayName!,
-                key: const ValueKey('payment_request_recipient_name'),
-                // A contact label is user-authored and unbounded; it is cut,
-                // never wrapped, the same way the requester line is.
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.headlineSmall.copyWith(
-                  color: colors.text.accent,
-                ),
+    final background = colors.background.base;
+    return ColoredBox(
+      color: background,
+      child: Stack(
+        children: [
+          PositionedDirectional(
+            top: -24,
+            end: -20,
+            width: 340,
+            height: 340,
+            child: ExcludeSemantics(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Opacity(
+                    opacity: 0.52,
+                    child: Image.asset(
+                      'assets/illustrations/payment_request_letter_caution.webp',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [background, background.withValues(alpha: 0)],
+                        stops: const [0, 0.75],
+                      ),
+                    ),
+                  ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [background.withValues(alpha: 0), background],
+                        stops: const [0.22, 0.70],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              if (identity.isOwnAccount) ...[
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  'Your account',
-                  key: const ValueKey('payment_request_own_account_label'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: colors.text.secondary,
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Flexible(
+                child: _FadingScrollRegion(
+                  contentPadding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                    0,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Payment request',
+                        key: const ValueKey('payment_request_title'),
+                        style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                      if (replacedNotice) ...[
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          'Replaced an earlier link',
+                          key: const ValueKey(
+                            'payment_request_replaced_notice',
+                          ),
+                          style: AppTypography.bodySmall.copyWith(
+                            color: colors.text.secondary,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: AppSpacing.base),
+                      Semantics(
+                        key: const ValueKey('external_request_warning'),
+                        container: true,
+                        liveRegion: true,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  height:
+                                      MediaQuery.textScalerOf(context).scale(
+                                        AppTypography.headlineLarge.fontSize!,
+                                      ) *
+                                      AppTypography.headlineLarge.height!,
+                                  child: Center(
+                                    child: AppIcon(
+                                      AppIcons.warningCircle,
+                                      size: 20,
+                                      color: colors.text.warning,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                Expanded(
+                                  child: Semantics(
+                                    header: true,
+                                    child: Text(
+                                      'Check before you pay',
+                                      style: AppTypography.headlineLarge
+                                          .copyWith(color: colors.text.accent),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.base),
+                            Text(
+                              'Other apps can change the address or amount in a request link.',
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.primary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              canScanOriginal
+                                  ? 'Scan the original QR code directly in Vizor.'
+                                  : 'Confirm the details with the person who sent it.',
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.secondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.base,
+                  AppSpacing.md,
+                  isMobileLayout ? AppSpacing.base : AppSpacing.md,
+                ),
+                child: _ExternalScanActions(
+                  canScanOriginal: canScanOriginal,
+                  onScan: onScan,
+                  onReview: onReview,
+                ),
+              ),
             ],
           ),
-        ),
-      ],
+          PositionedDirectional(
+            top: AppSpacing.sm,
+            end: AppSpacing.sm,
+            child: AppIconHoverButton(
+              key: const ValueKey('payment_request_close'),
+              icon: AppIcons.cross,
+              semanticLabel: 'Close payment request',
+              onTap: onClose,
+              idleColor: colors.button.secondary.bg,
+              hoverColor: colors.button.secondary.bgHover,
+              iconColor: colors.icon.accent,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// The full address as a continuous wrapping Geist Mono string.
-///
-/// Same typeface as the collapsed truncation above it so expanding the
-/// row does not change the glyph language — only the amount of address
-/// that is visible.
+class _ExternalScanActions extends StatelessWidget {
+  const _ExternalScanActions({
+    required this.canScanOriginal,
+    required this.onScan,
+    required this.onReview,
+  });
+  final bool canScanOriginal;
+  final VoidCallback? onScan;
+  final VoidCallback onReview;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (canScanOriginal) ...[
+        AppButton(
+          key: const ValueKey('payment_request_scan'),
+          onPressed: onScan,
+          variant: AppButtonVariant.primary,
+          expand: true,
+          growWithContent: true,
+          constrainContent: true,
+          leading: const AppIcon(AppIcons.qr),
+          child: const Text('Scan original QR'),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+      ],
+      AppButton(
+        key: const ValueKey('payment_request_link_details'),
+        onPressed: onReview,
+        variant: canScanOriginal
+            ? AppButtonVariant.ghost
+            : AppButtonVariant.primary,
+        expand: true,
+        growWithContent: true,
+        constrainContent: true,
+        child: const Text('Review link details'),
+      ),
+    ],
+  );
+}
+
 class _AddressChunks extends StatelessWidget {
   const _AddressChunks({required this.address, super.key});
 
@@ -1286,8 +1448,6 @@ class _Header extends StatelessWidget {
               child: Text(
                 title,
                 key: const ValueKey('payment_request_title'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: AppTypography.headlineMedium.copyWith(
                   color: colors.text.accent,
                 ),
@@ -1366,134 +1526,7 @@ class _AmountHero extends StatelessWidget {
   }
 }
 
-/// The transaction memo block, in the send review's own message shape.
-///
-/// The label sits above the value so it remains readable at mobile widths and
-/// large text sizes. The value toggles between a one-line preview and the full
-/// memo.
-///
-/// The expanded flag is owned by [_PaymentRequestCardState]; this widget is
-/// stateless on purpose, so no rebuild of the scrolling content can reset it.
-class _ProseRows extends StatelessWidget {
-  const _ProseRows({
-    required this.label,
-    required this.text,
-    required this.expanded,
-    required this.onToggle,
-    this.placeholder,
-    super.key,
-  });
-
-  /// Visible label for the encrypted memo that travels with the payment.
-  final String label;
-
-  final String text;
-
-  /// Drawn in place of [text] when [text] would render as nothing.
-  ///
-  /// The memo is still [text] and is still what the payment carries; this
-  /// only replaces the glyphs, so a memo made entirely of whitespace reads as
-  /// a memo the payer can see rather than a blank row they would take for an
-  /// empty one. Muted rather than accent, because it is the card describing
-  /// the memo, not the memo's own words.
-  final String? placeholder;
-
-  final bool expanded;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final transparent = colors.background.ground.withValues(alpha: 0);
-    final valueStyle = AppTypography.bodyMediumStrong;
-    final value = placeholder ?? text;
-    final valueColor = placeholder == null
-        ? colors.text.accent
-        : colors.text.muted;
-    final scaler = MediaQuery.textScalerOf(context);
-    // The control is the whole label-over-value block: 54px on mobile,
-    // 46 on desktop, so it clears the 44px touch floor by itself instead
-    // of padding an oversized box around the value line.
-    final controlHeight =
-        (scaler.scale(valueStyle.fontSize!) * valueStyle.height! * 2 +
-                AppSpacing.xxs)
-            .ceilToDouble() +
-        1;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Semantics(
-          button: true,
-          expanded: expanded,
-          excludeSemantics: true,
-          label: expanded
-              ? 'Collapse transaction memo'
-              : 'Expand transaction memo',
-          value: expanded ? null : '$label, $value',
-          onTap: onToggle,
-          child: AppButton(
-            key: const ValueKey('payment_request_memo_toggle'),
-            onPressed: onToggle,
-            variant: AppButtonVariant.ghost,
-            size: AppButtonSize.small,
-            height: controlHeight,
-            enabledBackgroundColor: transparent,
-            pressedBackgroundColor: transparent,
-            expand: true,
-            constrainContent: true,
-            contentPadding: _paymentRequestDisclosurePadding,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  label,
-                  // Inside a fixed-height control a label must not wrap.
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: valueStyle.copyWith(color: colors.text.secondary),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        expanded ? 'Collapse' : value,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: valueStyle.copyWith(
-                          color: expanded ? colors.text.accent : valueColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    AppIcon(
-                      expanded ? AppIcons.collapsed : AppIcons.expand,
-                      color: colors.icon.regular,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (expanded) ...[
-          const SizedBox(height: AppSpacing.xxs),
-          Text(value, style: valueStyle.copyWith(color: valueColor)),
-        ],
-      ],
-    );
-  }
-}
-
-/// The card's one status line.
-///
-/// The request errors ([PaymentRequestStatusX.isError]) take the destructive
-/// tone and the warning glyph the text fields already use. The one other line
-/// that reaches this slot is `syncing`, which is a pending state the card
-/// resolves on its own, so it renders as quiet secondary text with no glyph —
-/// the same treatment the replaced-link notice gets. "Checking" says itself
-/// inside the primary button and never comes through here.
+/// Pre-check feedback; payment contents remain available for inspection.
 class _StatusMessage extends StatelessWidget {
   const _StatusMessage({
     required this.status,
@@ -1550,6 +1583,95 @@ class _StatusMessage extends StatelessWidget {
 }
 
 /// Quiet one-liner above the content (the replaced-link notice).
+/// The scanned QR asks for the same payment as the link it was checking.
+class _LinkMatchNotice extends StatelessWidget {
+  const _LinkMatchNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      key: const ValueKey('payment_request_link_match'),
+      children: [
+        AppIcon(AppIcons.checkCircle, size: 16, color: colors.icon.success),
+        const SizedBox(width: AppSpacing.xxs),
+        Text(
+          'Matches the link',
+          style: AppTypography.bodySmall.copyWith(color: colors.text.secondary),
+        ),
+      ],
+    );
+  }
+}
+
+/// The link asked for something the scanned QR does not. The card already
+/// shows the QR, the trusted copy, so this names the link as the odd one out
+/// rather than casting doubt on what the user just scanned.
+class _LinkMismatchNotice extends StatelessWidget {
+  const _LinkMismatchNotice({required this.differences});
+
+  final Set<PaymentRequestLinkDifference> differences;
+
+  String get _title => differences.length > 1
+      ? 'The link had different details'
+      : switch (differences.single) {
+          PaymentRequestLinkDifference.address =>
+            'The link had a different address',
+          PaymentRequestLinkDifference.amount =>
+            'The link had a different amount',
+          PaymentRequestLinkDifference.memo => 'The link had a different memo',
+        };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      key: const ValueKey('payment_request_link_mismatch'),
+      decoration: BoxDecoration(
+        color: colors.background.utilityDestructiveAlphaSubtle,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.s),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ExcludeSemantics(
+              child: AppIcon(
+                AppIcons.warning,
+                size: AppIconSize.medium,
+                color: colors.icon.destructive,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _title,
+                    style: AppTypography.bodySmall.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: colors.text.destructive,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    'Using the QR instead — the link may have been changed.',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _QuietNotice extends StatelessWidget {
   const _QuietNotice({required this.message, super.key});
 
@@ -1623,7 +1745,7 @@ class _Actions extends StatelessWidget {
       : _recheckable
       ? 'Check again'
       : hasAmount
-      ? 'Review'
+      ? 'Review payment'
       // A blocked amount-less request is not waiting for an amount — the
       // address or the check is the problem — so naming the button after
       // the amount would point at the wrong fix.
@@ -1700,8 +1822,9 @@ class _Actions extends StatelessWidget {
         variant: variant,
         expand: true,
         constrainContent: true,
+        growWithContent: true,
         leading: leading,
-        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        child: Text(label),
       ),
     );
   }
@@ -1730,93 +1853,26 @@ class _Actions extends StatelessWidget {
   );
 }
 
-/// The details card as a fixed frame: a [ReviewWrapCard] that takes the
-/// height it is given, with the received content scrolling inside its own
-/// rounded clip.
-///
-/// The card's inner inset moves into the scroll viewport so the content
-/// runs edge to edge under the clip while the scrollbar rides in the
-/// gutter that inset leaves, and the fade cues sit on the card's own top
-/// and bottom edges instead of cutting the content off mid-surface under
-/// the pinned header.
-class _DetailsFrame extends StatelessWidget {
-  const _DetailsFrame({required this.rows});
-
-  final List<Widget> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    return ReviewWrapCard(
-      // The frame hugs short content and fills for long content; the
-      // viewport inside decides which, so the card must not force a height.
-      mainAxisSize: MainAxisSize.min,
-      padding: EdgeInsets.zero,
-      children: [
-        // Flexible, so the viewport inherits the frame's bounded height: a
-        // `Column` hands a plain child unbounded main-axis space, which
-        // would let the content size the scroll view instead of the frame.
-        Flexible(
-          fit: FlexFit.loose,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadii.large),
-            child: _FadingScrollRegion(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < rows.length; i++) ...[
-                    // The row gap the wrap card applies to its children.
-                    if (i > 0) const SizedBox(height: AppSpacing.sm),
-                    rows[i],
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Scrolls the received content inside the details frame, dissolves
-/// whichever edge still has content beyond it, and owns the overlay
-/// scrollbar for that scroll.
-///
-/// The fade is a mask on the content itself, not a gradient painted in the
-/// wrap-card color: masking dissolves the glyphs against whatever the card
-/// surface is in the current theme, with no second color to keep in sync.
-///
-/// The [ShaderMask] is present on every build, including while both fades
-/// are fully transparent. An earlier revision returned the bare child at
-/// zero opacity and inserted the mask only once the content overflowed;
-/// that changed the subtree's position in the widget tree, which
-/// deactivates and re-inflates every element under it. The scroll offset
-/// and every expansion state below were discarded on the first scroll as a
-/// result — the reason an expanded memo collapsed the moment the user
-/// scrolled.
+/// Scrolls the request details between the pinned header and actions.
+/// Content keeps the modal's horizontal inset; the scrollbar occupies the
+/// outer gutter so it never crosses a nested card or its text.
 class _FadingScrollRegion extends StatefulWidget {
   const _FadingScrollRegion({
     required this.child,
-    this.scrollViewKey = kPaymentRequestScrollViewKey,
-    this.scrollbarKey = kPaymentRequestScrollbarKey,
-    this.contentPadding = defaultContentPadding,
+    this.contentPadding = const EdgeInsets.symmetric(
+      horizontal: kPaymentRequestGutter,
+    ),
   });
 
   final Widget child;
-  final Key scrollViewKey;
-  final Key scrollbarKey;
+  final Key scrollViewKey = kPaymentRequestScrollViewKey;
+  final Key scrollbarKey = kPaymentRequestScrollbarKey;
   final EdgeInsetsGeometry contentPadding;
 
   static const _fadeHeight = AppSpacing.md;
 
-  /// The card's inset, moved inside the viewport so the content scrolls
-  /// the full height of the card. The card gutter on every side, not the
-  /// review screen's 24/16 pair: this card sits inside a frame that uses
-  /// 16, and two vertical rhythms one level apart read as a mistake.
-  static const defaultContentPadding = EdgeInsets.all(kPaymentRequestGutter);
-
   /// Overlay scrollbar geometry: the pane scrollbar's 6px capsule, centered
-  /// in the card's 16px inner gutter so it never rides over text.
+  /// in the modal's 16px outer gutter.
   static const scrollbarThickness = 6.0;
   static const scrollbarMargin = (AppSpacing.sm - scrollbarThickness) / 2;
 

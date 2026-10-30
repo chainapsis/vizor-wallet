@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOST_LIBRARY_POLICY="$SCRIPT_DIR/linux-appimage/host-libraries.txt"
+HOST_LIBRARY_PATTERNS=()
+
 BUNDLE_DIR=""
 OUTPUT=""
 APP_ID=""
@@ -141,6 +145,22 @@ OUTPUT="$OUTPUT_DIR/$(basename "$OUTPUT")"
 require_file "$BUNDLE_DIR/$BINARY_NAME" "bundle executable"
 require_file "$BUNDLE_DIR/data/applications/$APP_ID.desktop" "bundle desktop file"
 require_file "$BUNDLE_DIR/data/icons/hicolor/256x256/apps/$APP_ID.png" "bundle icon"
+require_file "$HOST_LIBRARY_POLICY" "host-library policy"
+
+for tool in python3 readelf ldd; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "Missing $tool for AppImage dependency validation" >&2
+    exit 1
+  fi
+done
+while IFS= read -r pattern; do
+  case "$pattern" in ''|'#'*) continue ;; esac
+  HOST_LIBRARY_PATTERNS+=("$pattern")
+done < "$HOST_LIBRARY_POLICY"
+if [[ ${#HOST_LIBRARY_PATTERNS[@]} -eq 0 ]]; then
+  echo "Host-library policy is empty" >&2
+  exit 1
+fi
 
 LINUXDEPLOY_BIN="$(resolve_tool LINUXDEPLOY_BIN linuxdeploy)"
 APPIMAGETOOL_BIN="$(resolve_tool APPIMAGETOOL_BIN appimagetool)"
@@ -188,9 +208,16 @@ write_app_run() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-APPDIR="\${APPDIR:-\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)}"
+APPDIR="\$(cd -- "\${APPDIR:-\$(dirname "\${BASH_SOURCE[0]}")}" && pwd)"
+case "\${APPDIR}" in
+  *:*|*';'*)
+    echo 'AppDir path contains a library-path separator' >&2
+    exit 1
+    ;;
+esac
 export XDG_DATA_DIRS="\${APPDIR}/usr/share:\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
-export LD_LIBRARY_PATH="\${APPDIR}/usr/bin/lib:\${APPDIR}/usr/lib:\${LD_LIBRARY_PATH:-}"
+# Do not inherit search paths outside the bundle. Host libraries use loader defaults.
+export LD_LIBRARY_PATH="\${APPDIR}/usr/bin/lib:\${APPDIR}/usr/lib"
 export GST_PLUGIN_SYSTEM_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
 if [[ -x "\${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" ]]; then
@@ -206,11 +233,12 @@ should_skip_dependency() {
   local path="$1"
   local base
   base="$(basename "$path")"
-  case "$base" in
-    ld-linux*.so*|libc.so.*|libpthread.so.*|libdl.so.*|libm.so.*|librt.so.*|libresolv.so.*|libnsl.so.*|libutil.so.*)
+  local pattern
+  for pattern in "${HOST_LIBRARY_PATTERNS[@]}"; do
+    if [[ "$base" == $pattern ]]; then
       return 0
-      ;;
-  esac
+    fi
+  done
   return 1
 }
 
@@ -231,9 +259,10 @@ copy_dependencies_for() {
   [[ -f "$file" ]] || return 0
 
   local ldd_output
-  if ! ldd_output="$(ldd "$file" 2>/dev/null)"; then
-    echo "Skipping dependency scan for $file because ldd failed" >&2
-    return 0
+  if ! ldd_output="$(ldd "$file" 2>&1)" || [[ "$ldd_output" == *"not found"* ]]; then
+    echo "Dependency scan failed for $file:" >&2
+    echo "$ldd_output" >&2
+    return 1
   fi
 
   while IFS= read -r dependency; do
@@ -377,7 +406,12 @@ install_appimage_root_icon() {
 export APPIMAGE_EXTRACT_AND_RUN=1
 
 log_step "Running linuxdeploy"
+linuxdeploy_excludes=()
+for pattern in "${HOST_LIBRARY_PATTERNS[@]}"; do
+  linuxdeploy_excludes+=(--exclude-library "$pattern")
+done
 "$LINUXDEPLOY_BIN" \
+  "${linuxdeploy_excludes[@]}" \
   --appdir "$APPDIR" \
   --executable "$PAYLOAD_DIR/$BINARY_NAME" \
   --desktop-file "$DESKTOP_FILE" \
@@ -390,6 +424,9 @@ install_appimage_root_icon
 
 log_step "Copying GStreamer runtime"
 copy_gstreamer_runtime
+
+log_step "Checking AppDir dependencies"
+python3 "$SCRIPT_DIR/linux-appimage/check_bundle.py" --appdir "$APPDIR"
 
 rm -f "$OUTPUT" "$OUTPUT.zsync" "$OUTPUT.sha256" "$OUTPUT.asc"
 

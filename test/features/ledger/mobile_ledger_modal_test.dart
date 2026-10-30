@@ -81,10 +81,7 @@ void main() {
       await frames(tester);
       expect(find.text('Pair your Ledger again'), findsOneWidget);
       expect(find.text('Did you reset pairing?'), findsNothing);
-      expect(
-        find.textContaining('Open Bluetooth settings and remove'),
-        findsOneWidget,
-      );
+      expect(find.text('Reset Bluetooth pairing'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       ble.pairingInvalidEvidence.value = false;
       ble.pairingInvalidEvidence.value = true;
@@ -192,7 +189,7 @@ void main() {
       );
       expect(find.text('Did you reset pairing?'), findsNothing);
       expect(
-        find.textContaining('Open Settings > Bluetooth.'),
+        find.text('Reset Bluetooth pairing'),
         invalid ? findsOneWidget : findsNothing,
       );
       expect(find.text('Open settings'), findsNothing);

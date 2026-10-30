@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_profile_picture.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/review_info_row.dart';
 import '../../../../core/widgets/review_list_row.dart' show kTxFeeHelpTooltip;
 import '../../domain/swap_contract.dart';
 import '../../models/swap_address_formatting.dart';
@@ -153,11 +154,9 @@ class MobilePayStatusHeader extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 252),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _MobilePayStatusHeaderRow(
+        child: ReviewInfoFlow(
+          rows: [
+            ReviewInfoRow(
               key: const ValueKey('mobile_pay_status_asset_row'),
               leading: SwapAssetIcon(
                 asset: asset,
@@ -165,28 +164,11 @@ class MobilePayStatusHeader extends StatelessWidget {
                 showChainBadge: !asset.isNativeZec,
               ),
               label: label,
-              headline: amountText,
-              scaleHeadlineToFit: true,
-              bottomText: fiatText,
+              value: amountText,
+              valueFit: BoxFit.scaleDown,
+              bottomLeftText: fiatText,
             ),
-            SizedBox(
-              width: 40,
-              height: 40,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
-                  width: 40,
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.arrowDown,
-                      size: AppIconSize.large,
-                      color: context.colors.icon.accent,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            _MobilePayStatusHeaderRow(
+            ReviewInfoRow(
               key: const ValueKey('mobile_pay_status_recipient_row'),
               leading: profilePictureId != null && profilePictureId.isNotEmpty
                   ? AppProfilePicture(
@@ -195,113 +177,27 @@ class MobilePayStatusHeader extends StatelessWidget {
                     )
                   : _MobilePayRecipientPlaceholder(),
               label: 'To',
-              headline: name == null || name.isEmpty ? compactAddress : name,
-              bottomText: name == null || name.isEmpty ? null : compactAddress,
-              bottomAction: _MobilePayFullAddressButton(
-                onTap: () => showMobileAddressVerifySheet(
-                  context,
-                  title: '${asset.chainLabel} address',
-                  address: recipientAddress,
-                  leading: SwapAssetIcon(
-                    asset: asset,
-                    size: 32,
-                    showChainBadge: false,
-                  ),
+              value: name == null || name.isEmpty ? compactAddress : name,
+              bottomLeftText: name == null || name.isEmpty
+                  ? null
+                  : compactAddress,
+              trailingActionLabel: 'Full address',
+              trailingActionKey: const ValueKey(
+                'mobile_pay_status_full_address',
+              ),
+              onTrailingAction: () => showMobileAddressVerifySheet(
+                context,
+                title: '${asset.chainLabel} address',
+                address: recipientAddress,
+                leading: SwapAssetIcon(
+                  asset: asset,
+                  size: 32,
+                  showChainBadge: false,
                 ),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _MobilePayStatusHeaderRow extends StatelessWidget {
-  const _MobilePayStatusHeaderRow({
-    required this.leading,
-    required this.label,
-    required this.headline,
-    this.scaleHeadlineToFit = false,
-    this.bottomText,
-    this.bottomAction,
-    super.key,
-  });
-
-  final Widget leading;
-  final String label;
-  final String headline;
-  final bool scaleHeadlineToFit;
-  final String? bottomText;
-  final Widget? bottomAction;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final headlineText = Text(
-      headline,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: AppTypography.headlineLarge.copyWith(color: colors.text.accent),
-    );
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 90),
-      child: Row(
-        children: [
-          SizedBox(width: 40, child: Center(child: leading)),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 24),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      label,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                if (scaleHeadlineToFit)
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: headlineText,
-                  )
-                else
-                  headlineText,
-                const SizedBox(height: AppSpacing.xxs),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 24),
-                  child: Row(
-                    children: [
-                      if (bottomText != null)
-                        Expanded(
-                          child: Text(
-                            bottomText!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: colors.text.secondary,
-                            ),
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                      ?bottomAction,
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -328,50 +224,6 @@ class _MobilePayRecipientPlaceholder extends StatelessWidget {
   }
 }
 
-class _MobilePayFullAddressButton extends StatelessWidget {
-  const _MobilePayFullAddressButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      child: GestureDetector(
-        key: const ValueKey('mobile_pay_status_full_address'),
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 24),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.eye,
-                  size: 16,
-                  color: colors.button.ghost.label,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Full address',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.button.ghost.label,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// White rounded surface hosting the tab content — the Figma frames
-/// put the timeline and the detail rows on `foreground.neutral.ground`.
 class _StatusCard extends StatelessWidget {
   const _StatusCard({required this.child, super.key});
 

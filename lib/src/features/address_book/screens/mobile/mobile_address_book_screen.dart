@@ -853,7 +853,7 @@ class _NoContactsState extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Image.asset(
-                _emptyContactsAsset(context),
+                _emptyContactsAsset,
                 width: 280,
                 height: 220,
                 fit: BoxFit.contain,
@@ -911,7 +911,7 @@ class _EmptySearchState extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Image.asset(
-                _emptySearchAsset(context),
+                _emptySearchAsset,
                 width: 170,
                 height: 170,
                 fit: BoxFit.contain,
@@ -943,17 +943,9 @@ class _EmptySearchState extends StatelessWidget {
   }
 }
 
-String _emptyContactsAsset(BuildContext context) {
-  return AppTheme.of(context) == AppThemeData.dark
-      ? 'assets/illustrations/address_book_empty_contacts_dark.png'
-      : 'assets/illustrations/address_book_empty_contacts_light.png';
-}
-
-String _emptySearchAsset(BuildContext context) {
-  return AppTheme.of(context) == AppThemeData.dark
-      ? 'assets/illustrations/address_book_empty_search_dark.png'
-      : 'assets/illustrations/address_book_empty_search_light.png';
-}
+const _emptyContactsAsset =
+    'assets/illustrations/address_book_empty_contacts.webp';
+const _emptySearchAsset = 'assets/illustrations/address_book_empty_search.webp';
 
 class _ContactDraft {
   const _ContactDraft({

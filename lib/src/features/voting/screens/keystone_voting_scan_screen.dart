@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/navigation/payment_uri_busy_surface_hold.dart';
+import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../services/qr_scanner.dart';
@@ -23,7 +23,7 @@ class KeystoneVotingScanScreen extends ConsumerStatefulWidget {
 // the signed voting QR while this camera reads it.
 class _KeystoneVotingScanScreenState
     extends ConsumerState<KeystoneVotingScanScreen>
-    with PaymentUriBusySurfaceHoldMixin {
+    with ExternalActionGuardHoldMixin {
   bool _decoding = false;
   String? _error;
 

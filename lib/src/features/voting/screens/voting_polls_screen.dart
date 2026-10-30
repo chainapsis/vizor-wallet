@@ -27,7 +27,8 @@ import '../widgets/voting_config_settings_panel.dart';
 import '../widgets/voting_metadata_widgets.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
-const _votingBetaLabelAsset = 'assets/illustrations/voting_beta_label.png';
+const _votingBetaLabelAsset =
+    'assets/illustrations/desktop/voting_beta_label.webp';
 const _votingBetaLabelWidth = 42.0;
 const _votingBetaLabelHeight = 24.0;
 const _votingBetaLabelCenterDx = 34.0;
