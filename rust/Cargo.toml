@@ -67,7 +67,7 @@ time = "0.3"
 # so we can explicitly install the ring CryptoProvider in `init_app`.
 # Without an explicit provider install, rustls 0.23+ panics the first
 # TLS handshake with "no process-level CryptoProvider installed".
-rustls = "0.23"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 
 # SQLite (re-exported by zcash_client_sqlite but needed for Connection type)
 rusqlite = "0.37"
