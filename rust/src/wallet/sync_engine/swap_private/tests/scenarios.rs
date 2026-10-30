@@ -30,6 +30,7 @@ use std::{
 use zakura_one_time_ivk::Purpose;
 use zcash_primitives::transaction::{builder::default_tx_expiry_delta, Transaction};
 
+mod directed;
 
 /// The seed every device restores, and a second seed some devices add as an account.
 const MAIN: u8 = 4;
