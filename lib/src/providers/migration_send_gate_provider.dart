@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/layout/app_form_factor.dart';
-import '../features/migration/providers/ironwood_migration_announcement_provider.dart';
+import '../features/migration/providers/ironwood_migration_state_provider.dart';
 import 'account_provider.dart';
 import 'sync_provider.dart';
 

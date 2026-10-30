@@ -40,8 +40,6 @@ void main() {
     expect(calls, ['main https://zec.example:443']);
     expect(status.endpointUrl, 'https://zec.example:443');
     expect(status.ironwoodActiveAtTip, isTrue);
-    expect(status.endpointMatchesNetwork, isTrue);
-    expect(status.hasLightwalletdMetadata, isTrue);
   });
 
   test('cached active status skips the full lightwalletd fetch', () async {
@@ -73,7 +71,6 @@ void main() {
     expect(fullFetches, 0);
     expect(status.ironwoodActiveAtTip, isTrue);
     expect(status.tipHeight, BigInt.zero);
-    expect(status.hasLightwalletdMetadata, isFalse);
   });
 
   test(
@@ -125,7 +122,6 @@ void main() {
       expect(store.activeNetworks, contains('main'));
       expect(refreshed.tipHeight, BigInt.from(3_500_000));
       expect(refreshed.ironwoodActiveAtTip, isTrue);
-      expect(refreshed.hasLightwalletdMetadata, isTrue);
     },
   );
 
@@ -317,16 +313,8 @@ rust_wallet.ChainUpgradeStatus _fullStatus({
 }) {
   return rust_wallet.ChainUpgradeStatus(
     network: network,
-    lightwalletdChainName: network,
     tipHeight: BigInt.from(tipHeight),
-    lightwalletdReportedHeight: BigInt.from(tipHeight),
-    lightwalletdEstimatedHeight: BigInt.from(tipHeight),
-    lightwalletdConsensusBranchId: ironwoodActive ? '37a5165b' : 'c8e71055',
-    lightwalletdUpgradeName: '',
-    lightwalletdUpgradeHeight: BigInt.zero,
-    nu63ActivationHeight: BigInt.from(3_428_143),
     ironwoodActiveAtTip: ironwoodActive,
-    endpointMatchesNetwork: true,
   );
 }
 
@@ -338,7 +326,6 @@ rust_wallet.ChainUpgradeActivationStatus _activationStatus({
   return rust_wallet.ChainUpgradeActivationStatus(
     network: network,
     tipHeight: tipHeight,
-    nu63ActivationHeight: BigInt.from(3_428_143),
     ironwoodActiveAtTip: ironwoodActive,
   );
 }

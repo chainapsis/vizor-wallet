@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
@@ -17,7 +17,7 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import '../../fakes/fake_sync_notifier.dart';
 
 const _accountUuid = '550e8400-e29b-41d4-a716-446655440000';
-const _dbPath = '/tmp/ironwood-announcement-test-wallet.db';
+const _dbPath = '/tmp/ironwood-migration-state-test-wallet.db';
 const _endpoint = RpcEndpointConfig(
   networkName: 'main',
   lightwalletdUrl: 'https://zec.example:443',
@@ -1157,7 +1157,6 @@ ProviderContainer _container({
             rust_wallet.ChainUpgradeActivationStatus(
               network: network,
               tipHeight: tipHeight,
-              nu63ActivationHeight: BigInt.from(3_428_143),
               ironwoodActiveAtTip: ironwoodActiveAtTip,
             ),
       ),
@@ -1282,18 +1281,8 @@ rust_wallet.ChainUpgradeStatus _chainStatus({
 }) {
   return rust_wallet.ChainUpgradeStatus(
     network: network,
-    lightwalletdChainName: network,
     tipHeight: BigInt.from(tipHeight),
-    lightwalletdReportedHeight: BigInt.from(tipHeight),
-    lightwalletdEstimatedHeight: BigInt.from(tipHeight),
-    lightwalletdConsensusBranchId: ironwoodActiveAtTip
-        ? '37a5165b'
-        : 'c8e71055',
-    lightwalletdUpgradeName: '',
-    lightwalletdUpgradeHeight: BigInt.zero,
-    nu63ActivationHeight: BigInt.from(3_428_143),
     ironwoodActiveAtTip: ironwoodActiveAtTip,
-    endpointMatchesNetwork: true,
   );
 }
 

@@ -65,7 +65,7 @@ import '../src/features/home/screens/mobile/mobile_home_screen.dart';
 import '../src/features/home/providers/nu7_announcement_provider.dart';
 import '../src/features/home/widgets/nu7_announcement.dart';
 import '../src/features/home/services/transparent_shielding_service.dart';
-import '../src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import '../src/features/migration/providers/ironwood_migration_state_provider.dart';
 import '../src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
