@@ -60,6 +60,8 @@ pub(crate) mod mempool;
 #[cfg(test)]
 mod private_recovery_reorg_tests;
 mod retry_progress;
+mod swap_private;
+pub(crate) use swap_private::{cancel_recovery, filter_step, recover, RecoveryError, Round, Wait};
 #[cfg(test)]
 pub(crate) mod test_lwd;
 mod tip_cache;

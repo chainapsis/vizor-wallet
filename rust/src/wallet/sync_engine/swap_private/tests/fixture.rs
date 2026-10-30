@@ -1,0 +1,1443 @@
+//! A synthetic Mainnet chain scanned into real app wallets, and a receiver service built
+//! from its actual payments with the production directory, companion, GCS and PIR code.
+use super::super::*;
+use orchard::keys::{FullViewingKey, Scope};
+use secrecy::SecretVec;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{mpsc, Arc, Mutex},
+};
+use zakura_one_time_ivk::{KeyId, Purpose};
+use zakura_pir_client::receiver::{
+    blocks::{BlockId, HeightSet, Range},
+    initial_salt,
+    inventory::{FilterRef, Inventory, Shard},
+    shards::{Coverage, ShardFilter},
+    Companion, Coverage as SegmentCoverage, Directory, Publication, RawRecord, Tree,
+};
+use zakura_pir_publisher::receiver::{
+    build, query_rows, witness::payloads, Paid, Projection, OPEN_SEED_ATTEMPTS,
+};
+use zakura_pir_query_server::receiver::server::Server;
+use zcash_client_backend::{
+    data_api::{
+        chain::{BlockSource, ChainState},
+        one_time_ivk::restore::{DirectoryPayment, LookupCursor, LookupWork, RecoveryStatus},
+        testing::{AddressType, IronwoodFvk, TestBuilder, TestState},
+        WalletRead, WalletWrite,
+    },
+    proto::compact_formats::CompactBlock,
+};
+use zcash_client_sqlite::testing::{
+    db::{TestDb, TestDbFactory},
+    BlockCache,
+};
+use zcash_primitives::transaction::Transaction;
+use zcash_protocol::{
+    consensus::BlockHeight, local_consensus::LocalNetwork, memo::MemoBytes, value::Zatoshis,
+};
+
+pub(super) const NETWORK: WalletNetwork = WalletNetwork::Main;
+pub(super) const ORIGIN: &str = "https://receiver.test";
+
+/// Ironwood activation on Mainnet, where the synthetic chain starts.
+pub(super) fn activation() -> u32 {
+    NETWORK
+        .activation_height(NetworkUpgrade::Nu6_3)
+        .unwrap()
+        .into()
+}
+
+/// Turns on NEAR swap privacy, which only reserving new addresses needs. Discovery runs
+/// without it, and without Private queries.
+pub(super) fn enable_feature() {
+    crate::api::sync::set_near_swap_privacy_enabled(true);
+}
+
+/// The Mainnet upgrade heights as a local network the test chain can mine.
+fn local_network() -> LocalNetwork {
+    let height = |upgrade| NETWORK.activation_height(upgrade);
+    LocalNetwork {
+        overwinter: height(NetworkUpgrade::Overwinter),
+        sapling: height(NetworkUpgrade::Sapling),
+        blossom: height(NetworkUpgrade::Blossom),
+        heartwood: height(NetworkUpgrade::Heartwood),
+        canopy: height(NetworkUpgrade::Canopy),
+        nu5: height(NetworkUpgrade::Nu5),
+        nu6: height(NetworkUpgrade::Nu6),
+        nu6_1: height(NetworkUpgrade::Nu6_1),
+        nu6_2: height(NetworkUpgrade::Nu6_2),
+        nu6_3: Some(activation().into()),
+        nu7: None,
+    }
+}
+
+/// The independent chain, its tree state after each block, and every payment the
+/// receiver directory indexes.
+pub(super) struct Chain {
+    st: TestState<BlockCache, TestDb, LocalNetwork>,
+    states: BTreeMap<u32, ChainState>,
+    records: Vec<RawRecord>,
+}
+
+impl Chain {
+    /// A chain whose first block is Ironwood's activation block.
+    pub(super) fn new() -> Self {
+        let below = activation() - 1;
+        let st = TestBuilder::new()
+            .with_network(local_network())
+            .with_data_store_factory(TestDbFactory::default())
+            .with_block_cache(BlockCache::new())
+            .with_initial_chain_state(|_, _| {
+                zcash_client_backend::data_api::testing::InitialChainState {
+                    chain_state: ChainState::empty(below.into(), BlockHash([0; 32])),
+                    prior_sapling_roots: vec![],
+                    prior_orchard_roots: vec![],
+                }
+            })
+            .with_account_having_current_birthday()
+            .build();
+        let mut chain = Self {
+            st,
+            states: BTreeMap::from([(below, ChainState::empty(below.into(), BlockHash([0; 32])))]),
+            records: Vec::new(),
+        };
+        chain.mine(1);
+        chain
+    }
+
+    /// Records the tree state of the block just mined.
+    fn advance(&mut self) -> u32 {
+        let block = self.st.latest_cached_block().unwrap();
+        let height = u32::from(block.height());
+        self.states.insert(height, block.chain_state().clone());
+        height
+    }
+
+    /// Mines `n` blocks without shielded outputs.
+    pub(super) fn mine(&mut self, n: u32) {
+        for _ in 0..n {
+            self.st.generate_empty_block();
+            self.advance();
+        }
+    }
+
+    /// The latest block.
+    pub(super) fn tip(&self) -> u32 {
+        *self.states.keys().next_back().unwrap()
+    }
+
+    /// The chain state at the end of block `height`.
+    pub(super) fn state(&self, height: u32) -> &ChainState {
+        &self.states[&height]
+    }
+
+    /// The hash of block `height`.
+    pub(super) fn hash(&self, height: u32) -> [u8; 32] {
+        self.states[&height].block_hash().0
+    }
+
+    /// Mines one block paying `value` to `fvk`'s default address with a real Ironwood
+    /// note. `indexed` says the receiver directory lists it, as for NEAR's zero-OVK
+    /// payouts.
+    pub(super) fn pay(&mut self, fvk: &FullViewingKey, value: u64, indexed: bool) -> u32 {
+        let (height, _, _) = self.st.generate_next_block(
+            &IronwoodFvk(fvk.clone()),
+            AddressType::DefaultExternal,
+            Zatoshis::const_from_u64(value),
+        );
+        let height = u32::from(height);
+        self.advance();
+        if indexed {
+            let record = self.record(height, fvk);
+            self.records.push(record);
+        }
+        height
+    }
+
+    /// Lists the payment to `fvk` at `height` that the directory left out (see [`Self::pay`]).
+    pub(super) fn index(&mut self, height: u32, fvk: &FullViewingKey) {
+        let record = self.record(height, fvk);
+        self.records.push(record);
+    }
+
+    /// Drops every block above `height`, as a reorg does before the replacement branch is
+    /// mined. Later blocks get fresh hashes, so wallets see a different chain.
+    pub(super) fn rewind(&mut self, height: u32) {
+        self.st.truncate_to_height(height.into());
+        self.states.split_off(&(height + 1));
+        self.records.retain(|r| r.payment.height <= height);
+    }
+
+    /// The hash of block `height` if the chain has it.
+    pub(super) fn hash_at(&self, height: u32) -> Option<[u8; 32]> {
+        self.states.get(&height).map(|s| s.block_hash().0)
+    }
+
+    /// Mines a block holding only `tx`, which an app wallet built and broadcast.
+    pub(super) fn mine_tx(&mut self, tx: &Transaction) -> u32 {
+        self.st.generate_next_block_from_tx(1, tx);
+        self.advance()
+    }
+
+    /// The cached compact block at `height`.
+    fn block(&self, height: u32) -> CompactBlock {
+        let mut found = None;
+        self.st
+            .cache()
+            .with_blocks::<_, ()>(Some(height.into()), Some(1), |block| {
+                found = Some(block);
+                Ok(())
+            })
+            .unwrap();
+        found.unwrap()
+    }
+
+    /// The directory record of the output in block `height` that `fvk` can decrypt.
+    fn record(&self, height: u32, fvk: &FullViewingKey) -> RawRecord {
+        use orchard::note_encryption::{CompactAction, IronwoodDomain};
+        use zcash_note_encryption::try_compact_note_decryption;
+        let block = self.block(height);
+        let ivk = fvk.to_ivk(Scope::External).prepare();
+        let mut position = self.states[&(height - 1)].final_ironwood_tree().tree_size();
+        for tx in &block.vtx {
+            for (action_index, compact) in tx.ironwood_actions.iter().enumerate() {
+                let action = CompactAction::try_from(compact).unwrap();
+                let domain = IronwoodDomain::for_compact_action(&action);
+                if try_compact_note_decryption(&domain, &ivk, &action).is_some() {
+                    return RawRecord {
+                        receiver: fvk.address_at(0u32, Scope::External).to_raw_address_bytes(),
+                        page: 0,
+                        total: 1,
+                        payment: DirectoryPayment {
+                            height,
+                            block_hash: block.hash().0,
+                            txid: *tx.txid().as_ref(),
+                            // Fake blocks have no coinbase, and the directory refuses index 0.
+                            tx_index: u32::try_from(tx.index).unwrap().max(1),
+                            action_index: action_index as u32,
+                            position,
+                            action_nullifier: compact.nullifier.as_slice().try_into().unwrap(),
+                            cmx: compact.cmx.as_slice().try_into().unwrap(),
+                            ephemeral_key: compact.ephemeral_key.as_slice().try_into().unwrap(),
+                            ciphertext_prefix: compact.ciphertext.as_slice().try_into().unwrap(),
+                        },
+                        ordinal: 0,
+                    };
+                }
+                position += 1;
+            }
+        }
+        panic!("no output in block {height} pays the key");
+    }
+
+    /// Every Ironwood note commitment, in tree order.
+    fn commitments(&self) -> Vec<[u8; 32]> {
+        let mut commitments = Vec::new();
+        self.st
+            .cache()
+            .with_blocks::<_, ()>(Some(activation().into()), None, |block| {
+                for tx in &block.vtx {
+                    for action in &tx.ironwood_actions {
+                        commitments.push(action.cmx.as_slice().try_into().unwrap());
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+        commitments
+    }
+}
+
+/// Which receiver route a request used, for holds and byte counts. Directory and
+/// companion queries share the `query` class.
+fn route_class(route: &str) -> &'static str {
+    match route {
+        "inventory" => "inventory",
+        "block-filters/head" => "head",
+        "query" => "query",
+        _ if route.starts_with("inventory/") => "chunk",
+        _ if route.starts_with("shard-filters/") => "shard-filter",
+        _ if route.starts_with("choice/") => "choice",
+        _ if route.starts_with("block-filters/") => "filters",
+        _ if route.starts_with("public/") => "public",
+        _ => panic!("unexpected receiver route {route}"),
+    }
+}
+
+/// A request that fails with `error` instead of being answered.
+struct Failure {
+    class: &'static str,
+    nth: usize,
+    error: fn() -> session::Error,
+}
+
+/// A request the service holds until the test releases it.
+struct Hold {
+    class: &'static str,
+    nth: usize,
+    arrived: mpsc::Sender<()>,
+    release: Arc<tokio::sync::Semaphore>,
+}
+
+/// The test's side of a held request: wait for it to arrive, then release it.
+pub(super) struct Held {
+    arrived: mpsc::Receiver<()>,
+    release: Arc<tokio::sync::Semaphore>,
+}
+
+impl Held {
+    /// Blocks until the worker has sent the held request.
+    pub(super) fn wait(&self) {
+        self.arrived
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the held request arrived");
+    }
+
+    /// Lets the held response go.
+    pub(super) fn release(&self) {
+        self.release.add_permits(1);
+    }
+}
+
+/// One immutable publication: an inventory of shards with real encrypted PIR over each
+/// segment's directory and companion, its choice objects, sealed shards' filters and a
+/// rolling block filter suffix. Counts every request and response body.
+pub(super) struct Service {
+    inventory: Inventory,
+    directories: Vec<Server<Directory>>,
+    companions: Vec<Server<Companion>>,
+    choices: Vec<([u8; 32], Vec<u8>)>,
+    shard_filters: Vec<([u8; 32], Vec<u8>)>,
+    head: Head,
+    /// Each block's set of paid receivers, for blocks that pay any.
+    sets: Vec<HeightSet>,
+    /// Block hashes from just before the first filter height through the filter tip.
+    hashes: BTreeMap<u32, [u8; 32]>,
+    requests: Mutex<Vec<(&'static str, String, usize, usize)>>,
+    holds: Mutex<Vec<Hold>>,
+    /// Filter ranges ending at or below this height are served as another chain's (see
+    /// [`Self::fork_filters_through`]).
+    filter_fork: Mutex<Option<u32>>,
+    /// The most heights one filter range covers, as a byte cap would (see
+    /// [`Self::cap_ranges`]).
+    range_cap: Mutex<Option<u32>>,
+    /// Requests, by class and index, that never answer (see [`Self::stall`]).
+    stalls: Mutex<Vec<(&'static str, usize)>>,
+    failures: Mutex<Vec<Failure>>,
+    /// How long each request of a class takes to answer.
+    delays: Mutex<BTreeMap<&'static str, Duration>>,
+    trace: Mutex<Trace>,
+    /// A protocol the head names instead of the supported one, as a newer service would.
+    protocol: Mutex<Option<String>>,
+    /// A history revision the filter head names instead of the publication's (see
+    /// [`Self::serve_revision`]).
+    revision: Mutex<Option<u64>>,
+}
+
+/// Which address and record each encrypted query read, for one account.
+#[derive(Default)]
+struct Trace {
+    wallet: Option<(String, AccountUuid)>,
+    /// The work item and record of the previous query, to number records within a step.
+    previous: Option<(LookupWork, Option<u32>)>,
+    queries: Vec<(bool, u64, Option<u32>)>,
+}
+
+impl Service {
+    /// Publishes payments mined through `pir_end` as one recent tier, and filters for
+    /// blocks `first` through `filter_tip`. Each filter lists the receivers paid in its
+    /// block plus `extra` hits.
+    pub(super) fn publish(
+        chain: &Chain,
+        pir_end: u32,
+        first: u32,
+        filter_tip: u32,
+        extra: &[(u32, [u8; 43])],
+    ) -> Arc<Self> {
+        Self::publish_shards(chain, &[], pir_end, first, filter_tip, extra)
+    }
+
+    /// [`Self::publish`] of everything mined through the chain tip, with filters from
+    /// activation and no extra hits.
+    pub(super) fn at_tip(chain: &Chain) -> Arc<Self> {
+        Self::publish(chain, chain.tip(), activation(), chain.tip(), &[])
+    }
+
+    /// [`Self::publish`], with history before the recent tier split into sealed shards
+    /// ending at each of `sealed`, each with its receiver filter. Every companion's
+    /// payloads are built at `pir_end`.
+    pub(super) fn publish_shards(
+        chain: &Chain,
+        sealed: &[u32],
+        pir_end: u32,
+        first: u32,
+        filter_tip: u32,
+        extra: &[(u32, [u8; 43])],
+    ) -> Arc<Self> {
+        let tree_size = chain.state(pir_end).final_ironwood_tree().tree_size();
+        let commitments = chain.commitments();
+        let (mut directories, mut companions, mut choices) = (vec![], vec![], vec![]);
+        let (mut shard_filters, mut shards) = (vec![], vec![]);
+        let (mut start, mut parent, mut position) = (activation(), chain.hash(activation() - 1), 0);
+        let ends = sealed
+            .iter()
+            .map(|end| (*end, true))
+            .chain([(pir_end, false)]);
+        for (end, is_sealed) in ends {
+            let end_position = chain.state(end).final_ironwood_tree().tree_size();
+            let records: Vec<&RawRecord> = chain
+                .records
+                .iter()
+                .filter(|r| (start..=end).contains(&r.payment.height))
+                .collect();
+            let positions: Vec<_> = records.iter().map(|r| r.payment.position).collect();
+            let built = payloads(&commitments[..tree_size as usize], &positions).unwrap();
+            let paid: Vec<Paid> = records
+                .iter()
+                .zip(built)
+                .map(|(r, payload)| (r.receiver, r.payment.clone(), payload))
+                .collect();
+            let mut projection = Projection::new(initial_salt(&parent, 0));
+            let mut heights: Vec<_> = paid.iter().map(|p| p.1.height).collect();
+            heights.dedup();
+            for height in heights {
+                let block: Vec<_> = paid.iter().filter(|p| p.1.height == height).collect();
+                let receivers: Vec<_> = block.iter().map(|p| p.0).collect();
+                projection
+                    .project(&receivers, &block[0].1.block_hash)
+                    .unwrap();
+            }
+            let coverage = SegmentCoverage {
+                genesis: MAINNET_GENESIS,
+                history_revision: 0,
+                start_height: start,
+                start_parent: parent,
+                start_position: position,
+                end_height: end,
+                end_hash: chain.hash(end),
+                end_position,
+            };
+            let tree = Tree {
+                height: pir_end,
+                hash: chain.hash(pir_end),
+                size: tree_size,
+            };
+            let segment = build(
+                &projection,
+                coverage,
+                &chain.hash(end),
+                OPEN_SEED_ATTEMPTS,
+                query_rows(paid.len() as u32),
+                tree,
+                &paid,
+            )
+            .unwrap();
+            let manifest = segment.directory.manifest.clone();
+            choices.push((manifest.choice.digest, segment.directory.choice.clone()));
+            let (directory, entries) = Server::directory(segment.directory).unwrap();
+            let companion = Server::companion(segment.companion, &manifest, &entries).unwrap();
+            let filter = is_sealed.then(|| {
+                let filter = ShardFilter::build(
+                    MAINNET_GENESIS,
+                    0,
+                    Coverage {
+                        start_height: start,
+                        end_height: end,
+                        end_hash: chain.hash(end),
+                    },
+                    records.iter().map(|r| &r.receiver),
+                )
+                .unwrap();
+                shard_filters.push((filter.digest(), filter.bytes().to_vec()));
+                FilterRef {
+                    digest: filter.digest(),
+                    bytes: filter.bytes().len() as u32,
+                    receivers: filter.receivers() as u32,
+                }
+            });
+            shards.push(Shard {
+                index: 0,
+                sealed: is_sealed,
+                start_height: start,
+                start_parent: parent,
+                start_position: position,
+                end_height: end,
+                end_hash: chain.hash(end),
+                end_position,
+                segments: vec![Publication {
+                    directory: directory.session().clone(),
+                    companion: companion.session().clone(),
+                }],
+                filter,
+            });
+            directories.push(directory);
+            companions.push(companion);
+            (start, parent, position) = (end + 1, chain.hash(end), end_position);
+        }
+        let sets = (first..=filter_tip)
+            .filter_map(|height| {
+                let hits: Vec<[u8; 43]> = chain
+                    .records
+                    .iter()
+                    .filter(|r| r.payment.height == height)
+                    .map(|r| r.receiver)
+                    .chain(extra.iter().filter(|(h, _)| *h == height).map(|(_, r)| *r))
+                    .collect();
+                HeightSet::build(&MAINNET_GENESIS, height, &hits).unwrap()
+            })
+            .collect();
+        let hashes = (first - 1..=filter_tip)
+            .map(|height| (height, chain.hash(height)))
+            .collect();
+        Arc::new(Self {
+            inventory: Inventory::build(MAINNET_GENESIS, 0, shards).unwrap(),
+            directories,
+            companions,
+            choices,
+            shard_filters,
+            head: Head {
+                genesis: MAINNET_GENESIS,
+                revision: 0,
+                first,
+                tip: BlockId {
+                    height: filter_tip,
+                    hash: chain.hash(filter_tip),
+                },
+            },
+            sets,
+            hashes,
+            requests: Mutex::new(Vec::new()),
+            holds: Mutex::new(Vec::new()),
+            stalls: Mutex::new(Vec::new()),
+            filter_fork: Mutex::new(None),
+            range_cap: Mutex::new(None),
+            failures: Mutex::new(Vec::new()),
+            delays: Mutex::new(BTreeMap::new()),
+            trace: Mutex::new(Trace::default()),
+            protocol: Mutex::new(None),
+            revision: Mutex::new(None),
+        })
+    }
+
+    /// Makes the head name `protocol`, which this client does not support.
+    pub(super) fn serve_protocol(&self, protocol: &str) {
+        *self.protocol.lock().unwrap() = Some(protocol.into());
+    }
+
+    /// Makes the filter head name history revision `revision`, as after a correction the
+    /// wallet hasn't seen.
+    pub(super) fn serve_revision(&self, revision: u64) {
+        *self.revision.lock().unwrap() = Some(revision);
+    }
+
+    /// The published inventory.
+    pub(super) fn inventory(&self) -> &Inventory {
+        &self.inventory
+    }
+
+    /// Holds the `nth` (zero-based) request of `class` until released.
+    pub(super) fn hold(&self, class: &'static str, nth: usize) -> Held {
+        let (arrived, waiting) = mpsc::channel();
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        self.holds.lock().unwrap().push(Hold {
+            class,
+            nth,
+            arrived,
+            release: release.clone(),
+        });
+        Held {
+            arrived: waiting,
+            release,
+        }
+    }
+
+    /// Serves every filter range ending at or below `height` as a same-revision service on
+    /// another chain would, with an end hash the wallet's chain doesn't have.
+    pub(super) fn fork_filters_through(&self, height: u32) {
+        *self.filter_fork.lock().unwrap() = Some(height);
+    }
+
+    /// Ends every filter range after at most `blocks` heights, as the byte cap ends a
+    /// dense one early.
+    pub(super) fn cap_ranges(&self, blocks: u32) {
+        *self.range_cap.lock().unwrap() = Some(blocks);
+    }
+
+    /// Makes the `nth` (zero-based) request of `class` send nothing back. It fails after
+    /// [`STALL`], as the app's transport fails a request that stops arriving (see
+    /// `STALL_TIMEOUT`).
+    pub(super) fn stall(&self, class: &'static str, nth: usize) {
+        self.stalls.lock().unwrap().push((class, nth));
+    }
+
+    /// Fails the `nth` (zero-based) request of `class` with `error` once any hold on it is
+    /// released, as a broken route or a refusing service would.
+    pub(super) fn fail(&self, class: &'static str, nth: usize, error: fn() -> session::Error) {
+        self.failures
+            .lock()
+            .unwrap()
+            .push(Failure { class, nth, error });
+    }
+
+    /// Answers every later request of `class` only after `delay`, as a slow route would.
+    pub(super) fn delay(&self, class: &'static str, delay: Duration) {
+        self.delays.lock().unwrap().insert(class, delay);
+    }
+
+    /// Records the address, and for a companion query the record, of every later query for
+    /// `account` of `wallet`. Queries are encrypted, so each one is attributed to the
+    /// lookup the worker just read: the first due item this publication can answer, which
+    /// the worker cannot change before its request. Only for single-account rounds without
+    /// concurrent writers.
+    pub(super) fn trace(&self, wallet: &Wallet, account: &Account) {
+        self.trace.lock().unwrap().wallet = Some((wallet.path.clone(), account.id));
+    }
+
+    /// The traced queries as (is a receive key, index, record), in request order. A
+    /// directory query has no record.
+    pub(super) fn traced(&self) -> Vec<(bool, u64, Option<u32>)> {
+        self.trace.lock().unwrap().queries.clone()
+    }
+
+    /// Attributes one query, `body`, to the lookup in flight (see [`Self::trace`]).
+    fn record_query(&self, body: &[u8]) {
+        let mut trace = self.trace.lock().unwrap();
+        let Some((path, account)) = trace.wallet.clone() else {
+            return;
+        };
+        let db =
+            open_existing_wallet_db_with_timeout(&path, NETWORK, WALLET_DB_BUSY_TIMEOUT).unwrap();
+        let end = BlockHeight::from(self.inventory.head().end_height);
+        let work = db
+            .one_time_recovery(account, one_time_ivk::now().unwrap(), Some(end))
+            .unwrap()
+            .lookups
+            .into_iter()
+            .next()
+            .expect("a query is sent only for a due lookup");
+        let session = body.get(4..36);
+        let directory = self
+            .directories
+            .iter()
+            .any(|d| session == Some(&d.id()[..]));
+        // A step resuming its cursor continues after the cursor's last record.
+        let first = || {
+            work.cursor
+                .as_ref()
+                .filter(|cursor| self.resumes(cursor))
+                .and_then(|cursor| cursor.last.as_ref())
+                .map_or(0, |last| last.page + 1)
+        };
+        let record = (!directory).then(|| match &trace.previous {
+            Some((previous, Some(record))) if *previous == work => record + 1,
+            _ => first(),
+        });
+        trace.queries.push((
+            work.work.key.purpose() == Purpose::Receive,
+            work.work.key.index(),
+            record,
+        ));
+        trace.previous = Some((work, record));
+    }
+
+    /// Whether a step against this publication resumes `cursor`.
+    fn resumes(&self, cursor: &LookupCursor) -> bool {
+        cursor.inventory == self.inventory.head().inventory
+    }
+
+    /// The status and body for one request, as the receiver service answers it.
+    fn answer(&self, class: &str, route: &str, body: &[u8]) -> Result<Vec<u8>, session::Error> {
+        let gone = || session::Error::Revision;
+        Ok(match class {
+            "inventory" => {
+                let mut head = self.inventory.head().clone();
+                if let Some(protocol) = self.protocol.lock().unwrap().clone() {
+                    head.protocol = protocol;
+                }
+                serde_json::to_vec(&head).unwrap()
+            }
+            "chunk" => {
+                let (id, chunk) = route
+                    .strip_prefix("inventory/")
+                    .unwrap()
+                    .split_once('/')
+                    .unwrap();
+                if id != hex::encode(self.inventory.head().inventory) {
+                    return Err(gone());
+                }
+                let chunks = self.inventory.chunks().unwrap();
+                serde_json::to_vec(&chunks[chunk.parse::<usize>().unwrap()]).unwrap()
+            }
+            "shard-filter" => {
+                let digest = route.strip_prefix("shard-filters/").unwrap();
+                self.shard_filters
+                    .iter()
+                    .find(|(d, _)| hex::encode(d) == digest)
+                    .map(|(_, f)| f.clone())
+                    .ok_or_else(|| session::Error::Transport("HTTP 404".into()))?
+            }
+            "head" => {
+                let mut head = self.head.clone();
+                head.revision = self.revision.lock().unwrap().unwrap_or(head.revision);
+                serde_json::to_vec(&head).unwrap()
+            }
+            "filters" => {
+                let range = route.strip_prefix("block-filters/0/").unwrap();
+                let (from, limit) = range.split_once('/').unwrap();
+                let from: u32 = from.parse().unwrap();
+                let limit: u32 = limit.parse().unwrap();
+                if from < self.head.first {
+                    return Err(gone());
+                }
+                let cap = self.range_cap.lock().unwrap().unwrap_or(limit);
+                let last = (from + limit.min(cap) - 1).min(self.head.tip.height);
+                Range::new(
+                    0,
+                    from,
+                    last - from + 1,
+                    self.hashes[&(from - 1)],
+                    match *self.filter_fork.lock().unwrap() {
+                        Some(fork) if last <= fork => [0xf0; 32],
+                        _ => self.hashes[&last],
+                    },
+                    self.sets
+                        .iter()
+                        .filter(|set| (from..=last).contains(&set.height()))
+                        .cloned()
+                        .collect(),
+                )
+                .unwrap()
+                .encode()
+                .unwrap()
+            }
+            "choice" => {
+                let digest = route.strip_prefix("choice/").unwrap();
+                self.choices
+                    .iter()
+                    .find(|(d, _)| hex::encode(d) == digest)
+                    .map(|(_, c)| c.clone())
+                    .ok_or_else(|| session::Error::Transport("HTTP 404".into()))?
+            }
+            "public" => {
+                let id = route.strip_prefix("public/").unwrap();
+                self.directories
+                    .iter()
+                    .find(|d| hex::encode(d.id()) == id)
+                    .map(|d| d.public().to_vec())
+                    .or_else(|| {
+                        self.companions
+                            .iter()
+                            .find(|c| hex::encode(c.id()) == id)
+                            .map(|c| c.public().to_vec())
+                    })
+                    .ok_or_else(gone)?
+            }
+            _ => {
+                let session = body.get(4..36);
+                match self
+                    .directories
+                    .iter()
+                    .find(|d| session == Some(&d.id()[..]))
+                {
+                    Some(directory) => directory.respond(body).unwrap(),
+                    None => self
+                        .companions
+                        .iter()
+                        .find(|c| session == Some(&c.id()[..]))
+                        .ok_or_else(gone)?
+                        .respond(body)
+                        .unwrap(),
+                }
+            }
+        })
+    }
+
+    /// Answers one request, after any hold on it is released.
+    async fn reply(&self, url: &str, body: &[u8], limit: usize) -> Result<Vec<u8>, session::Error> {
+        let route = url.split("/receiver/v1/").nth(1).unwrap().to_owned();
+        let class = route_class(&route);
+        if class == "query" {
+            self.record_query(body);
+        }
+        let (seen, gate) = {
+            let seen = self
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(c, ..)| *c == class)
+                .count();
+            // Counted on arrival so a later request of the same class gets the next index.
+            self.requests
+                .lock()
+                .unwrap()
+                .push((class, route.clone(), body.len(), 0));
+            let holds = self.holds.lock().unwrap();
+            let gate = holds
+                .iter()
+                .find(|h| h.class == class && h.nth == seen)
+                .map(|h| {
+                    let _ = h.arrived.send(());
+                    h.release.clone()
+                });
+            (seen, gate)
+        };
+        if let Some(gate) = gate {
+            gate.acquire().await.unwrap().forget();
+        }
+        if self.stalls.lock().unwrap().contains(&(class, seen)) {
+            tokio::time::sleep(STALL).await;
+            return Err(session::Error::Transport(
+                "network: Private-service request stalled".into(),
+            ));
+        }
+        let delay = self.delays.lock().unwrap().get(class).copied();
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
+        }
+        let failure = self
+            .failures
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|f| f.class == class && f.nth == seen)
+            .map(|f| f.error);
+        if let Some(error) = failure {
+            return Err(error());
+        }
+        let response = self.answer(class, &route, body)?;
+        if response.len() > limit {
+            return Err(session::Error::Transport("response over its limit".into()));
+        }
+        let mut requests = self.requests.lock().unwrap();
+        let entry = requests
+            .iter_mut()
+            .rev()
+            .find(|(c, r, req, resp)| {
+                *c == class && *r == route && *req == body.len() && *resp == 0
+            })
+            .unwrap();
+        entry.3 = response.len();
+        Ok(response)
+    }
+
+    /// The number of requests of `class`.
+    pub(super) fn count(&self, class: &str) -> usize {
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, ..)| *c == class)
+            .count()
+    }
+
+    /// Encrypted directory and companion queries, excluding setup and filters.
+    pub(super) fn queries(&self) -> usize {
+        self.count("query")
+    }
+
+    /// The filter routes requested, as `from/count`.
+    pub(super) fn filter_requests(&self) -> Vec<String> {
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(c, ..)| *c == "filters")
+            .map(|(_, r, ..)| r.trim_start_matches("block-filters/0/").to_owned())
+            .collect()
+    }
+
+    /// Request plus response body bytes over every route.
+    pub(super) fn bytes(&self) -> usize {
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, _, req, resp)| req + resp)
+            .sum()
+    }
+
+    /// Request and response bytes per route class, for the evidence log.
+    pub(super) fn report(&self, label: &str) -> String {
+        let mut by: BTreeMap<&str, (usize, usize, usize)> = BTreeMap::new();
+        for (class, _, req, resp) in self.requests.lock().unwrap().iter() {
+            let e = by.entry(class).or_default();
+            e.0 += 1;
+            e.1 += req;
+            e.2 += resp;
+        }
+        let parts: Vec<_> = by
+            .iter()
+            .map(|(c, (n, req, resp))| format!("{c}: {n} requests, {req} up, {resp} down"))
+            .collect();
+        let line = format!(
+            "{label}: {}; total {} bytes",
+            parts.join("; "),
+            self.bytes()
+        );
+        println!("receiver bytes {line}");
+        line
+    }
+}
+
+impl Transport for Service {
+    /// Returns a bounded encoded public resource.
+    async fn get(&self, url: &str, limit: usize) -> Result<Vec<u8>, session::Error> {
+        self.reply(url, &[], limit).await
+    }
+    /// Evaluates a real encrypted query without exposing its receiver to the fixture.
+    async fn post(
+        &self,
+        url: &str,
+        body: Vec<u8>,
+        limit: usize,
+    ) -> Result<Vec<u8>, session::Error> {
+        self.reply(url, &body, limit).await
+    }
+}
+
+/// A software account and the seed the app keeps for it in secure storage.
+#[derive(Clone)]
+pub(super) struct Account {
+    pub(super) id: AccountUuid,
+    pub(super) uuid: String,
+    seed: Vec<u8>,
+}
+
+impl Account {
+    /// The seed the app would read from secure storage to sign.
+    pub(super) fn seed(&self) -> SecretVec<u8> {
+        SecretVec::new(self.seed.clone())
+    }
+
+    /// The account's Orchard key, which its ordinary Ironwood receivers and one-time
+    /// keys derive from.
+    pub(super) fn parent(&self) -> FullViewingKey {
+        let usk = zcash_keys::keys::UnifiedSpendingKey::from_seed(
+            &NETWORK,
+            &self.seed,
+            zip32::AccountId::ZERO,
+        )
+        .unwrap();
+        FullViewingKey::from(usk.orchard())
+    }
+
+    /// One-time key `index` for `purpose`, derived without registering it.
+    pub(super) fn key(&self, purpose: Purpose, index: u64) -> FullViewingKey {
+        KeyId::new(purpose, index).derive(&self.parent()).unwrap()
+    }
+
+    /// The receiver bytes of one-time key `index` for `purpose`.
+    pub(super) fn receiver(&self, purpose: Purpose, index: u64) -> [u8; 43] {
+        self.key(purpose, index)
+            .address_at(0u32, Scope::External)
+            .to_raw_address_bytes()
+    }
+}
+
+/// An app wallet database, scanned like ordinary sync from the shared chain.
+pub(super) struct Wallet {
+    _dir: tempfile::TempDir,
+    pub(super) path: String,
+    pub(super) accounts: Vec<Account>,
+    scanned: u32,
+    birthday: u32,
+    /// Whether worker calls first mark every account used, so rounds cover them with NEAR
+    /// swap privacy off, as most tests assume (see [`Self::mark_used`]).
+    pub(super) in_use: bool,
+}
+
+impl Wallet {
+    /// Creates the app's first software account from `seed` with the given birthday.
+    pub(super) fn new(seed: u8, birthday: u32) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wallet.db").to_str().unwrap().to_owned();
+        let seed = vec![seed; 32];
+        let (uuid, _) = crate::wallet::keys::init_db_and_create_account(
+            &path,
+            NETWORK,
+            &SecretVec::new(seed.clone()),
+            Some(u64::from(birthday)),
+            "Recovery",
+        )
+        .unwrap();
+        Self {
+            _dir: dir,
+            path,
+            accounts: vec![Account {
+                id: crate::wallet::keys::parse_account_uuid(&uuid).unwrap(),
+                uuid,
+                seed,
+            }],
+            scanned: birthday - 1,
+            birthday,
+            in_use: true,
+        }
+    }
+
+    /// Adds another software account from a different seed, as the app's add flow does.
+    pub(super) fn add_account(&mut self, seed: u8, birthday: u32) -> Account {
+        let seed = vec![seed; 32];
+        let (uuid, _) = crate::wallet::keys::add_account(
+            &self.path,
+            NETWORK,
+            "Second",
+            &SecretVec::new(seed.clone()),
+            Some(u64::from(birthday)),
+        )
+        .unwrap();
+        let account = Account {
+            id: crate::wallet::keys::parse_account_uuid(&uuid).unwrap(),
+            uuid,
+            seed,
+        };
+        self.accounts.push(account.clone());
+        account
+    }
+
+    /// The first account.
+    pub(super) fn account(&self) -> &Account {
+        &self.accounts[0]
+    }
+
+    /// A fresh handle on the app database.
+    pub(super) fn db(&self) -> WalletDatabase {
+        open_existing_wallet_db_with_timeout(&self.path, NETWORK, WALLET_DB_BUSY_TIMEOUT).unwrap()
+    }
+
+    /// Ordinary sync: scans every new block, without the recovery worker, filters or PIR.
+    pub(super) fn scan(&mut self, chain: &Chain) {
+        self.try_scan(chain).unwrap();
+    }
+
+    /// [`Self::scan`], returning the wallet's error when it refuses the blocks.
+    fn try_scan(&mut self, chain: &Chain) -> Result<(), String> {
+        let tip = chain.tip();
+        if tip <= self.scanned {
+            return Ok(());
+        }
+        let mut db = self.db();
+        db.update_chain_tip(tip.into()).unwrap();
+        zcash_client_backend::data_api::chain::scan_cached_blocks(
+            &NETWORK,
+            chain.st.cache(),
+            &mut db,
+            BlockHeight::from(self.scanned + 1),
+            chain.state(self.scanned),
+            (tip - self.scanned) as usize,
+        )
+        .map_err(|e| format!("scan from {}: {e:?}", self.scanned + 1))?;
+        self.scanned = tip;
+        Ok(())
+    }
+
+    /// Ordinary sync that follows reorgs: rewinds below the highest scanned block still on
+    /// `chain` through the app's reorg path, scans to the tip, and stamps new blocks with
+    /// the current time so quote deadlines can pass. Returns the height it rewound to, or
+    /// the app's error when the wallet refuses the rewind or the new blocks.
+    pub(super) fn sync(&mut self, chain: &Chain) -> Result<Option<u32>, String> {
+        let tip = chain.tip();
+        let mut db = self.db();
+        // Adding an account rewinds the wallet to that account's birthday.
+        let stored: Option<u32> = rusqlite::Connection::open(&self.path)
+            .unwrap()
+            .query_row("SELECT MAX(height) FROM blocks", [], |r| r.get(0))
+            .unwrap();
+        self.scanned = self.scanned.min(stored.unwrap_or(self.birthday - 1));
+        let mut fork = self.scanned;
+        while fork >= self.birthday {
+            let local = db.block_metadata(fork.into()).unwrap();
+            if local.is_some_and(|b| Some(b.block_hash().0) == chain.hash_at(fork)) {
+                break;
+            }
+            fork -= 1;
+        }
+        let mut rewound = None;
+        if fork < self.scanned {
+            let actual = super::super::super::truncate_wallet_to_height(
+                &self.path,
+                &mut db,
+                fork.into(),
+                tip.into(),
+                "scenario.rewind",
+            )
+            .map_err(|e| format!("{e:?}"))?;
+            self.scanned = u32::from(actual).min(fork).max(self.birthday - 1);
+            rewound = Some(self.scanned);
+        }
+        drop(db);
+        self.try_scan(chain)?;
+        rusqlite::Connection::open(&self.path)
+            .unwrap()
+            .execute(
+                "UPDATE blocks SET time = ?1 WHERE time = 0",
+                [one_time_ivk::now().unwrap()],
+            )
+            .unwrap();
+        Ok(rewound)
+    }
+
+    /// Scans the chain again from `from` to the tip, as sync does for a queued rescan.
+    pub(super) fn rescan_from(&mut self, chain: &Chain, from: u32) {
+        zcash_client_backend::data_api::chain::scan_cached_blocks(
+            &NETWORK,
+            chain.st.cache(),
+            &mut self.db(),
+            BlockHeight::from(from),
+            chain.state(from - 1),
+            (chain.tip() + 1 - from) as usize,
+        )
+        .unwrap();
+    }
+
+    /// The last block ordinary sync scanned.
+    pub(super) fn scanned(&self) -> u32 {
+        u32::from(
+            self.db()
+                .block_fully_scanned()
+                .unwrap()
+                .unwrap()
+                .block_height(),
+        )
+    }
+
+    /// The durable queue and progress of `account`.
+    pub(super) fn state(&self, account: &Account) -> RecoveryStatus {
+        self.db()
+            .one_time_recovery(account.id, one_time_ivk::now().unwrap(), None)
+            .unwrap()
+    }
+
+    /// Every one-time key of `account` with an unfinished queued lookup, as
+    /// (is a receive key, index). The status API returns only a bounded batch.
+    pub(super) fn queued(&self, account: &Account) -> BTreeSet<(bool, u64)> {
+        let conn = rusqlite::Connection::open(&self.path).unwrap();
+        let mut statement = conn
+            .prepare(
+                "SELECT k.purpose, k.key_index FROM ironwood_one_time_lookups l
+                 JOIN ironwood_one_time_keys k ON k.id = l.one_time_key_id
+                 JOIN accounts a ON a.id = k.account_id
+                 WHERE a.uuid = ?1 AND l.target_height IS NOT NULL AND l.reasons != 0
+                   AND l.read_complete = 0",
+            )
+            .unwrap();
+        let rows = statement
+            .query_map([account.id.expose_uuid().as_bytes()], |r| {
+                Ok((
+                    r.get::<_, u8>(0)? == 1,
+                    u64::from_be_bytes(r.get::<_, [u8; 8]>(1)?),
+                ))
+            })
+            .unwrap();
+        rows.collect::<Result<_, _>>().unwrap()
+    }
+
+    /// Runs one worker round against `service`, as `recover` does, with a 45 second budget.
+    pub(super) fn recover(&self, service: &Service) -> Result<Round, RecoveryError> {
+        self.recover_with(service, false, Duration::from_secs(45))
+    }
+
+    /// Runs one worker round, a history check's with `manual`, under the given overall
+    /// budget.
+    pub(super) fn recover_with(
+        &self,
+        service: &Service,
+        manual: bool,
+        budget: Duration,
+    ) -> Result<Round, RecoveryError> {
+        self.mark_used();
+        run_worker(&self.path, service, manual, None, budget)
+    }
+
+    /// Starts a worker round on its own thread, as the app schedules it beside sync.
+    pub(super) fn spawn(
+        &self,
+        service: &Arc<Service>,
+        manual: bool,
+        budget: Duration,
+    ) -> std::thread::JoinHandle<Result<Round, RecoveryError>> {
+        self.mark_used();
+        let path = self.path.clone();
+        let service = service.clone();
+        std::thread::spawn(move || run_worker(&path, &service, manual, None, budget))
+    }
+
+    /// Runs one automatic worker round with `active`'s work first, under `budget`.
+    pub(super) fn recover_active(
+        &self,
+        service: &Service,
+        active: &Account,
+        budget: Duration,
+    ) -> Result<Round, RecoveryError> {
+        self.mark_used();
+        run_worker(&self.path, service, false, Some(active.id), budget)
+    }
+
+    /// Runs one filter step against `service`, as `filter_step` does.
+    pub(super) fn step(&self, service: &Service) -> Result<Step, String> {
+        self.mark_used();
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(step_with_transport(
+                &self.path,
+                NETWORK,
+                ORIGIN,
+                service,
+                CANCEL.load(Ordering::SeqCst),
+            ))
+    }
+
+    /// Enables and marks used every account of a wallet [`Self::in_use`] says is in use.
+    fn mark_used(&self) {
+        if !self.in_use {
+            return;
+        }
+        let mut db = self.db();
+        for account in &self.accounts {
+            db.enable_one_time_recovery(account.id).unwrap();
+        }
+        rusqlite::Connection::open(&self.path)
+            .unwrap()
+            .execute("UPDATE ironwood_one_time_recovery SET used = 1", [])
+            .unwrap();
+    }
+
+    /// Moves `account`'s filter marker back to block `height` of `chain`, as a step at
+    /// another time would have left it.
+    pub(super) fn set_marker(&self, account: &Account, chain: &Chain, height: u32) {
+        rusqlite::Connection::open(&self.path)
+            .unwrap()
+            .execute(
+                "UPDATE ironwood_one_time_recovery SET filter_height = ?2, filter_hash = ?3
+                 WHERE account_id = (SELECT id FROM accounts WHERE uuid = ?1)",
+                rusqlite::params![
+                    account.id.expose_uuid().as_bytes().as_slice(),
+                    height,
+                    chain.hash(height).to_vec()
+                ],
+            )
+            .unwrap();
+    }
+
+    /// Clears `account`'s filter marker, as a history correction does, so its next round
+    /// runs a complete check.
+    pub(super) fn clear_marker(&self, account: &Account) {
+        rusqlite::Connection::open(&self.path)
+            .unwrap()
+            .execute(
+                "UPDATE ironwood_one_time_recovery SET filter_height = NULL, filter_hash = NULL,
+                 generation = generation + 1
+                 WHERE account_id = (SELECT id FROM accounts WHERE uuid = ?1)",
+                [account.id.expose_uuid().as_bytes().as_slice()],
+            )
+            .unwrap();
+    }
+
+    /// Runs rounds against `service` until one reports no more runnable work, at most
+    /// `rounds` of them, and returns the last.
+    pub(super) fn settle(&self, service: &Service, rounds: usize) -> Round {
+        for _ in 1..rounds {
+            let round = self.recover(service).unwrap();
+            if !round.more {
+                return round;
+            }
+        }
+        self.recover(service).unwrap()
+    }
+
+    /// Makes every deferred lookup due, as if its retry delay had passed.
+    pub(super) fn retry_now(&self) {
+        rusqlite::Connection::open(&self.path)
+            .unwrap()
+            .execute(
+                "UPDATE ironwood_one_time_lookups SET next_attempt_at = 0",
+                [],
+            )
+            .unwrap();
+    }
+
+    /// Mined, unspent value of `account`'s one-time-key notes.
+    pub(super) fn one_time_unspent(&self, account: &Account) -> u64 {
+        self.one_time_value(account, true)
+    }
+
+    /// Value of every one-time-key note `account` has admitted, spent or not.
+    pub(super) fn one_time_received(&self, account: &Account) -> u64 {
+        self.one_time_value(account, false)
+    }
+
+    /// Sums `account`'s mined one-time-key notes, optionally excluding spent ones.
+    fn one_time_value(&self, account: &Account, unspent: bool) -> u64 {
+        let conn = rusqlite::Connection::open(&self.path).unwrap();
+        conn.query_row(
+            "SELECT COALESCE(SUM(n.value), 0) FROM ironwood_received_notes n
+             JOIN transactions r ON r.id_tx = n.transaction_id
+             JOIN accounts a ON a.id = n.account_id
+             WHERE a.uuid = ?1 AND n.one_time_key_id IS NOT NULL AND r.mined_height IS NOT NULL
+               AND (?2 = 0 OR NOT EXISTS(SELECT 1 FROM ironwood_received_note_spends s
+                   JOIN transactions t ON t.id_tx = s.transaction_id
+                   WHERE s.ironwood_received_note_id = n.id
+                     AND (t.mined_height IS NOT NULL OR t.expiry_height = 0
+                          OR t.expiry_height > (SELECT MAX(height) FROM blocks))))",
+            rusqlite::params![account.id.expose_uuid().as_bytes(), unspent],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|v| v as u64)
+        .unwrap()
+    }
+
+    /// Values of `account`'s mined, unspent Ironwood notes outside one-time keys, smallest
+    /// first.
+    pub(super) fn notes(&self, account: &Account) -> Vec<u64> {
+        let conn = rusqlite::Connection::open(&self.path).unwrap();
+        let mut statement = conn
+            .prepare(
+                "SELECT n.value FROM ironwood_received_notes n
+                 JOIN transactions r ON r.id_tx = n.transaction_id
+                 JOIN accounts a ON a.id = n.account_id
+                 WHERE a.uuid = ?1 AND n.one_time_key_id IS NULL AND r.mined_height IS NOT NULL
+                   AND NOT EXISTS(SELECT 1 FROM ironwood_received_note_spends s
+                       JOIN transactions t ON t.id_tx = s.transaction_id
+                       WHERE s.ironwood_received_note_id = n.id
+                         AND (t.mined_height IS NOT NULL OR t.expiry_height = 0
+                              OR t.expiry_height > (SELECT MAX(height) FROM blocks)))
+                 ORDER BY n.value",
+            )
+            .unwrap();
+        let rows = statement
+            .query_map([account.id.expose_uuid().as_bytes()], |r| {
+                r.get::<_, i64>(0).map(|v| v as u64)
+            })
+            .unwrap();
+        rows.collect::<Result<_, _>>().unwrap()
+    }
+
+    /// How many of `account`'s Ironwood notes store `memo`.
+    pub(super) fn notes_with_memo(&self, account: &Account, memo: &MemoBytes) -> usize {
+        let conn = rusqlite::Connection::open(&self.path).unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM ironwood_received_notes n
+             JOIN accounts a ON a.id = n.account_id
+             WHERE a.uuid = ?1 AND n.memo = ?2",
+            rusqlite::params![account.id.expose_uuid().as_bytes(), memo.as_slice()],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n as usize)
+        .unwrap()
+    }
+
+    /// Each refund key `account` has registered, as its index and recorded funding height.
+    pub(super) fn refund_keys(&self, account: &Account) -> Vec<(u64, Option<u32>)> {
+        let conn = rusqlite::Connection::open(&self.path).unwrap();
+        let mut statement = conn
+            .prepare(
+                "SELECT k.key_index, k.funding_height FROM ironwood_one_time_keys k
+                 JOIN accounts a ON a.id = k.account_id
+                 WHERE a.uuid = ?1 AND k.purpose = 0 ORDER BY k.key_index",
+            )
+            .unwrap();
+        let rows = statement
+            .query_map([account.id.expose_uuid().as_bytes()], |r| {
+                Ok((u64::from_be_bytes(r.get::<_, [u8; 8]>(0)?), r.get(1)?))
+            })
+            .unwrap();
+        rows.collect::<Result<_, _>>().unwrap()
+    }
+
+    /// Each refund-key receipt of `account` as its nullifier and whether a mined
+    /// transaction spends it.
+    pub(super) fn refund_receipts(&self, account: &Account) -> Vec<([u8; 32], bool)> {
+        let conn = rusqlite::Connection::open(&self.path).unwrap();
+        let mut statement = conn
+            .prepare(
+                "SELECT n.nf, EXISTS(SELECT 1 FROM ironwood_received_note_spends s
+                     JOIN transactions t ON t.id_tx = s.transaction_id
+                     WHERE s.ironwood_received_note_id = n.id AND t.mined_height IS NOT NULL)
+                 FROM ironwood_received_notes n
+                 JOIN ironwood_one_time_keys k ON k.id = n.one_time_key_id
+                 JOIN accounts a ON a.id = n.account_id
+                 WHERE a.uuid = ?1 AND k.purpose = 0 ORDER BY n.id",
+            )
+            .unwrap();
+        let rows = statement
+            .query_map([account.id.expose_uuid().as_bytes()], |r| {
+                Ok((r.get::<_, [u8; 32]>(0)?, r.get::<_, bool>(1)?))
+            })
+            .unwrap();
+        rows.collect::<Result<_, _>>().unwrap()
+    }
+
+    /// The app's spendable plus pending total for `account`, as the home screen reads it.
+    pub(super) fn balance(&self, account: &Account) -> u64 {
+        crate::api::sync::get_balance(self.path.clone(), "main".into(), account.uuid.clone())
+            .unwrap()
+            .total
+    }
+
+    /// The app's transaction history for `account`.
+    pub(super) fn history(&self, account: &Account) -> Vec<crate::api::sync::TransactionInfo> {
+        crate::api::sync::get_transaction_history(
+            self.path.clone(),
+            "main".into(),
+            None,
+            account.uuid.clone(),
+        )
+        .unwrap()
+    }
+
+    /// The newest transaction the app built and stored, with its raw bytes.
+    pub(super) fn last_built(&self) -> (Transaction, Vec<u8>) {
+        let conn = rusqlite::Connection::open(&self.path).unwrap();
+        let raw: Vec<u8> = conn
+            .query_row(
+                "SELECT raw FROM transactions WHERE raw IS NOT NULL ORDER BY id_tx DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let branch = zcash_protocol::consensus::BranchId::for_height(
+            &NETWORK,
+            BlockHeight::from(self.scanned + 1),
+        );
+        (Transaction::read(&raw[..], branch).unwrap(), raw)
+    }
+}
+
+/// How long a stalled fixture request takes to fail, standing in for the app's much
+/// longer `STALL_TIMEOUT`.
+pub(super) const STALL: Duration = Duration::from_secs(1);
+
+/// Runs `recover_with_transport` with the generation the production entry point captures
+/// and the wallet's own descriptor store, starting requests for `budget` as `recover`
+/// does for its round deadline.
+fn run_worker(
+    path: &str,
+    service: &Service,
+    manual: bool,
+    active: Option<AccountUuid>,
+    budget: Duration,
+) -> Result<Round, RecoveryError> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let generation = CANCEL.load(Ordering::SeqCst);
+            let deadline = tokio::time::Instant::now() + budget;
+            recover_with_transport(
+                path,
+                NETWORK,
+                manual,
+                active,
+                ORIGIN,
+                service,
+                &DescriptorTable::new(path, generation),
+                generation,
+                deadline,
+            )
+            .await
+        })
+}
