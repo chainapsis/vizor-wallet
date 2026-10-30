@@ -591,9 +591,8 @@ rust/src/
 ├── ffi.rs              # Thin, read-only C adapter for iOS Ironwood migration
 │                        # inspection and observable preparation-txid listing.
 ├── migration_preparation.rs
-│                       # Mobile preparation core. The iOS C FFI uses only its
-│                       # read-only inspect, proof-readiness, and observable
-│                       # txid reads.
+│                       # Read-only preparation inspection for the iOS C FFI:
+│                       # inspect, proof-readiness, and observable txid reads.
 │                       # Located outside api/ to avoid FRB codegen picking it up.
 ├── wallet/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
@@ -723,7 +722,7 @@ policy-aware openers and fails closed while Tor is starting or broken.
   is the executable statement of this rule.
 
 Key files:
-- `rust/src/migration_preparation.rs` — mobile preparation core
+- `rust/src/migration_preparation.rs` — read-only preparation inspection
 - `rust/src/ffi.rs` — iOS read-only inspection and query adapter
 - `ios/Runner/zcash_sync.h` — matching C header
 - `ios/Runner/BackgroundMigrationPreparationManager.swift` — continued-task
