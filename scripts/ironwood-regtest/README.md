@@ -33,7 +33,7 @@ test on the macOS device. It verifies all of the following through the app UI:
 
 - migration UI stays hidden before activation;
 - live NU6.3 activation is detected without restarting the app;
-- the announcement can be dismissed and the home CTA still starts migration;
+- the home CTA starts migration;
 - unavailable migration options cannot continue;
 - denomination preparation broadcasts a real Orchard transaction;
 - locking and unlocking preserves and resumes the active migration run;

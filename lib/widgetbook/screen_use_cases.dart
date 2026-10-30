@@ -71,7 +71,6 @@ import '../src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import '../src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import '../src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
-import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import '../src/features/onboarding/import/import_split_view.dart';
@@ -2453,29 +2452,6 @@ Widget buildMobileHomeIronwoodMigrationRequiredUseCase(BuildContext context) {
   );
 }
 
-Widget buildMobileHomeIronwoodAnnouncementUseCase(BuildContext context) {
-  final accountUuid = _ironwoodMobileHomeAccountState.activeAccountUuid!;
-  final status = _previewMigrationStatus(kIronwoodMigrationReadyPhase);
-  return _buildMobileHomeUseCase(
-    accountState: _ironwoodMobileHomeAccountState,
-    syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(14_292_000_000),
-      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
-    ),
-    migrationCta: IronwoodHomeMigrationCtaState.start(
-      network: 'main',
-      accountUuid: accountUuid,
-      status: status,
-    ),
-    marketData: const ZecMarketData(usdPrice: 8.397, change24hPct: 13.12),
-    swapEnabled: false,
-    staticAnnouncement: MobileIronwoodMigrationAnnouncementSheet(
-      onStartMigration: () {},
-      onOpenReleaseNotes: () {},
-    ),
-  );
-}
-
 Widget buildMobileHomeNu7AnnouncementUseCase(BuildContext context) {
   return _buildMobileHomeUseCase(
     accountState: _ironwoodMobileHomeAccountState,
@@ -2942,29 +2918,6 @@ Widget buildMobileHomeTorFailedUseCase(BuildContext context) {
     accountState: _accountsDesignState,
     syncState: _homeTorFailedSyncState(),
     networkPrivacyState: _previewTorFailed,
-  );
-}
-
-Widget buildDesktopHomeIronwoodMigrationAnnouncementUseCase(
-  BuildContext context,
-) {
-  final accountUuid = _accountsDesignState.activeAccountUuid!;
-  return _buildDesktopHomeUseCase(
-    accountState: _accountsDesignState,
-    syncState: _homeSyncedState(
-      orchardBalance: BigInt.from(14_223_000_000),
-      recentTransactions: [_homeTx(1), _homeTx(2), _homeTx(3), _homeTx(4)],
-    ),
-    migrationCta: IronwoodHomeMigrationCtaState.start(
-      network: 'main',
-      accountUuid: accountUuid,
-      status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
-    ),
-    announcement: IronwoodMigrationAnnouncementState.visible(
-      network: 'main',
-      accountUuid: accountUuid,
-      status: _previewMigrationStatus(kIronwoodMigrationReadyPhase),
-    ),
   );
 }
 
@@ -3705,8 +3658,6 @@ Widget _buildMobileHomeUseCase({
   bool openAccountsSheet = false,
   IronwoodHomeMigrationCtaState migrationCta =
       const IronwoodHomeMigrationCtaState.hidden(),
-  IronwoodMigrationAnnouncementState announcement =
-      const IronwoodMigrationAnnouncementState.hidden(),
   ZecMarketData marketData = const ZecMarketData(
     usdPrice: 70,
     change24hPct: 13.12,
@@ -3823,9 +3774,6 @@ Widget _buildMobileHomeUseCase({
         return migrationCta;
       }),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
-      ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
-        return announcement;
-      }),
     ],
     child: shieldFlow
         ? _ShieldMotionPreview(child: harness)
@@ -3854,8 +3802,6 @@ Widget _buildDesktopHomeUseCase({
   required AccountState accountState,
   required SyncState syncState,
   required IronwoodHomeMigrationCtaState migrationCta,
-  IronwoodMigrationAnnouncementState announcement =
-      const IronwoodMigrationAnnouncementState.hidden(),
   Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
   double zecUsdPrice = 1.20012,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
@@ -3929,9 +3875,6 @@ Widget _buildDesktopHomeUseCase({
               : migrationCta.status,
         ),
       ),
-      ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
-        return announcement;
-      }),
       nu7AnnouncementProvider.overrideWith((ref) async => nu7Announcement),
     ],
     child:
