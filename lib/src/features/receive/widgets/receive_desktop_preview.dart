@@ -458,27 +458,24 @@ class _ReceiveContentArea extends StatelessWidget {
             height: 44 * 2 + AppSpacing.xs,
             child: Column(
               children: [
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 230,
-                      height: 44,
-                      child: _CopyAddressButton(isShielded: isShielded),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    const SizedBox(
-                      width: 60,
-                      height: 44,
-                      child: _ShareButton(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                const _FixedPillButton(
+                SizedBox(
                   width: 230 + AppSpacing.xs + 60,
                   height: 44,
-                  label: 'Request ZEC',
-                  variant: _FixedPillButtonVariant.ghost,
+                  child: _CopyAddressButton(isShielded: isShielded),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                const Row(
+                  children: [
+                    _FixedPillButton(
+                      width: 230,
+                      height: 44,
+                      label: 'Request ZEC',
+                      iconName: AppIcons.request,
+                      variant: _FixedPillButtonVariant.secondary,
+                    ),
+                    SizedBox(width: AppSpacing.xs),
+                    SizedBox(width: 60, height: 44, child: _ShareButton()),
+                  ],
                 ),
               ],
             ),

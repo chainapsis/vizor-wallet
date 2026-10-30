@@ -1509,6 +1509,12 @@ void main() {
 
     expect(find.text('Turn off Face ID unlock?'), findsOneWidget);
     expect(find.textContaining('You will use your passcode'), findsOneWidget);
+    for (final label in ['Turn off', 'Cancel']) {
+      expect(
+        tester.widget<Text>(find.text(label)).style?.fontSize,
+        AppTypography.labelLarge.fontSize,
+      );
+    }
     expect(biometricNotifier.disableCount, 0);
 
     await tester.tap(
