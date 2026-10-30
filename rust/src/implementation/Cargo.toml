@@ -1,0 +1,129 @@
+[package]
+name = "vizor-wallet-implementation"
+publish = false
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "vizor_wallet_impl"
+path = "../lib.rs"
+crate-type = ["rlib"]
+doc = false
+
+# Runtime dependencies belong here; shared specs live in the workspace.
+[dependencies]
+zakura-pir-protocol = { version = "=0.0.1-rc3", default-features = false, features = ["http-endpoint"] }
+zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
+zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
+zakura-pir-client = { workspace = true }
+zcash_note_encryption = { workspace = true }
+flutter_rust_bridge = { workspace = true }
+zcash_script = "0.6"
+voting-crypto-deps = { workspace = true }
+sapling-crypto = { package = "zakura-sapling-crypto", version = "=4.0.0", default-features = false, features = ["circuit"] }
+uuid = { workspace = true }
+zip32 = { workspace = true }
+pasta_curves = { package = "zakura-pasta-curves", version = "=4.0.0" }
+ff = "0.14"
+jubjub = { package = "zakura-jubjub", version = "=4.0.0" }
+bls12_381 = { package = "zakura-bls12-381", version = "=4.0.0" }
+rand_core = "0.6"
+secp256k1 = { workspace = true }
+bip0039 = { workspace = true }
+nonempty = "0.11"
+minicbor = "0.19"
+prost = "0.14"
+incrementalmerkletree = "0.8"
+shardtree = { workspace = true }
+secrecy = { workspace = true }
+zeroize = "1"
+aes = { version = "0.8", features = ["zeroize"] }
+aes-gcm = { version = "0.10", features = ["zeroize"] }
+base64 = "0.22"
+pbkdf2 = "0.12"
+serde = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+futures = "0.3"
+tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
+bytes = "1"
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
+hyper = { workspace = true }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "tls12", "webpki-roots"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
+tower-service = "0.3"
+time = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rusqlite = { workspace = true }
+redb = "4.1.0"
+same-file = "1.0.6"
+log = "0.4"
+regex = { workspace = true }
+hex = { workspace = true }
+ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
+serde_json = { workspace = true }
+url = { workspace = true }
+ics23 = { version = "0.12", default-features = false }
+prost13 = { package = "prost", version = "0.13" }
+tendermint = "0.40.4"
+tendermint-light-client-verifier = "0.40.4"
+zcash_primitives = { workspace = true }
+zcash_address = { workspace = true }
+zcash_keys = { workspace = true }
+zcash_protocol = { workspace = true }
+transparent = { workspace = true }
+zcash_client_backend = { workspace = true }
+zcash_client_sqlite = { workspace = true }
+zcash_voting = { workspace = true }
+orchard = { workspace = true }
+zcash_proofs = { package = "zakura-proofs", version = "=4.0.0", features = ["local-prover"] }
+pczt = { workspace = true }
+ur-registry = { git = "https://github.com/valargroup/keystone-sdk-rust.git", rev = "c2119436f5246be05b1ba877a7e6b63f51c01339", package = "ur-registry", default-features = false, features = ["std"] }
+
+[target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies]
+oslog = "0.2.0"
+
+[target."cfg(target_os = \"android\")".dependencies]
+android_logger = "0.15"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+security-framework = { version = "3.7", features = ["OSX_10_15"] }
+
+[target."cfg(any(target_os = \"macos\", target_os = \"windows\", target_os = \"linux\"))".dependencies]
+ledger-transport = "0.11.0"
+ledger-transport-hid = "0.11.0"
+
+[dev-dependencies]
+hyper = { workspace = true, features = ["server", "http2"] }
+ed25519-consensus = { workspace = true }
+tempfile = { workspace = true }
+hex = { workspace = true }
+rusqlite = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "time"] }
+regex = { workspace = true }
+zcash_client_sqlite = { workspace = true, features = ["test-dependencies"] }
+zcash_client_backend = { workspace = true, features = ["test-dependencies"] }
+zcash_voting = { workspace = true, features = ["test-fixtures"] }
+zakura-pir-client = { workspace = true, features = ["testing"] }
+ipir-sp = { workspace = true }
+vote-commitment-tree = { workspace = true }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
+
+[lints.clippy]
+# These shapes are intentional at FFI/API boundaries or in transaction
+# orchestration code. Refactoring them solely to satisfy style lints would add
+# indirection without improving runtime safety.
+too_many_arguments = "allow"
+not_unsafe_ptr_arg_deref = "allow"
+type_complexity = "allow"
+should_implement_trait = "allow"
+# Test-only helpers intentionally sit next to the production code they verify,
+# and several assertions document cfg-dependent invariants.
+items_after_test_module = "allow"
+assertions_on_constants = "allow"
