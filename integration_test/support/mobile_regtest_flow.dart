@@ -151,7 +151,6 @@ Future<void> tapAppButton(
         'visible_prompt_keys': [
           for (final value in [
             'mobile_sync_keep_awake_prompt_sheet',
-            'mobile_ironwood_announcement_sheet',
             'mobile_home_migration_attention_host',
           ])
             if (tester.any(find.byKey(ValueKey(value)))) value,
@@ -293,13 +292,6 @@ Future<void> cleanupE2eWalletState() async {
 
   final preferences = await SharedPreferences.getInstance();
   await preferences.remove(ironwoodActiveSeenStorageKey(mobileE2eNetwork));
-  for (final key in preferences.getKeys()) {
-    if (key.startsWith(
-      'zcash_ironwood_migration_announcement_seen_${mobileE2eNetwork}_',
-    )) {
-      await preferences.remove(key);
-    }
-  }
 
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
@@ -565,15 +557,9 @@ Future<void> startMobilePrivateMigration(WidgetTester tester) async {
   );
 }
 
-/// Opens the choice screen after the migration announcement, intro, and
+/// Opens the choice screen from the home banner through the intro and
 /// explanation steps. Callers choose either Private or Immediate from here.
 Future<void> openMobileMigrationOptions(WidgetTester tester) async {
-  final announcementSheet = find.byKey(
-    const ValueKey('mobile_ironwood_announcement_sheet'),
-  );
-  final announcementStart = find.byKey(
-    const ValueKey('mobile_ironwood_start_migration_button'),
-  );
   final homeCta = find.byKey(
     const ValueKey('mobile_home_ironwood_migration_banner'),
   );
@@ -582,18 +568,13 @@ Future<void> openMobileMigrationOptions(WidgetTester tester) async {
   );
   final deadline = DateTime.now().add(const Duration(minutes: 5));
   var lastTap = DateTime.fromMillisecondsSinceEpoch(0);
-  while (tester.any(announcementSheet) || !tester.any(intro.hitTestable())) {
+  while (!tester.any(intro.hitTestable())) {
     if (DateTime.now().isAfter(deadline)) {
       fail('Timed out entering the mobile Ironwood migration flow.');
     }
     if (DateTime.now().difference(lastTap) > const Duration(seconds: 1)) {
-      final tappableAnnouncementStart = announcementStart.hitTestable();
       final tappableHomeCta = homeCta.hitTestable();
-      if (tester.any(tappableAnnouncementStart)) {
-        lastTap = DateTime.now();
-        await tester.tap(tappableAnnouncementStart);
-      } else if (!tester.any(announcementSheet) &&
-          tester.any(tappableHomeCta)) {
+      if (tester.any(tappableHomeCta)) {
         lastTap = DateTime.now();
         await tester.tap(tappableHomeCta);
       }

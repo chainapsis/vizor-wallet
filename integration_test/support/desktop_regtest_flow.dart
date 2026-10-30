@@ -147,22 +147,6 @@ Future<void> unlockDesktopRegtestWallet(WidgetTester tester) async {
   );
 }
 
-Future<void> dismissIronwoodAnnouncement(WidgetTester tester) async {
-  final overlay = find.byKey(
-    const ValueKey('ironwood_migration_announcement_overlay'),
-  );
-  final origin = tester.getTopLeft(overlay);
-  await tester.tapAt(origin + const Offset(16, 16), pointer: _takeE2ePointer());
-  await tester.pump(const Duration(milliseconds: 250));
-  await pumpUntil(
-    tester,
-    () => !tester.any(
-      find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
-    ),
-    description: 'dismissed Ironwood announcement',
-  );
-}
-
 /// Home's migration CTA through the intro, How it works and What to expect to
 /// the migration options.
 Future<void> openMigrationOptions(WidgetTester tester) async {
@@ -536,11 +520,6 @@ Future<void> cleanupDesktopRegtestWallet() async {
 
   final preferences = await SharedPreferences.getInstance();
   await preferences.remove(ironwoodActiveSeenStorageKey('regtest'));
-  for (final key in preferences.getKeys()) {
-    if (key.startsWith('zcash_ironwood_migration_announcement_seen_regtest_')) {
-      await preferences.remove(key);
-    }
-  }
 
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
