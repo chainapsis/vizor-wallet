@@ -1,6 +1,8 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,9 +19,10 @@ import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 /// Intercepts the two security calls the screen makes so no secure
 /// storage is touched.
 class _FakeSecurityNotifier extends AppSecurityNotifier {
-  _FakeSecurityNotifier({this.confirmResult = true});
+  _FakeSecurityNotifier({this.confirmResult = true, this.changeResult});
 
   final bool confirmResult;
+  final Future<bool>? changeResult;
   final confirmedWith = <String>[];
   ({String current, String next})? changedWith;
 
@@ -35,7 +38,7 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
     required String newPassword,
   }) async {
     changedWith = (current: currentPassword, next: newPassword);
-    return true;
+    return await (changeResult ?? Future.value(true));
   }
 }
 
@@ -230,6 +233,34 @@ void main() {
     expect(security.changedWith, (current: '111111', next: '222222'));
     expect(popResult, [true]);
     expect(find.text('open'), findsOneWidget);
+  });
+
+  testWidgets('late rotation completion cannot pop a locked passcode screen', (
+    tester,
+  ) async {
+    final rotation = Completer<bool>();
+    final security = _FakeSecurityNotifier(changeResult: rotation.future);
+    final popResult = <bool?>[];
+    await tester.pumpWidget(
+      _app(
+        security,
+        popResult: popResult,
+        biometric: _FakeBiometricController(
+          initialState: _faceBiometricState.copyWith(enabled: false),
+        ),
+      ),
+    );
+    await open(tester);
+    await _enterPasscode(tester, '111111');
+    await _enterPasscode(tester, '222222');
+    await _enterPasscode(tester, '222222');
+    expect(security.changedWith, (current: '111111', next: '222222'));
+    security.lock();
+    rotation.complete(true);
+    await tester.pumpAndSettle();
+    expect(popResult, isEmpty);
+    expect(find.byType(MobileChangePasscodeScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a confirm mismatch restarts the new-passcode phase', (
