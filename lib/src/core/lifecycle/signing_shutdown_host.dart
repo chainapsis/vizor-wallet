@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show exit;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
@@ -45,12 +46,14 @@ class SigningShutdownHost extends StatefulWidget {
     required this.coordinator,
     required this.desktop,
     required this.child,
+    this.exitProcess = exit,
     super.key,
   });
 
   final SigningShutdownCoordinator coordinator;
   final bool desktop;
   final Widget child;
+  final void Function(int) exitProcess;
 
   @override
   State<SigningShutdownHost> createState() => _SigningShutdownHostState();
@@ -59,6 +62,9 @@ class SigningShutdownHost extends StatefulWidget {
 class _SigningShutdownHostState extends State<SigningShutdownHost>
     with WindowListener {
   late final AppLifecycleListener _lifecycle;
+  bool get _exitsLinuxProcess =>
+      widget.desktop && defaultTargetPlatform == TargetPlatform.linux;
+
   bool _closingWindow = false;
   Future<void>? _exitPreparation;
 
@@ -79,7 +85,7 @@ class _SigningShutdownHostState extends State<SigningShutdownHost>
     // Close the work gate synchronously, then hide and clean up concurrently.
     // A failed or stalled window method must not strand the process on exit.
     final cleanup = widget.coordinator.prepareExit();
-    if (widget.desktop) {
+    if (widget.desktop && !_exitsLinuxProcess) {
       try {
         await _hideWindowForExit().timeout(widget.coordinator.timeout);
       } catch (error, stack) {
@@ -87,6 +93,11 @@ class _SigningShutdownHostState extends State<SigningShutdownHost>
       }
     }
     await cleanup;
+    if (_exitsLinuxProcess) {
+      // GTK teardown can dispose the compositor while Flutter is presenting.
+      // Keep the existing cleanup policy, then bypass the unsafe teardown.
+      widget.exitProcess(0);
+    }
   }
 
   @override
@@ -110,6 +121,7 @@ class _SigningShutdownHostState extends State<SigningShutdownHost>
     _closingWindow = true;
     unawaited(() async {
       await _prepareExit();
+      if (_exitsLinuxProcess) return;
       try {
         await windowManager.destroy();
       } catch (error, stack) {

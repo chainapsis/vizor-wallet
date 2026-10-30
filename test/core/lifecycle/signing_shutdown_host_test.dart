@@ -251,4 +251,66 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   });
+
+  for (final timesOut in [false, true]) {
+    testWidgets(
+      'Linux exits once without GTK teardown (cleanup timeout: $timesOut)',
+      (tester) async {
+        const channel = MethodChannel('window_manager');
+        final methods = <String>[];
+        final exits = <int>[];
+        final errors = <Object>[];
+        final cleanup = Completer<void>();
+        var cleanups = 0;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          (call) async {
+            methods.add(call.method);
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            channel,
+            null,
+          ),
+        );
+        await tester.pumpWidget(
+          SigningShutdownHost(
+            desktop: true,
+            exitProcess: exits.add,
+            coordinator: SigningShutdownCoordinator(
+              releaseReservations: () {
+                cleanups++;
+                return cleanup.future;
+              },
+              onError: (error, _) => errors.add(error),
+            ),
+            child: const SizedBox(),
+          ),
+        );
+        windowManager.listeners.single.onWindowClose();
+        windowManager.listeners.single.onWindowClose();
+        final nativeExit = tester.binding.handleRequestAppExit();
+        await tester.pump(const Duration(milliseconds: 299));
+        expect(exits, isEmpty);
+        expect(cleanups, 1);
+        expect(methods, ['setPreventClose']);
+        if (timesOut) {
+          await tester.pump(const Duration(milliseconds: 1));
+          expect(errors.single, isA<TimeoutException>());
+        } else {
+          cleanup.complete();
+          await tester.pump();
+          expect(errors, isEmpty);
+        }
+        expect(await nativeExit, AppExitResponse.exit);
+        expect(exits, [0]);
+        expect(methods, ['setPreventClose']);
+        if (timesOut) cleanup.complete();
+        await tester.pumpWidget(const SizedBox());
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.linux),
+    );
+  }
 }
