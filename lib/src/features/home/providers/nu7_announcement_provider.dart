@@ -51,7 +51,6 @@ class Nu7AnnouncementState {
 }
 
 /// Visible once the wallet's tip reaches NU7 activation, until dismissed.
-/// From then on it replaces the Ironwood announcement.
 final nu7AnnouncementProvider = FutureProvider<Nu7AnnouncementState>((
   ref,
 ) async {

@@ -31,7 +31,6 @@ import '../widgetbook/activity_use_cases.dart';
 import '../widgetbook/received_receipt_use_cases.dart';
 import '../widgetbook/keystone_use_cases.dart';
 import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
-import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/mobile_gift_onboarding_use_cases.dart';
@@ -2954,13 +2953,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'mobile-home-ironwood-announcement',
-    description: 'Mobile Ironwood migration announcement sheet',
-    builder: buildMobileHomeIronwoodAnnouncementUseCase,
-    desktop: false,
-    mobile: true,
-  ),
-  FigmaCompareScenario(
     id: 'mobile-home-nu7-announcement',
     description: 'Mobile NU7 announcement sheet',
     builder: buildMobileHomeNu7AnnouncementUseCase,
@@ -2971,11 +2963,6 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'desktop-home-nu7-announcement',
     description: 'Desktop NU7 announcement modal',
     builder: buildDesktopHomeNu7AnnouncementUseCase,
-  ),
-  FigmaCompareScenario(
-    id: 'ironwood-migration-announcement-modal',
-    description: 'Ironwood migration announcement modal',
-    builder: buildIronwoodMigrationAnnouncementModalUseCase,
   ),
   FigmaCompareScenario(
     id: 'ironwood-migration-privacy-lock',

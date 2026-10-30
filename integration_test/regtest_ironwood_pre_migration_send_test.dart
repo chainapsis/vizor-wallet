@@ -83,11 +83,12 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(const ValueKey('ironwood_migration_announcement_modal')),
+          find.byKey(
+            const ValueKey('home_desktop_ironwood_migration_cta_button'),
+          ),
         ),
-        description: 'Ironwood migration announcement',
+        description: 'migration CTA',
       );
-      await dismissIronwoodAnnouncement(tester);
 
       final accountUuid = await firstDesktopRegtestAccountUuid();
       final dbPath = await getWalletDbPath();
