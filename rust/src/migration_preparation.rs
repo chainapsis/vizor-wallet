@@ -8,15 +8,14 @@ use std::fmt;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync;
 
+/// Codes cross the iOS C FFI. 1, 3 and 5 came only from the removed Android
+/// preparation path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MigrationPreparationState {
     WaitingForDenominationPreparation = 0,
-    ProofReady = 1,
     NeedsUserAction = 2,
-    Cancelled = 3,
     Inactive = 4,
-    WaitingForPreparedNoteAnchor = 5,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
