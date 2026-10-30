@@ -82,8 +82,9 @@ class _SigningShutdownHostState extends State<SigningShutdownHost>
   }
 
   Future<void> _prepareExitOnce() async {
-    // Close the work gate synchronously, then hide and clean up concurrently.
-    // A failed or stalled window method must not strand the process on exit.
+    // Close the work gate synchronously and start the bounded cleanup.
+    // Other desktops hide concurrently; Linux stays visible until process exit
+    // to avoid GTK compositor teardown. Window methods remain timeout-bounded.
     final cleanup = widget.coordinator.prepareExit();
     if (widget.desktop && !_exitsLinuxProcess) {
       try {
