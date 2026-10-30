@@ -4,7 +4,10 @@ use orchard::{
     note_encryption::IronwoodDomain,
     value::NoteValue,
 };
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use zcash_client_backend::{
     data_api::WalletWrite,
     proto::compact_formats::{ChainMetadata, CompactBlock, CompactOrchardAction, CompactTx},
