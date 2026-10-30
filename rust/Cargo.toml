@@ -181,8 +181,7 @@ android_logger = "0.15"
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
-ledger-transport = "0.11.0"
-ledger-transport-hid = "0.11.0"
+hidapi = { version = "2.6.1", default-features = false, features = ["linux-static-hidraw"] }
 
 [dev-dependencies]
 hyper = { version = "1", features = ["server", "http2"] }
