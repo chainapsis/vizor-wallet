@@ -37,8 +37,10 @@ const MAP_DIGEST_HEADER: &str = "x-txid-map-sha256";
 /// One PIR service's origin over one routed HTTPS client. Every request is
 /// bounded by the service's deadline, from dispatch through the last body
 /// byte, and stops when `should_exit` does.
-pub(crate) struct RoutedExchange<'a, F> {
-    route: RoutedTransport<'a, F>,
+///
+/// Share the HTTP implementation across cancellation callback types.
+pub(crate) struct RoutedExchange<'a> {
+    route: RoutedTransport<'a, dyn Fn() -> bool + Sync + 'a>,
     /// The service's name in log lines.
     service: &'static str,
     /// The configured origin, without a trailing slash.
@@ -49,11 +51,11 @@ pub(crate) struct RoutedExchange<'a, F> {
     observer: Option<RequestObserver>,
 }
 
-impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
+impl<'a> RoutedExchange<'a> {
     /// Transparent PIR at `origin`.
     pub(crate) fn transparent(
         origin: &str,
-        should_exit: &'a F,
+        should_exit: &'a (dyn Fn() -> bool + Sync),
         handle: Handle,
     ) -> Result<Self, SyncError> {
         Self::new(
@@ -68,7 +70,7 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     /// Txid display PIR at `origin`.
     pub(crate) fn txid(
         origin: &str,
-        should_exit: &'a F,
+        should_exit: &'a (dyn Fn() -> bool + Sync),
         handle: Handle,
     ) -> Result<Self, SyncError> {
         Self::new(
@@ -87,7 +89,7 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     fn new(
         service: &'static str,
         origin: &str,
-        should_exit: &'a F,
+        should_exit: &'a (dyn Fn() -> bool + Sync),
         handle: Handle,
         timeout: Duration,
     ) -> Result<Self, SyncError> {
@@ -115,7 +117,7 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     }
 
     async fn exchange(&self, request: &HttpRequest) -> Result<HttpReply, HttpFailure> {
-        let should_exit = self.route.should_exit;
+        let should_exit = &self.route.should_exit;
         if should_exit() {
             return Err(HttpFailure::Cancelled);
         }
@@ -167,7 +169,7 @@ impl<'a, F: Fn() -> bool> RoutedExchange<'a, F> {
     }
 }
 
-impl<F: Fn() -> bool> HttpExchange for RoutedExchange<'_, F> {
+impl HttpExchange for RoutedExchange<'_> {
     fn send(&self, request: &HttpRequest) -> Result<HttpReply, HttpFailure> {
         let received = self.handle.block_on(self.exchange(request));
         let (service, method, template) =
@@ -416,14 +418,14 @@ mod tests {
     }
 
     /// An exchange whose observer answers every request.
-    fn answered<'a, F: Fn() -> bool>(
+    fn answered<'a>(
         runtime: &Runtime,
-        should_exit: &'a F,
+        should_exit: &'a (dyn Fn() -> bool + Sync),
         answer: impl Fn(&ObservedRequest) -> http::Response<http_body_util::Full<Bytes>>
             + Send
             + Sync
             + 'static,
-    ) -> (RoutedExchange<'a, F>, RequestObserver) {
+    ) -> (RoutedExchange<'a>, RequestObserver) {
         let observer = RequestObserver::answering(answer);
         let exchange = RoutedExchange::transparent(ORIGIN, should_exit, runtime.handle().clone())
             .unwrap()

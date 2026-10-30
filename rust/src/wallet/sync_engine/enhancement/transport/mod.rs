@@ -98,12 +98,12 @@ impl From<SyncError> for RoutedHttpError {
 /// `routed_request` re-checks the route per request, and `DirectRouteIo` polls
 /// the route lease on every read and write, so a pooled connection stays
 /// route-policed for its whole life.
-pub(in crate::wallet::sync_engine) struct RoutedTransport<'a, F> {
+pub(in crate::wallet::sync_engine) struct RoutedTransport<'a, F: ?Sized> {
     should_exit: &'a F,
     direct: DirectHttpsClient,
 }
 
-impl<'a, F> RoutedTransport<'a, F> {
+impl<'a, F: ?Sized> RoutedTransport<'a, F> {
     pub(in crate::wallet::sync_engine) fn new(should_exit: &'a F) -> Self {
         // Both rustls providers are compiled in, so none is the default until
         // one is installed. Lightwalletd channels install ring; a routed
@@ -185,41 +185,7 @@ async fn routed_response(
                     "Tor route changed before private-service request",
                 ))
             })?;
-        let request = async {
-            match method {
-                Method::GET => {
-                    client
-                        .http_get(
-                            uri,
-                            |builder| builder,
-                            |incoming| async { Ok(incoming) },
-                            0,
-                            |_| None,
-                        )
-                        .await
-                }
-                Method::POST => {
-                    client
-                        .http_post(
-                            uri,
-                            |builder| {
-                                builder
-                                    .header(http::header::CONTENT_TYPE, "application/octet-stream")
-                            },
-                            Full::new(Bytes::from(body)),
-                            |incoming| async { Ok(incoming) },
-                            0,
-                            |_| None,
-                        )
-                        .await
-                }
-                _ => unreachable!("private services use GET and POST only"),
-            }
-            .map_err(|error| SyncError::net(format!("private-service Tor request failed: {error}")))
-        };
-        // Returning Incoming from the Tor parser exposes headers without
-        // polling the body. A malformed error body cannot erase its status.
-        return Ok(request.await?);
+        return Ok(tor_response(&client, method, uri, body).await?);
     }
 
     let request = Request::builder()
@@ -232,6 +198,46 @@ async fn routed_response(
         SyncError::net(format!("private-service HTTPS request failed: {error}"))
     })?;
     Ok(response)
+}
+
+/// Share the HTTP futures across cancellation callback types. Returning
+/// [`Incoming`] exposes headers without polling the body, so a malformed error
+/// body cannot erase its status. The caller still owns cancellation and routing.
+async fn tor_response(
+    client: &zcash_client_backend::tor::Client,
+    method: Method,
+    uri: http::Uri,
+    body: Vec<u8>,
+) -> Result<http::Response<Incoming>, SyncError> {
+    match method {
+        Method::GET => {
+            client
+                .http_get(
+                    uri,
+                    |builder| builder,
+                    |incoming| async { Ok(incoming) },
+                    0,
+                    |_| None,
+                )
+                .await
+        }
+        Method::POST => {
+            client
+                .http_post(
+                    uri,
+                    |builder| {
+                        builder.header(http::header::CONTENT_TYPE, "application/octet-stream")
+                    },
+                    Full::new(Bytes::from(body)),
+                    |incoming| async { Ok(incoming) },
+                    0,
+                    |_| None,
+                )
+                .await
+        }
+        _ => unreachable!("private services use GET and POST only"),
+    }
+    .map_err(|error| SyncError::net(format!("private-service Tor request failed: {error}")))
 }
 
 /// Keep the deadline outside both phases; error bodies are never consumed.
