@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/widget_test_viewport.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
@@ -262,8 +263,7 @@ Future<void> _pumpMobilePaymentLinks(
   LedgerGiftHarness? ledger,
   LedgerPcztSigner? signer,
 }) async {
-  await tester.binding.setSurfaceSize(const Size(393, 852));
-  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await setWidgetTestViewport(tester, const Size(393, 852));
 
   await tester.pumpWidget(
     ProviderScope(

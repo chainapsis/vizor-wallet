@@ -1,6 +1,7 @@
 import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
 import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'dart:async';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -40,6 +41,7 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../fakes/fake_gift_link_rust_api.dart';
+import 'widget_test_viewport.dart';
 import '../fakes/fake_sync_notifier.dart';
 import '../fakes/fake_zec_market_data_cache.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
@@ -81,7 +83,7 @@ Future<void> pumpPaymentLinksScreen(
   bool? pricingEnabled,
   PrivacyModeNotifier? privacyNotifier,
   Map<String, GiftCardUsage>? giftCardUsages,
-  Size logicalSize = const Size(1080, 720),
+  Size? logicalSize,
   GlobalKey? captureBoundaryKey,
   NetworkUpgradeWindowState? upgradeWindow,
   BlockSpacing? feeSchedule,
@@ -90,8 +92,13 @@ Future<void> pumpPaymentLinksScreen(
     RustLib.initMock(api: FakeGiftLinkRustApi());
     addTearDown(RustLib.dispose);
   }
-  await tester.binding.setSurfaceSize(logicalSize);
-  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await setWidgetTestViewport(
+    tester,
+    logicalSize ??
+        (kAppFormFactor == AppFormFactor.mobile
+            ? const Size(390, 844)
+            : const Size(1080, 720)),
+  );
   final paymentLinkOperations = operations ?? FakePaymentLinkOperations();
   final paymentLinkClipboard = clipboard ?? FakePaymentLinkClipboard();
   final appBootstrap = bootstrap ?? paymentLinksBootstrap;

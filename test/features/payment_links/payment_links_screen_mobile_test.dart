@@ -31,6 +31,7 @@ import '../../support/gift_card_local_group_checks.dart';
 import '../../support/gift_card_claim_checking_checks.dart';
 import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
+import '../../support/widget_test_viewport.dart';
 
 void main() {
   registerGiftCardEntryChecks(mobile: true);
@@ -181,7 +182,7 @@ void main() {
       operations: operations,
       clipboard: clipboard,
     );
-    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await setWidgetTestViewport(tester, const Size(390, 844));
     await tester.pumpAndSettle();
     final newestRow = find.byKey(
       ValueKey('payment_link_mobile_recovery_${incomingLink.address}'),
@@ -238,7 +239,7 @@ void main() {
         return shareGate.future;
       },
     );
-    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await setWidgetTestViewport(tester, const Size(390, 844));
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Show gift card QR code'));
     await tester.pumpAndSettle();
@@ -300,7 +301,7 @@ void main() {
       operations: operations,
       clipboard: clipboard,
     );
-    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await setWidgetTestViewport(tester, const Size(390, 844));
     await tester.pumpAndSettle();
     final copy = find.byKey(
       const ValueKey('payment_link_mobile_card_copy_action'),
@@ -362,7 +363,7 @@ void main() {
           marketDataSource: source,
           pricingEnabled: settings.$1,
         );
-        await tester.binding.setSurfaceSize(const Size(390, 844));
+        await setWidgetTestViewport(tester, const Size(390, 844));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const ValueKey('payment_links_mobile_create_button')),
@@ -475,7 +476,7 @@ void main() {
           text: incomingLink.toUri().toString(),
         ),
       );
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
@@ -516,7 +517,7 @@ void main() {
         bootstrap: homeBootstrap,
         pricingEnabled: settings.$1,
       );
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       final link = VizorPaymentLink(
         network: incomingLink.network,
         address: incomingLink.address,
@@ -636,7 +637,7 @@ void main() {
         pricingEnabled: false,
         marketDataSource: source,
       );
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_create_button')),
@@ -702,7 +703,7 @@ void main() {
     (tester) async {
       final source = _PendingCardPrice();
       await pumpPaymentLinksScreen(tester, marketDataSource: source);
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_create_button')),
@@ -777,7 +778,7 @@ void main() {
     (tester) async {
       final source = _PendingCardPrice();
       await pumpPaymentLinksScreen(tester, marketDataSource: source);
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_create_button')),
@@ -1579,7 +1580,7 @@ void main() {
           return result.future;
         },
       );
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(find.bySemanticsLabel('Show gift card QR code'));
       await tester.pumpAndSettle();
@@ -1752,7 +1753,7 @@ class _PendingCardPrice implements ZecMarketDataSource {
 }
 
 Future<void> _openRedeemScanner(WidgetTester tester) async {
-  await tester.binding.setSurfaceSize(const Size(390, 844));
+  await setWidgetTestViewport(tester, const Size(390, 844));
   await tester.pumpAndSettle();
   await tester.tap(
     find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
@@ -1775,7 +1776,7 @@ Future<GoRouter> _openReceivedCard(
     bootstrap: homeBootstrap,
     accountNotifier: accountNotifier,
   );
-  await tester.binding.setSurfaceSize(const Size(390, 844));
+  await setWidgetTestViewport(tester, const Size(390, 844));
   await tester.pumpAndSettle();
   final container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp)),
