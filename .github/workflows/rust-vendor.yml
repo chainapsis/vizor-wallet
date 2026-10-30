@@ -1,0 +1,24 @@
+name: Verify Rust vendors
+
+on:
+  pull_request:
+    paths:
+      - 'rust/vendor/**'
+      - 'scripts/check-rust-vendor.py'
+      - '.github/workflows/rust-vendor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'rust/vendor/**'
+      - 'scripts/check-rust-vendor.py'
+      - '.github/workflows/rust-vendor.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check-rust-vendor.py

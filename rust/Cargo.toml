@@ -266,6 +266,9 @@ opt-level = 3
 
 # Shared PIR configuration and product routes are not released yet.
 [patch.crates-io]
+# Share Tor configuration's TOML parser and omit production writer support.
+figment = { path = "vendor/figment" }
+tor-config = { path = "vendor/tor-config" }
 zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
 zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
 zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }

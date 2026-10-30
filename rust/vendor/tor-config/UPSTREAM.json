@@ -1,0 +1,43 @@
+{
+  "crate": "tor-config",
+  "version": "0.35.0",
+  "repository": "https://gitlab.torproject.org/tpo/core/arti.git",
+  "revision": "0b636d9d8d3309663de0fb5554255f5f8f82544d",
+  "path": "crates/tor-config",
+  "license": "MIT OR Apache-2.0",
+  "rust_source_changes": [],
+  "wallet_api_changes": [],
+  "changes": [
+    "Use TOML 0.9.5 or later with only parse/serde/std in production.",
+    "Enable TOML display for upstream unit tests only."
+  ],
+  "upstream_files_sha256": {
+    ".cargo_vcs_info.json": "f6406a50c34f83867688547ac9406aaaa310bafd0c0463dc4b3a8e1585baa7e5",
+    "Cargo.toml.orig": "6e7bf4ca60e9f9bd47e8d51f4094d9c95b0faed29ed34e69b94e7863c3ac8826",
+    "README.md": "f1698ad3475114a8bd1ff79baf6117f35f47173cc4be7cf6e59aaa7c34893bad",
+    "src/cmdline.rs": "69bddf76de7f82831229fdd5a3c8974740735f23c68f03903db767abf585c99b",
+    "src/err.rs": "00c81911d9a3d418bf09485bdbbcdbb4a0466315d13caa3c967a111d2d36e7dc",
+    "src/extend_builder.rs": "ccbf36c48ea42876abe87f14e4cb86554d84e7d56c09a91153699bc4c5582e05",
+    "src/file_watcher.rs": "0161616bcc419253917d6c3c5d109384a8c4d8c64f7d4628b38ab6095e8bb130",
+    "src/flatten.rs": "454c3b35922f03f4c0c68dc05f42e2168e6a1ec332d02025a6b68516474cd191",
+    "src/lib.rs": "f0a412e3b3a9d2be5a6bffa7a0ff5dd0da9ec22d18f8263c3e2d0fc12142c725",
+    "src/list_builder.rs": "0d7096e057fae9b88feca4041efd82daae9f1b71e23417bb5fdf81ba030b312e",
+    "src/listen.rs": "06f4a3e2277ecb18bf263569deb87f985f40399381a980c928ed21bb03e98e75",
+    "src/load.rs": "004332ac5718bf9b07cf90917a8da2e6f499033cff4eaf858eb3351037444939",
+    "src/map_builder.rs": "1b6c57879bbf980421162a1887e36e5d0f371ce45788788e67da356e137c2b3b",
+    "src/misc.rs": "bbf4c9f58a92d896b4f9c9bdbe9ea941e44207669b61ffbb392fdb462bdf10e0",
+    "src/mistrust.rs": "d496f77e57483d10121b7798c446e3a877e3b23a5cde81e9117e5cf9b7fa6f4e",
+    "src/mut_cfg.rs": "430cf4c7ac616cd9aeb4ff64eb44550a57762227d080273f2fa25f2ccc131b97",
+    "src/sources.rs": "ba0e25458d7b15bd5cbe8a43d68b16e6ae4cfed6aab1e08402b5163921ac9e79",
+    "src/testing.rs": "5ad8bedddb522be60bc6ec2ff24fe72d470221d26c27dd632bf99f2fe02f31b6",
+    "Cargo.toml": "65b25eac591b801c9bddfa43d9a187d0c689c46058b6bf94ff6b5cd782494853"
+  },
+  "patched_files_sha256": {
+    "Cargo.toml": "c2019977e5ce6e2ffa40012f3528d5c9fdffb57653e2c6471639b71c08fa4f50"
+  },
+  "added_file_sha256": {
+    "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "LICENSE-MIT": "e40081d18f17b6783fcb554ae42f6fa3548988e4d705a3e4541e2ef240293040",
+    "MANIFEST.patch": "7d6bd008ae3fef3a66311c18e0a36784ef3528d439df67e845db4605039da170"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "base_commit": "0228a92e5a8da49d873af1e3212596875e659290",
+  "scope": "TOML manifests only; vendored Rust sources unchanged",
+  "graphs": {
+    "aarch64-apple-darwin": {
+      "before": {
+        "runtime": 521,
+        "build_only": 96,
+        "total": 617
+      },
+      "after": {
+        "runtime": 515,
+        "build_only": 96,
+        "total": 611
+      }
+    },
+    "x86_64-unknown-linux-gnu": {
+      "before": {
+        "runtime": 533,
+        "build_only": 98,
+        "total": 631
+      },
+      "after": {
+        "runtime": 527,
+        "build_only": 98,
+        "total": 625
+      }
+    }
+  },
+  "validation": {
+    "vendor_hashes": "passed",
+    "mac_wallet_release_check": "passed",
+    "figment_all_features": {
+      "unit_integration_passed": 14,
+      "doctests_passed": 142
+    },
+    "tor_config": {
+      "passed": 71,
+      "failed": 0
+    },
+    "wallet_route_tests": {
+      "passed": 36,
+      "failed": 0,
+      "note": "Loopback tests require execution outside the filesystem/network sandbox."
+    },
+    "linux_wallet_release_check": "passed on linux-1, rustc 1.97.1"
+  },
+  "api_surface": {
+    "vizor": [],
+    "dependency": "Figment providers::Toml Format::Error changes from TOML 0.8 de::Error to TOML 0.9 de::Error."
+  },
+  "clean_build_speedup": "not measured for this isolated PR"
+}

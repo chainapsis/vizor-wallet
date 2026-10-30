@@ -1,0 +1,13 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -96,7 +96,9 @@
+ optional = true
+ 
+ [dependencies.toml]
+-version = "0.8"
++version = "0.9.5"
++default-features = false
++features = ["parse", "serde", "std"]
+ optional = true
+ 
+ [dependencies.uncased]

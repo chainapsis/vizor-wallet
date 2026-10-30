@@ -1,0 +1,18 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -133,6 +133,8 @@
+ 
+ [dependencies.toml]
+ version = "0.9.5"
++default-features = false
++features = ["parse", "serde", "std"]
+ 
+ [dependencies.tor-basic-utils]
+ version = "0.35.0"
+@@ -171,3 +173,6 @@
+ 
+ [dev-dependencies.tracing-test]
+ version = "0.2.4"
++
++[dev-dependencies.toml]
++version = "0.9.5"
