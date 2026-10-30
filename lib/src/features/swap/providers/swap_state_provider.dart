@@ -113,7 +113,13 @@ class SwapNotifier extends Notifier<SwapState> {
       (previous, next) {
         if (previous == next) return;
         if (previous != null) {
-          unawaited(_persistCurrentIntents(accountUuid: previous));
+          unawaited(
+            _persistCurrentIntents(accountUuid: previous).catchError((
+              Object e,
+            ) {
+              log('Swap: saving activity on account switch failed error=$e');
+            }),
+          );
           // In Pay mode the composer state carries Pay's direction/payout
           // asset, which must not overwrite the previous account's saved
           // swap composer selection.

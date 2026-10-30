@@ -1243,6 +1243,19 @@ class _DelayedComposerPreferencesStore extends _FakeSwapPersistenceStore {
   }
 }
 
+class _FailingSaveSwapPersistenceStore extends _FakeSwapPersistenceStore {
+  final failedSaves = <String>[];
+
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) async {
+    failedSaves.add(accountUuid);
+    throw StateError('secure storage unavailable');
+  }
+}
+
 class _DelayedLoadSwapPersistenceStore extends _FakeSwapPersistenceStore {
   _DelayedLoadSwapPersistenceStore({
     required this.delayedAccounts,

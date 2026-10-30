@@ -10479,6 +10479,40 @@ void main() {
     expect(sessionStore.intentsFor('account-1'), isEmpty);
     expect(sessionStore.intentsFor('account-2'), isEmpty);
   });
+
+  testWidgets('a failed activity save on account switch is not uncaught', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FailingSaveSwapPersistenceStore();
+    final accountNotifier = _FakeSwapAccountNotifier(
+      _twoAccountBootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () => accountNotifier,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pumpAndSettle();
+
+    expect(sessionStore.failedSaves, ['account-1']);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 // Shared modal card shadow (core/widgets/app_modal_card.dart appModalShadow).
