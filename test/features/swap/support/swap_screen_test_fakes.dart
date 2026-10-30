@@ -1151,6 +1151,10 @@ class _FakeSwapPersistenceStore
   final _preferencesByAccount = <String, SwapComposerPreferences>{};
   final _payAssetByAccount = <String, SwapAsset>{};
 
+  /// The swaps saved under `accountUuid`.
+  List<SwapIntent> intentsFor(String accountUuid) =>
+      _intentsByAccount[accountUuid] ?? const [];
+
   @override
   Future<List<SwapIntentRecord>> loadRecords({
     required String accountUuid,
