@@ -70,5 +70,5 @@ class ImportBirthdayEstimator {
   }
 
   static bool _useMainnetFastPath(RpcEndpointConfig endpoint) =>
-      endpoint.network == ZcashNetwork.mainnet && !kZcashIronwoodMasquerade;
+      endpoint.network == ZcashNetwork.mainnet;
 }

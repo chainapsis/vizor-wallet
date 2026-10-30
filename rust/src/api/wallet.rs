@@ -1612,7 +1612,6 @@ mod tests {
         });
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn discovery_reads_history_from_the_rounded_birthday() {
         assert_eq!(
@@ -1638,7 +1637,6 @@ mod tests {
         dir.path().join(name).to_str().unwrap().to_string()
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_created_accounts_and_claims_keep_their_birthday() {
         let dir = tempfile::tempdir().unwrap();
@@ -1678,7 +1676,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_software_restores_round_their_birthday() {
         let dir = tempfile::tempdir().unwrap();
@@ -1730,7 +1727,6 @@ mod tests {
         assert_eq!(birthdays[&linked.account_uuid], 2_340_001);
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn mainnet_hardware_imports_round_their_birthday() {
         use secrecy::ExposeSecret;

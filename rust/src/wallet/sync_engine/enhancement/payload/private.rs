@@ -667,7 +667,6 @@ mod tests {
         assert!(!RoutedPayloadEnhancement::new(WalletNetwork::Regtest, true, "test").enabled());
     }
 
-    #[cfg(not(ironwood_masquerade))]
     const NU7_ACTIVATION: u32 = 3_543_405;
 
     fn cover_range(
@@ -685,7 +684,6 @@ mod tests {
         (u32::from(start), u32::from(end))
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn rediscovery_cover_range_hides_the_target_position() {
         // About two hours of blocks in either era.
@@ -714,7 +712,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn rediscovery_cover_size_follows_the_tip_spacing() {
         let sizes = |h, tip| {

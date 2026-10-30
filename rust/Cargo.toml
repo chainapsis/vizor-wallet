@@ -233,7 +233,7 @@ default-features = false
 features = ["zakura"]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
 
 [lints.clippy]
 # These shapes are intentional at FFI/API boundaries or in transaction

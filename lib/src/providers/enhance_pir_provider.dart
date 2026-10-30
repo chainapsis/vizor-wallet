@@ -14,10 +14,8 @@ import 'account_provider.dart';
 import 'sync_provider.dart';
 
 /// Whether the configured chain has a matching private enhancement service.
-bool isEnhancePirAvailableForNetwork(
-  String network, {
-  bool isMasquerade = kZcashIronwoodMasquerade,
-}) => !isMasquerade && zcashNetworkFromName(network) == ZcashNetwork.mainnet;
+bool isEnhancePirAvailableForNetwork(String network) =>
+    zcashNetworkFromName(network) == ZcashNetwork.mainnet;
 
 /// Exposes private enhancement availability to both settings form factors.
 final enhancePirAvailableProvider = Provider<bool>((ref) {

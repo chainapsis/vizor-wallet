@@ -271,8 +271,6 @@ mod tests {
         assert!(plans.is_empty());
     }
 
-    // Masquerade builds schedule no NU7 on the mainnet name.
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn address_history_pieces_follow_the_nu7_expiry_delta() {
         let nu7 = u32::from(
