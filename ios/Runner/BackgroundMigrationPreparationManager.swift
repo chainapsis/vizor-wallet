@@ -510,26 +510,13 @@ func migrationPreparationScopeTrackingDisposition(
   switch state {
   case 0:
     return nil
-  case 1:
-    // A local proof-ready snapshot is not network confirmation evidence.
-    // The iOS background task may only complete from lightwalletd observations
-    // collected in this process; any state-1 value is handed to foreground.
+  case 2:
     return .needsForegroundRecovery(
-      fingerprint: "state-1-unverified",
-      taskFailed: true
-    )
-  case 2, 3:
-    return .needsForegroundRecovery(
-      fingerprint: "state-\(state)",
+      fingerprint: "state-2",
       taskFailed: true
     )
   case 4:
     return .inactive
-  case 5:
-    return .needsForegroundRecovery(
-      fingerprint: "state-5",
-      taskFailed: false
-    )
   default:
     return .terminalFailure(
       fingerprint: "unexpected-state-\(state)"
@@ -847,13 +834,13 @@ func shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
 func migrationPreparationStateNeedsForegroundContinuation(
   _ state: UInt8
 ) -> Bool {
-  state == 0 || state == 2 || state == 3 || state == 5
+  state == 0 || state == 2
 }
 
 func migrationPreparationStateNeedsForegroundNotification(
   _ state: UInt8
 ) -> Bool {
-  state == 2 || state == 3 || state == 5
+  state == 2
 }
 
 func migrationPreparationForegroundRecoveryNotificationEvent(
@@ -1523,7 +1510,7 @@ final class BackgroundMigrationPreparationManager {
         runId,
         &preparation
       )
-      return code != 0 || preparation.state == 0 || preparation.state == 5
+      return code != 0 || preparation.state == 0
     }
     guard !hasPreparation else { return }
     stateLock.withPreparationLock {
