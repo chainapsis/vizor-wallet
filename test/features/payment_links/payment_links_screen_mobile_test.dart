@@ -894,7 +894,7 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('payment_link_claim_account_confirm')),
       );
-      await tester.pumpAndSettle();
+      await _pumpUntilClaimReturnsHome(tester, router);
       expect(
         operations.claimedSessions.single.destinationAccountUuid,
         'account-2',
@@ -1079,7 +1079,7 @@ void main() {
       expect(accounts.switchedAccounts, isEmpty);
 
       await _claimGift(tester, chooseAccount: true);
-      await tester.pumpAndSettle();
+      await _pumpUntilClaimReturnsHome(tester, router);
       expect(
         operations.claimedSessions.single.destinationAccountUuid,
         'account-2',
@@ -1154,7 +1154,11 @@ void main() {
     final operations = FakePaymentLinkOperations(
       readClaimDestination: () => accounts.current,
     );
-    await _openReceivedCard(tester, operations, accountNotifier: accounts);
+    final router = await _openReceivedCard(
+      tester,
+      operations,
+      accountNotifier: accounts,
+    );
     operations.prepareClaimFailures = 1;
     await tester.tap(find.text('Claim the gift'));
     await tester.pumpAndSettle();
@@ -1175,7 +1179,7 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('payment_link_claim_account_confirm')),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntilClaimReturnsHome(tester, router);
     expect(
       operations.claimedSessions.single.destinationAccountUuid,
       'account-2',
@@ -1817,4 +1821,23 @@ Future<void> _pumpClaimFrames(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 100));
   }
   expect(tester.takeException(), isNull);
+}
+
+// Home may keep animating after a successful claim. Wait for the navigation
+// and account picker to finish instead of requiring every animation to stop.
+Future<void> _pumpUntilClaimReturnsHome(
+  WidgetTester tester,
+  GoRouter router,
+) async {
+  for (var i = 0; i < 100; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (router.routerDelegate.currentConfiguration.uri.path == '/home' &&
+        find
+            .byKey(const ValueKey('payment_link_claim_account_sheet'))
+            .evaluate()
+            .isEmpty) {
+      return;
+    }
+  }
+  fail('Gift claim did not return to Home and close the account picker.');
 }
