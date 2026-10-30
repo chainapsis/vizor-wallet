@@ -57,18 +57,6 @@ fn prepared_notes_not_spendable_result(
     }
 }
 
-fn cancelled_migration_result(run: &super::migration::ActiveRun) -> IronwoodMigrationResult {
-    IronwoodMigrationResult {
-        txids: String::new(),
-        status: run.phase.clone(),
-        broadcasted_count: 0,
-        total_count: run.target_values_zatoshi.len() as u32,
-        message: Some("Background migration stopped before the next broadcast.".to_string()),
-        fee_zatoshi: 0,
-        migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
-    }
-}
-
 enum StagedDenominationAdvance {
     Waiting(IronwoodMigrationResult),
     Ready,
@@ -143,7 +131,7 @@ async fn advance_staged_denomination_run(
     run: &super::migration::ActiveRun,
     pending_password: &[u8],
     pending_salt_base64: &str,
-    policy: MigrationBroadcastPolicy<'_>,
+    policy: MigrationBroadcastPolicy,
 ) -> Result<StagedDenominationAdvance, String> {
     let stages = reconcile_mined_denomination_stages(
         db_path,
@@ -189,11 +177,6 @@ async fn advance_staged_denomination_run(
         .iter()
         .any(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
     {
-        if policy.is_cancelled() {
-            return Ok(StagedDenominationAdvance::Waiting(
-                cancelled_migration_result(run),
-            ));
-        }
         let finalized = finalize_ready_denomination_stages(
             db_path,
             network,
