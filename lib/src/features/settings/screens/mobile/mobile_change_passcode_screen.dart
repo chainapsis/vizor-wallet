@@ -177,6 +177,7 @@ class _MobileChangePasscodeScreenState
         // unmocked channels never respond.
         unawaited(_refreshBiometricEscrow(_newPasscode!));
         if (!mounted) return;
+        if (!ref.read(appSecurityProvider).isUnlocked) return;
         // context.pop (not Navigator.pop) so go_router's configuration
         // updates synchronously — a deferred router refresh landing in
         // the gap restores the stale config and resurrects this page.
