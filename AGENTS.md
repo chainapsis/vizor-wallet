@@ -550,6 +550,8 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 
 Single DB connection reused across entire sync (opened once, passed to all operations).
 
+Private swap receiver recovery is not part of this pipeline. A separate bounded worker (`sync_engine/swap_private.rs`, see `docs/near-swap-receiving.md`) runs it over receiver PIR without occupying `SYNC_RUNNING`. It never adds scan keys, retains compact blocks or delays block sync.
+
 Progress percentage: `initial_total` (total blocks to scan) is captured once before the scan loop from `suggest_scan_ranges()`. After each batch, `remaining` unscanned blocks are recalculated, then `pct = 1.0 - remaining / initial_total`. Note: `suggest_scan_ranges()` does not return `Scanned` ranges, so per-batch `total` cannot be used as the denominator. Each progress event includes `has_new_tx` (from `ScanSummary` received/spent note counts) to trigger transaction history refresh only when needed.
 
 Automatic retry: `run_sync_inner` wraps `run_sync_impl` with exponential backoff (3 retries, 2s/4s/8s). Cancel and mode-change are checked during retry wait. Both FRB and C FFI paths benefit.

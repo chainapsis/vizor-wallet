@@ -147,7 +147,7 @@ fn watched_hashes(db: &WalletDatabase, account: AccountUuid) -> BTreeSet<Vec<u8>
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires network: https://transparent-pir.valargroup.dev"]
+#[ignore = "requires network: https://wallet-pir.valargroup.dev"]
 async fn a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let _route = crate::network_privacy::test_route_policy::lock_route_policy();
@@ -277,7 +277,7 @@ async fn a_fresh_mainnet_account_recovers_and_promotes_against_the_live_service(
 /// VIZOR_DISCOVERY_LIVE_FLOOR=419200 cargo test --manifest-path rust/Cargo.toml -- --ignored --nocapture a_fresh_phrase_discovers
 /// ```
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires network: https://transparent-pir.valargroup.dev"]
+#[ignore = "requires network: https://wallet-pir.valargroup.dev"]
 async fn a_fresh_phrase_discovers_no_accounts_against_the_live_service() {
     use super::super::import_discovery::PrivateAccountDiscovery;
     let _ = rustls::crypto::ring::default_provider().install_default();

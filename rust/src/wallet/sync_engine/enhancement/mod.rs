@@ -33,7 +33,7 @@ pub(crate) mod content_failures;
 mod payload;
 mod policy;
 pub(crate) mod status;
-mod transport;
+pub(super) mod transport;
 
 pub(super) use auxiliary::transparent_history::store_address_transaction;
 pub(super) use payload::public::decode_enhancement_payload;
