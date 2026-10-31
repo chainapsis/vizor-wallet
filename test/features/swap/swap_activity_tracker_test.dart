@@ -842,74 +842,129 @@ void main() {
     expect(stored.swapIntentById('released')?.walletReleased, isTrue);
   });
 
-  test('a wallet failure does not fail the status refresh', () async {
-    final store = _MemorySwapActivityStore();
-    final provider = _StatusSwapProvider({
-      'private': _snapshot(
-        id: 'private',
-        depositAddress: 'private',
-        status: SwapIntentStatus.depositObserved,
-      ),
-    });
-    final tracker = SwapActivityTracker(
-      activityStore: store,
-      swapProvider: provider,
-      onProviderSnapshot: (_, _, _) async =>
-          throw StateError('database is locked'),
-    );
-    final intent = _intent(
-      id: 'private',
-      depositAddress: 'private',
-    ).copyWith(privateAddress: true);
-    await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
-    final result = await tracker.refreshOpenIntents(
-      accountUuid: 'account-1',
-      currentIntents: [intent],
-    );
-    expect(result.refreshError, isNull);
-    expect(result.intents.single.status, SwapIntentStatus.depositObserved);
+  /// Each 1Click status, as the adapter maps it, and whether it ends polling.
+  /// `expired` never comes from 1Click; the app derives it from the deadline.
+  const terminality = <SwapIntentStatus, bool>{
+    SwapIntentStatus.awaitingExternalDeposit: false, // PENDING_DEPOSIT
+    SwapIntentStatus.awaitingDeposit: false, // PENDING_DEPOSIT, ZEC in
+    SwapIntentStatus.depositObserved: false, // KNOWN_DEPOSIT_TX
+    SwapIntentStatus.processing: false, // PROCESSING
+    SwapIntentStatus.incompleteDeposit: false, // INCOMPLETE_DEPOSIT
+    SwapIntentStatus.providerStatusUnknown: false, // anything else
+    SwapIntentStatus.complete: true, // SUCCESS
+    SwapIntentStatus.refunded: true, // REFUNDED
+    SwapIntentStatus.failed: true, // FAILED
+    SwapIntentStatus.expired: true,
+  };
+
+  /// Pins which statuses are conclusive, since the wallet stops polling, and
+  /// so stops reporting to the wallet, at exactly these.
+  test('only SUCCESS, REFUNDED, FAILED and local expiry are terminal', () {
+    expect({
+      for (final status in SwapIntentStatus.values) status: status.isTerminal,
+    }, terminality);
   });
 
-  test('a wallet failure on a terminal status keeps the swap open', () async {
-    final store = _MemorySwapActivityStore();
-    final provider = _StatusSwapProvider({
-      'private': _snapshot(
-        id: 'private',
-        depositAddress: 'private',
-        status: SwapIntentStatus.refunded,
-      ),
-    });
-    var failures = 1;
-    final recorded = <SwapIntentStatus>[];
-    final tracker = SwapActivityTracker(
-      activityStore: store,
-      swapProvider: provider,
-      onProviderSnapshot: (_, snapshot, _) async {
-        if (failures-- > 0) throw StateError('database is locked');
-        recorded.add(snapshot.status);
-        return true;
-      },
-    );
-    final intent = _intent(
-      id: 'private',
-      depositAddress: 'private',
-    ).copyWith(privateAddress: true);
-    await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
-    final failed = await tracker.refreshOpenIntents(
-      accountUuid: 'account-1',
-      currentIntents: [intent],
-    );
-    expect(failed.refreshError, isNotNull);
-    final stored = await tracker.loadIntents(accountUuid: 'account-1');
-    expect(stored.single.status.isTerminal, isFalse);
+  for (final MapEntry(key: status, value: terminal) in terminality.entries) {
+    if (status == SwapIntentStatus.expired) continue;
 
-    final retried = await tracker.refreshOpenIntents(
-      accountUuid: 'account-1',
-      currentIntents: stored,
-    );
-    expect(retried.refreshError, isNull);
-    expect(recorded, [SwapIntentStatus.refunded]);
-  });
+    /// A wallet failure on a non-terminal status is logged and swallowed, and
+    /// the refresh takes the status. On a terminal one it fails the refresh
+    /// and keeps the swap open. Either way the next poll records it again.
+    test('a failed wallet record of ${status.name} is retried by the next '
+        'poll', () async {
+      final provider = _StatusSwapProvider({
+        'private': _snapshot(
+          id: 'private',
+          depositAddress: 'private',
+          status: status,
+        ),
+      });
+      var failures = 1;
+      final recorded = <SwapIntentStatus>[];
+      final tracker = SwapActivityTracker(
+        activityStore: _MemorySwapActivityStore(),
+        swapProvider: provider,
+        onProviderSnapshot: (_, snapshot, _) async {
+          if (failures-- > 0) throw StateError('database is locked');
+          recorded.add(snapshot.status);
+          return true;
+        },
+      );
+      final intent = _privateIncoming();
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+
+      final first = await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: [intent],
+      );
+      expect(
+        first.refreshError,
+        terminal ? isNotNull : isNull,
+        reason: 'only a terminal status fails the refresh',
+      );
+      if (!terminal) expect(first.intents.single.status, status);
+      final stored = await tracker.loadIntents(accountUuid: 'account-1');
+      expect(stored.single.status.isTerminal, isFalse);
+
+      final second = await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: stored,
+      );
+      expect(second.refreshError, isNull);
+      expect(provider.statusRequests, hasLength(2));
+      expect(recorded, [status]);
+    });
+  }
+
+  /// The poll that first sees PENDING_DEPOSIT after the deposit deadline is
+  /// the wallet's evidence that the started quote ended, which releases its
+  /// receive index. The app resolves that poll to `expired`, but the snapshot
+  /// it records is not terminal, so a wallet failure there is only logged.
+  /// The swap stays polled until the wallet reports the address released, so
+  /// the next poll records the status again. Here the deadline arrives with
+  /// the status, as 1Click reports it.
+  test(
+    'a failed record of the post-deadline status keeps the swap polled',
+    () async {
+      final provider = _StatusSwapProvider({
+        'private': _snapshot(
+          id: 'private',
+          depositAddress: 'private',
+          status: SwapIntentStatus.awaitingExternalDeposit,
+          deadline: DateTime.now().toUtc().subtract(const Duration(minutes: 1)),
+        ),
+      });
+      var failures = 1;
+      final recorded = <SwapIntentStatus>[];
+      final tracker = SwapActivityTracker(
+        activityStore: _MemorySwapActivityStore(),
+        swapProvider: provider,
+        onProviderSnapshot: (_, snapshot, _) async {
+          if (failures-- > 0) throw StateError('database is locked');
+          recorded.add(snapshot.status);
+          return true;
+        },
+      );
+      final intent = _privateIncoming(noDeadline: true);
+      await tracker.saveIntents(accountUuid: 'account-1', intents: [intent]);
+      await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: [intent],
+      );
+      expect(provider.statusRequests, hasLength(1), reason: 'it was polled');
+      expect(failures, lessThan(1), reason: 'and its record failed');
+      final stored = await tracker.loadIntents(accountUuid: 'account-1');
+      expect(stored.single.status, SwapIntentStatus.expired);
+      await tracker.refreshOpenIntents(
+        accountUuid: 'account-1',
+        currentIntents: stored,
+      );
+      expect(recorded, [
+        SwapIntentStatus.awaitingExternalDeposit,
+      ], reason: 'the next poll records the status the wallet missed');
+    },
+  );
 
   test('status refresh over Tor names the blocked route', () async {
     final store = _MemorySwapActivityStore();
@@ -973,6 +1028,7 @@ SwapIntentSnapshot _snapshot({
   required String id,
   required String depositAddress,
   required SwapIntentStatus status,
+  DateTime? deadline,
 }) {
   return SwapIntentSnapshot(
     id: id,
@@ -987,9 +1043,26 @@ SwapIntentSnapshot _snapshot({
       address: depositAddress,
       expiresInLabel: '01:30',
       reuseWarning: 'Do not reuse this address',
+      deadline: deadline,
     ),
   );
 }
+
+/// An open incoming swap quoted with a one-time (private) address, whose
+/// deposit deadline is an hour from now, or unknown with `noDeadline`.
+SwapIntent _privateIncoming({bool noDeadline = false}) =>
+    _intent(
+      id: 'private',
+      depositAddress: 'private',
+      status: SwapIntentStatus.awaitingExternalDeposit,
+      depositTxHash: null,
+    ).copyWith(
+      direction: SwapDirection.externalToZec,
+      privateAddress: true,
+      depositDeadline: noDeadline
+          ? null
+          : DateTime.now().toUtc().add(const Duration(hours: 1)),
+    );
 
 class _MemorySwapActivityStore implements SwapActivityStore {
   var saveCount = 0;

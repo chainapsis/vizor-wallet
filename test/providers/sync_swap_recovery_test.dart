@@ -675,7 +675,8 @@ void main() {
     test('a bare poll and a completed sync start no round when none is '
         'owed', () async {
       final sync = await atTip();
-      expect(await pollStartsRound(sync), isFalse);
+      _clock = _clock.add(const Duration(hours: 7));
+      expect(await pollStartsRound(sync), isFalse, reason: 'no timer owes one');
       sync.startSync(latestTipHeight: 102);
       await pumpEventQueue();
       await complete(sync, 1, height: 102);
