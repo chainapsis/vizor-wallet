@@ -12,7 +12,16 @@ zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git
 zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
 zakura-pir-client = { version = "=0.0.1-rc3", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
 zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
-flutter_rust_bridge = "=2.11.1"
+# The supported targets provide the atomic widths used by FRB.
+flutter_rust_bridge = { version = "=2.11.1", default-features = false, features = [
+    "anyhow",
+    "dart-opaque",
+    "log",
+    "rust-async",
+    "thread-pool",
+    "user-utils",
+    "wasm-start",
+] }
 
 zcash_script = "0.6"
 voting-crypto-deps = "=0.4.0"
