@@ -8,6 +8,7 @@ class SwapAddressPlan {
     required this.walletZecAddress,
     required this.oneClickRecipient,
     required this.oneClickRefundTo,
+    this.oneTimeZecAddress = false,
   });
 
   factory SwapAddressPlan.fromUserInput({
@@ -15,6 +16,7 @@ class SwapAddressPlan {
     required SwapAsset externalAsset,
     required String userExternalAddress,
     required String walletZecAddress,
+    bool oneTimeZecAddress = false,
   }) {
     final external = userExternalAddress.trim();
     final walletZec = walletZecAddress.trim();
@@ -40,6 +42,7 @@ class SwapAddressPlan {
       walletZecAddress: walletZec,
       oneClickRecipient: direction.sendsZec ? external : walletZec,
       oneClickRefundTo: direction.sendsZec ? walletZec : external,
+      oneTimeZecAddress: oneTimeZecAddress,
     );
   }
 
@@ -49,6 +52,10 @@ class SwapAddressPlan {
   final String walletZecAddress;
   final String oneClickRecipient;
   final String oneClickRefundTo;
+
+  /// Whether [walletZecAddress] is a one-time address reserved for this swap:
+  /// the payout address when receiving ZEC, the refund address when sending.
+  final bool oneTimeZecAddress;
 
   SwapQuoteRequest toQuoteRequest({
     double? amount,

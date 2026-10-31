@@ -22,11 +22,13 @@ import '../../address_book/contact_label_generator.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
-import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_models.dart';
 import '../models/swap_address_book_helpers.dart';
 import '../providers/swap_state_provider.dart';
+import '../providers/swap_address_wait_provider.dart';
+import '../providers/swap_funding_balance_provider.dart';
+import '../providers/swap_zec_staging_address_service.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
@@ -173,17 +175,35 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
+    final oneTimeZecAddress = ref.watch(swapUsesOneTimeAddressProvider);
+    final addressWait = ref.watch(
+      swapAddressWaitProvider(swapState.direction.sendsZec),
+    );
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: oneTimeZecAddress && swapState.direction.sendsZec,
+      )),
     );
+    final zecSpendable = funding.spendable;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final zecAvailableText = hideAmountIfPrivacyMode(
       ZecAmount.fromZatoshi(
-        migrationSpendable,
+        zecSpendable,
       ).pretty(denomStyle: ZecDenomStyle.upper).toString(),
-      privacyModeEnabled: ref.watch(privacyModeProvider),
+      privacyModeEnabled: privacyModeEnabled,
+    );
+    final balanceMessage = swapIronwoodOnlyShortfallMessage(
+      funding,
+      (available) => _reviewAmountExceedsAvailableZec(swapState, available),
+      payment: false,
+      maskAmount: (amount) => hideAmountIfPrivacyMode(
+        amount,
+        privacyModeEnabled: privacyModeEnabled,
+      ),
     );
     void openReview() {
       unawaited(() async {
@@ -263,12 +283,17 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                           _swapModal == _SwapModalSurface.slippageSettings,
                       onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                       zecAvailableText: zecAvailableText,
-                      zecAvailableZatoshi: migrationSpendable,
+                      zecAvailableZatoshi: zecSpendable,
+                      balanceMessage: balanceMessage,
+                      onViewSwaps: () => context.go('/activity'),
                       destinationContactName: swapDestinationContactFor(
                         swapState,
                         ref.watch(addressBookProvider).value?.contacts ??
                             const [],
                       )?.label,
+                      oneTimeZecAddress: oneTimeZecAddress,
+                      preparingOneTimeAddress:
+                          addressWait == SwapAddressWait.preparing,
                     );
                     // Figma container (420×656, 16px vertical padding): the
                     // title is pinned under the toolbar, the attribution and
@@ -292,7 +317,8 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         const SizedBox(height: AppSpacing.md),
                         _SwapReviewFooter(
                           state: swapState,
-                          zecAvailableZatoshi: migrationSpendable,
+                          addressWait: addressWait,
+                          zecAvailableZatoshi: zecSpendable,
                           onOpenDestinationAddress: _openAddressEditor,
                           onReviewQuote: openReview,
                         ),
@@ -424,12 +450,14 @@ class _SwapPageTitle extends StatelessWidget {
 class _SwapReviewFooter extends StatelessWidget {
   const _SwapReviewFooter({
     required this.state,
+    required this.addressWait,
     required this.zecAvailableZatoshi,
     required this.onOpenDestinationAddress,
     required this.onReviewQuote,
   });
 
   final SwapState state;
+  final SwapAddressWait? addressWait;
   final BigInt zecAvailableZatoshi;
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
@@ -442,7 +470,8 @@ class _SwapReviewFooter extends StatelessWidget {
     );
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
     final destinationFormatError = state.destinationAddressFormatError;
-    final canReview = state.canReviewQuote && !balanceExceeded;
+    final waiting = addressWait != null && !state.quoteLoading;
+    final canReview = state.canReviewQuote && !balanceExceeded && !waiting;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
         : canReview
@@ -456,12 +485,15 @@ class _SwapReviewFooter extends StatelessWidget {
                   ? 'Not enough ZEC'
                   : state.quoteLoading
                   ? 'Getting quote'
+                  : waiting
+                  ? swapAddressWaitLabel(addressWait!)
                   : 'Review swap');
     final reviewReady =
         !needsDestinationAddress &&
         destinationFormatError == null &&
         !balanceExceeded &&
-        !state.quoteLoading;
+        !state.quoteLoading &&
+        !waiting;
 
     return Center(
       child: SizedBox(

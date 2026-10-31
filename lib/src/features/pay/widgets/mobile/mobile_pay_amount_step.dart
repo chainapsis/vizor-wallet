@@ -28,6 +28,7 @@ class MobilePayAmountStep extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.zecAvailableZatoshi,
+    this.balanceMessage,
     required this.onAmountChanged,
     required this.onFiatAmountChanged,
     required this.onToggleFiatInputMode,
@@ -42,6 +43,10 @@ class MobilePayAmountStep extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final BigInt zecAvailableZatoshi;
+
+  /// Why [zecAvailableZatoshi] can't fund the payment, in place of
+  /// "Not enough ZEC".
+  final String? balanceMessage;
   final ValueChanged<String> onAmountChanged;
   final ValueChanged<String> onFiatAmountChanged;
   final VoidCallback onToggleFiatInputMode;
@@ -90,7 +95,9 @@ class MobilePayAmountStep extends StatelessWidget {
                 if (errorText != null || balanceExceeded) ...[
                   const SizedBox(height: AppSpacing.s),
                   SwapQuoteErrorText(
-                    message: balanceExceeded ? 'Not enough ZEC' : errorText!,
+                    message: balanceExceeded
+                        ? balanceMessage ?? 'Not enough ZEC'
+                        : errorText!,
                     textKey: const ValueKey('mobile_pay_amount_error'),
                     maxLines: 2,
                   ),

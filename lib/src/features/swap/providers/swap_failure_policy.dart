@@ -179,9 +179,13 @@ String _messageFor(
       'Not enough spendable ZEC to cover this swap and its network fee.\n'
           'Try a smaller amount or use Max.',
     SwapFailureCategory.zecDepositIronwoodFunding =>
-      'Private swaps are funded from your Ironwood balance, which cannot '
-          'cover this swap and its network fee.\n'
-          'Move funds to Ironwood first or try a smaller amount.',
+      surface == SwapFailureSurface.pay
+          ? "Private payments use Ironwood ZEC only, which can't cover this "
+                'payment and its network fee.\n'
+                'Move funds to Ironwood or try a smaller amount.'
+          : "Private swaps use Ironwood ZEC only, which can't cover this swap "
+                'and its network fee.\n'
+                'Move funds to Ironwood or try a smaller amount.',
     SwapFailureCategory.walletPreflight =>
       'ZEC deposit could not be prepared.\nCheck your balance and try again.',
     SwapFailureCategory.depositNotFound =>

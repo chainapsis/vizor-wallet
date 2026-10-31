@@ -9,6 +9,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/models/swap_activity_status_mapper.dart';
 import '../../../swap/models/swap_models.dart';
+import '../../../swap/providers/swap_payout_discovery_provider.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_panel.dart';
 
@@ -49,7 +50,12 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
           child: Column(
             children: [
               MobileTopNav.back(
-                title: mobileSwapActivityTitle(state, intent),
+                title: mobileSwapActivityTitle(
+                  state,
+                  intent,
+                  findingPayout:
+                      intent != null && watchIntentFindingPayout(ref, intent),
+                ),
                 // Pushed from activity rows -> pop; arrived via go()
                 // from the review start -> fall back to the return
                 // target (pop would be a no-op there).
@@ -77,9 +83,17 @@ class MobileSwapActivityDetailScreen extends ConsumerWidget {
   }
 }
 
-String mobileSwapActivityTitle(SwapState state, SwapIntent? intent) {
+String mobileSwapActivityTitle(
+  SwapState state,
+  SwapIntent? intent, {
+  bool findingPayout = false,
+}) {
   if (intent == null) return 'Swap';
-  final presentation = swapActivityStatusPresentationForIntent(state, intent);
+  final presentation = swapActivityStatusPresentationForIntent(
+    state,
+    intent,
+    findingPayout: findingPayout,
+  );
   if (presentation.paymentMode) {
     return switch (intent.status) {
       SwapIntentStatus.complete => 'Paid',

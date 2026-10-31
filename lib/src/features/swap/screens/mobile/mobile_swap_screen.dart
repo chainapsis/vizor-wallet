@@ -18,7 +18,6 @@ import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/address_book_contact_picker_modal.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../address_scan/domain/address_scan_payload.dart';
 import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
@@ -26,6 +25,9 @@ import '../../../address_scan/widgets/mobile_address_scan_view.dart'
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_models.dart';
 import '../../providers/swap_state_provider.dart';
+import '../../providers/swap_address_wait_provider.dart';
+import '../../providers/swap_funding_balance_provider.dart';
+import '../../providers/swap_zec_staging_address_service.dart';
 import '../../widgets/mobile/mobile_swap_address_edit_modal.dart';
 import '../../widgets/mobile/mobile_swap_asset_selector_modal.dart';
 import '../../widgets/swap_near_intents_attribution.dart';
@@ -326,13 +328,21 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     );
     final swapState = ref.watch(swapStateProvider);
     final swapNotifier = ref.read(swapStateProvider.notifier);
+    final oneTimeZecAddress = ref.watch(swapUsesOneTimeAddressProvider);
+    final addressWait = ref.watch(
+      swapAddressWaitProvider(swapState.direction.sendsZec),
+    );
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    final migrationSpendable = ref.watch(
-      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    final funding = ref.watch(
+      swapFundingBalanceProvider((
+        accountUuid: activeAccountUuid,
+        oneTimeRefund: oneTimeZecAddress && swapState.direction.sendsZec,
+      )),
     );
-    final zecAvailableText = ZecAmount.fromZatoshi(migrationSpendable)
+    final zecSpendable = funding.spendable;
+    final zecAvailableText = ZecAmount.fromZatoshi(zecSpendable)
         .pretty(denomStyle: ZecDenomStyle.upper)
         .toString();
 
@@ -353,6 +363,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final quoteError =
         swapState.quoteAmountPrecisionError ??
         swapState.externalAssetSupportError ??
+        swapIronwoodOnlyShortfallMessage(
+          funding,
+          (available) =>
+              _MobileSwapReviewButton.amountExceeds(swapState, available),
+          payment: false,
+        ) ??
         swapState.quoteError;
 
     return SafeArea(
@@ -398,6 +414,9 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           ref.watch(addressBookProvider).value?.contacts ??
                               const [],
                         )?.label,
+                        oneTimeZecAddress: oneTimeZecAddress,
+                        preparingOneTimeAddress:
+                            addressWait == SwapAddressWait.preparing,
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Row(
@@ -419,7 +438,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           Expanded(
                             child: _MobileSwapReviewButton(
                               state: swapState,
-                              zecAvailableZatoshi: migrationSpendable,
+                              addressWait: addressWait,
+                              zecAvailableZatoshi: zecSpendable,
                               onOpenDestinationAddress: _openAddressEditor,
                               onReviewQuote: openReview,
                             ),
@@ -432,6 +452,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                           message: quoteError,
                           textKey: const ValueKey('swap_quote_error_message'),
                           maxLines: 2,
+                          action: swapQuoteErrorAction(
+                            quoteError,
+                            onViewSwaps: () => context.go('/activity'),
+                          ),
                         ),
                       ],
                     ],
@@ -459,29 +483,33 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
 class _MobileSwapReviewButton extends StatelessWidget {
   const _MobileSwapReviewButton({
     required this.state,
+    required this.addressWait,
     required this.zecAvailableZatoshi,
     required this.onOpenDestinationAddress,
     required this.onReviewQuote,
   });
 
   final SwapState state;
+  final SwapAddressWait? addressWait;
   final BigInt zecAvailableZatoshi;
   final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
 
-  bool get _balanceExceeded {
+  /// Whether the ZEC amount [state] sends is not below [available].
+  static bool amountExceeds(SwapState state, BigInt available) {
     if (!state.direction.sendsZec) return false;
     final amount = parseZecAmount(state.amountText.trim());
     if (amount == null || amount <= BigInt.zero) return false;
-    return amount >= zecAvailableZatoshi;
+    return amount >= available;
   }
 
   @override
   Widget build(BuildContext context) {
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
     final destinationFormatError = state.destinationAddressFormatError;
-    final balanceExceeded = _balanceExceeded;
-    final canReview = state.canReviewQuote && !balanceExceeded;
+    final balanceExceeded = amountExceeds(state, zecAvailableZatoshi);
+    final waiting = addressWait != null && !state.quoteLoading;
+    final canReview = state.canReviewQuote && !balanceExceeded && !waiting;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
         : canReview
@@ -496,6 +524,8 @@ class _MobileSwapReviewButton extends StatelessWidget {
                   ? 'Not enough ZEC'
                   : state.quoteLoading
                   ? 'Getting quote'
+                  : waiting
+                  ? swapAddressWaitLabel(addressWait!)
                   : 'Continue to review');
 
     return AppButton(

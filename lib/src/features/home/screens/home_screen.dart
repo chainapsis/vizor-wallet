@@ -52,6 +52,7 @@ import '../../migration/widgets/ironwood_migration_announcement_modal.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_fiat_value_formatting.dart';
 import '../../swap/providers/swap_activity_tracker.dart';
+import '../../swap/providers/swap_payout_discovery_provider.dart';
 import '../widgets/desktop_home_setup_carousel.dart';
 import '../../swap/providers/swap_state_provider.dart';
 import '../services/transparent_balance_display.dart';
@@ -789,6 +790,11 @@ class _HomePaneState extends ConsumerState<_HomePane> {
             item: item,
             privacyModeEnabled: widget.privacyModeEnabled,
             onTap: () => _openSwapStatus(item.intentId),
+            findingPayout: watchSwapFindingPayout(
+              ref,
+              accountUuid: accountUuid,
+              awaitingTxid: item.payoutAwaitingDiscovery(DateTime.now()),
+            ),
           ),
         ),
     ]..sort(_compareHomeActivityEntries);

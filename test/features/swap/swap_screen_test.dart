@@ -53,7 +53,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_receive_reservatio
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show PlatformInt64Util;
 import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart'
-    show ReceiveDeposit, ReceiveError, ReceiveErrorKind;
+    show ReceiveDeposit, ReceiveError, ReceiveErrorKind, SwapRecoveryStatus;
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -8945,8 +8945,7 @@ void main() {
             'Your saved progress is kept.',
         kind: ReceiveErrorKind.upgradeRequired,
       ),
-      'Update Vizor to keep checking private swap addresses. '
-          'Your saved progress is kept.',
+      kSwapRecoveryUpdateMessage,
       'a round that needs a newer app asks for an update',
     ),
   ]) {
@@ -8988,11 +8987,195 @@ void main() {
     });
   }
 
+  testWidgets(
+    'with NEAR swap privacy on, an address still unchecked after its retry '
+    'waits on the button until the next round',
+    (tester) async {
+      final container = await _pumpSwapScreen(
+        tester,
+        swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+        nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+        reservationStore: _StaleFirstReservationStore(),
+        reserveSwapAddress: ({required accountUuid, required direction}) async {
+          throw const ReceiveError(
+            message: 'Preparing a private swap address. Try again in a moment.',
+            kind: ReceiveErrorKind.receiveHistory,
+          );
+        },
+      );
+      final notifier = container.read(swapStateProvider.notifier);
+      notifier.selectDirection(SwapDirection.externalToZec);
+      notifier.updateAmount('25');
+      notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+      await notifier.showReview();
+      await tester.pumpAndSettle();
+
+      final button = find.byKey(const ValueKey('swap_review_button'));
+      expect(container.read(swapStateProvider).quoteError, isNull);
+      expect(
+        find.descendant(of: button, matching: find.text('Preparing address…')),
+        findsOneWidget,
+      );
+      expect(tester.widget<AppButton>(button).onPressed, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('swap_one_time_address_payout')),
+          matching: find.text('Preparing address…'),
+        ),
+        findsOneWidget,
+      );
+
+      // The next round may have checked it, so the button asks again.
+      container.read(swapRecoveryRoundsProvider.notifier).ended();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: button, matching: find.text('Review swap')),
+        findsOneWidget,
+      );
+      expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+    },
+  );
+
+  testWidgets('the history lookup after turning on NEAR swap privacy holds the '
+      'button before any quote', (tester) async {
+    final container = await _pumpSwapScreen(
+      tester,
+      swapProvider: _FakeSwapProvider(zecDepositMemo: null),
+      nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+    );
+    final sync = container.read(syncProvider.notifier) as _FakeSwapSyncNotifier;
+    sync.swapRecoveryStatusResult = const SwapRecoveryStatus(
+      roundDue: false,
+      awaitingAdmission: false,
+      checkingHistory: true,
+      manualCheckActive: false,
+      upgradeRequired: false,
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.externalToZec);
+    notifier.updateAmount('25');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    container.read(swapRecoveryRoundsProvider.notifier).ended();
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Preparing address…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+
+    // A failed round lets a press show why instead of waiting.
+    container.read(swapRecoveryRoundFailedProvider.notifier).set(true);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+  });
+
+  testWidgets('a ZEC swap with a one-time refund address waits for sync', (
+    tester,
+  ) async {
+    final container = await _pumpSwapScreen(
+      tester,
+      swapProvider: _FakeSwapProvider(),
+      nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+      syncHeights: (chainTip: 1000, scanned: 900),
+      ironwoodBalance: BigInt.from(10000000000),
+    );
+    final notifier = container.read(swapStateProvider.notifier);
+    notifier.selectDirection(SwapDirection.zecToExternal);
+    notifier.updateAmount('1');
+    notifier.updateDestination('0x52908400098527886e0f7030069857d2e4169ee7');
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Waiting for sync…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
+  testWidgets('a payment with a one-time refund address waits for sync', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        seedSwapActivityFixtures: false,
+        nearSwapPrivacy: _OnNearSwapPrivacyNotifier.new,
+        syncHeights: (chainTip: 1000, scanned: 900),
+        ironwoodBalance: BigInt.from(10000000000),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('pay_select_recipient_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Waiting for sync…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+  });
+
+  for (final privacy in [true, false]) {
+    testWidgets(
+      'a ZEC amount above the Ironwood balance '
+      '${privacy ? 'is short with NEAR swap privacy on' : 'is fine with it off'}',
+      (tester) async {
+        final container = await _pumpSwapScreen(
+          tester,
+          swapProvider: _FakeSwapProvider(),
+          nearSwapPrivacy: privacy
+              ? _OnNearSwapPrivacyNotifier.new
+              : _FakeNearSwapPrivacyNotifier.new,
+          ironwoodBalance: BigInt.from(820000000),
+        );
+        final notifier = container.read(swapStateProvider.notifier);
+        notifier.selectDirection(SwapDirection.zecToExternal);
+        notifier.updateAmount('9');
+        notifier.updateDestination(
+          '0x52908400098527886e0f7030069857d2e4169ee7',
+        );
+        await tester.pumpAndSettle();
+
+        final button = find.byKey(const ValueKey('swap_review_button'));
+        const message =
+            'Private swaps use Ironwood ZEC only. You have 8.2\u00A0ZEC there.';
+        if (privacy) {
+          expect(
+            find.descendant(of: button, matching: find.text('Not enough ZEC')),
+            findsOneWidget,
+          );
+          expect(find.text(message), findsOneWidget);
+        } else {
+          expect(
+            find.descendant(of: button, matching: find.text('Review swap')),
+            findsOneWidget,
+          );
+          expect(find.text(message), findsNothing);
+        }
+      },
+    );
+  }
+
   for (final (failure, message, name) in <(Object?, String, String)>[
     (
       null,
-      'No swap address is free. Wait for a swap in progress to finish.',
-      'a round that succeeded keeps the wallet wording',
+      kPrivateSwapAddressLimitMessage,
+      'a round that succeeded says too many swaps are waiting',
     ),
     (
       const ReceiveError(
@@ -9001,8 +9184,8 @@ void main() {
             'wallet yet. Try again in a few minutes.',
         kind: ReceiveErrorKind.waitingForService,
       ),
-      'No swap address is free. Wait for a swap in progress to finish.',
-      'a round waiting for the receiver service keeps the wallet wording',
+      kPrivateSwapAddressLimitMessage,
+      'a round waiting for the receiver service says the same',
     ),
     (
       const ReceiveError(message: 'HTTP 503', kind: ReceiveErrorKind.other),
@@ -9046,6 +9229,13 @@ void main() {
       // One round ran, and the address was asked for again after it.
       expect(sync.swapRecoveryRounds, rounds + 1);
       expect(reservations, 2);
+      // Only the waiting swaps can free an address, so it links to them.
+      expect(
+        find.text('View swaps'),
+        message == kPrivateSwapAddressLimitMessage
+            ? findsOneWidget
+            : findsNothing,
+      );
     });
   }
 
@@ -9434,6 +9624,17 @@ void main() {
     await _openActivitySurface(tester);
     await _openActivityDetail(tester, 'left-starting');
     expect(find.text(swapStartFailedText), findsOneWidget);
+    // A warning, not the sync icon of a swap still starting.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_activity_start_pending')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is AppIcon && widget.name == AppIcons.warningCircle,
+        ),
+      ),
+      findsOneWidget,
+    );
     expect(find.byType(SwapDepositTokensPageContent), findsNothing);
   });
 
@@ -11888,6 +12089,8 @@ Future<ProviderContainer> _pumpSwapScreen(
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
   SwapDepositSender? depositSender,
+  ({int chainTip, int scanned})? syncHeights,
+  BigInt? ironwoodBalance,
 }) async {
   await _setDesktopViewport(tester);
   await tester.pumpWidget(
@@ -11907,6 +12110,8 @@ Future<ProviderContainer> _pumpSwapScreen(
       reservationStore: reservationStore,
       nearSwapPrivacy: nearSwapPrivacy,
       onProviderSnapshot: onProviderSnapshot,
+      syncHeights: syncHeights,
+      ironwoodBalance: ironwoodBalance,
     ),
   );
   await tester.pumpAndSettle();
@@ -11946,6 +12151,8 @@ Widget _routerHarness(
   onProviderSnapshot,
   SwapActivityStore? activityStore,
   NetworkUpgradeWindowState? upgradeWindow,
+  ({int chainTip, int scanned})? syncHeights,
+  BigInt? ironwoodBalance,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -11973,6 +12180,9 @@ Widget _routerHarness(
           displaySpendableBalance: displaySpendableBalance,
           displaySpendableFreshness: displaySpendableFreshness,
           recentTransactions: recentTransactions,
+          chainTipHeight: syncHeights?.chainTip ?? 0,
+          scannedHeight: syncHeights?.scanned ?? 0,
+          ironwoodBalance: ironwoodBalance,
         ),
       ),
       payDepositTransactionLoaderProvider.overrideWithValue(

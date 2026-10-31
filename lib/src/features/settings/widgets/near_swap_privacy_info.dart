@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,6 +11,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_shape.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
+import '../../../providers/swap_past_swaps_check_provider.dart';
 import 'swap_history_check_control.dart';
 
 /// NEAR swap privacy subtitle while it is on.
@@ -25,11 +28,23 @@ const kNearSwapPrivacyHardwareCopy =
     'Zcash addresses.';
 
 /// What Settings shows for NEAR swap privacy on desktop and mobile.
+/// [available] is false for a hardware wallet account, which shows
+/// [kNearSwapPrivacyUnavailableLabel] instead of a switch.
+/// [checkingPastSwaps] shows [kNearSwapPrivacyCheckingPastSwapsCopy].
 typedef NearSwapPrivacySetting = ({
   bool enabled,
+  bool available,
   String description,
   String? transition,
+  bool checkingPastSwaps,
 });
+
+/// Status in place of the switch for a hardware wallet account.
+const kNearSwapPrivacyUnavailableLabel = 'Not available';
+
+/// Shown under the description while the wallet looks for past one-time
+/// swap payments, as after turning this on or a restore.
+const kNearSwapPrivacyCheckingPastSwapsCopy = 'Checking past swaps';
 
 /// The NEAR swap privacy option's state, or null when Settings doesn't offer
 /// it (see [nearSwapPrivacySettingAvailableProvider]).
@@ -40,48 +55,114 @@ final nearSwapPrivacySettingProvider = Provider<NearSwapPrivacySetting?>((ref) {
       ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false;
   return (
     enabled: enabled,
+    available: !hardwareAccount,
     description: hardwareAccount
         ? kNearSwapPrivacyHardwareCopy
         : enabled
         ? kNearSwapPrivacyOnCopy
         : kNearSwapPrivacyOffCopy,
     transition: ref.watch(nearSwapPrivacyTransitionProvider),
+    checkingPastSwaps:
+        enabled && !hardwareAccount && ref.watch(swapPastSwapsCheckProvider),
   );
 });
 
 /// Title of the NEAR swap privacy explanation.
-const kNearSwapPrivacyInfoTitle = "What's this?";
+const kNearSwapPrivacyInfoTitle = 'NEAR swap privacy';
 
-/// Paragraphs of the NEAR swap privacy explanation.
-const kNearSwapPrivacyInfoParagraphs = [
-  'When you swap with NEAR Intents, your wallet gives NEAR a Zcash address for '
-      'the payout and another for any refund. With NEAR swap privacy on, these '
-      'are one-time addresses made just for swaps, so any future quantum '
-      "adversary can't tie them to your wallet.",
-  'A payout address from a quote that expired unpaid can be used again for a '
-      'later quote. Rarely, two devices with the same wallet that quote at the '
-      'same moment get the same address. NEAR can see that those quotes share '
-      'an address, but still not which wallet it belongs to.',
-  'Addresses you enter yourself, like an Ethereum address you reuse for '
-      'several swaps, are still shared with NEAR and can link those swaps. '
-      "Hardware wallet accounts don't use one-time addresses.",
-  'Your recovery phrase still recovers everything. After a restore, your '
-      'wallet finds these payments privately on its own.',
-  'Turning this off only gives new swaps regular addresses. Payouts and '
-      'refunds to one-time addresses you already used still show up.',
+/// What NEAR swap privacy protects, first in the explanation.
+const kNearSwapPrivacyInfoLead =
+    'Each swap gives NEAR Intents one-time Zcash addresses for its payout and '
+    "refund. Even a future quantum computer can't tie them to this wallet.";
+
+/// The explanation's sections after [kNearSwapPrivacyInfoLead].
+const kNearSwapPrivacyInfoSections = [
+  (
+    title: 'What changes',
+    body:
+        'Swaps that send ZEC are paid from your Ironwood balance only. The '
+        'first swap after you turn this on can take a few minutes to prepare.',
+  ),
+  (
+    title: "What it doesn't cover",
+    body:
+        "It keeps these addresses from being tied to your wallet; it doesn't "
+        'change how your funds are secured. Addresses you enter yourself, '
+        'like an Ethereum address you reuse, can still link your swaps. '
+        'Hardware wallet accounts use regular addresses.',
+  ),
+  (
+    title: 'When a payout address is shared',
+    body:
+        'A payout address from a quote that expired unpaid can be used again '
+        'for a later quote. Rarely, two devices with the same wallet that '
+        'quote at the same moment get the same address. NEAR can see that '
+        'those quotes share an address, but still not which wallet it belongs '
+        'to.',
+  ),
+  (
+    title: 'After a restore, or while it is off',
+    body:
+        'After a restore, your wallet finds these payments privately on its '
+        'own. Turning this off only gives new swaps regular addresses. Payouts '
+        'and refunds to one-time addresses you already used still show up.',
+  ),
 ];
 
-/// Heading of the troubleshooting section that ends the explanation while
-/// the swap history check is offered.
-const kNearSwapPrivacyTroubleshootingTitle = 'Troubleshooting';
+/// The "Learn more" button under the NEAR swap privacy description, which
+/// opens [showNearSwapPrivacyInfo]. Its icon lines up with the text above.
+class NearSwapPrivacyLearnMore extends StatelessWidget {
+  const NearSwapPrivacyLearnMore({super.key});
 
-/// What the swap history check does, above its button.
-const kNearSwapPrivacyTroubleshootingCopy =
-    'Vizor finds swap payments and refunds automatically. If one is missing '
-    'after a swap finished, this check looks at every private swap address '
-    'and refund key this wallet has used. It starts from the beginning of '
-    'Ironwood history and runs over Private queries. It can take a few '
-    'minutes.';
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    void open() => unawaited(showNearSwapPrivacyInfo(context));
+    return Semantics(
+      container: true,
+      button: true,
+      label: 'Learn more about NEAR swap privacy',
+      onTap: open,
+      excludeSemantics: true,
+      child: AppButton(
+        key: const ValueKey('near_swap_privacy_learn_more'),
+        variant: AppButtonVariant.ghost,
+        size: AppButtonSize.small,
+        leading: AppIcon(AppIcons.help, color: colors.icon.muted),
+        onPressed: open,
+        child: const Text('Learn more'),
+      ),
+    );
+  }
+}
+
+/// [kNearSwapPrivacyCheckingPastSwapsCopy] with a loader, read out as it
+/// appears and goes.
+class NearSwapPrivacyCheckingPastSwaps extends StatelessWidget {
+  const NearSwapPrivacyCheckingPastSwaps({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      liveRegion: true,
+      child: Row(
+        key: const ValueKey('near_swap_privacy_checking_past_swaps'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(AppIcons.loader, size: 16, color: colors.icon.muted),
+          const SizedBox(width: AppSpacing.xxs),
+          Text(
+            kNearSwapPrivacyCheckingPastSwapsCopy,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// Shows the NEAR swap privacy explanation for this binary's form factor: a
 /// sheet on mobile, a dialog on desktop.
@@ -123,15 +204,16 @@ class NearSwapPrivacyInfoDialog extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Flexible(
-                child: SingleChildScrollView(
-                  child: _Body(color: colors.text.secondary),
+                child: _FadingScrollBody(
+                  surface: colors.background.ground,
+                  child: const _Body(),
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
               AppButton(
                 key: const ValueKey('near_swap_privacy_info_close'),
                 expand: true,
-                variant: AppButtonVariant.secondary,
+                variant: AppButtonVariant.primary,
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('Close'),
               ),
@@ -144,77 +226,214 @@ class NearSwapPrivacyInfoDialog extends StatelessWidget {
 }
 
 /// Mobile NEAR swap privacy explanation.
-class NearSwapPrivacyInfoSheet extends StatelessWidget {
+class NearSwapPrivacyInfoSheet extends ConsumerWidget {
   const NearSwapPrivacyInfoSheet({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     return MobileModalScaffold(
       key: const ValueKey('near_swap_privacy_info_sheet'),
       title: kNearSwapPrivacyInfoTitle,
       onClose: () => Navigator.of(context).pop(),
-      leading: AppIcon(AppIcons.eye, size: 20, color: colors.icon.accent),
+      leading: AppIcon(AppIcons.linkOff, size: 20, color: colors.icon.accent),
       constrainBody: true,
-      child: SingleChildScrollView(child: _Body(color: colors.text.accent)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Flexible(
+            // The sheet's card paints the base surface.
+            child: _FadingScrollBody(
+              surface: colors.background.base,
+              child: const _Body(historyCheck: false),
+            ),
+          ),
+          // Where the sheet's buttons go, so it is in reach without scrolling,
+          // as far below the text as other sheets keep their buttons.
+          if (_showsHistoryCheck(ref)) ...[
+            const SizedBox(height: AppSpacing.md),
+            const SwapHistoryCheckControl(
+              key: ValueKey('near_swap_privacy_history_check'),
+              stacked: true,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
 
-/// [kNearSwapPrivacyInfoParagraphs] in [color], then the troubleshooting
-/// section with the swap history check while Settings offers NEAR swap
-/// privacy and the wallet has a software account, whatever the setting says.
-class _Body extends ConsumerWidget {
-  const _Body({required this.color});
+/// Whether the explanation offers the swap history check: Settings offers
+/// NEAR swap privacy and the wallet has a software account, whatever the
+/// setting says.
+bool _showsHistoryCheck(WidgetRef ref) =>
+    ref.watch(nearSwapPrivacySettingAvailableProvider) &&
+    (ref
+            .watch(accountProvider)
+            .value
+            ?.accounts
+            .any((account) => !account.isHardware) ??
+        false);
 
-  final Color color;
+/// The explanation's scrolling body. It has no scrollbar; instead an edge with
+/// more of the body past it fades into the surface, as the endpoint list
+/// does, and the fade goes once that end is in view.
+class _FadingScrollBody extends StatefulWidget {
+  const _FadingScrollBody({required this.surface, required this.child});
+
+  /// The color the body sits on, which the fade ends in.
+  final Color surface;
+  final Widget child;
+
+  @override
+  State<_FadingScrollBody> createState() => _FadingScrollBodyState();
+}
+
+class _FadingScrollBodyState extends State<_FadingScrollBody> {
+  final _controller = ScrollController();
+  var _above = false;
+  var _below = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_update);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _update() {
+    if (!mounted || !_controller.hasClients) return;
+    final position = _controller.position;
+    final above = position.extentBefore > 0.5;
+    final below = position.extentAfter > 0.5;
+    if (above != _above || below != _below) {
+      setState(() {
+        _above = above;
+        _below = below;
+      });
+    }
+  }
+
+  Widget _fade({
+    required Key key,
+    required bool shown,
+    required Alignment from,
+    required Alignment to,
+  }) => IgnorePointer(
+    child: AnimatedOpacity(
+      key: key,
+      opacity: shown ? 1 : 0,
+      duration: const Duration(milliseconds: 150),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: from,
+            end: to,
+            colors: [widget.surface, widget.surface.withValues(alpha: 0)],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    // Metrics change on the first layout and whenever the content resizes.
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (_) {
+        _update();
+        return false;
+      },
+      child: Stack(
+        children: [
+          ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: SingleChildScrollView(
+              controller: _controller,
+              child: widget.child,
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            height: AppSpacing.base,
+            child: _fade(
+              key: const ValueKey('near_swap_privacy_info_fade_top'),
+              shown: _above,
+              from: Alignment.topCenter,
+              to: Alignment.bottomCenter,
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: AppSpacing.lg,
+            child: _fade(
+              key: const ValueKey('near_swap_privacy_info_fade_bottom'),
+              shown: _below,
+              from: Alignment.bottomCenter,
+              to: Alignment.topCenter,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// [kNearSwapPrivacyInfoLead] and [kNearSwapPrivacyInfoSections], then the
+/// swap history check when [_showsHistoryCheck].
+class _Body extends ConsumerWidget {
+  const _Body({this.historyCheck = true});
+
+  /// Whether the history check ends the body, as in the desktop dialog. The
+  /// mobile sheet pins it below instead.
+  final bool historyCheck;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    final showHistoryCheck =
-        ref.watch(nearSwapPrivacySettingAvailableProvider) &&
-        (ref
-                .watch(accountProvider)
-                .value
-                ?.accounts
-                .any((account) => !account.isHardware) ??
-            false);
+    final showHistoryCheck = historyCheck && _showsHistoryCheck(ref);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final (index, paragraph)
-            in kNearSwapPrivacyInfoParagraphs.indexed) ...[
-          if (index > 0) const SizedBox(height: AppSpacing.sm),
+        Text(
+          kNearSwapPrivacyInfoLead,
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
+        ),
+        for (final section in kNearSwapPrivacyInfoSections) ...[
+          const SizedBox(height: AppSpacing.sm),
           Text(
-            paragraph,
-            style: AppTypography.bodyMedium.copyWith(color: color),
+            section.title,
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            section.body,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
+            ),
           ),
         ],
         if (showHistoryCheck) ...[
-          const SizedBox(height: AppSpacing.md),
-          Column(
-            key: const ValueKey('near_swap_privacy_troubleshooting'),
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                kNearSwapPrivacyTroubleshootingTitle,
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                kNearSwapPrivacyTroubleshootingCopy,
-                style: AppTypography.bodyMedium.copyWith(color: color),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              // The provider owns the check, so closing the explanation
-              // leaves a running or saved one going.
-              const SwapHistoryCheckControl(),
-            ],
+          const SizedBox(height: AppSpacing.sm),
+          Container(height: 1, color: colors.border.subtle),
+          const SizedBox(height: AppSpacing.xs),
+          // The provider owns the check, so closing the explanation leaves a
+          // running or saved one going.
+          const SwapHistoryCheckControl(
+            key: ValueKey('near_swap_privacy_history_check'),
           ),
         ],
       ],

@@ -9,6 +9,16 @@ import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_receive_reservation_service.dart';
 
+/// Whether swaps on the active account use one-time Zcash addresses: NEAR
+/// swap privacy is on and the account is not a hardware wallet, the same
+/// check [SwapZecStagingAddressService.usesSwapAddress] makes per quote.
+final swapUsesOneTimeAddressProvider = Provider<bool>((ref) {
+  final account = ref.watch(accountProvider).value?.activeAccount;
+  return account != null &&
+      !account.isHardware &&
+      ref.watch(nearSwapPrivacyProvider);
+});
+
 final swapZecStagingAddressServiceProvider =
     Provider<SwapZecStagingAddressService>((ref) {
       final reservations = ref.read(swapReceiveReservationServiceProvider);
@@ -85,6 +95,7 @@ class SwapZecStagingAddress {
       externalAsset: externalAsset,
       userExternalAddress: userExternalAddress,
       walletZecAddress: address,
+      oneTimeZecAddress: isPrivate,
     );
   }
 }

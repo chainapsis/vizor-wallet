@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/address_book/providers/address_book_pr
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/swap/screens/mobile/mobile_swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_slippage_stepper_modal.dart';
@@ -62,6 +63,10 @@ Widget _app({
   _MobileDelayedQuoteSwapProvider? swapProvider,
   SwapComposerPreferencesStore? composerPreferencesStore,
   List<AddressBookContact> addressBookContacts = const [],
+  bool oneTimeZecAddress = false,
+  int chainTipHeight = 0,
+  int scannedHeight = 0,
+  BigInt? ironwoodBalance,
 }) => ProviderScope(
   overrides: [
     appBootstrapProvider.overrideWithValue(_bootstrap()),
@@ -81,9 +86,16 @@ Widget _app({
           hasAccountScopedData: true,
           orchardBalance: BigInt.from(100000000),
           spendableBalance: BigInt.from(100000000),
+          chainTipHeight: chainTipHeight,
+          scannedHeight: scannedHeight,
+          ironwoodBalance:
+              ironwoodBalance ??
+              (oneTimeZecAddress ? BigInt.from(100000000) : null),
         ),
       ),
     ),
+    if (oneTimeZecAddress)
+      swapUsesOneTimeAddressProvider.overrideWithValue(true),
   ],
   child: MaterialApp.router(
     routerConfig: GoRouter(
@@ -568,6 +580,79 @@ void main() {
     await tester.enterText(field, '5.123');
     await tester.pump();
     expect(tester.widget<TextField>(textField).controller?.text, '5.12');
+  });
+
+  testWidgets('a one-time refund address waits for sync on the button', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(oneTimeZecAddress: true, chainTipHeight: 1000, scannedHeight: 900),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.5',
+    );
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('mobile_swap_review_button'));
+    expect(
+      find.descendant(of: button, matching: find.text('Waiting for sync…')),
+      findsOneWidget,
+    );
+    expect(tester.widget<AppButton>(button).onPressed, isNull);
+    expect(
+      find.byKey(const ValueKey('swap_one_time_address_refund')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a one-time refund address is funded from Ironwood only', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(oneTimeZecAddress: true, ironwoodBalance: BigInt.from(10000000)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Swap').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.5',
+    );
+    await tester.tap(find.text('Add recipient address'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_swap_review_button')),
+        matching: find.text('Not enough ZEC'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Private swaps use Ironwood ZEC only. You have 0.1\u00A0ZEC there.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets(

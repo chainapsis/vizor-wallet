@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_address_formatting.da
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/mobile/mobile_swap_review_header.dart';
+import '../../figma_compare/figma_compare_font_loader.dart';
 
 Widget _harness(Widget child) {
   return MaterialApp(
@@ -32,6 +33,7 @@ MobileSwapReviewContent _content({
   Iterable<AddressBookContact> addressBookContacts = const [],
   String? userExternalContactId,
   SwapDirection direction = SwapDirection.zecToExternal,
+  bool oneTimeZecAddress = false,
 }) {
   const externalAddress = '0x9aDFd236b6ccD57bd571ca3C538dbB55FE4819E2';
   const walletAddress =
@@ -46,6 +48,7 @@ MobileSwapReviewContent _content({
     externalAsset: SwapAsset.usdc,
     userExternalAddress: externalAddress,
     walletZecAddress: walletAddress,
+    oneTimeZecAddress: oneTimeZecAddress,
   );
 
   return MobileSwapReviewContent(
@@ -62,6 +65,71 @@ MobileSwapReviewContent _content({
 }
 
 void main() {
+  testWidgets('a one-time payout address is named on the ZEC row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        _content(
+          direction: SwapDirection.externalToZec,
+          oneTimeZecAddress: true,
+        ),
+      ),
+    );
+
+    expect(find.text('One-time address'), findsOneWidget);
+    expect(find.text('One-time refund address'), findsNothing);
+  });
+
+  testWidgets('a swap sending ZEC names its one-time refund address', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_harness(_content(oneTimeZecAddress: true)));
+
+    expect(find.text('One-time refund address'), findsOneWidget);
+    // The recipient row keeps its own address action.
+    expect(find.text('Full address'), findsOneWidget);
+  });
+
+  testWidgets('a narrow screen shortens the refund label instead of '
+      'overflowing', (tester) async {
+    await loadFigmaCompareFonts();
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, navigator) => AppTheme(
+          data: AppThemeData.light,
+          child: MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.3)),
+            child: navigator!,
+          ),
+        ),
+        // The screen's side padding.
+        home: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          child: _content(oneTimeZecAddress: true),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('One-time address'), findsOneWidget);
+    // Screen readers still hear what the address is for.
+    expect(find.bySemanticsLabel('One-time refund address'), findsOneWidget);
+  });
+
+  testWidgets('an ordinary address shows no one-time label', (tester) async {
+    await tester.pumpWidget(
+      _harness(_content(direction: SwapDirection.externalToZec)),
+    );
+
+    expect(find.text('One-time address'), findsNothing);
+  });
+
   testWidgets(
     'review card omits account destination and price protection rows',
     (tester) async {
