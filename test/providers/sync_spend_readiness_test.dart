@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/one_time_ivk.dart' as rust_swap;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -33,6 +34,21 @@ class _Api extends RustLibApi {
 
   @override
   bool crateApiSyncIsSyncRunning() => running;
+
+  // No account has private swap work, so a recovery round is idle.
+  @override
+  Future<rust_swap.SwapRecoveryRound> crateApiOneTimeIvkRunSwapRecovery({
+    required String dbPath,
+    required String networkName,
+  }) async => rust_swap.SwapRecoveryRound(
+    changed: false,
+    checked: false,
+    more: false,
+    rescan: false,
+  );
+
+  @override
+  void crateApiOneTimeIvkCancelSwapRecovery() {}
 
   @override
   bool crateApiSyncIsSyncCancelRequested() => false;

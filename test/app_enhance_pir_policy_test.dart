@@ -10,20 +10,24 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/enhance_pir_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 
-AppBootstrapState _ready({required bool? enabled, String network = 'main'}) =>
-    AppBootstrapState(
-      initialLocation: '/home',
-      initialAccountState: const AccountState(),
-      initialSyncSnapshot: AppSyncSnapshot.empty,
-      network: network,
-      rpcEndpointConfig: defaultRpcEndpointConfig(network),
-      themeMode: ThemeMode.system,
-      privacyModeEnabled: false,
-      isPasswordConfigured: true,
-      isUnlocked: true,
-      passwordRotationRecoveryFailed: false,
-      enhancePirEnabled: enabled,
-    );
+AppBootstrapState _ready({
+  required bool? enabled,
+  String network = 'main',
+  bool swap = false,
+}) => AppBootstrapState(
+  initialLocation: '/home',
+  initialAccountState: const AccountState(),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+  enhancePirEnabled: enabled,
+  nearSwapPrivacyEnabled: swap,
+);
 
 final _raised = ApiAppliedTransparentPolicy(
   mode: ApiTransparentLedgerMode.privateRequired,
@@ -41,11 +45,13 @@ void main() {
   late ApiAppliedTransparentPolicy? durable;
   late bool failRead;
   late _OptOutStore optOut;
+  late List<bool> swapFlags;
 
   Future<void> apply(AppBootstrapState bootstrap) => applyEnhancePirPolicy(
     bootstrap,
     setRustEnabled: (enabled) => applied.add('rust:$enabled'),
     setPreferenceConfirmed: (confirmed) => applied.add('confirmed:$confirmed'),
+    setRustSwapPrivacyEnabled: swapFlags.add,
     reconcileTransparentPolicy: (privateQueries) async {
       applied.add('reconcile:$privateQueries');
       if (privateQueries ? failRaise : failLower) {
@@ -70,6 +76,7 @@ void main() {
     durable = _lowered;
     failRead = false;
     optOut = _OptOutStore((step) => applied.add(step));
+    swapFlags = [];
     TransparentPolicyStartup.current = const TransparentPolicyStartup();
   });
   tearDown(
@@ -96,6 +103,13 @@ void main() {
       },
     );
   }
+
+  test('a restart with NEAR swap privacy on and Private queries off still '
+      'allows new swap addresses', () async {
+    await apply(_ready(enabled: false, swap: true));
+    expect(applied, contains('rust:false'));
+    expect(swapFlags, [true]);
+  });
 
   test(
     'a saved preference is confirmed and raised before native is applied',

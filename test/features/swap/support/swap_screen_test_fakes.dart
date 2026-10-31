@@ -39,6 +39,28 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
   final List<rust_sync.TransactionInfo> recentTransactions;
   var restartCount = 0;
   var refreshAfterSendCount = 0;
+  var swapRecoveryRounds = 0;
+  var swapRecoveryContinues = 0;
+  var swapRecoveryRequests = 0;
+
+  /// What each waited round reports: its failure, or null when it succeeded.
+  Object? swapRecoveryFailure;
+
+  /// Counts recovery rounds a swap flow starts without waiting.
+  @override
+  void continueSwapRecovery() => swapRecoveryContinues++;
+
+  /// Counts rounds NEAR statuses owe, without native work.
+  @override
+  void requestSwapRecovery() => swapRecoveryRequests++;
+
+  /// Counts the receiver rounds a swap flow waits for, without native work,
+  /// each ending with [swapRecoveryFailure].
+  @override
+  Future<Object?> awaitSwapRecovery() async {
+    swapRecoveryRounds++;
+    return swapRecoveryFailure;
+  }
 
   @override
   Future<SyncState> build() async => SyncState(
@@ -96,6 +118,7 @@ class _FakeSwapProvider implements SwapProvider {
     List<SwapAsset>? supportedAssets,
     this.submitDepositError,
     this.quoteExpiresAt,
+    this.zecDepositMemo = 'memo-live',
   }) : supportedAssets = supportedAssets ?? swapExternalAssets;
 
   final requests = <SwapQuoteRequest>[];
@@ -109,6 +132,16 @@ class _FakeSwapProvider implements SwapProvider {
   /// review-quote expiry guard in [SwapNotifier.startIntent].
   final DateTime? quoteExpiresAt;
 
+  /// The memo on ZEC deposit instructions. NEAR gives none, and a swap refund key
+  /// requires none.
+  final String? zecDepositMemo;
+
+  /// The address on ZEC deposit instructions, read after the request is recorded.
+  String get zecDepositAddress => 't1live-deposit';
+
+  /// The address on external deposit instructions, read once per quote.
+  String get externalDepositAddress => '0xlive-deposit';
+
   @override
   String get providerLabel => 'NEAR Intents';
 
@@ -117,9 +150,18 @@ class _FakeSwapProvider implements SwapProvider {
     return supportedAssets;
   }
 
+  /// Sends `request` as the NEAR adapter does: its send hook runs, then the
+  /// request counts as received.
+  Future<void> send(SwapQuoteRequest request) async {
+    await request.beforeSend?.call(
+      DateTime.now().add(const Duration(hours: 1)),
+    );
+    requests.add(request);
+  }
+
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
-    requests.add(request);
+    await send(request);
     final estimate = SwapQuote.estimate(
       direction: request.direction,
       externalAsset: request.externalAsset,
@@ -155,11 +197,13 @@ class _FakeSwapProvider implements SwapProvider {
       depositInstruction: SwapDepositInstruction(
         asset: estimate.sellAsset,
         address: request.direction == SwapDirection.zecToExternal
-            ? 't1live-deposit'
-            : '0xlive-deposit',
+            ? zecDepositAddress
+            : externalDepositAddress,
         expiresInLabel: '07:12',
         reuseWarning: 'Do not reuse this address',
-        memo: 'memo-live',
+        memo: request.direction == SwapDirection.zecToExternal
+            ? zecDepositMemo
+            : 'memo-live',
       ),
     );
   }
@@ -252,6 +296,85 @@ class _FakeSwapProvider implements SwapProvider {
       depositInstruction: base.depositInstruction,
     );
   }
+}
+
+/// Reports every deposit submission and status refresh as refunded, a terminal
+/// status.
+class _TerminalDepositSwapProvider extends _FakeSwapProvider {
+  _TerminalDepositSwapProvider() : super(zecDepositMemo: null);
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(
+    String intentId, {
+    String? depositMemo,
+  }) async => (await super.getStatus(
+    intentId,
+    depositMemo: depositMemo,
+  )).withStatus(SwapIntentStatus.refunded);
+
+  @override
+  Future<SwapIntentSnapshot> submitDepositTransaction({
+    required String depositAddress,
+    required String txHash,
+    String? depositMemo,
+    String? nearSenderAccount,
+  }) async => (await super.submitDepositTransaction(
+    depositAddress: depositAddress,
+    txHash: txHash,
+    depositMemo: depositMemo,
+    nearSenderAccount: nearSenderAccount,
+  )).withStatus(SwapIntentStatus.refunded);
+}
+
+/// Fails the status request for each deposit address in [failing].
+class _FailingStatusSwapProvider extends _FakeSwapProvider {
+  _FailingStatusSwapProvider(this.failing) : super(zecDepositMemo: null);
+
+  final Set<String> failing;
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(
+    String intentId, {
+    String? depositMemo,
+  }) async {
+    final status = await super.getStatus(intentId, depositMemo: depositMemo);
+    if (failing.contains(intentId)) throw Exception('status unavailable');
+    return status;
+  }
+}
+
+/// The wallet's four incoming slots, held by deposit address. A recorded status
+/// frees its slot, as a conclusive one does for an expired quote, and a status
+/// for a freed address reports that the wallet no longer tracks it.
+class _ReceiveSlots {
+  _ReceiveSlots(this.held);
+
+  final Set<String> held;
+
+  /// The reservation hook for the swap harness, refusing at the limit.
+  Future<SwapZecStagingAddress?> reserve({
+    required String accountUuid,
+    required SwapDirection direction,
+  }) async {
+    if (held.length >= 4) {
+      throw const ReceiveError(
+        message: 'Every swap address is in use.',
+        kind: ReceiveErrorKind.limit,
+      );
+    }
+    held.add('incoming');
+    return SwapZecStagingAddress(
+      address: 'u1incoming',
+      reservationIndex: BigInt.from(held.length),
+    );
+  }
+
+  /// The wallet status hook for the swap harness.
+  Future<bool?> observe(
+    SwapIntent intent,
+    SwapIntentSnapshot snapshot,
+    DateTime checkedAt,
+  ) async => held.remove(intent.depositAddress ?? intent.id);
 }
 
 class _DeferredSupportedAssetsSwapProvider extends _FakeSwapProvider {
@@ -587,18 +710,256 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   }
 }
 
+/// Swap address records that accept every quote without a wallet database.
+class _FakeReceiveReservationStore extends Fake
+    implements ReceiveReservationStore {
+  @override
+  Future<String> begin(BigInt reservation, DateTime deadline) async =>
+      'request-$reservation';
+
+  @override
+  Future<void> finish(String request, SwapQuote? accepted) async {}
+
+  @override
+  Future<void> recordRefund(BigInt refundIndex, SwapQuote quote) async {}
+}
+
+/// Swap address records that bind each refund key to one deposit, as the wallet
+/// does.
+class _BindingReceiveReservationStore extends Fake
+    implements ReceiveReservationStore {
+  final bindings = <BigInt, String>{};
+
+  @override
+  Future<void> recordRefund(BigInt refundIndex, SwapQuote quote) async {
+    final deposit = quote.depositInstruction.address;
+    if ((bindings[refundIndex] ??= deposit) != deposit) {
+      throw StateError('refund key is bound to another deposit');
+    }
+  }
+}
+
+/// Incoming reservation records that refuse the first reservation with `kind`:
+/// stale, as the wallet does once its latest quote expired, or waiting on a history
+/// check, as it does once a hint queued the address again.
+class _StaleFirstReservationStore extends Fake
+    implements ReceiveReservationStore {
+  _StaleFirstReservationStore([this.kind = ReceiveErrorKind.stale]);
+
+  final ReceiveErrorKind kind;
+  final begun = <BigInt>[];
+
+  @override
+  Future<String> begin(BigInt reservation, DateTime deadline) async {
+    begun.add(reservation);
+    if (reservation == BigInt.one) {
+      throw ReceiveError(message: 'This swap address is waiting.', kind: kind);
+    }
+    return 'request-$reservation';
+  }
+
+  @override
+  Future<void> finish(String request, SwapQuote? accepted) async {}
+}
+
+/// Incoming reservation records that accept every quote but refuse to start one,
+/// as the wallet does once a hint queued the address for another history check.
+class _HistoryPendingStartStore extends Fake
+    implements ReceiveReservationStore {
+  @override
+  Future<String> begin(BigInt reservation, DateTime deadline) async =>
+      'request-$reservation';
+
+  @override
+  Future<void> finish(String request, SwapQuote? accepted) async {}
+
+  @override
+  Future<ReceiveDeposit> start(String request) async =>
+      throw const ReceiveError(
+        message: 'Preparing a private swap address. Try again in a moment.',
+        kind: ReceiveErrorKind.receiveHistory,
+      );
+}
+
+/// Incoming reservation records whose start waits until [release], returning
+/// the deposit instructions the quote was saved with, or throwing [refusal]
+/// when set, as the wallet does for a stale reservation.
+class _HeldStartReservationStore extends Fake
+    implements ReceiveReservationStore {
+  _HeldStartReservationStore({this.refusal});
+
+  final ReceiveError? refusal;
+  final _held = Completer<void>();
+  final _accepted = <String, SwapQuote>{};
+
+  /// How many starts were asked for.
+  var starts = 0;
+
+  /// Lets the held start finish.
+  void release() => _held.complete();
+
+  @override
+  Future<String> begin(BigInt reservation, DateTime deadline) async =>
+      'request-$reservation';
+
+  @override
+  Future<void> finish(String request, SwapQuote? accepted) async {
+    if (accepted != null) _accepted[request] = accepted;
+  }
+
+  @override
+  Future<ReceiveDeposit> start(String request) async {
+    starts++;
+    await _held.future;
+    if (refusal case final refusal?) throw refusal;
+    final deposit = _accepted[request]!.depositInstruction;
+    return ReceiveDeposit(
+      address: deposit.address,
+      memo: deposit.memo,
+      deadlineSeconds: PlatformInt64Util.from(0),
+    );
+  }
+}
+
+/// Reserves `<prefix><n>` on the n-th call, as the wallet does: a refund key
+/// for a direction that sends ZEC, otherwise an incoming reservation.
+class _CountingReservations {
+  _CountingReservations(this.prefix);
+
+  final String prefix;
+  var count = 0;
+
+  /// The reservation hook for the swap harness.
+  Future<SwapZecStagingAddress?> reserve({
+    required String accountUuid,
+    required SwapDirection direction,
+  }) async {
+    count++;
+    final index = BigInt.from(count);
+    return SwapZecStagingAddress(
+      address: '$prefix$count',
+      refundIndex: direction.sendsZec ? index : null,
+      reservationIndex: direction.sendsZec ? null : index,
+    );
+  }
+}
+
+/// Reserves nothing the first time, refusing with `kind` as the wallet does while
+/// it waits on work it can finish itself, then reserves incoming addresses.
+class _WaitingFirstReservation {
+  _WaitingFirstReservation(this.kind);
+
+  final ReceiveErrorKind kind;
+  var calls = 0;
+
+  /// The reservation hook for the swap harness.
+  Future<SwapZecStagingAddress?> reserve({
+    required String accountUuid,
+    required SwapDirection direction,
+  }) async {
+    calls++;
+    if (calls == 1) {
+      throw ReceiveError(message: 'Waiting on the wallet', kind: kind);
+    }
+    return SwapZecStagingAddress(
+      address: 'u1incoming$calls',
+      reservationIndex: BigInt.from(calls),
+    );
+  }
+}
+
+/// Swap activity storage whose saves fail once [failSaves] is set, as when
+/// secure storage becomes unavailable.
+class _FailingSaveSwapPersistenceStore extends _FakeSwapPersistenceStore {
+  _FailingSaveSwapPersistenceStore({super.initialIntents});
+
+  var failSaves = false;
+
+  /// How many next saves fail, apart from [failSaves].
+  var failNextSaves = 0;
+
+  /// Throws while [failSaves] is set or [failNextSaves] counts down, else saves.
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) {
+    if (failNextSaves > 0) {
+      failNextSaves--;
+      throw StateError('Secure storage is unavailable.');
+    }
+    if (failSaves) throw StateError('Secure storage is unavailable.');
+    return super.saveRecords(accountUuid: accountUuid, records: records);
+  }
+}
+
+/// Quotes with a new address-only ZEC deposit address each time, as NEAR does.
+class _NewDepositPerQuoteSwapProvider extends _FakeSwapProvider {
+  _NewDepositPerQuoteSwapProvider() : super(zecDepositMemo: null);
+
+  @override
+  String get zecDepositAddress => 't1deposit${requests.length}';
+}
+
+/// Holds the first quote's response until [releaseFirst], so a later quote
+/// can be sent and answered while it is in flight.
+class _HeldFirstQuoteSwapProvider extends _NewDepositPerQuoteSwapProvider {
+  final _first = Completer<void>();
+
+  /// Lets the first quote's response arrive.
+  void releaseFirst() => _first.complete();
+
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) async {
+    final first = requests.isEmpty;
+    final quote = await super.quote(request);
+    if (first) await _first.future;
+    return quote;
+  }
+}
+
+/// NEAR swap privacy, off at first, that a test sets without the settings
+/// store or native calls.
+class _FakeNearSwapPrivacyNotifier extends NearSwapPrivacyNotifier {
+  @override
+  bool build() => false;
+
+  @override
+  Future<void> set(bool enabled) async => state = enabled;
+}
+
 class _FailingQuoteSwapProvider extends _FakeSwapProvider {
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
-    requests.add(request);
+    await send(request);
     throw StateError('provider unavailable');
+  }
+}
+
+/// NEAR receives each quote request, but its response is lost.
+class _LostResponseSwapProvider extends _FakeSwapProvider {
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) async {
+    await send(request);
+    throw TimeoutException('quote response lost');
+  }
+}
+
+/// Fails each quote request in local checks, before it is sent.
+class _UnsentQuoteSwapProvider extends _FakeSwapProvider {
+  final unsent = <SwapQuoteRequest>[];
+
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) async {
+    unsent.add(request);
+    throw StateError('unsupported asset');
   }
 }
 
 class _LowAmountQuoteSwapProvider extends _FakeSwapProvider {
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
-    requests.add(request);
+    await send(request);
     throw const OneClickApiException(
       'NEAR Intents quote failed (400): amount is too low',
       statusCode: 400,
@@ -838,6 +1199,9 @@ class _FakeSwapDepositSender implements SwapDepositSender {
   final String broadcastStatus;
   final String? broadcastMessage;
   final preflightRequests = <_DepositSendRequest>[];
+
+  /// When set, the fee check waits for it.
+  Completer<void>? holdPreflight;
   final requests = <_DepositSendRequest>[];
 
   @override
@@ -853,6 +1217,7 @@ class _FakeSwapDepositSender implements SwapDepositSender {
         sellAmountBaseUnits: quote.sellAmountBaseUnits,
       ),
     );
+    await holdPreflight?.future;
     final error = preflightError;
     if (error != null) throw error;
     return BigInt.from(10000);

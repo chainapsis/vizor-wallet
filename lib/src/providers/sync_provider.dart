@@ -14,6 +14,7 @@ import '../core/lifecycle/app_shutdown_signal.dart';
 import '../core/storage/wallet_paths.dart';
 import '../core/storage/wallet_balance_cache.dart';
 import '../rust/api/sync.dart' as rust_sync;
+import '../rust/api/one_time_ivk.dart' as rust_swap;
 import 'account_provider.dart';
 import 'public_details_loads_provider.dart';
 import 'pending_activity_evidence_provider.dart';
@@ -1017,10 +1018,15 @@ bool shouldRestartSyncForMigrationEntry({
 class SyncNotifier extends AsyncNotifier<SyncState> {
   SyncNotifier({
     Future<String> Function()? walletDbPathResolver,
+    Future<String?> Function()? existingWalletDbPathResolver,
     IronwoodMigrationBackgroundLifecycle? recoveryLifecycle,
     Duration recoveryTransitionTimeout = const Duration(seconds: 120),
     Future<void> Function(String dbPath)? excludeCompanionsFromBackup,
-  }) : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath,
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now,
+       _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath,
+       _existingWalletDbPathResolver =
+           existingWalletDbPathResolver ?? getExistingWalletDbPath,
        _recoveryLifecycle =
            recoveryLifecycle ?? IronwoodMigrationBackgroundLifecycle.instance,
        _recoveryTransitionTimeout = recoveryTransitionTimeout,
@@ -1030,6 +1036,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   final IronwoodMigrationBackgroundLifecycle _recoveryLifecycle;
   final Duration _recoveryTransitionTimeout;
+
+  /// The clock the swap recovery retry deadlines read.
+  final DateTime Function() _now;
+
   final Future<void> Function(String dbPath) _excludeCompanionsFromBackup;
 
   /// Whether the wallet's transparent policy may be private now even though
@@ -1159,6 +1169,524 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   ];
 
   final Future<String> Function() _walletDbPathResolver;
+
+  /// Resolves the recorded wallet path without assigning one, or null after a
+  /// reset (see [getExistingWalletDbPath]).
+  final Future<String?> Function() _existingWalletDbPathResolver;
+
+  /// The running chain of automatic rounds, the manual check or a filter step.
+  /// Rust admits one at a time, so whatever is owed meanwhile waits for it.
+  Future<void>? _swapRecovery;
+  int _swapRecoveryGeneration = 0;
+  int _swapRecoveryTransitions = 0;
+
+  /// How long an owed request is held after one, two, three and more rounds
+  /// in a row that failed, waited or hit the chain limit. A single bad Tor
+  /// circuit often fails one round in isolation, so the first two retry soon,
+  /// and only a longer outage backs off to the cap.
+  static const _swapRecoveryRetryDelays = <Duration>[
+    Duration(seconds: 10),
+    Duration(seconds: 10),
+    Duration(seconds: 30),
+    Duration(minutes: 1),
+    Duration(minutes: 2),
+    Duration(minutes: 5),
+    Duration(minutes: 15),
+    Duration(minutes: 30),
+  ];
+
+  /// Rounds chained in a row before the rest is held, so a round that keeps
+  /// reporting more can't spin.
+  static const _swapRecoveryChainLimit = 16;
+
+  /// Requests for a round so far (see [_oweSwapRecovery]).
+  int _swapRecoveryRequested = 0;
+
+  /// The newest request a finished round served. A round serves only the
+  /// requests made before it started, so one that finishes can't clear work
+  /// owed after that.
+  int _swapRecoveryServed = 0;
+
+  /// Rounds in a row that left the request held (see
+  /// [_swapRecoveryRetryDelays]).
+  int _swapRecoveryHolds = 0;
+
+  /// Until this time the owed request waits (see [_holdSwapRecovery]). Tip
+  /// checks and completed syncs run it after. A new request ends the hold.
+  DateTime? _swapRecoveryHeldUntil;
+
+  /// Whether a completed sync ends the hold early, as it does for a wait on
+  /// sync, a newer publication or a server, but not for a failure.
+  bool _swapRecoveryHoldEndsOnSync = false;
+
+  /// Completed syncs so far, so a round that waited for sync can tell that
+  /// one completed while it ran.
+  int _swapRecoverySyncs = 0;
+
+  /// The scanned height the last completed sync reported, so a filter step
+  /// follows only one that moved it.
+  int? _swapFilterScanned;
+
+  /// Completes when the round or filter step in flight ends, with a round's
+  /// failure or null (see [awaitSwapRecovery]).
+  Completer<Object?> _swapRecoveryRoundEnd = Completer<Object?>();
+
+  /// Whether a round that reached the wallet ended without its Activity and
+  /// balance refresh, because it was cancelled or the wallet could not be
+  /// read then. It may have committed results that no later round reports, so
+  /// the next round's end, resume, unlock or Pause refreshes once wallet
+  /// reads are safe. Any follow-up refresh clears it, and a wallet reset
+  /// drops it.
+  bool _swapRecoveryRefreshOwed = false;
+
+  /// Whether the wallet reported a round due (see [_checkSwapRecoveryWork]) or
+  /// a filter step owes one. Unlike a request it ends no hold, so a failed
+  /// round keeps its retry delay. It becomes a request only while no round
+  /// runs, so a running chain applies its own hold first.
+  bool _swapRecoveryWorkDue = false;
+
+  /// Owes a receiver round, numbered so a round already running can't clear
+  /// it, and ends any hold, since each request is a new reason to look. With
+  /// `run`, the round starts once the wallet is at the tip (see
+  /// [_runOwedSwapRecovery]). Without it, the next tip check or completed sync
+  /// starts it.
+  void _oweSwapRecovery({bool run = true}) {
+    _swapRecoveryRequested++;
+    _swapRecoveryHolds = 0;
+    _swapRecoveryHeldUntil = null;
+    if (run) _runOwedSwapRecovery();
+  }
+
+  /// Starts the owed round, unless it is held, once the wallet is at the tip:
+  /// `synced` right after a completed sync, which also ends a hold for a wait,
+  /// `atTip` after a tip check found nothing to scan or a completed sync's
+  /// work check found new work, and otherwise when the last sync completed and
+  /// none runs.
+  void _runOwedSwapRecovery({bool synced = false, bool atTip = false}) {
+    if (synced && _swapRecoveryHoldEndsOnSync) _swapRecoveryHeldUntil = null;
+    if (_swapRecoveryWorkDue && _swapRecovery == null) {
+      _swapRecoveryWorkDue = false;
+      _swapRecoveryRequested++;
+    }
+    if (_swapRecoveryRequested == _swapRecoveryServed || _swapRecoveryHeld) {
+      return;
+    }
+    if (!synced &&
+        !atTip &&
+        (_isSyncing || !(state.value?.isSyncComplete ?? false))) {
+      return;
+    }
+    _startSwapRecovery();
+  }
+
+  /// Starts a chain of receiver rounds without occupying the ordinary sync
+  /// lifecycle.
+  void _startSwapRecovery() {
+    if (_swapRecoverySlotFree) {
+      _swapRecovery = _driveSwapRecovery(_swapRecoveryGeneration);
+    }
+  }
+
+  /// Whether receiver work may take the slot (see [_swapRecovery]) now.
+  bool get _swapRecoverySlotFree =>
+      _swapRecovery == null &&
+      _swapRecoveryTransitions == 0 &&
+      !_requiresUnlock &&
+      _walletMutationPauseCount == 0 &&
+      canRunAppProcessWork(isInForeground: _isInForeground) &&
+      _getActiveAccountUuid() != null;
+
+  /// Starts a filter step when no round is owed or running, and reports
+  /// whether it did.
+  bool _startSwapFilterStep() {
+    if (_swapRecoveryRequested != _swapRecoveryServed ||
+        _swapRecoveryWorkDue ||
+        !_swapRecoverySlotFree) {
+      return false;
+    }
+    _swapRecovery = _driveSwapFilterStep(_swapRecoveryGeneration);
+    return true;
+  }
+
+  /// Runs one filter step in the round's slot, so what cancels a round cancels
+  /// it. Its `needsRound`, which a failed filter request also reports, owes a
+  /// round as due work does, without ending a hold, and so does a step that
+  /// fails unless it was cancelled.
+  /// Then it starts what was owed meanwhile and, unless cancelled, checks
+  /// whether a round is due, as a filter hit makes one.
+  Future<void> _driveSwapFilterStep(int generation) async {
+    try {
+      final step = await _trackedWalletCall(
+        _existingWalletDbPathResolver,
+        (path) async => generation != _swapRecoveryGeneration
+            ? null
+            : await rust_swap.runSwapFilterStep(
+                dbPath: path,
+                networkName: _endpointConfig.networkName,
+              ),
+      );
+      if ((step?.needsRound ?? false) &&
+          generation == _swapRecoveryGeneration) {
+        _swapRecoveryWorkDue = true;
+      }
+    } catch (error) {
+      log('Swap filter step failed, owing a round: $error');
+      if (generation == _swapRecoveryGeneration) _swapRecoveryWorkDue = true;
+    } finally {
+      _swapRecovery = null;
+    }
+    if (!ref.mounted) return;
+    final current = generation == _swapRecoveryGeneration;
+    // A step that wasn't cancelled followed a completed sync, at the tip.
+    _runOwedSwapRecovery(atTip: current);
+    // A waiter that joined the step waits for the round it owed, if one
+    // started, and otherwise ends as when a round could not start.
+    if (_swapRecovery == null) {
+      final ended = _swapRecoveryRoundEnd;
+      _swapRecoveryRoundEnd = Completer<Object?>();
+      ended.complete(null);
+    }
+    if (current) unawaited(_checkSwapRecoveryWork());
+  }
+
+  /// Runs automatic rounds while Rust reports more work it can run now, or a
+  /// round waited for sync that completed while it ran, up to
+  /// [_swapRecoveryChainLimit], then settles the last one (see
+  /// [_settleSwapRecovery]).
+  Future<void> _driveSwapRecovery(int generation) async {
+    var requested = _swapRecoveryRequested;
+    rust_swap.SwapRecoveryRound? round;
+    var failed = false;
+    try {
+      for (var rounds = 1; ; rounds++) {
+        requested = _swapRecoveryRequested;
+        final syncs = _swapRecoverySyncs;
+        try {
+          round = await _runSwapRecovery(generation);
+        } catch (error) {
+          log('Swap recovery remains pending: $error');
+          failed = true;
+          break;
+        }
+        if (!ref.mounted || generation != _swapRecoveryGeneration) break;
+        if (round == null) break;
+        final synced =
+            round.wait == rust_swap.SwapRecoveryWait.sync_ &&
+            _swapRecoverySyncs != syncs;
+        if ((round.more || synced) && rounds < _swapRecoveryChainLimit) {
+          continue;
+        }
+        break;
+      }
+    } finally {
+      _swapRecovery = null;
+    }
+    if (ref.mounted) {
+      _settleSwapRecovery(generation, requested, round, failed: failed);
+    }
+  }
+
+  /// Applies the outcome of the round started under `generation`. A round that
+  /// finishes without waiting serves the requests made before it started
+  /// (`requested`). Otherwise the request is held (see [_holdSwapRecovery]). A
+  /// request made during the round, or one a cancelled round leaves, runs
+  /// next. New work seen during the round waits for that outcome.
+  void _settleSwapRecovery(
+    int generation,
+    int requested,
+    rust_swap.SwapRecoveryRound? round, {
+    required bool failed,
+  }) {
+    if (generation != _swapRecoveryGeneration ||
+        (_swapRecoveryRequested > requested && !failed)) {
+      _runOwedSwapRecovery();
+    } else if (failed) {
+      _holdSwapRecovery(endsOnSync: false);
+    } else if (round != null) {
+      final wait = round.wait;
+      if (round.more || wait == rust_swap.SwapRecoveryWait.backoff) {
+        _holdSwapRecovery(endsOnSync: false);
+      } else if (wait != null) {
+        _holdSwapRecovery(endsOnSync: true);
+      } else {
+        _swapRecoveryServed = math.max(_swapRecoveryServed, requested);
+        _swapRecoveryHolds = 0;
+      }
+    }
+    if (_swapRecoveryWorkDue) _runOwedSwapRecovery();
+  }
+
+  /// Holds the owed request for the next of [_swapRecoveryRetryDelays]. With
+  /// `endsOnSync`, a completed sync ends the hold early.
+  void _holdSwapRecovery({required bool endsOnSync}) {
+    final delays = _swapRecoveryRetryDelays;
+    final delay = delays[math.min(_swapRecoveryHolds, delays.length - 1)];
+    _swapRecoveryHolds++;
+    _swapRecoveryHeldUntil = _now().add(delay);
+    _swapRecoveryHoldEndsOnSync = endsOnSync;
+  }
+
+  /// Whether the owed request is still held.
+  bool get _swapRecoveryHeld {
+    final until = _swapRecoveryHeldUntil;
+    return until != null && _now().isBefore(until);
+  }
+
+  /// Reads the wallet's recovery work (see [swapRecoveryStatus]), or null when
+  /// it can't be read.
+  Future<rust_swap.SwapRecoveryStatus?> _swapRecoveryWork() async {
+    try {
+      return await swapRecoveryStatus();
+    } catch (error) {
+      log('Swap recovery work not read: $error');
+      return null;
+    }
+  }
+
+  /// After a completed sync or a filter step, owes a round (see
+  /// [_swapRecoveryWorkDue]) when the wallet reports one due
+  /// (`SwapRecoveryStatus.roundDue`), as after a filter hit, a funding memo sync
+  /// learned, or filters that fell behind the scanned tip. A read that a
+  /// wallet reset overtook describes the old wallet and is dropped.
+  Future<void> _checkSwapRecoveryWork() async {
+    final epoch = _walletResetEpoch;
+    final work = await _swapRecoveryWork();
+    if (work == null || !ref.mounted || epoch != _walletResetEpoch) return;
+    if (!work.roundDue) return;
+    _swapRecoveryWorkDue = true;
+    _runOwedSwapRecovery(atTip: true);
+  }
+
+  /// Starts sync when found payments wait for it, or a rescan it queued, to
+  /// admit them, as a failed round may leave them.
+  Future<void> _syncIfAwaitingAdmission() async {
+    if ((await _swapRecoveryWork())?.awaitingAdmission ?? false) startSync();
+  }
+
+  /// Runs one round, automatic or `manual`, with the display refresh it needs,
+  /// then ends it for [awaitSwapRecovery] and the history check. It returns
+  /// what the round did, or null when an automatic one could not start or was
+  /// cancelled. Either throws its failure, and a cancelled manual check throws
+  /// a [StateError].
+  Future<rust_swap.SwapRecoveryRound?> _runSwapRecovery(
+    int generation, {
+    bool manual = false,
+  }) async {
+    Object? failure;
+    try {
+      final path = await _getDbPath();
+      if (!ref.mounted ||
+          generation != _swapRecoveryGeneration ||
+          _requiresUnlock ||
+          _walletMutationPauseCount > 0 ||
+          !canRunAppProcessWork(isInForeground: _isInForeground)) {
+        if (manual) throw StateError('Swap history check was cancelled.');
+        return null;
+      }
+      final network = _endpointConfig.networkName;
+      final rust_swap.SwapRecoveryRound? round;
+      try {
+        round = await _trackedWalletCall(
+          () async => path,
+          (path) => manual
+              ? rust_swap.checkSwapHistory(dbPath: path, networkName: network)
+              : rust_swap.runSwapRecovery(dbPath: path, networkName: network),
+        );
+      } catch (error) {
+        // A cancelled round's error says nothing about the receiver service.
+        if (generation != _swapRecoveryGeneration) {
+          _swapRecoveryRefreshOwed = true;
+          if (manual) throw StateError('Swap history check was cancelled.');
+          return null;
+        }
+        // A round can commit results and then fail (see
+        // `SwapRecoveryRound.changed`), such as a payment that now waits for
+        // sync to admit it.
+        await _refreshAfterSwapRecovery();
+        await _syncIfAwaitingAdmission();
+        rethrow;
+      }
+      if (round == null) return null;
+      if (round.rescan) startSync();
+      if (round.changed || _swapRecoveryRefreshOwed) {
+        await _refreshAfterSwapRecovery();
+      }
+      return round;
+    } catch (error) {
+      failure = error;
+      rethrow;
+    } finally {
+      final ended = _swapRecoveryRoundEnd;
+      _swapRecoveryRoundEnd = Completer<Object?>();
+      ended.complete(failure);
+      // Any round can resume or finish a saved history check.
+      if (ref.mounted) ref.read(swapRecoveryRoundsProvider.notifier).ended();
+    }
+  }
+
+  /// Reloads Activity and the balance after a receiver round. While the
+  /// wallet is locked or being changed, it owes the refresh instead (see
+  /// [_swapRecoveryRefreshOwed]).
+  Future<void> _refreshAfterSwapRecovery() async {
+    if (ref.mounted && !_requiresUnlock && _walletMutationPauseCount == 0) {
+      await _onSyncFollowupUpdated();
+    } else {
+      _swapRecoveryRefreshOwed = true;
+    }
+  }
+
+  /// Runs the refresh an earlier round skipped, if one is owed.
+  Future<void> _refreshOwedSwapRecovery() async {
+    if (_swapRecoveryRefreshOwed) await _refreshAfterSwapRecovery();
+  }
+
+  /// Owes a receiver round, as choosing a private query server or NEAR
+  /// promising ZEC does. It runs once the wallet is at the tip.
+  void requestSwapRecovery() => _oweSwapRecovery();
+
+  /// Continues durable receiver work right away, without waiting for the tip,
+  /// a hold or a block sync.
+  void continueSwapRecovery() {
+    _oweSwapRecovery(run: false);
+    _startSwapRecovery();
+  }
+
+  /// Like [continueSwapRecovery], for a watched history check polling saved
+  /// work on a timer, but it waits out a hold, and a running round already
+  /// serves the check, so the poll joins it instead of owing another.
+  void pollSwapRecovery() {
+    if (_swapRecovery != null || _swapRecoveryHeld) return;
+    _swapRecoveryRequested++;
+    _startSwapRecovery();
+  }
+
+  /// Runs receiver rounds until the active account has nothing left that
+  /// holds back issuance (see `getSwapAccountReadiness`), a round fails, or
+  /// no further round runs because the rest waits. Returns the failure, or
+  /// null when the rounds succeeded, were cancelled or could not start.
+  Future<Object?> awaitSwapRecovery() async {
+    continueSwapRecovery();
+    for (var rounds = 0; rounds < _swapRecoveryChainLimit; rounds++) {
+      if (_swapRecovery == null) return null;
+      final generation = _swapRecoveryGeneration;
+      final failure = await _swapRecoveryRoundEnd.future;
+      // A cancelled round's failure says nothing about the account.
+      if (generation != _swapRecoveryGeneration) return null;
+      if (failure != null) return failure;
+      if (await _activeSwapAccountReady()) return null;
+    }
+    return null;
+  }
+
+  /// Whether the active account has nothing left that holds back issuance. An
+  /// unreadable state ends the wait, and issuance then says what is missing.
+  Future<bool> _activeSwapAccountReady() async {
+    final account = _getActiveAccountUuid();
+    if (account == null || _requiresUnlock) return true;
+    try {
+      final readiness = await _trackedWalletCall(
+        _existingWalletDbPathResolver,
+        (path) => rust_swap.getSwapAccountReadiness(
+          dbPath: path,
+          networkName: _endpointConfig.networkName,
+          accountUuid: account,
+        ),
+      );
+      return readiness == null ||
+          !(readiness.seedWalk ||
+              readiness.lookups ||
+              readiness.awaitingAdmission);
+    } catch (error) {
+      log('Swap account readiness not read: $error');
+      return true;
+    }
+  }
+
+  /// Starts or resumes explicit history recovery of every enrolled address.
+  Future<void> checkSwapHistory() async {
+    if (_swapRecoveryTransitions > 0) {
+      throw StateError('A swap history transition is already running.');
+    }
+    _swapRecoveryTransitions++;
+    final generation = _swapRecoveryGeneration + 1;
+    int? requested;
+    rust_swap.SwapRecoveryRound? round;
+    var failed = false;
+    try {
+      await _stopSwapRecovery();
+      if (!ref.mounted ||
+          generation != _swapRecoveryGeneration ||
+          _requiresUnlock ||
+          _walletMutationPauseCount > 0) {
+        throw StateError('Swap history check was cancelled.');
+      }
+      // An explicit trigger, so it ends any hold. Its request, owed while the
+      // transition keeps automatic rounds out, carries on what the check
+      // leaves, such as jobs a failed check saved.
+      _oweSwapRecovery(run: false);
+      requested = _swapRecoveryRequested;
+      final work = _runSwapRecovery(generation, manual: true);
+      _swapRecovery = work;
+      try {
+        round = await work;
+      } catch (_) {
+        failed = true;
+        rethrow;
+      } finally {
+        _swapRecovery = null;
+      }
+    } finally {
+      _swapRecoveryTransitions--;
+      if (ref.mounted && requested != null) {
+        // More work it can run now starts the automatic chain at once.
+        if (round?.more ?? false) {
+          _runOwedSwapRecovery();
+        } else {
+          _settleSwapRecovery(generation, requested, round, failed: failed);
+        }
+      }
+    }
+  }
+
+  /// Cancels the running round's network work and invalidates a worker still
+  /// resolving its wallet path, without waiting for it.
+  void _cancelSwapRecoveryRound() {
+    ++_swapRecoveryGeneration;
+    rust_swap.cancelSwapRecovery();
+  }
+
+  /// Cancels network work and invalidates a worker still resolving its wallet path.
+  Future<void> _stopSwapRecovery() async {
+    _cancelSwapRecoveryRound();
+    try {
+      await _swapRecovery;
+    } catch (_) {
+      // The initiating manual caller receives its error. Draining must still allow
+      // locking, wallet mutations and durable cancellation to finish.
+    }
+  }
+
+  /// Pauses the manual job without erasing its durable cursor.
+  Future<void> cancelSwapHistory() async {
+    _swapRecoveryTransitions++;
+    try {
+      await _stopSwapRecovery();
+      try {
+        await _trackedWalletCall(
+          _getDbPath,
+          (path) => rust_swap.cancelSwapHistory(
+            dbPath: path,
+            networkName: _endpointConfig.networkName,
+          ),
+        );
+      } finally {
+        await _refreshOwedSwapRecovery();
+      }
+    } finally {
+      _swapRecoveryTransitions--;
+    }
+  }
+
   bool _isSyncing = false;
   bool _recoverySettingTransition = false;
   final RecoveryRestartGate _recoveryRestartGate = RecoveryRestartGate();
@@ -1316,6 +1844,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _syncStartDeferred = false;
       _deferredSyncLatestTipHeight = null;
       rust_sync.cancelFullSync();
+      _cancelSwapRecoveryRound();
       _syncSub?.cancel();
       _mempoolSub?.cancel();
       // Cancel the Rust-side observer too; cancelling the Dart
@@ -1490,6 +2019,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void _clearAccountScopedStateFor(String? accountUuid) {
     ++_balanceReadVersion;
     _authoritativeBalanceRecovery = null;
+    // Rounds do the active account's work first (Rust reads the account
+    // `setActiveSyncAccount` named), so an automatic round restarts with the
+    // incoming account. A history check spans every account and keeps running.
+    if (_swapRecovery != null && _swapRecoveryTransitions == 0) {
+      _cancelSwapRecoveryRound();
+    }
+    _oweSwapRecovery();
     final prev = state.value;
     if (prev == null) return;
 
@@ -1593,6 +2129,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _deferredSyncLatestTipHeight = null;
     _isSyncing = false;
     _stopPolling();
+    _cancelSwapRecoveryRound();
     rust_sync.cancelFullSync();
     _syncSub?.cancel();
     _syncSub = null;
@@ -1842,6 +2379,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               _lastForegroundSyncProgress = progress;
               final handling = _onSyncProgress(progress);
               _lastForegroundProgressHandling = handling;
+              // Started after the handling is recorded, so the round's refresh
+              // waits for this completion's reads. A batch before completion
+              // leaves blocks the receiver may already publish unscanned, so an
+              // owed round waits for completion.
+              if (progress.isComplete && ref.mounted && !_requiresUnlock) {
+                _swapRecoverySyncs++;
+                _runOwedSwapRecovery(synced: true);
+                final moved =
+                    progress.scannedHeight > (_swapFilterScanned ?? -1);
+                _swapFilterScanned = progress.scannedHeight;
+                // A step checks for new work itself once it ends.
+                if (!(moved && _startSwapFilterStep())) {
+                  unawaited(_checkSwapRecoveryWork());
+                }
+              }
               unawaited(
                 handling.catchError((Object error, StackTrace stackTrace) {
                   log(
@@ -2273,7 +2825,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   bool needsPauseForWalletMutation() =>
       _walletMutationSyncPauseSnapshot().hadWorkToPause ||
-      _recoveryStatusReadCount > 0;
+      _recoveryStatusReadCount > 0 ||
+      _swapRecovery != null;
 
   void clearCachedWalletDbPath() {
     _cachedDbPath = null;
@@ -2299,11 +2852,53 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         network: _endpointConfig.networkName,
       );
     } finally {
-      _recoveryStatusReadCount--;
-      if (_recoveryStatusReadCount == 0) {
-        _recoveryStatusReadsDrained?.complete();
-        _recoveryStatusReadsDrained = null;
-      }
+      _endTrackedWalletCall();
+    }
+  }
+
+  /// Reads the wallet's saved swap recovery state without network access, or
+  /// null without a wallet (see [_trackedWalletCall]). While a wallet mutation
+  /// holds admission it throws rather than reporting idle state.
+  Future<rust_swap.SwapRecoveryStatus?> swapRecoveryStatus() =>
+      _trackedWalletCall(
+        _existingWalletDbPathResolver,
+        (path) => rust_swap.getSwapRecoveryStatus(
+          dbPath: path,
+          networkName: _endpointConfig.networkName,
+        ),
+      );
+
+  /// Runs `call`, a native call on the wallet DB at the path `resolvePath`
+  /// gives, or returns null when it gives none. Every native wallet call of the
+  /// swap recovery code goes through here. It registers with the drain that
+  /// wallet mutations wait on (see [pauseForWalletMutation]) before its first
+  /// await, so deletion or reset can never remove the DB under it, and it
+  /// throws a [StateError] instead of starting while a mutation holds
+  /// admission.
+  Future<T?> _trackedWalletCall<T>(
+    Future<String?> Function() resolvePath,
+    Future<T> Function(String path) call,
+  ) async {
+    const busy = 'The wallet is changing. Try again in a moment.';
+    if (_walletMutationPauseCount > 0) throw StateError(busy);
+    _recoveryStatusReadCount++;
+    try {
+      final path = await resolvePath();
+      if (_walletMutationPauseCount > 0) throw StateError(busy);
+      if (path == null) return null;
+      return await call(path);
+    } finally {
+      _endTrackedWalletCall();
+    }
+  }
+
+  /// Ends one registered wallet call and releases a drain waiting on the last
+  /// one.
+  void _endTrackedWalletCall() {
+    _recoveryStatusReadCount--;
+    if (_recoveryStatusReadCount == 0) {
+      _recoveryStatusReadsDrained?.complete();
+      _recoveryStatusReadsDrained = null;
     }
   }
 
@@ -2323,6 +2918,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// is still deferred to the last exit as usual.
   void endWalletMutationPause() {
     _walletResetEpoch++;
+    _swapRecoveryRefreshOwed = false;
+    // A late round of the old wallet changes nothing.
+    _swapRecoveryGeneration++;
+    _swapRecoveryWorkDue = false;
+    _swapFilterScanned = null;
     // The applied policy belonged to the wallet just reset; a replacement
     // wallet reports its own.
     _appliedTransparentPolicy = null;
@@ -2423,6 +3023,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final pause = _walletMutationSyncPauseSnapshot();
 
     try {
+      await _stopSwapRecovery();
       if (pause.hadWorkToPause) {
         // The pause records whether to restart; a start queued behind the
         // stopped sync would otherwise outlive it.
@@ -2531,6 +3132,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     rust_sync.setSyncMode(mode: 0);
     rust_sync.cancelFullSync();
 
+    await _stopSwapRecovery();
     await cacheDrained;
     cacheStore.resume();
     await _waitForRustTasksToStop(
@@ -2572,6 +3174,24 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> restartSyncAfterTransportChange(
     Future<void> Function() updateTransport, {
     bool failIfNotQuiescent = true,
+  }) async {
+    _swapRecoveryTransitions++;
+    try {
+      await _stopSwapRecovery();
+      await _restartSyncWithTransport(
+        updateTransport,
+        failIfNotQuiescent: failIfNotQuiescent,
+      );
+    } finally {
+      _swapRecoveryTransitions--;
+    }
+  }
+
+  /// The body of [restartSyncAfterTransportChange], run once swap recovery has
+  /// stopped and is held off.
+  Future<void> _restartSyncWithTransport(
+    Future<void> Function() updateTransport, {
+    required bool failIfNotQuiescent,
   }) async {
     ++_syncGen;
     ++_progressEventVersion;
@@ -2654,8 +3274,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (_isShuttingDown) return;
     _isInForeground = true;
     ref.read(pendingActivityEvidenceProvider.notifier).setForeground(true);
-    // A resume is public: the recovery restart schedule starts over.
+    // A resume is public: the recovery restart schedule starts over. A swap
+    // recovery round is owed, which the tip check below starts at the tip or
+    // leaves to the sync it starts.
     _recoveryRestartGate.reset();
+    _oweSwapRecovery(run: false);
     // Consume a restart deferred by a mutation that finished while hidden.
     // An ongoing mutation keeps ownership until its own last pause exits.
     if (_walletMutationPauseCount == 0 &&
@@ -2663,6 +3286,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _endWalletMutationPause(resume: true);
     }
     unawaited(_refreshBalanceAfterResume());
+    unawaited(_refreshOwedSwapRecovery());
     // Coalesce repeated focus/resume events. An old mobile check spanning
     // backgrounding cannot certify foreground freshness; follow it immediately.
     _resumeTipCheckPending = true;
@@ -2674,6 +3298,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ref.read(pendingActivityEvidenceProvider.notifier).setForeground(false);
     ++_foregroundEpoch;
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
+      _cancelSwapRecoveryRound();
       _stopPolling();
       _queuedSyncStart = null;
     }
@@ -2782,6 +3407,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           'AutoSync: needs sync (tip=$tip, last=$lastSynced, complete=$syncComplete)',
         );
         startSync(latestTipHeight: tip.toInt());
+      } else {
+        _runOwedSwapRecovery(atTip: true);
       }
     } catch (e) {
       if (ref.mounted && gen == _syncGen && epoch == _sensitiveStateEpoch) {
@@ -2971,6 +3598,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// are re-read. The sync is not completed again.
   Future<void> _onSyncFollowupUpdated() async {
     if (!ref.mounted || _requiresUnlock) return;
+    _swapRecoveryRefreshOwed = false;
     ref.read(syncFollowupProvider.notifier).updated();
     // Let the completion's own reads land first, so this refresh does not
     // supersede them.
@@ -3458,7 +4086,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
   }
 
-  void refreshHomeInBackground() => unawaited(_refreshBalanceAfterResume());
+  /// Starts the live reads after a cold start or unlock, including a swap
+  /// recovery refresh that locking cancelled, and owes a swap recovery round,
+  /// which runs once the wallet is at the tip.
+  void refreshHomeInBackground() {
+    _oweSwapRecovery();
+    unawaited(_refreshOwedSwapRecovery());
+    unawaited(_refreshBalanceAfterResume());
+  }
 
   void _persistBalanceSnapshot(
     String dbPath,
@@ -4091,6 +4726,38 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
   () => SyncNotifier(),
 );
+
+/// Counts finished swap recovery rounds, so state the wallet keeps, such as a
+/// saved history check, can be read again after each one.
+final swapRecoveryRoundsProvider = NotifierProvider<SwapRecoveryRounds, int>(
+  SwapRecoveryRounds.new,
+);
+
+/// See [swapRecoveryRoundsProvider].
+class SwapRecoveryRounds extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// Records that a round finished.
+  void ended() => state++;
+}
+
+/// Reads the wallet's saved swap recovery state without network access, or
+/// null without a wallet (see [SyncNotifier.swapRecoveryStatus]). Overridable
+/// in tests.
+final swapRecoveryStatusReaderProvider =
+    Provider<Future<rust_swap.SwapRecoveryStatus?> Function()>((ref) {
+      return () => ref.read(syncProvider.notifier).swapRecoveryStatus();
+    });
+
+/// Whether the receiver service needs a newer app, as the wallet saved it. It is
+/// read at startup and again after every swap recovery round, which is when it
+/// can change. A read that fails keeps the last answer.
+final swapRecoveryUpdateRequiredProvider = FutureProvider<bool>((ref) async {
+  ref.watch(swapRecoveryRoundsProvider);
+  final status = await ref.read(swapRecoveryStatusReaderProvider)();
+  return status?.upgradeRequired ?? false;
+});
 
 /// Counts wallet data changes that do not complete a sync: post-sync
 /// follow-ups published by [SyncNotifier], and a "Load publicly" result the

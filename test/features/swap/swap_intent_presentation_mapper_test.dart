@@ -126,6 +126,95 @@ void main() {
     expect(updated.providerStatusRaw, 'FAILED');
   });
 
+  test('status-only snapshots keep the stored presentation', () {
+    final intent = _intentFromRecord(
+      const SwapIntentRecord(
+        id: 'unlisted-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '2.3 USDC',
+        receiveEstimateText: '0.0115 ZEC',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Swap is processing',
+        totalFeesText: '0.01 USDC',
+      ),
+    );
+    final updated = updateSwapIntentFromSnapshot(
+      intent,
+      const SwapIntentSnapshot(
+        id: 'unlisted-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'Unlisted token -> ZEC',
+        sellAmountText: 'Not reported',
+        receiveEstimateText: 'Not reported',
+        status: SwapIntentStatus.complete,
+        nextAction: 'Swap complete',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.usdc,
+          address: '0xdeposit',
+          expiresInLabel: 'expired',
+          reuseWarning: 'Do not reuse',
+        ),
+        providerStatusRaw: 'SUCCESS',
+        statusOnly: true,
+      ),
+    );
+
+    expect(updated.status, SwapIntentStatus.complete);
+    expect(updated.providerStatusRaw, 'SUCCESS');
+    expect(updated.pair, 'USDC -> ZEC');
+    expect(updated.sellAmount, '2.3 USDC');
+    // The quoted payout is no result, so it is not reported.
+    expect(updated.receiveEstimate, 'Not reported');
+    expect(updated.totalFeesText, '0.01 USDC');
+  });
+
+  test('a flexible swap completed status-only reports neither amount', () {
+    final intent = _intentFromRecord(
+      const SwapIntentRecord(
+        id: 'unlisted-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '2.3 USDC',
+        receiveEstimateText: '0.0115 ZEC',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Swap is processing',
+        totalFeesText: '0.01 USDC',
+      ),
+    );
+    final updated = updateSwapIntentFromSnapshot(
+      intent,
+      const SwapIntentSnapshot(
+        id: 'unlisted-swap',
+        providerLabel: 'NEAR Intents',
+        pairText: 'Unlisted token -> ZEC',
+        sellAmountText: 'Not reported',
+        receiveEstimateText: 'Not reported',
+        status: SwapIntentStatus.complete,
+        nextAction: 'Swap complete',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.usdc,
+          address: '0xdeposit',
+          expiresInLabel: 'expired',
+          reuseWarning: 'Do not reuse',
+        ),
+        providerStatusRaw: 'SUCCESS',
+        // The user deposited 1.15 USDC of the quoted 2.3 and got 0.00575 ZEC.
+        providerSwapType: 'FLEX_INPUT',
+        amountOutBaseUnits: '575000',
+        statusOnly: true,
+      ),
+    );
+
+    expect(updated.status, SwapIntentStatus.complete);
+    expect(updated.providerStatusRaw, 'SUCCESS');
+    expect(updated.pair, 'USDC -> ZEC');
+    expect(updated.sellAmount, 'Not reported');
+    // The quoted payout is no result, so it is not reported.
+    expect(updated.receiveEstimate, 'Not reported');
+    expect(updated.totalFeesText, '0.01 USDC');
+  });
+
   test('updates raw lifecycle facts from provider status snapshots', () {
     final createdAt = DateTime.utc(2026, 5, 7, 10);
     final checkedAt = DateTime.utc(2026, 5, 7, 10, 30);
@@ -218,6 +307,40 @@ void main() {
       expect(intent.userExternalContactId, 'contact-second');
     },
   );
+
+  test('marks swaps quoted with a reserved address as private', () {
+    final now = DateTime.utc(2026, 5, 7, 11);
+    final quote = _quoteWithDepositDeadline(DateTime.utc(2026, 5, 7, 12));
+    const plan = SwapAddressPlan(
+      direction: SwapDirection.zecToExternal,
+      externalAsset: SwapAsset.usdc,
+      userExternalAddress: '0xrecipient',
+      walletZecAddress: 'u1refund',
+      oneClickRecipient: '0xrecipient',
+      oneClickRefundTo: 'u1refund',
+    );
+    SwapIntent create(SwapQuote quote) => swapIntentFromSnapshot(
+      snapshot: _pendingDepositSnapshot(),
+      quote: quote,
+      addressPlan: plan,
+      accountUuid: 'account-1',
+      now: now,
+    );
+
+    expect(create(quote).privateAddress, isFalse);
+    expect(
+      create(
+        SwapQuote.withLocalIdentity(quote, swapRefundIndex: BigInt.from(3)),
+      ).privateAddress,
+      isTrue,
+    );
+    expect(
+      create(
+        SwapQuote.withLocalIdentity(quote, receiveRequestId: 'request-1'),
+      ).privateAddress,
+      isTrue,
+    );
+  });
 
   test('expires restored pending deposit records without evidence', () {
     final now = DateTime.utc(2026, 5, 7, 12, 1);
