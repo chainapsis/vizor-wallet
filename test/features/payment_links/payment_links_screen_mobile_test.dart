@@ -31,6 +31,7 @@ import '../../support/gift_card_local_group_checks.dart';
 import '../../support/gift_card_claim_checking_checks.dart';
 import '../../support/leading_decimal_input.dart';
 import '../../support/payment_links_screen_support.dart';
+import '../../support/widget_test_viewport.dart';
 
 void main() {
   registerGiftCardEntryChecks(mobile: true);
@@ -181,7 +182,7 @@ void main() {
       operations: operations,
       clipboard: clipboard,
     );
-    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await setWidgetTestViewport(tester, const Size(390, 844));
     await tester.pumpAndSettle();
     final newestRow = find.byKey(
       ValueKey('payment_link_mobile_recovery_${incomingLink.address}'),
@@ -238,7 +239,7 @@ void main() {
         return shareGate.future;
       },
     );
-    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await setWidgetTestViewport(tester, const Size(390, 844));
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Show gift card QR code'));
     await tester.pumpAndSettle();
@@ -300,7 +301,7 @@ void main() {
       operations: operations,
       clipboard: clipboard,
     );
-    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await setWidgetTestViewport(tester, const Size(390, 844));
     await tester.pumpAndSettle();
     final copy = find.byKey(
       const ValueKey('payment_link_mobile_card_copy_action'),
@@ -362,7 +363,7 @@ void main() {
           marketDataSource: source,
           pricingEnabled: settings.$1,
         );
-        await tester.binding.setSurfaceSize(const Size(390, 844));
+        await setWidgetTestViewport(tester, const Size(390, 844));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const ValueKey('payment_links_mobile_create_button')),
@@ -475,7 +476,7 @@ void main() {
           text: incomingLink.toUri().toString(),
         ),
       );
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
@@ -516,7 +517,7 @@ void main() {
         bootstrap: homeBootstrap,
         pricingEnabled: settings.$1,
       );
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       final link = VizorPaymentLink(
         network: incomingLink.network,
         address: incomingLink.address,
@@ -636,7 +637,7 @@ void main() {
         pricingEnabled: false,
         marketDataSource: source,
       );
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_create_button')),
@@ -702,7 +703,7 @@ void main() {
     (tester) async {
       final source = _PendingCardPrice();
       await pumpPaymentLinksScreen(tester, marketDataSource: source);
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_create_button')),
@@ -777,7 +778,7 @@ void main() {
     (tester) async {
       final source = _PendingCardPrice();
       await pumpPaymentLinksScreen(tester, marketDataSource: source);
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('payment_links_mobile_create_button')),
@@ -893,7 +894,7 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('payment_link_claim_account_confirm')),
       );
-      await tester.pumpAndSettle();
+      await _pumpUntilClaimReturnsHome(tester, router);
       expect(
         operations.claimedSessions.single.destinationAccountUuid,
         'account-2',
@@ -1078,7 +1079,7 @@ void main() {
       expect(accounts.switchedAccounts, isEmpty);
 
       await _claimGift(tester, chooseAccount: true);
-      await tester.pumpAndSettle();
+      await _pumpUntilClaimReturnsHome(tester, router);
       expect(
         operations.claimedSessions.single.destinationAccountUuid,
         'account-2',
@@ -1153,7 +1154,11 @@ void main() {
     final operations = FakePaymentLinkOperations(
       readClaimDestination: () => accounts.current,
     );
-    await _openReceivedCard(tester, operations, accountNotifier: accounts);
+    final router = await _openReceivedCard(
+      tester,
+      operations,
+      accountNotifier: accounts,
+    );
     operations.prepareClaimFailures = 1;
     await tester.tap(find.text('Claim the gift'));
     await tester.pumpAndSettle();
@@ -1174,7 +1179,7 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('payment_link_claim_account_confirm')),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntilClaimReturnsHome(tester, router);
     expect(
       operations.claimedSessions.single.destinationAccountUuid,
       'account-2',
@@ -1579,7 +1584,7 @@ void main() {
           return result.future;
         },
       );
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await setWidgetTestViewport(tester, const Size(390, 844));
       await tester.pumpAndSettle();
       await tester.tap(find.bySemanticsLabel('Show gift card QR code'));
       await tester.pumpAndSettle();
@@ -1752,7 +1757,7 @@ class _PendingCardPrice implements ZecMarketDataSource {
 }
 
 Future<void> _openRedeemScanner(WidgetTester tester) async {
-  await tester.binding.setSurfaceSize(const Size(390, 844));
+  await setWidgetTestViewport(tester, const Size(390, 844));
   await tester.pumpAndSettle();
   await tester.tap(
     find.byKey(const ValueKey('payment_links_mobile_redeem_button')),
@@ -1775,7 +1780,7 @@ Future<GoRouter> _openReceivedCard(
     bootstrap: homeBootstrap,
     accountNotifier: accountNotifier,
   );
-  await tester.binding.setSurfaceSize(const Size(390, 844));
+  await setWidgetTestViewport(tester, const Size(390, 844));
   await tester.pumpAndSettle();
   final container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp)),
@@ -1816,4 +1821,23 @@ Future<void> _pumpClaimFrames(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 100));
   }
   expect(tester.takeException(), isNull);
+}
+
+// Home may keep animating after a successful claim. Wait for the navigation
+// and account picker to finish instead of requiring every animation to stop.
+Future<void> _pumpUntilClaimReturnsHome(
+  WidgetTester tester,
+  GoRouter router,
+) async {
+  for (var i = 0; i < 100; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (router.routerDelegate.currentConfiguration.uri.path == '/home' &&
+        find
+            .byKey(const ValueKey('payment_link_claim_account_sheet'))
+            .evaluate()
+            .isEmpty) {
+      return;
+    }
+  }
+  fail('Gift claim did not return to Home and close the account picker.');
 }

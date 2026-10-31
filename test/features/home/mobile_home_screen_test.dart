@@ -55,6 +55,7 @@ import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/app_test_fonts.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -719,6 +720,7 @@ class _DeferredVotingStore implements VotingHomeCacheStore {
 }
 
 void main() {
+  setUpAll(loadAppTestFonts);
   testWidgets('Home displays ETA in place of the pool subtitle', (
     tester,
   ) async {

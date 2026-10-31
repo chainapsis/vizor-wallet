@@ -5,7 +5,6 @@ import 'dart:async';
 
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_progress.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
@@ -25,6 +24,8 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/widget_test_viewport.dart';
+import '../../support/app_test_fonts.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 
@@ -34,13 +35,7 @@ import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_led
 import '../../support/ledger_gift_card_support.dart';
 
 void main() {
-  setUpAll(() async {
-    final loader = FontLoader('Geist')
-      ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
-      ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'))
-      ..addFont(rootBundle.load('assets/fonts/Geist-SemiBold.ttf'));
-    await loader.load();
-  });
+  setUpAll(loadAppTestFonts);
 
   testWidgets(
     'Ledger Gift Card uses device approval instead of Keystone QR on mobile',
@@ -55,7 +50,7 @@ void main() {
       await _walkToApproveAndCreate(tester, settle: false);
       expect(find.byType(PaymentLinkLedgerSigningOverlay), findsOneWidget);
       expect(find.byType(MobileKeystonePcztSigningFlow), findsNothing);
-      expect(find.text('Confirm on your Ledger'), findsOneWidget);
+      expect(find.text('Review on Ledger'), findsOneWidget);
       ledger.storage.writeGate = Completer<void>();
       signing.complete([3]);
       for (var i = 0; i < 5; i++) {
@@ -262,8 +257,7 @@ Future<void> _pumpMobilePaymentLinks(
   LedgerGiftHarness? ledger,
   LedgerPcztSigner? signer,
 }) async {
-  await tester.binding.setSurfaceSize(const Size(393, 852));
-  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await setWidgetTestViewport(tester, const Size(393, 852));
 
   await tester.pumpWidget(
     ProviderScope(
