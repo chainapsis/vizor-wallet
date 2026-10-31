@@ -197,6 +197,7 @@ class _SettingsChangePasswordScreenState
       }
 
       _clearSensitiveState();
+      if (!ref.read(appSecurityProvider).isUnlocked) return;
       context.go('/settings');
     } on PasswordRotationRecoveryFailedException {
       if (!mounted) return;

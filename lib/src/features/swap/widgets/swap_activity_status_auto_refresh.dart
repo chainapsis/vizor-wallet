@@ -75,6 +75,7 @@ class _SwapActivityStatusAutoRefreshState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<bool>(swapFeatureEnabledProvider, (_, _) => _syncRefresh());
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
       if (previous?.value?.activeAccountUuid != next.value?.activeAccountUuid) {
         _syncRefresh();
