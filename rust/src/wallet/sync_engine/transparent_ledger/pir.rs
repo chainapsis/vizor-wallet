@@ -73,7 +73,7 @@ use crate::wallet::sync_engine::enhancement::RoutedExchange;
 /// transport is a fake, so nothing reaches it. Runtime traffic goes only to
 /// the selected server.
 #[cfg(test)]
-pub(crate) const TEST_ORIGIN: &str = "https://transparent-pir.valargroup.dev";
+pub(crate) const TEST_ORIGIN: &str = "https://wallet-pir.valargroup.dev";
 
 /// The caller-chosen source identity every companion binds.
 const SOURCE: &[u8] = b"vizor/transparent-pir/v1";
