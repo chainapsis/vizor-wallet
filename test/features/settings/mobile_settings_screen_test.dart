@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -19,7 +20,9 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_tab_bar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/near_swap_privacy_info.dart';
 import 'package:zcash_wallet/src/features/settings/widgets/private_queries_turn_off.dart';
+import 'package:zcash_wallet/src/features/settings/widgets/swap_history_check_control.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_list_row.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile/mobile_surface_card.dart';
@@ -84,6 +87,7 @@ AppBootstrapState _bootstrap({
   AccountState accountState = _accountState,
   String network = 'main',
   bool enhancePirEnabled = false,
+  bool nearSwapPrivacyEnabled = false,
 }) => AppBootstrapState(
   initialLocation: '/settings',
   initialAccountState: accountState,
@@ -96,6 +100,7 @@ AppBootstrapState _bootstrap({
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
   enhancePirEnabled: enhancePirEnabled,
+  nearSwapPrivacyEnabled: nearSwapPrivacyEnabled,
 );
 
 /// Skips the secure-storage write so theme selection works without a
@@ -150,6 +155,25 @@ class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
   }
 }
 
+/// Finds the troubleshooting section of the NEAR swap privacy explanation.
+final _troubleshooting = find.byKey(
+  const ValueKey('near_swap_privacy_troubleshooting'),
+);
+
+/// Opens the NEAR swap privacy explanation from its info button in Settings
+/// and finds the sheet.
+Future<Finder> _openNearSwapPrivacyInfo(WidgetTester tester) async {
+  final info = find.byKey(
+    const ValueKey('mobile_settings_near_swap_privacy_info'),
+  );
+  await tester.scrollUntilVisible(info, 200);
+  await tester.ensureVisible(info);
+  await tester.pumpAndSettle();
+  await tester.tap(info);
+  await tester.pumpAndSettle();
+  return find.byKey(const ValueKey('near_swap_privacy_info_sheet'));
+}
+
 Widget _app({
   AccountState accountState = _accountState,
   BiometricUnlockState? biometric,
@@ -163,8 +187,10 @@ Widget _app({
   GoRouter? router,
   String network = 'main',
   bool enhancePirEnabled = false,
+  bool nearSwapPrivacyEnabled = false,
   EnhancePirNotifier Function()? enhancePir,
   bool walletTransparentPrivate = false,
+  List<Override> extraOverrides = const [],
 }) {
   Widget themedBuilder(BuildContext context, Widget? child) => AppTheme(
     data: themeData ?? AppThemeData.dark,
@@ -203,6 +229,7 @@ Widget _app({
           accountState: accountState,
           network: network,
           enhancePirEnabled: enhancePirEnabled,
+          nearSwapPrivacyEnabled: nearSwapPrivacyEnabled,
         ),
       ),
       if (networkPrivacyState != null)
@@ -226,9 +253,20 @@ Widget _app({
         biometricUnlockProvider.overrideWith(
           () => _FakeBiometricNotifier(biometric),
         ),
+      ...extraOverrides,
     ],
     child: app,
   );
+}
+
+/// Setting feedback fixed at `message`.
+class _Feedback extends EnhancePirTransitionNotifier {
+  _Feedback(this.message);
+
+  final String? message;
+
+  @override
+  String? build() => message;
 }
 
 Widget _routedApp({PaymentLinkCardsLoader? cardsLoader}) {
@@ -546,6 +584,231 @@ void main() {
     expect(calls, [true]);
   });
 
+  testWidgets('NEAR swap privacy explains itself', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+    final description = find.byKey(
+      const ValueKey('mobile_settings_near_swap_privacy_description'),
+    );
+    await tester.scrollUntilVisible(description, 200);
+    // Private queries are off, which doesn't affect it.
+    expect(find.text(kNearSwapPrivacyOffCopy), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_settings_near_swap_privacy_sub_option'),
+        ),
+        matching: find.byKey(
+          const ValueKey('mobile_settings_near_swap_privacy_row'),
+        ),
+      ),
+      findsOneWidget,
+      reason: 'shown as an option of Private queries',
+    );
+
+    final info = find.byKey(
+      const ValueKey('mobile_settings_near_swap_privacy_info'),
+    );
+    await tester.ensureVisible(info);
+    await tester.pumpAndSettle();
+    await tester.tap(info);
+    await tester.pumpAndSettle();
+    final sheet = find.byKey(const ValueKey('near_swap_privacy_info_sheet'));
+    expect(sheet, findsOneWidget);
+    expect(find.text(kNearSwapPrivacyInfoTitle), findsOneWidget);
+    for (final paragraph in kNearSwapPrivacyInfoParagraphs) {
+      expect(find.text(paragraph), findsOneWidget);
+    }
+    // It names what one-time Zcash addresses leave linkable, including the
+    // reuse the design allows.
+    expect(find.textContaining('still shared with NEAR'), findsOneWidget);
+    expect(
+      find.textContaining('expired unpaid can be used again'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('two devices'), findsOneWidget);
+    expect(find.textContaining('new Zcash addresses'), findsNothing);
+    expect(
+      find.textContaining("Hardware wallet accounts don't use"),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('NEAR swap privacy describes one-time addresses', (tester) async {
+    await tester.pumpWidget(
+      _app(enhancePirEnabled: true, nearSwapPrivacyEnabled: true),
+    );
+    await tester.pumpAndSettle();
+    final description = find.byKey(
+      const ValueKey('mobile_settings_near_swap_privacy_description'),
+    );
+    await tester.scrollUntilVisible(description, 200);
+    expect(find.text(kNearSwapPrivacyOnCopy), findsOneWidget);
+    expect(find.text(kNearSwapPrivacyOffCopy), findsNothing);
+  });
+
+  testWidgets('NEAR swap privacy off describes regular addresses', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(enhancePirEnabled: true));
+    await tester.pumpAndSettle();
+    final description = find.byKey(
+      const ValueKey('mobile_settings_near_swap_privacy_description'),
+    );
+    await tester.scrollUntilVisible(description, 200);
+    expect(tester.widget<Text>(description).data, kNearSwapPrivacyOffCopy);
+    expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+    // Checking swap history doesn't need NEAR swap privacy.
+    final sheet = await _openNearSwapPrivacyInfo(tester);
+    expect(sheet, findsOneWidget);
+    expect(find.text(kNearSwapPrivacyInfoParagraphs.last), findsOneWidget);
+    expect(_troubleshooting, findsOneWidget);
+  });
+
+  for (final (name, own) in [
+    ('while it changes', kEnhancePirChangingMessage),
+    ('when it fails', kEnhancePirUnchangedMessage),
+  ]) {
+    testWidgets('NEAR swap privacy feedback shows under its own row $name', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          enhancePirEnabled: true,
+          nearSwapPrivacyEnabled: true,
+          extraOverrides: [
+            nearSwapPrivacyTransitionProvider.overrideWith(
+              () => _Feedback(own),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      final feedback = find.byKey(
+        const ValueKey('mobile_settings_near_swap_privacy_transition'),
+      );
+      await tester.scrollUntilVisible(feedback, 200);
+      expect(tester.widget<Text>(feedback).data, own);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('mobile_settings_near_swap_privacy_sub_option'),
+          ),
+          matching: feedback,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_settings_enhance_pir_transition')),
+        findsNothing,
+      );
+    });
+  }
+
+  testWidgets('Check swap history ends the NEAR swap privacy explanation', (
+    tester,
+  ) async {
+    // Real glyph widths, on a small phone where the section sits below the
+    // first screen.
+    await loadFigmaCompareFonts();
+    tester.view.physicalSize = const Size(320, 568);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      _app(enhancePirEnabled: true, nearSwapPrivacyEnabled: true),
+    );
+    await tester.pumpAndSettle();
+    final description = find.byKey(
+      const ValueKey('mobile_settings_near_swap_privacy_description'),
+    );
+    await tester.scrollUntilVisible(description, 200);
+    // Settings keeps only the toggle and its info button.
+    expect(find.byType(SwapHistoryCheckControl), findsNothing);
+    for (final key in [
+      'settings_swap_history_explanation',
+      'settings_check_swap_history',
+      'settings_cancel_swap_history',
+      'settings_check_swap_history_status',
+    ]) {
+      expect(find.byKey(ValueKey(key)), findsNothing, reason: key);
+    }
+
+    final sheet = await _openNearSwapPrivacyInfo(tester);
+    final section = find.descendant(of: sheet, matching: _troubleshooting);
+    expect(section, findsOneWidget);
+    // In the scrolling body, so a small phone can still reach it.
+    expect(
+      find.descendant(
+        of: find.descendant(
+          of: sheet,
+          matching: find.byType(SingleChildScrollView),
+        ),
+        matching: section,
+      ),
+      findsOneWidget,
+    );
+    for (final text in [
+      kNearSwapPrivacyTroubleshootingTitle,
+      kNearSwapPrivacyTroubleshootingCopy,
+      kSwapHistoryCheckExplanation,
+    ]) {
+      expect(
+        find.descendant(of: section, matching: find.text(text)),
+        findsOneWidget,
+      );
+    }
+    for (final key in [
+      'settings_swap_history_explanation',
+      'settings_check_swap_history',
+      'settings_check_swap_history_status',
+    ]) {
+      expect(
+        find.descendant(of: section, matching: find.byKey(ValueKey(key))),
+        findsOneWidget,
+        reason: key,
+      );
+    }
+    final start = find.byKey(const ValueKey('settings_check_swap_history'));
+    expect(tester.getTopLeft(start).dy, greaterThan(568));
+    await tester.ensureVisible(start);
+    await tester.pumpAndSettle();
+    expect(tester.getBottomLeft(start).dy, lessThanOrEqualTo(568));
+    expect(
+      tester.getTopLeft(section).dy,
+      greaterThan(
+        tester.getBottomLeft(find.text(kNearSwapPrivacyInfoParagraphs.last)).dy,
+      ),
+      reason: 'after the explanation',
+    );
+  });
+
+  for (final (name, accountState) in [
+    ('Keystone', _keystoneAccountState),
+    ('Ledger', _ledgerAccountState),
+  ]) {
+    testWidgets('NEAR swap privacy names the $name account exception', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          enhancePirEnabled: true,
+          nearSwapPrivacyEnabled: true,
+          accountState: accountState,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final description = find.byKey(
+        const ValueKey('mobile_settings_near_swap_privacy_description'),
+      );
+      await tester.scrollUntilVisible(description, 200);
+      expect(find.text(kNearSwapPrivacyHardwareCopy), findsOneWidget);
+      expect(find.text(kNearSwapPrivacyOnCopy), findsNothing);
+      expect(
+        find.byKey(const ValueKey('settings_check_swap_history')),
+        findsNothing,
+      );
+    });
+  }
+
   testWidgets('the Tor toggle matches the keep-awake toggle', (tester) async {
     await tester.pumpWidget(
       _app(
@@ -590,6 +853,12 @@ void main() {
     await tester.scrollUntilVisible(pirThumb, 200);
     expect(find.text('Advanced'), findsNothing);
     expect(find.text('Private queries'), findsOneWidget);
+    expect(find.text('NEAR swap privacy'), findsOneWidget);
+    final swapRow = tester.widget<GestureDetector>(
+      find.byKey(const ValueKey('mobile_settings_near_swap_privacy_row')),
+    );
+    // Private queries being off doesn't stop turning it on.
+    expect(swapRow.onTap, isNotNull);
     expect(tester.getSize(pirThumb), tester.getSize(torThumb));
     expect(tester.getSize(pirTrack), tester.getSize(torTrack));
   });

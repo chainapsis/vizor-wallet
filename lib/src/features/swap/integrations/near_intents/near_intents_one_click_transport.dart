@@ -19,6 +19,18 @@ class OneClickApiException implements Exception {
   String toString() => 'OneClickApiException: $message';
 }
 
+/// A status response whose amounts cannot be read because the provider no
+/// longer lists one of its tokens. It fails like any unreadable status, and
+/// carries the status fields alone in [snapshot] (with
+/// `SwapIntentSnapshot.statusOnly` set) for a private swap, whose wallet
+/// records still need the status.
+class OneClickStatusOnlyException extends OneClickApiException {
+  const OneClickStatusOnlyException(super.message, {required this.snapshot})
+    : super(operation: 'status');
+
+  final SwapIntentSnapshot snapshot;
+}
+
 class OneClickHttpResponse {
   const OneClickHttpResponse({required this.statusCode, required this.body});
 

@@ -118,7 +118,10 @@ class MobilePrivateQueriesControl extends ConsumerWidget {
             ),
             const SizedBox(width: AppSpacing.xxs),
             WalletPirServerSettingsButton(
-              enabled: enhancePirEnabled && interactive,
+              enabled:
+                  interactive &&
+                  (enhancePirEnabled ||
+                      ref.watch(swapRecoveryUsesServerProvider).value == true),
             ),
           ],
         ),

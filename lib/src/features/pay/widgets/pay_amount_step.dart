@@ -9,6 +9,7 @@ import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../swap/models/swap_models.dart';
 import '../../swap/widgets/swap_asset_icon.dart';
+import '../../swap/widgets/swap_quote_error_text.dart';
 import '../models/pay_amount_input.dart';
 
 const _payAmountSkeletonPeriod = Duration(milliseconds: 1200);
@@ -359,13 +360,9 @@ class PayAmountStep extends StatelessWidget {
           ),
           if (quoteError != null) ...[
             const SizedBox(height: AppSpacing.s),
-            Text(
-              quoteError,
-              key: const ValueKey('pay_amount_error'),
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.destructive,
-              ),
+            SwapQuoteErrorText(
+              message: quoteError,
+              textKey: const ValueKey('pay_amount_error'),
             ),
           ],
         ],

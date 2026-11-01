@@ -48,6 +48,9 @@ SwapIntent _swapIntentFromRecord(SwapIntentRecord record, {DateTime? now}) {
     depositDeadline: record.depositDeadline,
     accountUuid: record.accountUuid,
     payMode: record.payMode,
+    privateAddress: record.privateAddress,
+    walletReleased: record.walletReleased,
+    startPending: record.startPending,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     completedAt:
@@ -153,6 +156,8 @@ SwapIntent swapIntentFromSnapshot({
     depositDeadline: depositDeadline,
     accountUuid: accountUuid,
     payMode: payMode,
+    privateAddress:
+        quote.swapRefundIndex != null || quote.receiveRequestId != null,
     createdAt: now,
     updatedAt: now,
     completedAt: status.isTerminal ? now : null,
@@ -262,19 +267,38 @@ SwapIntent updateSwapIntentFromSnapshot(
     providerRefundInfo,
   );
   final nextAction = _nextActionForResolvedStatus(status, snapshot);
+  // Null fields leave the stored values in place.
+  final presentation = snapshot.statusOnly ? null : snapshot;
+  // A status-only snapshot cannot state a finished swap's amounts, and the
+  // saved quote is no result. A completion shows its payout, and a flexible
+  // input's deposit, as not reported. A refund without a verified refunded
+  // amount shows its sent side as not reported too, since Activity reads that
+  // side as the refund.
+  final unsettled = snapshot.statusOnly && status == SwapIntentStatus.complete;
+  final refundUnknown =
+      snapshot.statusOnly &&
+      status == SwapIntentStatus.refunded &&
+      !_hasPositiveAmount(providerRefundInfo?.refundedAmountText);
   final record = SwapIntentRecord.fromIntent(intent).copyWith(
-    providerLabel: snapshot.providerLabel,
-    pairText: snapshot.pairText,
-    sellAmountText: snapshot.sellAmountText,
-    receiveEstimateText: snapshot.receiveEstimateText,
+    providerLabel: presentation?.providerLabel,
+    pairText: presentation?.pairText,
+    sellAmountText:
+        presentation?.sellAmountText ??
+        ((unsettled && snapshot.providerSwapType == 'FLEX_INPUT') ||
+                refundUnknown
+            ? kSwapAmountNotReported
+            : null),
+    receiveEstimateText:
+        presentation?.receiveEstimateText ??
+        (unsettled ? kSwapAmountNotReported : null),
     status: status,
     nextAction: nextAction,
-    sellAmountBaseUnits: snapshot.sellAmountBaseUnits,
-    swapFeeText: snapshot.swapFeeText,
-    totalFeesText: snapshot.totalFeesText,
-    realisedSlippageText: snapshot.realisedSlippageText,
-    slippageToleranceText: snapshot.slippageToleranceText,
-    minimumReceiveText: snapshot.minimumReceiveText,
+    sellAmountBaseUnits: presentation?.sellAmountBaseUnits,
+    swapFeeText: presentation?.swapFeeText,
+    totalFeesText: presentation?.totalFeesText,
+    realisedSlippageText: presentation?.realisedSlippageText,
+    slippageToleranceText: presentation?.slippageToleranceText,
+    minimumReceiveText: presentation?.minimumReceiveText,
     providerStatusRaw: snapshot.providerStatusRaw,
     nearIntentHash: snapshot.nearIntentHash,
     originChainTxHash: snapshot.originChainTxHash,
@@ -378,4 +402,13 @@ bool _snapshotHasDepositEvidence(SwapIntentSnapshot snapshot) {
         originChainTxHash: snapshot.originChainTxHash,
         broadcastStatus: null,
       );
+}
+
+/// Whether `text` starts with a positive amount, as a verified refund does
+/// (the same reading as Activity's refund rows).
+bool _hasPositiveAmount(String? text) {
+  final amount = double.tryParse(
+    (text ?? '').trim().split(RegExp(r'\s+')).first.replaceAll(',', ''),
+  );
+  return amount != null && amount.isFinite && amount > 0;
 }

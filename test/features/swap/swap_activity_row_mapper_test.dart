@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_deposit_broadcast_result.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_intent_presentation_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -828,6 +829,77 @@ void main() {
     expect(row!.statusIconName, AppIcons.uturnUp);
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, isEmpty);
+  });
+
+  testWidgets('a status-only refund shows its amount as not reported', (
+    tester,
+  ) async {
+    // A flexible incoming swap quoted 70 USDC. The user sent 35 and NEAR
+    // refunded 34, but the token left NEAR's catalog before the last status,
+    // so the status cannot state the refund.
+    final quoted = swapIntentsFromRecords([
+      const SwapIntentRecord(
+        id: 'flex-refund',
+        providerLabel: 'NEAR Intents',
+        pairText: 'USDC -> ZEC',
+        sellAmountText: '70 USDC',
+        receiveEstimateText: '0.7 ZEC',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Swap is processing',
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: '0xdeposit',
+        privateAddress: true,
+      ),
+    ]).single;
+    final refunded = updateSwapIntentFromSnapshot(
+      quoted,
+      const SwapIntentSnapshot(
+        id: 'flex-refund',
+        providerLabel: 'NEAR Intents',
+        pairText: 'Unlisted token -> ZEC',
+        sellAmountText: kSwapAmountNotReported,
+        receiveEstimateText: kSwapAmountNotReported,
+        status: SwapIntentStatus.refunded,
+        nextAction: 'Refunded',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.usdc,
+          address: '0xdeposit',
+          expiresInLabel: 'expired',
+          reuseWarning: 'Do not reuse',
+        ),
+        providerStatusRaw: 'REFUNDED',
+        providerSwapType: 'FLEX_INPUT',
+        refundedAmountBaseUnits: '34000000',
+        statusOnly: true,
+      ),
+    );
+    ActivityRowData? row;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: SwapActivityRowItem.fromRecord(
+                  SwapIntentRecord.fromIntent(refunded),
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.title, 'Swap refunded');
+    expect(
+      row!.amountText,
+      kSwapAmountNotReported,
+      reason: 'not the 70 quoted',
+    );
   });
 
   testWidgets('refunded ZEC->external swap labels the ZEC refund', (

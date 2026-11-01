@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/app_secure_store.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
+import 'swap_activity_tracker.dart';
 
 const _swapActivityKey = 'zcash_swap_activities_v1';
 const _swapActivityStorageVersion = 1;
@@ -16,7 +18,9 @@ String _swapActivityKeyFor(String accountUuid) =>
     '$_swapActivityKey:$accountUuid';
 
 final swapActivityStoreProvider = Provider<SwapActivityStore>((ref) {
-  return AppSecureStoreSwapActivityStore(AppSecureStore.instance);
+  return DeletionSafeSwapActivityStore(
+    AppSecureStoreSwapActivityStore(AppSecureStore.instance),
+  );
 });
 
 class SwapActivityRecordsRevisionNotifier extends Notifier<int> {
@@ -33,12 +37,19 @@ final swapActivityRecordsRevisionProvider =
       SwapActivityRecordsRevisionNotifier.new,
     );
 
+/// `accountUuid`'s saved swaps as Home and Activity show them (see
+/// [SwapActivityTracker.recordsWithFinishedStarts]).
 final swapActivityRecordsProvider =
-    FutureProvider.family<List<SwapIntentRecord>, String>((ref, accountUuid) {
+    FutureProvider.family<List<SwapIntentRecord>, String>((
+      ref,
+      accountUuid,
+    ) async {
       ref.watch(swapActivityRecordsRevisionProvider);
-      return ref
+      final tracker = ref.read(swapActivityTrackerProvider);
+      final records = await ref
           .read(swapActivityStoreProvider)
           .loadRecords(accountUuid: accountUuid);
+      return tracker.recordsWithFinishedStarts(accountUuid, records);
     });
 
 final swapPendingIntentCountProvider = FutureProvider.family<int, String>((
@@ -136,6 +147,87 @@ class AppSecureStoreSwapActivityStore implements SwapActivityStore {
   }
 }
 
+/// The one gate every swap activity read and write passes, so no caller can
+/// race account deletion. Each account's reads, saves and deletions run one at
+/// a time in the order they arrive, so a read never overtakes a save accepted before it, and
+/// deleting an account waits only for a storage operation already under way,
+/// never for a provider request or recovery work. Once an account's activity is deleted,
+/// later saves for it are dropped, which stops a save prepared before the
+/// deletion from bringing the deleted account's swaps back. Account UUIDs are
+/// never reused, so a dropped account stays dropped.
+class DeletionSafeSwapActivityStore implements SwapActivityStore {
+  DeletionSafeSwapActivityStore(this._inner);
+
+  final SwapActivityStore _inner;
+  final Set<String> _deleted = {};
+
+  /// The last queued operation of each account. Accounts queue separately, so
+  /// one account's slow storage call never holds up another's.
+  final Map<String, Future<void>> _tails = {};
+
+  /// Runs `action` after every read, save and deletion queued before it for
+  /// `accountUuid`.
+  Future<T> _serialized<T>(String accountUuid, Future<T> Function() action) {
+    final result = (_tails[accountUuid] ?? Future<void>.value()).then(
+      (_) => action(),
+    );
+    final tail = result.then<void>((_) {}, onError: (_) {});
+    _tails[accountUuid] = tail;
+    unawaited(
+      tail.then((_) {
+        if (identical(_tails[accountUuid], tail)) _tails.remove(accountUuid);
+      }),
+    );
+    return result;
+  }
+
+  /// Reads `accountUuid`'s activity once every earlier save has landed.
+  @override
+  Future<List<SwapIntentRecord>> loadRecords({required String accountUuid}) =>
+      _serialized(
+        accountUuid,
+        () => _inner.loadRecords(accountUuid: accountUuid),
+      );
+
+  /// Saves `records` unless `accountUuid`'s activity was deleted, in which case
+  /// it writes nothing. It does not read what it replaces.
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) => _serialized(accountUuid, () async {
+    if (_deleted.contains(accountUuid)) return;
+    await _inner.saveRecords(accountUuid: accountUuid, records: records);
+  });
+
+  /// Reads `accountUuid`'s activity, replaces it with what `transform` makes
+  /// of it and saves that, as one queued operation, so no other read or save
+  /// runs between the read and the save. Writes nothing for a deleted account.
+  /// Writers use this rather than reading and saving separately, which would
+  /// let a concurrent writer's save be overwritten by an older list.
+  Future<void> update({
+    required String accountUuid,
+    required List<SwapIntentRecord> Function(List<SwapIntentRecord> saved)
+    transform,
+  }) => _serialized(accountUuid, () async {
+    if (_deleted.contains(accountUuid)) return;
+    final saved = await _inner.loadRecords(accountUuid: accountUuid);
+    await _inner.saveRecords(
+      accountUuid: accountUuid,
+      records: transform(saved),
+    );
+  });
+
+  /// Deletes `accountUuid`'s activity after any save under way, and drops
+  /// every later save for it.
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) =>
+      _serialized(accountUuid, () {
+        _deleted.add(accountUuid);
+        return _inner.deleteForAccount(accountUuid: accountUuid);
+      });
+}
+
 @visibleForTesting
 String swapActivityStorageKeyForTest(String accountUuid) =>
     _swapActivityKeyFor(accountUuid);
@@ -196,6 +288,9 @@ Map<String, Object?> _recordToJson(SwapIntentRecord record) {
     'depositDeadline': record.depositDeadline?.toUtc().toIso8601String(),
     'accountUuid': record.accountUuid,
     'payMode': record.payMode,
+    'privateAddress': record.privateAddress,
+    'walletReleased': record.walletReleased,
+    'startPending': record.startPending,
     'createdAt': record.createdAt?.toUtc().toIso8601String(),
     'updatedAt': record.updatedAt?.toUtc().toIso8601String(),
     'completedAt': record.completedAt?.toUtc().toIso8601String(),
@@ -244,6 +339,9 @@ SwapIntentRecord _recordFromJson(Map<String, dynamic> json) {
     depositDeadline: _optionalDateTime(json['depositDeadline']),
     accountUuid: _optionalString(json['accountUuid']),
     payMode: json['payMode'] == true,
+    privateAddress: json['privateAddress'] == true,
+    walletReleased: json['walletReleased'] == true,
+    startPending: json['startPending'] == true,
     createdAt: _optionalDateTime(json['createdAt']),
     updatedAt: _optionalDateTime(json['updatedAt']),
     completedAt: _optionalDateTime(json['completedAt']),
