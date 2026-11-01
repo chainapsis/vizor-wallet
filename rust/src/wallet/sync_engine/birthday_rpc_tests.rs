@@ -106,9 +106,12 @@ impl FakeLwd {
 
 async fn scan_one_block(server: &FakeLwd, network: WalletNetwork, start: u64) {
     let start = BlockHeight::from_u32(u32::try_from(start).unwrap());
-    let mut client = CompactTxStreamerClient::connect(server.url.clone())
+    let channel = tonic::transport::Endpoint::from_shared(server.url.clone())
+        .unwrap()
+        .connect()
         .await
         .unwrap();
+    let mut client = CompactTxStreamerClient::new(channel);
     let (source, state) = download_scan_batch(&mut client, start, start, network)
         .await
         .unwrap();
