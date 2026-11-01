@@ -25,6 +25,7 @@ import '../models/swap_address_book_helpers.dart';
 import '../models/swap_hardware_broadcast_result.dart';
 import '../models/swap_models.dart';
 import '../providers/pay_deposit_transaction_provider.dart';
+import '../providers/swap_payout_discovery_provider.dart';
 import '../providers/swap_state_provider.dart';
 import '../screens/mobile/mobile_swap_keystone_sign_screen.dart';
 import '../screens/mobile/mobile_swap_ledger_sign_screen.dart';
@@ -35,6 +36,7 @@ import 'mobile/mobile_swap_review_header.dart';
 import 'mobile/mobile_swap_status_content.dart';
 import 'mobile/mobile_swap_timeout_content.dart';
 import 'pay_activity_status_content.dart';
+import 'one_time_address_label.dart';
 import 'swap_status_page_content.dart';
 
 /// Which rendering the detail surface uses. The orchestration (intent
@@ -712,14 +714,16 @@ class _SwapActivityFlowContent extends StatelessWidget {
     // Nothing that could fund the swap shows before the wallet locks its
     // reservation (see [SwapIntent.startPending]).
     if (intent.startPending) {
-      final message = intent.status.isTerminal
-          ? swapStartFailedText
-          : swapStartingText;
+      final failed = intent.status.isTerminal;
       final mobile = layout == SwapActivityDetailLayout.mobile;
       return SizedBox(
         key: const ValueKey('swap_activity_start_pending'),
         width: mobile ? null : 400,
-        child: _ActivityStatusErrorPanel(message: message),
+        child: _ActivityStatusErrorPanel(
+          message: failed ? swapStartFailedText : swapStartingText,
+          iconName: failed ? AppIcons.warningCircle : AppIcons.loader,
+          iconColor: failed ? context.colors.icon.destructive : null,
+        ),
       );
     }
     final depositInstruction = SwapActivityDepositInstruction.fromIntent(
@@ -796,7 +800,41 @@ class _SwapActivityFlowContent extends StatelessWidget {
               child: _ActivityStatusErrorPanel(message: statusError),
             ),
         ],
+        _SwapUpdateRequiredNotice(intent: intent, mobile: mobile),
       ],
+    );
+  }
+}
+
+/// Tells the user why a private swap's payout or refund stopped being looked
+/// up while receiver recovery needs a newer app (see
+/// [swapRecoveryUpdateRequiredProvider] and [swapUpdateRequiredText]).
+/// Renders nothing otherwise.
+class _SwapUpdateRequiredNotice extends ConsumerWidget {
+  const _SwapUpdateRequiredNotice({required this.intent, required this.mobile});
+
+  final SwapIntent intent;
+  final bool mobile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final required =
+        intent.privateAddress &&
+        (ref.watch(swapRecoveryUpdateRequiredProvider).value ?? false);
+    final message = required
+        ? swapUpdateRequiredText(
+            intent,
+            findingPayout: watchIntentFindingPayout(ref, intent),
+          )
+        : null;
+    if (message == null) return const SizedBox.shrink();
+    final panel = _ActivityStatusErrorPanel(
+      message: message,
+      iconName: AppIcons.warningCircle,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.md),
+      child: mobile ? panel : SizedBox(width: 400, child: panel),
     );
   }
 }
@@ -886,9 +924,11 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           )
           .value;
     }
+    final findingPayout = watchIntentFindingPayout(ref, intent);
     final presentation = swapActivityStatusPresentationForIntent(
       state,
       intent,
+      findingPayout: findingPayout,
       accountDetail: accountInfo == null
           ? null
           : SwapActivityAccountDetail(
@@ -935,6 +975,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
           amountText: trimSwapAmountText(presentation.payAmountText),
           asset: presentation.payAsset,
           bottomText: presentation.payDetailText,
+          oneTimeAddress:
+              presentation.oneTimeAddress == OneTimeAddressRole.refund
+              ? OneTimeAddressRole.refund
+              : null,
         ),
         receiveHeaderRow: MobileSwapReviewHeaderRow(
           label: presentation.receiveLabel,
@@ -944,6 +988,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
               ? 'To: ${_headerRecipientText(recipient, presentation: presentation, contacts: addressBookContacts, contactId: recipientContactId)}'
               : presentation.receiveFiatText,
           fullAddress: recipientFullAddress,
+          oneTimeAddress:
+              presentation.oneTimeAddress == OneTimeAddressRole.payout
+              ? OneTimeAddressRole.payout
+              : null,
         ),
         activeTab: _activeTab,
         detailsExpanded: _detailsExpanded,
@@ -1011,6 +1059,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       progressTabLabel: presentation.progressTabLabel,
       paymentMode: presentation.paymentMode,
       showTabs: presentation.showTabs,
+      oneTimeAddress: presentation.oneTimeAddress,
       onTabChanged: (tab) {
         setState(() {
           _activeTab = tab;
@@ -1199,9 +1248,17 @@ class _ActivityDetailScrollAreaState extends State<_ActivityDetailScrollArea> {
 }
 
 class _ActivityStatusErrorPanel extends StatelessWidget {
-  const _ActivityStatusErrorPanel({required this.message});
+  const _ActivityStatusErrorPanel({
+    required this.message,
+    this.iconName = AppIcons.sync,
+    this.iconColor,
+  });
 
   final String message;
+  final String iconName;
+
+  /// Defaults to the muted icon color.
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1219,9 +1276,9 @@ class _ActivityStatusErrorPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AppIcon(
-            AppIcons.sync,
+            iconName,
             size: AppIconSize.large,
-            color: colors.icon.muted,
+            color: iconColor ?? colors.icon.muted,
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(

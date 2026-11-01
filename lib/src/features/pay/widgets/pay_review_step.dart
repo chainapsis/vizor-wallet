@@ -215,6 +215,7 @@ class PayReviewAction extends StatelessWidget {
     required this.startBlockedReason,
     required this.onConfirm,
     required this.onReviewAgain,
+    this.wrapBlockedReason = false,
     super.key,
   });
 
@@ -223,6 +224,9 @@ class PayReviewAction extends StatelessWidget {
   final String? startBlockedReason;
   final VoidCallback onConfirm;
   final VoidCallback onReviewAgain;
+
+  /// Shows [startBlockedReason] in full instead of capping it at two lines.
+  final bool wrapBlockedReason;
 
   @override
   Widget build(BuildContext context) {
@@ -235,8 +239,8 @@ class PayReviewAction extends StatelessWidget {
             child: Text(
               startBlockedReason!,
               key: const ValueKey('pay_review_blocked_reason'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+              maxLines: wrapBlockedReason ? null : 2,
+              overflow: wrapBlockedReason ? null : TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: context.colors.text.destructive,

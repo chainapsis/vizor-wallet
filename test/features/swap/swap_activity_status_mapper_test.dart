@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/swap/models/one_time_address_role.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -42,6 +43,37 @@ void main() {
       expect(presentation.payLabel, pay, reason: status.name);
       expect(presentation.receiveLabel, receive, reason: status.name);
     }
+  });
+
+  test('a private swap names the one-time address on its ZEC side', () {
+    SwapIntent intent(SwapDirection direction, {required bool private}) =>
+        _intent(
+          status: SwapIntentStatus.processing,
+          direction: direction,
+          externalAsset: SwapAsset.usdc,
+        ).copyWith(privateAddress: private);
+
+    expect(
+      swapActivityStatusPresentationForIntent(
+        _state(),
+        intent(SwapDirection.externalToZec, private: true),
+      ).oneTimeAddress,
+      OneTimeAddressRole.payout,
+    );
+    expect(
+      swapActivityStatusPresentationForIntent(
+        _state(),
+        intent(SwapDirection.zecToExternal, private: true),
+      ).oneTimeAddress,
+      OneTimeAddressRole.refund,
+    );
+    expect(
+      swapActivityStatusPresentationForIntent(
+        _state(),
+        intent(SwapDirection.externalToZec, private: false),
+      ).oneTimeAddress,
+      isNull,
+    );
   });
 
   test('maps in-progress status page data from the saved swap intent', () {

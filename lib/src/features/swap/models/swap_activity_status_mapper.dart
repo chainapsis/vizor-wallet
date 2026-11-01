@@ -12,6 +12,8 @@ import 'swap_fiat_value_formatting.dart';
 import 'swap_models.dart';
 import 'swap_status_presentation.dart';
 import 'swap_token_amount_formatting.dart';
+import 'one_time_address_role.dart';
+import 'swap_payout_discovery.dart';
 
 class SwapActivityAccountDetail {
   const SwapActivityAccountDetail({required this.name, this.profilePictureId});
@@ -98,6 +100,7 @@ class SwapActivityStatusPresentation {
     this.paymentMode = false,
     this.payStatus,
     required this.showTabs,
+    this.oneTimeAddress,
   });
 
   final String title;
@@ -136,6 +139,10 @@ class SwapActivityStatusPresentation {
   final bool paymentMode;
   final PayActivityStatusPresentation? payStatus;
   final bool showTabs;
+
+  /// Set when the swap's ZEC side uses a one-time address: the payout when
+  /// receiving ZEC, the refund when sending it.
+  final OneTimeAddressRole? oneTimeAddress;
 }
 
 SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
@@ -144,6 +151,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
   SwapActivityAccountDetail? accountDetail,
   Iterable<AddressBookContact> addressBookContacts = const [],
   BigInt? confirmedDepositFeeZatoshi,
+  bool findingPayout = false,
 }) {
   final sellAsset = swapActivitySellAsset(intent) ?? SwapAsset.zec;
   final receiveAsset = swapActivityReceiveAsset(intent) ?? SwapAsset.usdc;
@@ -193,10 +201,19 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     }
   }
 
+  // Until the wallet finds the payout, the swap reads as in progress.
+  final labelStatus = findingPayout
+      ? SwapIntentStatus.processing
+      : intent.status;
   return SwapActivityStatusPresentation(
+    oneTimeAddress: intent.privateAddress
+        ? (sendsZec ? OneTimeAddressRole.refund : OneTimeAddressRole.payout)
+        : null,
     // Keep the generic swap presentation stable. Pay surfaces consume the
     // dedicated [payStatus] contract instead of relabelling generic details.
-    title: _swapActivityStatusTitle(intent),
+    title: findingPayout
+        ? 'Swap in progress...'
+        : _swapActivityStatusTitle(intent),
     payAsset: sellAsset,
     receiveAsset: receiveAsset,
     payFiatText: payFiatText,
@@ -207,9 +224,9 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
         ? _payIntentShowsPaidCopy(intent)
               ? 'You paid'
               : 'You pay'
-        : _swapShowsTerminalFailureLabels(intent.status)
+        : _swapShowsTerminalFailureLabels(labelStatus)
         ? 'Deposit amount'
-        : intent.status == SwapIntentStatus.complete
+        : labelStatus == SwapIntentStatus.complete
         ? 'You paid'
         : "You're paying",
     receiveLabel: payMode
@@ -221,19 +238,21 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
             SwapIntentStatus.incompleteDeposit => 'Amount',
             _ => 'Recipient gets',
           }
-        : _swapShowsTerminalFailureLabels(intent.status)
+        : _swapShowsTerminalFailureLabels(labelStatus)
         ? 'Expected to receive'
-        : intent.status == SwapIntentStatus.complete
+        : labelStatus == SwapIntentStatus.complete
         ? 'You received'
         : "You're receiving",
     payDetailText: payDetailText,
     payDetailCopyText: payDetailCopyText,
     receiveDetailText: receiveDetailText,
     receiveDetailCopyText: receiveDetailCopyText,
-    statusLabel: intent.status.label,
-    badgeKind: _swapActivityStatusBadgeKind(intent.status),
+    statusLabel: findingPayout ? kSwapFindingPayoutLabel : intent.status.label,
+    badgeKind: findingPayout
+        ? SwapStatusBadgeKind.liveQuote
+        : _swapActivityStatusBadgeKind(intent.status),
     progressIndex: _swapActivityStatusProgressIndex(intent),
-    steps: _swapActivityProgressSteps(intent),
+    steps: _swapActivityProgressSteps(intent, findingPayout: findingPayout),
     details: _swapActivityStatusDetails(
       intent,
       addressBookContacts: addressBookContacts,
@@ -243,7 +262,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     payStatus: payStatus,
     // Mobile keeps the shared progress tabs while reading its detail values
     // from [payStatus]; desktop renders its dedicated Pay status content.
-    showTabs: !intent.status.isTerminal,
+    // A payout still being found keeps its steps, like any swap in progress.
+    showTabs: findingPayout || !intent.status.isTerminal,
   );
 }
 
@@ -373,7 +393,10 @@ int _swapActivityStatusProgressIndex(SwapIntent intent) {
   };
 }
 
-List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
+List<SwapStatusStepData> _swapActivityProgressSteps(
+  SwapIntent intent, {
+  bool findingPayout = false,
+}) {
   final sourceSymbol = swapActivityPairSymbol(intent.pair, 0);
   final receiveSymbol = swapActivityPairSymbol(intent.pair, 1);
   if (intent.payMode && intent.direction == SwapDirection.zecToExternal) {
@@ -454,13 +477,22 @@ List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
       lastCheckedLabel: lastCheckedLabel,
       description: 'The provider is executing the swap route.',
     ),
-    SwapStatusStepData(
-      title: deliveryTitle,
-      state: SwapStatusStepState.pending,
-      activeTitle: '$deliveryTitle...',
-      lastCheckedLabel: lastCheckedLabel,
-      description: 'Delivering the output asset to the recipient address.',
-    ),
+    if (findingPayout)
+      SwapStatusStepData(
+        title: deliveryTitle,
+        state: SwapStatusStepState.pending,
+        activeTitle: kSwapFindingPayoutLabel,
+        description:
+            'NEAR sent it to your one-time address. Vizor is finding it.',
+      )
+    else
+      SwapStatusStepData(
+        title: deliveryTitle,
+        state: SwapStatusStepState.pending,
+        activeTitle: '$deliveryTitle...',
+        lastCheckedLabel: lastCheckedLabel,
+        description: 'Delivering the output asset to the recipient address.',
+      ),
   ];
 }
 

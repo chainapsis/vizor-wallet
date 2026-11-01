@@ -397,9 +397,9 @@ void main() {
     );
     expect(
       swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
-      'Private swaps are funded from your Ironwood balance, which cannot '
-      'cover this swap and its network fee.\n'
-      'Move funds to Ironwood first or try a smaller amount.',
+      "Private swaps use Ironwood ZEC only, which can't cover this swap and "
+      'its network fee.\n'
+      'Move funds to Ironwood or try a smaller amount.',
     );
     // Other operations keep their own categories.
     expect(

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -71,29 +70,30 @@ void main() {
       await tester.pumpWidget(_control(theme, SwapHistoryCheck.checking));
       await tester.pump();
 
-      // No address count to choose: no field, one explanation line.
+      // No address count to choose: no field, one status line and one action.
       expect(find.byType(EditableText), findsNothing);
-      final explanation = find.byKey(
-        const ValueKey('settings_swap_history_explanation'),
-      );
       final status = find.byKey(
         const ValueKey('settings_check_swap_history_status'),
       );
-      final paragraph = tester.renderObject<RenderParagraph>(explanation);
-      expect(paragraph.didExceedMaxLines, isFalse, reason: 'shown in full');
-      final check = tester.getRect(
+      final pause = find.byKey(const ValueKey('settings_cancel_swap_history'));
+      expect(
+        tester.widget<Text>(status).data,
+        'Checking… this can take a few minutes.',
+      );
+      expect(
         find.byKey(const ValueKey('settings_check_swap_history')),
+        findsNothing,
+        reason: 'a running check only pauses',
       );
-      final pause = tester.getRect(
-        find.byKey(const ValueKey('settings_cancel_swap_history')),
+      expect(tester.getRect(status).overlaps(tester.getRect(pause)), isFalse);
+      // Screen readers hear the line change.
+      expect(
+        tester.getSemantics(status),
+        matchesSemantics(
+          isLiveRegion: true,
+          label: 'Checking… this can take a few minutes.',
+        ),
       );
-      expect(tester.getRect(explanation).bottom, lessThanOrEqualTo(check.top));
-      for (final above in [check, pause]) {
-        expect(above.bottom, lessThanOrEqualTo(tester.getRect(status).top));
-      }
-      // The two actions are separate buttons with a gap between them.
-      expect(check.overlaps(pause), isFalse);
-      expect(check.right < pause.left || check.bottom < pause.top, isTrue);
     });
   }
 
@@ -228,10 +228,7 @@ void main() {
     );
     await tester.pump();
     expect(
-      find.text(
-        'Update Vizor to keep checking private swap addresses. '
-        'Your saved progress is kept.',
-      ),
+      find.text(kSwapRecoveryUpdateMessage),
       findsOneWidget,
     );
   });
@@ -253,6 +250,16 @@ void main() {
   testWidgets('a finished check says so plainly', (tester) async {
     await tester.pumpWidget(_control(AppThemeData.dark, SwapHistoryCheck.done));
     await tester.pump();
-    expect(find.text('Swap history check complete.'), findsOneWidget);
+    expect(find.text('Check complete.'), findsOneWidget);
+    expect(find.text('Check again'), findsOneWidget);
+  });
+
+  testWidgets('before any check it asks whether something is missing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_control(AppThemeData.dark, SwapHistoryCheck.idle));
+    await tester.pump();
+    expect(find.text('Missing a payout or refund?'), findsOneWidget);
+    expect(find.text('Check swap history'), findsOneWidget);
   });
 }

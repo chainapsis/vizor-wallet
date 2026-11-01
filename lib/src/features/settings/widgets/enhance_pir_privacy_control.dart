@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/config/private_transparent_recovery_config.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_icon_hover_button.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import 'network_privacy_control.dart';
 import 'wallet_pir_server_popup.dart';
@@ -17,8 +16,10 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
     this.label = 'Private queries',
     this.keyPrefix = 'settings_enhance_pir',
     this.description = kPrivateQueriesSettingsCopy,
-    this.onInfo,
     this.serverSettings = true,
+    this.iconName = AppIcons.eye,
+    this.unavailableLabel,
+    this.footer = const [],
     super.key,
   });
 
@@ -28,8 +29,15 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
   final bool enabled;
   final VoidCallback? onToggle;
 
-  /// Shows an explanation of the setting from an info icon after the label.
-  final VoidCallback? onInfo;
+  final String iconName;
+
+  /// Shown in place of On/Off, with no switch, where the setting doesn't
+  /// apply.
+  final String? unavailableLabel;
+
+  /// Lines under the description, on its left edge, such as progress and a
+  /// "Learn more" button.
+  final List<Widget> footer;
 
   /// Shows the private query server picker after the label. Only the Private
   /// queries row owns the server choice.
@@ -64,9 +72,9 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
                   dimension: 20,
                   child: Center(
                     child: AppIcon(
-                      AppIcons.eye,
+                      iconName,
                       size: 20,
-                      color: enabled
+                      color: enabled && unavailableLabel == null
                           ? colors.icon.brandCrimson
                           : colors.icon.muted,
                     ),
@@ -90,18 +98,6 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
                               ),
                             ),
                           ),
-                          if (onInfo case final onInfo?) ...[
-                            const SizedBox(width: AppSpacing.xxs),
-                            AppIconHoverButton(
-                              key: ValueKey('${keyPrefix}_info'),
-                              icon: AppIcons.help,
-                              semanticLabel: "What's this?",
-                              size: 20,
-                              iconSize: 16,
-                              iconColor: colors.icon.muted,
-                              onTap: onInfo,
-                            ),
-                          ],
                           if (serverSettings) ...[
                             const SizedBox(width: AppSpacing.xxs),
                             WalletPirServerSettingsButton(
@@ -112,10 +108,10 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        enabled ? 'On' : 'Off',
+                        unavailableLabel ?? (enabled ? 'On' : 'Off'),
                         key: ValueKey('${keyPrefix}_status'),
                         style: AppTypography.labelLarge.copyWith(
-                          color: enabled
+                          color: enabled && unavailableLabel == null
                               ? colors.text.brandCrimson
                               : colors.text.secondary,
                           fontWeight: FontWeight.w400,
@@ -124,14 +120,16 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xs),
-                PrivacyToggle(
-                  key: ValueKey('${keyPrefix}_toggle'),
-                  trackKey: ValueKey('${keyPrefix}_toggle_track'),
-                  enabled: enabled,
-                  semanticsLabel: label,
-                  onToggle: onToggle,
-                ),
+                if (unavailableLabel == null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  PrivacyToggle(
+                    key: ValueKey('${keyPrefix}_toggle'),
+                    trackKey: ValueKey('${keyPrefix}_toggle_track'),
+                    enabled: enabled,
+                    semanticsLabel: label,
+                    onToggle: onToggle,
+                  ),
+                ],
               ],
             ),
           ),
@@ -157,6 +155,10 @@ class EnhancePirPrivacyControl extends ConsumerWidget {
             ),
           ),
         ),
+        for (final line in footer) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(alignment: AlignmentDirectional.centerStart, child: line),
+        ],
       ],
     );
   }
