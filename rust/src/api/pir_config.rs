@@ -261,8 +261,8 @@ pub fn selected_wallet_pir_server() -> Option<String> {
 /// Dart pauses sync before calling this and restarts it afterwards. Display
 /// services tied to the old server are dropped. Enhance, Status and Transparent
 /// sessions are rebuilt from the selected base; wallet keys and history stay
-/// unchanged. Receiver routing remains in the shared config, but this app base
-/// has no Receiver recovery integration.
+/// unchanged. Receiver recovery notices the change on its next round or filter
+/// step and forgets the old server's history (see `swap_private::adopt_server`).
 pub fn apply_wallet_pir_server(base_url: Option<String>) -> Result<bool, String> {
     // Concurrent applies would interleave their stages.
     static APPLY: Mutex<()> = Mutex::new(());

@@ -35,7 +35,7 @@ fn protocol_order(display: &str) -> [u8; 32] {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires network: https://transparent-pir.valargroup.dev"]
+#[ignore = "requires network: https://wallet-pir.valargroup.dev"]
 async fn txid_live() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let _route = crate::network_privacy::test_route_policy::lock_route_policy();
@@ -91,18 +91,19 @@ async fn txid_live() {
     assert_eq!(answer.transparent_input_count, 1);
     assert_eq!(answer.outputs, [(AMOUNT, Some(RECIPIENT.to_owned()))]);
     let sent = queries(&observer);
-    assert!(sent >= 2, "two directory queries at least");
+    // The canonical route reaches the one-query display site.
+    assert!(sent >= 1, "at least one private query");
     eprintln!(
         "txid_live: found via {} in {:.1}s, {sent} private queries, shard {shard} ({tier})",
         if tor { "Tor" } else { "direct" },
         took.as_secs_f64(),
     );
 
-    // Absent: an unpublished txid in the same shard sends the same two
-    // directory queries and finds nothing.
+    // Absent: an unpublished txid in the same shard sends as many queries
+    // and finds nothing.
     let (absent, _) = lookup([0x5a; 32], HEIGHT).await.unwrap();
     assert!(matches!(absent, Ok(TxidLookup::Absent)), "{absent:?}");
-    assert_eq!(queries(&observer), sent + 2);
+    assert_eq!(queries(&observer), 2 * sent);
 
     // Placement unknown: a height below the published window sends no query.
     // The window starts at height 1, so only genesis is below it.
@@ -111,7 +112,7 @@ async fn txid_live() {
         matches!(unplaced, Ok(TxidLookup::PlacementUnknown(Placement::Below))),
         "{unplaced:?}"
     );
-    assert_eq!(queries(&observer), sent + 2);
+    assert_eq!(queries(&observer), 2 * sent);
 
     // Every request used a txid display route, and none carried the txid.
     assert_private(&observer.requests(), &[txid.to_vec(), [0x5a; 32].to_vec()]);
