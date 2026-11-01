@@ -47,6 +47,7 @@ class SendStatusContentView extends StatelessWidget {
     this.onOpenExplorer,
     this.onRetry,
     this.onFeeHelp,
+    this.footer,
     super.key,
   }) : assert(recipient != null || recipientRow != null);
 
@@ -105,6 +106,10 @@ class SendStatusContentView extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onFeeHelp;
 
+  /// Optional follow-up action under the receipt, such as adding the
+  /// recipient to contacts.
+  final Widget? footer;
+
   bool get _failed => phase == SendStatusPhase.failed;
 
   @override
@@ -147,6 +152,7 @@ class SendStatusContentView extends StatelessWidget {
           Center(
             child: AppButton(onPressed: onRetry, child: const Text('Retry')),
           ),
+        ?footer,
       ],
     );
   }

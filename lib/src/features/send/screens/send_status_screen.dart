@@ -16,6 +16,8 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/zec_price_change_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
@@ -25,6 +27,7 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
 import '../../donation/widgets/donation_views.dart';
 import '../services/send_flow.dart';
+import '../services/zns_contact_offer.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_status_content_view.dart';
@@ -87,6 +90,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   bool _showSaplingParamsPrompt = false;
   bool _messageExpanded = false;
   bool _showVerifyAddress = false;
+  bool _savingZnsContact = false;
   Completer<bool>? _saplingParamsPromptCompleter;
 
   /// Captured in [initState] so [dispose] can release the flag without reading
@@ -329,6 +333,17 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     );
   }
 
+  Future<void> _addZnsContact(String znsName) async {
+    setState(() => _savingZnsContact = true);
+    await addZnsRecipientToContacts(
+      context,
+      ref,
+      znsName: znsName,
+      address: widget.args.address,
+    );
+    if (mounted) setState(() => _savingZnsContact = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     // The legacy receipt's pending phase rendered the loader + "In progress"
@@ -355,6 +370,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       contacts: addressBookContacts,
       address: widget.args.address,
       ownAccounts: ownAccounts,
+      znsName: widget.args.recipientZnsName,
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final memo = widget.args.memo;
@@ -362,6 +378,17 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     // only whitespace still sends that memo, so the row has to say so rather
     // than omit a memo the transaction carries.
     final hasMemo = memo != null && memo.isNotEmpty;
+    final znsName = widget.args.recipientZnsName;
+    final offerZnsContact =
+        !isDonation &&
+        _phase == _SendStatusPhase.succeeded &&
+        znsName != null &&
+        shouldOfferZnsContact(
+          znsName: znsName,
+          address: widget.args.address,
+          contacts: addressBookContacts,
+          ownAccounts: ownAccounts,
+        );
     final canOpenExplorer =
         (_phase == _SendStatusPhase.succeeded ||
             _phase == _SendStatusPhase.pendingBroadcast) &&
@@ -446,6 +473,22 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                             : null,
                         onOpenExplorer: canOpenExplorer
                             ? _openTransactionExplorer
+                            : null,
+                        footer: offerZnsContact
+                            ? Center(
+                                child: AppButton(
+                                  key: const ValueKey(
+                                    'send_status_add_zns_contact',
+                                  ),
+                                  variant: AppButtonVariant.ghost,
+                                  leading: const AppIcon(AppIcons.users),
+                                  onPressed: _savingZnsContact
+                                      ? null
+                                      : () =>
+                                            unawaited(_addZnsContact(znsName)),
+                                  child: const Text('Add to contacts'),
+                                ),
+                              )
                             : null,
                       ),
                     ),

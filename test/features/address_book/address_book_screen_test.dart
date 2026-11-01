@@ -8,6 +8,8 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
+import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
+import 'package:zcash_wallet/src/core/naming/zns_recipient_lookup.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
@@ -19,6 +21,8 @@ import 'package:zcash_wallet/src/features/address_book/screens/address_book_scre
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../fakes/fake_zns_name_resolver.dart';
 
 void main() {
   testWidgets('does not show a loading spinner while contacts load', (
@@ -749,6 +753,125 @@ void main() {
     final floatingButtonTop = tester.getRect(floatingButton).top;
     expect(lastRowBottom, lessThanOrEqualTo(floatingButtonTop + 0.5));
   });
+
+  group('a contact entered by Zcash name', () {
+    final addressField = find.byKey(
+      const ValueKey('address_book_contact_address_field'),
+    );
+    final submit = find.byKey(
+      const ValueKey('address_book_contact_submit_button'),
+    );
+
+    Future<void> openAddForm(WidgetTester tester) async {
+      await tester.tap(
+        find.byKey(const ValueKey('address_book_add_contact_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('address_book_contact_label_field')),
+        'Alice',
+      );
+    }
+
+    testWidgets('saves the resolved address with the name beside it', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      final repo = _FakeAddressBookRepository();
+      final resolver = FakeZnsNameResolver({'alice': _znsAddress});
+      await tester.pumpWidget(_addressBookHarness(repo, znsResolver: resolver));
+      await tester.pumpAndSettle();
+      await openAddForm(tester);
+
+      await tester.enterText(addressField, 'Alice.zcash');
+      await tester.pump(kZnsLookupDebounce);
+      await tester.pumpAndSettle();
+
+      expect(resolver.lookups, ['alice']);
+      expect(find.textContaining('Resolves to u14lms'), findsOneWidget);
+      expect(find.text('Invalid Zcash address'), findsNothing);
+
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      final saved = repo.contacts.single;
+      expect(saved.address, _znsAddress);
+      expect(saved.znsName, 'alice.zcash');
+      expect(
+        find.text('alice.zcash · ${saved.addressPreview}'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an unregistered name blocks the save', (tester) async {
+      await _setDesktopViewport(tester);
+      final repo = _FakeAddressBookRepository();
+      await tester.pumpWidget(
+        _addressBookHarness(repo, znsResolver: FakeZnsNameResolver()),
+      );
+      await tester.pumpAndSettle();
+      await openAddForm(tester);
+
+      await tester.enterText(addressField, 'nobody.zec');
+      await tester.pump(kZnsLookupDebounce);
+      await tester.pumpAndSettle();
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      expect(find.text(ZnsLookupStatus.notRegistered.message), findsOneWidget);
+      expect(repo.contacts, isEmpty);
+    });
+
+    testWidgets('editing keeps the name until the address changes', (
+      tester,
+    ) async {
+      await _setDesktopViewport(tester);
+      final repo = _FakeAddressBookRepository([
+        AddressBookContact(
+          id: 'c1',
+          label: 'Alice',
+          network: AddressBookNetwork.zcash,
+          address: _znsAddress,
+          profilePictureId: kDefaultProfilePictureId,
+          createdAtMs: 0,
+          updatedAtMs: 0,
+          znsName: 'alice.zcash',
+        ),
+      ]);
+      await tester.pumpWidget(
+        _addressBookHarness(repo, znsResolver: FakeZnsNameResolver()),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> openEdit() async {
+        await tester.tap(
+          find.byKey(const ValueKey('address_book_contact_menu_c1')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Edit contact'));
+        await tester.pumpAndSettle();
+      }
+
+      await openEdit();
+      expect(find.text('Saved from alice.zcash'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('address_book_contact_label_field')),
+        'Alice B',
+      );
+      await tester.pump();
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(repo.contacts.single.znsName, 'alice.zcash');
+
+      await openEdit();
+      await tester.enterText(addressField, _otherShieldedAddress);
+      await tester.pump();
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(repo.contacts.single.address, _otherShieldedAddress);
+      expect(repo.contacts.single.znsName, isNull);
+    });
+  });
 }
 
 /// Returns true when [labels] appear top-to-bottom in the given vertical
@@ -768,6 +891,7 @@ bool _menuItemOrder(WidgetTester tester, List<String> labels) {
 Widget _addressBookHarness(
   AddressBookRepository repo, {
   ValueChanged<SendPrefillArgs?>? onSendRoute,
+  ZnsNameResolver? znsResolver,
 }) {
   final router = GoRouter(
     initialLocation: '/address-book',
@@ -802,6 +926,8 @@ Widget _addressBookHarness(
       accountProvider.overrideWith(() => _FakeAccountNotifier(_accountState)),
       addressBookRepositoryProvider.overrideWithValue(repo),
       syncProvider.overrideWith(() => _FakeSyncNotifier(SyncState())),
+      if (znsResolver != null)
+        znsNameResolverProvider.overrideWithValue(znsResolver),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -809,6 +935,15 @@ Widget _addressBookHarness(
     ),
   );
 }
+
+const _znsAddress =
+    'u14lms6q2sg984hhng068lqesatnak86mlg297x0qkqsvkqgk2m7dyj5x2grlku3adg2tq6t'
+    'rl5ue3vce7c3jnu5808kw9lsr890kfetrg524q4pgcn4zcnp84na85453pz67cjfy4sx7y6z'
+    '6zc9t7666utasw5mehe9r2dwwcrgzp94ah';
+
+const _otherShieldedAddress =
+    'u1l8xunezsvhq8fgzfl7404m450nwnd76zshscn6nfys7vyz2ywyh4cc5daaq0c7q2su5l'
+    'qfh23sp7fkf3kt27ve5948mzpfutvdxs8yzc5r8c2t6p6al2ucw2t8xjzyt7j4mhv3hd0g';
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {
   await tester.binding.setSurfaceSize(const Size(1080, 720));

@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 
+import '../../fakes/fake_zns_name_resolver.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
+import 'package:zcash_wallet/src/core/naming/zns_recipient_lookup.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -493,6 +496,7 @@ Widget _app({
   BigInt? requestedAmountZatoshi,
   PaymentRequestPrecheck? precheck,
   ValueChanged<Object?>? onLedgerRoute,
+  ZnsNameResolver? Function()? znsResolver,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -547,6 +551,8 @@ Widget _app({
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
       if (precheck != null)
         paymentRequestPrecheckProvider.overrideWithValue(precheck),
+      if (znsResolver != null)
+        znsNameResolverProvider.overrideWithValue(znsResolver()),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -671,6 +677,7 @@ Widget _sendFlowRouterApp({
   /// router starts on `/send/review` — the payment-request card's Review, which
   /// makes the review the whole stack.
   MobileSendReviewDraftArgs? initialReviewDraft,
+  ZnsNameResolver? Function()? znsResolver,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -720,6 +727,7 @@ Widget _sendFlowRouterApp({
             preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
+            initialZnsName: args.recipientZnsName,
             isPaymentRequest: args.isPaymentRequest,
             paymentRequestLabel: args.requestedBy,
             requestedAmountZatoshi: args.requestedAmountZatoshi,
@@ -752,6 +760,7 @@ Widget _sendFlowRouterApp({
             preserveInitialMemoWhitespace: args.preserveMemoWhitespace,
             initialContactLabel: args.contactLabel,
             initialContactPictureId: args.contactPictureId,
+            initialZnsName: args.recipientZnsName,
             isPaymentRequest: args.isPaymentRequest,
             paymentRequestLabel: args.requestedBy,
             requestedAmountZatoshi: args.requestedAmountZatoshi,
@@ -810,6 +819,8 @@ Widget _sendFlowRouterApp({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      if (znsResolver != null)
+        znsNameResolverProvider.overrideWithValue(znsResolver()),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -826,6 +837,8 @@ Future<void> _enterAddress(WidgetTester tester, String address) async {
     ),
     address,
   );
+  // A Zcash name waits out the lookup debounce; an address is unaffected.
+  await tester.pump(kZnsLookupDebounce);
   await tester.pumpAndSettle();
 }
 
@@ -1476,6 +1489,84 @@ void main() {
           .text,
       isEmpty,
     );
+  });
+
+  group('a Zcash name as the recipient', () {
+    testWidgets('resolves and carries the name through to the proposal', (
+      tester,
+    ) async {
+      final resolver = FakeZnsNameResolver({'alice': _shieldedAddress});
+      await tester.pumpWidget(_sendFlowRouterApp(znsResolver: () => resolver));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_send_open_from_home')),
+      );
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, 'Alice.zcash');
+
+      expect(resolver.lookups, ['alice']);
+      expect(
+        find.byKey(const ValueKey('mobile_send_address_zns_match')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter Amount'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_send_amount_recipient_row')),
+          matching: find.text('alice.zcash'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('mobile_send_amount_recipient_zns_icon')),
+        findsOneWidget,
+      );
+
+      await _enterAmount(tester, '1.5');
+      await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Review Send'), findsOneWidget);
+      expect(find.text('alice.zcash'), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(_lastProposeToAddress, _shieldedAddress);
+      expect(resolver.lookups, ['alice'], reason: 'only compose looks it up');
+    });
+
+    testWidgets('an unregistered name says so and keeps Continue off', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_app(znsResolver: FakeZnsNameResolver.new));
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, 'nobody.zec');
+
+      expect(find.text(ZnsLookupStatus.notRegistered.message), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('mobile_send_continue')),
+            )
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('a bare word is never looked up', (tester) async {
+      final resolver = FakeZnsNameResolver({'alice': _shieldedAddress});
+      await tester.pumpWidget(_app(znsResolver: () => resolver));
+      await tester.pumpAndSettle();
+
+      await _enterAddress(tester, 'alice');
+
+      expect(resolver.lookups, isEmpty);
+    });
   });
 
   testWidgets('route-step mode lets amount and review pop as pages', (

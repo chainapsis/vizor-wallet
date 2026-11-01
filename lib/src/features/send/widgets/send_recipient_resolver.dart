@@ -98,14 +98,18 @@ AddressBookContact? sendRecipientContactFor({
 /// * the contact variant with the account name/avatar when the address is
 ///   one of the user's own accounts ([ownAccounts], keyed by trimmed
 ///   address — see [ownAccountAddressesProvider]),
+/// * the name variant when the user entered the recipient as the Zcash name
+///   [znsName] (display form, such as `alice.zcash`),
 /// * the raw-address variant otherwise.
 ///
 /// A saved contact wins over the own-account match: when the user labeled
 /// their own address in the address book, that label is the chosen display.
+/// Both win over [znsName], because they are the user's own records.
 SendReviewRecipient sendReviewRecipientFor({
   required Iterable<AddressBookContact> contacts,
   required String address,
   Map<String, AccountInfo> ownAccounts = const {},
+  String? znsName,
 }) {
   final contact = sendRecipientContactFor(contacts: contacts, address: address);
   if (contact != null) {
@@ -122,6 +126,9 @@ SendReviewRecipient sendReviewRecipientFor({
       name: ownAccount.name.trim(),
       profilePictureId: ownAccount.profilePictureId,
     );
+  }
+  if (znsName != null && znsName.isNotEmpty) {
+    return SendReviewNameRecipient(address: address, name: znsName);
   }
   return SendReviewAddressRecipient(address: address);
 }

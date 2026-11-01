@@ -20,7 +20,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(MobileSendScreen), findsOneWidget);
     expect(find.text('Select Recipient'), findsOneWidget);
-    expect(find.text('Address or request link'), findsOneWidget);
+    expect(find.text('Address, name, or request link'), findsOneWidget);
     expect(find.text('Paste'), findsNothing);
     expect(find.text('Scan a QR Code'), findsOneWidget);
     expect(find.text('Continue'), findsNothing);

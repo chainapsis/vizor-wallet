@@ -124,19 +124,22 @@ class SendVerifyAddressOverlay extends ConsumerWidget {
         variant: switch (recipient) {
           SendReviewContactRecipient() =>
             VerifyAddressModalVariant.knownContact,
-          SendReviewAddressRecipient() => VerifyAddressModalVariant.unknown,
+          // A ZNS name is the resolver's claim, not the user's record, so
+          // the address is checked like any unknown one.
+          SendReviewAddressRecipient() ||
+          SendReviewNameRecipient() => VerifyAddressModalVariant.unknown,
         },
         unknownAddressKind: isShieldedAddress
             ? VerifyAddressModalAddressKind.shielded
             : VerifyAddressModalAddressKind.transparent,
         contactName: switch (recipient) {
           SendReviewContactRecipient(:final name) => name,
-          SendReviewAddressRecipient() => null,
+          SendReviewAddressRecipient() || SendReviewNameRecipient() => null,
         },
         contactProfilePictureId: switch (recipient) {
           SendReviewContactRecipient(:final profilePictureId) =>
             profilePictureId,
-          SendReviewAddressRecipient() => null,
+          SendReviewAddressRecipient() || SendReviewNameRecipient() => null,
         },
         previousTransactionCount: previousTransactionCount,
         onClose: onClose,

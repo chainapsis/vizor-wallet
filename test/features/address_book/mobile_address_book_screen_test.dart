@@ -5,12 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:zcash_wallet/src/core/naming/zns_name_resolver.dart';
+import 'package:zcash_wallet/src/core/naming/zns_recipient_lookup.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/screens/mobile/mobile_address_book_screen.dart';
+
+import '../../fakes/fake_zns_name_resolver.dart';
 
 void main() {
   setUp(() async {
@@ -247,7 +251,119 @@ void main() {
     await tester.pump();
     expect(save().onPressed, isNotNull);
   });
+
+  group('a contact entered by Zcash name', () {
+    AppButton save(WidgetTester tester) => tester.widget<AppButton>(
+      find.byKey(const ValueKey('mobile_address_book_save')),
+    );
+
+    Future<void> enterContact(WidgetTester tester, String address) async {
+      await tester.tap(find.byKey(const ValueKey('mobile_contacts_add_empty')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_address_book_label')),
+        'Alice',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_address_book_address')),
+        address,
+      );
+      await tester.pump(kZnsLookupDebounce);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('saves the resolved address with the name beside it', (
+      tester,
+    ) async {
+      await _setMobileViewport(tester);
+      final repo = _FakeRepo();
+      await tester.pumpWidget(
+        _harness(
+          repo,
+          znsResolver: FakeZnsNameResolver({'alice': _znsAddress}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterContact(tester, 'alice.zec');
+
+      expect(find.textContaining('Resolves to u14lms'), findsOneWidget);
+      expect(find.text('Invalid Zcash address'), findsNothing);
+      expect(save(tester).onPressed, isNotNull);
+
+      final saveButton = find.byKey(const ValueKey('mobile_address_book_save'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+
+      expect(repo.contacts.single.address, _znsAddress);
+      expect(repo.contacts.single.znsName, 'alice.zcash');
+    });
+
+    testWidgets('re-picking the same network keeps a saved name', (
+      tester,
+    ) async {
+      await _setMobileViewport(tester);
+      final repo = _FakeRepo([
+        AddressBookContact(
+          id: 'alice',
+          label: 'Alice',
+          network: AddressBookNetwork.zcash,
+          address: _znsAddress,
+          profilePictureId: kDefaultProfilePictureId,
+          createdAtMs: 0,
+          updatedAtMs: 0,
+          znsName: 'alice.zcash',
+        ),
+      ]);
+      await tester.pumpWidget(
+        _harness(repo, znsResolver: FakeZnsNameResolver()),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('mobile_contact_menu_alice')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_contact_menu_edit')));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved from alice.zcash'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_address_book_network')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Zcash').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Saved from alice.zcash'), findsOneWidget);
+      final saveButton = find.byKey(const ValueKey('mobile_address_book_save'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+
+      expect(repo.contacts.single.znsName, 'alice.zcash');
+    });
+
+    testWidgets('an unregistered name keeps save off', (tester) async {
+      await _setMobileViewport(tester);
+      await tester.pumpWidget(
+        _harness(_FakeRepo(), znsResolver: FakeZnsNameResolver()),
+      );
+      await tester.pumpAndSettle();
+
+      await enterContact(tester, 'nobody.zcash');
+
+      expect(find.text(ZnsLookupStatus.notRegistered.message), findsOneWidget);
+      expect(save(tester).onPressed, isNull);
+    });
+  });
 }
+
+const _znsAddress =
+    'u14lms6q2sg984hhng068lqesatnak86mlg297x0qkqsvkqgk2m7dyj5x2grlku3adg2tq6t'
+    'rl5ue3vce7c3jnu5808kw9lsr890kfetrg524q4pgcn4zcnp84na85453pz67cjfy4sx7y6z'
+    '6zc9t7666utasw5mehe9r2dwwcrgzp94ah';
 
 Future<void> _setMobileViewport(WidgetTester tester) async {
   await tester.binding.setSurfaceSize(const Size(393, 852));
@@ -256,7 +372,7 @@ Future<void> _setMobileViewport(WidgetTester tester) async {
   });
 }
 
-Widget _harness(AddressBookRepository repo) {
+Widget _harness(AddressBookRepository repo, {ZnsNameResolver? znsResolver}) {
   final router = GoRouter(
     initialLocation: '/settings/address-book',
     routes: [
@@ -270,7 +386,11 @@ Widget _harness(AddressBookRepository repo) {
   );
 
   return ProviderScope(
-    overrides: [addressBookRepositoryProvider.overrideWithValue(repo)],
+    overrides: [
+      addressBookRepositoryProvider.overrideWithValue(repo),
+      if (znsResolver != null)
+        znsNameResolverProvider.overrideWithValue(znsResolver),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),

@@ -49,6 +49,50 @@ void main() {
     );
   });
 
+  test('an entered Zcash name resolves to the name variant', () {
+    final recipient = sendReviewRecipientFor(
+      contacts: const [],
+      address: _address,
+      znsName: 'alice.zcash',
+    );
+    expect(
+      recipient,
+      isA<SendReviewNameRecipient>()
+          .having((r) => r.name, 'name', 'alice.zcash')
+          .having((r) => r.address, 'address', _address),
+    );
+  });
+
+  test("the user's own records win over an entered Zcash name", () {
+    expect(
+      sendReviewRecipientFor(
+        contacts: [_contact('Alice', _address)],
+        address: _address,
+        znsName: 'alice.zcash',
+      ),
+      isA<SendReviewContactRecipient>().having((r) => r.name, 'name', 'Alice'),
+    );
+    expect(
+      sendReviewRecipientFor(
+        contacts: const [],
+        address: _address,
+        ownAccounts: {
+          _address: const AccountInfo(
+            uuid: 'uuid-1',
+            name: 'Savings',
+            order: 0,
+          ),
+        },
+        znsName: 'alice.zcash',
+      ),
+      isA<SendReviewContactRecipient>().having(
+        (r) => r.name,
+        'name',
+        'Savings',
+      ),
+    );
+  });
+
   test('own-account match trims the recipient address', () {
     final recipient = sendReviewRecipientFor(
       contacts: const [],

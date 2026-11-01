@@ -8,10 +8,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../core/formatting/address_display.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/naming/zns_name_resolver.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
@@ -43,6 +45,7 @@ import '../models/send_scan_result.dart';
 import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
 import '../services/send_proving_key_warmup.dart';
+import '../../../core/naming/zns_recipient_lookup.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_layout.dart' show SendReviewContactRecipient;
 
@@ -231,6 +234,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   /// every gate that already refuses bad addresses keeps refusing this one;
   /// this flag changes nothing but the sentence under the field.
   bool _addressWrongNetwork = false;
+
+  /// The Zcash name state of the address field.
+  final _zns = ZnsRecipientState();
   String?
   _amountError; // null = no error, empty string = silent invalid (empty/dot)
   // Canonical wallet amount used for validation and Rust calls. The controller
@@ -405,13 +411,43 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       setState(() {
         _addressType = '';
         _addressWrongNetwork = false;
+        _zns.clearLookup();
       });
       _handleAddressValidationSettled();
       return;
     }
+    // A Zcash name resolves first. The address it names then goes through
+    // the same validation as a typed one.
+    ZnsResolution? resolution;
+    final znsName = znsNameFromRecipientInput(addr);
+    if (znsName != null) {
+      setState(() {
+        _addressType = '';
+        _addressWrongNetwork = false;
+        _zns.begin();
+      });
+      await Future<void>.delayed(kZnsLookupDebounce);
+      if (!mounted || seq != _addressSeq) return;
+      final lookup = await lookUpZnsRecipient(
+        ref.read(znsNameResolverProvider),
+        znsName,
+      );
+      if (!mounted || seq != _addressSeq) return;
+      switch (lookup) {
+        case ZnsRecipientMissing(:final status):
+          setState(() {
+            _addressType = status.addressType;
+            _zns.fail(status);
+          });
+          _handleAddressValidationSettled();
+          return;
+        case ZnsRecipientFound(resolution: final found):
+          resolution = found;
+      }
+    }
     try {
       final result = await rust_sync.validateAddress(
-        address: addr,
+        address: resolution?.address ?? addr,
         network: ref.read(rpcEndpointProvider).networkName,
       );
       if (!mounted || seq != _addressSeq) return;
@@ -419,6 +455,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       setState(() {
         _addressType = nextAddressType;
         _addressWrongNetwork = result.wrongNetwork;
+        _zns.settle(addr, resolution, addressValid: result.isValid);
         if (_isTransparentLikeType(nextAddressType)) {
           _messageExpanded = false;
           _preserveMemoWhitespace = false;
@@ -435,10 +472,14 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       setState(() {
         _addressType = 'error';
         _addressWrongNetwork = false;
+        _zns.clearLookup();
       });
       _handleAddressValidationSettled();
     }
   }
+
+  /// The address this send pays: the resolved name's address, or the field.
+  String get _recipientAddress => _zns.paymentAddress(_addressController.text);
 
   void _handleAddressValidationSettled() {
     if (_isMaxMode) {
@@ -461,6 +502,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     setState(() {
       _addressType = '';
       _addressWrongNetwork = false;
+      _zns.clearLookup();
       _error = null;
       if (_isMaxMode) {
         _validateSeq++;
@@ -696,7 +738,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final quote = _maxQuote;
     if (quote == null) return false;
     return quote.accountUuid == widget.activeAccountUuid &&
-        quote.address == _addressController.text.trim() &&
+        quote.address == _recipientAddress &&
         quote.memo == _effectiveMemo &&
         parseZecAmount(_amountText.trim()) == quote.amountZatoshi;
   }
@@ -785,7 +827,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   Future<void> _resolveMaxEstimate(int seq) async {
     final accountUuid = widget.activeAccountUuid;
-    final address = _addressController.text.trim();
+    final address = _recipientAddress;
     final memo = _effectiveMemo;
     if (accountUuid == null || !_isMaxMode || seq != _maxSeq) return;
 
@@ -901,7 +943,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
-    final address = _addressController.text.trim();
+    final address = _recipientAddress;
     if (address.isEmpty ||
         _addressType == 'invalid' ||
         _addressType == 'error' ||
@@ -999,7 +1041,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     var pushedReview = false;
 
     try {
-      final address = _addressController.text.trim();
+      final address = _recipientAddress;
+      final znsName = _zns.displayName(_addressController.text);
       final amountZatoshi = parseZecAmount(_amountText.trim());
 
       if (_isResolvingMax) {
@@ -1073,6 +1116,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         isPaymentRequest: request != null,
         requestedBy: request?.label,
         requestedAmountZatoshi: parseZecAmount(request?.amountText ?? ''),
+        recipientZnsName: znsName,
       );
       activeProposalId = reviewArgs.proposalId;
 
@@ -1172,49 +1216,68 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     _addressController.edgeHighlightColor = null;
 
-    final addressTone = switch (_addressType) {
-      'invalid' || 'error' => AppTextFieldTone.destructive,
-      _ => AppTextFieldTone.neutral,
-    };
     // Live contact-match feedback: when the entered address is valid and
     // matches a saved contact (or one of the user's own accounts — the same
     // resolution the review screen shows), surface the name under the field
     // so the user knows the pasted/typed address is the intended one.
     // Validation messages keep priority over the match line.
     String? matchedRecipientName;
+    final currentZns = _zns.resolutionFor(_addressController.text);
     if (_hasValidAddress) {
       final recipient = sendReviewRecipientFor(
         contacts: addressBookContacts,
-        address: _addressController.text.trim(),
+        address: _recipientAddress,
         ownAccounts: ref.watch(ownAccountAddressesProvider).value ?? const {},
       );
       if (recipient is SendReviewContactRecipient) {
         matchedRecipientName = recipient.name;
       }
     }
-    final addressMessage = switch (_addressType) {
-      // A wrong-network address is well-formed, so "Invalid address" would
-      // send the user hunting for a typo that is not there.
-      'invalid' =>
-        _addressWrongNetwork
-            ? kWrongNetworkAddressMessage
-            : isZcashPaymentLink(_addressController.text)
-            ? kUnreadablePaymentLinkMessage
-            : 'Invalid address',
-      'error' => 'Address validation failed',
-      _ => matchedRecipientName,
+    // A typed name shows the address it resolved to, so the user sees what
+    // the name points at before review. A saved contact keeps priority.
+    final znsResolvedLine = currentZns != null && matchedRecipientName == null
+        ? 'Resolves to ${truncatedAddress(currentZns.address)}'
+        : null;
+    // A resolved name takes the field's success tone (check icon), the same
+    // state on every send surface.
+    final addressTone = switch (_addressType) {
+      'invalid' || 'error' => AppTextFieldTone.destructive,
+      _ when znsResolvedLine != null => AppTextFieldTone.success,
+      _ => AppTextFieldTone.neutral,
     };
-    final addressMessageIcon = switch (_addressType) {
-      'invalid' || 'error' => AppIcon(
-        AppIcons.warning,
-        size: 16,
-        color: colors.text.destructive,
-      ),
-      _ =>
-        matchedRecipientName == null
-            ? null
-            : AppIcon(AppIcons.user, size: 16, color: colors.icon.brandCrimson),
-    };
+    final znsStatusMessage = _zns.status?.message;
+    final addressMessage =
+        znsStatusMessage ??
+        switch (_addressType) {
+          // A wrong-network address is well-formed, so "Invalid address" would
+          // send the user hunting for a typo that is not there.
+          'invalid' =>
+            _addressWrongNetwork
+                ? kWrongNetworkAddressMessage
+                : isZcashPaymentLink(_addressController.text)
+                ? kUnreadablePaymentLinkMessage
+                : 'Invalid address',
+          'error' => 'Address validation failed',
+          _ => matchedRecipientName ?? znsResolvedLine,
+        };
+    final addressMessageIcon = _zns.status == ZnsLookupStatus.resolving
+        ? AppIcon(AppIcons.globe, size: 16, color: colors.icon.muted)
+        : switch (_addressType) {
+            'invalid' || 'error' => AppIcon(
+              AppIcons.warning,
+              size: 16,
+              color: colors.text.destructive,
+            ),
+            _ =>
+              matchedRecipientName != null
+                  ? AppIcon(
+                      AppIcons.user,
+                      size: 16,
+                      color: colors.icon.brandCrimson,
+                    )
+                  // Null lets the success tone show its check icon.
+                  : null,
+          };
     final addressHasText = _addressController.text.trim().isNotEmpty;
     final addressLeadingIcon = switch (_addressType) {
       'unified' || 'sapling' => AppIcons.shieldKeyhole,
@@ -1362,7 +1425,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                         : null,
                                     focusNode: focusNode,
                                     controller: controller,
-                                    hintText: 'Address or request link',
+                                    hintText: 'Address, name, or request link',
                                     leading: AppIcon(
                                       addressLeadingIcon,
                                       size: 20,
@@ -1380,6 +1443,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                       setState(() {
                                         _addressType = '';
                                         _addressWrongNetwork = false;
+                                        _zns.clearLookup();
                                         _error = null;
                                         if (_isMaxMode) {
                                           _validateSeq++;

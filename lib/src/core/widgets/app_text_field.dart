@@ -401,30 +401,11 @@ class _AppTextFieldState extends State<AppTextField> {
             widget.surface == AppTextFieldSurface.secondary
         ? const <BoxShadow>[]
         : _appTextFieldSurfaceShadow(colors);
-    final messageColor = switch (widget.tone) {
-      AppTextFieldTone.neutral => colors.text.secondary,
-      AppTextFieldTone.destructive => colors.text.destructive,
-      AppTextFieldTone.success => colors.text.success,
-      AppTextFieldTone.brandCrimson => colors.text.brandCrimson,
-    };
-    final defaultMessageIcon = switch (widget.tone) {
-      AppTextFieldTone.neutral => null,
-      AppTextFieldTone.destructive => AppIcon(
-        AppIcons.warning,
-        size: AppIconSize.medium,
-        color: messageColor,
-      ),
-      AppTextFieldTone.success => AppIcon(
-        AppIcons.checkCircle,
-        size: AppIconSize.medium,
-        color: messageColor,
-      ),
-      AppTextFieldTone.brandCrimson => AppIcon(
-        AppIcons.shieldKeyhole,
-        size: AppIconSize.medium,
-        color: messageColor,
-      ),
-    };
+    final messageColor = appTextFieldMessageColor(colors, widget.tone);
+    final defaultMessageIcon = appTextFieldMessageIcon(
+      widget.tone,
+      messageColor,
+    );
     final shouldShowClearButton =
         widget.showClearButton &&
         (_isFocused || _hovered) &&
@@ -855,6 +836,29 @@ class _AppTextFieldState extends State<AppTextField> {
       ],
     );
   }
+}
+
+/// The message color [AppTextField] uses for [tone]. Public so a screen that
+/// draws its own field message (see `AppFieldStatusLine`) matches the field.
+Color appTextFieldMessageColor(AppColors colors, AppTextFieldTone tone) =>
+    switch (tone) {
+      AppTextFieldTone.neutral => colors.text.secondary,
+      AppTextFieldTone.destructive => colors.text.destructive,
+      AppTextFieldTone.success => colors.text.success,
+      AppTextFieldTone.brandCrimson => colors.text.brandCrimson,
+    };
+
+/// The default message icon [AppTextField] shows for [tone], or null.
+Widget? appTextFieldMessageIcon(AppTextFieldTone tone, Color color) {
+  final iconName = switch (tone) {
+    AppTextFieldTone.neutral => null,
+    AppTextFieldTone.destructive => AppIcons.warning,
+    AppTextFieldTone.success => AppIcons.checkCircle,
+    AppTextFieldTone.brandCrimson => AppIcons.shieldKeyhole,
+  };
+  return iconName == null
+      ? null
+      : AppIcon(iconName, size: AppIconSize.medium, color: color);
 }
 
 List<BoxShadow> _appTextFieldSurfaceShadow(AppColors colors) =>
