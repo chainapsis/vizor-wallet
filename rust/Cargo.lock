@@ -6800,8 +6800,7 @@ dependencies = [
 [[package]]
 name = "tor-rtcompat"
 version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "591b0b0695e86c2958b8ab9c431f6fea17b544ef3ed3931bbfe96239fd5c9193"
+source = "git+https://github.com/zakura-core/arti.git?rev=69d025f04aa67454160a8d3e0d1706366faf99ea#69d025f04aa67454160a8d3e0d1706366faf99ea"
 dependencies = [
  "async-trait",
  "async_executors",
