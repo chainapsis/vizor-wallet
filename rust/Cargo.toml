@@ -8,8 +8,8 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 zakura-pir-protocol = { version = "=0.0.1-rc3", default-features = false, features = ["http-endpoint"] }
-zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
+zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
 zakura-pir-client = { version = "=0.0.1-rc3", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
 zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
 flutter_rust_bridge = "=2.11.1"
@@ -49,6 +49,8 @@ sha2 = "0.10"
 
 # Random number generation
 rand = "0.8"
+# Preserve the existing entropy and browser backends after trimming Flume.
+getrandom = { version = "0.2", default-features = false, features = ["js", "rdrand"] }
 
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
@@ -266,14 +268,15 @@ opt-level = 3
 
 # Shared PIR configuration and product routes are not released yet.
 [patch.crates-io]
-zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-filters = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-pir-client = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-pir-protocol = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-pir-publisher = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-pir-query-server = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
-zakura-pir-server-core = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
+tor-rtcompat = { git = "https://github.com/zakura-core/arti.git", rev = "69d025f04aa67454160a8d3e0d1706366faf99ea" }
+zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-pczt = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-filters = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-pir-client = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-pir-protocol = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-pir-publisher = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-pir-query-server = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
+zakura-pir-server-core = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "07448047042367ed79dc6c0c36854671129b2724" }
 # The library above takes `ipir-sp` from git. Keep the app's test evaluator on that source.
 ipir-sp = { git = "https://github.com/valargroup/ipir-sp", rev = "5ea080a3281a01c5459f585e0a1bbbde50ec2bd2" }
