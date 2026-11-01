@@ -879,7 +879,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "724949bdda5310709ca2f97bf69c2b01e3362f44fef1fb47913445db4c1debb5"
 dependencies = [
  "derive-deftly-macros",
- "heck 0.4.1",
+ "heck 0.5.0",
 ]
 
 [[package]]
@@ -888,9 +888,9 @@ version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17933e749f2502cfcd1c27519292fbbea22e8fc64ce680e863f855e8cd8cce23"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "indexmap",
- "itertools 0.10.5",
+ "itertools 0.15.0",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -2958,7 +2958,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -2971,7 +2971,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -3420,7 +3420,7 @@ dependencies = [
  "ur-registry",
  "url",
  "uuid",
- "vote-commitment-tree 0.8.0",
+ "vote-commitment-tree",
  "voting-crypto-deps",
  "zakura-address",
  "zakura-bls12-381",
@@ -3854,7 +3854,7 @@ version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1c97747dbf44bb1ca44a561ece23508e99cb592e862f22222dcf42f51d1e451"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -4575,23 +4575,8 @@ checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 
 [[package]]
 name = "vote-commitment-tree"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1f61ca7b949f575d170640d92009537ddefe5f75e20f7b981f7404c01f1bf8c"
-dependencies = [
- "anyhow",
- "imt-tree",
- "incrementalmerkletree",
- "lazy_static",
- "libc",
- "shardtree",
- "voting-crypto-deps",
-]
-
-[[package]]
-name = "vote-commitment-tree"
 version = "0.8.1"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=6d4ab976a7d6ea6c8a90186e5cca8d5eff387a90#6d4ab976a7d6ea6c8a90186e5cca8d5eff387a90"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=bebc3996e225407b4e5a3889a12b19b1d3842b3a#bebc3996e225407b4e5a3889a12b19b1d3842b3a"
 dependencies = [
  "imt-tree",
  "incrementalmerkletree",
@@ -4602,14 +4587,14 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.10.1"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=6d4ab976a7d6ea6c8a90186e5cca8d5eff387a90#6d4ab976a7d6ea6c8a90186e5cca8d5eff387a90"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=bebc3996e225407b4e5a3889a12b19b1d3842b3a#bebc3996e225407b4e5a3889a12b19b1d3842b3a"
 dependencies = [
  "base64",
  "hex",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
- "vote-commitment-tree 0.8.1",
+ "vote-commitment-tree",
  "voting-crypto-deps",
 ]
 
@@ -6712,7 +6697,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "5.3.0"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=6d4ab976a7d6ea6c8a90186e5cca8d5eff387a90#6d4ab976a7d6ea6c8a90186e5cca8d5eff387a90"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=bebc3996e225407b4e5a3889a12b19b1d3842b3a#bebc3996e225407b4e5a3889a12b19b1d3842b3a"
 dependencies = [
  "anyhow",
  "base64",
@@ -6745,7 +6730,7 @@ dependencies = [
  "url",
  "uuid",
  "valar-ypir",
- "vote-commitment-tree 0.8.1",
+ "vote-commitment-tree",
  "vote-commitment-tree-client",
  "voting-circuits",
  "voting-crypto-deps",

@@ -149,7 +149,7 @@ features = ["orchard", "transparent-inputs", "unstable", "serde"]
 [dependencies.zcash_voting]
 version = "=5.3.0"
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "6d4ab976a7d6ea6c8a90186e5cca8d5eff387a90"
+rev = "bebc3996e225407b4e5a3889a12b19b1d3842b3a"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -233,7 +233,7 @@ features = ["test-dependencies"]
 [dev-dependencies.zcash_voting]
 version = "=5.3.0"
 git = "https://github.com/valargroup/zcash_voting.git"
-rev = "6d4ab976a7d6ea6c8a90186e5cca8d5eff387a90"
+rev = "bebc3996e225407b4e5a3889a12b19b1d3842b3a"
 features = ["test-fixtures"]
 
 # Real adapter batches for the coordinator's fixture source, the fake txid
@@ -248,7 +248,7 @@ features = ["testing"]
 version = "=0.1.0-rc.7"
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.8.0"
+version = "=0.8.1"
 default-features = false
 features = ["zakura"]
 
@@ -268,8 +268,8 @@ should_implement_trait = "allow"
 items_after_test_module = "allow"
 assertions_on_constants = "allow"
 
-# Wallet and voting dependencies use their coordinated published releases.
-# Voting 5.2 is an explicit opt-in; keep the exact prerelease pin during validation.
+# Wallet and voting dependencies share the pinned Common 5 compatibility stack.
+# Replace these temporary source pins after coordinated upstream releases.
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
 # without `--release`). Rust crypto and voting flows are slow under the default
@@ -300,3 +300,4 @@ ipir-sp = { git = "https://github.com/valargroup/ipir-sp", rev = "5ea080a3281a01
 zakura-wallet-lib = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "328327a8f38cfcbacbad7efae1b44c84049e9fa0" }
 voting-circuits = { git = "https://github.com/valargroup/voting-circuits.git", rev = "262e12ce86727016c7b125b284becf1c2695a364" }
 voting-crypto-deps = { git = "https://github.com/valargroup/voting-circuits.git", rev = "262e12ce86727016c7b125b284becf1c2695a364" }
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting.git", rev = "bebc3996e225407b4e5a3889a12b19b1d3842b3a" }
