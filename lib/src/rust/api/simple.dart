@@ -17,6 +17,13 @@ Future<void> configureRegtestIronwoodActivationHeight({required int height}) =>
       height: height,
     );
 
+/// Activates NU7 on regtest at the local node's height. Call after the NU6.3
+/// height; production builds leave NU7 inactive on regtest.
+Future<void> configureRegtestNu7ActivationHeight({required int height}) =>
+    RustLib.instance.api.crateApiSimpleConfigureRegtestNu7ActivationHeight(
+      height: height,
+    );
+
 /// Enables Regtest-speed migration timing on Testnet only. Mainnet and
 /// Regtest consensus behavior are unaffected.
 Future<void> configureFastTestnetMigration({required bool enabled}) => RustLib

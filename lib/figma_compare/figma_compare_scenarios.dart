@@ -143,6 +143,12 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     platform: TargetPlatform.macOS,
   ),
   FigmaCompareScenario(
+    id: 'ledger-onboarding-viewing-key-approval',
+    description: 'Ledger onboarding: viewing-key approval names the account',
+    builder: buildLedgerOnboardingViewingKeyApproval,
+    platform: TargetPlatform.macOS,
+  ),
+  FigmaCompareScenario(
     id: 'ledger-onboarding-usb-error',
     description: 'Ledger onboarding: USB account export recovery',
     builder: buildLedgerOnboardingUsbError,
@@ -1279,6 +1285,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ledger-signing-memo-hash-update',
     description: 'Ledger signing: memo needs a newer Zcash app',
     builder: _buildLedgerSigningMemoHashUpdate,
+  ),
+  FigmaCompareScenario(
+    id: 'ledger-signing-app-update',
+    description: 'Ledger signing: transaction needs Zcash app 3.10.0',
+    builder: _buildLedgerSigningAppUpdate,
   ),
   FigmaCompareScenario(
     id: 'ledger-signing-voting-processing',
@@ -2951,6 +2962,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-nu7-announcement',
+    description: 'Mobile NU7 announcement sheet',
+    builder: buildMobileHomeNu7AnnouncementUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-nu7-announcement',
+    description: 'Desktop NU7 announcement modal',
+    builder: buildDesktopHomeNu7AnnouncementUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-announcement-modal',
     description: 'Ironwood migration announcement modal',
     builder: buildIronwoodMigrationAnnouncementModalUseCase,
@@ -2971,6 +2994,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     description:
         'Desktop home showing spendable Ironwood balance during migration',
     builder: buildDesktopHomeIronwoodMigrationInProgressUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'desktop-home-ironwood-upgrade-stopped',
+    description: 'Desktop home CTA for an upgrade-stopped migration',
+    builder: buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase,
   ),
   FigmaCompareScenario(
     id: 'desktop-home-sidebar-compact-balances',
@@ -3112,6 +3140,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ironwood-migration-stop-confirmation',
     description: 'Ironwood migration cancellation final confirmation',
     builder: buildIronwoodMigrationStopConfirmationUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-upgrade-stopped',
+    description: 'Desktop migration stopped by the network upgrade',
+    builder: buildIronwoodMigrationUpgradeStoppedUseCase,
   ),
   FigmaCompareScenario(
     id: 'ironwood-migration-complete',
@@ -3293,6 +3326,27 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-home-ironwood-migration-attention',
     description: 'Mobile home migration signature attention card',
     builder: buildMobileIronwoodMigrationHomeAttentionUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-upgrade-stopped',
+    description: 'Mobile migration stopped by the network upgrade',
+    builder: buildMobileIronwoodMigrationUpgradeStoppedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ironwood-upgrade-stopped',
+    description: 'Mobile home banner for an upgrade-stopped migration',
+    builder: buildMobileIronwoodMigrationHomeUpgradeStoppedUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-home-ironwood-upgrade-stopped-modal',
+    description: 'Mobile home sheet for an upgrade-stopped migration',
+    builder: buildMobileIronwoodMigrationHomeUpgradeStoppedModalUseCase,
     desktop: false,
     mobile: true,
   ),
@@ -3958,6 +4012,12 @@ Widget _buildLedgerSigningMemoHashUpdate(BuildContext context) =>
     buildLedgerSigningPreview(
       phase: LedgerSigningModalPhase.failed,
       failureMode: LedgerSigningPlaygroundFailure.memoHashUpdate,
+    );
+
+Widget _buildLedgerSigningAppUpdate(BuildContext context) =>
+    buildLedgerSigningPreview(
+      phase: LedgerSigningModalPhase.failed,
+      failureMode: LedgerSigningPlaygroundFailure.appUpdate,
     );
 
 Widget _buildLedgerVotingProcessing(BuildContext context) =>

@@ -31,6 +31,17 @@ missing dependencies, or incompatible dependency versions cause packaging to
 fail before signing or creating the AppImage. The build environment requires
 Python 3, `readelf` (binutils), and `ldd`.
 
+The runtime launcher ignores inherited `LD_LIBRARY_PATH` values. It searches
+the two AppDir library directories first, then uses the loader's normal system
+paths for host libraries. AppDir paths containing `:` or `;` are rejected because
+the loader interprets those characters as search-path separators.
+Run the focused launcher regression checks on Linux
+with Bash, Python 3, and a C compiler:
+
+```bash
+python3 scripts/linux-appimage/test_app_run.py
+```
+
 The runtime environment needs GTK 3, a Secret Service provider, udev, and
 EGL/GLES/Mesa or the appropriate GPU drivers. Minimal and server installations
 may need additional packages. Relevant Ubuntu packages include `libgtk-3-0`,

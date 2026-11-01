@@ -1230,6 +1230,9 @@ pub struct MigrationScheduledTransfer {
     pub part_index: u32,
     pub value_zatoshi: u64,
     pub block_offset: u32,
+    /// Blocks per ZIP 318 reference block the schedule was drawn at; an
+    /// approved schedule drawn at another spacing is refused.
+    pub blocks_per_reference_block: u32,
 }
 
 pub struct MigrationOutboxItem {
@@ -1242,6 +1245,8 @@ pub struct MigrationOutboxItem {
     pub scheduled_height: u32,
     pub schedule_start_height: u32,
     pub expiry_height: u32,
+    /// Height the part was signed for; the outbox holds it like the foreground.
+    pub target_height: u32,
 }
 
 pub struct MigrationOutboxBatch {
@@ -1420,6 +1425,7 @@ fn to_wallet_migration_schedule(
             part_index: Some(entry.part_index),
             value_zatoshi: entry.value_zatoshi,
             block_offset: entry.block_offset,
+            blocks_per_reference_block: entry.blocks_per_reference_block,
         })
         .collect()
 }
@@ -1548,6 +1554,30 @@ pub fn propose_send(
             memo.as_deref(),
         )
         .map(api_proposal_result)
+    })
+}
+
+/// Fee policy for new transactions at this wallet's authoritative target height.
+/// Reads only local chain state; no network request is made.
+pub struct WalletFeePolicy {
+    pub target_height: u32,
+    pub marginal_fee_zatoshi: u64,
+    pub minimum_fee_zatoshi: u64,
+}
+
+pub fn get_wallet_fee_policy(db_path: String, network: String) -> Result<WalletFeePolicy, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let target_height = wallet_sync::fee_policy_target(&db_path, network)?;
+        let marginal_fee = crate::wallet::fees::marginal_fee(
+            &network,
+            zcash_protocol::consensus::BlockHeight::from_u32(target_height),
+        );
+        Ok(WalletFeePolicy {
+            target_height,
+            marginal_fee_zatoshi: marginal_fee,
+            minimum_fee_zatoshi: 2 * marginal_fee,
+        })
     })
 }
 
@@ -1824,6 +1854,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
     approved_fee_zatoshi: u64,
     approved_migrated_zatoshi: u64,
     approved_input_note_count: u32,
+    keystone_batch: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1837,6 +1868,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
                 migrated_zatoshi: approved_migrated_zatoshi,
                 input_note_count: approved_input_note_count,
             },
+            keystone_batch,
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,
@@ -2200,6 +2232,7 @@ pub fn get_orchard_migration_private_plan(
                         part_index: entry.part_index.unwrap_or(0),
                         value_zatoshi: entry.value_zatoshi,
                         block_offset: entry.block_offset,
+                        blocks_per_reference_block: entry.blocks_per_reference_block,
                     })
                     .collect(),
             })
@@ -2277,6 +2310,7 @@ pub fn export_orchard_migration_outbox(
                         scheduled_height: item.scheduled_height,
                         schedule_start_height: item.schedule_start_height,
                         expiry_height: item.expiry_height,
+                        target_height: item.target_height,
                     })
                     .collect(),
             })

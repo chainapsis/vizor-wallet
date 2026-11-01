@@ -485,7 +485,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     final migrationCoordinator = ref.watch(
       ironwoodMigrationCoordinatorProvider,
     );
-    final migrationStatus = activeAccountUuid == null
+    // A run the upgrade stopped has no active run id, so the coordinator
+    // status alone would drop the section; the home CTA still carries it.
+    final migrationStatus =
+        ironwoodHomeMigrationPresentation.mode ==
+            IronwoodHomeMigrationCtaMode.stopped
+        ? ironwoodHomeMigrationPresentation.status
+        : activeAccountUuid == null
         ? null
         : migrationCoordinator.statuses[activeAccountUuid];
 
@@ -538,7 +544,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       ),
                     ),
                     SizedBox(height: headerNavGap),
-                    if (migrationStatus?.activeRunId != null &&
+                    if ((migrationStatus?.activeRunId != null ||
+                            migrationStatus?.phase ==
+                                kIronwoodMigrationStoppedByUpgradePhase) &&
                         migrationStatus?.phase !=
                             kIronwoodMigrationWaitingDenomConfirmationsPhase)
                       _SidebarMigrationHomeSection(
@@ -684,6 +692,8 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
         isKeystone &&
         status.phase == kIronwoodMigrationReadyToMigratePhase &&
         (signingPartIndices == null || signingPartIndices.isNotEmpty);
+    final stopped = status.phase == kIronwoodMigrationStoppedByUpgradePhase;
+    final attention = needsInput || stopped;
     final orchardLabel = hideAmountIfPrivacyMode(
       '${balanceIsAvailable ? _formatSidebarBalance(orchardBalance) : '—'} ZEC',
       privacyModeEnabled: privacyModeEnabled,
@@ -707,6 +717,7 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
               label: 'Home',
               iconName: AppIcons.home,
               onTap: onHome,
+              // A stopped run released its notes, so Orchard is no longer held.
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -714,31 +725,40 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
                     orchardLabel,
                     key: ValueKey('sidebar_orchard_balance'),
                     style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.secondary.withValues(alpha: 0.5),
+                      color: stopped
+                          ? colors.text.secondary
+                          : colors.text.secondary.withValues(alpha: 0.5),
                     ),
                   ),
-                  SizedBox(width: AppSpacing.xxs),
-                  AppIcon(
-                    AppIcons.lock,
-                    size: 16,
-                    color: colors.icon.regular.withValues(alpha: 0.5),
-                  ),
+                  if (!stopped) ...[
+                    SizedBox(width: AppSpacing.xxs),
+                    AppIcon(
+                      AppIcons.lock,
+                      size: 16,
+                      color: colors.icon.regular.withValues(alpha: 0.5),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
-          Positioned(
-            left: _SidebarMigrationGlow.left,
-            top: _SidebarMigrationGlow.top,
-            child: _SidebarMigrationGlow(),
-          ),
+          if (!stopped)
+            Positioned(
+              left: _SidebarMigrationGlow.left,
+              top: _SidebarMigrationGlow.top,
+              child: _SidebarMigrationGlow(),
+            ),
           Positioned(
             left: 0,
             right: 0,
             top: 40,
             child: AppSidebarItem(
               key: ValueKey('sidebar_migration_progress_button'),
-              label: needsInput ? 'Needs input' : 'Migrating...',
+              label: stopped
+                  ? 'Migration stopped'
+                  : needsInput
+                  ? 'Needs input'
+                  : 'Migrating...',
               leading: SizedBox(
                 width: _SidebarMigrationGlow.visualWidth,
                 height: _SidebarMigrationGlow.visualHeight,
@@ -747,9 +767,9 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
               inactiveOpacity: 0.64,
               onTap: onMigration,
               trailing: AppIcon(
-                needsInput ? AppIcons.warning : AppIcons.loader,
+                attention ? AppIcons.warning : AppIcons.loader,
                 size: 20,
-                color: needsInput ? colors.icon.warning : colors.icon.regular,
+                color: attention ? colors.icon.warning : colors.icon.regular,
               ),
             ),
           ),

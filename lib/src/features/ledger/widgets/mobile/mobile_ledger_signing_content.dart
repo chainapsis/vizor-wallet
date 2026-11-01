@@ -24,7 +24,6 @@ class MobileLedgerSigningContent extends StatelessWidget {
     this.account,
     required this.stage,
     required this.readiness,
-    required this.deviceModel,
     required this.saving,
     required this.finishing,
     required this.broadcasting,
@@ -47,7 +46,6 @@ class MobileLedgerSigningContent extends StatelessWidget {
   final VoidCallback? onAction;
   final LedgerSigningStage stage;
   final LedgerAppReadinessPhase readiness;
-  final String? deviceModel;
   final bool saving;
   final bool finishing;
   final bool broadcasting;
@@ -94,7 +92,7 @@ class MobileLedgerSigningContent extends StatelessWidget {
               ? 'Confirm opening Zcash on Ledger.'
               : 'Keep Ledger connected.'
         : stage == LedgerSigningStage.sending
-        ? ledgerSigningWaitInstruction(deviceModel)
+        ? kLedgerSigningWaitInstruction
         : stage == LedgerSigningStage.reviewing
         ? 'When prompted, check the amount and recipient on Ledger.'
         : stage == LedgerSigningStage.finishing

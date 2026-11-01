@@ -1,3 +1,5 @@
+import 'ledger_capability.dart';
+
 /// Temporary product limit for user-selected Ledger onboarding accounts.
 /// Existing accounts retain the full protocol derivation range.
 const kMaxLedgerOnboardingAccountIndex = 100;
@@ -11,4 +13,12 @@ bool isLedgerOnboardingAccountIndexValid(int? index) =>
 int? parseLedgerOnboardingAccountIndex(String text) {
   final index = int.tryParse(text);
   return isLedgerOnboardingAccountIndexValid(index) ? index : null;
+}
+
+/// Names the account the way the device does, so the two screens agree.
+String ledgerViewingKeyApprovalMessage(int accountIndex, String? appVersion) {
+  final number = ledgerDeviceAccountNumber(accountIndex, appVersion);
+  return number == null
+      ? 'Approve sharing your viewing key with Vizor.'
+      : 'Approve sharing the viewing key for Account #$number.';
 }

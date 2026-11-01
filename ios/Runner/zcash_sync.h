@@ -80,6 +80,27 @@ int32_t zcash_list_migration_preparation_txids(
     uintptr_t* output_len
 );
 
+/// NU7 activation height for network ("main", "test", "regtest"), or 0 when
+/// it is unscheduled or the network is unknown.
+uint64_t zcash_nu7_activation_height(const char* network);
+
+/// The first upgrade activation after height on network, or 0 when none is
+/// scheduled or the network is unknown.
+uint64_t zcash_next_upgrade_activation_height(const char* network,
+                                              uint64_t height);
+
+/// Whether the iOS outbox holds a migration part signed for target_height at
+/// remote_height on network, as the foreground judges it. A target of 0 (a
+/// part saved by an older build) is held by the tip alone.
+bool zcash_migration_broadcast_held(const char* network, uint64_t target_height,
+                                    uint64_t remote_height);
+
+/// ZIP 318 canonical expiry for a part scheduled at height, or 0.
+uint64_t zcash_zip318_canonical_expiry_height(const char* network, uint64_t height);
+
+/// Blocks per ZIP 318 reference block at height: 1 before NU7, 3 from it.
+uint64_t zcash_zip318_blocks_per_reference_block(const char* network, uint64_t height);
+
 int32_t zcash_inspect_migration_proof_readiness(
     const char* db_path,
     const char* network,

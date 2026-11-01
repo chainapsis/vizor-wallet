@@ -329,6 +329,48 @@ fn verify_header_with_trust(
     Ok(())
 }
 
+/// Hash provider for the fixed IAVL and multistore proof specifications.
+///
+/// Both specifications permit only SHA-256. ICS23 checks every leaf and inner
+/// operation against the specification before hashing, including the neighbors
+/// in non-membership proofs. Keep this provider restricted to those verification
+/// entry points; it cannot calculate roots for arbitrary proof specifications.
+struct VoteStoreHashes;
+
+impl ics23::HostFunctionsProvider for VoteStoreHashes {
+    fn sha2_256(message: &[u8]) -> [u8; 32] {
+        Sha256::digest(message).into()
+    }
+
+    fn sha2_512(_: &[u8]) -> [u8; 64] {
+        unreachable!()
+    }
+
+    fn sha2_512_truncated(_: &[u8]) -> [u8; 32] {
+        unreachable!()
+    }
+
+    fn keccak_256(_: &[u8]) -> [u8; 32] {
+        unreachable!()
+    }
+
+    fn ripemd160(_: &[u8]) -> [u8; 20] {
+        unreachable!()
+    }
+
+    fn blake2b_512(_: &[u8]) -> [u8; 64] {
+        unreachable!()
+    }
+
+    fn blake2s_256(_: &[u8]) -> [u8; 32] {
+        unreachable!()
+    }
+
+    fn blake3(_: &[u8]) -> [u8; 32] {
+        unreachable!()
+    }
+}
+
 fn proof(data: &str) -> Result<ics23::CommitmentProof, String> {
     let bytes = B64.decode(data).map_err(|_| INVALID)?;
     ics23::CommitmentProof::decode(bytes.as_slice()).map_err(|_| INVALID.into())
@@ -360,7 +402,7 @@ fn verify_query(
         return Err(INVALID.into());
     };
     let root = ex.value.clone();
-    if !ics23::verify_membership::<ics23::HostFunctionsManager>(
+    if !ics23::verify_membership::<VoteStoreHashes>(
         &store,
         &ics23::tendermint_spec(),
         &app_hash.to_vec(),
@@ -378,20 +420,9 @@ fn verify_query(
         .map_err(|_| INVALID)?
         .unwrap_or_default();
     let valid = if value == [1] {
-        ics23::verify_membership::<ics23::HostFunctionsManager>(
-            &p,
-            &ics23::iavl_spec(),
-            &root,
-            key,
-            &[1],
-        )
+        ics23::verify_membership::<VoteStoreHashes>(&p, &ics23::iavl_spec(), &root, key, &[1])
     } else if value.is_empty() {
-        ics23::verify_non_membership::<ics23::HostFunctionsManager>(
-            &p,
-            &ics23::iavl_spec(),
-            &root,
-            key,
-        )
+        ics23::verify_non_membership::<VoteStoreHashes>(&p, &ics23::iavl_spec(), &root, key)
     } else {
         false
     };
@@ -882,6 +913,82 @@ mod tests {
             verify(&main_keys, "main", &main.to_string(), main_now).unwrap(),
             [true, false]
         );
+    }
+
+    #[test]
+    fn proof_specs_reject_other_hashes_before_calling_the_provider() {
+        use ics23::{commitment_proof::Proof, CommitmentProof, HashOp};
+
+        // Check each hash field in the real membership proofs and both
+        // neighbors of absence proofs. Invalid operations must return false
+        // before reaching an unsupported host function, without panicking.
+        let hashes = [
+            HashOp::NoHash as i32,
+            HashOp::Sha256 as i32,
+            HashOp::Sha512 as i32,
+            HashOp::Keccak256 as i32,
+            HashOp::Ripemd160 as i32,
+            HashOp::Bitcoin as i32,
+            HashOp::Sha512256 as i32,
+            HashOp::Blake2b512 as i32,
+            HashOp::Blake2s256 as i32,
+            HashOp::Blake3 as i32,
+            -1,
+            i32::MAX,
+        ];
+        for network in ["main", "test"] {
+            let (evidence, _, _) = fixture(network);
+            for query in evidence["queries"].as_array().unwrap() {
+                let ops = query["result"]["response"]["proofOps"]["ops"]
+                    .as_array()
+                    .unwrap();
+                for (index, op) in ops.iter().enumerate() {
+                    let commitment = proof(op["data"].as_str().unwrap()).unwrap();
+                    let spec = if index == 0 {
+                        ics23::iavl_spec()
+                    } else {
+                        ics23::tendermint_spec()
+                    };
+                    let witnesses: Vec<_> = match commitment.proof.as_ref().unwrap() {
+                        Proof::Exist(witness) => vec![witness],
+                        Proof::Nonexist(absence) => {
+                            absence.left.iter().chain(&absence.right).collect()
+                        }
+                        _ => panic!("unexpected fixture proof format"),
+                    };
+                    for witness in witnesses {
+                        let root =
+                            ics23::calculate_existence_root::<VoteStoreHashes>(witness).unwrap();
+                        for hash in hashes {
+                            for field in 0..3 + witness.path.len() {
+                                let mut changed = witness.clone();
+                                let leaf = changed.leaf.as_mut().unwrap();
+                                let operation = match field {
+                                    0 => &mut leaf.hash,
+                                    1 => &mut leaf.prehash_key,
+                                    2 => &mut leaf.prehash_value,
+                                    _ => &mut changed.path[field - 3].hash,
+                                };
+                                if *operation == hash {
+                                    continue;
+                                }
+                                *operation = hash;
+                                let changed = CommitmentProof {
+                                    proof: Some(Proof::Exist(changed)),
+                                };
+                                assert!(!ics23::verify_membership::<VoteStoreHashes>(
+                                    &changed,
+                                    &spec,
+                                    &root,
+                                    &witness.key,
+                                    &witness.value,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
