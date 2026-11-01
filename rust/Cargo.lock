@@ -6428,8 +6428,7 @@ dependencies = [
 [[package]]
 name = "tor-key-forge"
 version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aa30066b80ade55a1b88a82b5320dfc50d1724918ad614ded8ecb4820c32062"
+source = "git+https://github.com/zakura-core/arti.git?rev=b404aaaaa62a86c0ec308f8467d198e9f0ba323c#b404aaaaa62a86c0ec308f8467d198e9f0ba323c"
 dependencies = [
  "derive-deftly",
  "derive_more 2.1.1",
@@ -6450,8 +6449,7 @@ dependencies = [
 [[package]]
 name = "tor-keymgr"
 version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e331dede46246977ae6722888329a60ef446df437f1a13ad2addcdff840692cc"
+source = "git+https://github.com/zakura-core/arti.git?rev=b404aaaaa62a86c0ec308f8467d198e9f0ba323c#b404aaaaa62a86c0ec308f8467d198e9f0ba323c"
 dependencies = [
  "amplify",
  "arrayvec",

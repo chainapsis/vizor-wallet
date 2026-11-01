@@ -266,6 +266,8 @@ opt-level = 3
 
 # Shared PIR configuration and product routes are not released yet.
 [patch.crates-io]
+tor-keymgr = { git = "https://github.com/zakura-core/arti.git", rev = "b404aaaaa62a86c0ec308f8467d198e9f0ba323c" }
+tor-key-forge = { git = "https://github.com/zakura-core/arti.git", rev = "b404aaaaa62a86c0ec308f8467d198e9f0ba323c" }
 tor-rtcompat = { git = "https://github.com/zakura-core/arti.git", rev = "69d025f04aa67454160a8d3e0d1706366faf99ea" }
 zakura-client-backend = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
 zakura-client-sqlite = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "87b8e5f209241870f35f3ab33e60e73f394a11e4" }
