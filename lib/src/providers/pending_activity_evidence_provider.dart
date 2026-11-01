@@ -6,6 +6,21 @@ const kActivityEtaFreshness = Duration(seconds: 30);
 const kActivityLongWait = Duration(minutes: 5);
 const kActivityFundingLongWait = Duration(minutes: 8);
 
+const kActivityEtaLabel = 'Est. 1–3 min';
+const kActivityFundingEtaLabel = 'Est. 2–6 min';
+const kActivityNu7EtaLabel = 'Est. under 1 min';
+const kActivityNu7FundingEtaLabel = 'Est. 1–2 min';
+const kActivityTakingLongerLabel = 'Taking longer';
+
+/// Every estimate a pending row can show beside its clock icon.
+const kActivityEtaLabels = {
+  kActivityEtaLabel,
+  kActivityFundingEtaLabel,
+  kActivityNu7EtaLabel,
+  kActivityNu7FundingEtaLabel,
+  kActivityTakingLongerLabel,
+};
+
 /// Broadcast responses and wallet history can use opposite txid byte orders.
 /// Use one local identity; never use the canonical form for network queries.
 String activityTxidKey(String txid) {
@@ -49,6 +64,7 @@ class PendingActivityEvidence {
     String txid,
     int scannedHeight, {
     bool waitingForFunding = false,
+    int blocksPerReferenceBlock = 1,
   }) {
     final checked = networkCheckedAt;
     final observed = observedAt[(accountUuid, activityTxidKey(txid))];
@@ -67,14 +83,18 @@ class PendingActivityEvidence {
         elapsed.isNegative) {
       return null;
     }
-    final longWait = waitingForFunding
-        ? kActivityFundingLongWait
-        : kActivityLongWait;
-    return elapsed >= longWait
-        ? 'Taking longer'
-        : waitingForFunding
-        ? 'Est. 2–6 min'
-        : 'Est. 1–3 min';
+    // The waits count 75-second blocks; NU7 blocks come three times as often.
+    final longWait =
+        (waitingForFunding ? kActivityFundingLongWait : kActivityLongWait) ~/
+        blocksPerReferenceBlock;
+    if (elapsed >= longWait) return kActivityTakingLongerLabel;
+    final fasterBlocks = blocksPerReferenceBlock > 1;
+    if (waitingForFunding) {
+      return fasterBlocks
+          ? kActivityNu7FundingEtaLabel
+          : kActivityFundingEtaLabel;
+    }
+    return fasterBlocks ? kActivityNu7EtaLabel : kActivityEtaLabel;
   }
 }
 

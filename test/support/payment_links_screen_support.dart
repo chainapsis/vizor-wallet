@@ -1,4 +1,7 @@
+import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'dart:async';
+import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -38,21 +41,15 @@ import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 import '../fakes/fake_gift_link_rust_api.dart';
+import 'app_test_fonts.dart';
+import 'widget_test_viewport.dart';
 import '../fakes/fake_sync_notifier.dart';
 import '../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
 
 /// Harness shared by the desktop and mobile Gift Card screen suites, which are
 /// separate files because only the mobile one runs in the mobile token lane.
-Future<void> loadPaymentLinksTestFonts() async {
-  final loader = FontLoader('Geist')
-    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
-    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'))
-    ..addFont(rootBundle.load('assets/fonts/Geist-SemiBold.ttf'));
-  await loader.load();
-  final displayLoader = FontLoader('Young Serif')
-    ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
-  await displayLoader.load();
-}
+Future<void> loadPaymentLinksTestFonts() => loadAppTestFonts();
 
 Future<void> pumpPaymentLinksScreen(
   WidgetTester tester, {
@@ -78,15 +75,22 @@ Future<void> pumpPaymentLinksScreen(
   bool? pricingEnabled,
   PrivacyModeNotifier? privacyNotifier,
   Map<String, GiftCardUsage>? giftCardUsages,
-  Size logicalSize = const Size(1080, 720),
+  Size? logicalSize,
   GlobalKey? captureBoundaryKey,
+  NetworkUpgradeWindowState? upgradeWindow,
+  BlockSpacing? feeSchedule,
 }) async {
   if (!RustLib.instance.initialized) {
     RustLib.initMock(api: FakeGiftLinkRustApi());
     addTearDown(RustLib.dispose);
   }
-  await tester.binding.setSurfaceSize(logicalSize);
-  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await setWidgetTestViewport(
+    tester,
+    logicalSize ??
+        (kAppFormFactor == AppFormFactor.mobile
+            ? const Size(390, 844)
+            : const Size(1080, 720)),
+  );
   final paymentLinkOperations = operations ?? FakePaymentLinkOperations();
   final paymentLinkClipboard = clipboard ?? FakePaymentLinkClipboard();
   final appBootstrap = bootstrap ?? paymentLinksBootstrap;
@@ -96,6 +100,10 @@ Future<void> pumpPaymentLinksScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        if (feeSchedule != null)
+          blockSpacingProvider.overrideWithValue(feeSchedule),
+        if (upgradeWindow != null)
+          networkUpgradeWindowProvider.overrideWithValue(upgradeWindow),
         if (privacyNotifier != null)
           privacyModeProvider.overrideWith(() => privacyNotifier),
         // These tests exercise funding and navigation with fake operations.
@@ -625,6 +633,7 @@ class FakePaymentLinkOperations implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
@@ -1064,6 +1073,7 @@ class FakePaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);

@@ -139,6 +139,21 @@ pub struct ChainUpgradeActivationStatus {
     pub ironwood_active_at_tip: bool,
 }
 
+/// Target block spacing before and from NU7, for time estimates in the UI.
+pub struct BlockSpacingSchedule {
+    pub nu7_activation_height: Option<u64>,
+    pub pre_nu7_block_seconds: u32,
+    pub nu7_block_seconds: u32,
+}
+
+/// The next network upgrade after a chain tip and the tip from which the
+/// wallet refuses transactions before it. The refusal holds while the next
+/// block is still before the upgrade.
+pub struct NetworkUpgradeWindow {
+    pub next_activation_height: u64,
+    pub send_hold_from_tip: u64,
+}
+
 /// Catches panics and converts them to Result<T, String>.
 pub(super) fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
     match panic::catch_unwind(f) {
@@ -319,6 +334,38 @@ pub fn get_chain_upgrade_status_at_height(
             ironwood_active_at_tip: is_ironwood_active_at_height(network, tip_height)?,
         })
     })
+}
+
+/// Target block spacing for `network`; the NU7 height is absent until scheduled.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_block_spacing_schedule(network: String) -> Result<BlockSpacingSchedule, String> {
+    let network = keys::parse_network(&network)?;
+    Ok(BlockSpacingSchedule {
+        nu7_activation_height: network
+            .activation_height(NetworkUpgrade::Nu7)
+            .map(|height| u64::from(u32::from(height))),
+        pre_nu7_block_seconds: crate::wallet::block_times::PRE_NU7_BLOCK_SECONDS,
+        nu7_block_seconds: crate::wallet::block_times::NU7_BLOCK_SECONDS,
+    })
+}
+
+/// The upgrade window after `tip_height` on `network`, or none when no
+/// upgrade is scheduled after it.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_network_upgrade_window(
+    network: String,
+    tip_height: u64,
+) -> Result<Option<NetworkUpgradeWindow>, String> {
+    let network = keys::parse_network(&network)?;
+    let tip = u32::try_from(tip_height).map_err(|_| "Chain tip exceeds u32".to_string())?;
+    Ok(
+        crate::wallet::network_upgrade::hold_heights(&network, tip).map(|heights| {
+            NetworkUpgradeWindow {
+                next_activation_height: heights.next_activation_height.into(),
+                send_hold_from_tip: heights.send_hold_from_tip.into(),
+            }
+        }),
+    )
 }
 
 /// Create a new Zcash wallet with a fresh mnemonic.
@@ -1140,9 +1187,9 @@ async fn discover_software_account_at_index(
 }
 
 /// Birthday stored for a restored account. On mainnet it is rounded down to
-/// just past a 10,000-block grid point (see
-/// [`crate::wallet::tree_states::restore_birthday`]), so lightwalletd learns
-/// only the bucket and never the exact requested height.
+/// just past a grid point, every 10,000 blocks before NU7 and 30,000 from it
+/// (see [`crate::wallet::tree_states::restore_birthday`]), so lightwalletd
+/// learns only the bucket and never the exact requested height.
 fn restored_birthday(network: WalletNetwork, birthday_height: Option<u64>) -> Option<u64> {
     birthday_height.map(|height| crate::wallet::tree_states::restore_birthday(network, height))
 }
@@ -1985,6 +2032,19 @@ mod tests {
             get_chain_upgrade_status_at_height("main".to_string(), activation).unwrap();
         assert_eq!(at_activation.tip_height, activation);
         assert!(at_activation.ironwood_active_at_tip);
+    }
+
+    #[test]
+    fn block_spacing_schedule_reports_nu7_heights_and_spacing() {
+        let main = get_block_spacing_schedule("main".to_string()).unwrap();
+        assert_eq!(main.nu7_activation_height, Some(3_543_405));
+        assert_eq!(
+            (main.pre_nu7_block_seconds, main.nu7_block_seconds),
+            (75, 25)
+        );
+
+        let test = get_block_spacing_schedule("test".to_string()).unwrap();
+        assert_eq!(test.nu7_activation_height, Some(4_465_026));
     }
 
     #[test]

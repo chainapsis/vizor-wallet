@@ -50,6 +50,22 @@ Future<ChainUpgradeActivationStatus> getChainUpgradeStatusAtHeight({
   tipHeight: tipHeight,
 );
 
+/// Target block spacing for `network`; the NU7 height is absent until scheduled.
+BlockSpacingSchedule getBlockSpacingSchedule({required String network}) =>
+    RustLib.instance.api.crateApiWalletGetBlockSpacingSchedule(
+      network: network,
+    );
+
+/// The upgrade window after `tip_height` on `network`, or none when no
+/// upgrade is scheduled after it.
+NetworkUpgradeWindow? getNetworkUpgradeWindow({
+  required String network,
+  required BigInt tipHeight,
+}) => RustLib.instance.api.crateApiWalletGetNetworkUpgradeWindow(
+  network: network,
+  tipHeight: tipHeight,
+);
+
 /// Create a new Zcash wallet with a fresh mnemonic.
 /// birthday_height should be the current chain tip (from get_latest_block_height).
 /// It is stored exactly: a tip birthday reveals only that a wallet was created
@@ -569,6 +585,34 @@ class AccountViewingKeys {
           uivk == other.uivk;
 }
 
+/// Target block spacing before and from NU7, for time estimates in the UI.
+class BlockSpacingSchedule {
+  final BigInt? nu7ActivationHeight;
+  final int preNu7BlockSeconds;
+  final int nu7BlockSeconds;
+
+  const BlockSpacingSchedule({
+    this.nu7ActivationHeight,
+    required this.preNu7BlockSeconds,
+    required this.nu7BlockSeconds,
+  });
+
+  @override
+  int get hashCode =>
+      nu7ActivationHeight.hashCode ^
+      preNu7BlockSeconds.hashCode ^
+      nu7BlockSeconds.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BlockSpacingSchedule &&
+          runtimeType == other.runtimeType &&
+          nu7ActivationHeight == other.nu7ActivationHeight &&
+          preNu7BlockSeconds == other.preNu7BlockSeconds &&
+          nu7BlockSeconds == other.nu7BlockSeconds;
+}
+
 /// Chain upgrade activation state computed from a known chain tip height.
 class ChainUpgradeActivationStatus {
   final String network;
@@ -726,6 +770,30 @@ class LightwalletdEndpointProbe {
           runtimeType == other.runtimeType &&
           chainName == other.chainName &&
           latencyMs == other.latencyMs;
+}
+
+/// The next network upgrade after a chain tip and the tip from which the
+/// wallet refuses transactions before it. The refusal holds while the next
+/// block is still before the upgrade.
+class NetworkUpgradeWindow {
+  final BigInt nextActivationHeight;
+  final BigInt sendHoldFromTip;
+
+  const NetworkUpgradeWindow({
+    required this.nextActivationHeight,
+    required this.sendHoldFromTip,
+  });
+
+  @override
+  int get hashCode => nextActivationHeight.hashCode ^ sendHoldFromTip.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NetworkUpgradeWindow &&
+          runtimeType == other.runtimeType &&
+          nextActivationHeight == other.nextActivationHeight &&
+          sendHoldFromTip == other.sendHoldFromTip;
 }
 
 /// A higher ZIP32 software account that can be imported by user choice.

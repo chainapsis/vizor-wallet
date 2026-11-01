@@ -321,7 +321,10 @@ class _MobileLedgerConnectScreenState
                   ? _closing
                         ? 'Cancelling the Ledger request…'
                         : _error ??
-                              'Approve sharing your viewing key with Vizor.'
+                              ledgerViewingKeyApprovalMessage(
+                                _accountIndex,
+                                readiness.version,
+                              )
                   : null,
               note: current == 2 && _error == null && !_closing
                   ? 'View your balance and activity in Vizor. Transactions still need approval on Ledger.'

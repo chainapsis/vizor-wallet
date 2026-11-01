@@ -740,6 +740,7 @@ import UIKit
     var result = transport
     result["transport"] = transport
     result["accountUuid"] = runResult.transportAccountUuid
+    result["heldForUpgradeTxids"] = runResult.heldForUpgradeTxids
     if let proofReady = runResult.proofReady {
       result["proofReady"] = [
         "batchId": proofReady.batchId,

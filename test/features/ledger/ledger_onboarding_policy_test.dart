@@ -22,6 +22,24 @@ void main() {
     }
   });
 
+  test('viewing-key approval names the account as the device shows it', () {
+    // 3.10.0 numbers accounts from 1; earlier apps show the index itself.
+    expect(
+      ledgerViewingKeyApprovalMessage(3, '3.10.0'),
+      'Approve sharing the viewing key for Account #4.',
+    );
+    expect(
+      ledgerViewingKeyApprovalMessage(3, '3.9.4'),
+      'Approve sharing the viewing key for Account #3.',
+    );
+    for (final version in [null, 'unknown']) {
+      expect(
+        ledgerViewingKeyApprovalMessage(3, version),
+        'Approve sharing your viewing key with Vizor.',
+      );
+    }
+  });
+
   test(
     'USB and Bluetooth reject invalid indices before reading device dependencies',
     () async {

@@ -47,7 +47,8 @@ fn build_requests(
     }
     let params = VotingRoundParams {
         vote_round_id: "01".repeat(32),
-        snapshot_height: 4_000_000,
+        // The SDK votes only on NU6.3 snapshots, so this sits before NU7.
+        snapshot_height: 3_500_000,
         ea_pk: vec![0xEA; 32],
         nc_root: vec![0xAA; 32],
         nullifier_imt_root: vec![0xBB; 32],

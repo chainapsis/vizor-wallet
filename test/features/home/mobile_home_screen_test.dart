@@ -17,6 +17,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_participation_provider.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_received_store.dart';
@@ -29,6 +30,9 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
+import 'package:zcash_wallet/src/core/navigation/mobile_sidebar_route_observer.dart';
+import 'package:zcash_wallet/src/features/home/providers/nu7_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_feed.dart';
 import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_transaction_status_screen.dart';
@@ -51,6 +55,7 @@ import 'package:zcash_wallet/src/core/widgets/app_tooltip.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/app_test_fonts.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 
@@ -85,6 +90,16 @@ class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
     required String accountUuid,
     required SwapAsset asset,
   }) async {}
+}
+
+class _MemoryNu7AnnouncementStore implements Nu7AnnouncementStore {
+  final seen = <String>{};
+
+  @override
+  Future<bool> isSeen(String network) async => seen.contains(network);
+
+  @override
+  Future<void> markSeen(String network) async => seen.add(network);
 }
 
 class _FakeIronwoodAnnouncementStore
@@ -246,10 +261,16 @@ Widget _app(
   AppThemeData theme = AppThemeData.dark,
   AccountState accountState = _accountState,
   Widget Function(GoRouterState)? receiptBuilder,
+  Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
+  _MemoryNu7AnnouncementStore? nu7AnnouncementStore,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
+  final ironwoodAnnouncementStore = _FakeIronwoodAnnouncementStore();
+  final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
+  final popupObserver = MobileSidebarRouteObserver();
   final router = GoRouter(
     initialLocation: '/home',
+    observers: [popupObserver],
     routes: [
       if (useShellRouter)
         // The production mobile shell keeps every branch mounted, so a widget
@@ -404,11 +425,21 @@ Widget _app(
         migrationPresentationCta ?? migrationCta,
       ),
       ironwoodMigrationAnnouncementProvider.overrideWith(
-        (ref) async => announcement,
+        (ref) async => ironwoodAnnouncementStore.seen
+            ? const IronwoodMigrationAnnouncementState.hidden()
+            : announcement,
       ),
       ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
-        _FakeIronwoodAnnouncementStore(),
+        ironwoodAnnouncementStore,
       ),
+      nu7AnnouncementProvider.overrideWith(
+        (ref) async => nu7Store.seen.contains(nu7Announcement.network)
+            ? const Nu7AnnouncementState.hidden()
+            : nu7Announcement,
+      ),
+      nu7AnnouncementStoreProvider.overrideWithValue(nu7Store),
+      mobileSidebarRouteObserverProvider.overrideWithValue(popupObserver),
+      nu7AnnouncementMotionEnabledProvider.overrideWithValue(false),
       if (migrationCoordinator != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(migrationCoordinator),
       mobileIronwoodMigrationAttentionSessionProvider.overrideWith(
@@ -689,6 +720,7 @@ class _DeferredVotingStore implements VotingHomeCacheStore {
 }
 
 void main() {
+  setUpAll(loadAppTestFonts);
   testWidgets('Home displays ETA in place of the pool subtitle', (
     tester,
   ) async {
@@ -2545,6 +2577,7 @@ void main() {
         currentHeight: currentHeight,
         broadcastHeight: currentHeight,
         isKeystone: false,
+        blockSpacing: BlockSpacing.preNu7,
       )!;
       final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
         accountUuid: 'account-1',
@@ -2574,6 +2607,148 @@ void main() {
       expect(find.text('Migration needs attention'), findsOneWidget);
     },
   );
+
+  testWidgets('shows the NU7 announcement once and remembers it', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _MemoryNu7AnnouncementStore();
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.text('NU7 Update is live.\nWhat does this mean?'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('nu7_announcement_got_it_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+    expect(store.seen, {'main'});
+  });
+
+  testWidgets('does not stack the NU7 announcement on an Ironwood sheet', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        announcement: IronwoodMigrationAnnouncementState.visible(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(kIronwoodMigrationReadyPhase),
+        ),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_close_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
+
+  testWidgets('holds the NU7 announcement until home is visible', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // Seen until the test clears it, standing in for activation arriving later.
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        useShellRouter: true,
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final home = tester.element(find.byType(MobileHomeScreen));
+    final router = GoRouter.of(home);
+    router.go('/shell-activity');
+    await tester.pumpAndSettle();
+
+    store.seen.clear();
+    ProviderScope.containerOf(home).invalidate(nu7AnnouncementProvider);
+    await tester.pumpAndSettle();
+
+    expect(find.text('shell activity route'), findsOneWidget);
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    router.go('/home');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
+
+  testWidgets('holds the NU7 announcement while another sheet is open', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(),
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final home = tester.element(find.byType(MobileHomeScreen));
+    unawaited(
+      showAppMobileSheet<void>(
+        context: home,
+        builder: (_) => const Text('other sheet'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    store.seen.clear();
+    ProviderScope.containerOf(home).invalidate(nu7AnnouncementProvider);
+    await tester.pumpAndSettle();
+
+    expect(find.text('other sheet'), findsOneWidget);
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsNothing);
+
+    Navigator.of(home, rootNavigator: true).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('other sheet'), findsNothing);
+    expect(find.byKey(const ValueKey('nu7_announcement')), findsOneWidget);
+  });
 
   testWidgets('shows the mobile Ironwood announcement sheet', (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));

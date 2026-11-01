@@ -82,8 +82,11 @@ String _migrationDisplayZec(BigInt zatoshi) {
   return '${formatGroupedInteger(int.parse(whole))}$fraction';
 }
 
-String _migrationArrivalLabel(rust_sync.OrchardMigrationPrivatePlan plan) {
-  return migrationPlanCompletionTimingLabel(plan);
+String _migrationArrivalLabel(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+  BlockTimeEstimate blockTimes,
+) {
+  return migrationPlanCompletionTimingLabel(plan, blockTimes: blockTimes);
 }
 
 Future<void> _openIronwoodReleaseNotes() async {

@@ -324,6 +324,32 @@ void main() {
     },
   );
 
+  test('NU7 block spacing shortens estimates and the long-wait cutoff', () {
+    PendingActivityEvidence after(Duration elapsed) => PendingActivityEvidence(
+      now: started.add(elapsed),
+      networkCheckedAt: started.add(elapsed),
+      checkedTip: 100,
+      observedAt: {('a', 'tx'): started},
+    );
+    String? label(Duration elapsed, {bool funding = false}) =>
+        after(elapsed).labelFor(
+          'a',
+          'tx',
+          100,
+          waitingForFunding: funding,
+          blocksPerReferenceBlock: 3,
+        );
+
+    expect(label(Duration.zero), kActivityNu7EtaLabel);
+    expect(label(Duration.zero, funding: true), kActivityNu7FundingEtaLabel);
+    expect(label(const Duration(seconds: 99)), kActivityNu7EtaLabel);
+    expect(label(const Duration(seconds: 100)), kActivityTakingLongerLabel);
+    expect(
+      label(const Duration(seconds: 160), funding: true),
+      kActivityTakingLongerLabel,
+    );
+  });
+
   test('Gift Card ETA covers every leg rather than the representative row', () {
     String? label(
       List<rust_sync.TransactionInfo> txs,

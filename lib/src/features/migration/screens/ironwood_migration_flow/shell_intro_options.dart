@@ -58,6 +58,13 @@ class _IronwoodMigrationShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ledgerAccount =
         ref.watch(accountProvider).value?.activeAccount?.isLedger ?? false;
+    // A stopped run's remainder starts from the options; say so and lead
+    // back to its status.
+    final movingRest = ref.watch(
+      ironwoodHomeMigrationPresentationProvider.select(
+        (cta) => cta.mode == IronwoodHomeMigrationCtaMode.stopped,
+      ),
+    );
     final content = switch (step) {
       IronwoodMigrationFlowStep.prepare => const Center(
         child: CircularProgressIndicator(),
@@ -74,6 +81,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
         privateEnabled: !ledgerAccount,
+        movingRest: movingRest,
       ),
       IronwoodMigrationFlowStep.review =>
         _IronwoodMigrationPrivateReviewContent(
@@ -95,7 +103,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
     };
 
     return _IronwoodMigrationFrame(
-      toolbar: _toolbarFor(context, step),
+      toolbar: _toolbarFor(context, step, movingRest: movingRest),
       disableSidebarActions: step != IronwoodMigrationFlowStep.options,
       child: content,
     );
@@ -114,7 +122,11 @@ Future<void> _openReleaseNotes(
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
+Widget _toolbarFor(
+  BuildContext context,
+  IronwoodMigrationFlowStep step, {
+  bool movingRest = false,
+}) {
   return AppPaneToolbar(
     leading: AppBackLink(
       label: switch (step) {
@@ -122,7 +134,8 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
         IronwoodMigrationFlowStep.intro => 'Home',
         IronwoodMigrationFlowStep.howItWorks => 'Ironwood Pool',
         IronwoodMigrationFlowStep.whatToExpect => 'How Migration Works',
-        IronwoodMigrationFlowStep.options => 'About Migration',
+        IronwoodMigrationFlowStep.options =>
+          movingRest ? 'Ironwood Migration' : 'About Migration',
         IronwoodMigrationFlowStep.review => 'Migration Options',
         IronwoodMigrationFlowStep.immediateReview => 'Migration Options',
       },
@@ -137,7 +150,11 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
           case IronwoodMigrationFlowStep.whatToExpect:
             context.go('/migration/how-it-works');
           case IronwoodMigrationFlowStep.options:
-            context.go('/migration/what-to-expect');
+            context.go(
+              movingRest
+                  ? '/migration/private/status'
+                  : '/migration/what-to-expect',
+            );
           case IronwoodMigrationFlowStep.review:
             context.go('/migration/options');
           case IronwoodMigrationFlowStep.immediateReview:
@@ -1025,10 +1042,12 @@ class _IronwoodMigrationOptionsContent extends StatefulWidget {
   const _IronwoodMigrationOptionsContent({
     required this.data,
     required this.privateEnabled,
+    this.movingRest = false,
   });
 
   final IronwoodMigrationFlowData data;
   final bool privateEnabled;
+  final bool movingRest;
 
   @override
   State<_IronwoodMigrationOptionsContent> createState() =>
@@ -1071,7 +1090,9 @@ class _IronwoodMigrationOptionsContentState
             child: Column(
               children: [
                 Text(
-                  'Choose how to migrate',
+                  widget.movingRest
+                      ? 'How to move the rest'
+                      : 'Choose how to migrate',
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
@@ -1081,9 +1102,13 @@ class _IronwoodMigrationOptionsContentState
                 SizedBox(
                   width: 322,
                   child: Text(
-                    'Choose between more privacy over time or a faster '
-                    'migration. You can review the details before anything '
-                    'moves.',
+                    widget.movingRest
+                        ? '${_formatZecAmountCompact(widget.data.amountZatoshi)}'
+                              ' ZEC is still in Orchard. Choose between more '
+                              'privacy over time or a faster migration.'
+                        : 'Choose between more privacy over time or a faster '
+                              'migration. You can review the details before '
+                              'anything moves.',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,

@@ -20,6 +20,8 @@ import 'pay_selected_asset_store.dart';
 import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
+import '../../../providers/network_upgrade_window_provider.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 export 'swap_provider_config.dart';
 
@@ -879,6 +881,15 @@ class SwapNotifier extends Notifier<SwapState> {
         ? 'Ledger'
         : 'Keystone';
     if (quote.direction.sendsZec) {
+      // The provider would open a swap for a deposit Rust then refuses.
+      if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
+        log('Swap: start held for the network upgrade');
+        state = state.copyWith(
+          startSubmitting: false,
+          statusError: kNetworkUpgradeHoldMessage,
+        );
+        return null;
+      }
       try {
         await ref
             .read(swapDepositSenderProvider)

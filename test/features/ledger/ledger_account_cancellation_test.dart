@@ -76,7 +76,7 @@ void main() {
         );
         addTearDown(container.dispose);
         final result = full
-            ? container.read(ledgerPcztTransportSignerProvider)('unused', [1])
+            ? container.read(ledgerPcztSignerProvider)('unused', [1])
             : container.read(ledgerActionPcztSignerProvider)('unused', [1]);
         final expectation = expectLater(
           result,

@@ -58,6 +58,8 @@ import '../services/transparent_balance_display.dart';
 import '../services/transparent_shielding_service.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 import '../widgets/ledger_shield_signing_overlay.dart';
+import '../providers/nu7_announcement_provider.dart';
+import '../widgets/nu7_announcement.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -86,6 +88,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _shieldBalanceErrorDetail;
   IronwoodMigrationAnnouncementState? _visibleIronwoodAnnouncement;
   String? _suppressedIronwoodAnnouncementScope;
+  String? _dismissedNu7Network;
 
   @override
   void initState() {
@@ -229,6 +232,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.invalidate(ironwoodMigrationAnnouncementProvider);
   }
 
+  Future<void> _dismissNu7Announcement(String network) async {
+    setState(() => _dismissedNu7Network = network);
+    try {
+      await ref.read(nu7AnnouncementStoreProvider).markSeen(network);
+    } catch (e) {
+      log('HomeScreen: failed to store NU7 announcement state: $e');
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(nu7AnnouncementProvider);
+  }
+
   void _dismissIronwoodAnnouncement(
     IronwoodMigrationAnnouncementState announcement,
   ) {
@@ -358,6 +373,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _visibleIronwoodAnnouncement = null;
     }
     final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
+    // Never stack it on an open Ironwood modal or hardware signing.
+    final nu7Network = ref.watch(nu7AnnouncementProvider).value?.network;
+    final visibleNu7Network =
+        visibleIronwoodAnnouncement == null &&
+            _shieldHardwareSignerKind == null &&
+            nu7Network != _dismissedNu7Network
+        ? nu7Network
+        : null;
     return AppDesktopBackdropShell(
       background: _HomeFullPageBackground(assetName: backgroundAsset),
       sidebar: const AppMainSidebar(),
@@ -434,6 +457,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     unawaited(_openIronwoodReleaseNotes()),
               ),
             ),
+          if (visibleNu7Network != null)
+            Nu7AnnouncementOverlay(
+              onClose: () =>
+                  unawaited(_dismissNu7Announcement(visibleNu7Network)),
+            ),
         ],
       ),
     );
@@ -443,7 +471,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 String? _ironwoodMigrationTargetForCta(IronwoodHomeMigrationCtaState cta) {
   return switch (cta.mode) {
     IronwoodHomeMigrationCtaMode.start => '/migration/prepare',
-    IronwoodHomeMigrationCtaMode.resume => '/migration/private/status',
+    IronwoodHomeMigrationCtaMode.resume ||
+    IronwoodHomeMigrationCtaMode.stopped => '/migration/private/status',
     IronwoodHomeMigrationCtaMode.hidden => null,
   };
 }
@@ -1588,6 +1617,9 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
+    final migrationStopped =
+        widget.ironwoodMigrationCta.mode ==
+        IronwoodHomeMigrationCtaMode.stopped;
     // The tray sits on the card's ground shelf (Figma 4731:64262/64704), so
     // the action rests on the accent text token. The design draws no hover
     // state; hover uses the standard ghost-button fill instead of inventing
@@ -1610,7 +1642,8 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
         ? colors.text.destructive
         : colors.text.homeCard;
     final cardRadius = BorderRadius.circular(AppRadii.large);
-    final showIronwoodMigrationState = migrationRequired || migrationInProgress;
+    final showIronwoodMigrationState =
+        migrationRequired || migrationInProgress || migrationStopped;
     final balanceContentColor = migrationRequired
         ? colors.text.disabled
         : colors.text.homeCard;
@@ -1845,9 +1878,12 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
             _HomeDesktopMigrationCtaButton(
               label: migrationRequired
                   ? 'Migrate to Ironwood'
+                  : migrationStopped
+                  ? 'Migration stopped by network upgrade'
                   : widget.waitingForMigrationConfirmation
                   ? 'Waiting for confirmation...'
                   : '${hideAmountIfPrivacyMode('${widget.migratingBalanceText} ZEC', privacyModeEnabled: widget.privacyModeEnabled)} still migrating',
+              stopped: migrationStopped,
               animateIndicator: widget.animateMigrationCta,
               onTap: widget.onIronwoodMigrationCta,
             ),
@@ -2037,11 +2073,15 @@ class _HomeMigrationPulseIndicatorState
 class _HomeDesktopMigrationCtaButton extends StatelessWidget {
   const _HomeDesktopMigrationCtaButton({
     required this.label,
+    this.stopped = false,
     required this.animateIndicator,
     required this.onTap,
   });
 
   final String label;
+
+  /// The NU7 upgrade ended the run, so the card asks for attention.
+  final bool stopped;
   final bool animateIndicator;
   final VoidCallback onTap;
 
@@ -2078,25 +2118,27 @@ class _HomeDesktopMigrationCtaButton extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  ShaderMask(
-                    blendMode: BlendMode.dstIn,
-                    shaderCallback: (bounds) => LinearGradient(
-                      colors: [
-                        Colors.white.withValues(alpha: 0.05),
-                        Colors.white.withValues(alpha: 0.55),
-                      ],
-                    ).createShader(bounds),
-                    child: Opacity(
-                      opacity: hovered ? 0.82 : 1,
-                      child: Image.asset(
-                        _ironwoodMigrationIllustrationAsset,
-                        key: const ValueKey(
-                          'home_desktop_ironwood_migration_background',
+                  // Like the mobile banner, attention states drop the art.
+                  if (!stopped)
+                    ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (bounds) => LinearGradient(
+                        colors: [
+                          Colors.white.withValues(alpha: 0.05),
+                          Colors.white.withValues(alpha: 0.55),
+                        ],
+                      ).createShader(bounds),
+                      child: Opacity(
+                        opacity: hovered ? 0.82 : 1,
+                        child: Image.asset(
+                          _ironwoodMigrationIllustrationAsset,
+                          key: const ValueKey(
+                            'home_desktop_ironwood_migration_background',
+                          ),
+                          fit: BoxFit.cover,
                         ),
-                        fit: BoxFit.cover,
                       ),
                     ),
-                  ),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.sm,
@@ -2104,10 +2146,20 @@ class _HomeDesktopMigrationCtaButton extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        _HomeMigrationPulseIndicator(
-                          animate: animateIndicator,
-                          accentColor: colors.text.positiveStrong,
-                        ),
+                        if (stopped)
+                          AppIcon(
+                            AppIcons.warning,
+                            key: const ValueKey(
+                              'home_desktop_ironwood_migration_stopped_icon',
+                            ),
+                            size: 20,
+                            color: colors.icon.warning,
+                          )
+                        else
+                          _HomeMigrationPulseIndicator(
+                            animate: animateIndicator,
+                            accentColor: colors.text.positiveStrong,
+                          ),
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
                           child: Text(

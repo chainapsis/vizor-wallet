@@ -10,6 +10,7 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/navigation/external_action_guard_hold.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -336,6 +337,8 @@ class _KeystoneShieldSigningOverlayState
   String _pcztBroadcastStatusMessage(
     rust_sync.ExtractAndBroadcastPcztResult result,
   ) {
+    final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
+    if (upgradeHold != null) return upgradeHold;
     if (result.status == 'broadcast_unknown') {
       return result.message ??
           'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
@@ -355,6 +358,8 @@ class _KeystoneShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('sync')) {
       return 'Sync the wallet before shielding transparent balance.';

@@ -173,10 +173,12 @@ class _MobileMigrationMigratingState
       fallback: widget.data.amountText,
     );
     final etaHeight = _mobileMigrationEtaHeight(syncState);
+    final blockTimes = ref.watch(blockSpacingProvider).fromTip(etaHeight);
     final parts = _mobileMigrationPartPresentations(
       status: status,
       previewPlan: widget.previewPlan,
       explicitParts: widget.previewParts,
+      blockTimes: blockTimes,
       currentHeight: etaHeight,
     );
     final partCount = parts.isNotEmpty
@@ -193,9 +195,10 @@ class _MobileMigrationMigratingState
     final completion = status == null
         ? widget.previewPlan == null
               ? 'Schedule pending'
-              : _migrationArrivalLabel(widget.previewPlan!)
+              : _migrationArrivalLabel(widget.previewPlan!, blockTimes)
         : migrationApproximateCompletionTimingLabel(
             status,
+            blockTimes: blockTimes,
             currentHeight: etaHeight,
           );
     final spendable = _mobileSpendableAmountText(

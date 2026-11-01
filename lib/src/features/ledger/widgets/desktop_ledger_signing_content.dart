@@ -27,7 +27,6 @@ class DesktopLedgerSigningContent extends StatelessWidget {
     this.actionLabel,
     this.onChangeConnection,
     this.identity,
-    this.deviceModel,
     this.roundNumber = 1,
     this.roundCount = 1,
     this.roundFeeNotice,
@@ -45,7 +44,7 @@ class DesktopLedgerSigningContent extends StatelessWidget {
       cancelling,
       preparationComplete;
   final VoidCallback? onCancel, onAction, onChangeConnection;
-  final String? actionLabel, identity, deviceModel, roundFeeNotice;
+  final String? actionLabel, identity, roundFeeNotice;
   final int roundNumber, roundCount;
 
   @override
@@ -69,7 +68,7 @@ class DesktopLedgerSigningContent extends StatelessWidget {
         : opening
         ? 'Confirm opening Zcash on Ledger.'
         : stage == LedgerSigningStage.sending
-        ? ledgerSigningWaitInstruction(deviceModel)
+        ? kLedgerSigningWaitInstruction
         : stage == LedgerSigningStage.reviewing
         ? 'When prompted, check the amount and recipient on Ledger.'
         : stage == LedgerSigningStage.finishing
