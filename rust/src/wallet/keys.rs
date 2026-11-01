@@ -2622,16 +2622,14 @@ mod tests {
         let other_account_uuid = uuid::Uuid::new_v4().to_string();
         {
             let conn = rusqlite::Connection::open(db_path_str).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE vizor_ledger_signed_operations (
-                    network TEXT NOT NULL,
-                    account_uuid TEXT NOT NULL
-                );",
-            )
-            .unwrap();
             conn.execute(
-                "INSERT INTO vizor_ledger_signed_operations (network, account_uuid)
-                 VALUES ('main', ?1), ('main', ?2), ('test', ?1)",
+                "INSERT INTO vizor_ledger_signed_operations (
+                    network, operation_id, account_uuid, kind, proof_pczt, signature_pczt,
+                    state, created_at_ms, updated_at_ms
+                 ) VALUES
+                    ('main', 'selected', ?1, 'send', X'00', X'00', 'signed_pending_broadcast', 0, 0),
+                    ('main', 'other-account', ?2, 'send', X'00', X'00', 'signed_pending_broadcast', 0, 0),
+                    ('test', 'other-network', ?1, 'send', X'00', X'00', 'signed_pending_broadcast', 0, 0)",
                 rusqlite::params![ledger_uuid, other_account_uuid],
             )
             .unwrap();

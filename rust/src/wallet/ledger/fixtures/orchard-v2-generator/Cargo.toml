@@ -1,0 +1,44 @@
+[package]
+name = "historical-pczt-generator"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+orchard = { package = "zakura-orchard", version = "=2.2.0", features = ["circuit"] }
+pczt = { package = "zakura-pczt", git = "https://github.com/zakura-core/wallet-libraries.git", rev = "3fc2bf443020194c56a71d1f63c0d24002cc9517", features = ["orchard", "io-finalizer", "zcp-builder"] }
+zcash_primitives = { package = "zakura-primitives", version = "=2.2.0" }
+zcash_protocol = { package = "zakura-protocol", version = "=2.2.0" }
+halo2 = { package = "zakura-halo2-proofs", version = "=2.2.0", features = ["multicore"] }
+rand = "0.10"
+hex = "0.4"
+serde_json = "1"
+
+[patch.crates-io]
+zakura-bellman = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-bento = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-bento-core = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-bento-macros = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-bls12-381 = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-equihash = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-halo2-gadgets = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-halo2-legacy-pdqsort = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-halo2-poseidon = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-halo2-proofs = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-jubjub = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-orchard = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-pairing = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-pasta-curves = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-reddsa = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-redjubjub = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-sapling-crypto = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-sinsemilla = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-udon = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-address = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-keys = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-primitives = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-protocol = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-proofs = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-transparent = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+zakura-zip321 = { git = "https://github.com/zakura-core/common.git", rev = "a2aa82ce3d3be56650a3236d9739b2b9285ff831" }
+
+[workspace]

@@ -678,6 +678,24 @@ mod tests {
     use crate::wallet::ledger::LedgerAppSupport;
 
     fn memo_pczt(version: BundleVersion, memo: &[u8], value: u64, with_ovk: bool) -> Vec<u8> {
+        if version == BundleVersion::orchard_v2() {
+            // Current builders intentionally refuse historical V2 construction. Retain
+            // memo parsing coverage with actual PCZTs made by the historical builder.
+            assert!(with_ovk);
+            #[derive(serde::Deserialize)]
+            struct Fixture {
+                memo_hex: String,
+                value: u64,
+                pczt_hex: String,
+            }
+            let fixtures: Vec<Fixture> =
+                serde_json::from_str(include_str!("fixtures/orchard_v2_memos.json")).unwrap();
+            let fixture = fixtures
+                .into_iter()
+                .find(|fixture| fixture.memo_hex == hex::encode(memo) && fixture.value == value)
+                .expect("every historical memo case has a frozen PCZT fixture");
+            return hex::decode(fixture.pczt_hex).unwrap();
+        }
         pczt_with_bundle_type(
             version,
             memo,
@@ -685,6 +703,38 @@ mod tests {
             with_ovk,
             orchard::builder::BundleType::UNPADDED,
         )
+    }
+
+    fn assert_memo_classification(pczt_bytes: &[u8], expected: bool) {
+        let pczt = Pczt::parse(pczt_bytes).unwrap();
+        let check = |bundle: &orchard::pczt::Bundle| -> Result<(), String> {
+            if !bundle.actions().is_empty() {
+                assert_eq!(bundle_memo_reaches_hash_path(bundle)?, expected);
+            }
+            Ok(())
+        };
+        Verifier::new(pczt)
+            .with_orchard::<String, _>(|bundle| check(bundle).map_err(OrchardError::Custom))
+            .unwrap()
+            .with_ironwood::<String, _>(|bundle| check(bundle).map_err(OrchardError::Custom))
+            .unwrap();
+    }
+
+    fn assert_orchard_change_is_refused(pczt_bytes: &[u8]) {
+        for app in [LedgerAppSupport::OLDEST, LedgerAppSupport::NEWEST] {
+            assert_eq!(
+                super::super::build_pczt_full_signing_plan(pczt_bytes, app)
+                    .err()
+                    .as_deref(),
+                Some(LEDGER_ORCHARD_CHANGE_UNSUPPORTED)
+            );
+            assert_eq!(
+                super::super::build_pczt_signing_plan(pczt_bytes, app)
+                    .err()
+                    .as_deref(),
+                Some(LEDGER_ORCHARD_CHANGE_UNSUPPORTED)
+            );
+        }
     }
 
     fn pczt_with_bundle_type(
@@ -858,12 +908,18 @@ mod tests {
             ] {
                 for value in [0, 90_000] {
                     let pczt = memo_pczt(version, memo, value, true);
-                    assert!(super::super::build_pczt_full_signing_plan(
-                        &pczt,
-                        LedgerAppSupport::OLDEST
-                    )
-                    .unwrap_err()
-                    .contains(LEDGER_MEMO_HASH_UNSUPPORTED));
+                    assert_memo_classification(&pczt, true);
+                    if version == BundleVersion::orchard_v3() {
+                        assert_orchard_change_is_refused(&pczt);
+                        continue;
+                    }
+                    let error =
+                        super::super::build_pczt_full_signing_plan(&pczt, LedgerAppSupport::OLDEST)
+                            .unwrap_err();
+                    assert!(
+                        error.contains(LEDGER_MEMO_HASH_UNSUPPORTED),
+                        "{version:?}: {error}"
+                    );
                     assert!(
                         super::super::build_pczt_signing_plan(&pczt, LedgerAppSupport::OLDEST)
                             .unwrap_err()
@@ -897,7 +953,7 @@ mod tests {
     }
 
     #[test]
-    fn printable_ascii_memos_still_build_signing_plans() {
+    fn printable_ascii_memos_build_plans_for_supported_bundles() {
         for version in [
             BundleVersion::orchard_v2(),
             BundleVersion::orchard_v3(),
@@ -914,11 +970,16 @@ mod tests {
                 &[b'x'; 512],
             ] {
                 let pczt = memo_pczt(version, memo, 90_000, true);
-                assert!(super::super::build_pczt_full_signing_plan(
-                    &pczt,
-                    LedgerAppSupport::OLDEST
-                )
-                .is_ok());
+                assert_memo_classification(&pczt, false);
+                if version == BundleVersion::orchard_v3() {
+                    assert_orchard_change_is_refused(&pczt);
+                    continue;
+                }
+                if let Err(error) =
+                    super::super::build_pczt_full_signing_plan(&pczt, LedgerAppSupport::OLDEST)
+                {
+                    panic!("{version:?}: {error}");
+                }
             }
         }
     }

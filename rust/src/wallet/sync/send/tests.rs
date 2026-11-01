@@ -2955,7 +2955,7 @@ fn estimate_send_max_stays_at_v6_ceiling_for_v2_only_spends() {
 }
 
 #[test]
-fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
+fn keystone_transparent_shielding_refuses_before_nu6_3() {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(200).unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
@@ -3011,25 +3011,16 @@ fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result = create_shield_transparent_pczt_for_live_tip(
+    let error = create_shield_transparent_pczt_for_live_tip(
         db_path,
         network,
         &account_uuid,
         "shield-test",
         None,
     )
-    .unwrap();
-    let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
-
-    assert_eq!(
-        *pczt.global().tx_version(),
-        zcash_protocol::constants::V5_TX_VERSION
-    );
-    assert!(!pczt.orchard().actions().is_empty());
-    assert!(pczt.ironwood().actions().is_empty());
-    assert!(!result.needs_sapling_params);
-    assert!(result.fee_zatoshi > 0);
-    assert!(result.shielded_zatoshi > 0);
+    .err()
+    .expect("historical transaction construction is refused");
+    assert!(error.message.contains("before NU6.3 activation"));
 }
 
 #[test]
@@ -4441,7 +4432,10 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
     .unwrap();
     let id = parse_account_uuid(&uuid).unwrap();
     let mut db = open_wallet_db(path, network).unwrap();
-    let tip = BlockHeight::from_u32(2_600_000);
+    let tip = network
+        .activation_height(zcash_protocol::consensus::NetworkUpgrade::Nu6_3)
+        .unwrap()
+        + 10;
     db.update_chain_tip(tip).unwrap();
     type CheckpointError = WalletError<
         (),
@@ -4451,9 +4445,17 @@ fn ledger_shielding_limits_inputs_and_preserves_account_scope_paths() {
         (),
         ReceivedNoteId,
     >;
-    let _: Result<_, CheckpointError> = db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
-    let _: Result<_, CheckpointError> = db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
-    let _: Result<_, CheckpointError> = db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    // ZIP 218 anchors must be at least one block behind the tip.
+    let checkpoint_height = tip - 1;
+    let checkpoint: Result<_, CheckpointError> =
+        db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(checkpoint_height)?));
+    checkpoint.unwrap();
+    let checkpoint: Result<_, CheckpointError> =
+        db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(checkpoint_height)?));
+    checkpoint.unwrap();
+    let checkpoint: Result<_, CheckpointError> =
+        db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(checkpoint_height)?));
+    checkpoint.unwrap();
     let external = ufvk.transparent().unwrap().derive_external_ivk().unwrap();
     let internal = ufvk.transparent().unwrap().derive_internal_ivk().unwrap();
     for i in 0..35u32 {
@@ -4629,7 +4631,10 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
     .unwrap();
     let id = parse_account_uuid(&uuid).unwrap();
     let mut db = open_wallet_db(path, network).unwrap();
-    let tip = BlockHeight::from_u32(2_600_000);
+    let tip = network
+        .activation_height(zcash_protocol::consensus::NetworkUpgrade::Nu6_3)
+        .unwrap()
+        + 10;
     db.update_chain_tip(tip).unwrap();
     type CheckpointError = WalletError<
         (),
@@ -4639,9 +4644,17 @@ fn durable_private_transparent_policy_blocks_shielding_and_survives_startup() {
         (),
         ReceivedNoteId,
     >;
-    let _: Result<_, CheckpointError> = db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
-    let _: Result<_, CheckpointError> = db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
-    let _: Result<_, CheckpointError> = db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+    // ZIP 218 anchors must be at least one block behind the tip.
+    let checkpoint_height = tip - 1;
+    let checkpoint: Result<_, CheckpointError> =
+        db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(checkpoint_height)?));
+    checkpoint.unwrap();
+    let checkpoint: Result<_, CheckpointError> =
+        db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(checkpoint_height)?));
+    checkpoint.unwrap();
+    let checkpoint: Result<_, CheckpointError> =
+        db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(checkpoint_height)?));
+    checkpoint.unwrap();
     let external = ufvk.transparent().unwrap().derive_external_ivk().unwrap();
     for i in 0..3u32 {
         let address = external
