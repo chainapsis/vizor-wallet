@@ -111,6 +111,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
         data: data,
         privateEnabled: privateMigrationEnabled,
+        privacyModeEnabled: privacyModeEnabled,
         privateUnavailableForLedger: ledgerAccount,
         // A stopped run's remainder starts here; say so and lead back.
         movingRest:

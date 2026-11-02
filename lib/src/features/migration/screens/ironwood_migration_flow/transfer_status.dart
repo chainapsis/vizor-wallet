@@ -385,13 +385,15 @@ class _MigrationUpgradeStoppedStatusContent extends StatelessWidget {
       children: [
         _MigrationSummaryMetric(
           label: 'Moved to Ironwood',
-          value: '${_formatZecAmountCompact(moved)} ZEC',
+          value:
+              '${_displayZecAmountCompact(moved, privacyModeEnabled: privacyModeEnabled)} ZEC',
           secondary: true,
         ),
         const SizedBox(height: 16),
         _MigrationSummaryMetric(
           label: 'Still in Orchard',
-          value: '${_formatZecAmountCompact(remaining)} ZEC',
+          value:
+              '${_displayZecAmountCompact(remaining, privacyModeEnabled: privacyModeEnabled)} ZEC',
         ),
       ],
     );

@@ -6225,6 +6225,56 @@ void main() {
       expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
       _expectNoDoubledDenomination();
     });
+
+    testWidgets('upgrade stop and moving the rest mask the amounts', (
+      tester,
+    ) async {
+      useDesktopView(tester);
+      final stopped = _stoppedByUpgradeStatus();
+      Widget harness({required bool privacyModeEnabled}) =>
+          _migrationOptionsHarness(
+            initialLocation: '/migration/private/status',
+            statusRoutePreview: stopped,
+            presentationCta: IronwoodHomeMigrationCtaState.stopped(
+              network: 'main',
+              accountUuid: 'account-1',
+              status: stopped,
+            ),
+            privacyModeEnabled: privacyModeEnabled,
+          );
+
+      Finder onStop(Finder finder) => find.descendant(
+        of: find.byKey(
+          const ValueKey('ironwood_migration_status_stopped_by_upgrade'),
+        ),
+        matching: finder,
+      );
+
+      await tester.pumpWidget(harness(privacyModeEnabled: false));
+      await tester.pumpAndSettle();
+      expect(onStop(find.text('0 ZEC')), findsNWidgets(2));
+
+      await remount(tester, harness(privacyModeEnabled: true));
+      await tester.pumpAndSettle();
+      expect(find.text('Still in Orchard'), findsOneWidget);
+      expect(onStop(find.text('****** ZEC')), findsNWidgets(2));
+      expect(onStop(find.textContaining(RegExp(r'\d ZEC'))), findsNothing);
+      expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('ironwood_upgrade_stop_move_remaining')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          '****** ZEC is still in Orchard. Choose between more privacy over '
+          'time or a faster migration.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('0.1 ZEC'), findsNothing);
+      _expectNoDoubledDenomination();
+    });
   });
 }
 

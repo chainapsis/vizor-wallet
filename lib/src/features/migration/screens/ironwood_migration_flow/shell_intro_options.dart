@@ -83,6 +83,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
         privateEnabled: !ledgerAccount,
+        privacyModeEnabled: privacyModeEnabled,
         movingRest: movingRest,
       ),
       IronwoodMigrationFlowStep.review =>
@@ -1052,11 +1053,13 @@ class _IronwoodMigrationOptionsContent extends StatefulWidget {
   const _IronwoodMigrationOptionsContent({
     required this.data,
     required this.privateEnabled,
+    required this.privacyModeEnabled,
     this.movingRest = false,
   });
 
   final IronwoodMigrationFlowData data;
   final bool privateEnabled;
+  final bool privacyModeEnabled;
   final bool movingRest;
 
   @override
@@ -1113,7 +1116,7 @@ class _IronwoodMigrationOptionsContentState
                   width: 322,
                   child: Text(
                     widget.movingRest
-                        ? '${_formatZecAmountCompact(widget.data.amountZatoshi)}'
+                        ? '${_displayZecAmountCompact(widget.data.amountZatoshi, privacyModeEnabled: widget.privacyModeEnabled)}'
                               ' ZEC is still in Orchard. Choose between more '
                               'privacy over time or a faster migration.'
                         : 'Choose between more privacy over time or a faster '

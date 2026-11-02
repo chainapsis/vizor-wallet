@@ -9514,6 +9514,49 @@ void main() {
       await tester.pumpWidget(harness);
     }
 
+    testWidgets('upgrade stop and moving the rest mask the amounts', (
+      tester,
+    ) async {
+      final stopped = _status(
+        phase: kIronwoodMigrationStoppedByUpgradePhase,
+        activeRunId: null,
+      );
+      final cta = IronwoodHomeMigrationCtaState.stopped(
+        network: 'main',
+        accountUuid: 'account-1',
+        status: stopped,
+      );
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/options',
+          migrationService: _migrationService(),
+          status: stopped,
+          ctaBuilder: () => cta,
+          extraOverrides: [
+            ironwoodHomeMigrationPresentationProvider.overrideWithValue(cta),
+            privacyMode(true),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          '****** ZEC is still in Orchard. Choose between more privacy over '
+          'time or a faster migration.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Still in Orchard'), findsOneWidget);
+      expect(find.text('****** ZEC'), findsNWidgets(2));
+      expect(find.textContaining('142.23'), findsNothing);
+      expect(find.textContaining(RegExp(r'\d ZEC')), findsNothing);
+      expect(find.bySemanticsLabel(RegExp(r'\d ZEC')), findsNothing);
+      expect(find.textContaining('ZEC ZEC'), findsNothing);
+    });
+
     testWidgets('intro masks the Orchard balance and updates in place', (
       tester,
     ) async {

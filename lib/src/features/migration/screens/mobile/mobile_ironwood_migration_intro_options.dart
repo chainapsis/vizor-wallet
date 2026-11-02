@@ -152,12 +152,14 @@ class _MobileMigrationOptions extends ConsumerStatefulWidget {
   const _MobileMigrationOptions({
     required this.data,
     required this.privateEnabled,
+    required this.privacyModeEnabled,
     this.privateUnavailableForLedger = false,
     this.movingRest = false,
   });
 
   final IronwoodMigrationFlowData data;
   final bool privateEnabled;
+  final bool privacyModeEnabled;
   final bool privateUnavailableForLedger;
   final bool movingRest;
 
@@ -249,7 +251,7 @@ class _MobileMigrationOptionsState
         ? '/migration/private/status'
         : '/migration/how-it-works';
     final restIntro = widget.movingRest
-        ? '${ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText}'
+        ? '${hideIfPrivacyMode(ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText, privacyModeEnabled: widget.privacyModeEnabled)}'
               ' ZEC is still in Orchard. '
         : '';
     return _MobileIronwoodMigrationBackScope(

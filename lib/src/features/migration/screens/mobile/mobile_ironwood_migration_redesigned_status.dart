@@ -946,7 +946,7 @@ class _MobileMigrationRedesignedStatusState
           ),
           // What the next run moves; the options and review start from it.
           remainingAmountText:
-              '${ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText} ZEC',
+              '${hideIfPrivacyMode(ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText, privacyModeEnabled: privacyModeEnabled)} ZEC',
           completedParts: _completedParts(widget.status),
           totalParts: _totalParts(widget.status),
         ),
