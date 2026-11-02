@@ -111,6 +111,9 @@ Widget _buildCapture(
       ledgerRecoveryAccountKeyLoaderProvider.overrideWithValue(
         (_) async => 'expected',
       ),
+      ledgerRecoveryAccountKeyMatcherProvider.overrideWithValue(
+        (expected, exported) async => expected == exported,
+      ),
       ledgerBluetoothExistingAccountConnectorProvider.overrideWithValue(
         (index, device) async => LedgerDeviceAccount(
           ufvk: device.id == 'other-account' ? 'different' : 'expected',

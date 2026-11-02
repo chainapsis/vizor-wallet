@@ -158,6 +158,7 @@ ProviderContainer containerFor(
   FakeBle ble,
   FakeAccounts accounts, {
   Future<LedgerDeviceAccount> Function()? export,
+  LedgerRecoveryAccountKeyMatcher? keyMatcher,
   TargetPlatform platform = TargetPlatform.macOS,
 }) => ProviderContainer(
   overrides: [
@@ -168,6 +169,9 @@ ProviderContainer containerFor(
     ledgerTargetPlatformProvider.overrideWithValue(platform),
     ledgerRecoveryAccountKeyLoaderProvider.overrideWithValue(
       (_) async => 'expected',
+    ),
+    ledgerRecoveryAccountKeyMatcherProvider.overrideWithValue(
+      keyMatcher ?? (expected, exported) async => expected == exported,
     ),
     ledgerBluetoothExistingAccountConnectorProvider.overrideWithValue((
       index,
@@ -313,6 +317,114 @@ void main() {
       expect(ble.calls, ['stop', 'disconnect', 'connect']);
     });
   }
+  test('semantic key match saves despite different UFVK strings', () async {
+    final accounts = FakeAccounts();
+    final c = containerFor(
+      FakeBle(),
+      accounts,
+      export: () async => exported('device-without-sapling'),
+      keyMatcher: (expected, actual) async {
+        expect(expected, 'expected');
+        expect(actual, 'device-without-sapling');
+        return true;
+      },
+    );
+    addTearDown(c.dispose);
+    await c
+        .read(ledgerPairingRecoveryServiceProvider)
+        .verifyAndSave(
+          accountUuid: 'a',
+          device: device,
+          checkCurrent: () {},
+          onSaving: () {},
+        );
+    expect(accounts.savedId, 'new');
+    expect(accounts.writes, 1);
+  });
+  test('identical strings cannot bypass key validation', () async {
+    final accounts = FakeAccounts();
+    final c = containerFor(
+      FakeBle(),
+      accounts,
+      keyMatcher: (_, _) async => false,
+    );
+    addTearDown(c.dispose);
+    await expectLater(
+      c
+          .read(ledgerPairingRecoveryServiceProvider)
+          .verifyAndSave(
+            accountUuid: 'a',
+            device: device,
+            checkCurrent: () {},
+            onSaving: () {},
+          ),
+      throwsA(isA<LedgerAccountMismatchException>()),
+    );
+    expect(accounts.writes, 0);
+  });
+  for (final change in ['cancel', 'lock', 'account']) {
+    test('$change during key validation prevents saving', () async {
+      final accounts = FakeAccounts();
+      final validating = Completer<void>();
+      final match = Completer<bool>();
+      final c = containerFor(
+        FakeBle(),
+        accounts,
+        keyMatcher: (_, _) {
+          validating.complete();
+          return match.future;
+        },
+      );
+      addTearDown(c.dispose);
+      final result = c
+          .read(ledgerPairingRecoveryServiceProvider)
+          .verifyAndSave(
+            accountUuid: 'a',
+            device: device,
+            checkCurrent: () {},
+            onSaving: () {},
+          );
+      final assertion = expectLater(
+        result,
+        throwsA(isA<LedgerMobileException>()),
+      );
+      await validating.future;
+      switch (change) {
+        case 'cancel':
+          c.read(ledgerDeviceRequestsProvider).cancel();
+        case 'lock':
+          (c.read(appSecurityProvider.notifier) as FakeSecurity).setUnlocked(
+            false,
+          );
+        case 'account':
+          accounts.changeActive('other');
+      }
+      match.complete(true);
+      await assertion;
+      expect(accounts.writes, 0);
+    });
+  }
+  test('key decoder failure never saves connection metadata', () async {
+    final accounts = FakeAccounts();
+    final c = containerFor(
+      FakeBle(),
+      accounts,
+      keyMatcher: (_, _) async => throw StateError('Invalid viewing key'),
+    );
+    addTearDown(c.dispose);
+    await expectLater(
+      c
+          .read(ledgerPairingRecoveryServiceProvider)
+          .verifyAndSave(
+            accountUuid: 'a',
+            device: device,
+            checkCurrent: () {},
+            onSaving: () {},
+          ),
+      throwsStateError,
+    );
+    expect(accounts.writes, 0);
+  });
   test(
     'different account index cannot commit even with matching key',
     () async {
