@@ -12,14 +12,14 @@ zakura-pir-config = { git = "https://github.com/zakura-core/wallet-libraries.git
 zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries.git", rev = "bed478f1ec48814197f2c5aa386c14d046c7e52f" }
 zakura-pir-client = { version = "=0.0.1-rc3", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
 zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
-# The supported targets provide the atomic widths used by FRB.
+# The app installs its own redacting logger and panic hook.
+# Supported targets provide the atomic widths used by FRB.
 flutter_rust_bridge = { version = "=2.11.1", default-features = false, features = [
     "anyhow",
     "dart-opaque",
     "log",
     "rust-async",
     "thread-pool",
-    "user-utils",
     "wasm-start",
 ] }
 
@@ -37,7 +37,7 @@ rand_core = "0.6"
 secp256k1 = "0.33"
 
 # Key generation
-bip0039 = "0.12"
+bip0039 = { version = "0.12", default-features = false, features = ["rand"] }
 
 # Serialization
 nonempty = "0.11"
@@ -86,7 +86,7 @@ same-file = "1.0.6"
 
 # Logging. `log_redaction` installs the process logger, which masks
 # identifiers and forwards to the backend FRB's default utils would install.
-log = "0.4"
+log = { version = "0.4", features = ["std"] }
 regex = "1"
 
 # Hex encoding
@@ -146,7 +146,7 @@ version = "=0.1.0-rc9.4"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 [dependencies.zcash_voting]
-version = "=5.2.0-rc.2"
+version = "=5.2.0"
 
 [dependencies.orchard]
 package = "zakura-orchard"
@@ -181,7 +181,7 @@ features = ["std"]
 
 # The platform log backends FRB 2.11.1 uses, at the versions it already pulls in.
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
-oslog = "0.2.0"
+oslog = { version = "0.2.0", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
@@ -190,8 +190,7 @@ android_logger = "0.15"
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
-ledger-transport = "0.11.0"
-ledger-transport-hid = "0.11.0"
+hidapi = { version = "2.6.1", default-features = false, features = ["linux-static-hidraw"] }
 
 [dev-dependencies]
 hyper = { version = "1", features = ["server", "http2"] }
@@ -224,7 +223,7 @@ version = "=0.1.0-rc9.4"
 features = ["test-dependencies"]
 
 [dev-dependencies.zcash_voting]
-version = "=5.2.0-rc.2"
+version = "=5.2.0"
 features = ["test-fixtures"]
 
 # Real adapter batches for the coordinator's fixture source, the fake txid
@@ -239,7 +238,7 @@ features = ["testing"]
 version = "=0.1.0-rc.7"
 
 [dev-dependencies.vote-commitment-tree]
-version = "=0.8.0"
+version = "=0.8.1"
 default-features = false
 features = ["zakura"]
 

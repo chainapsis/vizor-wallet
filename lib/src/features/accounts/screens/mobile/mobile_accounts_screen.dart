@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -401,6 +402,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       return;
     }
     await Clipboard.setData(ClipboardData(text: address));
+    unawaited(AppHaptics.copy());
     if (mounted) showAppToast(context, 'Shielded address copied');
   }
 
@@ -772,13 +774,6 @@ class MobileAccountRemovalSheet extends StatelessWidget {
     height: 21 / 14,
     letterSpacing: -0.21,
   );
-  static const _buttonLabelStyle = TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w500,
-    fontSize: 14,
-    height: 16 / 14,
-    letterSpacing: -0.06,
-  );
 
   String get _description {
     if (hasActiveMigration) {
@@ -856,7 +851,7 @@ class MobileAccountRemovalSheet extends StatelessWidget {
               leading: isLastAccount ? null : const AppIcon(AppIcons.trash),
               child: Text(
                 isLastAccount ? 'Reset Vizor' : 'Remove',
-                style: _buttonLabelStyle.copyWith(
+                style: AppTypography.labelLarge.copyWith(
                   color: colors.button.destructive.label,
                 ),
               ),
@@ -864,7 +859,7 @@ class MobileAccountRemovalSheet extends StatelessWidget {
             const SizedBox(height: AppSpacing.s),
             MobileSheetCancel(
               onTap: () => Navigator.of(context).pop(false),
-              textStyle: _buttonLabelStyle.copyWith(
+              textStyle: AppTypography.labelLarge.copyWith(
                 color: colors.button.ghost.label,
               ),
             ),

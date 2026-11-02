@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/storage/linux_keyring_coordinator.dart';
@@ -36,14 +37,6 @@ class MobileAccountsSheet extends ConsumerStatefulWidget {
   ConsumerState<MobileAccountsSheet> createState() =>
       _MobileAccountsSheetState();
 }
-
-const _accountsSheetLabelMStyle = TextStyle(
-  fontFamily: 'Geist',
-  fontWeight: FontWeight.w500,
-  fontSize: 14,
-  height: 16 / 14,
-  letterSpacing: -0.06,
-);
 
 const _accountsSheetCurrentNameStyle = TextStyle(
   fontFamily: 'Geist',
@@ -100,6 +93,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
     final syncNotifier = ref.read(syncProvider.notifier);
     try {
       await accountNotifier.switchAccount(uuid);
+      unawaited(AppHaptics.selection());
     } on WalletMutationBusyException catch (error) {
       if (mounted) showAppToast(context, error.toString());
       return;
@@ -139,6 +133,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
       }
 
       await Clipboard.setData(ClipboardData(text: address));
+      unawaited(AppHaptics.copy());
       if (!mounted) return;
       showAppToast(context, 'Address copied');
     } catch (e) {
@@ -202,7 +197,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
           if (others.isNotEmpty) ...[
             Text(
               'Other accounts',
-              style: _accountsSheetLabelMStyle.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
               ),
             ),
@@ -245,7 +240,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                         return MobileListRow(
                           key: ValueKey('account_row_${account.uuid}'),
                           minRowHeight: _accountsSheetRowHeight,
-                          textStyle: _accountsSheetLabelMStyle,
+                          textStyle: AppTypography.labelLarge,
                           leading: MobileAccountAvatar(
                             profilePictureId: account.profilePictureId,
                             size: AppProfilePictureSize.navLarge,
@@ -281,7 +276,6 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
                   height: AppButtonSizing.largeHeight,
                   child: const Text(
                     'Manage accounts',
-                    style: _accountsSheetLabelMStyle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

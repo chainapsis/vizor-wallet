@@ -840,8 +840,11 @@ A hardware TEX request's ZIP 320 ephemeral address follows the same boundary:
 releasing the request before that boundary returns the address, so cancelled
 approvals cannot exhaust the ephemeral gap limit; after it the address stays
 reserved.
-Normal app exit closes the proposal gate, requests sync cancellation, and hides
-its desktop window before awaiting reservation cleanup. Rust allows 250ms to
+Normal app exit closes the proposal gate and requests sync cancellation.
+Desktop exits hide the window before awaiting reservation cleanup, except on
+Linux. Linux keeps the window visible during the same bounded cleanup, then
+calls `exit(0)` instead of GTK hide/destroy teardown to avoid the compositor
+shutdown crash. Rust allows 250ms to
 acquire the wallet write lock and drain accepted DB creators, then releases only
 unsubmitted reservations without waiting on SQLite contention. Once the budget
 expires, it starts no further cleanup; unfinished work is left for startup

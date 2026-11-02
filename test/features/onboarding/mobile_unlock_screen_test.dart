@@ -544,6 +544,20 @@ void main() {
     testWidgets('passcode unlock without a pending Gift Card opens home', (
       tester,
     ) async {
+      const channel = MethodChannel('com.zcash.wallet/haptics');
+      final confirmations = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        confirmations.add(call.method);
+        return true;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
       final routed = _routedUnlockApp();
       addTearDown(routed.router.dispose);
       await tester.pumpWidget(routed.app);
@@ -556,6 +570,7 @@ void main() {
 
       expect(routed.router.state.uri.path, '/home');
       expect(find.text('Home destination'), findsOneWidget);
+      expect(confirmations, ['success']);
       expect(find.text('Payment link destination'), findsNothing);
     });
 
