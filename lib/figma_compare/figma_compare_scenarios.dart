@@ -3753,6 +3753,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-receive-transparent',
+    description: 'Mobile receive screen on the transparent pool',
+    builder: buildReceiveMobileTransparentUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-receive-wide',
     description:
         'Adaptive receive with safe pane geometry and a deterministic wallet',
@@ -3809,6 +3816,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'receive-desktop-shielded',
     description: 'Desktop receive pane with copy/share and a labelled request',
     builder: buildReceiveDesktopRequestEntryUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
+    id: 'receive-desktop-transparent',
+    description:
+        'Desktop transparent receive with copy/share and a text request',
+    builder: buildReceiveDesktopTransparentRequestEntryUseCase,
     desktop: true,
     mobile: false,
   ),

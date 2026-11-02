@@ -154,16 +154,43 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   void _selectType(ReceiveAddressType type) {
     if (_selectedType == type) return;
     setState(() => _selectedType = type);
-    if (_pageController.hasClients) {
+    if (!_pageController.hasClients) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pageController.jumpToPage(type.index);
+    } else {
       unawaited(
         _pageController.animateToPage(
           type.index,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeInOutCubic,
         ),
       );
     }
   }
+
+  double get _page {
+    final attached = _pageController.hasClients;
+    return attached && _pageController.position.haveDimensions
+        ? _pageController.page!
+        : _selectedType.index.toDouble();
+  }
+
+  // The chip follows the pager, so a swipe moves both together.
+  Widget _buildTabs({required double width}) => AnimatedBuilder(
+    animation: _pageController,
+    builder: (context, _) => ReceiveTabs(
+      width: width,
+      height: _MobileReceiveMetrics.tabsHeight,
+      iconSize: _MobileReceiveMetrics.tabsIconSize,
+      iconGap: AppSpacing.xs,
+      labelStyle: AppTypography.labelLarge,
+      labelFontWeight: FontWeight.w500,
+      alwaysDarkSelected: true,
+      selectedType: _selectedType,
+      position: _page,
+      onChanged: _selectType,
+    ),
+  );
 
   void _handlePageChanged(int page) {
     final type = ReceiveAddressType.values[page];
@@ -265,17 +292,7 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                   children: [
                     const SizedBox(height: _MobileReceiveMetrics.topGap),
                     Center(
-                      child: ReceiveTabs(
-                        width: _MobileReceiveMetrics.tabsWidth,
-                        height: _MobileReceiveMetrics.tabsHeight,
-                        iconSize: _MobileReceiveMetrics.tabsIconSize,
-                        iconGap: AppSpacing.xs,
-                        labelStyle: AppTypography.labelLarge,
-                        labelFontWeight: FontWeight.w500,
-                        alwaysDarkSelected: true,
-                        selectedType: _selectedType,
-                        onChanged: _selectType,
-                      ),
+                      child: _buildTabs(width: _MobileReceiveMetrics.tabsWidth),
                     ),
                     const SizedBox(height: _MobileReceiveMetrics.tabsToQrGap),
                     Center(
@@ -321,10 +338,8 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                           _MobileReceiveMetrics.buttonIconSize,
                                     ),
                                     child: Text(
-                                      'Copy $poolLabel address',
-                                      style: AppTypography.labelMedium.copyWith(
-                                        fontWeight: FontWeight.w500,
-                                      ),
+                                      'Copy address',
+                                      semanticsLabel: 'Copy $poolLabel address',
                                     ),
                                   ),
                                 ),
@@ -381,23 +396,42 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
     );
   }
 
-  Widget _buildQrPager({required bool scanOptimizedQr}) => SizedBox(
+  /// Outside a split pane the pager spans the content width and leaves its
+  /// cards unclipped, so they slide apart with a gap and leave at the screen
+  /// edge. A split pane has no such edge, so its column clips and fades them.
+  Widget _buildQrPager({
+    required bool scanOptimizedQr,
+    bool contained = false,
+  }) => SizedBox(
     key: _qrPagerKey,
-    width: _MobileReceiveMetrics.qrWrapWidth,
+    width: contained ? _MobileReceiveMetrics.qrWrapWidth : double.infinity,
     height: _MobileReceiveMetrics.qrCodeHeight,
     child: PageView(
       key: const ValueKey('mobile_receive_qr_pager'),
       controller: _pageController,
+      // Builds the other pool's code ahead so a switch never waits on it.
+      allowImplicitScrolling: true,
+      clipBehavior: contained ? Clip.hardEdge : Clip.none,
       onPageChanged: _handlePageChanged,
       children: [
         for (final type in ReceiveAddressType.values)
-          _ReceiveQrPage(
-            key: ValueKey('mobile_receive_qr_${type.name}'),
-            type: type,
-            address: _addressFor(type),
-            renewing: _renewing,
-            scanOptimizedQr: scanOptimizedQr,
-            onRenew: () => unawaited(_renewShieldedAddress()),
+          AnimatedBuilder(
+            animation: _pageController,
+            builder: (context, child) {
+              if (!contained) return child!;
+              final distance = (_page - type.index).abs().clamp(0.0, 1.0);
+              return Opacity(opacity: 1 - distance, child: child);
+            },
+            child: Center(
+              child: _ReceiveQrPage(
+                key: ValueKey('mobile_receive_qr_${type.name}'),
+                type: type,
+                address: _addressFor(type),
+                renewing: _renewing,
+                scanOptimizedQr: scanOptimizedQr,
+                onRenew: () => unawaited(_renewShieldedAddress()),
+              ),
+            ),
           ),
       ],
     ),
@@ -423,7 +457,10 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                 (constraints.maxWidth - _MobileReceiveMetrics.qrWrapWidth) / 2,
               ),
             );
-            final qr = _buildQrPager(scanOptimizedQr: scanOptimizedQr);
+            final qr = _buildQrPager(
+              scanOptimizedQr: scanOptimizedQr,
+              contained: split,
+            );
             final details = Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -457,19 +494,11 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                     onBack: () => context.pop(),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  ReceiveTabs(
+                  _buildTabs(
                     width: math.min(
                       _MobileReceiveMetrics.tabsWidth,
                       constraints.maxWidth - horizontalPadding * 2,
                     ),
-                    height: _MobileReceiveMetrics.tabsHeight,
-                    iconSize: _MobileReceiveMetrics.tabsIconSize,
-                    iconGap: AppSpacing.xs,
-                    labelStyle: AppTypography.labelLarge,
-                    labelFontWeight: FontWeight.w500,
-                    alwaysDarkSelected: true,
-                    selectedType: _selectedType,
-                    onChanged: _selectType,
                   ),
                   const SizedBox(height: AppSpacing.md),
                   if (split)
@@ -505,9 +534,6 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
   Widget _buildWideActions() {
     final poolLabel = _isShielded ? 'shielded' : 'transparent';
     final enabled = _selectedAddress.isNotEmpty;
-    final labelStyle = AppTypography.labelMedium.copyWith(
-      fontWeight: FontWeight.w500,
-    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -530,7 +556,6 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
             'Copy address',
             semanticsLabel: 'Copy $poolLabel address',
             textAlign: TextAlign.center,
-            style: labelStyle,
           ),
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -550,7 +575,6 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
             'Share address',
             semanticsLabel: 'Share $poolLabel address',
             textAlign: TextAlign.center,
-            style: labelStyle,
           ),
         ),
         const SizedBox(height: AppSpacing.s),
@@ -561,11 +585,12 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
           growWithContent: true,
           height: _MobileReceiveMetrics.buttonHeight,
           variant: AppButtonVariant.ghost,
+          pressedBackgroundColor: const Color(0x00000000),
+          disabledBackgroundColor: const Color(0x00000000),
           onPressed: enabled ? _openRequest : null,
           child: Text(
             'Request $kZcashDefaultCurrencyTicker',
             textAlign: TextAlign.center,
-            style: labelStyle,
           ),
         ),
       ],
@@ -741,29 +766,21 @@ class _RequestTextButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: enabled ? onTap : null,
-        child: SizedBox(
-          width: _MobileReceiveMetrics.buttonStackWidth,
-          height: _MobileReceiveMetrics.buttonHeight,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
+      child: AppButton(
+        variant: AppButtonVariant.ghost,
+        expand: true,
+        constrainContent: true,
+        growWithContent: true,
+        height: _MobileReceiveMetrics.buttonHeight,
+        contentPadding: EdgeInsets.zero,
+        // Keep this a text-only action on hover, press and while disabled.
+        pressedBackgroundColor: const Color(0x00000000),
+        disabledBackgroundColor: const Color(0x00000000),
+        onPressed: enabled ? onTap : null,
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: AppTypography.labelLarge.copyWith(color: color),
         ),
       ),
     );
