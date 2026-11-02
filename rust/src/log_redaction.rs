@@ -15,6 +15,12 @@ use std::borrow::Cow;
 use std::io::Write;
 use std::sync::{LazyLock, Once};
 
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
+
 use log::{Log, Metadata, Record};
 use regex::{Captures, Regex, Replacer};
 
@@ -93,9 +99,80 @@ impl<L: Log> Log for RedactingLogger<L> {
 }
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
+struct AppleLogger {
+    subsystem: String,
+    loggers: RwLock<HashMap<String, Arc<oslog::OsLog>>>,
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+impl AppleLogger {
+    fn new(subsystem: &str) -> Self {
+        Self {
+            subsystem: subsystem.to_owned(),
+            loggers: RwLock::new(HashMap::new()),
+        }
+    }
+
+    // Release both cache guards before formatting or emitting a record.
+    fn for_target(&self, target: &str) -> Arc<oslog::OsLog> {
+        let existing = {
+            let loggers = self
+                .loggers
+                .read()
+                .unwrap_or_else(|error| error.into_inner());
+            loggers.get(target).map(Arc::clone)
+        };
+        if let Some(logger) = existing {
+            return logger;
+        }
+        let mut loggers = self
+            .loggers
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
+        let logger = Arc::clone(
+            loggers
+                .entry(target.to_owned())
+                .or_insert_with(|| Arc::new(oslog::OsLog::new(&self.subsystem, target))),
+        );
+        drop(loggers);
+        logger
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+impl Log for AppleLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= log::max_level()
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            let logger = self.for_target(record.target());
+            logger.with_level(
+                apple_log_level(record.level()),
+                &format!("{}", record.args()),
+            );
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+fn apple_log_level(level: log::Level) -> oslog::Level {
+    match level {
+        log::Level::Trace => oslog::Level::Debug,
+        log::Level::Debug => oslog::Level::Info,
+        log::Level::Info => oslog::Level::Default,
+        log::Level::Warn => oslog::Level::Error,
+        log::Level::Error => oslog::Level::Fault,
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 fn platform_backend() -> Option<Box<dyn Log>> {
-    // `new` only; `level_filter` would also change the global max level.
-    Some(Box::new(oslog::OsLogger::new("frb_user")))
+    // Match the previous backend without changing the global max level.
+    Some(Box::new(AppleLogger::new("frb_user")))
 }
 
 #[cfg(target_os = "android")]
@@ -479,5 +556,57 @@ mod tests {
              failed to open <path>\n\
              stack backtrace:\n   0: rust_lib_zcash_wallet::wallet::db::open\n             at <path>:459:5\n"
         );
+    }
+
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    mod apple {
+        use super::super::AppleLogger;
+        use std::sync::{Arc, Barrier};
+
+        #[test]
+        fn concurrent_targets_reuse_one_cached_arc_per_raw_category() {
+            const WORKERS: usize = 8;
+            let logger = Arc::new(AppleLogger::new("vizor.logger.test"));
+            let barrier = Arc::new(Barrier::new(WORKERS));
+            let handles: Vec<_> = (0..WORKERS)
+                .map(|_| {
+                    let logger = Arc::clone(&logger);
+                    let barrier = Arc::clone(&barrier);
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        logger.for_target("same")
+                    })
+                })
+                .collect();
+            let entries: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+            assert!(entries.iter().all(|entry| Arc::ptr_eq(entry, &entries[0])));
+            let other = logger.for_target("other");
+            assert!(!Arc::ptr_eq(&entries[0], &other));
+            let nul = logger.for_target("raw\0category");
+            let normalized = logger.for_target("raw(null)category");
+            assert!(!Arc::ptr_eq(&nul, &normalized));
+            assert_eq!(logger.loggers.read().unwrap().len(), 4);
+        }
+
+        #[test]
+        fn poisoned_cache_recovers_reads_and_writes() {
+            let logger = AppleLogger::new("vizor.logger.test");
+            let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _guard = logger.loggers.write().unwrap();
+                panic!("synthetic cache poison");
+            }));
+            assert!(failed.is_err());
+            let first = logger.for_target("after-poison");
+            let second = logger.for_target("after-poison");
+            assert!(Arc::ptr_eq(&first, &second));
+        }
+
+        #[test]
+        fn safe_native_handle_outlives_the_cache_owner() {
+            let logger = AppleLogger::new("vizor.logger.test");
+            let handle = logger.for_target("safe-smoke");
+            drop(logger);
+            handle.with_level(oslog::Level::Debug, "Vizor safe logger smoke");
+        }
     }
 }
