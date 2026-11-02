@@ -1907,16 +1907,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "filetime"
-version = "0.2.29"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
-dependencies = [
- "cfg-if",
- "libc",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6620,12 +6610,10 @@ dependencies = [
 [[package]]
 name = "tor-persist"
 version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59e41aea027686b05f21e0ad75aa2c0c9681a87f2f3130b6d6f7a7a8c06edd7b"
+source = "git+https://github.com/zakura-core/arti.git?rev=a2865c40351f8b705ac2f6d57abb2f8462be4fd7#a2865c40351f8b705ac2f6d57abb2f8462be4fd7"
 dependencies = [
  "derive-deftly",
  "derive_more 2.1.1",
- "filetime",
  "fs-mistrust",
  "fslock",
  "futures",
