@@ -2547,7 +2547,7 @@ void main() {
         currentHeight: currentHeight,
         broadcastHeight: currentHeight,
         isKeystone: false,
-        blockSpacing: BlockSpacing.preNu7,
+        blockSpacing: BlockSpacing.nu7Unscheduled,
       )!;
       final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
         accountUuid: 'account-1',
