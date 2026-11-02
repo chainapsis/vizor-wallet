@@ -142,12 +142,16 @@ enum _MobileMigrationOption { private, immediate }
 
 class _MobileMigrationOptions extends ConsumerStatefulWidget {
   const _MobileMigrationOptions({
+    required this.data,
     required this.privateEnabled,
     this.privateUnavailableForLedger = false,
+    this.movingRest = false,
   });
 
+  final IronwoodMigrationFlowData data;
   final bool privateEnabled;
   final bool privateUnavailableForLedger;
+  final bool movingRest;
 
   @override
   ConsumerState<_MobileMigrationOptions> createState() =>
@@ -227,28 +231,43 @@ class _MobileMigrationOptionsState
     final privateSelected = _selectedOption == _MobileMigrationOption.private;
     final immediateSelected =
         _selectedOption == _MobileMigrationOption.immediate;
+    final tipHeight = ref.watch(
+      syncProvider.select((sync) => sync.asData?.value.chainTipHeight),
+    );
+    final immediateEstimate = ironwoodImmediateMigrationCompletionEstimate(
+      ref.watch(blockSpacingProvider).fromTip(tipHeight ?? 0),
+    );
+    final backLocation = widget.movingRest
+        ? '/migration/private/status'
+        : '/migration/how-it-works';
+    final restIntro = widget.movingRest
+        ? '${ZecAmount.fromZatoshi(widget.data.amountZatoshi).compactBalance.amountText}'
+              ' ZEC is still in Orchard. '
+        : '';
     return _MobileIronwoodMigrationBackScope(
       // The in-flight step saves a migration draft and then routes on. Leaving
       // in the middle would strand that work on a screen the user has left.
-      onFallback: _isContinuing
-          ? null
-          : () => context.go('/migration/how-it-works'),
+      onFallback: _isContinuing ? null : () => context.go(backLocation),
       child: _MobileMigrationStepScaffold(
-        onBack: _isContinuing
-            ? () {}
-            : () => context.go('/migration/how-it-works'),
+        onBack: _isContinuing ? () {} : () => context.go(backLocation),
         navTitle: 'How to Migrate',
         topGap: 91,
         childGap: 24,
-        title: 'Choose How to Migrate',
+        title: widget.movingRest
+            ? 'How to Move the Rest'
+            : 'Choose How to Migrate',
         subtitle: widget.privateEnabled
-            ? 'Choose between more privacy over time or a faster migration. '
-                  'You can review the details before anything moves.'
+            ? widget.movingRest
+                  ? '${restIntro}Choose between more privacy over time or a '
+                        'faster migration.'
+                  : 'Choose between more privacy over time or a faster '
+                        'migration. You can review the details before '
+                        'anything moves.'
             : widget.privateUnavailableForLedger
-            ? 'Private migration is not available for Ledger accounts. '
-                  'Choose Immediate to continue.'
-            : 'Private migration is temporarily unavailable on Android. '
-                  'Choose immediate to continue.',
+            ? '${restIntro}Private migration is not available for Ledger '
+                  'accounts. Choose Immediate to continue.'
+            : '${restIntro}Private migration is temporarily unavailable on '
+                  'Android. Choose immediate to continue.',
         bottom: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -294,7 +313,7 @@ class _MobileMigrationOptionsState
               title: 'Immediate',
               body:
                   'Migrates your entire balance in one batch. '
-                  'Fast (~10 mins) but less private.',
+                  'Fast ($immediateEstimate) but less private.',
               selected: immediateSelected,
               icon: _MigrationChoiceIcon.immediate,
               onTap: _isContinuing

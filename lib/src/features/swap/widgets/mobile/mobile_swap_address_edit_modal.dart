@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -108,6 +111,7 @@ class _MobileSwapAddressEditModalState
 
   void _toggleRemember() {
     setState(() => _rememberAddress = !_rememberAddress);
+    unawaited(AppHaptics.selection());
   }
 
   bool get _canSubmit => _formatError == null;

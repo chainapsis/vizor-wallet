@@ -133,11 +133,13 @@ pub struct NetworkHttpResponse {
 /// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
 /// Tor is still bootstrapping waits for the route first, under the bootstrap's
 /// own deadline, and the caller's cancellation covers that wait.
+/// `max_body_bytes` stops reception before buffering a reply beyond its budget.
 pub async fn tor_http_get(
     url: String,
     headers: Vec<NetworkHttpHeader>,
     timeout_milliseconds: Option<u64>,
     request_id: Option<u64>,
+    max_body_bytes: Option<u64>,
 ) -> Result<NetworkHttpResponse, String> {
     let response = with_tor_http_request_cancellation(request_id, async {
         // The cancellation wrapper selects over this whole future, wait included.
@@ -152,7 +154,7 @@ pub async fn tor_http_get(
             client.http_get(
                 uri,
                 |builder| apply_headers(builder, &headers),
-                collect_body,
+                move |body| collect_body(body, max_body_bytes),
                 0,
                 |_| None,
             ),
@@ -169,12 +171,14 @@ pub async fn tor_http_get(
 /// `timeout_milliseconds` bounds the HTTP exchange only. A request made while
 /// Tor is still bootstrapping waits for the route first, under the bootstrap's
 /// own deadline, and the caller's cancellation covers that wait.
+/// `max_body_bytes` stops reception before buffering a reply beyond its budget.
 pub async fn tor_http_post(
     url: String,
     headers: Vec<NetworkHttpHeader>,
     body: Vec<u8>,
     timeout_milliseconds: Option<u64>,
     request_id: Option<u64>,
+    max_body_bytes: Option<u64>,
 ) -> Result<NetworkHttpResponse, String> {
     let response = with_tor_http_request_cancellation(request_id, async {
         // The cancellation wrapper selects over this whole future, wait included.
@@ -190,7 +194,7 @@ pub async fn tor_http_post(
                 uri,
                 |builder| apply_headers(builder, &headers),
                 Full::new(Bytes::from(body)),
-                collect_body,
+                move |body| collect_body(body, max_body_bytes),
                 0,
                 |_| None,
             ),
@@ -330,18 +334,40 @@ fn apply_headers(
     builder
 }
 
+/// Buffers ordinary HTTP replies under the caller's byte budget and deadline.
 async fn collect_body(
     body: hyper::body::Incoming,
-) -> Result<Vec<u8>, zcash_client_backend::tor::Error> {
+    max_body_bytes: Option<u64>,
+) -> Result<Vec<u8>, TorError> {
     with_api_response_body_timeout(TOR_API_RESPONSE_BODY_TIMEOUT, async move {
-        Ok(body
-            .collect()
+        collect_limited_body(body, max_body_bytes)
             .await
-            .map_err(HttpError::from)?
-            .to_bytes()
-            .to_vec())
+            .map_err(TorError::Io)
     })
     .await
+}
+
+async fn collect_limited_body<B>(mut body: B, limit: Option<u64>) -> Result<Vec<u8>, std::io::Error>
+where
+    B: hyper::body::Body<Data = Bytes> + Unpin,
+    B::Error: std::fmt::Display,
+{
+    let mut bytes = Vec::new();
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(|error| std::io::Error::other(error.to_string()))?;
+        if let Ok(chunk) = frame.into_data() {
+            if limit
+                .is_some_and(|limit| chunk.len() as u64 > limit.saturating_sub(bytes.len() as u64))
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "HTTP response exceeds byte limit",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+    }
+    Ok(bytes)
 }
 
 async fn with_api_response_body_timeout<T>(
@@ -633,6 +659,43 @@ mod tests {
         MAINNET_SAPLING_ACTIVATION_HEIGHT, MAINNET_SAPLING_ACTIVATION_TIME,
         TOR_HTTP_REQUEST_TIMEOUT_ERROR,
     };
+
+    #[tokio::test]
+    async fn body_budget_stops_polling_before_the_end_of_a_stream() {
+        use bytes::Bytes;
+        use futures::stream;
+        use http_body_util::StreamBody;
+        use hyper::body::Frame;
+        use std::sync::atomic::AtomicUsize;
+        let polls = Arc::new(AtomicUsize::new(0));
+        let counted = polls.clone();
+        let chunks = stream::iter((0..100).map(move |_| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, std::io::Error>(Frame::data(Bytes::from_static(&[1; 16])))
+        }));
+        let error = super::collect_limited_body(StreamBody::new(chunks), Some(32))
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(polls.load(Ordering::SeqCst), 3);
+        for limit in [Some(16), None] {
+            assert_eq!(
+                super::collect_limited_body(
+                    http_body_util::Full::new(Bytes::from_static(&[1; 16])),
+                    limit
+                )
+                .await
+                .unwrap(),
+                vec![1; 16]
+            );
+        }
+        assert!(super::collect_limited_body(
+            http_body_util::Full::new(Bytes::from_static(&[1])),
+            Some(0)
+        )
+        .await
+        .is_err());
+    }
 
     fn tree_state(network: &str, height: u64, time: u32) -> TreeState {
         TreeState {

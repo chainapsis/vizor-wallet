@@ -104,11 +104,13 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
     final colors = context.colors;
     final amount = parseZecAmount(amountText);
     final hasAmount = amount != null && amount > BigInt.zero;
-    final redeemFee = BigInt.from(kPaymentLinkClaimFeeReserveZatoshi);
-    final perCard = hasAmount ? amount + redeemFee : null;
+    final redeemFee = quote == null
+        ? null
+        : quote!.claimFeeReserveZatoshi ~/ BigInt.from(quote!.count);
+    final perCard = hasAmount && redeemFee != null ? amount + redeemFee : null;
     final cards = perCard == null ? null : perCard * BigInt.from(count);
     final total = quote?.totalDeductedZatoshi;
-    // Only the network fee, and so the total, waits on the quote or on sync.
+    // Both fees wait for the authoritative quote.
     final feePending =
         hasAmount &&
         quote == null &&
@@ -180,7 +182,7 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         _line(context, 'Per card', money(perCard)),
         caption(
           '${formatZecAmount(amount ?? BigInt.zero)} ZEC + '
-          '${formatZecAmount(redeemFee)} ZEC redeem fee',
+          '${redeemFee == null ? '—' : formatZecAmount(redeemFee)} ZEC redeem fee',
         ),
         const SizedBox(height: AppSpacing.xs),
         _line(context, '× $count cards', money(cards)),

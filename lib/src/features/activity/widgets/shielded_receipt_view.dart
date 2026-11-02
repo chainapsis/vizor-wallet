@@ -93,10 +93,9 @@ class ShieldedReceiptView extends StatelessWidget {
         const SizedBox(height: AppSpacing.base),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          child: ReviewInfoFlow(
+            connectorColor: colors.text.secondary,
+            rows: [
               ReviewInfoRow(
                 label: 'Amount',
                 value: amountText,
@@ -111,7 +110,6 @@ class ShieldedReceiptView extends StatelessWidget {
                 bottomLeftIconName: AppIcons.transparentBalance,
                 bottomLeftText: 'From transparent balance',
               ),
-              const _ShieldedArrowSeparator(),
               ReviewInfoRow(
                 label: 'To',
                 value: 'Shielded balance',
@@ -169,27 +167,6 @@ class ShieldedReceiptView extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-class _ShieldedArrowSeparator extends StatelessWidget {
-  const _ShieldedArrowSeparator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: SizedBox(
-        width: AppAssetSize.size,
-        child: Center(
-          child: AppIcon(
-            AppIcons.arrowDown,
-            size: AppIconSize.large,
-            color: context.colors.text.secondary,
-          ),
-        ),
-      ),
     );
   }
 }

@@ -25,6 +25,12 @@ pub fn configure_regtest_ironwood_activation_height(height: u32) -> Result<(), S
     crate::wallet::network::configure_regtest_nu6_3_activation_height(height)
 }
 
+/// Activates NU7 on regtest at the local node's height. Call after the NU6.3
+/// height; production builds leave NU7 inactive on regtest.
+pub fn configure_regtest_nu7_activation_height(height: u32) -> Result<(), String> {
+    crate::wallet::network::configure_regtest_nu7_activation_height(height)
+}
+
 /// Enables Regtest-speed migration timing on Testnet only. Mainnet and
 /// Regtest consensus behavior are unaffected.
 pub fn configure_fast_testnet_migration(enabled: bool) {

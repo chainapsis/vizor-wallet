@@ -45,18 +45,24 @@ enum SendScanDowngrade {
 
 /// The one line the scanner shows for [downgrade], or null when nothing was
 /// lost (a plain address QR, or a request whose address is all it asked for).
-String? sendScanDowngradeMessage(SendScanDowngrade? downgrade) =>
-    switch (downgrade) {
-      SendScanDowngrade.multipleRecipients =>
-        'Scanned the first recipient only — this request asks for more '
-            'than one',
-      SendScanDowngrade.unsupportedMemo =>
-        "Scanned the address only — the request's message couldn't be "
-            'read',
-      SendScanDowngrade.malformedRequest =>
-        "Scanned the address only — the payment request couldn't be read",
-      null => null,
-    };
+///
+/// [pasted] words it for a link pasted into the recipient field.
+String? sendScanDowngradeMessage(
+  SendScanDowngrade? downgrade, {
+  bool pasted = false,
+}) {
+  final verb = pasted ? 'Pasted' : 'Scanned';
+  return switch (downgrade) {
+    SendScanDowngrade.multipleRecipients =>
+      '$verb the first recipient only — this request asks for more '
+          'than one',
+    SendScanDowngrade.unsupportedMemo =>
+      "$verb the address only — the request's message couldn't be read",
+    SendScanDowngrade.malformedRequest =>
+      "$verb the address only — the payment request couldn't be read",
+    null => null,
+  };
+}
 
 /// A recipient and nothing else — today's behaviour, unchanged.
 class SendScanAddress extends SendScanResult {
@@ -123,7 +129,9 @@ SendScanResult? resolveSendScanPayload(String raw, {String? acceptedAddress}) {
     // chain's URI, was never a payment request.
     return (
       payment: null,
-      downgrade: _isZcashUri(raw) ? SendScanDowngrade.malformedRequest : null,
+      downgrade: isZcashPaymentLink(raw)
+          ? SendScanDowngrade.malformedRequest
+          : null,
     );
   }
   if (!request.isSupported) {
@@ -174,4 +182,23 @@ SendScanDowngrade _refusedRequestDowngrade(Zip321PaymentRequest request) {
   return SendScanDowngrade.malformedRequest;
 }
 
-bool _isZcashUri(String raw) => raw.trim().toLowerCase().startsWith('zcash:');
+/// The recipient field's error for a `zcash:` link that is not a valid
+/// address — "Invalid address" would read as a typo in an address.
+const kUnreadablePaymentLinkMessage = "This request link couldn't be read";
+
+/// Whether [raw] is a `zcash:` link rather than a bare address.
+bool isZcashPaymentLink(String raw) =>
+    raw.trim().toLowerCase().startsWith('zcash:');
+
+/// A `zcash:` link pasted into a send recipient field, resolved the way a scan
+/// is. Null when [raw] is not a `zcash:` link, or names no address the field
+/// could take in its place.
+SendScanResult? resolvePastedPaymentLink(String raw) {
+  if (!isZcashPaymentLink(raw)) return null;
+  final resolved = resolveSendScanPayload(raw.trim());
+  // With no address to extract, the scan payload falls back to the raw text.
+  if (resolved is SendScanAddress && isZcashPaymentLink(resolved.address)) {
+    return null;
+  }
+  return resolved;
+}

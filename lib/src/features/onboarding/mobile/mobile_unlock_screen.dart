@@ -266,6 +266,7 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         final claimed = claimParkedPaymentUriAfterUnlock(ref);
         final hasPendingPaymentLink =
             ref.read(paymentLinkIntakeProvider).pendingLink != null;
+        unawaited(AppHaptics.accessGranted());
         context.go(hasPendingPaymentLink ? '/payment-links' : '/home');
         syncNotifier.refreshHomeInBackground();
         final pendingPrefill = claimed.prefill;

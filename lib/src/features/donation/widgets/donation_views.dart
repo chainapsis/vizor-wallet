@@ -543,15 +543,14 @@ class DonationReviewContentView extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                child: Column(
-                  children: [
+                child: ReviewInfoFlow(
+                  rows: [
                     ReviewInfoRow(
                       label: 'Amount',
                       value: amountText,
                       leading: const ReviewZecCoinImage(),
                       bottomLeftText: fiatText,
                     ),
-                    const ReviewConnectorIcon(iconName: AppIcons.arrowDown),
                     const DonationRecipientInfoRow(),
                   ],
                 ),

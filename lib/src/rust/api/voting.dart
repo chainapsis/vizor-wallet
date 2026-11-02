@@ -8,6 +8,7 @@ import '../third_party/zcash_voting/config.dart';
 import '../third_party/zcash_voting/delegate.dart';
 import '../third_party/zcash_voting/share_policy.dart';
 import '../third_party/zcash_voting/wire.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `catch`, `config_error`, `delegation_static_inputs_for`, `internal`, `invalid_input`, `pir_snapshot_failure`, `pir_snapshot_height_field`, `pir_snapshot_probe_attempt`, `pir_snapshot_root_url`, `probe_pir_snapshot_endpoint`, `round_inputs`, `view`

@@ -103,6 +103,11 @@ class _IronwoodMigrationPrivateReviewContentState
         return;
       }
       if (!mounted) return;
+      // A schedule drawn before the upgrade can never start; draw a new one.
+      if (networkUpgradeHoldMessage(e) ==
+          kNetworkUpgradeScheduleChangedMessage) {
+        ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+      }
       setState(() {
         _startError = _privateMigrationStartErrorMessage(e);
       });
@@ -158,6 +163,10 @@ class _IronwoodMigrationPrivateReviewContentState
         ? ref.watch(ironwoodMigrationPrivatePlanProvider)
         : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
+    final tipHeight = ref.watch(
+      syncProvider.select((sync) => sync.asData?.value.chainTipHeight),
+    );
+    final blockTimes = ref.watch(blockSpacingProvider).fromTip(tipHeight ?? 0);
     return FutureBuilder<void>(
       future: _minimumAnalyzingDelay,
       builder: (context, snapshot) {
@@ -192,6 +201,7 @@ class _IronwoodMigrationPrivateReviewContentState
 
         return _MigrationReviewContent(
           plan: plan,
+          blockTimes: blockTimes,
           isStarting: _isStarting,
           error: _startError,
           onContinue: () => unawaited(_startMigration(plan)),
@@ -601,12 +611,14 @@ const _migrationPlanDonutSize = 256.0;
 class _MigrationReviewContent extends StatelessWidget {
   const _MigrationReviewContent({
     required this.plan,
+    required this.blockTimes,
     required this.isStarting,
     required this.onContinue,
     this.error,
   });
 
   final rust_sync.OrchardMigrationPrivatePlan plan;
+  final BlockTimeEstimate blockTimes;
   final bool isStarting;
   final VoidCallback onContinue;
   final String? error;
@@ -614,7 +626,10 @@ class _MigrationReviewContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final completionEstimate = migrationPlanCompletionDurationLabel(plan);
+    final completionEstimate = migrationPlanCompletionDurationLabel(
+      plan,
+      blockTimes: blockTimes,
+    );
     return SizedBox(
       key: const ValueKey('ironwood_migration_review_screen'),
       width: 420,

@@ -960,7 +960,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           _request = null;
           _pendingSignedMessages = null;
           _decoding = false;
+          // Rust drops a request held for the upgrade; say why.
           _error =
+              networkUpgradeHoldMessage(e) ??
               'This Keystone signing request can no longer be used. Prepare it again.';
         });
         return;
@@ -2270,6 +2272,8 @@ bool _keystoneMigrationRequestMissingError(Object error) {
 
 @visibleForTesting
 String ironwoodMigrationKeystoneSigningErrorMessage(Object error) {
+  final upgradeHold = networkUpgradeHoldMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   final lower = message.toLowerCase();
   if (lower.contains('batch result request id') &&

@@ -25,7 +25,7 @@ use super::super::import_discovery::PrivateAccountDiscovery;
 use super::super::pir::{test_transport, TransparentPirSource};
 use super::activation::checkpoint_trees;
 use super::pir::{
-    assert_private, main_wallet, service, shard_map, MainWallet, BIRTHDAY, INIT, MAP, TOP,
+    assert_private, main_wallet, refusing, service, shard_map, MainWallet, BIRTHDAY, INIT, MAP, TOP,
 };
 use super::*;
 use crate::wallet::sync::{get_shield_transparent_status, get_transaction_history};
@@ -877,7 +877,7 @@ async fn an_activated_wallet_discloses_nothing_through_any_lane_including_the_pi
             .iter()
             .map(|request| request.path.as_str())
             .collect::<Vec<_>>(),
-        [MAP, INIT, "/v2/filters/shards/0/filter"],
+        [MAP, INIT, "/transparent/v1/filters/shards/0/filter"],
         "only the service's routes, and no candidate in any of them"
     );
     assert_private(&requests, &candidates);
@@ -1122,8 +1122,24 @@ async fn private_queries_discloses_nothing_before_it_raises_the_wallet() {
     for first_account in [false, true] {
         let gate = import_gate(MAIN, &path, first_account, selected).unwrap();
         assert!(!gate.is_allowed());
-        // Discovery goes to the transparent PIR service, which this lane
-        // does not reach: it fails, never a shorter list, and sends nothing.
+        // With no server selected there is no private discovery, and nothing
+        // is sent anywhere.
+        assert_eq!(
+            discover_used_software_accounts(
+                MAIN,
+                &seed,
+                Some(u64::from(BIRTHDAY)),
+                &lwd.url,
+                &gate,
+                &PrivateAccountDiscovery::new(&path, MAIN),
+            )
+            .await
+            .err(),
+            Some(crate::api::wallet::SOFTWARE_ACCOUNT_DISCOVERY_UNAVAILABLE.to_string()),
+        );
+        // Discovery goes to the selected transparent PIR service, which
+        // refuses here: it fails, never a shorter list.
+        let _seam = test_transport::set(&path, refusing());
         assert_eq!(
             discover_used_software_accounts(
                 MAIN,

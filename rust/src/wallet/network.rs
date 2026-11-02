@@ -11,10 +11,18 @@ const DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT: u32 = u32::MAX;
 static REGTEST_NU6_3_ACTIVATION_HEIGHT: AtomicU32 =
     AtomicU32::new(DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT);
 
+// NU7 stays inactive on regtest unless an NU7 E2E configures its height.
+const DEFAULT_REGTEST_NU7_ACTIVATION_HEIGHT: u32 = u32::MAX;
+#[cfg(not(test))]
+static REGTEST_NU7_ACTIVATION_HEIGHT: AtomicU32 =
+    AtomicU32::new(DEFAULT_REGTEST_NU7_ACTIVATION_HEIGHT);
+
 #[cfg(test)]
 thread_local! {
     static REGTEST_NU6_3_ACTIVATION_HEIGHT: Cell<u32> =
         const { Cell::new(DEFAULT_REGTEST_NU6_3_ACTIVATION_HEIGHT) };
+    static REGTEST_NU7_ACTIVATION_HEIGHT: Cell<u32> =
+        const { Cell::new(DEFAULT_REGTEST_NU7_ACTIVATION_HEIGHT) };
 }
 
 pub fn configure_regtest_nu6_3_activation_height(height: u32) -> Result<(), String> {
@@ -34,6 +42,26 @@ fn regtest_nu6_3_activation_height() -> BlockHeight {
     #[cfg(test)]
     let height = REGTEST_NU6_3_ACTIVATION_HEIGHT.get();
     BlockHeight::from_u32(height)
+}
+
+/// Activates NU7 on regtest. It must follow NU6.3, which carries Ironwood.
+pub fn configure_regtest_nu7_activation_height(height: u32) -> Result<(), String> {
+    if height <= u32::from(regtest_nu6_3_activation_height()) {
+        return Err("Regtest NU7 activation height must follow NU6.3".to_string());
+    }
+    #[cfg(not(test))]
+    REGTEST_NU7_ACTIVATION_HEIGHT.store(height, Ordering::SeqCst);
+    #[cfg(test)]
+    REGTEST_NU7_ACTIVATION_HEIGHT.set(height);
+    Ok(())
+}
+
+fn regtest_nu7_activation_height() -> Option<BlockHeight> {
+    #[cfg(not(test))]
+    let height = REGTEST_NU7_ACTIVATION_HEIGHT.load(Ordering::SeqCst);
+    #[cfg(test)]
+    let height = REGTEST_NU7_ACTIVATION_HEIGHT.get();
+    (height != DEFAULT_REGTEST_NU7_ACTIVATION_HEIGHT).then(|| BlockHeight::from_u32(height))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -101,9 +129,7 @@ impl Parameters for WalletNetwork {
                 | NetworkUpgrade::Nu6_1
                 | NetworkUpgrade::Nu6_2 => Some(BlockHeight::from_u32(1)),
                 NetworkUpgrade::Nu6_3 => Some(regtest_nu6_3_activation_height()),
-                // Keep proposed NU7 inactive on regtest unless a future E2E
-                // configures an activation height for it.
-                NetworkUpgrade::Nu7 => None,
+                NetworkUpgrade::Nu7 => regtest_nu7_activation_height(),
             },
         }
     }
@@ -121,6 +147,25 @@ mod tests {
         assert_eq!(
             network.activation_height(NetworkUpgrade::Nu6_3),
             Some(BlockHeight::from_u32(5000))
+        );
+    }
+}
+
+#[cfg(test)]
+mod regtest_tests {
+    use super::*;
+
+    #[test]
+    fn regtest_nu7_activates_only_when_configured_after_nu6_3() {
+        let network = WalletNetwork::Regtest;
+        assert_eq!(network.activation_height(NetworkUpgrade::Nu7), None);
+
+        configure_regtest_nu6_3_activation_height(400).unwrap();
+        assert!(configure_regtest_nu7_activation_height(400).is_err());
+        configure_regtest_nu7_activation_height(1200).unwrap();
+        assert_eq!(
+            network.activation_height(NetworkUpgrade::Nu7),
+            Some(BlockHeight::from_u32(1200))
         );
     }
 }

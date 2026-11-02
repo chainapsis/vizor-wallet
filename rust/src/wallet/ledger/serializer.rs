@@ -1,10 +1,13 @@
 //! Byte-exact serializer for the Ledger Zcash app's compact PCZT APDU subset.
 
+use zcash_protocol::consensus::BranchId;
+
 use super::limits::ensure_count;
 use super::parse::{
     Bip32Derivation, Global, IronwoodBundle, ParsedPczt, ShieldedAction, ShieldedBundle,
-    TransparentInput, TransparentOutput, LEDGER_MEMO_HASH_UNSUPPORTED,
+    TransparentInput, TransparentOutput, LEDGER_APP_UPDATE_REQUIRED, LEDGER_MEMO_HASH_UNSUPPORTED,
 };
+use super::LedgerAppSupport;
 
 pub(super) const MAX_PACKET_SIZE: usize = 255;
 
@@ -17,10 +20,17 @@ pub(super) struct CommandPackets {
 
 pub(super) fn serialize_pczt(
     pczt: &ParsedPczt,
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
 ) -> Result<Vec<CommandPackets>, String> {
-    if !memo_hash_supported && pczt.memo_reaches_hash_path {
+    if !app_support.memo_hash && pczt.memo_reaches_hash_path {
         return Err(LEDGER_MEMO_HASH_UNSUPPORTED.into());
+    }
+    // Older apps answer these with a generic IncorrectData; name the update instead.
+    if !app_support.nu7_branch && pczt.global.consensus_branch_id == u32::from(BranchId::Nu7) {
+        return Err(LEDGER_APP_UPDATE_REQUIRED.into());
+    }
+    if !app_support.orchard_to_ironwood && spends_orchard_into_ironwood(pczt) {
+        return Err(LEDGER_APP_UPDATE_REQUIRED.into());
     }
     let is_v6 = pczt.global.tx_version >= 6;
     let mut commands = vec![
@@ -82,6 +92,16 @@ fn serialize_transparent_inputs(inputs: &[TransparentInput]) -> Result<Vec<Vec<u
     }
 
     Ok(packets)
+}
+
+fn spends_orchard_into_ironwood(pczt: &ParsedPczt) -> bool {
+    pczt.orchard_bundle
+        .as_ref()
+        .is_some_and(|bundle| bundle.actions.iter().any(|action| action.spend_value != 0))
+        && pczt
+            .ironwood_bundle
+            .as_ref()
+            .is_some_and(|bundle| bundle.actions.iter().any(|action| action.action.value != 0))
 }
 
 fn serialize_header(global: &Global) -> Vec<u8> {
@@ -486,7 +506,7 @@ mod tests {
                     anchor: [0; 32],
                 }),
             },
-            true
+            LedgerAppSupport::NEWEST
         )
         .is_ok());
     }
@@ -510,7 +530,7 @@ mod tests {
                 ironwood_bundle: None,
                 memo_reaches_hash_path: false,
             },
-            true,
+            LedgerAppSupport::NEWEST,
         )
         .unwrap();
 
@@ -523,6 +543,76 @@ mod tests {
         );
         assert_eq!(commands.last().unwrap().packets, vec![vec![0]]);
         assert!(commands.last().unwrap().finishes_pczt);
+    }
+
+    #[test]
+    fn nu7_branch_needs_an_app_that_accepts_it() {
+        let pczt = |branch: BranchId| ParsedPczt {
+            global: Global {
+                consensus_branch_id: branch.into(),
+                ..global(6)
+            },
+            transparent_inputs: vec![],
+            transparent_outputs: vec![],
+            orchard_bundle: None,
+            ironwood_bundle: None,
+            memo_reaches_hash_path: false,
+        };
+        let before_3_10 = LedgerAppSupport {
+            memo_hash: true,
+            nu7_branch: false,
+            orchard_to_ironwood: false,
+        };
+
+        assert_eq!(
+            serialize_pczt(&pczt(BranchId::Nu7), before_3_10).unwrap_err(),
+            LEDGER_APP_UPDATE_REQUIRED
+        );
+        assert!(serialize_pczt(&pczt(BranchId::Nu6_3), before_3_10).is_ok());
+        assert!(serialize_pczt(&pczt(BranchId::Nu7), LedgerAppSupport::NEWEST).is_ok());
+    }
+
+    #[test]
+    fn orchard_into_ironwood_needs_an_app_that_signs_it() {
+        let action = |spend_value, value| ShieldedAction {
+            spend_value,
+            value,
+            ..shielded_action()
+        };
+        let pczt = |orchard_spend| ParsedPczt {
+            global: global(6),
+            transparent_inputs: vec![],
+            transparent_outputs: vec![],
+            orchard_bundle: Some(ShieldedBundle {
+                actions: vec![action(orchard_spend, 0)],
+                flags: 0,
+                value_balance: 0,
+                anchor: [0; 32],
+            }),
+            ironwood_bundle: Some(IronwoodBundle {
+                actions: vec![IronwoodAction {
+                    action: action(0, 90_000),
+                    note_plaintext_version: 3,
+                }],
+                flags: 0,
+                value_balance: 0,
+                anchor: [0; 32],
+            }),
+            memo_reaches_hash_path: false,
+        };
+        let before_3_10 = LedgerAppSupport {
+            memo_hash: true,
+            nu7_branch: true,
+            orchard_to_ironwood: false,
+        };
+
+        assert_eq!(
+            serialize_pczt(&pczt(100_000), before_3_10).unwrap_err(),
+            LEDGER_APP_UPDATE_REQUIRED
+        );
+        // Padding with no Orchard value is not a crossing.
+        assert!(serialize_pczt(&pczt(0), before_3_10).is_ok());
+        assert!(serialize_pczt(&pczt(100_000), LedgerAppSupport::NEWEST).is_ok());
     }
 
     #[test]

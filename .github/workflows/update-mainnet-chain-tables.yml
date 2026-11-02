@@ -3,7 +3,8 @@ name: Update mainnet chain tables
 # Appends new entries to the compiled-in mainnet tables that let the wallet
 # avoid asking lightwalletd about wallet-derived heights:
 # - block times every 1,000 blocks, for birthday date and height conversion;
-# - tree states every 10,000 blocks, where restored birthdays start scanning.
+# - tree states every 10,000 blocks, where restored birthdays start scanning
+#   (every third one from NU7).
 # A person reviews and merges each update, since the tables ship in the binary.
 
 on:

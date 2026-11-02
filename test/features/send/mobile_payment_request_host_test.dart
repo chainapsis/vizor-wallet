@@ -1012,7 +1012,7 @@ void main() {
         amountText: '0.75',
         label: 'Bakery',
       ),
-      source: PaymentRequestSource.qrCode,
+      source: PaymentRequestSource.link,
     );
     _discardGate!.complete();
     await tester.pumpAndSettle();
@@ -1034,6 +1034,6 @@ void main() {
       find.byKey(const ValueKey('payment_request_replaced_notice')),
       findsOneWidget,
     );
-    expect(find.text('Updated from the scanned QR'), findsOneWidget);
+    expect(find.text('Replaced an earlier link'), findsOneWidget);
   });
 }

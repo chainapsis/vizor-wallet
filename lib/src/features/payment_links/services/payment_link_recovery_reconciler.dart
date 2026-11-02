@@ -523,6 +523,7 @@ class PaymentLinkRecoveryReconciler {
                 await fundingHistory(entry.link),
                 expectedZatoshi: paymentLinkFundingAmountZatoshi(
                   entry.link.amountZatoshi,
+                  claimFeeReserveZatoshi: entry.claimFeeReserveZatoshi,
                 ),
               ).toSet();
               check();
@@ -550,6 +551,7 @@ class PaymentLinkRecoveryReconciler {
             await fundingHistory(record.link),
             expectedZatoshi: paymentLinkFundingAmountZatoshi(
               record.link.amountZatoshi,
+              claimFeeReserveZatoshi: record.claimFeeReserveZatoshi,
             ),
           );
           check();

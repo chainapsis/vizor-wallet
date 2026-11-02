@@ -110,6 +110,7 @@ class PendingClaimPaymentLinkOperations implements PaymentLinkOperations {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) => throw UnimplementedError();
 
   @override

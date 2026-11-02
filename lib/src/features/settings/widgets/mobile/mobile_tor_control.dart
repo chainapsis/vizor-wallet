@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../providers/network_privacy_provider.dart';
@@ -47,8 +48,15 @@ class MobileTorControl extends ConsumerWidget {
         : presentation.description;
     final toggleAction = networkPrivacyToggleAction(state);
     final interactive = enabled && toggleAction.isInteractive;
-    Future<void> request(bool value) =>
-        onRequest?.call(value) ?? notifier.setTorEnabled(value);
+    Future<void> request(bool value) async {
+      await (onRequest?.call(value) ?? notifier.setTorEnabled(value));
+      if (context.mounted &&
+          value != state.torEnabled &&
+          ref.read(networkPrivacyProvider).torEnabled == value) {
+        unawaited(AppHaptics.selection());
+      }
+    }
+
     final onToggle = interactive
         ? () => unawaited(request(toggleAction.requestedTorEnabled))
         : null;

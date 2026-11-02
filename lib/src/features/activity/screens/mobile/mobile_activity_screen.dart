@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/formatting/zec_amount.dart';
+import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -76,7 +77,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
 
   List<SwapActivityRowItem> _swaps() {
     final uuid = _activeAccountUuid;
-
+    if (!ref.read(swapFeatureEnabledProvider)) return const [];
     return uuid == null
         ? const []
         : ref.read(swapActivityRowItemsProvider(uuid)).value ?? const [];
@@ -186,10 +187,12 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         await ref.read(giftCardActivityIndexProvider(uuid!).future);
       } catch (_) {}
       if (!mounted || !identical(pager, _pager)) return;
-      try {
-        await ref.read(swapActivityRowItemsProvider(uuid!).future);
-      } catch (_) {}
-      if (!mounted || !identical(pager, _pager)) return;
+      if (ref.read(swapFeatureEnabledProvider)) {
+        try {
+          await ref.read(swapActivityRowItemsProvider(uuid!).future);
+        } catch (_) {}
+        if (!mounted || !identical(pager, _pager)) return;
+      }
     }
     await pager.load(refresh: true);
   }
@@ -332,14 +335,17 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         unawaited(_loadTransactions(showLoading: true));
       }
     });
+    final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     if (accountUuid != null) {
       ref.listen(giftCardActivityIndexProvider(accountUuid), (_, next) {
         if (next.hasValue && !next.isLoading) unawaited(_pager?.load());
       });
-      ref.listen(swapActivityRowItemsProvider(accountUuid), (_, next) {
-        if (next.hasValue && !next.isLoading) unawaited(_pager?.load());
-      });
+      if (swapFeatureEnabled) {
+        ref.listen(swapActivityRowItemsProvider(accountUuid), (_, next) {
+          if (next.hasValue && !next.isLoading) unawaited(_pager?.load());
+        });
+      }
     }
     final giftCardActivityIndex = accountUuid == null
         ? GiftCardActivityIndex.empty
@@ -349,7 +355,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     final loadedTransactions = _transactionsAccountUuid == accountUuid
         ? _transactions
         : null;
-    final swapItems = accountUuid == null
+    final swapItems = accountUuid == null || !swapFeatureEnabled
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
               const <SwapActivityRowItem>[];

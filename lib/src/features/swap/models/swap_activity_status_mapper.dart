@@ -22,6 +22,16 @@ class SwapActivityAccountDetail {
 
 enum PayActivityStatusPhase { inProgress, completed, failed, refunded }
 
+/// Label of the paid amount on the Pay status header: past tense once the
+/// payment completes, neutral when it did not reach the recipient.
+String payActivityStatusAmountLabel(PayActivityStatusPhase phase) =>
+    switch (phase) {
+      PayActivityStatusPhase.completed => 'You paid',
+      PayActivityStatusPhase.failed || PayActivityStatusPhase.refunded =>
+        'Amount',
+      PayActivityStatusPhase.inProgress => "You're paying",
+    };
+
 /// Shared Pay status data backed by values whose meaning is known at the
 /// activity boundary. Provider/app fees are deliberately not repurposed as the
 /// Figma `Tx fee`; that value is injected only from a confirmed matching ZEC
@@ -199,6 +209,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
               : 'You pay'
         : _swapShowsTerminalFailureLabels(intent.status)
         ? 'Deposit amount'
+        : intent.status == SwapIntentStatus.complete
+        ? 'You paid'
         : "You're paying",
     receiveLabel: payMode
         ? switch (intent.status) {
@@ -211,6 +223,8 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
           }
         : _swapShowsTerminalFailureLabels(intent.status)
         ? 'Expected to receive'
+        : intent.status == SwapIntentStatus.complete
+        ? 'You received'
         : "You're receiving",
     payDetailText: payDetailText,
     payDetailCopyText: payDetailCopyText,

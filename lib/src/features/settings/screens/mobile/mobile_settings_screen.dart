@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../payment_links/providers/payment_link_cards_provider.dart';
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/app_version_config.dart';
 import '../../../../core/config/zcash_explorer.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -151,7 +152,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     ),
                     MobileListRow(
                       leading: _RowIcon(AppIcons.lock),
-                      label: 'Password',
+                      label: 'Change passcode',
                       minRowHeight: _settingsRowHeight,
                       textStyle: settingsRowStyle,
                       chevronColor: settingsChevronColor,
@@ -391,6 +392,7 @@ class MobileSettingsScreen extends ConsumerWidget {
         );
         if (!context.mounted || confirmed != true) return;
         await notifier.disable();
+        unawaited(AppHaptics.selection());
         if (context.mounted) {
           showAppToast(
             context,
@@ -411,6 +413,7 @@ class MobileSettingsScreen extends ConsumerWidget {
           .read(appSecurityProvider.notifier)
           .requireSessionPasswordForNativeSecretUse();
       await notifier.enable(passcode);
+      unawaited(AppHaptics.selection());
       if (context.mounted) {
         showAppToast(
           context,
@@ -447,6 +450,10 @@ class MobileSettingsScreen extends ConsumerWidget {
   }) async {
     try {
       await ref.read(syncKeepAwakeProvider.notifier).setEnabled(!enabled);
+      if (context.mounted &&
+          ref.read(syncKeepAwakeProvider).enabled != enabled) {
+        unawaited(AppHaptics.selection());
+      }
     } catch (_) {
       if (!context.mounted) return;
       showAppToast(context, "Couldn't update screen awake setting.");
@@ -475,13 +482,6 @@ class _DisableBiometricSheet extends StatelessWidget {
     height: 21 / 14,
     letterSpacing: -0.21,
   );
-  static const _buttonLabelStyle = TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w500,
-    fontSize: 14,
-    height: 16 / 14,
-    letterSpacing: -0.06,
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -508,7 +508,7 @@ class _DisableBiometricSheet extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(
               'Turn off',
-              style: _buttonLabelStyle.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.button.destructive.label,
               ),
             ),
@@ -516,7 +516,7 @@ class _DisableBiometricSheet extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(
             onTap: () => Navigator.of(context).pop(false),
-            textStyle: _buttonLabelStyle.copyWith(
+            textStyle: AppTypography.labelLarge.copyWith(
               color: colors.button.ghost.label,
             ),
           ),
@@ -836,7 +836,10 @@ class _ThemeOptionCard extends StatelessWidget {
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: () {
+          if (!selected) unawaited(AppHaptics.selection());
+          onTap();
+        },
         child: Container(
           height: 64,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),

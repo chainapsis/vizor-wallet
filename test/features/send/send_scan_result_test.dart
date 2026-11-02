@@ -207,5 +207,37 @@ void main() {
         expect(sendScanDowngradeMessage(downgrade), isNotNull);
       }
     });
+
+    test('a pasted link says it was pasted', () {
+      expect(
+        sendScanDowngradeMessage(
+          SendScanDowngrade.malformedRequest,
+          pasted: true,
+        ),
+        "Pasted the address only — the payment request couldn't be read",
+      );
+    });
+  });
+
+  group('resolvePastedPaymentLink', () {
+    test('leaves a bare address to the field', () {
+      expect(resolvePastedPaymentLink(_address), isNull);
+    });
+
+    test('resolves a request with terms like a scan', () {
+      expect(
+        resolvePastedPaymentLink('zcash:$_address?amount=0.25'),
+        isA<SendScanPaymentRequest>(),
+      );
+    });
+
+    test('a link that names only an address gives the address', () {
+      final result = resolvePastedPaymentLink('zcash:$_address');
+      expect((result! as SendScanAddress).address, _address);
+    });
+
+    test('a link with no address is not something the field can take', () {
+      expect(resolvePastedPaymentLink('zcash:?amount=0.25'), isNull);
+    });
   });
 }

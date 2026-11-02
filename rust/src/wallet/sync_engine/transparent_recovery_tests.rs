@@ -344,12 +344,12 @@ fn address_history_real_utxo_queue_coalesces_and_advances_after_storage() {
         count, 10,
         "real backend emits one overlapping range per receipt"
     );
-    let planned = address_history::plan(&requests);
+    let planned = address_history::plan(&requests, network);
     assert_eq!(planned.len(), 1);
     assert_eq!(planned[0].len(), 1, "ten network requests become one");
     // Planning has no completion side effect; cancellation can retry the same range.
     assert_eq!(
-        address_history::plan(&db.transaction_data_requests().unwrap()),
+        address_history::plan(&db.transaction_data_requests().unwrap(), network),
         planned
     );
     let spend = legacy_transaction(
@@ -361,12 +361,12 @@ fn address_history_real_utxo_queue_coalesces_and_advances_after_storage() {
     let req = planned[0][0].clone();
     db.notify_address_checked(req.clone(), req.block_range_end().unwrap() - 1)
         .unwrap();
-    assert!(address_history::plan(&db.transaction_data_requests().unwrap()).is_empty());
+    assert!(address_history::plan(&db.transaction_data_requests().unwrap(), network).is_empty());
     db.update_chain_tip(tip + 2).unwrap();
     let requests = db.transaction_data_requests().unwrap();
     let remaining = requests.iter().filter(|r| matches!(r, TransactionDataRequest::TransactionsInvolvingAddress(r) if r.address() == address && r.block_range_end().is_some())).count();
     assert_eq!(remaining, 9, "the spent output is no longer watched");
-    let next = address_history::plan(&requests);
+    let next = address_history::plan(&requests, network);
     assert_eq!(next[0][0].block_range_start(), tip + 2);
 }
 
@@ -403,7 +403,7 @@ async fn checkpoint_drains_parent_payload_discovered_by_address_history() {
     )
     .unwrap();
     db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
-    assert!(!address_history::plan(&db.transaction_data_requests().unwrap()).is_empty());
+    assert!(!address_history::plan(&db.transaction_data_requests().unwrap(), network).is_empty());
 
     let parent_txid = [9u8; 32];
     let discovered = legacy_transaction(OutPoint::new(parent_txid, 0), address, 900_000);
@@ -777,7 +777,9 @@ mod private_transparent_policy {
             .unwrap();
         }
         db.update_chain_tip(BlockHeight::from_u32(200)).unwrap();
-        assert!(!address_history::plan(&db.transaction_data_requests().unwrap()).is_empty());
+        assert!(
+            !address_history::plan(&db.transaction_data_requests().unwrap(), network).is_empty()
+        );
         let discovered = legacy_transaction(OutPoint::new([9; 32], 0), address, 900_000);
         let mut history_tx = Vec::new();
         discovered.write(&mut history_tx).unwrap();
@@ -824,8 +826,9 @@ mod private_transparent_policy {
     #[tokio::test]
     async fn a_checkpoint_does_not_follow_up_on_its_own_replies() {
         let mut f = fixture();
-        let address =
-            address_history::plan(&f.db.transaction_data_requests().unwrap())[0][0].address();
+        let address = address_history::plan(&f.db.transaction_data_requests().unwrap(), f.network)
+            [0][0]
+            .address();
         let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
         let mut session = enhancement::EnhancementSession::new(f.network, &f.path);
 
@@ -834,7 +837,7 @@ mod private_transparent_policy {
             .await
             .unwrap();
         assert_eq!(lwd.count("/GetTaddressTxids"), 1);
-        let waiting = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let waiting = address_history::plan(&f.db.transaction_data_requests().unwrap(), f.network);
         assert!(
             waiting.iter().any(|group| group[0].address() == address),
             "the address's next range waits"
@@ -973,7 +976,8 @@ mod private_transparent_policy {
     #[tokio::test]
     async fn transition_during_address_history_withholds_later_reads() {
         let mut f = fixture();
-        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let unchecked =
+            address_history::plan(&f.db.transaction_data_requests().unwrap(), f.network);
         let address = unchecked[0][0].address();
         let start = unchecked[0][0].block_range_start();
         let mut lwd = transitioning_lwd(&f, "/GetTaddressTxids").await;
@@ -987,7 +991,8 @@ mod private_transparent_policy {
         // under the new generation; this lane must not reuse its stale ones.
         assert_eq!(lwd.count("/GetTaddressTxids"), 1);
         // The in-flight range is not acknowledged; it is retried from its start.
-        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let unchecked =
+            address_history::plan(&f.db.transaction_data_requests().unwrap(), f.network);
         assert!(unchecked
             .iter()
             .any(|group| group[0].address() == address && group[0].block_range_start() == start));
@@ -997,7 +1002,8 @@ mod private_transparent_policy {
     #[tokio::test]
     async fn transition_during_empty_address_history_withholds_acknowledgement() {
         let mut f = fixture();
-        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let unchecked =
+            address_history::plan(&f.db.transaction_data_requests().unwrap(), f.network);
         let (address, start) = (
             unchecked[0][0].address(),
             unchecked[0][0].block_range_start(),
@@ -1011,7 +1017,8 @@ mod private_transparent_policy {
             .unwrap();
 
         assert_eq!(lwd.count("/GetTaddressTxids"), 1);
-        let unchecked = address_history::plan(&f.db.transaction_data_requests().unwrap());
+        let unchecked =
+            address_history::plan(&f.db.transaction_data_requests().unwrap(), f.network);
         assert!(unchecked
             .iter()
             .any(|group| group[0].address() == address && group[0].block_range_start() == start));
@@ -1022,7 +1029,8 @@ mod private_transparent_policy {
     #[tokio::test]
     async fn transition_during_address_history_fill_withholds_later_addresses() {
         let mut f = fixture_with_receipts(6);
-        let planned = address_history::plan(&f.db.transaction_data_requests().unwrap()).len();
+        let planned =
+            address_history::plan(&f.db.transaction_data_requests().unwrap(), f.network).len();
         assert!(planned > 4, "more addresses than one fill: {planned}");
         let mut lwd = CapturingLwd::start(f.history_tx.clone()).await;
         let _transition = transition_on_first_dispatch(&f.path, f.network);

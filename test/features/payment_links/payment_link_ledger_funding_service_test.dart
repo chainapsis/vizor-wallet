@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
@@ -296,6 +297,26 @@ void main() {
       expect(h.operations.acks, 1);
     },
   );
+
+  test('a gift the upgrade expired reports the hold copy', () async {
+    final h = LedgerGiftHarness();
+    final draft = await h.prepare();
+    h.operations
+      ..status = 'expired'
+      ..message =
+          "Transactions can't be sent this close to the network upgrade. "
+          'Try again after it activates.';
+    await expectLater(
+      h.submit(draft),
+      throwsA(
+        isA<LedgerGiftFundingTerminalException>().having(
+          (error) => error.userMessage,
+          'userMessage',
+          kNetworkUpgradeHoldMessage,
+        ),
+      ),
+    );
+  });
 
   test(
     'definitively rejected gift transaction removes only unbroadcast draft',

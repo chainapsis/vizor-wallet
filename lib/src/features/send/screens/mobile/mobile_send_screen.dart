@@ -29,6 +29,7 @@ import '../../../../core/widgets/mobile/mobile_review_row.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../core/widgets/mobile/mobile_tx_fee_info_sheet.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
+import '../../../../core/widgets/review_info_row.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
@@ -39,6 +40,7 @@ import '../../../address_book/providers/address_book_provider.dart';
 import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../models/send_prefill_args.dart';
 import '../../models/send_scan_result.dart';
 import '../../services/send_flow.dart';
 import '../../services/send_amount_conversion.dart';
@@ -398,9 +400,6 @@ const _kMobileSendAmountRecipientBlockHeight = 97.0;
 const _kMobileSendAmountRecipientLabelHeight = 25.0;
 const _kMobileSendAmountRecipientRowHeight = 68.0;
 const _kMobileSendReviewInfoHeight = 268.0;
-const _kMobileSendReviewInfoRowHeight = 90.0;
-const _kMobileSendReviewInfoDetailsHeight = 89.0;
-const _kMobileSendReviewIconRowHeight = 24.0;
 const _kMobileSendReviewWrapHeight = 161.0;
 const _kMobileSendReviewRowHeight = 32.0;
 const _kMobileSendReviewDividerHeight = 1.0;
@@ -631,6 +630,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _amountError = null;
         _feeZatoshi = widget.initialFeeZatoshi;
         if (_feeZatoshi == null && !widget.refreshReviewFeeOnInit) {
+          // Preview fallback only; real submissions use a Rust proposal quote.
           _feeZatoshi = BigInt.from(10000);
         }
         _seedInitialMaxQuote();
@@ -797,6 +797,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
   }
 
+  /// A `zcash:` link in the field is answered at once, however it got there:
+  /// nobody types one by hand, so it arrived by paste.
+  void _handleAddressEdited(String text) {
+    if (_takePaymentLink(text)) return;
+    _handleAddressChanged();
+  }
+
   void _handleAddressChanged({bool clearContact = true}) {
     setState(() {
       if (widget.isPaymentRequest &&
@@ -849,32 +856,78 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             .read(paymentRequestFlowProvider.notifier)
             .present(prefill, source: PaymentRequestSource.qrCode);
       case SendScanAddress(:final address, :final downgrade):
-        final recipient = address.trim();
-        if (recipient.isEmpty) return;
-        _addressController.value = TextEditingValue(
-          text: recipient,
-          selection: TextSelection.collapsed(offset: recipient.length),
-        );
-        _handleAddressChanged();
-        // A request the scan refused still surrendered its address, and the
-        // composer just took it. Say what was left behind — otherwise the
-        // payer answers a request they never saw the terms of.
-        final downgradeMessage = sendScanDowngradeMessage(downgrade);
-        if (downgradeMessage != null) {
-          showAppToast(
-            context,
-            downgradeMessage,
-            iconName: AppIcons.warning,
-            tone: AppToastTone.destructive,
-          );
-        }
+        _takeLinkAddress(address, downgrade);
     }
+  }
+
+  /// Puts the address a scan or pasted link surrendered in the field.
+  ///
+  /// A request the wallet refused still surrendered its address, and the
+  /// composer just took it. Say what was left behind — otherwise the payer
+  /// answers a request they never saw the terms of.
+  bool _takeLinkAddress(
+    String address,
+    SendScanDowngrade? downgrade, {
+    bool pasted = false,
+  }) {
+    final recipient = address.trim();
+    if (recipient.isEmpty) return false;
+    _addressController.value = TextEditingValue(
+      text: recipient,
+      selection: TextSelection.collapsed(offset: recipient.length),
+    );
+    _handleAddressChanged();
+    final downgradeMessage = sendScanDowngradeMessage(
+      downgrade,
+      pasted: pasted,
+    );
+    if (downgradeMessage != null) {
+      showAppToast(
+        context,
+        downgradeMessage,
+        iconName: AppIcons.warning,
+        tone: AppToastTone.destructive,
+      );
+    }
+    return true;
+  }
+
+  /// Answers a `zcash:` link pasted into the address field the way a scan is
+  /// answered: a request with terms opens the payment request card, and a link
+  /// that names only an address leaves that address in the field.
+  ///
+  /// Returns false when [raw] is not a link this can answer, so the field
+  /// keeps it and says why.
+  bool _takePaymentLink(String raw) {
+    return switch (resolvePastedPaymentLink(raw)) {
+      SendScanPaymentRequest(:final prefill) => _openPaymentRequest(prefill),
+      SendScanAddress(:final address, :final downgrade) => _takeLinkAddress(
+        address,
+        downgrade,
+        pasted: true,
+      ),
+      null => false,
+    };
+  }
+
+  /// Hands a pasted link's request to the payment request card, which treats
+  /// it as untrusted like any link — the clipboard is another app's word for
+  /// it — but without an original QR at hand to scan.
+  bool _openPaymentRequest(SendPrefillArgs prefill) {
+    _addressController.clear();
+    _handleAddressChanged();
+    _addressFocus.unfocus();
+    ref
+        .read(paymentRequestFlowProvider.notifier)
+        .present(prefill, source: PaymentRequestSource.pastedLink);
+    return true;
   }
 
   Future<void> _pasteAddress() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final pasted = data?.text?.trim() ?? '';
     if (pasted.isEmpty || !mounted) return;
+    if (_takePaymentLink(pasted)) return;
     _addressController.value = TextEditingValue(
       text: pasted,
       selection: TextSelection.collapsed(offset: pasted.length),
@@ -2338,7 +2391,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                                 ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 _RecipientLineText(
-                                  'Scan an address using camera',
+                                  'Scan an address or payment request',
                                   color: colors.text.secondary,
                                   fontWeight: FontWeight.w400,
                                 ),
@@ -2472,7 +2525,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       fieldKey: const ValueKey('mobile_send_address_input'),
       controller: _addressController,
       focusNode: _addressFocus,
-      hintText: 'Zcash Address',
+      hintText: 'Address or request link',
       leading: SizedBox(
         width: AppInputSizing.iconWrapWidth,
         height: AppInputSizing.height,
@@ -2520,7 +2573,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
               ),
             )
           : null,
-      onChanged: (_) => _handleAddressChanged(),
+      onChanged: _handleAddressEdited,
       keyboardType: TextInputType.text,
     );
   }
@@ -2539,6 +2592,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             // would send the user hunting for a typo that is not there.
             ? (_addressWrongNetwork
                   ? kWrongNetworkAddressMessage
+                  : isZcashPaymentLink(_addressController.text)
+                  ? kUnreadablePaymentLinkMessage
                   : 'Invalid address')
             : 'Address validation failed',
         style: AppTypography.labelLarge.copyWith(
@@ -3115,6 +3170,35 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     );
   }
 
+  Widget _reviewRecipientRow({
+    required String address,
+    required _ReviewRecipientPresentation recipient,
+  }) {
+    final colors = context.colors;
+    final compactAddress = _compactReviewAddress(address);
+    // A request only retitles the row. The headline stays the recipient the
+    // wallet resolved, so an unverified link label never stands in for the
+    // identity being paid.
+    return ReviewInfoRow(
+      leading: recipient.buildReviewLeading(),
+      label: _isAnsweringPaymentRequest ? 'Requested by' : 'To',
+      value: recipient.headline,
+      bottomLeftIconName: _isShieldedAddress
+          ? AppIcons.shieldKeyhole
+          : AppIcons.transparentBalance,
+      bottomLeftIconColor: _isShieldedAddress
+          ? colors.icon.brandCrimson
+          : colors.icon.muted,
+      bottomLeftText: _isTexAddressType(_addressType)
+          ? 'TEX - $compactAddress'
+          : compactAddress,
+      trailingActionLabel: 'Full address',
+      trailingActionKey: const ValueKey('mobile_send_full_address'),
+      onTrailingAction: () =>
+          unawaited(_showFullAddressSheet(address, recipient)),
+    );
+  }
+
   Widget _buildReviewStep(BuildContext context) {
     // Uppercase ticker per the mobile review frame ("123.12 ZEC").
     final amountText =
@@ -3166,47 +3250,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       padding: const EdgeInsets.symmetric(
                         vertical: AppSpacing.md,
                       ),
-                      child: Column(
-                        children: [
-                          _ReviewInfoRow(
+                      child: ReviewInfoFlow(
+                        rows: [
+                          ReviewInfoRow(
                             leading: const _ReviewZecIcon(),
-                            title: 'Amount',
-                            headline: amountText,
-                            headlineKey: const ValueKey(
+                            label: 'Amount',
+                            value: amountText,
+                            valueKey: const ValueKey(
                               'mobile_send_review_amount',
                             ),
-                            detail: amountFiatText,
-                            detailKey: const ValueKey(
+                            bottomLeftText: amountFiatText,
+                            bottomLeftTextKey: const ValueKey(
                               'mobile_send_review_amount_fiat',
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.xs),
-                          const SizedBox(
-                            width: 40,
-                            height: _kMobileSendReviewIconRowHeight,
-                            child: Center(
-                              child: AppIcon(AppIcons.arrowDownward, size: 24),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          _ReviewInfoRow(
-                            // A request only retitles the row. The headline
-                            // stays the recipient the wallet resolved, so an
-                            // unverified link label never stands in for the
-                            // identity being paid.
-                            leading: recipient.buildReviewLeading(),
-                            title: _isAnsweringPaymentRequest
-                                ? 'Requested by'
-                                : 'To',
-                            headline: recipient.headline,
-                            bottom: _ReviewAddressLine(
-                              address: _compactReviewAddress(address),
-                              addressType: _addressType,
-                              isShielded: _isShieldedAddress,
-                              onFullAddress: () => unawaited(
-                                _showFullAddressSheet(address, recipient),
-                              ),
-                            ),
+                          _reviewRecipientRow(
+                            address: address,
+                            recipient: recipient,
                           ),
                         ],
                       ),
@@ -3675,202 +3735,8 @@ class _ReviewWalletIcon extends StatelessWidget {
   }
 }
 
-class _ReviewInfoRow extends StatelessWidget {
-  const _ReviewInfoRow({
-    required this.leading,
-    required this.title,
-    required this.headline,
-    this.headlineKey,
-    this.detail,
-    this.detailKey,
-    this.bottom,
-  }) : assert(detail == null || bottom == null);
-
-  final Widget leading;
-  final String title;
-  final String headline;
-  final Key? headlineKey;
-  final String? detail;
-  final Key? detailKey;
-  final Widget? bottom;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final detailText = detail;
-    return SizedBox(
-      height: _kMobileSendReviewInfoRowHeight,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          leading,
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: SizedBox(
-              height: _kMobileSendReviewInfoDetailsHeight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: _kMobileSendReviewIconRowHeight,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        title,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  SizedBox(
-                    height: 33,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        headline,
-                        key: headlineKey,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.headlineLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  SizedBox(
-                    height: _kMobileSendReviewIconRowHeight,
-                    child:
-                        bottom ??
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: detailText == null
-                              ? const SizedBox.shrink()
-                              : Text(
-                                  detailText,
-                                  key: detailKey,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.secondary,
-                                  ),
-                                ),
-                        ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReviewAddressLine extends StatelessWidget {
-  const _ReviewAddressLine({
-    required this.address,
-    required this.addressType,
-    required this.isShielded,
-    required this.onFullAddress,
-  });
-
-  final String address;
-  final String addressType;
-  final bool isShielded;
-  final VoidCallback onFullAddress;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final isTex = _isTexAddressType(addressType);
-    final label = isTex ? 'TEX - $address' : address;
-    return Row(
-      children: [
-        Expanded(
-          child: Row(
-            children: [
-              AppIcon(
-                isShielded
-                    ? AppIcons.shieldKeyhole
-                    : AppIcons.transparentBalance,
-                size: 16,
-                color: isShielded
-                    ? colors.icon.brandCrimson
-                    : colors.icon.muted,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Expanded(
-                child: Text(
-                  label,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xxs),
-        _ReviewSmallButton(
-          key: const ValueKey('mobile_send_full_address'),
-          icon: AppIcons.eye,
-          label: 'Full address',
-          onTap: onFullAddress,
-        ),
-      ],
-    );
-  }
-}
-
 bool _isTexAddressType(String addressType) =>
     addressType.trim().toLowerCase() == 'tex';
-
-class _ReviewSmallButton extends StatelessWidget {
-  const _ReviewSmallButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    super.key,
-  });
-
-  final String icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxs),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(icon, size: 16, color: colors.button.ghost.label),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                label,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.button.ghost.label,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _ReviewWrap extends StatelessWidget {
   const _ReviewWrap({

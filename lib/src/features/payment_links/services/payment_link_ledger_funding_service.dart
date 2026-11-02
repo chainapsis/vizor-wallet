@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -50,13 +51,18 @@ final paymentLinkLedgerFundingServiceProvider =
 int _unknownChainHeight() => 0;
 
 class LedgerGiftFundingTerminalException implements Exception {
-  const LedgerGiftFundingTerminalException();
+  const LedgerGiftFundingTerminalException({this.reason});
 
   static const message =
       'This gift card transaction expired or was rejected. Go back to create a new gift card.';
 
+  /// Rust's reason for the expiry, which can be the network upgrade hold.
+  final String? reason;
+
+  String get userMessage => networkUpgradeHoldMessage(reason ?? '') ?? message;
+
   @override
-  String toString() => message;
+  String toString() => userMessage;
 }
 
 /// Reuses Gift Card draft/proof storage but uses the Ledger signed outbox.
@@ -103,12 +109,14 @@ class PaymentLinkLedgerFundingService {
     required String accountUuid,
     required BigInt amountZatoshi,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) => lifecycle.run(() {
     _requireAccount(accountUuid);
     return hardware.createFundingPczt(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: accountUuid,
       presentation: presentation,
+      expectedQuote: expectedQuote,
     );
   });
 
@@ -240,7 +248,7 @@ class PaymentLinkLedgerFundingService {
         /* A sync refresh cannot undo funding. */
       }
       if (result.status == 'expired') {
-        throw const LedgerGiftFundingTerminalException();
+        throw LedgerGiftFundingTerminalException(reason: result.message);
       }
       return PaymentLinkHardwareFundingResult(
         txids: result.txid,

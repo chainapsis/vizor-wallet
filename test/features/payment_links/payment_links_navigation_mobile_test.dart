@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
 import '../../support/payment_links_screen_support.dart';
+import '../../support/widget_test_viewport.dart';
+import 'package:zcash_wallet/src/core/layout/mobile/mobile_wallet_sidebar.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/providers/payment_link_scanner_provider.dart';
 
@@ -22,13 +24,14 @@ Future<GoRouter> openFromSettings(
   SwitchablePaymentLinkAccountNotifier? accounts,
   PaymentLinkScanner? scanner,
   FakePaymentLinkClipboard? clipboard,
+  Size logicalSize = const Size(393, 852),
 }) async {
   await pumpPaymentLinksScreen(
     tester,
     operations: operations,
     accountNotifier: accounts,
     scanner: scanner,
-    logicalSize: const Size(393, 852),
+    logicalSize: logicalSize,
     clipboard:
         clipboard ??
         FakePaymentLinkClipboard(text: incomingLink.toUri().toString()),
@@ -75,6 +78,24 @@ Future<void> back(WidgetTester tester) async {
 
 void main() {
   setUpAll(loadPaymentLinksTestFonts);
+  for (final size in [const Size(393, 852), const Size(900, 720)]) {
+    testWidgets('gift creation remains interactive at $size with DPR 2', (
+      tester,
+    ) async {
+      await setWidgetTestViewport(tester, size, devicePixelRatio: 2);
+      await openFromSettings(tester, logicalSize: size);
+      expect(
+        find.byType(MobileWalletSidebar),
+        size.width > size.height ? findsOneWidget : findsNothing,
+      );
+      await createToReview(tester);
+      expect(keyed(_review), findsOneWidget);
+      await back(tester);
+      expect(keyed(_message), findsOneWidget);
+      expect(find.text('Keep this message'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
   final platforms = TargetPlatformVariant({
     TargetPlatform.iOS,
     TargetPlatform.android,

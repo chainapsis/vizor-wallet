@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart'
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
+import 'package:zcash_wallet/src/features/home/providers/nu7_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
@@ -504,6 +505,119 @@ void main() {
     expect(find.text('Zcash Network Upgrade'), findsOneWidget);
   });
 
+  testWidgets('home shows the NU7 announcement until it is dismissed', (
+    tester,
+  ) async {
+    final store = _MemoryNu7AnnouncementStore();
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
+    expect(overlay, findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('nu7_announcement_got_it_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(overlay, findsNothing);
+    expect(store.seen, {'main'});
+  });
+
+  testWidgets('the NU7 announcement fades in unless motion is reduced', (
+    tester,
+  ) async {
+    final overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
+    double opacity() => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(of: overlay, matching: find.byType(FadeTransition))
+              .first,
+        )
+        .opacity
+        .value;
+    Future<void> showAnnouncement() async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        ),
+      );
+      for (var frame = 0; frame < 10 && overlay.evaluate().isEmpty; frame++) {
+        await tester.pump();
+      }
+      expect(overlay, findsOneWidget);
+    }
+
+    await showAnnouncement();
+    expect(opacity(), lessThan(1));
+    await tester.pumpAndSettle();
+    expect(opacity(), 1);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(const SizedBox());
+    await showAnnouncement();
+    expect(opacity(), 1);
+  });
+
+  testWidgets('home does not stack the NU7 announcement on the Ironwood one', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodMigrationAnnouncementStateListenable:
+            _ironwoodAnnouncementTestProvider,
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(14_312_000_000),
+          spendableBalance: BigInt.from(14_312_000_000),
+          totalBalance: BigInt.from(14_312_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ZcashWalletApp)),
+    );
+    container
+        .read(_ironwoodAnnouncementTestProvider.notifier)
+        .setAnnouncement(
+          IronwoodMigrationAnnouncementState.visible(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _migrationStatus(kIronwoodMigrationReadyPhase),
+          ),
+        );
+    await tester.pumpAndSettle();
+
+    final nu7Overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_announcement_overlay')),
+      findsOneWidget,
+    );
+    expect(nu7Overlay, findsNothing);
+
+    await tester.tapAt(const Offset(4, 4));
+    await tester.pumpAndSettle();
+    container
+        .read(_ironwoodAnnouncementTestProvider.notifier)
+        .setAnnouncement(const IronwoodMigrationAnnouncementState.hidden());
+    await tester.pumpAndSettle();
+
+    expect(nu7Overlay, findsOneWidget);
+  });
+
   testWidgets('home keeps Ironwood announcement visible during sync changes', (
     tester,
   ) async {
@@ -704,6 +818,47 @@ void main() {
       expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     },
   );
+
+  testWidgets('home desktop CTA flags a migration stopped by the upgrade', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.stopped(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(kIronwoodMigrationStoppedByUpgradePhase),
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          orchardBalance: BigInt.from(340_000_000),
+          ironwoodBalance: BigInt.from(210_000_000),
+          spendableBalance: BigInt.from(210_000_000),
+          totalBalance: BigInt.from(550_000_000),
+        ),
+      ),
+    );
+    await tester.pump();
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_cta_button')),
+    );
+
+    expect(find.text('Migration stopped by network upgrade'), findsOneWidget);
+    expect(find.textContaining('still migrating'), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey('home_desktop_ironwood_migration_stopped_icon'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_desktop_ironwood_migration_background')),
+      findsNothing,
+    );
+  });
 
   testWidgets('home keeps completed Ironwood visible during migration sync', (
     tester,
@@ -1331,6 +1486,49 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('home holds the NU7 announcement during hardware shielding', (
+    tester,
+  ) async {
+    final store = _MemoryNu7AnnouncementStore()..seen.add('main');
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        hardwareSignerKind: HardwareSignerKind.ledger,
+        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
+        nu7AnnouncementStore: store,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          transparentBalance: BigInt.from(242_000_000),
+          canShieldTransparentBalance: true,
+          totalBalance: BigInt.from(242_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('home_shield_balance_button')));
+    await tester.pump();
+
+    store.seen.clear();
+    ProviderScope.containerOf(
+      tester.element(find.byType(ZcashWalletApp)),
+    ).invalidate(nu7AnnouncementProvider);
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('ledger_shield_signing_overlay_surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('nu7_announcement_overlay')),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   for (final height in [600.0, 720.0, 900.0]) {
     testWidgets('five skeleton rows match loaded desktop geometry at $height', (
       tester,
@@ -1906,9 +2104,19 @@ Widget _appHarness(
   bool failIfMigrationResolverLoads = false,
   _FakeNetworkPrivacyNotifier? networkPrivacy,
   HardwareSignerKind? hardwareSignerKind,
+  Nu7AnnouncementState nu7Announcement = const Nu7AnnouncementState.hidden(),
+  _MemoryNu7AnnouncementStore? nu7AnnouncementStore,
 }) {
+  final nu7Store = nu7AnnouncementStore ?? _MemoryNu7AnnouncementStore();
   return ProviderScope(
     overrides: [
+      nu7AnnouncementProvider.overrideWith(
+        (ref) async => nu7Store.seen.contains(nu7Announcement.network)
+            ? const Nu7AnnouncementState.hidden()
+            : nu7Announcement,
+      ),
+      nu7AnnouncementStoreProvider.overrideWithValue(nu7Store),
+      nu7AnnouncementMotionEnabledProvider.overrideWithValue(false),
       if (etaLabels != null)
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
       if (networkPrivacy != null)
@@ -2247,4 +2455,14 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   Future<void> retry() async {
     retryCalls++;
   }
+}
+
+class _MemoryNu7AnnouncementStore implements Nu7AnnouncementStore {
+  final seen = <String>{};
+
+  @override
+  Future<bool> isSeen(String network) async => seen.contains(network);
+
+  @override
+  Future<void> markSeen(String network) async => seen.add(network);
 }

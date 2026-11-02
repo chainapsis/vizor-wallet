@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/config/rpc_endpoint_config.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -511,7 +514,10 @@ class _ModeTab extends StatelessWidget {
       label: label,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: () {
+          if (!selected) unawaited(AppHaptics.selection());
+          onTap();
+        },
         child: Align(
           alignment: alignment,
           child: Padding(
@@ -635,7 +641,12 @@ class _PresetCard extends StatelessWidget {
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: onTap == null
+            ? null
+            : () {
+                if (!selected) unawaited(AppHaptics.selection());
+                onTap!();
+              },
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.fromLTRB(

@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_address_verify_sheet.dart';
+import '../../../../core/widgets/review_info_row.dart';
 import '../../domain/swap_contract.dart';
 import '../swap_asset_icon.dart';
 
@@ -41,9 +41,7 @@ class MobileSwapReviewHeaderRow {
 
 /// Serif paying/receiving block shared by the mobile swap review,
 /// progress, and completed screens — Figma `Review Info`
-/// (4731:85563): two 90px rows joined by the flow arrow, each with a
-/// 32px asset coin (chain badge on external assets), the small grey
-/// label, the Headline L serif amount, and a bottom strip.
+/// (4731:85563), built on the core [ReviewInfoFlow].
 class MobileSwapReviewHeader extends StatelessWidget {
   const MobileSwapReviewHeader({
     required this.pay,
@@ -58,159 +56,41 @@ class MobileSwapReviewHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _HeaderRow(row: pay),
-          SizedBox(
-            width: 40,
-            child: Center(
-              child: AppIcon(
-                AppIcons.arrowDown,
-                size: AppIconSize.large,
-                color: context.colors.icon.accent,
-              ),
-            ),
-          ),
-          _HeaderRow(row: receive),
-        ],
+      child: ReviewInfoFlow(
+        rows: [_row(context, pay), _row(context, receive)],
       ),
     );
   }
-}
 
-class _HeaderRow extends StatelessWidget {
-  const _HeaderRow({required this.row});
-
-  final MobileSwapReviewHeaderRow row;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
+  Widget _row(BuildContext context, MobileSwapReviewHeaderRow row) {
     final fullAddress = row.fullAddress;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 90),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 40,
-            child: Center(
-              child: SwapAssetIcon(
+    return ReviewInfoRow(
+      label: row.label,
+      value: row.amountText,
+      leading: SwapAssetIcon(
+        asset: row.asset,
+        size: 32,
+        showChainBadge: !row.asset.isNativeZec,
+      ),
+      bottomLeftText: row.bottomText,
+      trailingActionLabel: fullAddress == null ? null : 'Full address',
+      trailingActionKey: const ValueKey('mobile_swap_full_address'),
+      onTrailingAction: fullAddress == null
+          ? null
+          : () => showMobileAddressVerifySheet(
+              context,
+              title:
+                  row.addressNetworkLabel ??
+                  (row.asset.isNativeZec
+                      ? 'Zcash address'
+                      : '${row.asset.chainLabel} address'),
+              address: fullAddress,
+              leading: SwapAssetIcon(
                 asset: row.asset,
                 size: 32,
-                showChainBadge: !row.asset.isNativeZec,
+                showChainBadge: false,
               ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  height: 24,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      row.label,
-                      style: AppTypography.labelMedium.copyWith(
-                        color: colors.text.secondary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  row.amountText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                SizedBox(
-                  height: 24,
-                  child: Row(
-                    children: [
-                      if (row.bottomText != null)
-                        Expanded(
-                          child: Text(
-                            row.bottomText!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: colors.text.secondary,
-                            ),
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                      if (fullAddress != null)
-                        _FullAddressButton(
-                          onTap: () => showMobileAddressVerifySheet(
-                            context,
-                            title:
-                                row.addressNetworkLabel ??
-                                (row.asset.isNativeZec
-                                    ? 'Zcash address'
-                                    : '${row.asset.chainLabel} address'),
-                            address: fullAddress,
-                            leading: SwapAssetIcon(
-                              asset: row.asset,
-                              size: 32,
-                              showChainBadge: false,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FullAddressButton extends StatelessWidget {
-  const _FullAddressButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      child: GestureDetector(
-        key: const ValueKey('mobile_swap_full_address'),
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxs),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(
-                AppIcons.eye,
-                size: AppIconSize.medium,
-                color: colors.button.ghost.label,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Full address',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.button.ghost.label,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
