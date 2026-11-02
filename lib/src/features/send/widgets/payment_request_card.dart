@@ -437,6 +437,7 @@ class PaymentRequestView {
       status: status,
       statusMessage: statusMessage,
       replacedNotice: replacedNotice,
+      linkDifferences: linkDifferences,
     );
   }
 
