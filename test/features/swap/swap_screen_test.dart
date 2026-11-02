@@ -10418,6 +10418,101 @@ void main() {
     expect(depositSender.requests, hasLength(1));
     expect(swapProvider.submittedDeposits, hasLength(1));
   });
+
+  testWidgets('account switch during a swap start drops the start', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _DelayedStartSwapProvider();
+    final depositSender = _FakeSwapDepositSender();
+    final sessionStore = _FakeSwapPersistenceStore();
+    final accountNotifier = _FakeSwapAccountNotifier(
+      _twoAccountBootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () => accountNotifier,
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pump();
+    expect(swapProvider.startedQuotes, hasLength(1));
+
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+    swapProvider.completeStart();
+    await tester.pumpAndSettle();
+
+    // Before, account-1's ZEC was sent to a swap listed only on account-2's
+    // screen and saved under neither account.
+    expect(depositSender.requests, isEmpty);
+    expect(container.read(swapStateProvider).intents, isEmpty);
+    expect(sessionStore.intentsFor('account-1'), isEmpty);
+    expect(sessionStore.intentsFor('account-2'), isEmpty);
+  });
+
+  testWidgets('a failed activity save on account switch is not uncaught', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FailingSaveSwapPersistenceStore();
+    final accountNotifier = _FakeSwapAccountNotifier(
+      _twoAccountBootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () => accountNotifier,
+        sessionStore: sessionStore,
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pumpAndSettle();
+
+    expect(sessionStore.failedSaves, ['account-1']);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 // Shared modal card shadow (core/widgets/app_modal_card.dart appModalShadow).
