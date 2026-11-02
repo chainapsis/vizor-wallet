@@ -1,14 +1,11 @@
 //! Read-only participation discovery. No spending key, hotkey, PIR or proof
 //! generation is needed. Network transport stays at the wallet boundary.
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use prost13::Message;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tendermint::{block::signed_header::SignedHeader, validator};
-use tendermint_light_client_verifier::operations::{
-    commit_validator::{CommitValidator, ProdCommitValidator},
-    voting_power::{ProdVotingPowerCalculator, VotingPowerCalculator},
-};
+use tendermint::validator;
+#[path = "participation_evidence.rs"]
+mod evidence;
+use evidence::*;
 use zcash_client_backend::data_api::{Account, WalletRead};
 use zcash_voting::{governance, selection::select_snapshot_note_infos, types::NoteInfo};
 
@@ -16,12 +13,18 @@ use super::network::{voting_network, wallet_network};
 use crate::wallet::sync::open_wallet_db_for_read;
 
 // Explicit consensus-key trust, independent of the server returning a proof.
-// Captured from the official production/stage RPCs on 2026-09-10. This narrow
-// reader accepts changes only with >2/3 signatures under both the bundled
-// and current voting powers. It does not advance its trust anchor.
+// The manifest records reviewed pins; the application never advances them.
 // See docs/voting-participation.md before updating these trust anchors.
-const PROD_VALIDATORS: &str = "621A1E2C532170C3C0BC2E951D26C1CCA7A0EFB009AA15820D648D336C64F6BD";
-const STAGE_VALIDATORS: &str = "6E81F631CB63A527AB5A659529BA8942C46CCF78BA87D1B3AD4CF8AE5BDC2E8B";
+#[derive(Deserialize)]
+struct TrustAnchor {
+    chain_id: String,
+    validator_set_hash: String,
+}
+fn trust_anchor(network: &str) -> Result<TrustAnchor, String> {
+    let mut anchors: std::collections::BTreeMap<String, TrustAnchor> =
+        serde_json::from_str(include_str!("trust/anchors.json")).map_err(|_| INVALID)?;
+    anchors.remove(network).ok_or_else(|| INVALID.into())
+}
 // Set only by the local integration harness. Production/testnet never consult
 // this anchor; their compiled trust roots remain authoritative.
 static REGTEST_TRUST: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
@@ -44,7 +47,6 @@ pub fn configure_regtest_trust(chain: String, validator_hash: String) -> Result<
 
 const MAX_NOTES: usize = 1024;
 const MAX_JSON: usize = 8 * 1024 * 1024;
-const INVALID: &str = "Voting participation evidence could not be verified";
 
 #[derive(Serialize, Deserialize)]
 pub struct Candidates {
@@ -173,97 +175,25 @@ pub fn prepare(
 }
 
 #[derive(Deserialize)]
-struct Envelope<T> {
-    result: T,
-}
-#[derive(Deserialize)]
-struct CommitResult {
-    signed_header: SignedHeader,
-}
-#[derive(Deserialize)]
-struct ValidatorsResult {
-    validators: Vec<validator::Info>,
-}
-#[derive(Deserialize)]
-struct QueryResult {
-    response: QueryResponse,
-}
-#[derive(Deserialize)]
-struct QueryResponse {
-    code: u32,
-    height: String,
-    key: Option<String>,
-    value: Option<String>,
-    #[serde(rename = "proofOps")]
-    proof_ops: ProofOps,
-}
-#[derive(Deserialize)]
-struct ProofOps {
-    ops: Vec<ProofOp>,
-}
-#[derive(Deserialize)]
-struct ProofOp {
-    r#type: String,
-    key: String,
-    data: String,
-}
-#[derive(Deserialize)]
 struct Evidence {
     commit: Envelope<CommitResult>,
     validators: Envelope<ValidatorsResult>,
     queries: Vec<Envelope<QueryResult>>,
 }
 
-fn checked_validator_set(validators: &ValidatorsResult) -> Result<validator::Set, String> {
-    if validators.validators.is_empty() || validators.validators.len() > 100 {
-        return Err(INVALID.into());
-    }
-    let power = validators
-        .validators
-        .iter()
-        .try_fold(0u64, |sum, v| sum.checked_add(v.power.value()))
-        .ok_or(INVALID)?;
-    if power == 0
-        || validators
-            .validators
-            .iter()
-            .any(|v| v.power.value() == 0 || v.address != tendermint::account::Id::from(v.pub_key))
-        || power > (i64::MAX as u64) / 8
-        || validators
-            .validators
-            .iter()
-            .map(|v| v.address)
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            != validators.validators.len()
-    {
-        return Err(INVALID.into());
-    }
-    Ok(validator::Set::without_proposer(
-        validators.validators.clone(),
-    ))
-}
-
 fn bundled_validators(network: &str) -> Result<&'static validator::Set, String> {
     static MAIN: std::sync::OnceLock<Result<validator::Set, String>> = std::sync::OnceLock::new();
     static TEST: std::sync::OnceLock<Result<validator::Set, String>> = std::sync::OnceLock::new();
-    let (slot, json, pin) = match network {
-        "main" => (
-            &MAIN,
-            include_str!("trust/main-validators.json"),
-            PROD_VALIDATORS,
-        ),
-        "test" => (
-            &TEST,
-            include_str!("trust/test-validators.json"),
-            STAGE_VALIDATORS,
-        ),
+    let (slot, json, chain) = match network {
+        "main" => (&MAIN, include_str!("trust/main-validators.json"), "zvote-1"),
+        "test" => (&TEST, include_str!("trust/test-validators.json"), "svote-1"),
         _ => return Err(INVALID.into()),
     };
     slot.get_or_init(|| {
         let validators = serde_json::from_str(json).map_err(|_| INVALID)?;
         let set = checked_validator_set(&ValidatorsResult { validators })?;
-        if set.hash().to_string() != pin {
+        let anchor = trust_anchor(network)?;
+        if set.hash().to_string() != anchor.validator_set_hash || anchor.chain_id != chain {
             return Err(INVALID.into());
         }
         Ok(set)
@@ -292,144 +222,6 @@ fn verify_header(
         _ => return Err(INVALID.into()),
     };
     verify_header_with_trust(commit, &set, chain, trusted, now)
-}
-
-fn verify_header_with_trust(
-    commit: &CommitResult,
-    set: &validator::Set,
-    chain: &str,
-    trusted: &validator::Set,
-    now: i64,
-) -> Result<(), String> {
-    let s = &commit.signed_header;
-    let h = &s.header;
-    let age = now.checked_sub(h.time.unix_timestamp()).ok_or(INVALID)?;
-    if h.chain_id.as_str() != chain
-        || set.hash() != h.validators_hash
-        || h.hash() != s.commit.block_id.hash
-        || h.height != s.commit.height
-        || !(-60..=600).contains(&age)
-    {
-        return Err(INVALID.into());
-    }
-    ProdCommitValidator.validate(s, set).map_err(|_| INVALID)?;
-    ProdCommitValidator
-        .validate_full(s, set)
-        .map_err(|_| INVALID)?;
-    // Each quorum uses its own voting powers. New powers cannot inflate the
-    // contribution of a signer within the bundled trust anchor.
-    ProdVotingPowerCalculator::default()
-        .check_enough_trust_and_signers(
-            s,
-            trusted,
-            tendermint::trust_threshold::TrustThresholdFraction::TWO_THIRDS,
-            set,
-        )
-        .map_err(|_| INVALID)?;
-    Ok(())
-}
-
-/// Hash provider for the fixed IAVL and multistore proof specifications.
-///
-/// Both specifications permit only SHA-256. ICS23 checks every leaf and inner
-/// operation against the specification before hashing, including the neighbors
-/// in non-membership proofs. Keep this provider restricted to those verification
-/// entry points; it cannot calculate roots for arbitrary proof specifications.
-struct VoteStoreHashes;
-
-impl ics23::HostFunctionsProvider for VoteStoreHashes {
-    fn sha2_256(message: &[u8]) -> [u8; 32] {
-        Sha256::digest(message).into()
-    }
-
-    fn sha2_512(_: &[u8]) -> [u8; 64] {
-        unreachable!()
-    }
-
-    fn sha2_512_truncated(_: &[u8]) -> [u8; 32] {
-        unreachable!()
-    }
-
-    fn keccak_256(_: &[u8]) -> [u8; 32] {
-        unreachable!()
-    }
-
-    fn ripemd160(_: &[u8]) -> [u8; 20] {
-        unreachable!()
-    }
-
-    fn blake2b_512(_: &[u8]) -> [u8; 64] {
-        unreachable!()
-    }
-
-    fn blake2s_256(_: &[u8]) -> [u8; 32] {
-        unreachable!()
-    }
-
-    fn blake3(_: &[u8]) -> [u8; 32] {
-        unreachable!()
-    }
-}
-
-fn proof(data: &str) -> Result<ics23::CommitmentProof, String> {
-    let bytes = B64.decode(data).map_err(|_| INVALID)?;
-    ics23::CommitmentProof::decode(bytes.as_slice()).map_err(|_| INVALID.into())
-}
-
-fn verify_query(
-    q: &QueryResponse,
-    key: &[u8],
-    app_hash: &[u8],
-    height: u64,
-) -> Result<bool, String> {
-    if q.code != 0
-        || q.height.parse::<u64>().ok() != Some(height)
-        || q.key.as_ref().and_then(|k| B64.decode(k).ok()).as_deref() != Some(key)
-        || q.proof_ops.ops.len() != 2
-    {
-        return Err(INVALID.into());
-    }
-    let ops = &q.proof_ops.ops;
-    if ops[0].r#type != "ics23:iavl"
-        || ops[1].r#type != "ics23:simple"
-        || B64.decode(&ops[0].key).map_err(|_| INVALID)? != key
-        || B64.decode(&ops[1].key).map_err(|_| INVALID)? != b"vote"
-    {
-        return Err(INVALID.into());
-    }
-    let store = proof(&ops[1].data)?;
-    let Some(ics23::commitment_proof::Proof::Exist(ex)) = &store.proof else {
-        return Err(INVALID.into());
-    };
-    let root = ex.value.clone();
-    if !ics23::verify_membership::<VoteStoreHashes>(
-        &store,
-        &ics23::tendermint_spec(),
-        &app_hash.to_vec(),
-        b"vote",
-        &root,
-    ) {
-        return Err(INVALID.into());
-    }
-    let p = proof(&ops[0].data)?;
-    let value = q
-        .value
-        .as_ref()
-        .map(|v| B64.decode(v))
-        .transpose()
-        .map_err(|_| INVALID)?
-        .unwrap_or_default();
-    let valid = if value == [1] {
-        ics23::verify_membership::<VoteStoreHashes>(&p, &ics23::iavl_spec(), &root, key, &[1])
-    } else if value.is_empty() {
-        ics23::verify_non_membership::<VoteStoreHashes>(&p, &ics23::iavl_spec(), &root, key)
-    } else {
-        false
-    };
-    if !valid {
-        return Err(INVALID.into());
-    }
-    Ok(!value.is_empty())
 }
 
 pub fn verify(
@@ -696,6 +488,11 @@ pub fn clear_account(db: &zcash_voting::storage::VotingDb) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{engine::general_purpose::STANDARD as B64, Engine};
+    use tendermint::block::signed_header::SignedHeader;
+    use tendermint_light_client_verifier::operations::voting_power::{
+        ProdVotingPowerCalculator, VotingPowerCalculator,
+    };
 
     fn fixture(network: &str) -> (serde_json::Value, Vec<String>, i64) {
         let text = match network {
@@ -709,6 +506,61 @@ mod tests {
         let now = header.header.time.unix_timestamp();
         (value, keys, now)
     }
+
+    #[test]
+    fn refreshed_main_anchor_authenticates_transition_and_latest_commit() {
+        let transition: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/voting-participation/main-anchor-refresh.json"
+        ))
+        .unwrap();
+        let previous = checked_validator_set(&ValidatorsResult {
+            validators: serde_json::from_value(transition["previous_validators"].clone()).unwrap(),
+        })
+        .unwrap();
+        assert_eq!(
+            previous.hash().to_string(),
+            "621A1E2C532170C3C0BC2E951D26C1CCA7A0EFB009AA15820D648D336C64F6BD"
+        );
+        let historical: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/voting-participation/main-20261102.json"
+        ))
+        .unwrap();
+        let current = checked_validator_set(
+            &serde_json::from_value::<ValidatorsResult>(historical["validators"]["result"].clone())
+                .unwrap(),
+        )
+        .unwrap();
+        let bridge: CommitResult =
+            serde_json::from_value(transition["commit"]["result"].clone()).unwrap();
+        // The previous trusted committee authenticates the new validator-set
+        // hash, with >2/3 valid signing power under both sets.
+        verify_header_with_trust(
+            &bridge,
+            &current,
+            "zvote-1",
+            &previous,
+            bridge.signed_header.header.time.unix_timestamp(),
+        )
+        .unwrap();
+
+        // A latest /commit response need not contain every validator's signature.
+        // This real commit has 90/130 current power but only 60/100 old power.
+        let evidence = historical;
+        let latest: CommitResult =
+            serde_json::from_value(evidence["commit"]["result"].clone()).unwrap();
+        let old_power = ProdVotingPowerCalculator::default()
+            .voting_power_in(
+                &latest.signed_header,
+                &previous,
+                tendermint::trust_threshold::TrustThresholdFraction::TWO_THIRDS,
+            )
+            .unwrap();
+        assert_eq!((old_power.tallied, old_power.total), (60, 100));
+        let now = latest.signed_header.header.time.unix_timestamp();
+        assert!(verify_header_with_trust(&latest, &current, "zvote-1", &previous, now).is_err());
+        verify_header_with_trust(&latest, &current, "zvote-1", &current, now).unwrap();
+    }
+
     #[test]
     fn incremental_cache_keeps_valid_siblings_and_never_needs_fresh_evidence_for_known_notes() {
         let (mut value, keys, now) = fixture("main");
@@ -901,12 +753,20 @@ mod tests {
         let (evidence, keys, now) = fixture("test");
         assert!(verify(&keys, "regtest", &evidence.to_string(), now).is_err());
         assert!(configure_regtest_trust("local".into(), "invalid".into()).is_err());
-        configure_regtest_trust("svote-1".into(), STAGE_VALIDATORS.into()).unwrap();
+        configure_regtest_trust(
+            "svote-1".into(),
+            trust_anchor("test").unwrap().validator_set_hash,
+        )
+        .unwrap();
         assert_eq!(
             verify(&keys, "regtest", &evidence.to_string(), now).unwrap(),
             [true, false]
         );
-        assert!(configure_regtest_trust("different-chain".into(), PROD_VALIDATORS.into()).is_err());
+        assert!(configure_regtest_trust(
+            "different-chain".into(),
+            trust_anchor("main").unwrap().validator_set_hash
+        )
+        .is_err());
         assert!(verify(&keys, "main", &evidence.to_string(), now).is_err());
         let (main, main_keys, main_now) = fixture("main");
         assert_eq!(
@@ -1027,8 +887,13 @@ mod tests {
         corrupt["validators"]["result"]["validators"][0]["voting_power"] = serde_json::json!("1");
         assert!(verify(&k, "main", &corrupt.to_string(), now).is_err());
         let mut corrupt = v.clone();
-        corrupt["commit"]["result"]["signed_header"]["commit"]["signatures"][0]["signature"] =
-            serde_json::json!(B64.encode([0; 64]));
+        let signer = corrupt["commit"]["result"]["signed_header"]["commit"]["signatures"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|signature| signature["block_id_flag"] == 2)
+            .unwrap();
+        signer["signature"] = serde_json::json!(B64.encode([0; 64]));
         assert!(verify(&k, "main", &corrupt.to_string(), now).is_err());
     }
     #[test]

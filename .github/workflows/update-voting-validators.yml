@@ -1,0 +1,88 @@
+name: Update voting validators
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # The date gate below selects alternate Mondays.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-voting-validators
+  cancel-in-progress: false
+
+env:
+  BRANCH: automation/voting-validators
+  DATA_FILES: >-
+    rust/src/wallet/voting/trust
+    rust/tests/fixtures/voting-participation/main.json
+    rust/tests/fixtures/voting-participation/test.json
+    docs/voting-participation.md
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Select alternate weeks
+        id: due
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=$(python3 scripts/update-voting-validators.py --schedule-due)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install stable Rust
+        if: steps.due.outputs.run == 'true'
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+
+      - uses: actions/cache@v4
+        if: steps.due.outputs.run == 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            tools/voting-validators/target
+          key: voting-validators-${{ runner.os }}-${{ hashFiles('tools/voting-validators/Cargo.lock') }}-${{ hashFiles('tools/voting-validators/src/**', 'rust/src/wallet/voting/participation_evidence.rs') }}
+          restore-keys: |
+            voting-validators-${{ runner.os }}-${{ hashFiles('tools/voting-validators/Cargo.lock') }}-
+
+      - name: Build and test the verifier and updater
+        if: steps.due.outputs.run == 'true'
+        run: |
+          cargo fmt --manifest-path tools/voting-validators/Cargo.toml -- --check
+          cargo build --manifest-path tools/voting-validators/Cargo.toml --locked
+          cargo test --manifest-path tools/voting-validators/Cargo.toml --locked
+          python3 scripts/test_voting_validators.py
+          python3 scripts/update-voting-validators.py --check
+
+      - name: Authenticate and prepare updates
+        if: steps.due.outputs.run == 'true'
+        id: update
+        run: |
+          python3 scripts/update-voting-validators.py --summary-file "$RUNNER_TEMP/voting-validator-update.md"
+          python3 scripts/update-voting-validators.py --check
+          cat "$RUNNER_TEMP/voting-validator-update.md" >> "$GITHUB_STEP_SUMMARY"
+          # shellcheck disable=SC2086 # DATA_FILES is a fixed list of paths.
+          if git diff --quiet -- $DATA_FILES; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reconcile the pull request
+        if: steps.due.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGED: ${{ steps.update.outputs.changed }}
+        run: bash scripts/update-voting-validators-pr.sh
