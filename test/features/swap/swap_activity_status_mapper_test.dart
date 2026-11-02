@@ -6,6 +6,44 @@ import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
 
 void main() {
+  test('labels the Pay amount by outcome', () {
+    expect(
+      payActivityStatusAmountLabel(PayActivityStatusPhase.inProgress),
+      "You're paying",
+    );
+    expect(
+      payActivityStatusAmountLabel(PayActivityStatusPhase.completed),
+      'You paid',
+    );
+    for (final phase in [
+      PayActivityStatusPhase.failed,
+      PayActivityStatusPhase.refunded,
+    ]) {
+      expect(payActivityStatusAmountLabel(phase), 'Amount', reason: phase.name);
+    }
+  });
+
+  test('labels swap headers by outcome', () {
+    for (final (status, pay, receive) in [
+      (SwapIntentStatus.processing, "You're paying", "You're receiving"),
+      (SwapIntentStatus.complete, 'You paid', 'You received'),
+      // Unsuccessful swaps must not imply delivery.
+      (SwapIntentStatus.failed, 'Deposit amount', 'Expected to receive'),
+      (SwapIntentStatus.refunded, 'Deposit amount', 'Expected to receive'),
+    ]) {
+      final presentation = swapActivityStatusPresentationForIntent(
+        _state(),
+        _intent(
+          status: status,
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+        ),
+      );
+      expect(presentation.payLabel, pay, reason: status.name);
+      expect(presentation.receiveLabel, receive, reason: status.name);
+    }
+  });
+
   test('maps in-progress status page data from the saved swap intent', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(indicativeExternalPerZec: {SwapAsset.usdc: 70}),

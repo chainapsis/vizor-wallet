@@ -41,8 +41,8 @@ DATA_FILE = REPO_ROOT / "rust/src/wallet/block_times/mainnet_data.rs"
 START_HEIGHT = 419_200
 STEP = 1_000
 # Average spacing between consecutive entries must stay within these bounds.
-# Mainnet targets 150 s before Blossom and 75 s after it.
-MIN_AVG_BLOCK_SECONDS = 30
+# Mainnet targets 150 s before Blossom, 75 s after it, and 25 s from NU7.
+MIN_AVG_BLOCK_SECONDS = 10
 MAX_AVG_BLOCK_SECONDS = 300
 
 HEADER = """\

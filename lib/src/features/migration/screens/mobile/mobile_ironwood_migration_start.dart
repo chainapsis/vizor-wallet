@@ -201,6 +201,7 @@ class _MobileIronwoodMigrationStartScreenState
   var _messageIndex = 0;
   var _isPreparing = false;
   var _keystoneHandedOff = false;
+  var _approvedPlanRefused = false;
   late final IronwoodMigrationService _migrationService;
 
   @override
@@ -283,7 +284,7 @@ class _MobileIronwoodMigrationStartScreenState
 
     try {
       final plan =
-          widget.approvedPlan ??
+          (_approvedPlanRefused ? null : widget.approvedPlan) ??
           await ref.read(ironwoodMigrationPrivatePlanProvider.future);
       if (plan == null) {
         throw StateError('Migration plan is unavailable.');
@@ -368,6 +369,13 @@ class _MobileIronwoodMigrationStartScreenState
       }
       _messageTimer?.cancel();
       _isPreparing = false;
+      // A schedule drawn before the upgrade can never start; Retry draws a
+      // new one.
+      if (networkUpgradeHoldMessage(error) ==
+          kNetworkUpgradeScheduleChangedMessage) {
+        ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+        _approvedPlanRefused = true;
+      }
       setState(() {
         _phase = _MobileMigrationStartPhase.error;
         _error = _mobilePrivateMigrationStartErrorMessage(error);

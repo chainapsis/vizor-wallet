@@ -2341,6 +2341,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (_walletMutationPauseCount > 0) return;
     final restartSync = resume && _pendingMutationRestartSync;
     final restartPolling = resume && _pendingMutationRestartPolling;
+    // A configuration fetch can finish after mobile hides. Keep its restart
+    // pending until resume instead of starting foreground work while hidden.
+    // Locked wallets still discard the request below, as before.
+    if ((restartSync || restartPolling) &&
+        !_requiresUnlock &&
+        !canRunAppProcessWork(isInForeground: _isInForeground)) {
+      return;
+    }
     _pendingMutationRestartSync = false;
     _pendingMutationRestartPolling = false;
     // Check nothing else when there is nothing to restart: the opt-out exit
@@ -2464,6 +2472,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// [forceRestart] resumes sync and polling regardless of what the pause
   /// snapshot captured — the recovery toggle stops sync itself, so it must
   /// bring it back even when nothing was running when it took the pause.
+  /// Mobile defers that request while hidden and consumes it on resume;
+  /// locking or resetting the wallet discards the deferred request.
   ///
   /// A pause that outlived a wallet reset contributes neither its snapshot
   /// nor [forceRestart]: both describe the deleted wallet. It only releases
@@ -2646,6 +2656,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ref.read(pendingActivityEvidenceProvider.notifier).setForeground(true);
     // A resume is public: the recovery restart schedule starts over.
     _recoveryRestartGate.reset();
+    // Consume a restart deferred by a mutation that finished while hidden.
+    // An ongoing mutation keeps ownership until its own last pause exits.
+    if (_walletMutationPauseCount == 0 &&
+        (_pendingMutationRestartSync || _pendingMutationRestartPolling)) {
+      _endWalletMutationPause(resume: true);
+    }
     unawaited(_refreshBalanceAfterResume());
     // Coalesce repeated focus/resume events. An old mobile check spanning
     // backgrounding cannot certify foreground freshness; follow it immediately.
@@ -3615,10 +3631,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
   }
 
-  /// Waits until a UI-only persisted or completed-sync snapshot has been
-  /// reconciled with the latest Rust balance. Editing can continue while it is
-  /// visible, but proposal and Max operations call this before treating the
-  /// displayed amount as spendable.
+  /// Validates spend readiness without waiting for display history. A persisted
+  /// or carried snapshot is never authority: after native scanning finishes,
+  /// read a fresh account balance without publishing sync completion state.
   Future<void> waitForAuthoritativeSpendable({
     required String accountUuid,
     Duration timeout = const Duration(seconds: 30),
@@ -3626,42 +3641,61 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     const pollInterval = Duration(milliseconds: 100);
     final deadline = DateTime.now().add(timeout);
     final initial = _previousScopedState(state.value, accountUuid);
-    if (!(initial?.isUsingCompletedSpendableSnapshot ?? false)) {
-      return;
-    }
-    var requestedRecovery = false;
+    if (!(initial?.isUsingCompletedSpendableSnapshot ?? false)) return;
+    final epoch = _sensitiveStateEpoch;
 
-    while (true) {
-      if (_requiresUnlock) {
-        throw StateError('Wallet locked while finishing sync.');
+    void checkScope() {
+      if (!ref.mounted || _requiresUnlock || epoch != _sensitiveStateEpoch) {
+        throw StateError('Wallet changed while finishing sync.');
       }
       if (_getActiveAccountUuid() != accountUuid) {
         throw StateError('Active account changed while finishing sync.');
       }
-
       final scoped = _previousScopedState(state.value, accountUuid);
       if (scoped?.failure != null || scoped?.error != null) {
         throw StateError('Wallet sync failed before balance refresh.');
       }
-      if (!(scoped?.isUsingCompletedSpendableSnapshot ?? false)) {
-        return;
+    }
+
+    bool nativeScanFinished() =>
+        !rust_sync.isSyncRunning() &&
+        (!_isSyncing || (_lastForegroundSyncProgress?.isComplete ?? false));
+
+    while (true) {
+      checkScope();
+      final scoped = _previousScopedState(state.value, accountUuid);
+      if (!(scoped?.isUsingCompletedSpendableSnapshot ?? false)) return;
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) {
+        throw StateError('Wallet sync is still finishing. Try again.');
       }
 
-      final syncInProgress =
-          (scoped?.isSyncing ?? false) ||
-          (scoped?.isBackgroundMode ?? false) ||
-          rust_sync.isSyncRunning();
-      if (!syncInProgress && !requestedRecovery) {
-        requestedRecovery = true;
-        await _ensureAuthoritativeBalanceRecovery();
-        final refreshed = _previousScopedState(state.value, accountUuid);
-        if (!(refreshed?.isUsingCompletedSpendableSnapshot ?? false)) {
+      if (nativeScanFinished()) {
+        final gen = _syncGen;
+        final balance =
+            await (() async {
+              final dbPath = await _getDbPath();
+              checkScope();
+              return readWalletBalance(
+                dbPath: dbPath,
+                network: _endpointConfig.networkName,
+                accountUuid: accountUuid,
+              );
+            })().timeout(
+              remaining,
+              onTimeout: () {
+                throw StateError('Wallet sync is still finishing. Try again.');
+              },
+            );
+        checkScope();
+        // A foreground start may have raced the read. The operation's lease
+        // prevents another start during the second check and native operation.
+        if (gen == _syncGen &&
+            nativeScanFinished() &&
+            balance.availability ==
+                rust_sync.WalletBalanceAvailability.available) {
           return;
         }
-      }
-
-      if (DateTime.now().isAfter(deadline)) {
-        throw StateError('Wallet sync is still finishing. Try again.');
       }
       await Future<void>.delayed(pollInterval);
     }

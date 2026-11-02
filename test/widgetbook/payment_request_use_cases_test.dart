@@ -297,28 +297,28 @@ void main() {
     },
   );
 
-  testWidgets('replaced notice reflects the new input source', (tester) async {
-    for (final source in PaymentRequestSource.values) {
-      await tester.pumpWidget(const SizedBox.shrink());
-      await _pumpUseCase(
-        tester,
-        (_) => _surface(source: source, replaced: true),
-      );
-      expect(
-        find.text(
-          source == PaymentRequestSource.qrCode
-              ? 'Updated from the scanned QR'
-              : 'Replaced an earlier link',
-        ),
-        findsOneWidget,
-      );
-    }
+  testWidgets('replaced notice names the earlier link', (tester) async {
+    await _pumpUseCase(
+      tester,
+      (_) => _surface(source: PaymentRequestSource.link, replaced: true),
+    );
+    expect(find.text('Replaced an earlier link'), findsOneWidget);
+  });
+
+  testWidgets('scanned request preview carries no replaced notice', (
+    tester,
+  ) async {
+    await _pumpUseCase(tester, buildPaymentRequestScannedUseCase);
+    expect(_key('payment_request_replaced_notice'), findsNothing);
   });
   testWidgets('every registered use case renders in its own lane', (
     tester,
   ) async {
     for (final builder in <WidgetBuilder>[
       buildPaymentRequestFullUseCase,
+      buildPaymentRequestPastedUseCase,
+      buildPaymentRequestScannedMatchesLinkUseCase,
+      buildPaymentRequestScannedDiffersFromLinkUseCase,
       buildPaymentRequestMinimalUseCase,
       buildPaymentRequestLongValuesUseCase,
       buildPaymentRequestLongValuesExpandedUseCase,
@@ -344,6 +344,9 @@ void main() {
 
     for (final builder in <WidgetBuilder>[
       buildMobilePaymentRequestFullUseCase,
+      buildMobilePaymentRequestPastedUseCase,
+      buildMobilePaymentRequestScannedMatchesLinkUseCase,
+      buildMobilePaymentRequestScannedDiffersFromLinkUseCase,
       buildMobilePaymentRequestMinimalUseCase,
       buildMobilePaymentRequestLongValuesUseCase,
       buildMobilePaymentRequestLongValuesExpandedUseCase,

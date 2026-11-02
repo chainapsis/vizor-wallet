@@ -938,7 +938,7 @@ platform :mac do
     ENV.fetch("MATCH_CERTIFICATE_PASSWORD")
     ENV.fetch("MACOS_KEYCHAIN_PASSWORD")
 
-    return if readonly
+    next if readonly
 
     UI.user_error!("APP_STORE_CONNECT_API_KEY_JSON is required when MATCH_READONLY is false") if ENV["APP_STORE_CONNECT_API_KEY_JSON"].to_s.strip.empty?
   end

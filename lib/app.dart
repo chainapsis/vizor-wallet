@@ -13,6 +13,7 @@ import 'src/core/feedback/app_review.dart';
 import 'src/core/feedback/app_review_host.dart';
 import 'src/core/input/app_password_input_source.dart';
 import 'src/app_bootstrap.dart';
+import 'src/providers/wallet_pir_server_provider.dart';
 import 'src/providers/account_provider.dart';
 import 'src/core/lifecycle/signing_shutdown_host.dart';
 import 'src/core/lifecycle/app_shutdown_signal.dart';
@@ -36,7 +37,7 @@ import 'src/core/security/background_auto_lock_host.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
-import 'src/core/widgets/mobile/mobile_numeric_keyboard_toolbar.dart';
+import 'src/core/widgets/mobile/mobile_keyboard_toolbar.dart';
 import 'src/core/widgets/app_button.dart';
 import 'src/core/widgets/app_icon.dart';
 import 'src/core/widgets/app_toast.dart';
@@ -225,6 +226,11 @@ Future<void> initializeZcashWalletRuntime() async {
     await rust_simple.configureRegtestIronwoodActivationHeight(
       height: kZcashRegtestIronwoodActivationHeight,
     );
+    if (kZcashRegtestNu7ActivationHeight != 0xFFFFFFFF) {
+      await rust_simple.configureRegtestNu7ActivationHeight(
+        height: kZcashRegtestNu7ActivationHeight,
+      );
+    }
   }
 
   // Order matters: window_manager creates and shows the NSWindow inside
@@ -1847,6 +1853,7 @@ class ZcashWalletApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(votingShareTrackingRestorerProvider);
     ref.watch(paymentLinkClaimCoordinatorProvider);
+    ref.watch(walletPirServerActivatorProvider);
     final appRouter = ref.watch(_routerProvider);
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);
@@ -1908,7 +1915,7 @@ class ZcashWalletApp extends ConsumerWidget {
                                     child: PaymentRequestHost(
                                       router: router,
                                       child: LedgerOperationRecoveryHost(
-                                        child: MobileNumericKeyboardToolbar(
+                                        child: MobileKeyboardToolbar(
                                           child: BackgroundAutoLockHost(
                                             router: router,
                                             child: AppReviewHost(

@@ -6,7 +6,10 @@ import '../../../core/zcash/zip321_payment_request.dart';
 const kPaymentUriPrefillSource = 'zcash-uri';
 
 /// Input provenance, not authentication of the requester.
-enum PaymentRequestSource { link, qrCode }
+///
+/// [pastedLink] is a link pasted into the send recipient field: as untrusted
+/// as any [link], but usually with no original QR at hand to scan.
+enum PaymentRequestSource { link, pastedLink, qrCode }
 
 class SendPrefillArgs {
   const SendPrefillArgs({

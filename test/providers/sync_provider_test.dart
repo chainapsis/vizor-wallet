@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/activity/activity_eta_provider.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
   test(
@@ -61,6 +62,9 @@ void main() {
   testWidgets(
     'cached snapshot survives a live read and Send waits for sync completion',
     (tester) async {
+      final nativeSync = _SpendReadinessRustApiFake();
+      RustLib.initMock(api: nativeSync);
+      addTearDown(RustLib.dispose);
       final cached =
           SyncState(
             accountUuid: _accountUuid,
@@ -109,6 +113,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       expect(operations, 0);
 
+      nativeSync.running = false;
       notifier.replaceState(
         syncing.copyWith(
           isSyncing: false,
@@ -591,6 +596,59 @@ void main() {
       evidence.clear();
       sync.stopTipChecksForTesting();
     });
+  }
+
+  for (final forceRestart in [false, true]) {
+    for (final resetBeforeResume in [false, true]) {
+      testWidgets(
+        'wallet mutation restart waits for foreground (forced: $forceRestart, reset: $resetBeforeResume)',
+        (tester) async {
+          final sync = _PollingTestSyncNotifier();
+          final container = ProviderContainer(
+            overrides: [
+              appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+              accountProvider.overrideWith(_ExistingAccountNotifier.new),
+              syncProvider.overrideWith(() => sync),
+              rpcEndpointFailoverProvider.overrideWith(
+                () => _TipTestNotifier(() async => BigInt.from(100)),
+              ),
+              chainUpgradeStatusProvider.overrideWith(_TipUpgradeNotifier.new),
+              enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+            ],
+          );
+          addTearDown(container.dispose);
+          await container.read(accountProvider.future);
+          await container.read(syncProvider.future);
+          sync.handleAppHideForTesting();
+          // Model the last pause exiting after a configuration refresh. The
+          // wallet was idle for a forced restart, or had work to resume.
+          sync.resumeAfterWalletMutation(
+            WalletMutationSyncPause(
+              hadActiveSync: !forceRestart,
+              hadPolling: false,
+              hadMempoolObserver: false,
+              resetEpoch: 0,
+            ),
+            forceRestart: forceRestart,
+          );
+          final mobile = kAppFormFactor == AppFormFactor.mobile;
+          expect(sync.startSyncs, mobile ? 0 : 1);
+          if (resetBeforeResume) sync.endWalletMutationPause();
+          sync.handleAppResumeForTesting();
+          await tester.pump();
+          final expected = mobile && resetBeforeResume ? 0 : 1;
+          expect(sync.startSyncs, expected);
+          sync.handleAppResumeForTesting();
+          await tester.pump();
+          expect(
+            sync.startSyncs,
+            expected,
+            reason: 'a deferred restart is consumed once',
+          );
+          sync.stopTipChecksForTesting();
+        },
+      );
+    }
   }
 
   testWidgets('a resumed tip check discovers a new block and withdraws ETA', (
@@ -1629,6 +1687,16 @@ void main() {
       expect(current.recentTransactions, [fetchedTx]);
     },
   );
+}
+
+class _SpendReadinessRustApiFake implements RustLibApi {
+  bool running = true;
+
+  @override
+  bool crateApiSyncIsSyncRunning() => running;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _LifecycleTestSyncNotifier extends SyncNotifier {

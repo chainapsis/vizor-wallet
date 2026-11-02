@@ -51,10 +51,36 @@ const APP_TRANSITION_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const SIGNING_STATUS_COOLDOWN: Duration = Duration::from_secs(4);
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const SIGNING_STATUS_POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// What the connected Zcash app can sign, from its version; see
+/// `ledgerAppSupport` in `lib/src/features/ledger/ledger_capability.dart`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LedgerAppSupport {
+    /// A memo the app shows as a hash (3.9.4).
+    pub memo_hash: bool,
+    /// The NU7 consensus branch (3.10.0).
+    pub nu7_branch: bool,
+    /// An Orchard spend paying into Ironwood (3.10.0).
+    pub orchard_to_ironwood: bool,
+}
+
+impl LedgerAppSupport {
+    /// 3.10.0.
+    pub(crate) const NEWEST: Self = Self {
+        memo_hash: true,
+        nu7_branch: true,
+        orchard_to_ironwood: true,
+    };
+    /// 3.9.3, the oldest app Vizor signs with.
+    #[cfg(test)]
+    pub(crate) const OLDEST: Self = Self {
+        memo_hash: false,
+        nu7_branch: false,
+        orchard_to_ironwood: false,
+    };
+}
+
 const ZCASH_APP_NAME: &str = "Zcash";
 const DASHBOARD_APP_NAMES: [&str; 3] = ["BOLOS", "OLOS", "OLOS\0"];
-const LEGACY_ORCHARD_RECOVERY_UNSUPPORTED: &str =
-    "ledger_legacy_orchard_recovery_unsupported: The current Ledger Zcash app cannot sign a transaction that spends legacy Orchard funds into Ironwood.";
 /// Leads errors where the device's signatures verify against keys other than
 /// this account's, so the UI can ask for the Ledger that holds the account.
 const SIGNATURE_MISMATCH_PREFIX: &str = "ledger_signature_mismatch: ";
@@ -310,47 +336,17 @@ fn validate_fingerprint(
 /// Builds the complete ordered APDU exchange for compact shielded signing.
 pub(crate) fn build_pczt_signing_plan(
     pczt_bytes: &[u8],
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
 ) -> Result<Vec<ApduCommand>, String> {
-    build_signing_plan(pczt_bytes, false, memo_hash_supported).map(|(commands, _)| commands)
+    build_signing_plan(pczt_bytes, false, app_support).map(|(commands, _)| commands)
 }
 
 /// Builds the complete ordered APDU exchange for a fully signed PCZT.
 pub(crate) fn build_pczt_full_signing_plan(
     pczt_bytes: &[u8],
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
 ) -> Result<Vec<ApduCommand>, String> {
-    build_signing_plan(pczt_bytes, true, memo_hash_supported).map(|(commands, _)| commands)
-}
-
-/// Blocks the unverified Orchard-to-Ironwood path in supported Ledger apps
-/// without weakening or changing the transaction that Vizor prepared.
-///
-/// Keep the transport signer independent from this release gate so the opt-in
-/// Speculos canary can verify a future app build before Vizor raises its
-/// minimum supported version and removes this guard.
-pub(crate) fn validate_pczt_release_support(pczt_bytes: &[u8]) -> Result<(), String> {
-    let parsed = parse_pczt(pczt_bytes)?;
-    let has_orchard_spend = parsed
-        .orchard_bundle
-        .as_ref()
-        .is_some_and(|bundle| bundle.actions.iter().any(|action| action.spend_value != 0));
-    let has_ironwood_output = parsed
-        .ironwood_bundle
-        .as_ref()
-        .is_some_and(|bundle| bundle.actions.iter().any(|action| action.action.value != 0));
-    require_legacy_orchard_recovery_support(has_orchard_spend, has_ironwood_output)
-}
-
-fn require_legacy_orchard_recovery_support(
-    has_orchard_spend: bool,
-    has_ironwood_output: bool,
-) -> Result<(), String> {
-    if has_orchard_spend && has_ironwood_output {
-        Err(LEGACY_ORCHARD_RECOVERY_UNSUPPORTED.into())
-    } else {
-        Ok(())
-    }
+    build_signing_plan(pczt_bytes, true, app_support).map(|(commands, _)| commands)
 }
 
 /// Validates raw status-bearing responses and returns compact shielded signatures.
@@ -358,7 +354,8 @@ pub fn finalize_pczt_signing(
     pczt_bytes: &[u8],
     responses: &[Vec<u8>],
 ) -> Result<Vec<SpendAuthSignature>, String> {
-    let (commands, requests) = build_signing_plan(pczt_bytes, false, true)?;
+    // The device already answered this plan, so no app limit applies.
+    let (commands, requests) = build_signing_plan(pczt_bytes, false, LedgerAppSupport::NEWEST)?;
     let (_, shielded) = decode_signing_responses(&commands, &requests, responses)?;
     preflight_device_signatures(pczt_bytes, &shielded)?;
     Ok(shielded)
@@ -370,7 +367,8 @@ pub fn finalize_pczt_full_signing(
     responses: &[Vec<u8>],
 ) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
-    let (commands, requests) = build_signing_plan(pczt_bytes, true, true)?;
+    // The device already answered this plan, so no app limit applies.
+    let (commands, requests) = build_signing_plan(pczt_bytes, true, LedgerAppSupport::NEWEST)?;
     let (transparent, shielded) = decode_signing_responses(&commands, &requests, responses)?;
     apply_signatures(pczt_bytes, &parsed, &transparent, &shielded)
 }
@@ -378,7 +376,7 @@ pub fn finalize_pczt_full_signing(
 fn build_signing_plan(
     pczt_bytes: &[u8],
     include_transparent: bool,
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
 ) -> Result<(Vec<ApduCommand>, Vec<SignatureRequest>), String> {
     let parsed = parse_pczt(pczt_bytes)?;
     if !include_transparent && !parsed.transparent_inputs.is_empty() {
@@ -388,7 +386,7 @@ fn build_signing_plan(
         );
     }
 
-    let serialized = serialize_pczt(&parsed, memo_hash_supported)?;
+    let serialized = serialize_pczt(&parsed, app_support)?;
     let mut commands = Vec::new();
     for command in serialized {
         let total = command.packets.len();
@@ -683,29 +681,24 @@ pub fn get_ufvk(
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt(
     pczt_bytes: &[u8],
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
-    sign_pczt_with_progress(
-        pczt_bytes,
-        &|_, _| {},
-        memo_hash_supported,
-        expected_app_version,
-    )
+    sign_pczt_with_progress(pczt_bytes, &|_, _| {}, app_support, expected_app_version)
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     // Raw developer/canary entry point, without a wallet account context.
     sign_pczt_inner(
         pczt_bytes,
         progress,
-        memo_hash_supported,
+        app_support,
         expected_app_version,
         None,
     )
@@ -717,14 +710,14 @@ pub fn sign_pczt_with_progress(
 pub(crate) fn sign_pczt_for_account_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     expected_app_version: Option<&str>,
     account_key: &device_account::DeviceAccountKey,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     sign_pczt_inner(
         pczt_bytes,
         progress,
-        memo_hash_supported,
+        app_support,
         expected_app_version,
         Some(account_key),
     )
@@ -734,7 +727,7 @@ pub(crate) fn sign_pczt_for_account_with_progress(
 pub(crate) fn sign_pczt_for_account_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
-    _memo_hash_supported: bool,
+    _app_support: LedgerAppSupport,
     _expected_app_version: Option<&str>,
     _account_key: &device_account::DeviceAccountKey,
 ) -> Result<Vec<SpendAuthSignature>, String> {
@@ -745,7 +738,7 @@ pub(crate) fn sign_pczt_for_account_with_progress(
 fn sign_pczt_inner(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     expected_app_version: Option<&str>,
     account_key: Option<&device_account::DeviceAccountKey>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
@@ -756,7 +749,7 @@ fn sign_pczt_inner(
                 .into(),
         );
     }
-    let commands = serialize_pczt(&parsed, memo_hash_supported)?;
+    let commands = serialize_pczt(&parsed, app_support)?;
 
     let mut requests = Vec::new();
     if let Some(bundle) = &parsed.orchard_bundle {
@@ -811,7 +804,7 @@ fn sign_pczt_inner(
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn sign_pczt(
     _pczt_bytes: &[u8],
-    _memo_hash_supported: bool,
+    _app_support: LedgerAppSupport,
     _expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
@@ -821,7 +814,7 @@ pub fn sign_pczt(
 pub fn sign_pczt_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
-    _memo_hash_supported: bool,
+    _app_support: LedgerAppSupport,
     _expected_app_version: Option<&str>,
 ) -> Result<Vec<SpendAuthSignature>, String> {
     Err(unsupported_platform())
@@ -833,29 +826,24 @@ pub fn sign_pczt_with_progress(
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_full(
     pczt_bytes: &[u8],
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
-    sign_pczt_full_with_progress(
-        pczt_bytes,
-        &|_, _| {},
-        memo_hash_supported,
-        expected_app_version,
-    )
+    sign_pczt_full_with_progress(pczt_bytes, &|_, _| {}, app_support, expected_app_version)
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub fn sign_pczt_full_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     // Raw developer/canary entry point, without a wallet account context.
     sign_pczt_full_inner(
         pczt_bytes,
         progress,
-        memo_hash_supported,
+        app_support,
         expected_app_version,
         None,
     )
@@ -867,14 +855,14 @@ pub fn sign_pczt_full_with_progress(
 pub(crate) fn sign_pczt_full_for_account_with_progress(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     expected_app_version: Option<&str>,
     account_key: &device_account::DeviceAccountKey,
 ) -> Result<Vec<u8>, String> {
     sign_pczt_full_inner(
         pczt_bytes,
         progress,
-        memo_hash_supported,
+        app_support,
         expected_app_version,
         Some(account_key),
     )
@@ -884,7 +872,7 @@ pub(crate) fn sign_pczt_full_for_account_with_progress(
 pub(crate) fn sign_pczt_full_for_account_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
-    _memo_hash_supported: bool,
+    _app_support: LedgerAppSupport,
     _expected_app_version: Option<&str>,
     _account_key: &device_account::DeviceAccountKey,
 ) -> Result<Vec<u8>, String> {
@@ -895,12 +883,12 @@ pub(crate) fn sign_pczt_full_for_account_with_progress(
 fn sign_pczt_full_inner(
     pczt_bytes: &[u8],
     progress: &dyn Fn(&str, Option<&str>),
-    memo_hash_supported: bool,
+    app_support: LedgerAppSupport,
     expected_app_version: Option<&str>,
     account_key: Option<&device_account::DeviceAccountKey>,
 ) -> Result<Vec<u8>, String> {
     let parsed = parse_pczt(pczt_bytes)?;
-    let commands = serialize_pczt(&parsed, memo_hash_supported)?;
+    let commands = serialize_pczt(&parsed, app_support)?;
 
     let transparent_requests = 0..parsed.transparent_inputs.len();
     let mut shielded_requests = Vec::new();
@@ -977,7 +965,7 @@ fn sign_pczt_full_inner(
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn sign_pczt_full(
     _pczt_bytes: &[u8],
-    _memo_hash_supported: bool,
+    _app_support: LedgerAppSupport,
     _expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
@@ -987,7 +975,7 @@ pub fn sign_pczt_full(
 pub fn sign_pczt_full_with_progress(
     _pczt_bytes: &[u8],
     _progress: &dyn Fn(&str, Option<&str>),
-    _memo_hash_supported: bool,
+    _app_support: LedgerAppSupport,
     _expected_app_version: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     Err(unsupported_platform())
@@ -1298,19 +1286,6 @@ mod tests {
             .contains("cancelled"));
     }
 
-    #[test]
-    fn release_gate_blocks_only_legacy_orchard_to_ironwood_recovery() {
-        assert!(require_legacy_orchard_recovery_support(true, true)
-            .unwrap_err()
-            .contains("ledger_legacy_orchard_recovery_unsupported"));
-        assert_eq!(require_legacy_orchard_recovery_support(true, false), Ok(()));
-        assert_eq!(require_legacy_orchard_recovery_support(false, true), Ok(()));
-        assert_eq!(
-            require_legacy_orchard_recovery_support(false, false),
-            Ok(())
-        );
-    }
-
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     #[test]
     fn signing_status_cooldown_only_waits_until_the_device_can_receive_apdus() {
@@ -1547,7 +1522,7 @@ mod tests {
     #[test]
     fn shielded_only_api_rejects_transparent_inputs_before_transport() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        assert!(sign_pczt(&pczt_bytes, false, None)
+        assert!(sign_pczt(&pczt_bytes, LedgerAppSupport::OLDEST, None)
             .unwrap_err()
             .contains("use sign_pczt_full"));
     }
@@ -1555,7 +1530,7 @@ mod tests {
     #[test]
     fn full_plan_flattens_pczt_packets_before_transparent_requests() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        let commands = build_pczt_full_signing_plan(&pczt_bytes, false).unwrap();
+        let commands = build_pczt_full_signing_plan(&pczt_bytes, LedgerAppSupport::OLDEST).unwrap();
 
         assert_eq!(commands.first().map(|command| command.ins), Some(0x52));
         assert_eq!(commands.last().map(|command| command.ins), Some(0x55));
@@ -1568,7 +1543,7 @@ mod tests {
     #[test]
     fn short_mobile_exchange_preserves_terminal_status_error() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        let commands = build_pczt_full_signing_plan(&pczt_bytes, false).unwrap();
+        let commands = build_pczt_full_signing_plan(&pczt_bytes, LedgerAppSupport::OLDEST).unwrap();
         let mut responses = vec![vec![0x90, 0]; commands.len() - 2];
         responses.push(vec![0x69, 0x85]);
 
@@ -1580,7 +1555,7 @@ mod tests {
     #[test]
     fn short_successful_mobile_exchange_reports_response_count() {
         let (pczt_bytes, _, _) = transparent_pczt();
-        let commands = build_pczt_full_signing_plan(&pczt_bytes, false).unwrap();
+        let commands = build_pczt_full_signing_plan(&pczt_bytes, LedgerAppSupport::OLDEST).unwrap();
         let responses = vec![vec![0x90, 0]; commands.len() - 1];
 
         assert!(finalize_pczt_full_signing(&pczt_bytes, &responses)

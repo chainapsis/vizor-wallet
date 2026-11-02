@@ -704,6 +704,13 @@ Swift BackgroundMigrationPreparationManager
   `com.keplr.vizor.sync` is cancelled once at launch as a tombstone for requests
   submitted by older builds; no handler is registered for it.
 
+### Network Upgrades
+
+Read [docs/network-upgrades.md](docs/network-upgrades.md) before changing send
+expiry or block-time and wait-time estimates. It covers what the wallet refuses
+around an upgrade, where those rules live
+(`rust/src/wallet/network_upgrade.rs`), and NU7's block spacing.
+
 ### Tor and the network route
 
 Tor covers the app's foreground traffic only. The desired route lives in Rust
@@ -758,6 +765,14 @@ while an executed denomination preparation waits for confirmations.
 - `NotFound`, mempool height `0`, and fork height `UInt64.max` contribute zero
   confirmations. A normal mined height contributes
   `tip - minedHeight + 1`, capped at 3.
+- A preparation transaction the tracker saw broadcast while the next block
+  was still before a network upgrade, and that the server reports `NotFound`
+  on two consecutive passes once it is past, was dropped at activation (nodes
+  clear old-branch transactions, ZIP 200). The wave goes to the foreground
+  without failing the task, since only the foreground can stop the run.
+  Transactions first seen later may target the new branch and are not judged.
+  The check reads `zcash_next_upgrade_activation_height` and process memory,
+  not the wallet DB.
 - Reaching 3 confirmations finishes only the current observation wave. The
   manager stores a foreground-continuation token, posts an “Open Vizor”
   notification under its own `confirmedWaveReady` kind so healthy copy never
@@ -807,8 +822,9 @@ Before changing a Ledger send, Gift Card, shielding, swap, or voting flow, read
 `docs/ledger/limitations.md`. **32 actions per pool does not mean 32 recipients:**
 the device can review only **4 external shielded outputs across both pools**;
 internal change is excluded. Numeric limits live in `rust/src/wallet/ledger/limits.rs`.
-Keep account-key verification before PCZT transmission and retain the
-Orchard-to-Ironwood gate until the actual supported app passes its canary.
+Keep account-key verification before PCZT transmission. Apps before 3.10.0
+reject the NU7 branch and an Orchard spend into Ironwood; `LedgerAppSupport`
+carries what the connected app can sign, and the serializer refuses the rest.
 
 ### Signing Cancellation
 
@@ -828,8 +844,11 @@ A hardware TEX request's ZIP 320 ephemeral address follows the same boundary:
 releasing the request before that boundary returns the address, so cancelled
 approvals cannot exhaust the ephemeral gap limit; after it the address stays
 reserved.
-Normal app exit closes the proposal gate, requests sync cancellation, and hides
-its desktop window before awaiting reservation cleanup. Rust allows 250ms to
+Normal app exit closes the proposal gate and requests sync cancellation.
+Desktop exits hide the window before awaiting reservation cleanup, except on
+Linux. Linux keeps the window visible during the same bounded cleanup, then
+calls `exit(0)` instead of GTK hide/destroy teardown to avoid the compositor
+shutdown crash. Rust allows 250ms to
 acquire the wallet write lock and drain accepted DB creators, then releases only
 unsubmitted reservations without waiting on SQLite contention. Once the budget
 expires, it starts no further cleanup; unfinished work is left for startup
@@ -987,8 +1006,12 @@ the setting off restores public discovery from height 0.
 `create_wallet()` fetches chain tip from lightwalletd as birthday height before creating the account. This prevents new wallets from doing a full chain scan. Birthday fetch failure blocks wallet creation (network required).
 
 On mainnet, the wallet API (`rust/src/api/wallet.rs`, `restored_birthday`)
-stores every restored birthday rounded down to one past a 10,000-block grid
-point (`tree_states::restore_birthday`), so lightwalletd learns only the bucket.
+stores every restored birthday rounded down to one past a grid point
+(`tree_states::restore_birthday`), so lightwalletd learns only the bucket. The
+grid is every 10,000 blocks before NU7 and every 30,000 from it, about 8.7 days
+in both eras, and the bucket containing the activation starts at the last grid
+point before it. It is a height grid, not a calendar, so every app version
+draws the same buckets.
 When the grid point is a compiled checkpoint (`rust/src/wallet/tree_states.rs`)
 the first scan batch reads its state locally instead of sending
 `GetTreeState`; a restore newer than the table fetches the grid point's state.

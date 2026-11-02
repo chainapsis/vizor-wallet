@@ -24,8 +24,10 @@ import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/comma_to_dot_input_formatter.dart';
 import '../../../core/widgets/decimal_amount_input_formatter.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -37,6 +39,7 @@ import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
 import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/send_prefill_args.dart';
+import '../models/send_scan_result.dart';
 import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
 import '../services/send_proving_key_warmup.dart';
@@ -445,6 +448,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
+  /// A `zcash:` link in the field opens at once, however it got there:
+  /// nobody types one by hand, so it arrived by paste.
+  void _handleAddressEdited(String text) {
+    if (_takePaymentLink(text)) return;
+    _handleAddressChanged();
+  }
+
   void _handleAddressChanged() {
     _addressSeq++;
     _maxDebounceTimer?.cancel();
@@ -464,6 +474,49 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (!_isMaxMode) {
       _validateAmount();
     }
+  }
+
+  /// Answers a pasted `zcash:` link the way the in-app scanner answers a QR:
+  /// a request with terms opens the payment request card, and a link that
+  /// names only an address leaves that address in the field. Returns false
+  /// when [raw] is not a link this can answer, so the field keeps it.
+  bool _takePaymentLink(String raw) {
+    switch (resolvePastedPaymentLink(raw)) {
+      case SendScanPaymentRequest(:final prefill):
+        _openPaymentRequest(prefill);
+      case SendScanAddress(:final address, :final downgrade):
+        final recipient = address.trim();
+        if (recipient.isEmpty) return false;
+        _addressController.value = TextEditingValue(
+          text: recipient,
+          selection: TextSelection.collapsed(offset: recipient.length),
+        );
+        _handleAddressChanged();
+        final message = sendScanDowngradeMessage(downgrade, pasted: true);
+        if (message != null) {
+          showAppToast(
+            context,
+            message,
+            iconName: AppIcons.warning,
+            tone: AppToastTone.destructive,
+          );
+        }
+      case null:
+        return false;
+    }
+    return true;
+  }
+
+  /// Hands a pasted link's request to the payment request card, which treats
+  /// it as untrusted like any link — the clipboard is another app's word for
+  /// it — but without an original QR at hand to scan.
+  void _openPaymentRequest(SendPrefillArgs prefill) {
+    _addressController.clear();
+    _handleAddressChanged();
+    _addressFocusNode.unfocus();
+    ref
+        .read(paymentRequestFlowProvider.notifier)
+        .present(prefill, source: PaymentRequestSource.pastedLink);
   }
 
   void _handleAmountChanged() {
@@ -981,9 +1034,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      // Check balance before proposing
+      // A current native Max quote can exceed the carried display balance.
+      // Proposal creation still checks that its inputs remain spendable.
       final available = _availableBalanceForCurrentAddress;
-      if (amountZatoshi > available) {
+      if (amountZatoshi > available && !_hasCurrentMaxQuote) {
         setState(() {
           _error = '$_insufficientBalanceText.';
           _isSending = false;
@@ -1142,7 +1196,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       // A wrong-network address is well-formed, so "Invalid address" would
       // send the user hunting for a typo that is not there.
       'invalid' =>
-        _addressWrongNetwork ? kWrongNetworkAddressMessage : 'Invalid address',
+        _addressWrongNetwork
+            ? kWrongNetworkAddressMessage
+            : isZcashPaymentLink(_addressController.text)
+            ? kUnreadablePaymentLinkMessage
+            : 'Invalid address',
       'error' => 'Address validation failed',
       _ => matchedRecipientName,
     };
@@ -1304,7 +1362,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                         : null,
                                     focusNode: focusNode,
                                     controller: controller,
-                                    hintText: 'Zcash address',
+                                    hintText: 'Address or request link',
                                     leading: AppIcon(
                                       addressLeadingIcon,
                                       size: 20,
@@ -1312,7 +1370,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                     ),
                                     messageText: addressMessage,
                                     messageIcon: addressMessageIcon,
-                                    onChanged: (_) => _handleAddressChanged(),
+                                    onChanged: _handleAddressEdited,
                                     onSubmitted: (_) => onFieldSubmitted(),
                                     keyboardType: TextInputType.text,
                                     showClearButton: true,

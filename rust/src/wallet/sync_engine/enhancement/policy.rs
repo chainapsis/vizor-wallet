@@ -360,8 +360,7 @@ mod tests {
     /// A supplemental source guard: release builds must ignore every
     /// development switch, so each environment read in the crate's sources
     /// sits under a debug-build gate (`cfg(debug_assertions)` or
-    /// `cfg!(debug_assertions)` at most a few lines above it, or the
-    /// debug-only `origin_override` it hands its reader to), or in a test.
+    /// `cfg!(debug_assertions)` at most a few lines above it), or in a test.
     /// It cannot prove a gate is correct; it catches a new read added without
     /// one. Run the gate tests themselves with `cargo test --release` to see
     /// the switches off.
@@ -412,16 +411,15 @@ mod tests {
                 if code.starts_with("//") || !reads {
                     continue;
                 }
-                let gated = code.contains("origin_override(")
-                    || lines[index.saturating_sub(WINDOW)..=index]
-                        .iter()
-                        .any(|above| {
-                            above.contains("cfg(debug_assertions)")
-                                || above.contains("cfg!(debug_assertions)")
-                                || above.contains("#[test]")
-                                || above.contains("#[tokio::test")
-                                || above.contains("#[cfg(test)]")
-                        });
+                let gated = lines[index.saturating_sub(WINDOW)..=index]
+                    .iter()
+                    .any(|above| {
+                        above.contains("cfg(debug_assertions)")
+                            || above.contains("cfg!(debug_assertions)")
+                            || above.contains("#[test]")
+                            || above.contains("#[tokio::test")
+                            || above.contains("#[cfg(test)]")
+                    });
                 if !gated {
                     ungated.push(format!("{}:{}: {}", relative.display(), index + 1, code));
                 }

@@ -105,14 +105,13 @@ void main() {
     await tester.pumpAndSettle();
     final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
     final original = scroll.offset;
-    final gift = find.byWidgetPredicate(
-      (w) =>
-          w is PaymentLinkCardSelector &&
-          w.artwork == PaymentLinkCardArtwork.gift,
+    final lastArtwork = PaymentLinkCardArtwork.values.last;
+    final lastSelector = find.byWidgetPredicate(
+      (w) => w is PaymentLinkCardSelector && w.artwork == lastArtwork,
     );
-    await tester.tap(gift);
+    await tester.tap(lastSelector);
     await tester.pumpAndSettle();
-    expect(selected, PaymentLinkCardArtwork.gift);
+    expect(selected, lastArtwork);
     final knight = find.byWidgetPredicate(
       (w) =>
           w is PaymentLinkCardSelector &&

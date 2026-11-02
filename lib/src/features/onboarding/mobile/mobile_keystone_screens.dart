@@ -10,6 +10,7 @@ import 'mobile_onboarding_progress_scope.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/feedback/app_haptics.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -521,7 +522,10 @@ class _AccountCard extends StatelessWidget {
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: () {
+          if (!selected) unawaited(AppHaptics.selection());
+          onTap();
+        },
         child: Container(
           // Figma `Radio Card` (4654:74580): min-h 64, ground fill, 16 px
           // radius, asymmetric 8/12/4 padding. Only the selected card

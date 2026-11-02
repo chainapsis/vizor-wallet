@@ -128,6 +128,7 @@ enum LedgerSigningPlaygroundFailure {
   openApp,
   reconnect,
   memoHashUpdate,
+  appUpdate,
 }
 
 Widget buildLedgerSigningPlaygroundUseCase(BuildContext context) {
@@ -623,6 +624,7 @@ LedgerSigningFailurePresentation _failurePresentation(
       ),
     LedgerSigningPlaygroundFailure.memoHashUpdate =>
       ledgerMemoHashUpdateFailure,
+    LedgerSigningPlaygroundFailure.appUpdate => ledgerAppUpdateFailure,
     LedgerSigningPlaygroundFailure.reconnect =>
       const LedgerSigningFailurePresentation(
         title: 'Ledger needs attention',

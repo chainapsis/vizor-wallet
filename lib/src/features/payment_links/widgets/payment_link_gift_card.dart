@@ -20,7 +20,7 @@ const _supportingValueShadows = <Shadow>[
   Shadow(color: Color(0x8C000000), offset: Offset(0, 1), blurRadius: 1),
 ];
 
-/// Artwork choices exported from the Figma `_CARD BG IMAGE` component set.
+/// Built-in artwork choices for gift cards.
 enum PaymentLinkCardArtwork {
   knight('payment_link_card_knight.webp', 'Knight'),
   chestLava('payment_link_card_chest_lava.webp', 'Chest in lava cave'),
@@ -32,7 +32,8 @@ enum PaymentLinkCardArtwork {
   diamond('payment_link_card_diamond.webp', 'Diamond'),
   ruby('payment_link_card_ruby.webp', 'Ruby'),
   coin('payment_link_card_coin.webp', 'Zcash coin'),
-  gift('payment_link_card_gift.webp', 'Gift box');
+  gift('payment_link_card_gift.webp', 'Gift box'),
+  rogueCat('payment_link_card_rogue_cat.webp', 'Rogue cat');
 
   const PaymentLinkCardArtwork(this.fileName, this.semanticLabel);
 

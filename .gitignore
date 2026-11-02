@@ -55,6 +55,7 @@ rust/build/
 .regtest-voting/
 .ironwood-regtest/
 .ironwood-regtest-snapshots/
+.nu7-regtest/
 
 # Symbolication related
 app.*.symbols

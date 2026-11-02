@@ -45,6 +45,7 @@ import '../widgets/sapling_params_prompt.dart';
 import '../widgets/send_recipient_resolver.dart';
 import '../widgets/send_review_content_view.dart';
 import '../widgets/send_verify_address_overlay.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 
 export '../services/send_flow.dart'
     show KeystoneBroadcastArgs, LedgerBroadcastArgs, SendReviewArgs;
@@ -510,7 +511,19 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     late final LedgerSigningFailurePresentation failure;
     late final _LedgerSendRecoveryAction? action;
 
-    if (lower.contains('proposal not found') ||
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) {
+      // Rust refused the PCZT at the live tip; the device was never asked.
+      // Nothing to do here until the upgrade, so only Cancel remains.
+      failure = LedgerSigningFailurePresentation(
+        title: kNetworkUpgradeHoldActionLabel,
+        statusLabel: 'Action needed',
+        message: upgradeHold,
+        showDeviceAppPrompt: false,
+        showConnectionPicker: false,
+      );
+      action = null;
+    } else if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       failure = const LedgerSigningFailurePresentation(
         title: 'Transaction expired',
@@ -521,16 +534,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         actionLabel: 'Create new transaction',
       );
       action = _LedgerSendRecoveryAction.createNewTransaction;
-    } else if (isLedgerLegacyOrchardRecoveryUnsupported(error)) {
-      failure = const LedgerSigningFailurePresentation(
-        title: 'Ledger app update required',
-        statusLabel: 'Recovery unavailable',
-        message: kLedgerLegacyOrchardRecoveryUnavailableMessage,
-        showDeviceAppPrompt: false,
-      );
-      action = null;
     } else if (isLedgerMemoHashUnsupported(error)) {
       failure = ledgerMemoHashUpdateFailure;
+      action = _LedgerSendRecoveryAction.retrySigning;
+    } else if (isLedgerAppUpdateRequired(error)) {
+      failure = ledgerAppUpdateFailure;
       action = _LedgerSendRecoveryAction.retrySigning;
     } else if (lower.contains('sapling')) {
       failure = const LedgerSigningFailurePresentation(
@@ -965,6 +973,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   String _friendlyKeystoneError(String raw) {
+    final upgradeHold = networkUpgradeHoldMessage(raw);
+    if (upgradeHold != null) return upgradeHold;
     final lower = raw.toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {

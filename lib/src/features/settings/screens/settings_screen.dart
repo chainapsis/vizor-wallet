@@ -554,7 +554,7 @@ class _SettingsList extends ConsumerWidget {
             ),
             _SettingsRow(
               iconName: AppIcons.lock,
-              label: 'Password',
+              label: 'Change password',
               onTap: onChangePassword,
             ),
             _SettingsRow(

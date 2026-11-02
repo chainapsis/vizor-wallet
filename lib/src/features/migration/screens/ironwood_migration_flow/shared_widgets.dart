@@ -271,6 +271,7 @@ String _transferEstimatedArrival(rust_sync.MigrationStatus status) {
 
 String _transferEstimatedCompletion(
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   required int currentHeight,
   bool needsInput = false,
   List<rust_sync.MigrationPartStatus>? parts,
@@ -303,7 +304,7 @@ String _transferEstimatedCompletion(
       // current transaction to be mined and reach trusted depth.
       remainingBlocks = math.max(1, status.denominationConfirmationTarget);
     }
-    return _formatMigrationBlockDurationEstimate(remainingBlocks);
+    return _formatMigrationBlockDurationEstimate(remainingBlocks, blockTimes);
   }
 
   // Active runs publish an authoritative completion projection from Rust.
@@ -322,19 +323,25 @@ String _transferEstimatedCompletion(
   if (remainingBlocks == null) {
     return _formatMigrationBlockDurationEstimate(
       _fallbackRemainingMigrationBlocks(status),
+      blockTimes,
     );
   }
-  return _formatMigrationBlockDurationEstimate(math.max(1, remainingBlocks));
+  return _formatMigrationBlockDurationEstimate(
+    math.max(1, remainingBlocks),
+    blockTimes,
+  );
 }
 
 String _migrationCompletionEstimateDisplay(
   rust_sync.MigrationStatus status, {
+  required BlockTimeEstimate blockTimes,
   required int currentHeight,
   required bool needsInput,
   required List<rust_sync.MigrationPartStatus> parts,
 }) {
   final estimate = _transferEstimatedCompletion(
     status,
+    blockTimes: blockTimes,
     currentHeight: currentHeight,
     needsInput: needsInput,
     parts: parts,
@@ -346,8 +353,10 @@ String _migrationCompletionEstimateDisplay(
     return 'in $estimate';
   }
   if (estimatedCompletionHeight <= currentHeight) return 'in $estimate';
-  final remainingBlocks = estimatedCompletionHeight - currentHeight;
-  final seconds = remainingBlocks * _migrationEstimatedSecondsPerBlock;
+  final seconds = blockTimes.secondsBetween(
+    currentHeight,
+    estimatedCompletionHeight,
+  );
   final minutes = (seconds / Duration.secondsPerMinute).ceil();
   if (minutes < 60) {
     return 'in ~$minutes ${minutes == 1 ? 'minute' : 'minutes'}';
@@ -512,11 +521,12 @@ rust_sync.MigrationScheduledBroadcast? _nextScheduledBroadcast(
   return fallbackScheduled;
 }
 
-String _formatMigrationBlockDurationEstimate(int blocks) {
+String _formatMigrationBlockDurationEstimate(
+  int blocks,
+  BlockTimeEstimate blockTimes,
+) {
   if (blocks <= 0) return 'Not scheduled';
-  final duration = Duration(
-    seconds: blocks * _migrationEstimatedSecondsPerBlock,
-  );
+  final duration = Duration(seconds: blockTimes.secondsForBlocks(blocks));
   final minutes = (duration.inSeconds / Duration.secondsPerMinute).ceil();
   if (minutes < 60) {
     return minutes == 1 ? '~1 min' : '~$minutes mins';

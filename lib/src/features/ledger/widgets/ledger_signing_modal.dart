@@ -55,13 +55,26 @@ class LedgerSigningFailurePresentation {
   final LedgerRequestFailure? requestFailure;
 }
 
+const kLedgerAppUpdateRequiredTitle = 'Ledger app update required';
+
 /// A memo the connected app would show as a hash was refused because the app
 /// predates [kLedgerMemoHashAppVersion]. Retrying after an update reads the new
 /// version, so the action stays a retry.
 const ledgerMemoHashUpdateFailure = LedgerSigningFailurePresentation(
-  title: 'Ledger app update required',
+  title: kLedgerAppUpdateRequiredTitle,
   statusLabel: 'Action needed',
   message: ledgerMemoHashUnsupportedError,
+  showDeviceAppPrompt: false,
+  actionLabel: 'Try again',
+);
+
+/// An NU7 or Orchard-to-Ironwood transaction was refused because the app
+/// predates [kLedgerNu7AppVersion]; retrying after an update reads the new
+/// version.
+const ledgerAppUpdateFailure = LedgerSigningFailurePresentation(
+  title: kLedgerAppUpdateRequiredTitle,
+  statusLabel: 'Action needed',
+  message: ledgerAppUpdateRequiredError,
   showDeviceAppPrompt: false,
   actionLabel: 'Try again',
 );
@@ -168,12 +181,8 @@ class LedgerSigningModal extends ConsumerWidget {
       LedgerSigningModalPhase.broadcasting => LedgerSigningStage.finishing,
       LedgerSigningModalPhase.failed => LedgerSigningStage.preparing,
     };
-    var title = failed ? failure!.title : stage.title;
-    var message = failed
-        ? failure!.message
-        : stage.messageForDevice(
-            progress?.accountUuid == accountUuid ? progress?.deviceModel : null,
-          );
+    var title = failed ? _failureTitle(failure!) : stage.title;
+    var message = failed ? failure!.message : stage.message;
     var statusLabel = failed ? failure!.statusLabel : stage.status;
     if (phase == LedgerSigningModalPhase.finishing) {
       title = 'Finishing transaction';
@@ -223,9 +232,6 @@ class LedgerSigningModal extends ConsumerWidget {
         onAction: onFailureAction,
         stage: stage,
         readiness: readiness.phase,
-        deviceModel: progress?.accountUuid == accountUuid
-            ? progress?.deviceModel
-            : null,
         saving: phase == LedgerSigningModalPhase.saving,
         finishing: phase == LedgerSigningModalPhase.finishing,
         broadcasting: phase == LedgerSigningModalPhase.broadcasting,
@@ -268,7 +274,6 @@ class LedgerSigningModal extends ConsumerWidget {
       cancelLabel: cancelLabel,
       onChangeConnection: canChangeConnection ? changeConnection : null,
       identity: '$identity · ${bluetooth ? 'Bluetooth' : 'USB'}',
-      deviceModel: model,
       roundNumber: roundNumber,
       roundCount: roundCount,
       roundFeeNotice: roundFeeNotice,
@@ -284,3 +289,9 @@ class LedgerSigningModal extends ConsumerWidget {
     return null;
   }
 }
+
+// Every flow names a required app update the same way.
+String _failureTitle(LedgerSigningFailurePresentation failure) =>
+    failure.requestFailure == LedgerRequestFailure.appUpdateRequired
+    ? kLedgerAppUpdateRequiredTitle
+    : failure.title;

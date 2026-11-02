@@ -153,14 +153,13 @@ class ReceivedReceiptView extends StatelessWidget {
         const SizedBox(height: AppSpacing.base),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          child: ReviewInfoFlow(
+            connectorColor: context.colors.text.secondary,
+            rows: [
               if (detailsLoading ||
                   fromRecipient != null ||
                   fromAccount != null ||
-                  unknownFromKind != null) ...[
+                  unknownFromKind != null)
                 if (detailsLoading)
                   const ReceiptCounterpartySkeleton(label: 'From')
                 else if (fromRecipient != null)
@@ -188,8 +187,6 @@ class ReceivedReceiptView extends StatelessWidget {
                   )
                 else
                   _unknownFromRow(context, unknownFromKind!),
-                const _ReceivedArrowSeparator(),
-              ],
               ReviewInfoRow(
                 label: 'Amount',
                 value: amountText,
@@ -311,29 +308,6 @@ class ReceivedReceiptView extends StatelessWidget {
           ? _poolIconColor(context, true)
           : null,
       bottomLeftText: isShieldedSender ? 'Shielded' : null,
-    );
-  }
-}
-
-/// The 24px arrow-down connector between the From and Amount rows, centered
-/// under the 32px leading-icon column.
-class _ReceivedArrowSeparator extends StatelessWidget {
-  const _ReceivedArrowSeparator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: SizedBox(
-        width: AppAssetSize.size,
-        child: Center(
-          child: AppIcon(
-            AppIcons.arrowDown,
-            size: AppIconSize.large,
-            color: context.colors.text.secondary,
-          ),
-        ),
-      ),
     );
   }
 }

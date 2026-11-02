@@ -35,8 +35,8 @@ class SwapReviewInfoSideData {
 /// Figma 'Review Info': the paying/receiving summary block shared by the
 /// swap review, in-progress, and completed surfaces.
 ///
-/// Built on two core [ReviewInfoRow] instances separated by the centered
-/// downward arrow — the same primitive the send review/status surfaces use.
+/// Built on the core [ReviewInfoFlow] — the same primitive the send
+/// review/status surfaces use.
 class SwapReviewInfo extends StatelessWidget {
   const SwapReviewInfo({
     required this.pay,
@@ -51,27 +51,15 @@ class SwapReviewInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return Padding(
       key: const ValueKey('swap_review_info'),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      child: ReviewInfoFlow(
+        rows: [
           _side(
             data: pay,
             key: const ValueKey('swap_review_info_pay'),
             copyButtonKey: const ValueKey('swap_review_info_pay_copy'),
-          ),
-          SizedBox(
-            height: 24,
-            child: Center(
-              child: AppIcon(
-                AppIcons.arrowDownward,
-                size: 24,
-                color: colors.icon.accent,
-              ),
-            ),
           ),
           _side(
             data: receive,

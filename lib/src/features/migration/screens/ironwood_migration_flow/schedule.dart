@@ -718,7 +718,7 @@ class _MigrationManageError extends StatelessWidget {
   }
 }
 
-class _MigrationPreparationScheduleContent extends StatelessWidget {
+class _MigrationPreparationScheduleContent extends ConsumerWidget {
   const _MigrationPreparationScheduleContent({
     required this.status,
     required this.privacyModeEnabled,
@@ -732,8 +732,9 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
   final VoidCallback? onManage;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final blockTimes = ref.watch(blockSpacingProvider).fromTip(currentHeight);
     final transactions = orderedMigrationPreparationTransactions(status);
     final rounds = _preparationRounds(transactions);
     final currentRound = _currentPreparationRound(rounds);
@@ -803,7 +804,7 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
                       value: !hasCompletionProjection
                           ? 'Calculating'
                           : '#${formatGroupedInteger(finalProjectedHeight)}'
-                                '${remainingBlocks > 0 ? ' · ${_formatPreparationDuration(remainingBlocks)}' : ''}',
+                                '${remainingBlocks > 0 ? ' · ${_formatPreparationDuration(remainingBlocks, blockTimes)}' : ''}',
                       valueIcon: hasCompletionProjection
                           ? AppIcons.block
                           : null,
@@ -1185,10 +1186,9 @@ class _MigrationPreparationScheduleStatus extends StatelessWidget {
   }
 }
 
-String _formatPreparationDuration(int blocks) {
+String _formatPreparationDuration(int blocks, BlockTimeEstimate blockTimes) {
   final minutes =
-      (blocks * _migrationEstimatedSecondsPerBlock / Duration.secondsPerMinute)
-          .ceil();
+      (blockTimes.secondsForBlocks(blocks) / Duration.secondsPerMinute).ceil();
   if (minutes < 60) return minutes == 1 ? '~1 min' : '~$minutes mins';
   final halfHours = (minutes / 30).ceil();
   final wholeHours = halfHours ~/ 2;
@@ -1290,7 +1290,7 @@ class _MigrationScheduleErrorContent extends StatelessWidget {
   }
 }
 
-class _MigrationScheduleContent extends StatelessWidget {
+class _MigrationScheduleContent extends ConsumerWidget {
   const _MigrationScheduleContent({
     required this.status,
     required this.privacyModeEnabled,
@@ -1304,8 +1304,9 @@ class _MigrationScheduleContent extends StatelessWidget {
   final VoidCallback? onManage;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final blockTimes = ref.watch(blockSpacingProvider).fromTip(currentHeight);
     final parts = orderedMigrationParts(_displayMigrationParts(status));
     final total = _sumTargetValues(status);
     final completed = parts
@@ -1345,6 +1346,7 @@ class _MigrationScheduleContent extends StatelessWidget {
                   label: 'Est. completion',
                   value: _migrationCompletionEstimateDisplay(
                     status,
+                    blockTimes: blockTimes,
                     currentHeight: currentHeight,
                     needsInput: false,
                     parts: parts,

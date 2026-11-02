@@ -424,7 +424,13 @@ int? _nextDesktopPreparationBlock(rust_sync.MigrationStatus status, int tip) {
     final height = stage.scheduledHeight ?? stage.plannedHeight;
     if (next == null || height < next) next = height;
   }
-  return _aboveTip(next, tip);
+  // A layer waiting on confirmed inputs is built on a later scan.
+  final awaitingInputs = stages.any(
+    (stage) =>
+        stage.state ==
+        rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+  );
+  return _aboveTip(next, tip) ?? (awaitingInputs ? tip + 1 : null);
 }
 
 int? _aboveTip(int? height, int tip) =>

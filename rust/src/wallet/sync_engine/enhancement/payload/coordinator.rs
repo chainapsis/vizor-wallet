@@ -223,8 +223,12 @@ impl EnhancementEffects<WalletDatabase> for ProductionEnhancementEffects<'_> {
             // Near the known tip the window is truncated there.
             let tip = zcash_client_backend::data_api::WalletRead::chain_height(&*db)
                 .map_err(|e| SyncError::db(format!("chain_height: {e}")))?;
-            let (start, end) =
-                rediscovery_cover_range(request.height, tip, random_rediscovery_offset());
+            let (start, end) = rediscovery_cover_range(
+                self.network,
+                request.height,
+                tip,
+                random_rediscovery_offset,
+            );
             downloaded = await_request_with_cancel(
                 crate::wallet::sync_engine::lwd::download_blocks(
                     self.lwd,
