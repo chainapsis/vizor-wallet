@@ -3328,11 +3328,10 @@ mod tests {
         };
         use shardtree::{store::memory::MemoryShardStore, ShardTree};
         use voting_crypto_deps::rand::rngs::OsRng;
-        use zcash_note_encryption::try_note_decryption;
         use zcash_primitives::transaction::{builder::PcztResult, fees::zip317};
         use zcash_protocol::{
             consensus::{BlockHeight, NetworkType, NetworkUpgrade, Parameters},
-            memo::{Memo, MemoBytes},
+            memo::MemoBytes,
             value::Zatoshis,
         };
 
@@ -3366,8 +3365,6 @@ mod tests {
             Vec<u32>,
             [u8; 96],
         ) {
-            let mut rng = OsRng;
-
             let seed = [7u8; 32];
             let seed_fingerprint = [8u8; 32];
             let account_index = zip32::AccountId::ZERO;
@@ -3375,34 +3372,26 @@ mod tests {
                 .expect("valid Orchard ZIP 32 spending key");
             let orchard_ask = orchard::keys::SpendAuthorizingKey::from(&orchard_sk);
             let orchard_fvk = orchard::keys::FullViewingKey::from(&orchard_sk);
-            let orchard_ivk = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
             let orchard_ovk = orchard_fvk.to_ovk(orchard::keys::Scope::Internal);
             let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
 
-            // Pretend we already received an Orchard (V2) note.
+            // Model an already-received V2 note without proving a historical
+            // output, which the current builder deliberately rejects.
             let value = orchard::value::NoteValue::from_raw(1_000_000);
-            let note = {
-                let orchard_bundle_version = orchard::bundle::BundleVersion::orchard_v2();
-                let mut orchard_builder = orchard::builder::Builder::new(
-                    orchard::builder::BundleType::DEFAULT,
-                    orchard_bundle_version,
-                    orchard_bundle_version.default_flags(),
-                    orchard::Anchor::empty_tree(),
-                )
+            let rho = orchard::note::Rho::from_bytes(&[1; 32]).unwrap();
+            let rseed = (0u8..=255)
+                .find_map(|byte| {
+                    orchard::note::RandomSeed::from_bytes([byte; 32], &rho).into_option()
+                })
                 .unwrap();
-                orchard_builder
-                    .add_output(None, recipient, value, Memo::Empty.encode().into_bytes())
-                    .unwrap();
-                let (bundle, meta) = orchard_builder.build::<i64>(&mut rng).unwrap().unwrap();
-                let action = bundle
-                    .actions()
-                    .get(meta.output_action_index(0).unwrap())
-                    .unwrap();
-                let domain = orchard::note_encryption::OrchardDomain::for_action(action);
-                let (note, _, _) =
-                    try_note_decryption(&domain, &orchard_ivk.prepare(), action).unwrap();
-                note
-            };
+            let note = orchard::Note::from_parts(
+                recipient,
+                value,
+                rho,
+                rseed,
+                orchard::note::NoteVersion::V2,
+            )
+            .unwrap();
 
             // Single-leaf Orchard tree for the spend witness/anchor.
             let (anchor, merkle_path) = {
