@@ -28,6 +28,12 @@ use crate::wallet::block_times::{self, BlockTimePoint};
 use crate::wallet::network::WalletNetwork;
 
 const TOR_API_RESPONSE_BODY_TIMEOUT: Duration = Duration::from_secs(30);
+/// Hard ceiling on a buffered Tor API reply. The 30-second body timer bounds
+/// elapsed time only, so without this a fast server could make Rust buffer an
+/// arbitrarily large body before it crosses FRB. Callers may request a smaller
+/// budget; omitting one, or asking for more, gets this ceiling. Large files use
+/// [tor_http_download], which streams to disk and is not subject to it.
+const TOR_API_RESPONSE_BODY_MAX_BYTES: u64 = 16 * 1024 * 1024;
 const TOR_HTTP_REQUEST_TIMEOUT_ERROR: &str = "Tor HTTP request timed out";
 const TOR_HTTP_REQUEST_CANCELLED_ERROR: &str = "Tor HTTP request cancelled";
 const MAINNET_SAPLING_ACTIVATION_HEIGHT: u64 = 419_200;
@@ -134,6 +140,7 @@ pub struct NetworkHttpResponse {
 /// Tor is still bootstrapping waits for the route first, under the bootstrap's
 /// own deadline, and the caller's cancellation covers that wait.
 /// `max_body_bytes` stops reception before buffering a reply beyond its budget.
+/// The budget is always capped at 16 MiB, including when it is omitted.
 pub async fn tor_http_get(
     url: String,
     headers: Vec<NetworkHttpHeader>,
@@ -172,6 +179,7 @@ pub async fn tor_http_get(
 /// Tor is still bootstrapping waits for the route first, under the bootstrap's
 /// own deadline, and the caller's cancellation covers that wait.
 /// `max_body_bytes` stops reception before buffering a reply beyond its budget.
+/// The budget is always capped at 16 MiB, including when it is omitted.
 pub async fn tor_http_post(
     url: String,
     headers: Vec<NetworkHttpHeader>,
@@ -339,15 +347,23 @@ async fn collect_body(
     body: hyper::body::Incoming,
     max_body_bytes: Option<u64>,
 ) -> Result<Vec<u8>, TorError> {
+    let limit = effective_body_limit(max_body_bytes);
     with_api_response_body_timeout(TOR_API_RESPONSE_BODY_TIMEOUT, async move {
-        collect_limited_body(body, max_body_bytes)
+        collect_limited_body(body, limit)
             .await
             .map_err(TorError::Io)
     })
     .await
 }
 
-async fn collect_limited_body<B>(mut body: B, limit: Option<u64>) -> Result<Vec<u8>, std::io::Error>
+/// The caller's budget, never above [TOR_API_RESPONSE_BODY_MAX_BYTES].
+fn effective_body_limit(max_body_bytes: Option<u64>) -> u64 {
+    max_body_bytes.map_or(TOR_API_RESPONSE_BODY_MAX_BYTES, |limit| {
+        limit.min(TOR_API_RESPONSE_BODY_MAX_BYTES)
+    })
+}
+
+async fn collect_limited_body<B>(mut body: B, limit: u64) -> Result<Vec<u8>, std::io::Error>
 where
     B: hyper::body::Body<Data = Bytes> + Unpin,
     B::Error: std::fmt::Display,
@@ -356,9 +372,7 @@ where
     while let Some(frame) = body.frame().await {
         let frame = frame.map_err(|error| std::io::Error::other(error.to_string()))?;
         if let Ok(chunk) = frame.into_data() {
-            if limit
-                .is_some_and(|limit| chunk.len() as u64 > limit.saturating_sub(bytes.len() as u64))
-            {
+            if chunk.len() as u64 > limit.saturating_sub(bytes.len() as u64) {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "HTTP response exceeds byte limit",
@@ -673,12 +687,12 @@ mod tests {
             counted.fetch_add(1, Ordering::SeqCst);
             Ok::<_, std::io::Error>(Frame::data(Bytes::from_static(&[1; 16])))
         }));
-        let error = super::collect_limited_body(StreamBody::new(chunks), Some(32))
+        let error = super::collect_limited_body(StreamBody::new(chunks), 32)
             .await
             .unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert_eq!(polls.load(Ordering::SeqCst), 3);
-        for limit in [Some(16), None] {
+        for limit in [16, 17] {
             assert_eq!(
                 super::collect_limited_body(
                     http_body_util::Full::new(Bytes::from_static(&[1; 16])),
@@ -691,10 +705,41 @@ mod tests {
         }
         assert!(super::collect_limited_body(
             http_body_util::Full::new(Bytes::from_static(&[1])),
-            Some(0)
+            0
         )
         .await
         .is_err());
+    }
+
+    #[test]
+    fn omitted_or_oversized_body_budget_gets_the_hard_ceiling() {
+        use super::{effective_body_limit, TOR_API_RESPONSE_BODY_MAX_BYTES};
+        assert_eq!(effective_body_limit(None), TOR_API_RESPONSE_BODY_MAX_BYTES);
+        assert_eq!(
+            effective_body_limit(Some(u64::MAX)),
+            TOR_API_RESPONSE_BODY_MAX_BYTES
+        );
+        assert_eq!(effective_body_limit(Some(1024)), 1024);
+        assert_eq!(effective_body_limit(Some(0)), 0);
+    }
+
+    #[tokio::test]
+    async fn omitted_body_budget_rejects_a_reply_beyond_the_ceiling() {
+        use bytes::Bytes;
+        use futures::stream;
+        use http_body_util::StreamBody;
+        use hyper::body::Frame;
+        const CHUNK: usize = 1024 * 1024;
+        let chunk_count = super::TOR_API_RESPONSE_BODY_MAX_BYTES as usize / CHUNK + 1;
+        let chunks = stream::iter(
+            (0..chunk_count)
+                .map(|_| Ok::<_, std::io::Error>(Frame::data(Bytes::from(vec![0; CHUNK])))),
+        );
+        let error =
+            super::collect_limited_body(StreamBody::new(chunks), super::effective_body_limit(None))
+                .await
+                .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 
     fn tree_state(network: &str, height: u64, time: u32) -> TreeState {
