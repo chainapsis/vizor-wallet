@@ -596,7 +596,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('2 contacts'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     await tester.tap(find.text('Second'));
     await tester.pumpAndSettle();
 

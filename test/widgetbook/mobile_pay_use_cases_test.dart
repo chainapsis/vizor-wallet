@@ -80,8 +80,8 @@ void main() {
       AppThemeData.dark,
     );
     expect(find.byType(MobilePayRecipientStep), findsOneWidget);
-    expect(find.text('Recently sent'), findsOneWidget);
-    expect(find.text('2 contacts'), findsOneWidget);
+    expect(find.text('Recents'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
 
     await _pumpUseCase(
       tester,

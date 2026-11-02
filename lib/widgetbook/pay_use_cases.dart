@@ -296,6 +296,7 @@ class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
         controller: _controller,
         typedAddress: _typedAddress,
         addressError: issue,
+        network: AddressBookNetwork.ethereum,
         contacts: _previewContacts,
         recents: _previewRecents,
         busy: false,

@@ -18,6 +18,7 @@ import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import '../src/features/address_scan/widgets/mobile_address_scan_card.dart';
 import '../src/features/send/screens/mobile/mobile_send_screen.dart';
+import '../src/features/send/services/recent_send_recipients.dart';
 import '../src/features/send/services/send_proving_key_warmup.dart';
 import '../src/features/send/widgets/send_compose_view.dart';
 import '../src/features/send/widgets/send_recipient_resolver.dart';
@@ -164,6 +165,13 @@ Widget buildMobileSendRecipientFocusedUseCase(BuildContext context) {
 
 Widget buildMobileSendRecipientContactsUseCase(BuildContext context) {
   return const _MobileSendHarness(contacts: _mobileSendContacts);
+}
+
+Widget buildMobileSendRecipientRecentsUseCase(BuildContext context) {
+  return const _MobileSendHarness(
+    contacts: _mobileSendContacts,
+    recents: _mobileSendRecents,
+  );
 }
 
 Widget buildMobileSendRecipientFilledUseCase(BuildContext context) {
@@ -382,6 +390,7 @@ class _SendPageFrame extends StatelessWidget {
 class _MobileSendHarness extends StatelessWidget {
   const _MobileSendHarness({
     this.contacts = const [],
+    this.recents = const [],
     this.ownAccounts = const {},
     this.initialRecipient,
     this.initialAmount,
@@ -397,6 +406,7 @@ class _MobileSendHarness extends StatelessWidget {
   });
 
   final List<AddressBookContact> contacts;
+  final List<SendRecentRecipient> recents;
   final Map<String, AccountInfo> ownAccounts;
   final String? initialRecipient;
   final String? initialAmount;
@@ -417,6 +427,9 @@ class _MobileSendHarness extends StatelessWidget {
         appBootstrapProvider.overrideWithValue(_mobileSendBootstrap),
         sendProvingKeyWarmupProvider.overrideWithValue(() {}),
         ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+        recentSendRecipientsProvider.overrideWith(
+          (ref, accountUuid) async => recents,
+        ),
         syncProvider.overrideWith(() => _WidgetbookSendSyncNotifier()),
         zecLiveUsdUnitPriceProvider.overrideWithValue(70),
         addressBookRepositoryProvider.overrideWithValue(
@@ -540,6 +553,18 @@ final _mobileSendBootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+const _mobileSendRecents = [
+  SendRecentRecipient(address: _mobileShieldedAddress, isShielded: true),
+  SendRecentRecipient(
+    address: 'u1recentshieldedrecipient000000000000000000000000000000h7x2q9',
+    isShielded: true,
+  ),
+  SendRecentRecipient(
+    address: 't1RecentTransparentRecipient00000Qk9',
+    isShielded: false,
+  ),
+];
 
 const _mobileSendContacts = [
   AddressBookContact(

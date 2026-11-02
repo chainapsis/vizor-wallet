@@ -139,7 +139,34 @@ void main() {
       expect(recents, hasLength(1));
       expect(recents.single.address, _evmA);
       expect(recents.single.amountText, '-18.5 USDC');
-      expect(recents.single.lastUsedAt, DateTime(2026, 7, 5));
+      expect(recents.single.lastUsedAt, DateTime(2026, 7, 4));
+    });
+
+    test('dates an in-flight payout by creation, not by its last poll', () {
+      final recents = payRecentRecipients(
+        intents: [
+          _intent(
+            id: 'older-but-polled',
+            recipient: _evmA,
+            status: SwapIntentStatus.processing,
+            depositTxHash: 'zec-deposit-tx',
+            destinationChainTxHash: 'usdc-payout-tx',
+            createdAt: DateTime(2026, 7, 1),
+            updatedAt: DateTime(2026, 7, 9),
+          ),
+          _intent(
+            id: 'newer-complete',
+            recipient: _evmB,
+            createdAt: DateTime(2026, 7, 2),
+            completedAt: DateTime(2026, 7, 3),
+          ),
+        ],
+        network: AddressBookNetwork.ethereum,
+        contacts: const [],
+      );
+
+      expect(recents.map((recent) => recent.address), [_evmB, _evmA]);
+      expect(recents.last.lastUsedAt, DateTime(2026, 7, 1));
     });
 
     test('keeps a broadcasted Pay deposit before external delivery', () {
