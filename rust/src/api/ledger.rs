@@ -147,6 +147,17 @@ pub fn ledger_parse_mobile_ufvk_responses(
     })
 }
 
+/// Verify a Ledger export against a stored account, allowing only a stored-only
+/// Sapling component. Does not access the device or change either viewing key.
+pub fn ledger_account_viewing_keys_match(
+    expected_ufvk: String,
+    exported_ufvk: String,
+    network: String,
+) -> Result<bool, String> {
+    require_mainnet(&network)?;
+    ledger::account_identity::viewing_keys_match(&expected_ufvk, &exported_ufvk)
+}
+
 /// Build the transport-neutral compact shielded PCZT signing exchange.
 /// `app_support` comes from the connected app's version; see
 /// `ledgerAppSupport` in `lib/src/features/ledger/ledger_capability.dart`.
@@ -480,7 +491,7 @@ fn require_mainnet(network: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ledger_account_fingerprint, require_mainnet};
+    use super::{ledger_account_fingerprint, ledger_account_viewing_keys_match, require_mainnet};
 
     #[test]
     fn account_fingerprint_is_stable_and_account_scoped() {
@@ -495,6 +506,15 @@ mod tests {
         assert!(require_mainnet("main").is_ok());
         assert!(require_mainnet("test").unwrap_err().contains("mainnet"));
         assert!(require_mainnet("regtest").unwrap_err().contains("mainnet"));
+        for network in ["test", "regtest"] {
+            assert!(ledger_account_viewing_keys_match(
+                String::new(),
+                String::new(),
+                network.into()
+            )
+            .unwrap_err()
+            .contains("mainnet"));
+        }
     }
 }
 

@@ -43,6 +43,16 @@ APDUs wait for that screen to clear before sending follow-up commands. Dart also
 waits before preparing the next Bluetooth signing connection. Pairing-invalid,
 locked-device and app-unavailable failures remain distinct.
 
+Selecting a Bluetooth device without a matching saved connection ID requires
+viewing-key approval for the existing account index. Rust validates both mainnet
+UFVKs and compares their complete Orchard and transparent keys, requiring both
+components. A Sapling component present only in the stored account may be
+omitted by the Ledger export; every other item, including unknown items, must
+match. If both keys contain Sapling, that component must match too. Verification
+updates only connection metadata and preserves the stored UFVK and fingerprint.
+Cancellation, lock and account changes invalidate a pending comparison before
+metadata can be saved. The same saved-ID readiness path is unchanged.
+
 ## Consecutive shielding approvals
 
 Each approval uses at most **32 transparent inputs**. The UI keeps one

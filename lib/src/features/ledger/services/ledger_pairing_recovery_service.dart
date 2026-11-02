@@ -4,6 +4,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../../rust/api/ledger.dart' as rust_ledger;
 import 'ledger_account_service.dart';
 import 'ledger_app_readiness_service.dart';
 import 'ledger_bluetooth_access.dart';
@@ -67,11 +68,24 @@ final ledgerRecoveryAccountKeyLoaderProvider =
       },
     );
 
+typedef LedgerRecoveryAccountKeyMatcher =
+    Future<bool> Function(String expected, String exported);
+final ledgerRecoveryAccountKeyMatcherProvider =
+    Provider<LedgerRecoveryAccountKeyMatcher>(
+      (ref) =>
+          (expected, exported) => rust_ledger.ledgerAccountViewingKeysMatch(
+            expectedUfvk: expected,
+            exportedUfvk: exported,
+            network: ref.read(rpcEndpointProvider).networkName,
+          ),
+    );
+
 final ledgerPairingRecoveryServiceProvider = Provider(
   LedgerPairingRecoveryService.new,
 );
 
-/// Rebinds only after exporting and comparing the complete account viewing key.
+/// Rebinds only after verifying the exported account keys. A stored-only Sapling
+/// component is allowed; Orchard, transparent and every other item must match.
 /// Device names, model names and Bluetooth identifiers are not account identity.
 /// A matching saved ID reconnects with app readiness only; no rebind is needed.
 class LedgerPairingRecoveryService {
@@ -159,10 +173,16 @@ class LedgerPairingRecoveryService {
       ledgerBluetoothExistingAccountConnectorProvider,
     )(account.zip32AccountIndex!, device);
     check();
-    if (expected == null ||
-        expected.isEmpty ||
-        exported.ufvk != expected ||
-        exported.accountIndex != account.zip32AccountIndex) {
+    final matches =
+        expected != null &&
+        expected.isNotEmpty &&
+        exported.accountIndex == account.zip32AccountIndex &&
+        await ref.read(ledgerRecoveryAccountKeyMatcherProvider)(
+          expected,
+          exported.ufvk,
+        );
+    check();
+    if (!matches) {
       throw const LedgerAccountMismatchException();
     }
     // Device approval stays outside the durable mutation drain. Once verified,
