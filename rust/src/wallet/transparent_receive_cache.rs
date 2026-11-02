@@ -1145,7 +1145,6 @@ mod tests {
         assert_eq!(plan(&grown, 1020), vec![(vec![other, old, new], 950)]);
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn internal_refresh_interval_keeps_its_duration_across_nu7() {
         const NU7: u64 = 3_543_405;

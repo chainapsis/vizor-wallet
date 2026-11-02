@@ -755,23 +755,6 @@ mod tests {
         }
     }
 
-    #[cfg(ironwood_masquerade)]
-    #[tokio::test]
-    async fn masquerade_estimate_uses_the_chain_endpoint_instead_of_the_table() {
-        // The fast path is off, so the unusable endpoint makes it fail rather
-        // than answer from the real-mainnet table.
-        let result = estimate_import_birthday_height(
-            "not-a-lightwalletd-url".to_string(),
-            1_677_602_242,
-            true,
-            Some(3_498_200),
-            Some(1_790_527_223),
-        )
-        .await;
-        assert!(result.is_err());
-    }
-
-    #[cfg(not(ironwood_masquerade))]
     #[tokio::test]
     async fn mainnet_estimate_with_a_known_tip_opens_no_connection() {
         let height = estimate_import_birthday_height(

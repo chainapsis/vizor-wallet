@@ -1427,8 +1427,8 @@ pub(crate) fn get_export_birthday_anchor(
 /// Returns the exact time when the wallet has scanned that block. Otherwise,
 /// where [`block_times::table_covers`] the network (real mainnet), estimates
 /// it from the compiled-in block-time table, anchored past the table by the
-/// wallet's highest scanned block. Returns `None` elsewhere, including Ironwood
-/// masquerade builds, when the block is not stored locally.
+/// wallet's highest scanned block. Returns `None` elsewhere when the block is
+/// not stored locally.
 ///
 /// Callers pass the height they already display, so the returned time always
 /// belongs to that height even if the wallet's data changes in between.
@@ -4562,7 +4562,6 @@ mod tests {
         assert_eq!(got, Some(1_677_600_000));
     }
 
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn local_block_time_estimates_unscanned_mainnet_blocks() {
         let db = fresh_history_db();
@@ -4581,26 +4580,6 @@ mod tests {
         );
     }
 
-    #[cfg(ironwood_masquerade)]
-    #[test]
-    fn local_block_time_never_estimates_masquerade_chain_blocks() {
-        let db = fresh_history_db();
-        add_blocks_table(&db, &[(1_000, 1_790_000_000)]);
-        let path = db.path().to_str().unwrap();
-
-        // Unscanned heights fall back to the chain's own endpoint.
-        assert_eq!(
-            get_local_block_time(path, WalletNetwork::Main, 400).unwrap(),
-            None
-        );
-        // Scanned heights still answer exactly.
-        assert_eq!(
-            get_local_block_time(path, WalletNetwork::Main, 1_000).unwrap(),
-            Some(1_790_000_000)
-        );
-    }
-
-    #[cfg(not(ironwood_masquerade))]
     #[test]
     fn local_block_time_anchors_past_the_table_on_the_highest_scanned_block() {
         let db = fresh_history_db();
