@@ -4405,8 +4405,9 @@ void main() {
             isSyncComplete: true,
             percentage: 1,
             displayTargetPercentage: 1,
-            spendableBalance: BigInt.from(15000000),
-            displaySpendableBalance: BigInt.from(15000000),
+            // Above 2 × 0.1 so the cards are quoted, below the 0.2005 total.
+            spendableBalance: BigInt.from(20010000),
+            displaySpendableBalance: BigInt.from(20010000),
           ),
         ),
       );
@@ -4429,14 +4430,21 @@ void main() {
         findsOneWidget,
       );
       expect(find.bySemanticsLabel('****** ZEC available'), findsOneWidget);
-      expect(find.text('Additional ZEC needed'), findsOneWidget);
-      expect(find.text('At least ****** ZEC'), findsOneWidget);
+      final shortfall = find.ancestor(
+        of: find.text('Additional ZEC needed'),
+        matching: find.byType(Row),
+      );
+      expect(
+        find.descendant(of: shortfall.first, matching: find.text('****** ZEC')),
+        findsOneWidget,
+      );
       // The draft's own cost stays visible; only balance-derived values hide.
       expect(find.text('0.2002 ZEC'), findsOneWidget);
-      expect(find.textContaining('0.15'), findsNothing);
-      expect(find.textContaining('0.0505'), findsNothing);
+      expect(find.text('0.2005 ZEC'), findsOneWidget);
+      expect(find.textContaining('0.2001'), findsNothing);
+      expect(find.textContaining('0.0004'), findsNothing);
       expect(find.textContaining('ZEC ZEC'), findsNothing);
-      expect(find.bySemanticsLabel(RegExp(r'0\.15|0\.0505')), findsNothing);
+      expect(find.bySemanticsLabel(RegExp(r'0\.2001|0\.0004')), findsNothing);
     } finally {
       semantics.dispose();
     }
