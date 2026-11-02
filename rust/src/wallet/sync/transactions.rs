@@ -1142,19 +1142,12 @@ fn read_transaction_history(
     if let Some(limit) = limit {
         return recent_history::assemble_recent_history(bases, uuid_bytes, limit, |batch| {
             attach_history_details(&read_tx, db_path, network, account, batch)?;
-            read_history_outputs(
-                &read_tx,
-                uuid_bytes,
-                batch.iter().map(|base| base.txid.as_slice()),
-            )
+            read_history_outputs(&read_tx, uuid_bytes, batch.iter().map(TxBase::txid_bytes))
         });
     }
     attach_history_details(&read_tx, db_path, network, account, &mut bases)?;
-    let outputs_by_txid = read_history_outputs(
-        &read_tx,
-        uuid_bytes,
-        bases.iter().map(|base| base.txid.as_slice()),
-    )?;
+    let outputs_by_txid =
+        read_history_outputs(&read_tx, uuid_bytes, bases.iter().map(TxBase::txid_bytes))?;
     drop(read_tx);
     Ok(assemble_history(
         &bases,
@@ -2617,6 +2610,10 @@ fn build_classified_tx_with_fee(
 }
 
 impl TxBase {
+    fn txid_bytes(&self) -> &[u8] {
+        self.txid.as_slice()
+    }
+
     fn history_sort_key(&self) -> HistorySortKey {
         HistorySortKey {
             pending_rank: u8::from(self.mined_height.is_none() && !self.expired_unmined),
