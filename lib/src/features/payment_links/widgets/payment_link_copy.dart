@@ -37,7 +37,7 @@ const kPaymentLinkInvalidTitle = 'The link doesn’t look legit.';
 const kPaymentLinkRedeemSubtitle =
     'Copy the card link you’ve received, and paste it below.';
 const kPaymentLinkInvalidSubtitle = 'Copy the link & try again';
-const kPaymentLinkWaitingStatusLabel = 'Wait 1:15 to get the link';
+const kPaymentLinkWaitingStatusLabel = 'Wait 0:25 to get the link';
 const kPaymentLinkShareWaitingDescription =
     'We’re getting your gift card ready to share.';
 const kPaymentLinkClaimWaitingDescription =

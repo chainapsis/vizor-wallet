@@ -1872,7 +1872,7 @@ void main() {
       await tester.tap(find.text('Create card'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Wait 1:15 to get the link'), findsOneWidget);
+      expect(find.text('Wait 0:25 to get the link'), findsOneWidget);
       expect(find.text('Copy link'), findsNothing);
 
       operations.fundingConfirmationCount = 1;
@@ -1934,7 +1934,7 @@ void main() {
       find.text('Your gift will be ready to claim shortly.'),
       findsOneWidget,
     );
-    expect(find.text('Wait 1:15 to claim'), findsOneWidget);
+    expect(find.text('Wait 0:25 to claim'), findsOneWidget);
     expect(find.text('Claim the gift card'), findsNothing);
 
     operations
@@ -3967,7 +3967,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Claim'));
       await tester.pumpAndSettle();
-      expect(find.text('Wait 1:15 to claim'), findsOneWidget);
+      expect(find.text('Wait 0:25 to claim'), findsOneWidget);
 
       operations.waitingForFundingConfirmations = false;
       await tester.pump(const Duration(seconds: 10));

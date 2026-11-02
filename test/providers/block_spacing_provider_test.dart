@@ -29,7 +29,7 @@ void main() {
     expect(spacing.nu7BlockSeconds, 25);
   });
 
-  test('keeps pre-NU7 spacing when the schedule is unavailable', () {
+  test('keeps the default spacing when the schedule is unavailable', () {
     final container = _container(
       ({required network}) => throw StateError('bridge unavailable'),
     );
@@ -38,7 +38,10 @@ void main() {
     final spacing = container.read(blockSpacingProvider);
 
     expect(spacing.nu7ActivationHeight, isNull);
-    expect(spacing.preNu7BlockSeconds, BlockSpacing.preNu7.preNu7BlockSeconds);
+    expect(
+      spacing.nu7BlockSeconds,
+      BlockSpacing.nu7Unscheduled.nu7BlockSeconds,
+    );
   });
 }
 
