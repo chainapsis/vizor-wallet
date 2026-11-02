@@ -16,11 +16,11 @@ use super::network::{voting_network, wallet_network};
 use crate::wallet::sync::open_wallet_db_for_read;
 
 // Explicit consensus-key trust, independent of the server returning a proof.
-// Captured from the official production/stage RPCs on 2026-09-10. This narrow
+// Captured from the official RPCs: production 2026-11-02, stage 2026-09-10. This narrow
 // reader accepts changes only with >2/3 signatures under both the bundled
 // and current voting powers. It does not advance its trust anchor.
 // See docs/voting-participation.md before updating these trust anchors.
-const PROD_VALIDATORS: &str = "621A1E2C532170C3C0BC2E951D26C1CCA7A0EFB009AA15820D648D336C64F6BD";
+const PROD_VALIDATORS: &str = "E2E8170C807DAB936C75A02E092E9EE81C9F4776B03BA672FCD3DFF7AB2FD8C1";
 const STAGE_VALIDATORS: &str = "6E81F631CB63A527AB5A659529BA8942C46CCF78BA87D1B3AD4CF8AE5BDC2E8B";
 // Set only by the local integration harness. Production/testnet never consult
 // this anchor; their compiled trust roots remain authoritative.
@@ -709,6 +709,55 @@ mod tests {
         let now = header.header.time.unix_timestamp();
         (value, keys, now)
     }
+
+    #[test]
+    fn refreshed_main_anchor_authenticates_transition_and_latest_commit() {
+        let transition: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/voting-participation/main-anchor-refresh.json"
+        ))
+        .unwrap();
+        let previous = checked_validator_set(&ValidatorsResult {
+            validators: serde_json::from_value(transition["previous_validators"].clone()).unwrap(),
+        })
+        .unwrap();
+        assert_eq!(
+            previous.hash().to_string(),
+            "621A1E2C532170C3C0BC2E951D26C1CCA7A0EFB009AA15820D648D336C64F6BD"
+        );
+        let current = bundled_validators("main").unwrap();
+        let bridge: CommitResult =
+            serde_json::from_value(transition["commit"]["result"].clone()).unwrap();
+        // The previous trusted committee authenticates the new validator-set
+        // hash, with >2/3 valid signing power under both sets.
+        verify_header_with_trust(
+            &bridge,
+            current,
+            "zvote-1",
+            &previous,
+            bridge.signed_header.header.time.unix_timestamp(),
+        )
+        .unwrap();
+
+        // A latest /commit response need not contain every validator's signature.
+        // This real commit has 90/130 current power but only 60/100 old power.
+        let (evidence, keys, now) = fixture("main");
+        let latest: CommitResult =
+            serde_json::from_value(evidence["commit"]["result"].clone()).unwrap();
+        let old_power = ProdVotingPowerCalculator::default()
+            .voting_power_in(
+                &latest.signed_header,
+                &previous,
+                tendermint::trust_threshold::TrustThresholdFraction::TWO_THIRDS,
+            )
+            .unwrap();
+        assert_eq!((old_power.tallied, old_power.total), (60, 100));
+        assert!(verify_header_with_trust(&latest, current, "zvote-1", &previous, now).is_err());
+        assert_eq!(
+            verify(&keys, "main", &evidence.to_string(), now).unwrap(),
+            [true, false]
+        );
+    }
+
     #[test]
     fn incremental_cache_keeps_valid_siblings_and_never_needs_fresh_evidence_for_known_notes() {
         let (mut value, keys, now) = fixture("main");
@@ -1027,8 +1076,13 @@ mod tests {
         corrupt["validators"]["result"]["validators"][0]["voting_power"] = serde_json::json!("1");
         assert!(verify(&k, "main", &corrupt.to_string(), now).is_err());
         let mut corrupt = v.clone();
-        corrupt["commit"]["result"]["signed_header"]["commit"]["signatures"][0]["signature"] =
-            serde_json::json!(B64.encode([0; 64]));
+        let signer = corrupt["commit"]["result"]["signed_header"]["commit"]["signatures"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|signature| signature["block_id_flag"] == 2)
+            .unwrap();
+        signer["signature"] = serde_json::json!(B64.encode([0; 64]));
         assert!(verify(&k, "main", &corrupt.to_string(), now).is_err());
     }
     #[test]

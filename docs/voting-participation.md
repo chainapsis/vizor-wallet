@@ -39,13 +39,27 @@ provider, including operations in non-membership neighbors.
 
 This is a reader anchored to a bundled consensus committee, not a full rotating
 light client. The bundled public keys and original voting powers live in
-`rust/src/wallet/voting/trust/`. Their hashes must match the original pins below,
-which were captured from the official RPCs on 2026-09-10:
+`rust/src/wallet/voting/trust/`. Their hashes must match the pins below,
+captured from the official RPCs on the listed dates:
 
-| Network | Chain | RPC | Validator-set hash |
-| --- | --- | --- | --- |
-| main | zvote-1 | https://vote-rpc-primary.valargroup.org | 621A1E2C532170C3C0BC2E951D26C1CCA7A0EFB009AA15820D648D336C64F6BD |
-| test | svote-1 | https://stage.vote-rpc-primary.valargroup.org | 6E81F631CB63A527AB5A659529BA8942C46CCF78BA87D1B3AD4CF8AE5BDC2E8B |
+| Network | Chain | RPC | Captured | Validator-set hash |
+| --- | --- | --- | --- | --- |
+| main | zvote-1 | https://vote-rpc-primary.valargroup.org | 2026-11-02 | E2E8170C807DAB936C75A02E092E9EE81C9F4776B03BA672FCD3DFF7AB2FD8C1 |
+| test | svote-1 | https://stage.vote-rpc-primary.valargroup.org | 2026-09-10 | 6E81F631CB63A527AB5A659529BA8942C46CCF78BA87D1B3AD4CF8AE5BDC2E8B |
+
+The main anchor was refreshed on 2026-11-02 from ten validators with total
+power 100 to thirteen with total power 130: four additions, one removal,
+and no key or power changes for the nine retained validators. The signed header
+at height 10033311 authenticates the refreshed set under both the previous
+anchor (`621A1E2C532170C3C0BC2E951D26C1CCA7A0EFB009AA15820D648D336C64F6BD`)
+and current quorums. The previous set and this header are retained in
+`rust/tests/fixtures/voting-participation/main-anchor-refresh.json`.
+The refreshed `main.json` contains real membership/absence proofs and a latest
+commit at height 10033812 with signing power 90/130 under the refreshed set
+but only 60/100 under the previous anchor. Such latest commits were rejected
+before the refresh even though the chain's current quorum was satisfied.
+A later height-specific canonical commit can contain more signatures, so
+historical full commits alone do not reproduce the intermittent failure.
 
 The initial trust anchor relies on that official HTTPS bootstrap. The current
 validator set must hash to the signed header, but need not hash to the bundled
