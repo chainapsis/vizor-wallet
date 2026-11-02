@@ -1991,7 +1991,6 @@ dependencies = [
  "js-sys",
  "lazy_static",
  "log",
- "portable-atomic",
  "threadpool",
  "tokio",
  "wasm-bindgen",

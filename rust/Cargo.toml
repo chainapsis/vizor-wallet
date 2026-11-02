@@ -13,11 +13,11 @@ zakura-service-config = { git = "https://github.com/zakura-core/wallet-libraries
 zakura-pir-client = { version = "=0.0.1-rc3", default-features = false, features = ["enhance", "status", "transparent", "wallet", "sqlite", "lightwalletd"] }
 zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
 # The app installs its own redacting logger and panic hook.
+# Supported targets provide the atomic widths used by FRB.
 flutter_rust_bridge = { version = "=2.11.1", default-features = false, features = [
     "anyhow",
     "dart-opaque",
     "log",
-    "portable-atomic",
     "rust-async",
     "thread-pool",
     "wasm-start",
