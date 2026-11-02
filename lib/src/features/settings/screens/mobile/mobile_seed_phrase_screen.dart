@@ -322,6 +322,9 @@ class _MobileSeedPhraseScreenState
       return;
     }
     final birthdayLoadGeneration = ++_birthdayLoadGeneration;
+    if (mnemonic != null && revealError == null) {
+      unawaited(AppHaptics.accessGranted());
+    }
     setState(() {
       _mnemonic = mnemonic;
       _bip39Passphrase = bip39Passphrase;

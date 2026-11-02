@@ -309,6 +309,22 @@ void main() {
   testWidgets('tapping another account switches and closes the sheet', (
     tester,
   ) async {
+    final feedback = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          feedback.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
     final notifier = _FakeAccountNotifier();
     await tester.pumpWidget(
       _app(
@@ -322,16 +338,55 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(notifier.switched, ['account-2']);
+    expect(feedback, ['HapticFeedbackType.selectionClick']);
     expect(find.text('Other accounts'), findsNothing);
+  });
+
+  testWidgets('the active account does not switch or emit feedback', (
+    tester,
+  ) async {
+    final feedback = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          feedback.add(call.arguments);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final notifier = _FakeAccountNotifier();
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: notifier,
+        addressService: _FakeReceiveAddressService('u1other'),
+      ),
+    );
+    await _openSheet(tester);
+    await tester.tap(find.text('Account 1'));
+    await tester.pumpAndSettle();
+    expect(notifier.switched, isEmpty);
+    expect(feedback, isEmpty);
+    expect(find.text('Other accounts'), findsOneWidget);
   });
 
   testWidgets('copy loads the shielded address and confirms with a toast', (
     tester,
   ) async {
     final copied = <String>[];
+    final feedback = <Object?>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          feedback.add(call.arguments);
+        }
         if (call.method == 'Clipboard.setData') {
           copied.add((call.arguments as Map)['text'] as String);
         }
@@ -357,6 +412,7 @@ void main() {
 
     expect(service.requested, ['account-2']);
     expect(copied, ['u1otheraddress']);
+    expect(feedback, ['HapticFeedbackType.lightImpact']);
     expect(find.text('Address copied'), findsOneWidget);
     final widgets = tester.allWidgets.toList(growable: false);
     final toastIndex = widgets.indexWhere(

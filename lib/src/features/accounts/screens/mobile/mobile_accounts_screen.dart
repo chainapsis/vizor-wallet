@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
@@ -401,6 +402,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       return;
     }
     await Clipboard.setData(ClipboardData(text: address));
+    unawaited(AppHaptics.copy());
     if (mounted) showAppToast(context, 'Shielded address copied');
   }
 

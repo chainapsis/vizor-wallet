@@ -106,6 +106,7 @@ class _MobileChangePasscodeScreenState
         });
         return;
       }
+      unawaited(AppHaptics.accessGranted());
       setState(() {
         _submitting = false;
         _currentPasscode = _entry;
