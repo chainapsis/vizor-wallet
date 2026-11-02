@@ -25,6 +25,7 @@ import '../core/storage/linux_keyring_coordinator.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/payment_links/providers/gift_card_tracking_lifecycle_provider.dart';
 import '../features/swap/providers/swap_activity_store.dart';
+import '../features/send/services/recent_send_recipients.dart';
 import '../features/migration/services/ironwood_migration_background_credential_store.dart';
 import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/payment_links/providers/payment_link_claim_lifecycle_registry_provider.dart';
@@ -1779,6 +1780,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           .read(swapActivityStoreProvider)
           .deleteForAccount(accountUuid: uuid);
     } catch (_) {}
+    try {
+      await ref
+          .read(sendRecentRecipientStoreProvider)
+          .deleteForAccount(accountUuid: uuid);
+    } catch (e, st) {
+      log('removeAccount: failed to delete send recents for $uuid: $e\n$st');
+    }
     // Only after the Rust delete, which also drops this account's Ledger
     // outbox: a checkpointed draft must never lose its secret while its
     // signed transaction can still be broadcast.

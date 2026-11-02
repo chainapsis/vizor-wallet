@@ -124,7 +124,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('6 contacts'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('Contact label'), findsNWidgets(6));
     expect(
       tester

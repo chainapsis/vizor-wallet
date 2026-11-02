@@ -64,7 +64,9 @@ List<PayRecentRecipient> payRecentRecipients({
     final address = intent.oneClickRecipient?.trim() ?? '';
     if (address.isEmpty) continue;
     if (addressFormatIssue(network, address) != null) continue;
-    final usedAt = intent.completedAt ?? intent.updatedAt ?? intent.createdAt;
+    // Status polling rewrites updatedAt, so it is only a fallback for records
+    // without a creation time.
+    final usedAt = intent.completedAt ?? intent.createdAt ?? intent.updatedAt;
     final normalizedAddress = normalizedAddressBookAddress(network, address);
     final storedContactId = intent.userExternalContactId?.trim();
     final contactId = storedContactId == null || storedContactId.isEmpty

@@ -30,6 +30,7 @@ import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/features/send/services/payment_request_precheck.dart';
+import 'package:zcash_wallet/src/features/send/services/recent_send_recipients.dart';
 import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_host.dart';
@@ -49,6 +50,17 @@ const _shieldedAddress =
 const _transparentAddress = 't1transparentdestination0000000000000000000';
 const _texAddress = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
 const _invalidAddress = 'not-an-address';
+const _otherAccountAddress =
+    'u1otheraccountaddress0000000000000000000000000000000000000000000000';
+const _aliceContact = AddressBookContact(
+  id: 'alice',
+  label: 'Alice',
+  network: AddressBookNetwork.zcash,
+  address: _shieldedAddress,
+  profilePictureId: 'pfp-01',
+  createdAtMs: 1,
+  updatedAtMs: 1,
+);
 
 /// A real address that this build cannot pay because it belongs to another
 /// Zcash network — Rust reports it as not-valid plus `wrongNetwork`.
@@ -474,6 +486,8 @@ Widget _app({
   List<AddressBookContact> contacts = const [],
   AccountState? accountState,
   Map<String, AccountInfo> ownAccounts = const {},
+  List<SendRecentRecipient> recents = const [],
+  Future<List<SendRecentRecipient>> Function()? loadRecents,
   EdgeInsets viewPadding = EdgeInsets.zero,
   MobileSendScanner? openScanner,
   String? initialRecipient,
@@ -545,6 +559,9 @@ Widget _app({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      recentSendRecipientsProvider.overrideWith(
+        (ref, accountUuid) => loadRecents?.call() ?? Future.value(recents),
+      ),
       if (precheck != null)
         paymentRequestPrecheckProvider.overrideWithValue(precheck),
     ],
@@ -579,6 +596,9 @@ Widget _amountStepWithPriceLoadingApp() {
         _FakeAddressBookRepository(const []),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      recentSendRecipientsProvider.overrideWith(
+        (ref, accountUuid) async => const [],
+      ),
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -619,6 +639,9 @@ Widget _reviewApp({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => const {}),
+      recentSendRecipientsProvider.overrideWith(
+        (ref, accountUuid) async => const [],
+      ),
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -810,6 +833,9 @@ Widget _sendFlowRouterApp({
         _FakeAddressBookRepository(contacts),
       ),
       ownAccountAddressesProvider.overrideWith((ref) async => ownAccounts),
+      recentSendRecipientsProvider.overrideWith(
+        (ref, accountUuid) async => const [],
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -3251,7 +3277,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('1 contact'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('mobile_send_contact_alice')));
     await tester.pumpAndSettle();
 
@@ -3288,20 +3314,300 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('2 contacts'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Bob'), findsOneWidget);
 
     await _enterAddress(tester, 'ali');
 
-    expect(find.text('1 contact'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Bob'), findsNothing);
   });
 
-  testWidgets('recipient text does not filter contacts by address', (
+  testWidgets('a full contact address keeps that contact listed', (
     tester,
   ) async {
+    await tester.pumpWidget(_app(contacts: const [_aliceContact]));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _shieldedAddress);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_contacts_section')),
+        matching: find.text('Alice'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an address start finds the contact past the u1 prefix', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(contacts: const [_aliceContact]));
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'u1tes');
+    expect(find.text('Alice'), findsNothing);
+
+    await _enterAddress(tester, 'u1test');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_send_contacts_section')),
+        matching: find.text('Alice'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a contact name search does not report an invalid address', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        validateAddress: ({required address, required network}) async =>
+            const AddressValidationResult(
+              isValid: false,
+              addressType: '',
+              wrongNetwork: false,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'ali');
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Invalid address'), findsNothing);
+
+    await _enterAddress(tester, 'zzz');
+    expect(find.text('Alice'), findsNothing);
+    expect(find.text('Invalid address'), findsOneWidget);
+  });
+
+  testWidgets('a saved contact address that is invalid still reports it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        validateAddress: ({required address, required network}) async =>
+            const AddressValidationResult(
+              isValid: false,
+              addressType: '',
+              wrongNetwork: false,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, _aliceContact.address);
+    expect(find.text('Alice'), findsWidgets);
+    expect(find.text('Invalid address'), findsOneWidget);
+  });
+
+  testWidgets('the address error waits for the lists to load', (tester) async {
+    final recents = Completer<List<SendRecentRecipient>>();
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        loadRecents: () => recents.future,
+        validateAddress: ({required address, required network}) async =>
+            const AddressValidationResult(
+              isValid: false,
+              addressType: '',
+              wrongNetwork: false,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'ali');
+    expect(find.text('Invalid address'), findsNothing);
+
+    recents.complete(const []);
+    await tester.pumpAndSettle();
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Invalid address'), findsNothing);
+  });
+
+  testWidgets('recents list recent recipients above contacts', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        ownAccounts: const {
+          _otherAccountAddress: AccountInfo(
+            uuid: 'account-2',
+            name: 'Savings',
+            order: 1,
+          ),
+        },
+        recents: const [
+          SendRecentRecipient(address: _shieldedAddress, isShielded: true),
+          SendRecentRecipient(address: _otherAccountAddress, isShielded: true),
+          SendRecentRecipient(address: _transparentAddress, isShielded: false),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final recents = find.byKey(const ValueKey('mobile_send_recents_section'));
+    final contacts = find.byKey(const ValueKey('mobile_send_contacts_section'));
+    expect(find.text('Recents'), findsOneWidget);
+    expect(
+      tester.getTopLeft(recents).dy,
+      lessThan(tester.getTopLeft(contacts).dy),
+    );
+    Finder inRecents(String text) =>
+        find.descendant(of: recents, matching: find.text(text));
+    expect(inRecents('Alice'), findsOneWidget);
+    expect(inRecents('Savings'), findsOneWidget);
+    // Named rows show the address; only the bare address shows its pool.
+    expect(inRecents('Transparent'), findsOneWidget);
+    expect(inRecents('Shielded'), findsNothing);
+  });
+
+  testWidgets('a recent sent to another account is found by its name', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        ownAccounts: const {
+          _otherAccountAddress: AccountInfo(
+            uuid: 'account-2',
+            name: 'Savings',
+            order: 1,
+          ),
+        },
+        recents: const [
+          SendRecentRecipient(address: _otherAccountAddress, isShielded: true),
+          SendRecentRecipient(address: _transparentAddress, isShielded: false),
+        ],
+        validateAddress: ({required address, required network}) async =>
+            const AddressValidationResult(
+              isValid: false,
+              addressType: '',
+              wrongNetwork: false,
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _enterAddress(tester, 'sav');
+
+    final recents = find.byKey(const ValueKey('mobile_send_recents_section'));
+    expect(
+      find.descendant(of: recents, matching: find.text('Savings')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: recents, matching: find.text('Transparent')),
+      findsNothing,
+    );
+    expect(find.text('Invalid address'), findsNothing);
+  });
+
+  testWidgets('recents and contacts appear together once recents load', (
+    tester,
+  ) async {
+    final recents = Completer<List<SendRecentRecipient>>();
+    await tester.pumpWidget(
+      _app(contacts: const [_aliceContact], loadRecents: () => recents.future),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('mobile_send_scan_row')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_send_contacts_section')),
+      findsNothing,
+    );
+
+    recents.complete(const [
+      SendRecentRecipient(address: _transparentAddress, isShielded: false),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_send_recents_section')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_send_contacts_section')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a failed recents load still shows contacts', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        loadRecents: () => Future.error(StateError('wallet db busy')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('mobile_send_recents_section')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_send_contacts_section')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('tapping a recent fills its address', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        recents: const [
+          SendRecentRecipient(address: _transparentAddress, isShielded: false),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_recent_$_transparentAddress')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter Amount'), findsOneWidget);
+  });
+
+  testWidgets('a recent that is a contact keeps its name on a failed send', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        contacts: const [_aliceContact],
+        recents: const [
+          SendRecentRecipient(address: _shieldedAddress, isShielded: true),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_send_recent_$_shieldedAddress')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_continue')));
+    await tester.pumpAndSettle();
+    await _enterAmount(tester, '1.5');
+    await tester.tap(find.byKey(const ValueKey('mobile_send_review_button')));
+    await tester.pumpAndSettle();
+    // The fake Rust API has no proposeSend, so the send fails.
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Send failed'), findsNWidgets(2));
+    expect(find.textContaining('to Alice'), findsOneWidget);
+  });
+
+  testWidgets('an address prefix does not filter contacts', (tester) async {
     await tester.pumpWidget(
       _app(
         contacts: const [
@@ -3321,7 +3627,7 @@ void main() {
 
     await _enterAddress(tester, 'testshielded');
 
-    expect(find.text('1 contact'), findsNothing);
+    expect(find.text('Contacts'), findsNothing);
     expect(find.text('Alice'), findsNothing);
   });
 
