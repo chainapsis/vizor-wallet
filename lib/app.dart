@@ -226,6 +226,11 @@ Future<void> initializeZcashWalletRuntime() async {
     await rust_simple.configureRegtestIronwoodActivationHeight(
       height: kZcashRegtestIronwoodActivationHeight,
     );
+    if (kZcashRegtestNu7ActivationHeight != 0xFFFFFFFF) {
+      await rust_simple.configureRegtestNu7ActivationHeight(
+        height: kZcashRegtestNu7ActivationHeight,
+      );
+    }
   }
 
   // Order matters: window_manager creates and shows the NSWindow inside

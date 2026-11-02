@@ -7,6 +7,8 @@ bool _keystoneTwoRoundPlanSupported(
 }
 
 String _mobilePrivateMigrationStartErrorMessage(Object error) {
+  final upgradeHold = networkUpgradeHoldMessage(error);
+  if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('mnemonic')) {
     return "Secret Passphrase isn't available for this account.";
@@ -171,6 +173,10 @@ class _MobileMigrationFastReviewState
   Widget build(BuildContext context) {
     final ledgerAccountUuid = _ledgerAccountUuid;
     final ledgerPlan = _ledgerPlan;
+    final tipHeight = ref.watch(
+      syncProvider.select((sync) => sync.asData?.value.chainTipHeight),
+    );
+    final blockTimes = ref.watch(blockSpacingProvider).fromTip(tipHeight ?? 0);
 
     final colors = context.colors;
     final isLedgerAccount =
@@ -345,7 +351,9 @@ class _MobileMigrationFastReviewState
                     const SizedBox(height: AppSpacing.xs),
                     _ReviewRow(
                       label: 'Migration complete in',
-                      value: _mobileImmediateMigrationCompletionEstimate,
+                      value: ironwoodImmediateMigrationCompletionEstimate(
+                        blockTimes,
+                      ),
                       height: 32,
                     ),
                   ],
@@ -477,16 +485,4 @@ class _MobileMigrationFastReviewState
       ],
     );
   }
-}
-
-const _mobileImmediateEstimatedSecondsPerBlock = 75;
-const _mobileImmediateConfirmationBlocks = 3;
-
-String get _mobileImmediateMigrationCompletionEstimate {
-  final estimatedMinutes =
-      (_mobileImmediateEstimatedSecondsPerBlock *
-      _mobileImmediateConfirmationBlocks /
-      Duration.secondsPerMinute);
-  final roundedFiveMinuteUnits = (estimatedMinutes / 5).ceil();
-  return '~${roundedFiveMinuteUnits * 5} mins';
 }

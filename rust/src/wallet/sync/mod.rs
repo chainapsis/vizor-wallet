@@ -32,6 +32,7 @@ mod pczt;
 pub(crate) use pczt::{check_orchard_spend_auth_signatures, SpendAuthSignatureError};
 pub(crate) mod proposal_locks;
 mod send;
+pub(crate) use send::fee_policy_target;
 mod transactions;
 pub(crate) use transactions::has_recovered_status_work;
 #[cfg(test)]
@@ -57,9 +58,9 @@ pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx,
     denomination_confirmations_required, migration_preparation_snapshot_read_only,
     migration_status, observable_denomination_transaction_ids, proof_retry_height,
-    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationPreparationOutputKind,
-    MigrationPreparationTransactionState, MigrationScheduleEntry, MigrationStatus,
-    PreparationTimingPolicy,
+    reconcile_wallet_locks_after_sync, zip318_blocks_at, zip318_canonical_migration_expiry_height,
+    MigrationPartState, MigrationPreparationOutputKind, MigrationPreparationTransactionState,
+    MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
 };
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, create_tex_pczts_from_proposal,

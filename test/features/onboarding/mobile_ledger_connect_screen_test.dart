@@ -382,7 +382,7 @@ void main() {
       expect(find.text('Add account'), findsOneWidget);
       expect(find.text('Continue'), findsNothing);
       expect(
-        find.textContaining('Approve sharing your viewing key'),
+        find.text('Approve sharing the viewing key for Account #101.'),
         findsOneWidget,
       );
       expect(
@@ -631,7 +631,7 @@ void main() {
       expect(find.text('birthday-route-bluetooth-Nano X'), findsNothing);
       expect(find.text('Add Ledger account'), findsOneWidget);
       expect(
-        find.textContaining('Approve sharing your viewing key'),
+        find.text('Approve sharing the viewing key for Account #1.'),
         findsOneWidget,
       );
     },
@@ -1125,7 +1125,7 @@ void main() {
         same(surface),
       );
       expect(
-        find.textContaining('Approve sharing your viewing key'),
+        find.text('Approve sharing the viewing key for Account #0.'),
         findsOneWidget,
       );
       expect(find.text('Continue'), findsNothing);
@@ -1133,7 +1133,7 @@ void main() {
       expect(
         tester
             .widget<Text>(
-              find.textContaining('Approve sharing your viewing key'),
+              find.text('Approve sharing the viewing key for Account #0.'),
             )
             .style
             ?.fontWeight,
@@ -1657,7 +1657,7 @@ class _FakeSyncNotifier extends SyncNotifier {
 class _FakeReadinessController extends LedgerAppReadinessController {
   @override
   LedgerAppReadinessState build() =>
-      const LedgerAppReadinessState.ready('3.9.4');
+      const LedgerAppReadinessState.ready('3.10.0');
 }
 
 class _FakeBleService implements LedgerMobileBleService {

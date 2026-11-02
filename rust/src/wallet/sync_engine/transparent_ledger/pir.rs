@@ -587,10 +587,10 @@ pub(crate) mod test_transport {
             self.transports.load(Ordering::SeqCst)
         }
 
-        pub(in crate::wallet::sync_engine::transparent_ledger) fn attach<'a, F: Fn() -> bool>(
+        pub(in crate::wallet::sync_engine::transparent_ledger) fn attach<'a>(
             &self,
-            exchange: RoutedExchange<'a, F>,
-        ) -> RoutedExchange<'a, F> {
+            exchange: RoutedExchange<'a>,
+        ) -> RoutedExchange<'a> {
             self.transports.fetch_add(1, Ordering::SeqCst);
             exchange.with_observer(self.observer.clone())
         }

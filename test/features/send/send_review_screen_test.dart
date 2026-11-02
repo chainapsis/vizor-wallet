@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/review_info_row.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
@@ -1338,36 +1339,6 @@ void main() {
   );
 
   testWidgets(
-    'Ledger legacy Orchard recovery requires an app update without retrying',
-    (tester) async {
-      await _setDesktopViewport(tester);
-      await tester.pumpWidget(
-        _harness(
-          _reviewArgs(addressType: 'unified'),
-          bootstrap: _bootstrap(
-            isHardware: true,
-            hardwareSignerKind: HardwareSignerKind.ledger,
-          ),
-          ledgerSigner: (_) async => throw StateError(
-            '$kLedgerLegacyOrchardRecoveryErrorCode: test fixture',
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Confirm with Ledger'));
-      await _flushRealAsync(tester);
-
-      expect(find.text('Ledger app update required'), findsOneWidget);
-      expect(
-        find.text(kLedgerLegacyOrchardRecoveryUnavailableMessage),
-        findsOneWidget,
-      );
-      expect(find.text('Try again'), findsNothing);
-    },
-  );
-
-  testWidgets(
     'Ledger memo refused by an older app asks for an update and a retry',
     (tester) async {
       var signerCalls = 0;
@@ -1394,6 +1365,38 @@ void main() {
       expect(find.text(ledgerMemoHashUnsupportedError), findsOneWidget);
 
       // After updating the app, a retry reads the new version.
+      await tester.tap(find.text('Try again'));
+      await _flushRealAsync(tester);
+      expect(signerCalls, 2);
+    },
+  );
+
+  testWidgets(
+    'Ledger transaction an older app cannot sign asks for an update and a retry',
+    (tester) async {
+      var signerCalls = 0;
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerSigner: (_) async {
+            signerCalls++;
+            throw StateError(ledgerAppUpdateRequiredError);
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Ledger app update required'), findsOneWidget);
+      expect(find.text(ledgerAppUpdateRequiredError), findsOneWidget);
+
       await tester.tap(find.text('Try again'));
       await _flushRealAsync(tester);
       expect(signerCalls, 2);
@@ -2280,6 +2283,48 @@ void main() {
     expect(find.text('send-route'), findsOneWidget);
     expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
   });
+
+  testWidgets(
+    'Ledger upgrade hold shows the hold copy, not the device',
+    (tester) async {
+      final operationService = _FakeLedgerSignedOperationService();
+      var signerCalls = 0;
+      rustApi.createPcztError = StateError(
+        "Transactions can't be sent this close to the network upgrade. "
+        'Try again after it activates.',
+      );
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(addressType: 'unified'),
+          bootstrap: _bootstrap(
+            isHardware: true,
+            hardwareSignerKind: HardwareSignerKind.ledger,
+          ),
+          ledgerOperationService: operationService,
+          ledgerSigner: (_) async {
+            signerCalls++;
+            return _fakeSignatureBytes;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm with Ledger'));
+      await _flushRealAsync(tester);
+
+      expect(find.text('Paused for network upgrade'), findsOneWidget);
+      expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+      expect(find.textContaining('Check your device'), findsNothing);
+      expect(find.text('Ledger signing failed'), findsNothing);
+      expect(find.text('Create new transaction'), findsNothing);
+      expect(find.text('New transaction required'), findsNothing);
+      expect(find.text('Try again'), findsNothing);
+      expect(signerCalls, 0);
+      expect(operationService.checkpoints, isEmpty);
+    },
+  );
 
   testWidgets('Ledger checkpoint retry preserves bytes without re-signing', (
     tester,

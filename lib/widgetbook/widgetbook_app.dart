@@ -569,6 +569,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Accounts modal',
                       builder: buildMobileHomeAccountsModalUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'NU7 announcement',
+                      builder: buildMobileHomeNu7AnnouncementUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
@@ -577,6 +581,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Gift Cards',
                       builder: buildDesktopHomeGiftCardsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'NU7 announcement',
+                      builder: buildDesktopHomeNu7AnnouncementUseCase,
                     ),
                   ],
                 ),
@@ -634,6 +642,15 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Migration complete',
                       builder: buildIronwoodMigrationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration stopped by network upgrade',
+                      builder: buildIronwoodMigrationUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration stopped by network upgrade',
+                      builder:
+                          buildDesktopHomeIronwoodMigrationUpgradeStoppedUseCase,
                     ),
                   ],
                 ),
@@ -766,6 +783,21 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Home - Migration needs input modal',
                       builder:
                           buildMobileIronwoodMigrationHomeAttentionModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Migration stopped',
+                      builder:
+                          buildMobileIronwoodMigrationUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Home banner',
+                      builder:
+                          buildMobileIronwoodMigrationHomeUpgradeStoppedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Upgrade - Home sheet',
+                      builder:
+                          buildMobileIronwoodMigrationHomeUpgradeStoppedModalUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Keystone - QR scan help',

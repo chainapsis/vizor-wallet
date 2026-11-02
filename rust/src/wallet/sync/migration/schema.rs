@@ -204,7 +204,8 @@ fn backfill_legacy_signed_schedule_metadata(
                 continue;
             };
             if recovered_origin.is_some_and(|existing| existing != origin)
-                || zip318_canonical_migration_expiry_height(scheduled_height)? != expiry_height
+                || legacy_zip318_canonical_migration_expiry_height(scheduled_height)?
+                    != expiry_height
             {
                 invalid_children.push((message_id, child_index));
                 continue;
@@ -271,7 +272,7 @@ fn backfill_legacy_signed_schedule_metadata(
                     "UPDATE {RUNS_TABLE}
                      SET phase = ?1,
                          last_error = 'Legacy migration signatures crossed a ZIP 318 expiry boundary and must be recreated'
-                     WHERE run_id = ?2"
+                     WHERE run_id = ?2 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
                 ),
                 params![PHASE_READY_TO_MIGRATE, run_id],
             )
@@ -361,7 +362,7 @@ fn backfill_legacy_pending_schedule_metadata(
             .map_err(|e| format!("Read pending migration schedule origin: {e}"))?;
         let canonical = persisted_origin.is_none_or(|existing| existing == origin)
             && recovered
-                .map(zip318_canonical_migration_expiry_height)
+                .map(legacy_zip318_canonical_migration_expiry_height)
                 .transpose()?
                 == Some(expiry_height);
         if canonical {
@@ -407,7 +408,7 @@ fn backfill_legacy_pending_schedule_metadata(
                     "UPDATE {RUNS_TABLE}
                      SET phase = ?1,
                          last_error = 'Legacy migration schedule crossed a ZIP 318 expiry boundary and must be recreated'
-                     WHERE run_id = ?2"
+                     WHERE run_id = ?2 AND phase NOT IN ({TERMINAL_PHASES_SQL})"
                 ),
                 params![PHASE_READY_TO_MIGRATE, run_id],
             )

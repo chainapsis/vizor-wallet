@@ -23,12 +23,15 @@ import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
+import '../../../../core/navigation/mobile_sidebar_route_observer.dart';
+import '../../../../core/navigation/route_stack.dart';
 import '../../../../core/privacy/privacy_mask.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_tooltip.dart';
 import '../../../../providers/account_provider.dart';
+import '../../../../providers/block_spacing_provider.dart';
 import '../../../../providers/enhance_pir_provider.dart';
 import '../../../../providers/voting/voting_home_entry_provider.dart';
 import '../../../../providers/voting/voting_home_cache_provider.dart';
@@ -64,6 +67,8 @@ import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
 import '../../services/transparent_balance_display.dart';
 import '../../widgets/mobile/shield/mobile_shield_backdrop.dart';
 import '../../providers/backup_reminder_provider.dart';
+import '../../providers/nu7_announcement_provider.dart';
+import '../../widgets/nu7_announcement.dart';
 import '../../widgets/mobile_home_carousel.dart';
 
 /// Mobile home tab: shielded balance card, send/receive actions, and
@@ -130,6 +135,7 @@ class MobileHomeScreen extends ConsumerWidget {
           ),
           const _SyncKeepAwakePromptHost(),
           const _IronwoodMigrationAnnouncementHost(),
+          const _Nu7AnnouncementHost(),
           _IronwoodMigrationAttentionMountGate(
             isHomeCurrent: isCurrentHomeRoute,
           ),
@@ -345,9 +351,10 @@ class _IronwoodMigrationAttentionHostState
     if (!mounted || _showing || _resumeRefreshInProgress) return;
     if (GoRouterState.of(context).uri.path != '/home') return;
     final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
-    if (cta.mode != IronwoodHomeMigrationCtaMode.resume) return;
+    final stopped = cta.mode == IronwoodHomeMigrationCtaMode.stopped;
+    if (cta.mode != IronwoodHomeMigrationCtaMode.resume && !stopped) return;
     final accountUuid = cta.accountUuid;
-    final runId = cta.status?.activeRunId;
+    final runId = mobileIronwoodMigrationAttentionRunId(cta.status);
     final sync = ref.read(syncProvider).value;
     if (accountUuid == null || runId == null) return;
     final attention = mobileIronwoodMigrationAttention(
@@ -357,6 +364,7 @@ class _IronwoodMigrationAttentionHostState
       isKeystone: ref
           .read(accountProvider.notifier)
           .isKeystoneAccount(accountUuid),
+      blockSpacing: ref.read(blockSpacingProvider),
     );
     if (attention == null) return;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
@@ -424,10 +432,16 @@ class _IronwoodMigrationAttentionHostState
       );
       if (!mounted) return;
       if (action == _IronwoodAttentionAction.openMigration) {
-        context.push(
-          '/migration/private/status',
-          extra: const MobileIronwoodMigrationStatusEntry(),
-        );
+        // The stopped sheet's button says "Move remaining balance".
+        if (attention.kind ==
+            MobileIronwoodMigrationAttentionKind.upgradeStopped) {
+          context.push('/migration/options');
+        } else {
+          context.push(
+            '/migration/private/status',
+            extra: const MobileIronwoodMigrationStatusEntry(),
+          );
+        }
       }
     } finally {
       _showing = false;
@@ -522,6 +536,98 @@ class _IronwoodMigrationAnnouncementHostState
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       // The announcement remains open so the user can retry.
+    }
+  }
+}
+
+/// Shows the NU7 announcement once per network while home is visible and
+/// uncovered.
+class _Nu7AnnouncementHost extends ConsumerStatefulWidget {
+  const _Nu7AnnouncementHost();
+
+  @override
+  ConsumerState<_Nu7AnnouncementHost> createState() =>
+      _Nu7AnnouncementHostState();
+}
+
+class _Nu7AnnouncementHostState extends ConsumerState<_Nu7AnnouncementHost> {
+  bool _showing = false;
+  String? _shownFor;
+  GoRouter? _router;
+  late final MobileSidebarRouteObserver _popups;
+
+  @override
+  void initState() {
+    super.initState();
+    // Root sheets and dialogs do not change the router's location.
+    _popups = ref.read(mobileSidebarRouteObserverProvider)
+      ..addListener(_scheduleEvaluate);
+    _scheduleEvaluate();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (identical(_router, router)) return;
+    _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    _router = router;
+    router.routerDelegate.addListener(_scheduleEvaluate);
+  }
+
+  @override
+  void dispose() {
+    _router?.routerDelegate.removeListener(_scheduleEvaluate);
+    _popups.removeListener(_scheduleEvaluate);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(nu7AnnouncementProvider, (_, _) => _evaluate());
+    return const SizedBox.shrink();
+  }
+
+  void _scheduleEvaluate() {
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (mounted) _evaluate();
+      })
+      ..ensureVisualUpdate();
+  }
+
+  void _evaluate() {
+    final network = ref.read(nu7AnnouncementProvider).value?.network;
+    if (network == null || _showing || _shownFor == network) return;
+    // This branch stays mounted behind other tabs, pushed routes and sheets.
+    if (_router?.routerDelegate.currentConfiguration.uri.path != '/home' ||
+        !isRouteTopmost(context)) {
+      return;
+    }
+    _shownFor = network;
+    unawaited(_show(network));
+  }
+
+  Future<void> _show(String network) async {
+    _showing = true;
+    try {
+      await showAppMobileSheet<void>(
+        context: context,
+        builder: (sheetContext) => SingleChildScrollView(
+          child: Nu7AnnouncementContent(
+            onClose: () => Navigator.of(sheetContext).pop(),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      try {
+        await ref.read(nu7AnnouncementStoreProvider).markSeen(network);
+      } catch (_) {
+        return;
+      }
+      if (mounted) ref.invalidate(nu7AnnouncementProvider);
+    } finally {
+      _showing = false;
     }
   }
 }
@@ -1027,6 +1133,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           ref
               .read(accountProvider.notifier)
               .isKeystoneAccount(activeAccountUuid),
+      blockSpacing: ref.watch(blockSpacingProvider),
     );
 
     final uuid = activeAccountUuid;
@@ -1146,7 +1253,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               onIronwoodMigrationTap: () {
                 final target = switch (widget.ironwoodMigrationCta.mode) {
                   IronwoodHomeMigrationCtaMode.start => '/migration/intro',
-                  IronwoodHomeMigrationCtaMode.resume =>
+                  IronwoodHomeMigrationCtaMode.resume ||
+                  IronwoodHomeMigrationCtaMode.stopped =>
                     '/migration/private/status',
                   IronwoodHomeMigrationCtaMode.hidden => null,
                 };

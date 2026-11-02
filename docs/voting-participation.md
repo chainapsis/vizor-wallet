@@ -32,6 +32,11 @@ proven unused subset already meets the voting threshold. Otherwise the prior
 display decision is retained.
 Without a previous decision, the card stays hidden.
 
+Both proof specifications use SHA-256. ICS23 builds without default features;
+verification uses the existing `sha2` dependency through a private hash provider.
+The fixed specifications reject other hash operations before invoking that
+provider, including operations in non-membership neighbors.
+
 This is a reader anchored to a bundled consensus committee, not a full rotating
 light client. The bundled public keys and original voting powers live in
 `rust/src/wallet/voting/trust/`. Their hashes must match the original pins below,

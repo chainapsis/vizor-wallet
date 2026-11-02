@@ -3,6 +3,8 @@
 
 #[path = "ledger_zcash_speculos_poc/gift_card.rs"]
 mod gift_card;
+#[path = "ledger_zcash_speculos_poc/migration.rs"]
+mod migration;
 #[path = "ledger_zcash_speculos_poc/regtest.rs"]
 mod regtest;
 #[path = "ledger_zcash_speculos_poc/voting.rs"]
@@ -26,7 +28,7 @@ use rust_lib_zcash_wallet::api::ledger::{
     ledger_build_pczt_full_signing_apdu_plan, ledger_build_ufvk_apdu_plan, ledger_device_app,
     ledger_export_account, ledger_finalize_mobile_pczt_full_signing,
     ledger_parse_mobile_ufvk_responses, ledger_sign_pczt_full,
-    ledger_validate_device_account_response, LedgerApduCommand,
+    ledger_validate_device_account_response, LedgerApduCommand, LedgerAppSupport,
 };
 use rust_lib_zcash_wallet::{api::wallet::import_hardware_account, wallet::network::WalletNetwork};
 use serde_json::{json, Value};
@@ -68,9 +70,13 @@ const SPECULOS_UFVK_STATUS_WAIT: Duration = Duration::from_secs(4);
 const BOLOS_CLA: u8 = 0xb0;
 const GET_APP_AND_VERSION: u8 = 0x01;
 const MINIMUM_ZCASH_APP_VERSION: (u64, u64, u64) = (3, 9, 3);
-/// The canary exercises whichever app build is under test, so Vizor's memo
-/// policy must not decide what reaches the device.
-const CANARY_MEMO_HASH_SUPPORTED: bool = true;
+/// The canary exercises whichever app build is under test, so Vizor's app
+/// version policy must not decide what reaches the device.
+const CANARY_APP_SUPPORT: LedgerAppSupport = LedgerAppSupport {
+    memo_hash: true,
+    nu7_branch: true,
+    orchard_to_ironwood: true,
+};
 /// The fixture wallet's only transparent UTXO, held at external index 0. The
 /// shielding, swap, pay, and TEX step 1 fixtures all spend it: each scenario
 /// runs on its own copy of the wallet DB, and hardware broadcasts withhold any
@@ -155,7 +161,7 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         account.account_uuid.clone(),
         pczt.bytes.clone(),
         config.network.clone(),
-        CANARY_MEMO_HASH_SUPPORTED,
+        CANARY_APP_SUPPORT,
     )?;
     verify_smoke_account_preflight(&signing_client, &plan)?;
     let approval = config
@@ -166,7 +172,7 @@ fn run_desktop_smoke(config: Config) -> Result<(), String> {
         account.account_uuid,
         pczt.bytes.clone(),
         config.network,
-        CANARY_MEMO_HASH_SUPPORTED,
+        CANARY_APP_SUPPORT,
         Some(app_version),
     );
     let automated_signing_review = approval
@@ -233,6 +239,18 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         .as_deref()
         .map(|path| gift_card::prepare_wallet(path, &export.ufvk, &export.seed_fingerprint))
         .transpose()?;
+    let migration_account = config
+        .migration_db_path
+        .as_deref()
+        .map(|path| {
+            migration::prepare_wallet(
+                path,
+                &export.ufvk,
+                &export.seed_fingerprint,
+                export.account_index,
+            )
+        })
+        .transpose()?;
     let metadata = json!({
         "accountUuid": account_uuid,
         "ufvk": export.ufvk,
@@ -250,6 +268,7 @@ fn run_prepare_fixture(config: Config) -> Result<(), String> {
         "votingBundle2ActionIndex": voting_bundle_2.action_index,
         "orchardToIronwoodV6PcztPath": orchard_to_ironwood_path,
         "giftCardAccountUuid": gift_card_account,
+        "migrationAccountUuid": migration_account,
     });
     fs::write(&metadata_path, metadata.to_string())
         .map_err(|error| format!("Write {}: {error}", metadata_path.display()))?;
@@ -284,18 +303,23 @@ fn prepare_fixture_wallet(
     let mut db = WalletDb::for_path(db_path, WalletNetwork::Main, SystemClock, OsRng)
         .map_err(|error| format!("Open fixture wallet DB: {error}"))?
         .with_transparent_ledger_mode(TransparentLedgerMode::Public);
-    let chain_tip = BlockHeight::from_u32(3_000_000);
+    // After NU7, so the PCZTs the app builds from this wallet carry its branch.
+    let chain_tip = BlockHeight::from_u32(3_600_000);
     db.update_chain_tip(chain_tip)
         .map_err(|error| format!("Set fixture chain tip: {error}"))?;
-    let sapling_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
-        db.with_sapling_tree_mut(|tree| tree.checkpoint(chain_tip));
-    sapling_checkpoint.map_err(|error| format!("Checkpoint fixture Sapling tree: {error}"))?;
-    let orchard_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
-        db.with_orchard_tree_mut(|tree| tree.checkpoint(chain_tip));
-    orchard_checkpoint.map_err(|error| format!("Checkpoint fixture Orchard tree: {error}"))?;
-    let ironwood_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
-        db.with_ironwood_tree_mut(|tree| tree.checkpoint(chain_tip));
-    ironwood_checkpoint.map_err(|error| format!("Checkpoint fixture Ironwood tree: {error}"))?;
+    // Anchors sit at least one block behind the tip, so checkpoint the block below it too.
+    for height in [chain_tip - 1, chain_tip] {
+        let sapling_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+            db.with_sapling_tree_mut(|tree| tree.checkpoint(height));
+        sapling_checkpoint.map_err(|error| format!("Checkpoint fixture Sapling tree: {error}"))?;
+        let orchard_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+            db.with_orchard_tree_mut(|tree| tree.checkpoint(height));
+        orchard_checkpoint.map_err(|error| format!("Checkpoint fixture Orchard tree: {error}"))?;
+        let ironwood_checkpoint: Result<_, ShardTreeError<commitment_tree::Error>> =
+            db.with_ironwood_tree_mut(|tree| tree.checkpoint(height));
+        ironwood_checkpoint
+            .map_err(|error| format!("Checkpoint fixture Ironwood tree: {error}"))?;
+    }
     let transparent_utxo = WalletTransparentOutput::from_parts(
         OutPoint::new(FIXTURE_UTXO_TXID, 0),
         TxOut::new(
@@ -375,7 +399,7 @@ fn run_file(config: Config) -> Result<(), String> {
         account_uuid.clone(),
         pczt.clone(),
         config.network.clone(),
-        CANARY_MEMO_HASH_SUPPORTED,
+        CANARY_APP_SUPPORT,
     )?;
     if plan.commands.is_empty() {
         return Err("Vizor produced an empty Ledger signing plan".into());
@@ -436,7 +460,7 @@ fn run_smoke(config: Config) -> Result<(), String> {
         account.account_uuid.clone(),
         pczt.bytes.clone(),
         config.network.clone(),
-        CANARY_MEMO_HASH_SUPPORTED,
+        CANARY_APP_SUPPORT,
     )?;
     verify_smoke_account_preflight(&signing_client, &plan)?;
     let (responses, automated_signing_review) =
@@ -969,6 +993,7 @@ struct Config {
     desktop_smoke: bool,
     prepare_fixture: bool,
     gift_card_db_path: Option<String>,
+    migration_db_path: Option<String>,
     smoke: bool,
     db_path: Option<String>,
     account_uuid: Option<String>,
@@ -996,6 +1021,7 @@ impl Config {
         let mut desktop_smoke = false;
         let mut prepare_fixture = false;
         let mut gift_card_db_path = None;
+        let mut migration_db_path = None;
         let mut args = args.into_iter();
 
         while let Some(arg) = args.next() {
@@ -1010,6 +1036,7 @@ impl Config {
                 "--output" => output_path = Some(PathBuf::from(value(&mut args)?)),
                 "--metadata" => metadata_path = Some(PathBuf::from(value(&mut args)?)),
                 "--gift-card-db" => gift_card_db_path = Some(value(&mut args)?),
+                "--migration-db" => migration_db_path = Some(value(&mut args)?),
                 "--network" => network = value(&mut args)?,
                 "--api-url" => api_url = value(&mut args)?,
                 "--signing-api-url" => signing_api_url = Some(value(&mut args)?),
@@ -1035,6 +1062,7 @@ impl Config {
             desktop_smoke,
             prepare_fixture,
             gift_card_db_path,
+            migration_db_path,
             smoke,
             db_path,
             account_uuid,
@@ -1050,7 +1078,7 @@ impl Config {
 }
 
 fn usage() -> String {
-    let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--gift-card-db <isolated-gift-wallet-db>] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
+    let prepare = "Usage:\n  ledger_zcash_speculos_poc desktop-smoke --api-url <ufvk-speculos-api> --signing-api-url <signing-speculos-api> [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc prepare-fixture --db-path <wallet-db> --pczt <unsigned-pczt> --metadata <fixture-json> [--api-url http://127.0.0.1:5000] [--gift-card-db <isolated-gift-wallet-db>] [--migration-db <isolated-orchard-wallet-db>] [--manual-review]\n\nDesktop-smoke exercises the production macOS Ledger transport selected by the VIZOR_LEDGER_SPECULOS_* environment variables. Prepare-fixture exports account 0, writes a persistent test database plus unsigned transparent PCZT, and records their paths and account metadata as JSON. Both modes require Ledger Zcash 3.9.3 or newer.";
     format!("{prepare}\n\n{}", format!(
         "Usage:\n  ledger_zcash_speculos_poc smoke --signing-api-url <speculos-api> [--api-url {DEFAULT_API_URL}] [--output <signed-pczt>] [--manual-review]\n\n  ledger_zcash_speculos_poc \\\n  --db-path <wallet-db> --account-uuid <ledger-account-uuid> --pczt <unsigned-pczt> \\\n  [--output <signed-pczt>] [--network main] [--api-url {DEFAULT_API_URL}] [--manual-review]\n\n\
 Smoke mode exports account 0 from Speculos, imports it into a temporary mainnet DB,\n\

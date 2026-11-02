@@ -1,0 +1,39 @@
+name: vizor-nu7-regtest
+
+# Zebra is the node implementation that ships NU7. Heights come from the
+# zebrad.toml that scripts/nu7-regtest/up.sh writes into .nu7-regtest/.
+services:
+  zebra:
+    image: zfnd/zebra@sha256:a70d2be8ffef3a4b6e37355724e36a0e6c1838e46baa28bfb216739f00cf2d34
+    entrypoint: ["zebrad", "-c", "/etc/zebrad/zebrad.toml", "start"]
+    ports:
+      - "127.0.0.1:${NU7_REGTEST_RPC_PORT:-48232}:18232"
+      - "127.0.0.1:${NU7_REGTEST_LIGHTWALLETD_PORT:-49067}:9067"
+    volumes:
+      - ./.nu7-regtest/zebrad.toml:/etc/zebrad/zebrad.toml:ro
+      - zebra-state:/var/cache/zebrad-cache
+
+  lightwalletd:
+    image: electriccoinco/lightwalletd@sha256:2ae3a551e1117eea17e9742b1360fc36db0e6d0613ddcbc7f5eed68a9b34e3db
+    platform: linux/amd64
+    entrypoint: ["lightwalletd"]
+    command:
+      - "--no-tls-very-insecure"
+      - "--grpc-bind-addr"
+      - "0.0.0.0:9067"
+      - "--zcash-conf-path"
+      - "/etc/zcash/lightwalletd-zcash.conf"
+      - "--data-dir"
+      - "/var/lib/lightwalletd"
+      - "--log-file"
+      - "/dev/stdout"
+    network_mode: "service:zebra"
+    depends_on:
+      - zebra
+    volumes:
+      - ./scripts/nu7-regtest/lightwalletd-zcash.conf:/etc/zcash/lightwalletd-zcash.conf:ro
+      - lightwalletd-data:/var/lib/lightwalletd
+
+volumes:
+  zebra-state:
+  lightwalletd-data:

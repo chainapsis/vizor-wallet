@@ -290,8 +290,8 @@ void main() {
     expect(row2Rect.height, 48);
     expect(row3Rect.top - row2Rect.bottom, 8);
     expect((gutter.padding as EdgeInsets).right, 18);
-    expect(rowLabel.style?.fontSize, 14);
-    expect(rowLabel.style?.height, 16 / 14);
+    expect(rowLabel.style?.fontSize, AppTypography.labelLarge.fontSize);
+    expect(rowLabel.style?.height, AppTypography.labelLarge.height);
     expect(rowLabel.style?.fontWeight, FontWeight.w500);
 
     await tester.dragFrom(

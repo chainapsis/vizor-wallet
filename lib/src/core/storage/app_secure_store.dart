@@ -197,6 +197,7 @@ class AppSecureStore {
   /// `encodeLinuxKeyringValue` for the gnome-keyring failure it prevents.
   final bool encodesLinuxKeyringValues;
   int _sessionGeneration = 0;
+  int _authenticationGeneration = 0;
 
   /// Shared across provider containers so creation outlives the initiating UI.
   late final votingHotkeys = VotingHotkeyStore(
@@ -208,6 +209,19 @@ class AppSecureStore {
 
   bool get hasSessionPassword => _sessionPassword != null;
 
+  /// Authentication ownership is enforced on every platform. Keep this separate
+  /// from Linux secret-consumer checks, which also select native signing paths.
+  int get authenticationGeneration => _authenticationGeneration;
+
+  bool isAuthenticationGenerationCurrent(int generation) =>
+      generation == _authenticationGeneration;
+
+  void _checkAuthenticationGeneration(int generation) {
+    if (!isAuthenticationGenerationCurrent(generation)) {
+      throw const SecureStorageSessionChangedException();
+    }
+  }
+
   /// Capture before awaiting credentials and check again before using them.
   /// Linux keyring requests can remain pending while the wallet session changes.
   int get sessionGeneration => _sessionGeneration;
@@ -218,7 +232,10 @@ class AppSecureStore {
   /// Account switching and deletion invalidate earlier secret consumers before
   /// their asynchronous work starts, while keeping the current wallet unlocked.
   void invalidatePendingSecretOperations() {
-    if (enforcesSessionGeneration) _sessionGeneration++;
+    if (enforcesSessionGeneration) {
+      _sessionGeneration++;
+      _authenticationGeneration++;
+    }
   }
 
   void _checkSessionGeneration(int generation) {
@@ -556,7 +573,7 @@ class AppSecureStore {
   }
 
   Future<void> deleteAll() {
-    if (enforcesSessionGeneration) clearSessionPassword();
+    clearSessionPassword();
     return _secretMutationLock.run(() async {
       await _runStorageOperation('delete all', _storage.deleteAll);
       if (!identical(_mnemonicStorage, _storage)) {
@@ -609,7 +626,7 @@ class AppSecureStore {
   }
 
   Future<void> configurePassword(String password) async {
-    final generation = sessionGeneration;
+    final generation = authenticationGeneration;
     final error = validateRequiredWalletPassword(password);
     if (error != null) {
       throw ArgumentError(error);
@@ -617,11 +634,13 @@ class AppSecureStore {
     final salt = _randomBytes(16);
     final saltBase64 = base64Encode(salt);
     final verifier = await _derivePasswordVerifier(password, saltBase64);
-    _checkSessionGeneration(generation);
+    _checkAuthenticationGeneration(generation);
     await writePlain(_passwordVerifierSaltKey, saltBase64);
     await writePlain(_passwordVerifierKey, verifier);
     // Finish the durable writes even if the UI locks while native storage waits.
-    if (isSessionGenerationCurrent(generation)) setSessionPassword(password);
+    if (isAuthenticationGenerationCurrent(generation)) {
+      setSessionPassword(password);
+    }
   }
 
   /// Rotates the wallet password and re-encrypts every app-managed secret.
@@ -633,11 +652,11 @@ class AppSecureStore {
     required String currentPassword,
     required String newPassword,
   }) {
-    final generation = sessionGeneration;
+    final generation = authenticationGeneration;
     // Secret writes and password rotation share one lock so a mnemonic cannot
     // be encrypted with the old key after rotation has taken its key snapshot.
     return _secretMutationLock.run(() async {
-      _checkSessionGeneration(generation);
+      _checkAuthenticationGeneration(generation);
       final existingRecoveryRecord = await readPlain(
         _passwordRotationInProgressKey,
       );
@@ -658,8 +677,11 @@ class AppSecureStore {
         throw ArgumentError(newPasswordError);
       }
 
-      final isCurrentPasswordValid = await verifyPasswordOnly(currentPassword);
-      _checkSessionGeneration(generation);
+      final isCurrentPasswordValid = await _verifyPasswordOnly(
+        currentPassword,
+        generation,
+      );
+      _checkAuthenticationGeneration(generation);
       if (!isCurrentPasswordValid) {
         return false;
       }
@@ -762,7 +784,7 @@ class AppSecureStore {
         oldVerifier: oldVerifier,
         entries: rollbackSecrets,
       );
-      _checkSessionGeneration(generation);
+      _checkAuthenticationGeneration(generation);
       await writePlain(_passwordRotationInProgressKey, rotation.serialize());
 
       try {
@@ -776,7 +798,7 @@ class AppSecureStore {
         Error.throwWithStackTrace(error, stackTrace);
       }
 
-      if (isSessionGenerationCurrent(generation)) {
+      if (isAuthenticationGenerationCurrent(generation)) {
         setSessionPassword(newPassword);
       }
       await _deleteRotationRecordBestEffort();
@@ -823,7 +845,7 @@ class AppSecureStore {
   }
 
   Future<void> clearPasswordConfiguration() {
-    if (enforcesSessionGeneration) clearSessionPassword();
+    clearSessionPassword();
     return _secretMutationLock.run(() async {
       // Remove abandoned recovery material before its decryption credential.
       // A failed delete must not leave an old journal beside a new password.
@@ -857,14 +879,23 @@ class AppSecureStore {
   /// storage session. Use this for in-app re-authentication prompts where the
   /// wallet is already unlocked and callers only need a fresh password check.
   Future<bool> verifyPasswordOnly(String password) async {
-    final generation = sessionGeneration;
+    final generation = authenticationGeneration;
+    // A rotation must finish before an access gate reads its verifier. The
+    // rotation itself uses the locked helper below to avoid re-entering its lock.
+    final pendingMutation = _secretMutationLock.pendingCompletion;
+    if (pendingMutation != null) await pendingMutation;
+    _checkAuthenticationGeneration(generation);
+    return _verifyPasswordOnly(password, generation);
+  }
+
+  Future<bool> _verifyPasswordOnly(String password, int generation) async {
     if (!isWalletPasswordValid(password)) {
       return false;
     }
     final encodedSalt = await readPlain(_passwordVerifierSaltKey);
-    _checkSessionGeneration(generation);
+    _checkAuthenticationGeneration(generation);
     final storedVerifier = await readPlain(_passwordVerifierKey);
-    _checkSessionGeneration(generation);
+    _checkAuthenticationGeneration(generation);
     if (encodedSalt == null ||
         encodedSalt.isEmpty ||
         storedVerifier == null ||
@@ -873,23 +904,23 @@ class AppSecureStore {
     }
 
     final derived = await _derivePasswordVerifier(password, encodedSalt);
-    _checkSessionGeneration(generation);
+    _checkAuthenticationGeneration(generation);
     return derived == storedVerifier;
   }
 
   Future<bool> verifyPassword(String password) async {
     // Start a new unlock attempt before the first await. Even a later rejected
     // attempt must prevent an older pending attempt from opening the session.
-    if (enforcesSessionGeneration) clearSessionPassword();
-    final generation = sessionGeneration;
+    clearSessionPassword();
+    final generation = authenticationGeneration;
     final isMatch = await verifyPasswordOnly(password);
-    _checkSessionGeneration(generation);
+    _checkAuthenticationGeneration(generation);
     if (isMatch) {
       // This request already owns the generation allocated above.
       _sessionPassword = password;
       try {
         final migratedForRead = await migrateAccountMnemonicsAfterUnlock();
-        _checkSessionGeneration(generation);
+        _checkAuthenticationGeneration(generation);
         if (!migratedForRead) {
           clearSessionPassword();
           return false;
@@ -897,7 +928,7 @@ class AppSecureStore {
       } on SecureStorageSessionChangedException {
         rethrow;
       } catch (error, stackTrace) {
-        _checkSessionGeneration(generation);
+        _checkAuthenticationGeneration(generation);
         clearSessionPassword();
         debugPrint(
           'AppSecureStore: failed to migrate account mnemonics after unlock: '
@@ -917,11 +948,13 @@ class AppSecureStore {
   }
 
   void setSessionPassword(String password) {
+    _authenticationGeneration++;
     if (enforcesSessionGeneration) _sessionGeneration++;
     _sessionPassword = password;
   }
 
   void clearSessionPassword() {
+    _authenticationGeneration++;
     if (enforcesSessionGeneration) _sessionGeneration++;
     _sessionPassword = null;
   }
@@ -1287,7 +1320,7 @@ class AppSecureStore {
       } else {
         await writePlain(_passwordVerifierKey, rollback.oldVerifier!);
       }
-      if (isSessionGenerationCurrent(generation)) {
+      if (isAuthenticationGenerationCurrent(generation)) {
         setSessionPassword(currentPassword);
       }
       await _deleteRotationRecordBestEffort();
@@ -1396,15 +1429,20 @@ class _AccountMnemonicMigrationResult {
 
 class _AsyncLock {
   Future<void> _tail = Future<void>.value();
+  int _pendingCount = 0;
+
+  Future<void>? get pendingCompletion => _pendingCount == 0 ? null : _tail;
 
   Future<T> run<T>(Future<T> Function() action) {
     final previous = _tail;
     final completer = Completer<void>();
     _tail = completer.future;
+    _pendingCount++;
 
-    return previous
-        .then((_) => Future<T>.sync(action))
-        .whenComplete(() => completer.complete());
+    return previous.then((_) => Future<T>.sync(action)).whenComplete(() {
+      _pendingCount--;
+      completer.complete();
+    });
   }
 }
 

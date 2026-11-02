@@ -50,6 +50,7 @@ abstract interface class PaymentLinkHardwareSigningService {
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   });
 
   Future<List<String>> encodeSigningUrParts({
@@ -148,6 +149,10 @@ class RustPaymentLinkHardwareSigningService
     if (batch.links.any((link) => link.network != endpoint.networkName)) {
       throw StateError('The Gift Card network changed.');
     }
+    await _paymentLinkService.validateFundingReserve(
+      batch.quote.claimFeeReserveZatoshi ~/ BigInt.from(batch.quote.count),
+      network: endpoint.networkName,
+    );
     try {
       return await _createPczt(
         accountUuid: batch.quote.sourceAccountUuid,
@@ -162,6 +167,9 @@ class RustPaymentLinkHardwareSigningService
             addresses: [for (final link in batch.links) link.address],
             amountZatoshi: paymentLinkFundingAmountZatoshi(
               batch.quote.recipientAmountZatoshi,
+              claimFeeReserveZatoshi:
+                  batch.quote.claimFeeReserveZatoshi ~/
+                  BigInt.from(batch.quote.count),
             ),
           );
           return proposal;
@@ -189,12 +197,15 @@ class RustPaymentLinkHardwareSigningService
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
+    PaymentLinkFundingQuote? expectedQuote,
   }) async {
     final link = await _paymentLinkService.createFundingDraft(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,
       presentation: presentation,
+      expectedQuote: expectedQuote,
     );
+    final fundingAmount = await _paymentLinkService.fundingAmountForDraft(link);
     return _createPczt(
       accountUuid: sourceAccountUuid,
       links: [link],
@@ -204,8 +215,14 @@ class RustPaymentLinkHardwareSigningService
         accountUuid: sourceAccountUuid,
         sendFlowId: sendFlowId,
         toAddress: link.address,
-        amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
+        amountZatoshi: fundingAmount,
       ),
+      checkProposal: (proposal) {
+        if (expectedQuote != null &&
+            proposal.feeZatoshi != expectedQuote.fundingFeeZatoshi) {
+          throw const PaymentLinkBatchQuoteChanged();
+        }
+      },
       removeDrafts: () =>
           _recoveryStore.removeUnsubmittedDraft(address: link.address),
     );
@@ -464,6 +481,22 @@ class RustPaymentLinkHardwareSigningService
     } finally {
       for (final link in draft.links) {
         _surfaces.close(link.address);
+      }
+    }
+    if (stored.status == 'expired') {
+      // Rust refused it before submission, so nothing reached the network.
+      try {
+        if (draft.batch case final batch?) {
+          await _recoveryStore.removeTerminalBatch(batch.id);
+        } else {
+          await _recoveryStore.removeUnbroadcastDraft(
+            address: draft.link.address,
+          );
+        }
+      } catch (error) {
+        log(
+          'PaymentLinkHardwareSigning: expired funding cleanup failed: $error',
+        );
       }
     }
     if (isPaymentLinkFundingBroadcastAccepted(stored.status) &&

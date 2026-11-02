@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_failure_policy.dart';
+import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 
 void main() {
   test('credential failures are hidden as temporary service issues', () {
@@ -380,6 +381,18 @@ void main() {
       swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
       'Not enough spendable ZEC to cover this swap and its network fee.\n'
       'Try a smaller amount or use Max.',
+    );
+  });
+
+  test('ZEC deposits held before a network upgrade say so', () {
+    final error = Exception(
+      "Propose failed: Transactions can't be sent this close to the network "
+      'upgrade. Try again after it activates.',
+    );
+
+    expect(
+      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      kNetworkUpgradeHoldMessage,
     );
   });
 

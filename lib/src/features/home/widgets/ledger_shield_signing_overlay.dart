@@ -8,6 +8,7 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/zcash/network_upgrade_hold.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -170,9 +171,10 @@ class _LedgerShieldSigningOverlayState
           setState(() {
             _phase = LedgerSigningModalPhase.failed;
             _canRetry = false;
-            _error =
-                existingOperation.message ??
-                'The shield transaction status is uncertain. Check activity before trying again.';
+            _error = _broadcastStatusMessage(
+              status: existingOperation.status ?? '',
+              message: existingOperation.message,
+            );
           });
           return;
         }
@@ -616,6 +618,8 @@ class _LedgerShieldSigningOverlayState
     required String status,
     required String? message,
   }) {
+    final upgradeHold = networkUpgradeHoldMessage(message ?? '');
+    if (upgradeHold != null) return upgradeHold;
     if (status == 'broadcast_unknown') {
       return message ??
           'The shield transaction may have reached the network. Check activity before trying again.';
@@ -650,6 +654,8 @@ class _LedgerShieldSigningOverlayState
       requestKind: LedgerRequestKind.shield,
     );
     _deviceGuidance = guidance;
+    final upgradeHold = networkUpgradeHoldMessage(error);
+    if (upgradeHold != null) return upgradeHold;
     // Retrying the same request fails the same way on the device.
     if (guidance?.retryable == false) _canRetry = false;
     final failure = LedgerRequestFailure.fromError(error);
@@ -715,6 +721,7 @@ class _LedgerShieldSigningOverlayState
   Widget build(BuildContext context) {
     final canLeave = !_cancelled && (_momentComplete || !_isBroadcasting);
     final broadcasting = _phase == LedgerSigningModalPhase.broadcasting;
+    final upgradeHold = _error == kNetworkUpgradeHoldMessage;
     final modal = LedgerSigningModal(
       cancelling: _cancelled,
       resumingApproval: _resumingApproval,
@@ -735,12 +742,15 @@ class _LedgerShieldSigningOverlayState
               isError: !_pausedEarly,
               title: _pausedEarly
                   ? 'Shielding paused'
+                  : upgradeHold
+                  ? kNetworkUpgradeHoldActionLabel
                   : 'Ledger signing failed',
               statusLabel: _pausedEarly ? 'Inputs remaining' : 'Action needed',
               message: _error ?? 'Ledger shielding could not be completed.',
               showDeviceAppPrompt:
                   !_pausedEarly &&
                   (_deviceGuidance?.showDeviceAppPrompt ?? false),
+              showConnectionPicker: !upgradeHold,
               actionLabel: _canRetry ? 'Try again' : null,
             )
           : null,

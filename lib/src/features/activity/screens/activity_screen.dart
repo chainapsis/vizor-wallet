@@ -185,10 +185,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         await ref.read(giftCardActivityIndexProvider(uuid!).future);
       } catch (_) {}
       if (!mounted || !identical(pager, _pager)) return;
-      try {
-        await ref.read(swapActivityRowItemsProvider(uuid!).future);
-      } catch (_) {}
-      if (!mounted || !identical(pager, _pager)) return;
+      if (ref.read(swapFeatureEnabledProvider)) {
+        try {
+          await ref.read(swapActivityRowItemsProvider(uuid!).future);
+        } catch (_) {}
+        if (!mounted || !identical(pager, _pager)) return;
+      }
     }
     await pager.load(refresh: true);
   }
@@ -290,6 +292,9 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<bool>(swapFeatureEnabledProvider, (_, _) {
+      _syncSwapActivityStatusRefresh();
+    });
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
       final nextUuid = next.value?.activeAccountUuid;
       if (nextUuid != _activeAccountUuid) {
@@ -319,14 +324,17 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         unawaited(_loadTransactions(showLoading: true));
       }
     });
+    final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     if (accountUuid != null) {
       ref.listen(giftCardActivityIndexProvider(accountUuid), (_, next) {
         if (next.hasValue && !next.isLoading) unawaited(_pager?.load());
       });
-      ref.listen(swapActivityRowItemsProvider(accountUuid), (_, next) {
-        if (next.hasValue && !next.isLoading) unawaited(_pager?.load());
-      });
+      if (swapFeatureEnabled) {
+        ref.listen(swapActivityRowItemsProvider(accountUuid), (_, next) {
+          if (next.hasValue && !next.isLoading) unawaited(_pager?.load());
+        });
+      }
     }
     final giftCardActivityIndex = accountUuid == null
         ? GiftCardActivityIndex.empty
@@ -340,7 +348,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         loadedTransactions ?? const <rust_sync.TransactionInfo>[];
     final canRenderTransactions =
         accountUuid != null && loadedTransactions != null;
-    final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final swapItems = accountUuid == null || !swapFeatureEnabled
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??

@@ -482,13 +482,6 @@ class _DisableBiometricSheet extends StatelessWidget {
     height: 21 / 14,
     letterSpacing: -0.21,
   );
-  static const _buttonLabelStyle = TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w500,
-    fontSize: 14,
-    height: 16 / 14,
-    letterSpacing: -0.06,
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -515,7 +508,7 @@ class _DisableBiometricSheet extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(
               'Turn off',
-              style: _buttonLabelStyle.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.button.destructive.label,
               ),
             ),
@@ -523,7 +516,7 @@ class _DisableBiometricSheet extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           MobileSheetCancel(
             onTap: () => Navigator.of(context).pop(false),
-            textStyle: _buttonLabelStyle.copyWith(
+            textStyle: AppTypography.labelLarge.copyWith(
               color: colors.button.ghost.label,
             ),
           ),
