@@ -226,11 +226,7 @@ void main() {
         );
         expect(tester.state(find.byType(PageView)), same(pagerState));
         expect(
-          find.text(
-            size.width > size.height
-                ? 'Copy address'
-                : 'Copy transparent address',
-          ),
+          find.bySemanticsLabel('Copy transparent address'),
           findsOneWidget,
         );
         expect(

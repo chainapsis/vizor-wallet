@@ -765,7 +765,6 @@ class _ReceiveContentLayout extends StatelessWidget {
   static const _contentHeight = 656.0;
   static const _contentHeightWithError = 724.0;
   static const _actionsTop = 548.0;
-  // The request button's width; copy spans the whole row above it.
   static const _actionButtonWidth = 230.0;
   static const _actionButtonHeight = 44.0;
   static const _shareButtonWidth = 60.0;
@@ -874,39 +873,23 @@ class _ReceiveContentLayout extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          SizedBox(
-                            height: _actionButtonHeight,
-                            child: ReceiveCopyAddressButton(
-                              key: ValueKey(
-                                _isShielded
-                                    ? 'receive_copy_shielded_address_button'
-                                    : 'receive_copy_transparent_address_button',
-                              ),
-                              label: _isShielded
-                                  ? 'Copy shielded address'
-                                  : 'Copy transparent address',
-                              type: selectedType,
-                              enabled: address.isNotEmpty && !isLoading,
-                              onTap: onCopy,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
                           Row(
                             children: [
-                              Expanded(
-                                child: AppButton(
-                                  key: const ValueKey('receive_request_button'),
-                                  variant: AppButtonVariant.secondary,
-                                  height: _actionButtonHeight,
-                                  expand: true,
-                                  onPressed: address.isNotEmpty && !isLoading
-                                      ? onRequest
-                                      : null,
-                                  leading: const AppIcon(
-                                    AppIcons.request,
-                                    size: 20,
+                              SizedBox(
+                                width: _actionButtonWidth,
+                                height: _actionButtonHeight,
+                                child: ReceiveCopyAddressButton(
+                                  key: ValueKey(
+                                    _isShielded
+                                        ? 'receive_copy_shielded_address_button'
+                                        : 'receive_copy_transparent_address_button',
                                   ),
-                                  child: const Text('Request ZEC'),
+                                  label: _isShielded
+                                      ? 'Copy shielded address'
+                                      : 'Copy transparent address',
+                                  type: selectedType,
+                                  enabled: address.isNotEmpty && !isLoading,
+                                  onTap: onCopy,
                                 ),
                               ),
                               const SizedBox(width: AppSpacing.xs),
@@ -935,6 +918,19 @@ class _ReceiveContentLayout extends StatelessWidget {
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          AppButton(
+                            key: const ValueKey('receive_request_button'),
+                            variant: AppButtonVariant.ghost,
+                            pressedBackgroundColor: const Color(0x00000000),
+                            disabledBackgroundColor: const Color(0x00000000),
+                            height: _actionButtonHeight,
+                            expand: true,
+                            onPressed: address.isNotEmpty && !isLoading
+                                ? onRequest
+                                : null,
+                            child: const Text('Request ZEC'),
                           ),
                         ],
                       ),

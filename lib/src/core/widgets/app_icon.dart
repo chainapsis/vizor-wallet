@@ -95,7 +95,6 @@ abstract final class AppIcons {
   static const qr = 'qr';
   static const qrCodeFill = 'qr_code_fill';
   static const renew = 'renew';
-  static const request = 'request';
   static const scroll = 'scroll';
   static const search = 'search';
   static const share = 'share';

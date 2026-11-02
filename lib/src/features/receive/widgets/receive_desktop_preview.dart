@@ -20,6 +20,7 @@ enum ReceiveDesktopPreviewState {
   /// the single-CTA row the pane had before the request flow landed, so the
   /// two can still be compared.
   shieldedRequestEntry,
+  transparentRequestEntry,
 }
 
 class ReceiveDesktopPreview extends StatelessWidget {
@@ -35,7 +36,8 @@ class ReceiveDesktopPreview extends StatelessWidget {
       state == ReceiveDesktopPreviewState.shieldedRequestEntry;
 
   bool get _showsRequestEntry =>
-      state == ReceiveDesktopPreviewState.shieldedRequestEntry;
+      state == ReceiveDesktopPreviewState.shieldedRequestEntry ||
+      state == ReceiveDesktopPreviewState.transparentRequestEntry;
 
   bool get _showsModal =>
       state == ReceiveDesktopPreviewState.shieldedModal ||
@@ -458,24 +460,27 @@ class _ReceiveContentArea extends StatelessWidget {
             height: 44 * 2 + AppSpacing.xs,
             child: Column(
               children: [
-                SizedBox(
-                  width: 230 + AppSpacing.xs + 60,
-                  height: 44,
-                  child: _CopyAddressButton(isShielded: isShielded),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                const Row(
+                Row(
                   children: [
-                    _FixedPillButton(
+                    SizedBox(
                       width: 230,
                       height: 44,
-                      label: 'Request ZEC',
-                      iconName: AppIcons.request,
-                      variant: _FixedPillButtonVariant.secondary,
+                      child: _CopyAddressButton(isShielded: isShielded),
                     ),
-                    SizedBox(width: AppSpacing.xs),
-                    SizedBox(width: 60, height: 44, child: _ShareButton()),
+                    const SizedBox(width: AppSpacing.xs),
+                    const SizedBox(
+                      width: 60,
+                      height: 44,
+                      child: _ShareButton(),
+                    ),
                   ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                const _FixedPillButton(
+                  width: 230 + AppSpacing.xs + 60,
+                  height: 44,
+                  label: 'Request ZEC',
+                  variant: _FixedPillButtonVariant.ghost,
                 ),
               ],
             ),

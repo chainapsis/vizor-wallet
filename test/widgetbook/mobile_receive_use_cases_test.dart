@@ -26,15 +26,31 @@ void main() {
     expect(find.text('Receive ZEC'), findsOneWidget);
     expect(find.text('Account Name'), findsOneWidget);
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(find.text('Copy shielded address'), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
+    final copyLabel = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.text('Copy address'),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(copyLabel.size.height, moreOrLessEquals(17, epsilon: 0.1));
+    expect(copyLabel.text.style?.fontSize, AppTypography.labelLarge.fontSize);
+    final requestLabel = tester.renderObject<RenderParagraph>(
+      find.text('Request ZEC'),
+    );
+    expect(
+      requestLabel.text.style?.fontSize,
+      AppTypography.labelLarge.fontSize,
+    );
+
     final scrollable = tester.state<ScrollableState>(
       find.byType(Scrollable).first,
     );
     expect(scrollable.position.maxScrollExtent, 0);
-    // Request shares its row with the square share button: 300 - 8 - 50.
+    // Copy shares its row with the square share button: 300 - 8 - 50.
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_copy'))),
-      const Size(300, 50),
+      const Size(242, 50),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_share'))),
@@ -42,7 +58,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_receive_request'))),
-      const Size(242, 50),
+      const Size(300, 50),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('receive_address_type_tabs'))),
@@ -84,7 +100,22 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(find.text('Copy transparent address'), findsOneWidget);
+    expect(find.text('Copy address'), findsOneWidget);
+    final copyLabel = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: find.text('Copy address'),
+        matching: find.byType(RichText),
+      ),
+    );
+    expect(copyLabel.size.height, moreOrLessEquals(17, epsilon: 0.1));
+    expect(copyLabel.text.style?.fontSize, AppTypography.labelLarge.fontSize);
+    final requestLabel = tester.renderObject<RenderParagraph>(
+      find.text('Request ZEC'),
+    );
+    expect(
+      requestLabel.text.style?.fontSize,
+      AppTypography.labelLarge.fontSize,
+    );
   });
 
   testWidgets('receive mobile shielded sheet use case opens info sheet', (

@@ -317,53 +317,35 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                         width: _MobileReceiveMetrics.buttonStackWidth,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            AppButton(
-                              key: const ValueKey('mobile_receive_copy'),
-                              expand: true,
-                              constrainContent: true,
-                              height: _MobileReceiveMetrics.buttonHeight,
-                              variant: _isShielded
-                                  ? AppButtonVariant.primary
-                                  : AppButtonVariant.secondary,
-                              onPressed: _selectedAddress.isEmpty
-                                  ? null
-                                  : () => unawaited(_copyAddress()),
-                              leading: const AppIcon(
-                                AppIcons.copy,
-                                size: _MobileReceiveMetrics.buttonIconSize,
-                              ),
-                              child: Text('Copy $poolLabel address'),
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
                             Row(
                               children: [
                                 Expanded(
                                   child: AppButton(
-                                    key: const ValueKey(
-                                      'mobile_receive_request',
-                                    ),
+                                    key: const ValueKey('mobile_receive_copy'),
                                     expand: true,
                                     constrainContent: true,
                                     height: _MobileReceiveMetrics.buttonHeight,
-                                    variant: AppButtonVariant.secondary,
+                                    variant: _isShielded
+                                        ? AppButtonVariant.primary
+                                        : AppButtonVariant.secondary,
                                     onPressed: _selectedAddress.isEmpty
                                         ? null
-                                        : _openRequest,
+                                        : () => unawaited(_copyAddress()),
                                     leading: const AppIcon(
-                                      AppIcons.request,
+                                      AppIcons.copy,
                                       size:
                                           _MobileReceiveMetrics.buttonIconSize,
                                     ),
                                     child: Text(
-                                      'Request $kZcashDefaultCurrencyTicker',
+                                      'Copy address',
+                                      semanticsLabel: 'Copy $poolLabel address',
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.xs),
                                 // Sharing is familiar as an icon; the request
-                                // beside it keeps a visible label.
+                                // gets its own visible label on the row below.
                                 SizedBox(
                                   width: _MobileReceiveMetrics.buttonHeight,
                                   height: _MobileReceiveMetrics.buttonHeight,
@@ -392,6 +374,13 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            _RequestTextButton(
+                              key: const ValueKey('mobile_receive_request'),
+                              label: 'Request $kZcashDefaultCurrencyTicker',
+                              enabled: _selectedAddress.isNotEmpty,
+                              onTap: _openRequest,
                             ),
                           ],
                         ),
@@ -596,11 +585,9 @@ class _MobileReceiveScreenState extends ConsumerState<MobileReceiveScreen> {
           growWithContent: true,
           height: _MobileReceiveMetrics.buttonHeight,
           variant: AppButtonVariant.ghost,
+          pressedBackgroundColor: const Color(0x00000000),
+          disabledBackgroundColor: const Color(0x00000000),
           onPressed: enabled ? _openRequest : null,
-          leading: const AppIcon(
-            AppIcons.request,
-            size: _MobileReceiveMetrics.buttonIconSize,
-          ),
           child: Text(
             'Request $kZcashDefaultCurrencyTicker',
             textAlign: TextAlign.center,
@@ -755,6 +742,46 @@ class _ReceiveAddressSummary extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RequestTextButton extends StatelessWidget {
+  const _RequestTextButton({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = enabled ? colors.text.accent : colors.text.disabled;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: AppButton(
+        variant: AppButtonVariant.ghost,
+        expand: true,
+        constrainContent: true,
+        growWithContent: true,
+        height: _MobileReceiveMetrics.buttonHeight,
+        contentPadding: EdgeInsets.zero,
+        // Keep this a text-only action on hover, press and while disabled.
+        pressedBackgroundColor: const Color(0x00000000),
+        disabledBackgroundColor: const Color(0x00000000),
+        onPressed: enabled ? onTap : null,
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: AppTypography.labelLarge.copyWith(color: color),
+        ),
       ),
     );
   }

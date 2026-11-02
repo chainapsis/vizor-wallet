@@ -53,6 +53,12 @@ Widget buildReceiveDesktopRequestEntryUseCase(BuildContext context) {
   );
 }
 
+Widget buildReceiveDesktopTransparentRequestEntryUseCase(BuildContext context) {
+  return const _ReceiveDesktopHarness(
+    state: ReceiveDesktopPreviewState.transparentRequestEntry,
+  );
+}
+
 Widget buildReceiveMobileShieldedUseCase(BuildContext context) {
   return const _ReceiveMobileHarness(type: ReceiveAddressType.shielded);
 }

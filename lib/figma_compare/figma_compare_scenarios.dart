@@ -3753,6 +3753,14 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: false,
   ),
   FigmaCompareScenario(
+    id: 'receive-desktop-transparent',
+    description:
+        'Desktop transparent receive with copy/share and a text request',
+    builder: buildReceiveDesktopTransparentRequestEntryUseCase,
+    desktop: true,
+    mobile: false,
+  ),
+  FigmaCompareScenario(
     id: 'receive-request-result',
     description: 'Desktop request modal step two with the shielded request QR',
     builder: buildRequestModalStepTwoShieldedUseCase,

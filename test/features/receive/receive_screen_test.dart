@@ -76,7 +76,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('receive_copy_shielded_address_button')),
       ),
-      const Size(298, 44),
+      const Size(230, 44),
     );
     expect(
       tester.getSize(_findRenewShieldedAddressButton()),
@@ -858,6 +858,16 @@ void main() {
     await tester.pumpWidget(
       _receiveHarness(receiveAddressService: _FailingReceiveAddressService.new),
     );
+    // The first frame is loading: request stays text-only while disabled.
+    final loadingRequest = find.byKey(const ValueKey('receive_request_button'));
+    expect(tester.widget<AppButton>(loadingRequest).onPressed, isNull);
+    final requestSurface = tester.widget<AnimatedContainer>(
+      find.descendant(
+        of: loadingRequest,
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    expect((requestSurface.decoration as ShapeDecoration).color?.a, 0);
     await tester.pump();
     await tester.pump();
 
@@ -868,11 +878,12 @@ void main() {
     expect(request, findsOneWidget);
     final share = find.byKey(const ValueKey('receive_share_button'));
     expect(find.text('Request ZEC'), findsOneWidget);
-    expect(tester.getSize(copy), const Size(298, 44));
-    expect(tester.getSize(request), const Size(230, 44));
+    expect(tester.getSize(copy), const Size(230, 44));
+    expect(tester.getSize(request), const Size(298, 44));
+    expect(tester.widget<AppButton>(request).variant, AppButtonVariant.ghost);
     expect(
-      find.descendant(of: request, matching: _findAppIcon(AppIcons.request)),
-      findsOneWidget,
+      find.descendant(of: request, matching: find.byType(AppIcon)),
+      findsNothing,
     );
     expect(tester.getSize(share), const Size(60, 44));
     expect(
@@ -883,13 +894,13 @@ void main() {
           .message,
       'Share shielded address',
     );
-    // Request sits beside share under copy, all one 8px gap apart.
+    // Copy and share sit together above the independent request action.
     expect(
       tester.getTopLeft(share).dy,
-      moreOrLessEquals(tester.getTopLeft(request).dy, epsilon: 0.1),
+      moreOrLessEquals(tester.getTopLeft(copy).dy, epsilon: 0.1),
     );
     expect(
-      tester.getTopLeft(share).dx - tester.getTopRight(request).dx,
+      tester.getTopLeft(share).dx - tester.getTopRight(copy).dx,
       moreOrLessEquals(AppSpacing.xs, epsilon: 0.1),
     );
     expect(
