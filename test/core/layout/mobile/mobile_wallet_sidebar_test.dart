@@ -54,6 +54,7 @@ void main() {
             SyncStatusKind.syncing => '4% Syncing...',
             SyncStatusKind.synced => 'Vizor is synced',
             SyncStatusKind.failed => 'Syncing failed',
+            SyncStatusKind.catchingUp => kSyncStatusCatchingUpLabel,
           };
           await tester.pumpWidget(
             harness(
@@ -107,7 +108,9 @@ void main() {
           }
           final syncColor = switch (kind) {
             SyncStatusKind.syncing => theme.colors.sync.textSyncing,
-            SyncStatusKind.synced => theme.colors.sync.text,
+            // A short catch-up keeps the synced look.
+            SyncStatusKind.synced ||
+            SyncStatusKind.catchingUp => theme.colors.sync.text,
             SyncStatusKind.failed => theme.colors.sync.textError,
           };
           expect(effectiveStyle(label).color, syncColor);

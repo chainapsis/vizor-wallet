@@ -622,7 +622,7 @@ void main() {
           .data;
       expect(
         description,
-        'Vizor’s network requests go through Tor. Ironwood private migration '
+        'Vizor uses Tor to protect your IP address. Ironwood private migration '
         'uses a direct connection while Vizor is closed. Links opened in other '
         'apps use those apps’ network settings.',
       );
@@ -797,8 +797,8 @@ void main() {
           .data;
       expect(
         description,
-        'Vizor’s network requests go through Tor. Links opened in other apps '
-        'use those apps’ network settings.',
+        'Vizor uses Tor to protect your IP address. Links opened in other '
+        'apps use those apps’ network settings.',
       );
       expect(description, isNot(contains('migration')));
     } finally {

@@ -52,6 +52,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/zec_price_change_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/go_route_descendants.dart';
@@ -185,6 +186,59 @@ List<({Color? fill, Color? label})> _sidebarPaints(WidgetTester tester) => [
 ];
 
 void main() {
+  testWidgets('the wide layout sidebar shows a short catch-up without a '
+      'percentage', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 720);
+    addTearDown(tester.view.reset);
+    final router = GoRouter(
+      initialLocation: '/activity',
+      routes: [
+        ShellRoute(
+          builder: (context, state, child) =>
+              MobileAdaptiveFrame(router: GoRouter.of(context), child: child),
+          routes: [
+            GoRoute(
+              path: '/activity',
+              builder: (_, _) => const Scaffold(body: Text('Activity pane')),
+            ),
+          ],
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      _app(
+        router,
+        initialSyncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          phase: 'scan',
+          scannedHeight: 3000000,
+          chainTipHeight: 3000003,
+          remainingScanBlocks: 3,
+          lastSyncStartedAt: DateTime.now(),
+          startedFromCompletedSync: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final sidebar = tester.widget<MobileWalletSidebar>(
+      find.byType(MobileWalletSidebar),
+    );
+    expect(sidebar.status.label, kSyncStatusCatchingUpLabel);
+    expect(
+      find.descendant(
+        of: find.byType(MobileWalletSidebar),
+        matching: find.textContaining('% Syncing'),
+      ),
+      findsNothing,
+    );
+  });
+
   for (final interrupted in ['none', 'different', 'same']) {
     testWidgets(
       'sidebar waits for cleanup, serializes input and respects route changes ($interrupted)',

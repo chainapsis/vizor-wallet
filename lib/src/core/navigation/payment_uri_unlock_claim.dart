@@ -32,9 +32,11 @@ class PaymentUriUnlockClaim {
 /// Claims the parked payment-URI prefill after a successful unlock.
 ///
 /// Call it *after* the post-unlock work (`restoreAfterUnlock`,
-/// `refreshAfterUnlock`, `startSyncAnyway`) and before the `go('/home')`:
-/// claiming earlier would clear the prefill with no way to recover it if any
-/// of those threw, and the returned decision reads state those calls settle.
+/// `refreshAfterUnlock`) and before the `go('/home')`: claiming earlier would
+/// clear the prefill with no way to recover it if either threw, and the
+/// returned decision reads state those calls settle. The sync start that
+/// follows them settles nothing the claim reads, so it does not hold the
+/// claim or the navigation.
 ///
 /// The claim is more than the TTL. `decidePaymentUriDrain` is the one place
 /// that says whether a link can be shown at all, and its answer can change
