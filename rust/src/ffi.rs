@@ -25,7 +25,6 @@ use zcash_client_backend::data_api::status::{
     PublicTransactionStatusRequest, TransactionStatusRead, TransactionStatusWork,
 };
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
 
 #[repr(C)]
 pub struct CMigrationPreparationProgress {
@@ -659,19 +658,6 @@ pub extern "C" fn zcash_list_migration_preparation_txids(
     }
 }
 
-/// NU7 activation height for `network`, or 0 when it is unscheduled or the
-/// network is unknown; the iOS outbox paces its checks with it.
-#[no_mangle]
-pub extern "C" fn zcash_nu7_activation_height(network: *const c_char) -> u64 {
-    std::panic::catch_unwind(|| {
-        unsafe { c_str_to_str(network) }
-            .and_then(WalletNetwork::from_str)
-            .and_then(|network| network.activation_height(NetworkUpgrade::Nu7))
-            .map_or(0, |height| u64::from(u32::from(height)))
-    })
-    .unwrap_or(0)
-}
-
 /// The first upgrade activation after `height` on `network`, or 0 when none
 /// is scheduled or the network is unknown. The iOS background lanes find the
 /// upgrade that ends a transaction's branch with it.
@@ -821,15 +807,6 @@ pub extern "C" fn zcash_inspect_migration_proof_readiness(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn nu7_activation_height_reads_the_network_schedule() {
-        let main = std::ffi::CString::new("main").unwrap();
-        let unknown = std::ffi::CString::new("mainnet").unwrap();
-        assert_eq!(zcash_nu7_activation_height(main.as_ptr()), 3_543_405);
-        assert_eq!(zcash_nu7_activation_height(unknown.as_ptr()), 0);
-        assert_eq!(zcash_nu7_activation_height(std::ptr::null()), 0);
-    }
 
     #[test]
     fn next_upgrade_activation_height_follows_the_branch_at_the_height() {
