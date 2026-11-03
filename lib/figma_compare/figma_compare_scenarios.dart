@@ -1897,6 +1897,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPayRecipientNewAddressUseCase,
   ),
   FigmaCompareScenario(
+    id: 'mobile-pay-amount',
+    description: 'Mobile Pay amount entry with a filled amount',
+    builder: buildMobilePayAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-pay-recipient',
     description: 'Mobile Pay recipient selection with recent contacts',
     builder: buildMobilePayRecipientUseCase,
