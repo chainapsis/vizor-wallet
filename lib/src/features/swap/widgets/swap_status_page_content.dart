@@ -15,6 +15,7 @@ import '../models/swap_detail_tooltips.dart';
 import '../models/swap_models.dart';
 import '../models/swap_status_presentation.dart';
 import 'swap_review_info.dart';
+import 'swap_progress_explorer_footer.dart';
 
 export '../models/swap_status_presentation.dart';
 
@@ -52,6 +53,7 @@ class SwapStatusPageContent extends StatefulWidget {
     this.showTabs = true,
     this.onTabChanged,
     this.onCopy,
+    this.explorerUri,
     super.key,
   });
 
@@ -91,6 +93,7 @@ class SwapStatusPageContent extends StatefulWidget {
 
   /// Copy callback for the [SwapReviewInfo] address lines (clipboard + toast).
   final ValueChanged<String>? onCopy;
+  final Uri? explorerUri;
 
   @override
   State<SwapStatusPageContent> createState() => _SwapStatusPageContentState();
@@ -268,7 +271,7 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             // tab scroll at the reference window height. The page must fit
             // without a scrollbar (all status frames hide the Scrollbar
             // instance), so the inset is intentionally dropped.
-            _StatusTabs(
+            SwapStatusTabs(
               activeTab: widget.activeTab,
               progressLabel: widget.progressTabLabel,
               onChanged: widget.onTabChanged,
@@ -276,7 +279,15 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             const SizedBox(height: AppSpacing.sm),
             if (widget.activeTab == SwapStatusTab.progress)
               _SwapDetailCard(
-                child: _SwapProgressRoute(steps: _displayedSteps()),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _SwapProgressRoute(steps: _displayedSteps()),
+                    if (widget.explorerUri case final uri?)
+                      SwapProgressExplorerFooter(uri: uri),
+                  ],
+                ),
               )
             else
               _SwapDetailCard(child: _SwapDetailRows(rows: widget.details)),
@@ -439,11 +450,12 @@ class _SwapDetailCard extends StatelessWidget {
   }
 }
 
-class _StatusTabs extends StatelessWidget {
-  const _StatusTabs({
+class SwapStatusTabs extends StatelessWidget {
+  const SwapStatusTabs({
     required this.activeTab,
     required this.progressLabel,
     required this.onChanged,
+    super.key,
   });
 
   final SwapStatusTab activeTab;

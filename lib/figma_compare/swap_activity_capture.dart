@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/core/layout/app_desktop_shell.dart';
 import '../src/core/layout/app_form_factor.dart';
+import '../src/core/theme/app_theme.dart';
 import '../src/features/activity/screens/mobile/mobile_swap_activity_detail_screen.dart';
 import '../src/features/address_book/providers/address_book_provider.dart';
 import '../src/features/swap/models/swap_activity_navigation.dart';
@@ -14,14 +15,14 @@ import '../src/features/swap/widgets/swap_activity_panel.dart';
 import '../src/providers/account_provider.dart';
 
 Widget buildSwapActivityProcessingCapture(BuildContext context) =>
-    _capture(payMode: false);
+    _capture(context, payMode: false);
 
 Widget buildPayActivityProcessingCapture(BuildContext context) =>
-    _capture(payMode: true);
+    _capture(context, payMode: true);
 
 /// Uses the production Activity surface and mapper, with local intent data.
 /// In particular, explorer callbacks and the initial tab come from app code.
-Widget _capture({required bool payMode}) {
+Widget _capture(BuildContext context, {required bool payMode}) {
   final intent = SwapIntent(
     id: payMode ? 'capture-pay-processing' : 'capture-swap-processing',
     pair: 'ZEC -> USDC',
@@ -56,11 +57,14 @@ Widget _capture({required bool payMode}) {
     ],
     child: kAppFormFactor == AppFormFactor.mobile
         ? MobileSwapActivityDetailScreen(swapIntentId: intent.id)
-        : AppDesktopPane(
-            padding: EdgeInsets.zero,
-            child: SwapActivityDetailSurface(
-              intentId: intent.id,
-              returnTarget: SwapActivityReturnTarget.activity,
+        : ColoredBox(
+            color: context.colors.background.window,
+            child: AppDesktopPane(
+              padding: EdgeInsets.zero,
+              child: SwapActivityDetailSurface(
+                intentId: intent.id,
+                returnTarget: SwapActivityReturnTarget.activity,
+              ),
             ),
           ),
   );

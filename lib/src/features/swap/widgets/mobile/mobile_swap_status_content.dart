@@ -19,6 +19,7 @@ import '../../models/swap_detail_tooltips.dart';
 import '../../models/swap_status_presentation.dart';
 import '../swap_asset_icon.dart';
 import '../swap_status_page_content.dart' show SwapAnimatedProgressRoute;
+import '../swap_progress_explorer_footer.dart';
 import 'mobile_swap_review_header.dart';
 
 const _mobileStatusDetailIconSize = 16.0;
@@ -78,10 +79,18 @@ class MobileSwapStatusContent extends StatelessWidget {
           _StatusCard(
             key: const ValueKey('mobile_swap_status_card'),
             child: activeTab == SwapStatusTab.progress
-                ? SwapAnimatedProgressRoute(
-                    steps: presentation.steps,
-                    progressIndex: presentation.progressIndex,
-                    badgeKind: presentation.badgeKind,
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SwapAnimatedProgressRoute(
+                        steps: presentation.steps,
+                        progressIndex: presentation.progressIndex,
+                        badgeKind: presentation.badgeKind,
+                      ),
+                      if (presentation.explorerUri case final uri?)
+                        SwapProgressExplorerFooter(uri: uri),
+                    ],
                   )
                 : presentation.paymentMode && presentation.payStatus != null
                 ? _MobilePaymentDetails(presentation: presentation)
@@ -108,8 +117,6 @@ class MobileSwapStatusContent extends StatelessWidget {
                   ),
           ),
         ],
-        // No global "View on Near Intents" link on mobile. Figma keeps the
-        // external route on the Tx ID row inside transaction details.
       ],
     );
   }
