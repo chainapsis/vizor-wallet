@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/core/widgets/decimal_amount_input_formatter.dar
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/donation/donation_config.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/models/send_scan_result.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
@@ -483,6 +484,9 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 }
 
 Widget _app({
+  bool initialReview = false,
+  SendFlowKind flowKind = SendFlowKind.send,
+  ValueChanged<SendReviewArgs>? onStatusRoute,
   List<AddressBookContact> contacts = const [],
   AccountState? accountState,
   Map<String, AccountInfo> ownAccounts = const {},
@@ -520,6 +524,8 @@ Widget _app({
           initialRecipient: initialRecipient,
           initialAmount: initialAmount,
           initialAmountReady: initialAmountReady,
+          initialReview: initialReview,
+          flowKind: flowKind,
           initialFeeZatoshi: initialFeeZatoshi,
           initialMemo: initialMemo,
           validateAddress: validateAddress,
@@ -537,6 +543,14 @@ Widget _app({
         },
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
+      GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+      GoRoute(
+        path: '/send/status',
+        builder: (_, state) {
+          onStatusRoute?.call(state.extra! as SendReviewArgs);
+          return const Text('donation status');
+        },
+      ),
     ],
   );
   return ProviderScope(
@@ -946,6 +960,75 @@ void main() {
       ..physicalSize = const Size(520, 1100)
       ..devicePixelRatio = 1.0;
   });
+
+  testWidgets(
+    'donation review fixes the recipient and preserves donation on proposal',
+    (tester) async {
+      _proposeSendSucceeds = true;
+      SendReviewArgs? submitted;
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          flowKind: SendFlowKind.donation,
+          initialRecipient: _shieldedAddress,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+          initialMemo: 'must not be sent',
+          onStatusRoute: (args) => submitted = args,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Review donation'), findsOneWidget);
+      expect(find.text('Vizor Wallet'), findsOneWidget);
+      expect(find.text('Total'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mobile_send_memo_row')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(_lastProposeToAddress, kVizorDonationAddress);
+      expect(_lastProposeMemo, isNull);
+      expect(submitted?.flowKind, SendFlowKind.donation);
+      expect(submitted?.amountZatoshi, BigInt.from(2000000));
+    },
+  );
+
+  testWidgets(
+    'donation review uses existing Ledger signing with donation args',
+    (tester) async {
+      _proposeSendSucceeds = true;
+      Object? handedOff;
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          flowKind: SendFlowKind.donation,
+          accountState: const AccountState(
+            accounts: [
+              AccountInfo(
+                uuid: 'account-1',
+                name: 'Ledger',
+                order: 0,
+                isHardware: true,
+                hardwareSignerKind: HardwareSignerKind.ledger,
+              ),
+            ],
+            activeAccountUuid: 'account-1',
+          ),
+          initialRecipient: kVizorDonationAddress,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+          onLedgerRoute: (args) => handedOff = args,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm with Ledger'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+      expect(handedOff, isA<SendReviewArgs>());
+      expect((handedOff as SendReviewArgs).flowKind, SendFlowKind.donation);
+      expect((handedOff as SendReviewArgs).address, kVizorDonationAddress);
+    },
+  );
 
   testWidgets('starts Orchard proving-key warmup when mobile send loads', (
     tester,

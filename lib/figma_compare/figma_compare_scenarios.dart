@@ -33,6 +33,7 @@ import '../widgetbook/keystone_use_cases.dart';
 import '../widgetbook/payment_link_claim_outcome_use_cases.dart';
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/donation_use_cases.dart';
+import '../widgetbook/mobile_donation_use_cases.dart';
 import '../widgetbook/mobile_pay_use_cases.dart';
 import '../widgetbook/mobile_gift_onboarding_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
@@ -1605,6 +1606,83 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'donation-zec-empty',
     description: 'Desktop donation composer with an empty ZEC amount',
     builder: buildDonationZecEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-empty',
+    description: 'Mobile donation empty amount',
+    builder: buildMobileDonationEmptyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-amount',
+    description: 'Mobile donation ZEC preset',
+    builder: buildMobileDonationAmountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-usd',
+    description: 'Mobile donation USD preset',
+    builder: buildMobileDonationUsdUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-insufficient',
+    description: 'Mobile donation insufficient funds',
+    builder: buildMobileDonationInsufficientUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-review',
+    description: 'Mobile donation review',
+    builder: buildMobileDonationReviewUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-sending',
+    description: 'Mobile donation broadcast in progress',
+    builder: buildMobileDonationSendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-success',
+    description: 'Mobile donation thank you',
+    builder: buildMobileDonationSuccessUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-pending',
+    description: 'Mobile donation queued broadcast',
+    builder: buildMobileDonationPendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-failure',
+    description: 'Mobile donation failed broadcast',
+    builder: buildMobileDonationFailureUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-review-large-text',
+    description: 'Mobile donation review with 200 percent text',
+    builder: buildMobileDonationReviewLargeTextUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-donation-success-large-text',
+    description: 'Mobile donation thank you with 200 percent text',
+    builder: buildMobileDonationSuccessLargeTextUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'donation-zec-selected',

@@ -315,6 +315,25 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
 }
 
 void main() {
+  for (final network in ['main', 'test', 'regtest']) {
+    testWidgets('Support Vizor is exposed only on mainnet: $network', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          network: network,
+          networkPrivacyState: const NetworkPrivacyState.off(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, -2000));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Support Vizor'),
+        network == 'main' ? findsOneWidget : findsNothing,
+      );
+    });
+  }
   testWidgets('mobile private recovery is labelled experimental', (
     tester,
   ) async {
@@ -440,10 +459,9 @@ void main() {
               tester.getTopLeft(footer).dy -
                   tester
                       .getBottomLeft(
-                        // The privacy card is the last card above the
-                        // footer.
+                        // Mainnet's support group is the last card.
                         find.ancestor(
-                          of: find.text('Privacy'),
+                          of: find.text('Misc'),
                           matching: find.byType(MobileSurfaceCard),
                         ),
                       )

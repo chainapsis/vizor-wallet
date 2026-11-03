@@ -36,6 +36,7 @@ import '../../../onboarding/shared/onboarding_welcome_art.dart'
     show VizorWordmark;
 import '../../widgets/mobile/mobile_network_privacy_card.dart';
 import '../../widgets/settings_new_badge.dart';
+import '../../../donation/donation_config.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
 ///
@@ -296,6 +297,26 @@ class MobileSettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 const MobileNetworkPrivacyCard(),
+                if (donationFeatureEnabledForNetwork(
+                  endpointConfig.networkName,
+                )) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  _SettingsGroup(
+                    title: 'Misc',
+                    rows: [
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_donation_row'),
+                        leading: _RowIcon(AppIcons.donation),
+                        label: 'Support Vizor',
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        chevronColor: settingsChevronColor,
+                        showChevron: true,
+                        onTap: () => context.push('/donation'),
+                      ),
+                    ],
+                  ),
+                ],
                 // The About row stays hidden until the legal documents
                 // are ready — the /about screen exists but must not be
                 // user-reachable (product decision, 2026-06).
