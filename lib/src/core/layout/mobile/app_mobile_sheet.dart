@@ -47,6 +47,9 @@ Future<T?> showAppMobileSheet<T>({
   bool enableDrag = true,
   bool transparentBackground = false,
   ValueListenable<bool>? canDismiss,
+  // Screen-owned sheets may need to dismiss this exact route after a data
+  // change or navigation, without popping another screen above it.
+  void Function(ModalRoute<T> route)? onRouteCreated,
 }) {
   final appTheme = context.appTheme;
   final colors = context.colors;
@@ -84,11 +87,12 @@ Future<T?> showAppMobileSheet<T>({
         Builder(builder: (context) => MobileModalCard(child: builder(context))),
       ),
     );
+    onRouteCreated?.call(route);
     final popped = navigator.push(route);
     return canDismiss == null ? popped : popped.then((_) => route.completed);
   }
 
-  if (canDismiss != null) {
+  if (canDismiss != null || onRouteCreated != null) {
     final navigator = Navigator.of(context, rootNavigator: true);
     final route = ControlledModalSheetRoute<T>(
       canDismiss: canDismiss,
@@ -111,6 +115,7 @@ Future<T?> showAppMobileSheet<T>({
         ),
       ),
     );
+    onRouteCreated?.call(route);
     return navigator.push(route).then((_) => route.completed);
   }
 

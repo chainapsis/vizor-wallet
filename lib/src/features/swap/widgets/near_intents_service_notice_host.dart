@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/layout/app_form_factor.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/navigation/route_owned_redirect.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../domain/near_intents_service_status.dart';
@@ -44,7 +44,8 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
   List<ModalRoute<dynamic>> _pages = [];
   final _animations = <Animation<double>>{};
   final _observers = <RouteOwnedNavigationObserver>{};
-  RawDialogRoute<void>? _mobileRoute;
+  ModalRoute<void>? _mobileRoute;
+  bool _closing = false;
   NearIntentsServiceNoticeData? _candidate;
   bool _scheduled = false;
 
@@ -113,10 +114,9 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
   }
 
   void _reconcile() {
-    if (_mobileRoute != null && !_mobileRoute!.isActive) {
-      _mobileRoute = null;
-      _presented.value = null;
-    }
+    // A normal sheet pop keeps its contents throughout the exit animation.
+    // The shared route's completion releases the data and our ownership.
+    if (_closing || (_mobileRoute != null && !_mobileRoute!.isActive)) return;
     final notice = _candidate;
     if (!_eligible || notice == null) {
       _dismiss();
@@ -130,32 +130,30 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
     _presented.value = notice;
     if (kAppFormFactor == AppFormFactor.mobile && _mobileRoute == null) {
       FocusManager.instance.primaryFocus?.unfocus();
-      final theme = context.appTheme;
-      final route = RawDialogRoute<void>(
-        barrierDismissible: true,
-        barrierLabel: 'Dismiss service notice',
-        barrierColor: context.colors.background.neutralScrim,
-        transitionDuration: Duration.zero,
-        pageBuilder: (routeContext, _, _) {
-          ModalRoute.isCurrentOf(routeContext);
-          _schedule();
-          return AppTheme(
-            data: theme,
-            child: ValueListenableBuilder(
-              valueListenable: _presented,
-              builder: (context, value, _) => !mounted || value == null
-                  ? const SizedBox.shrink()
-                  : SafeArea(bottom: false, child: _modal(value)),
-            ),
-          );
-        },
+      final popped = showAppMobileSheet<void>(
+        context: context,
+        onRouteCreated: (route) => _mobileRoute = route,
+        builder: (_) => ValueListenableBuilder(
+          valueListenable: _presented,
+          builder: (_, value, _) => !mounted || value == null
+              ? const SizedBox.shrink()
+              : NearIntentsServiceNoticeContent(
+                  notice: value,
+                  payMode: widget.payMode,
+                  onClose: _dismiss,
+                  onDetails: _openDetails,
+                ),
+        ),
       );
-      _mobileRoute = route;
+      final route = _mobileRoute!;
       unawaited(
-        Navigator.of(context, rootNavigator: true).push(route).whenComplete(() {
+        popped.whenComplete(() async {
+          await route.completed;
           if (!mounted || !identical(_mobileRoute, route)) return;
           _mobileRoute = null;
+          _closing = false;
           _presented.value = null;
+          _schedule();
         }),
       );
     }
@@ -163,10 +161,29 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
 
   void _dismiss() {
     if (!mounted) return;
-    _presented.value = null;
     final route = _mobileRoute;
-    _mobileRoute = null;
-    if (route != null && route.isActive) route.navigator?.removeRoute(route);
+    if (route == null) {
+      _presented.value = null;
+      return;
+    }
+    if (_closing || !route.isActive) return;
+    _closing = true;
+    if (route.isCurrent) {
+      route.navigator?.pop();
+    } else {
+      // A newer root screen owns the top of the stack. Remove only our sheet.
+      route.navigator?.removeRoute(route);
+    }
+  }
+
+  Future<void> _openDetails() async {
+    try {
+      await ref.read(nearIntentsServiceStatusPageLauncherProvider)(
+        nearIntentsServiceStatusPage,
+      );
+    } catch (_) {
+      // Optional external details must not interrupt the user's draft.
+    }
   }
 
   Widget _modal(NearIntentsServiceNoticeData notice) =>
@@ -174,15 +191,7 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
         notice: notice,
         payMode: widget.payMode,
         onClose: _dismiss,
-        onDetails: () async {
-          try {
-            await ref.read(nearIntentsServiceStatusPageLauncherProvider)(
-              nearIntentsServiceStatusPage,
-            );
-          } catch (_) {
-            // Optional external details must not interrupt the user's draft.
-          }
-        },
+        onDetails: _openDetails,
       );
 
   @override
