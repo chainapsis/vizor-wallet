@@ -109,7 +109,7 @@ class _NoticeContent extends StatelessWidget {
       ..sort();
     final networks = chains.contains('*')
         ? 'All chains'
-        : chains.map(_networkName).join(', ');
+        : chains.map(swapChainDisplayName).join(', ');
     final windows = <NearIntentsServiceIssue>[];
     final seen = <String>{};
     for (final issue in notice.issues) {
@@ -185,14 +185,16 @@ class _NoticeContent extends StatelessWidget {
                           const SizedBox(height: AppSpacing.sm),
                           if (!notice.maintenanceOnly)
                             Text(
-                              'Maintenance window: ${window.chains.contains('*') ? 'All chains' : window.chains.map(_networkName).join(', ')}',
+                              'Maintenance window: ${window.chains.contains('*') ? 'All chains' : window.chains.map(swapChainDisplayName).join(', ')}',
                               style: bodyStyle,
                             )
                           else if (windows.length > 1)
                             Text(
                               window.chains.contains('*')
                                   ? 'All chains'
-                                  : window.chains.map(_networkName).join(', '),
+                                  : window.chains
+                                        .map(swapChainDisplayName)
+                                        .join(', '),
                               style: bodyStyle,
                             ),
                           Text(
@@ -348,6 +350,3 @@ String formatNearIntentsServiceTime(DateTime value) {
       '${two(time.hour)}:${two(time.minute)} '
       '(UTC${offset.isNegative ? '-' : '+'}${two(minutes ~/ 60)}:${two(minutes % 60)})';
 }
-
-String _networkName(String chain) =>
-    chain == 'bsc' ? 'BNB Chain (BSC)' : swapChainDisplayName(chain);
