@@ -34,6 +34,9 @@ class SwapProgressExplorerFooter extends StatelessWidget {
         key: const ValueKey('swap_progress_explorer_link'),
         onPressed: () => unawaited(_open()),
         variant: AppButtonVariant.ghost,
+        hoverBackgroundColor: context.colors.background.ground.withValues(
+          alpha: 0,
+        ),
         height: AppButtonSizing.largeHeight,
         expand: true,
         constrainContent: true,
