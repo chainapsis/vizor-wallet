@@ -61,6 +61,7 @@ import 'ledger_recovery_capture.dart';
 import 'ledger_onboarding_guidance_capture.dart';
 import 'review_info_capture.dart';
 import 'swap_asset_icons_capture.dart';
+import 'swap_activity_capture.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -102,6 +103,20 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'activity-swap-processing',
+    description: 'Production Activity swap detail while processing',
+    builder: buildSwapActivityProcessingCapture,
+    mobile: true,
+    allowPointer: true,
+  ),
+  FigmaCompareScenario(
+    id: 'activity-pay-processing',
+    description: 'Production Activity Pay detail while processing',
+    builder: buildPayActivityProcessingCapture,
+    mobile: true,
+    allowPointer: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-shield-ledger-connection-help',
     description: 'Ledger pairing recovery inside the mobile shielding scene',
