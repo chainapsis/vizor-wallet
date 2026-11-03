@@ -144,7 +144,6 @@ void main() {
       ..maintenance = [
         NearIntentsServiceIssue(
           chains: {'*'},
-          active: false,
           startsAt: now.add(const Duration(seconds: 1)),
           finishesAt: now.add(const Duration(seconds: 2)),
         ),
@@ -166,9 +165,9 @@ void main() {
     NearIntentsServiceNoticeData? notice() => container
         .read(nearIntentsServiceStatusProvider)
         .noticeFor(inputChain: 'zec', outputChain: 'eth');
-    expect(notice()!.upcoming, isTrue);
+    expect(notice(), isNull);
     await tester.pump(const Duration(seconds: 1));
-    expect(notice()!.upcoming, isFalse);
+    expect(notice(), isNotNull);
     await tester.pump(const Duration(seconds: 1));
     expect(notice(), isNull);
     expect(source.incidentCalls, 1);

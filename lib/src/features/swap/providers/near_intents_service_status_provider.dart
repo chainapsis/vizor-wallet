@@ -133,7 +133,6 @@ class NearIntentsServiceStatusNotifier
       if (next.maintenanceFetchedAt != null)
         next.maintenanceFetchedAt!.add(nearIntentsStatusFreshness),
       for (final issue in next.maintenance) ...[
-        issue.startsAt!.subtract(nearIntentsMaintenanceLeadTime),
         issue.startsAt!,
         issue.finishesAt!,
       ],

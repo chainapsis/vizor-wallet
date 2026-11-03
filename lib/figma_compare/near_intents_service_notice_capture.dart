@@ -1,59 +1,59 @@
 import 'package:flutter/widgets.dart';
 
+import '../src/core/layout/app_form_factor.dart';
 import '../src/core/theme/app_theme.dart';
-import '../src/core/widgets/app_button.dart';
+import '../src/core/widgets/app_pane_modal_overlay.dart';
 import '../src/features/swap/domain/near_intents_service_status.dart';
 import '../src/features/swap/widgets/near_intents_service_notice.dart';
 
 Widget buildCurrentServiceNoticeCapture(BuildContext context) =>
-    _noticeCapture(context, upcoming: false);
+    _capture(context);
+Widget buildAllChainsServiceNoticeCapture(BuildContext context) =>
+    _capture(context, all: true);
+Widget buildPayServiceNoticeCapture(BuildContext context) =>
+    _capture(context, pay: true);
 
-Widget buildUpcomingServiceNoticeCapture(BuildContext context) =>
-    _noticeCapture(context, upcoming: true);
-
-/// The same pure cards used by the first screens, with deterministic windows.
-/// Keeps visual iteration independent of API, wallet, storage and Rust state.
-Widget _noticeCapture(BuildContext context, {required bool upcoming}) {
+/// Production modal with deterministic data; no API, wallet, storage or Rust.
+Widget _capture(BuildContext context, {bool all = false, bool pay = false}) {
   final notice = NearIntentsServiceNoticeData(
-    upcoming: upcoming,
     issues: [
       NearIntentsServiceIssue(
-        chains: const {'*'},
-        active: !upcoming,
-        startsAt: DateTime.utc(2026, 11, 3, 12),
-        finishesAt: DateTime.utc(2026, 11, 3, 14),
+        chains: all
+            ? const {'*'}
+            : const {
+                'eth',
+                'arb',
+                'base',
+                'bsc',
+                'avax',
+                'pol',
+                'op',
+                'gnosis',
+                'scroll',
+                'monad',
+                'aurora',
+                'xlayer',
+              },
+        startsAt: DateTime.utc(2026, 11, 3, 12, 15),
+        finishesAt: DateTime.utc(2026, 11, 3, 15, 15),
       ),
     ],
   );
-  return ColoredBox(
-    color: context.colors.background.base,
-    child: Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 396),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final pay in [false, true]) ...[
-                NearIntentsServiceNoticeCard(
-                  notice: notice,
-                  payMode: pay,
-                  onDetails: () async {},
-                ),
-                const SizedBox(height: AppSpacing.s),
-                AppButton(
-                  expand: true,
-                  onPressed: () {},
-                  child: Text(pay ? 'Continue' : 'Review'),
-                ),
-                if (!pay) const SizedBox(height: AppSpacing.lg),
-              ],
-            ],
-          ),
-        ),
-      ),
-    ),
+  final modal = NearIntentsServiceNoticeModal(
+    notice: notice,
+    payMode: pay,
+    onClose: () {},
+    onDetails: () async {},
+  );
+  return Stack(
+    fit: StackFit.expand,
+    children: [
+      ColoredBox(color: context.colors.background.base),
+      if (kAppFormFactor == AppFormFactor.mobile) ...[
+        ColoredBox(color: context.colors.background.neutralScrim),
+        modal,
+      ] else
+        AppPaneModalOverlay(onDismiss: () {}, child: modal),
+    ],
   );
 }

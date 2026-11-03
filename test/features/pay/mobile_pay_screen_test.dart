@@ -340,7 +340,7 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 
 void main() {
   testWidgets(
-    'service notice keeps mobile Pay actions reachable with multiple windows and keyboard',
+    'service notice keeps mobile Pay usable with multiple windows and keyboard',
     (tester) async {
       await _setMobileViewport(tester, const Size(320, 568));
       addTearDown(tester.view.resetViewInsets);
@@ -353,24 +353,36 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final button = find.byKey(
-        const ValueKey('mobile_pay_amount_continue_button'),
+      expect(
+        find
+            .byKey(const ValueKey('near_intents_service_notice_ok'))
+            .hitTestable(),
+        findsOneWidget,
       );
-      expect(button.hitTestable(), findsOneWidget);
-      expect(tester.getRect(button).bottom, lessThanOrEqualTo(352));
+      await tester.tap(
+        find.byKey(const ValueKey('near_intents_service_notice_ok')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find
+            .byKey(const ValueKey('mobile_pay_amount_continue_button'))
+            .hitTestable(),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
   );
-
   testWidgets(
     'service notice is advisory and only on the mobile Pay amount step',
     (tester) async {
       await _setMobileViewport(tester, const Size(320, 568));
-      await tester.pumpWidget(
-        _app(serviceStatus: serviceStatusFixture(upcoming: true)),
+      await tester.pumpWidget(_app(serviceStatus: serviceStatusFixture()));
+      await tester.pumpAndSettle();
+      expect(find.text('Payments may not work right now.'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('near_intents_service_notice_ok')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Maintenance scheduled'), findsOneWidget);
       await tester.enterText(
         find.byKey(const ValueKey('mobile_pay_amount_input')),
         '10',
@@ -380,14 +392,6 @@ void main() {
         const ValueKey('mobile_pay_amount_continue_button'),
       );
       expect(tester.widget<AppButton>(button).onPressed, isNotNull);
-      expect(
-        tester
-            .getRect(
-              find.byKey(const ValueKey('mobile_pay_service_notice_scroll')),
-            )
-            .bottom,
-        lessThanOrEqualTo(tester.getRect(button).top),
-      );
       await tester.tap(button);
       await tester.pumpAndSettle();
       expect(

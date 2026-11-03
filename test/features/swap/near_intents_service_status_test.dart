@@ -40,6 +40,35 @@ NearIntentsServiceStatus _status({
 );
 
 void main() {
+  test(
+    'incident IDs and schedule starts identify notices independently of ETA updates',
+    () {
+      final first = NearIntentsServiceIssue(chains: {'eth'}, id: 'incident-A');
+      final second = NearIntentsServiceIssue(chains: {'eth'}, id: 'incident-B');
+      expect(first.noticeKey, isNot(second.noticeKey));
+      final windows = parseNearIntentsMaintenance([
+        _window(),
+        _window(finish: '2026-11-02T16:00:00Z'),
+      ]);
+      expect(windows[0].noticeKey, windows[1].noticeKey);
+      expect(
+        _status(
+          maintenance: parseNearIntentsMaintenance([
+            _window(status: 'scheduled'),
+          ]),
+        ).noticeFor(inputChain: 'zec', outputChain: 'eth'),
+        isNull,
+      );
+      for (final status in ['active', 'scheduled']) {
+        final future = _status(
+          maintenance: parseNearIntentsMaintenance([
+            _window(status: status, start: '2026-11-02T14:00:00Z'),
+          ]),
+        );
+        expect(future.noticeFor(inputChain: 'zec', outputChain: 'eth'), isNull);
+      }
+    },
+  );
   test('only active records from the public feed produce incidents', () {
     final issues = parseNearIntentsIncidents({
       'activeIncidentCount': 4,
@@ -117,11 +146,11 @@ void main() {
     expect(zec.noticeFor(inputChain: 'eth', outputChain: 'zec'), isNotNull);
   });
   test(
-    'scheduled windows appear at three hours and transition at boundaries',
+    'future windows stay hidden until their start, then expire at their end',
     () {
       final windows = parseNearIntentsMaintenance([
         _window(
-          status: 'scheduled',
+          status: 'active',
           start: '2026-11-02T16:00:00Z',
           finish: '2026-11-02T17:00:00Z',
         ),
@@ -131,8 +160,8 @@ void main() {
         now: now,
       ).noticeFor(inputChain: 'zec', outputChain: 'eth');
       expect(notice(_now.subtract(const Duration(microseconds: 1))), isNull);
-      expect(notice(_now)!.upcoming, isTrue);
-      expect(notice(DateTime.utc(2026, 11, 2, 16))!.upcoming, isFalse);
+      expect(notice(_now), isNull);
+      expect(notice(DateTime.utc(2026, 11, 2, 16)), isNotNull);
       expect(notice(DateTime.utc(2026, 11, 2, 17)), isNull);
     },
   );
@@ -179,7 +208,7 @@ void main() {
     expect(snapshot.noticeFor(inputChain: 'zec', outputChain: 'eth'), isNull);
   });
   test(
-    'ongoing incidents win over upcoming schedules and outlive ended maintenance',
+    'ongoing incidents outlive ended maintenance and exclude future schedules',
     () {
       final snapshot = _status(
         incidents: [
@@ -195,7 +224,7 @@ void main() {
         ]),
       );
       final notice = snapshot.noticeFor(inputChain: 'zec', outputChain: 'eth')!;
-      expect(notice.upcoming, isFalse);
+      expect(notice.maintenanceOnly, isFalse);
       expect(notice.issues.length, 1);
       expect(notice.issues.single.isMaintenance, isFalse);
     },

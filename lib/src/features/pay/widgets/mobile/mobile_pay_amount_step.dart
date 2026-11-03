@@ -34,7 +34,6 @@ class MobilePayAmountStep extends StatelessWidget {
     required this.slippageLabel,
     required this.onOpenSlippage,
     required this.onContinue,
-    this.serviceNotice,
     super.key,
   });
 
@@ -49,7 +48,6 @@ class MobilePayAmountStep extends StatelessWidget {
   final String slippageLabel;
   final VoidCallback onOpenSlippage;
   final VoidCallback onContinue;
-  final Widget? serviceNotice;
 
   @override
   Widget build(BuildContext context) {
@@ -63,115 +61,92 @@ class MobilePayAmountStep extends StatelessWidget {
     final errorText =
         precisionError ?? state.externalAssetSupportError ?? state.quoteError;
 
-    return LayoutBuilder(
-      builder: (context, constraints) => Column(
-        key: const ValueKey('mobile_pay_amount_step'),
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
-                AppSpacing.sm,
-                AppSpacing.sm,
-                AppSpacing.sm,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _MobilePayAmountCard(
-                    state: state,
-                    controller: controller,
-                    focusNode: focusNode,
-                    onAmountChanged: onAmountChanged,
-                    onFiatAmountChanged: onFiatAmountChanged,
-                    onToggleFiatInputMode: onToggleFiatInputMode,
-                    onOpenAssetSelector: onOpenAssetSelector,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _EstimatedZecRow(state: state),
-                  if (errorText != null || balanceExceeded) ...[
-                    const SizedBox(height: AppSpacing.s),
-                    Text(
-                      balanceExceeded ? 'Not enough ZEC' : errorText!,
-                      key: const ValueKey('mobile_pay_amount_error'),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: colors.text.destructive,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          Padding(
+    return Column(
+      key: const ValueKey('mobile_pay_amount_step'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
-              AppSpacing.s,
               AppSpacing.sm,
-              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.sm,
             ),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (serviceNotice != null)
-                  ConstrainedBox(
-                    // Keep the action row reachable even with multiple windows,
-                    // enlarged text, or the keyboard occupying a compact screen.
-                    constraints: BoxConstraints(
-                      maxHeight: constraints.maxHeight / 2,
-                    ),
-                    child: SingleChildScrollView(
-                      key: const ValueKey('mobile_pay_service_notice_scroll'),
-                      primary: false,
-                      child: serviceNotice,
+                _MobilePayAmountCard(
+                  state: state,
+                  controller: controller,
+                  focusNode: focusNode,
+                  onAmountChanged: onAmountChanged,
+                  onFiatAmountChanged: onFiatAmountChanged,
+                  onToggleFiatInputMode: onToggleFiatInputMode,
+                  onOpenAssetSelector: onOpenAssetSelector,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _EstimatedZecRow(state: state),
+                if (errorText != null || balanceExceeded) ...[
+                  const SizedBox(height: AppSpacing.s),
+                  Text(
+                    balanceExceeded ? 'Not enough ZEC' : errorText!,
+                    key: const ValueKey('mobile_pay_amount_error'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.destructive,
                     ),
                   ),
-                Row(
-                  key: const ValueKey('mobile_pay_amount_actions'),
-                  children: [
-                    SizedBox(
-                      width: _slippageButtonWidth,
-                      child: AppButton(
-                        key: const ValueKey('mobile_pay_slippage_button'),
-                        variant: AppButtonVariant.secondary,
-                        expand: true,
-                        constrainContent: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xxs,
-                        ),
-                        onPressed: onOpenSlippage,
-                        trailing: const AppIcon(AppIcons.cog, size: 20),
-                        child: Text(
-                          slippageLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.s),
-                    Expanded(
-                      child: AppButton(
-                        key: const ValueKey(
-                          'mobile_pay_amount_continue_button',
-                        ),
-                        expand: true,
-                        constrainContent: true,
-                        onPressed: canContinue ? onContinue : null,
-                        child: const Text('Continue'),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ],
             ),
           ),
-        ],
-      ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.s,
+            AppSpacing.sm,
+            AppSpacing.md,
+          ),
+          child: Row(
+            key: const ValueKey('mobile_pay_amount_actions'),
+            children: [
+              SizedBox(
+                width: _slippageButtonWidth,
+                child: AppButton(
+                  key: const ValueKey('mobile_pay_slippage_button'),
+                  variant: AppButtonVariant.secondary,
+                  expand: true,
+                  constrainContent: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xxs,
+                  ),
+                  onPressed: onOpenSlippage,
+                  trailing: const AppIcon(AppIcons.cog, size: 20),
+                  child: Text(
+                    slippageLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s),
+              Expanded(
+                child: AppButton(
+                  key: const ValueKey('mobile_pay_amount_continue_button'),
+                  expand: true,
+                  constrainContent: true,
+                  onPressed: canContinue ? onContinue : null,
+                  child: const Text('Continue'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

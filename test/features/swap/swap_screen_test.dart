@@ -80,36 +80,33 @@ import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart'
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
-  testWidgets('service notice keeps the desktop Swap composer scrollable', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    final router = GoRouter(initialLocation: '/swap', routes: [_swapRoute()]);
-    await tester.pumpWidget(
-      _routerHarness(router, serviceStatus: serviceStatusFixture(windows: 5)),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Swaps may not work'), findsOneWidget);
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('swap_review_button')),
-    );
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(
-      find.byKey(const ValueKey('swap_review_button')).hitTestable(),
-      findsOneWidget,
-    );
-    final noticeBottom = tester
-        .getRect(find.byKey(const ValueKey('near_intents_service_notice')))
-        .bottom;
-    expect(
-      noticeBottom,
-      lessThanOrEqualTo(
-        tester.getRect(find.byKey(const ValueKey('swap_review_button'))).top,
-      ),
-    );
-  });
-
+  testWidgets(
+    'service notice is dismissible and does not change desktop Swap eligibility',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(initialLocation: '/swap', routes: [_swapRoute()]),
+          serviceStatus: serviceStatusFixture(windows: 5),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Swaps may not work right now.'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('near_intents_service_notice_ok')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('near_intents_service_notice')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('swap_review_button')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'service notice is advisory and only on the desktop Pay amount step',
     (tester) async {
@@ -117,11 +114,15 @@ void main() {
       await tester.pumpWidget(
         _routerHarness(
           GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
-          serviceStatus: serviceStatusFixture(upcoming: true),
+          serviceStatus: serviceStatusFixture(),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Maintenance scheduled'), findsOneWidget);
+      expect(find.text('Payments may not work right now.'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('near_intents_service_notice_ok')),
+      );
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('pay_amount_input')),
         '10',

@@ -102,7 +102,7 @@ Widget _app({
 );
 
 void main() {
-  testWidgets('service notice is above the mobile Swap button remains usable', (
+  testWidgets('service notice can be dismissed before using mobile Swap', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(320, 568);
@@ -113,17 +113,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Swap').last);
     await tester.pumpAndSettle();
-    expect(find.text('Swaps may not work'), findsOneWidget);
+    expect(find.text('Swaps may not work right now.'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('near_intents_service_notice_ok')),
+    );
+    await tester.pumpAndSettle();
     final button = find.byKey(const ValueKey('mobile_swap_review_button'));
     await tester.ensureVisible(button);
     await tester.pumpAndSettle();
     expect(button.hitTestable(), findsOneWidget);
-    expect(
-      tester
-          .getRect(find.byKey(const ValueKey('near_intents_service_notice')))
-          .bottom,
-      lessThanOrEqualTo(tester.getRect(button).top),
-    );
     expect(tester.widget<AppButton>(button).onPressed, isNotNull);
     expect(tester.takeException(), isNull);
   });

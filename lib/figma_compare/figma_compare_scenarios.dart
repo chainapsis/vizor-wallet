@@ -105,14 +105,20 @@ class FigmaCompareScenario {
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
     id: 'near-intents-service-current',
-    description: 'Current interruption notices above Swap and Pay actions',
+    description: 'Current NEAR Intents maintenance modal with affected chains',
     builder: buildCurrentServiceNoticeCapture,
     mobile: true,
   ),
   FigmaCompareScenario(
-    id: 'near-intents-service-upcoming',
-    description: 'Upcoming maintenance notices above Swap and Pay actions',
-    builder: buildUpcomingServiceNoticeCapture,
+    id: 'near-intents-service-all-chains',
+    description: 'Current NEAR Intents maintenance modal for all chains',
+    builder: buildAllChainsServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-pay',
+    description: 'Current NEAR Intents service modal on Pay',
+    builder: buildPayServiceNoticeCapture,
     mobile: true,
   ),
   FigmaCompareScenario(

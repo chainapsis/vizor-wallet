@@ -1,274 +1,353 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/layout/app_form_factor.dart';
+import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../domain/near_intents_service_status.dart';
 import '../domain/swap_asset.dart';
-import '../domain/swap_direction.dart';
-import '../providers/near_intents_service_status_provider.dart';
 
 final nearIntentsServiceStatusPage = Uri.https(
   'partners.near-intents.org',
   '/shield/status',
 );
-
 typedef ServiceStatusPageLauncher = Future<bool> Function(Uri uri);
-
 final nearIntentsServiceStatusPageLauncherProvider =
     Provider<ServiceStatusPageLauncher>(
       (ref) =>
           (uri) => launchUrl(uri, mode: LaunchMode.externalApplication),
     );
 
-/// Inserted only on the Swap composer and Pay amount step, never on review or
-/// signing screens. No state from this advisory participates in button gating.
-class NearIntentsServiceNotice extends ConsumerWidget {
-  const NearIntentsServiceNotice({
-    required this.direction,
-    required this.externalAsset,
+// Figma's warning/light and warning-alpha-subtle tokens are not yet part of
+// the app palette. Keep this notice's exact orange treatment local to it.
+const _warningOrange = Color(0xFFE7581B);
+
+/// Pure presentation, shared by production, Widgetbook and widget captures.
+class NearIntentsServiceNoticeModal extends StatelessWidget {
+  const NearIntentsServiceNoticeModal({
+    required this.notice,
+    required this.onClose,
+    required this.onDetails,
     this.payMode = false,
     super.key,
   });
-
-  final SwapDirection direction;
-  final SwapAsset externalAsset;
+  final NearIntentsServiceNoticeData notice;
+  final VoidCallback onClose;
+  final Future<void> Function() onDetails;
   final bool payMode;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Drop the subscription while a review/picker route covers the first screen.
-    if (!(ModalRoute.of(context)?.isCurrent ?? true)) {
-      return const SizedBox.shrink();
-    }
-    final status = ref.watch(nearIntentsServiceStatusProvider);
-    final notice = status.noticeFor(
-      inputChain: direction.fromAsset(externalAsset).chainTicker,
-      outputChain: direction.toAsset(externalAsset).chainTicker,
+  Widget build(BuildContext context) {
+    final mobile = kAppFormFactor == AppFormFactor.mobile;
+    final content = _NoticeContent(
+      notice: notice,
+      payMode: payMode,
+      onClose: onClose,
+      onDetails: onDetails,
     );
-    if (notice == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.s),
-      child: NearIntentsServiceNoticeCard(
-        notice: notice,
-        payMode: payMode,
-        chainLabels: {
-          'zec': 'Zcash',
-          externalAsset.chainTicker: externalAsset.chainLabel,
-        },
-        onDetails: () async {
-          try {
-            await ref.read(nearIntentsServiceStatusPageLauncherProvider)(
-              nearIntentsServiceStatusPage,
-            );
-          } catch (_) {
-            // Opening optional details must not interrupt the payment form.
-          }
-        },
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (mobile) {
+          final bottom =
+              AppSpacing.base +
+              (defaultTargetPlatform == TargetPlatform.android
+                  ? MediaQuery.viewPaddingOf(context).bottom
+                  : 0);
+          return MobileModalCard(
+            margin: EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.sm,
+              AppSpacing.sm,
+              bottom,
+            ),
+            child: content,
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: constraints.maxHeight - AppSpacing.base,
+            ),
+            child: AppModalCard(
+              padding: EdgeInsets.zero,
+              highlight: true,
+              child: content,
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-/// Pure presentation so previews and captures never require HTTP or Rust.
-class NearIntentsServiceNoticeCard extends StatelessWidget {
-  const NearIntentsServiceNoticeCard({
+class _NoticeContent extends StatelessWidget {
+  const _NoticeContent({
     required this.notice,
+    required this.payMode,
+    required this.onClose,
     required this.onDetails,
-    this.payMode = false,
-    this.chainLabels = const {},
-    super.key,
   });
-
   final NearIntentsServiceNoticeData notice;
-  final Future<void> Function() onDetails;
   final bool payMode;
-  final Map<String, String> chainLabels;
+  final VoidCallback onClose;
+  final Future<void> Function() onDetails;
 
   @override
   Widget build(BuildContext context) {
+    final mobile = kAppFormFactor == AppFormFactor.mobile;
     final colors = context.colors;
-    final upcoming = notice.upcoming;
-    // A provisional information tint blended with the themed surface. Current
-    // issues use the design system's gold utility background and warning ink.
-    const informationTint = Color(0xFF6E8CA8);
-    final background = upcoming
-        ? Color.lerp(colors.background.base, informationTint, 0.15)!
-        : colors.background.utilitySuccessSubtle;
-    final iconColor = upcoming ? colors.icon.muted : colors.icon.warning;
-    final title = upcoming
-        ? 'Maintenance scheduled'
-        : payMode
-        ? 'Payments may not work'
-        : 'Swaps may not work';
+    final chains = {for (final issue in notice.issues) ...issue.chains}.toList()
+      ..sort();
+    final networks = chains.contains('*')
+        ? 'All chains'
+        : chains.map(_networkName).join(', ');
     final windows = <NearIntentsServiceIssue>[];
     final seen = <String>{};
     for (final issue in notice.issues) {
       if (!issue.isMaintenance) continue;
-      final chains = issue.chains.toList()..sort();
       if (seen.add(
-        '${issue.startsAt}:${issue.finishesAt}:${chains.join(',')}:${issue.direction}',
+        '${issue.startsAt}:${issue.finishesAt}:${(issue.chains.toList()..sort()).join(',')}',
       )) {
         windows.add(issue);
       }
     }
+    final title = notice.maintenanceOnly
+        ? 'Maintenance notice'
+        : 'Service notice';
+    final bodyStyle = AppTypography.bodyMedium.copyWith(
+      color: colors.text.accent,
+    );
     return Semantics(
-      liveRegion: true,
-      container: true,
-      child: Container(
+      namesRoute: true,
+      label: title,
+      scopesRoute: true,
+      explicitChildNodes: true,
+      child: Stack(
         key: const ValueKey('near_intents_service_notice'),
-        width: double.infinity,
-        padding: const EdgeInsets.all(AppSpacing.s),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(AppRadii.small),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final stacked =
-                    constraints.maxWidth < 240 ||
-                    MediaQuery.textScalerOf(context).scale(1) > 1.3;
-                final details = AppButton(
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              mobile ? AppSpacing.base : AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 40),
+                  child: Text(
+                    title,
+                    style:
+                        (mobile
+                                ? AppTypography.bodyLarge.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  )
+                                : AppTypography.labelLarge.copyWith(
+                                    fontWeight: FontWeight.w400,
+                                  ))
+                            .copyWith(color: colors.text.accent),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Flexible(
+                  child: SingleChildScrollView(
+                    key: const ValueKey('near_intents_service_notice_body'),
+                    primary: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (notice.maintenanceOnly) ...[
+                          Text(
+                            'NEAR Intents is under maintenance.',
+                            style: bodyStyle,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                        ],
+                        Text(
+                          payMode
+                              ? 'Payments may not work right now.'
+                              : 'Swaps may not work right now.',
+                          style: bodyStyle,
+                        ),
+                        for (final window in windows) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          if (!notice.maintenanceOnly)
+                            Text(
+                              'Maintenance window: ${window.chains.contains('*') ? 'All chains' : window.chains.map(_networkName).join(', ')}',
+                              style: bodyStyle,
+                            )
+                          else if (windows.length > 1)
+                            Text(
+                              window.chains.contains('*')
+                                  ? 'All chains'
+                                  : window.chains.map(_networkName).join(', '),
+                              style: bodyStyle,
+                            ),
+                          Text(
+                            'Start: ${formatNearIntentsServiceTime(window.startsAt!)}',
+                            style: bodyStyle,
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            'Expected end: ${formatNearIntentsServiceTime(window.finishesAt!)}',
+                            style: bodyStyle,
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.xs),
+                        Container(
+                          padding: const EdgeInsets.all(AppSpacing.sm),
+                          decoration: BoxDecoration(
+                            color: _warningOrange.withValues(alpha: .08),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.medium,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppSpacing.sm,
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      notice.maintenanceOnly
+                                          ? 'List of maintenance'
+                                          : 'Affected networks',
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.headlineSmall
+                                          .copyWith(color: _warningOrange),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Text(
+                                      networks,
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.bodyMediumStrong
+                                          .copyWith(color: colors.text.accent),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 4,
+                                ),
+                                child: SvgPicture.asset(
+                                  'assets/icons/near_intents_maintenance_wordmark.svg',
+                                  width: 91.9008,
+                                  height: 10.9945,
+                                  semanticsLabel: 'NEAR Intents',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppButton(
                   key: const ValueKey('near_intents_service_notice_details'),
                   variant: AppButtonVariant.ghost,
-                  size: kAppFormFactor == AppFormFactor.mobile
+                  size: mobile
                       ? AppButtonSize.large
-                      : AppButtonSize.medium,
+                      : AppButtonSize.mediumLarge,
+                  expand: true,
+                  constrainContent: true,
+                  growWithContent: true,
                   onPressed: () => unawaited(onDetails()),
                   trailing: const AppIcon(
                     AppIcons.arrowTopRight,
                     size: AppIconSize.medium,
                   ),
-                  child: const Text('Details'),
-                );
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.xs),
-                          child: AppIcon(
-                            upcoming ? AppIcons.time : AppIcons.warningCircle,
-                            size: AppIconSize.medium,
-                            color: iconColor,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: AppSpacing.xs),
-                            child: Text(
-                              title,
-                              style: AppTypography.labelLarge.copyWith(
-                                color: colors.text.accent,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (!stacked) details,
-                      ],
-                    ),
-                    if (stacked)
-                      Align(alignment: Alignment.centerRight, child: details),
-                  ],
-                );
-              },
-            ),
-            if (upcoming) ...[
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                payMode
-                    ? 'Payments may not work during this time.'
-                    : 'Swaps may not work during this time.',
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-            for (final window in windows) ...[
-              const SizedBox(height: AppSpacing.xs),
-              if (windows.length > 1)
-                Text(
-                  window.chains.contains('*')
-                      ? 'All networks'
-                      : window.chains
-                            .map((c) => chainLabels[c] ?? c.toUpperCase())
-                            .join(', '),
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.secondary,
+                  child: const Text(
+                    'NEAR Intents status page',
+                    textAlign: TextAlign.center,
                   ),
                 ),
-              _TimeRow(label: 'Starts', time: window.startsAt!),
-              const SizedBox(height: AppSpacing.xxs),
-              _TimeRow(label: 'Ends', time: window.finishesAt!),
-            ],
-          ],
-        ),
+                const SizedBox(height: AppSpacing.s),
+                AppButton(
+                  key: const ValueKey('near_intents_service_notice_ok'),
+                  size: mobile
+                      ? AppButtonSize.large
+                      : AppButtonSize.mediumLarge,
+                  expand: true,
+                  growWithContent: true,
+                  onPressed: onClose,
+                  child: const Text('Ok'),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            // A 44px mobile hit target surrounds the 32px Figma circle.
+            top: mobile ? AppSpacing.sm - 6 : AppSpacing.sm,
+            right: mobile ? AppSpacing.sm - 6 : AppSpacing.sm,
+            child: Semantics(
+              button: true,
+              label: 'Close service notice',
+              child: AppButton(
+                key: const ValueKey('near_intents_service_notice_close'),
+                variant: mobile
+                    ? AppButtonVariant.ghost
+                    : AppButtonVariant.secondary,
+                height: mobile ? 44 : 32,
+                minWidth: mobile ? 44 : 32,
+                contentPadding: EdgeInsets.zero,
+                onPressed: onClose,
+                child: ExcludeSemantics(
+                  child: mobile
+                      ? Container(
+                          key: const ValueKey(
+                            'near_intents_service_notice_close_circle',
+                          ),
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: colors.button.secondary.bg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: AppIcon(AppIcons.cross, size: 20),
+                          ),
+                        )
+                      : const AppIcon(AppIcons.cross, size: 20),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _TimeRow extends StatelessWidget {
-  const _TimeRow({required this.label, required this.time});
-  final String label;
-  final DateTime time;
-
-  @override
-  Widget build(BuildContext context) {
-    final local = time.toLocal();
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final value =
-        '${months[local.month - 1]} ${local.day}, ${local.year} · '
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')} ${local.timeZoneName}';
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 48,
-          child: Text(
-            label,
-            style: AppTypography.labelMedium.copyWith(
-              color: context.colors.text.secondary,
-            ),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        Expanded(
-          child: Text(
-            value,
-            style: AppTypography.labelMedium.copyWith(
-              color: context.colors.text.accent,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+/// Explicit local date and numeric UTC offset also disambiguate midnight,
+/// long-running maintenance and repeated wall-clock times around DST changes.
+String formatNearIntentsServiceTime(DateTime value) {
+  final time = value.toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  final offset = time.timeZoneOffset;
+  final minutes = offset.inMinutes.abs();
+  return '${time.year.toString().padLeft(4, '0')}-${two(time.month)}-${two(time.day)} '
+      '${two(time.hour)}:${two(time.minute)} '
+      '(UTC${offset.isNegative ? '-' : '+'}${two(minutes ~/ 60)}:${two(minutes % 60)})';
 }
+
+String _networkName(String chain) =>
+    chain == 'bsc' ? 'BNB Chain (BSC)' : swapChainDisplayName(chain);

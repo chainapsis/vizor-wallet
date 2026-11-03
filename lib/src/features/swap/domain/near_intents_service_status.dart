@@ -2,6 +2,7 @@
 class NearIntentsServiceIssue {
   const NearIntentsServiceIssue({
     required this.chains,
+    this.id,
     this.direction = '*',
     this.startsAt,
     this.finishesAt,
@@ -9,6 +10,7 @@ class NearIntentsServiceIssue {
   });
 
   final Set<String> chains;
+  final String? id;
   final String direction;
   final DateTime? startsAt;
   final DateTime? finishesAt;
@@ -22,28 +24,29 @@ class NearIntentsServiceIssue {
       (direction != 'deposit' &&
           (chains.contains('*') || chains.contains(outputChain)));
 
-  bool upcomingAt(DateTime now) =>
-      isMaintenance && !active && now.isBefore(startsAt!);
+  /// Stable across polling, ETA edits, failures and recovery. Incident IDs
+  /// distinguish separate outages on the same chain; schedules without IDs
+  /// use their start, scope and direction rather than their mutable end time.
+  String get noticeKey {
+    final scope = (chains.toList()..sort()).join(',');
+    return '${isMaintenance ? 'maintenance' : 'incident'}:'
+        '${id ?? startsAt?.toUtc().toIso8601String() ?? 'scope'}:$scope:$direction';
+  }
 
   bool visibleAt(DateTime now) {
     if (!isMaintenance) return true;
-    if (!now.isBefore(finishesAt!)) return false;
-    return !upcomingAt(now) ||
-        !startsAt!.isAfter(now.add(nearIntentsMaintenanceLeadTime));
+    return active && !now.isBefore(startsAt!) && now.isBefore(finishesAt!);
   }
 }
 
-const nearIntentsMaintenanceLeadTime = Duration(hours: 3);
 const nearIntentsStatusFreshness = Duration(seconds: 60);
 
 class NearIntentsServiceNoticeData {
-  const NearIntentsServiceNoticeData({
-    required this.upcoming,
-    required this.issues,
-  });
+  const NearIntentsServiceNoticeData({required this.issues});
 
-  final bool upcoming;
   final List<NearIntentsServiceIssue> issues;
+
+  bool get maintenanceOnly => issues.every((issue) => issue.isMaintenance);
 }
 
 class NearIntentsServiceStatus {
@@ -81,8 +84,7 @@ class NearIntentsServiceStatus {
             )
             .toList();
     if (matching.isEmpty) return null;
-    final ongoing = matching.where((issue) => !issue.upcomingAt(now)).toList();
-    final selected = ongoing.isEmpty ? matching : ongoing;
+    final selected = matching;
     selected.sort((a, b) {
       final global = (b.chains.contains('*') ? 1 : 0).compareTo(
         a.chains.contains('*') ? 1 : 0,
@@ -90,10 +92,7 @@ class NearIntentsServiceStatus {
       if (global != 0) return global;
       return (a.startsAt ?? now).compareTo(b.startsAt ?? now);
     });
-    return NearIntentsServiceNoticeData(
-      upcoming: ongoing.isEmpty,
-      issues: selected,
-    );
+    return NearIntentsServiceNoticeData(issues: selected);
   }
 }
 
@@ -116,7 +115,12 @@ List<NearIntentsServiceIssue> parseNearIntentsIncidents(Object? json) {
     final type = _string(item['scopeType']);
     final scope = _string(item['scopeValue']);
     if (status != 'active' || type != 'chain') continue;
-    result.add(NearIntentsServiceIssue(chains: Set.unmodifiable({scope})));
+    result.add(
+      NearIntentsServiceIssue(
+        chains: Set.unmodifiable({scope}),
+        id: _optionalId(item['id']),
+      ),
+    );
   }
   return List.unmodifiable(result);
 }
@@ -150,6 +154,7 @@ List<NearIntentsServiceIssue> parseNearIntentsMaintenance(Object? json) {
     result.add(
       NearIntentsServiceIssue(
         chains: Set.unmodifiable(chains),
+        id: _optionalId(item['id']),
         direction: direction,
         startsAt: start,
         finishesAt: finish,
@@ -158,6 +163,14 @@ List<NearIntentsServiceIssue> parseNearIntentsMaintenance(Object? json) {
     );
   }
   return List.unmodifiable(result);
+}
+
+String? _optionalId(Object? value) {
+  if (value == null) return null;
+  if (value is! String || value.trim().isEmpty) {
+    throw const FormatException('Invalid service issue ID');
+  }
+  return value.trim();
 }
 
 Map<String, dynamic> _object(Object? value) {
