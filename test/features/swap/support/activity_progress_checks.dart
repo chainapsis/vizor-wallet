@@ -99,7 +99,9 @@ void runActivityProgressChecks({required bool mobile}) {
       await tester.pumpAndSettle();
       expect(find.text(progressLabel), findsNothing);
       expect(
-        find.text(pay || mobile ? 'Completed' : SwapIntentStatus.complete.label),
+        find.text(
+          pay || mobile ? 'Completed' : SwapIntentStatus.complete.label,
+        ),
         findsOneWidget,
       );
       expect(find.text('Tx ID'), findsOneWidget);
@@ -180,6 +182,21 @@ void runActivityProgressChecks({required bool mobile}) {
         expect(tester.takeException(), isNull);
       });
     }
+    if (!mobile && pay) {
+      testWidgets('desktop Pay progress grows with enlarged text', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          mobile: false,
+          intent: _intent(pay: true),
+          textScale: 1.6,
+        );
+        await tester.ensureVisible(find.byKey(_footer));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   }
 }
 
@@ -207,6 +224,7 @@ Future<ProviderContainer> _pump(
   required bool mobile,
   required SwapIntent intent,
   bool narrow = false,
+  double textScale = 1,
 }) async {
   await loadFigmaCompareFonts();
   tester.view.devicePixelRatio = 1;
@@ -234,7 +252,7 @@ Future<ProviderContainer> _pump(
           child: MediaQuery(
             data: MediaQuery.of(context).copyWith(
               disableAnimations: true,
-              textScaler: TextScaler.linear(narrow ? 1.6 : 1),
+              textScaler: TextScaler.linear(narrow ? 1.6 : textScale),
             ),
             child: child!,
           ),

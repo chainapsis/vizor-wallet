@@ -591,20 +591,17 @@ class _ProgressStep extends StatelessWidget {
     final pending = step.state == SwapStatusStepState.pending;
     final isLast = index == count - 1;
     const isMobile = kAppFormFactor == AppFormFactor.mobile;
-    // Fixed per-step heights reproduce the Figma connector lengths: the active
+    // Minimum step heights reproduce the Figma connector lengths: the active
     // step reserves room for its 2-line description (24 title + 8 gap + 58
     // padded description), pending/complete steps a single title row, and the
     // last step has no trailing connector.
     final height = active ? (isMobile ? 112.0 : 90.0) : (isLast ? 24.0 : 37.0);
     final title = step.titleForState(step.state);
     final content = Row(
-      crossAxisAlignment: isMobile
-          ? CrossAxisAlignment.stretch
-          : CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
           width: 24,
-          height: isMobile ? null : height,
           child: Stack(
             alignment: Alignment.topCenter,
             children: [
@@ -639,9 +636,9 @@ class _ProgressStep extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
+              ConstrainedBox(
                 key: ValueKey('swap_activity_route_step_${index}_title_row'),
-                height: 24,
+                constraints: const BoxConstraints(minHeight: 24),
                 child: Row(
                   children: [
                     Expanded(
@@ -722,18 +719,15 @@ class _ProgressStep extends StatelessWidget {
     final key = ValueKey(
       'swap_activity_route_step_${index}_${step.state.name}',
     );
-    if (isMobile) {
-      // Keep the reference connector length while allowing wrapped descriptions
-      // and larger text to extend the step and its connector together.
-      return IntrinsicHeight(
-        child: ConstrainedBox(
-          key: key,
-          constraints: BoxConstraints(minHeight: height),
-          child: content,
-        ),
-      );
-    }
-    return SizedBox(key: key, height: height, child: content);
+    // Let larger text extend the step and its connector together on both
+    // form factors, retaining the reference geometry at the default scale.
+    return IntrinsicHeight(
+      child: ConstrainedBox(
+        key: key,
+        constraints: BoxConstraints(minHeight: height),
+        child: content,
+      ),
+    );
   }
 }
 

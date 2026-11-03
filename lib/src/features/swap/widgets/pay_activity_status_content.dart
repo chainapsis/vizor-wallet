@@ -16,7 +16,8 @@ import 'swap_progress_explorer_footer.dart';
 
 /// Desktop Pay activity status for Figma nodes 6245:109737 / 6245:110194 and
 /// their dark variants. The Activity pane host already provides the toolbar
-/// reserve and 16px top inset, so this widget owns only the 396x549 content.
+/// reserve and 16px top inset. In-progress cards grow with their timeline;
+/// terminal cards retain the original 396x549 reference geometry.
 class PayActivityStatusContent extends StatelessWidget {
   const PayActivityStatusContent({
     required this.status,
@@ -133,9 +134,9 @@ class PayActivityStatusContent extends StatelessWidget {
       separator: '...',
     );
 
-    return SizedBox(
+    return ConstrainedBox(
       key: const ValueKey('pay_status_review_info'),
-      height: reviewInfoHeight,
+      constraints: const BoxConstraints(minHeight: reviewInfoHeight),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         child: ReviewInfoFlow(
