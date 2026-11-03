@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -230,22 +232,43 @@ void main() {
     },
   );
   test(
-    'HTTP client uses the two public URLs, no auth, cancellation and limits',
+    'HTTP client uses the Vizor proxy without auth or direct fallbacks',
     () async {
       final transport = _Transport();
       final client = NearIntentsServiceStatusClient(client: transport);
       addTearDown(client.close);
-      await client.loadIncidents();
-      await client.loadMaintenance();
+      final cancel = Completer<void>();
+      expect(await client.loadIncidents(cancelSignal: cancel.future), isEmpty);
+      expect(
+        await client.loadMaintenance(cancelSignal: cancel.future),
+        isEmpty,
+      );
       expect(transport.urls, [
-        'https://shield.chaindefuser.com/public/status',
-        'https://partners.near-intents.org/api/shield/public/maintenance-modes',
+        'https://functions.vizor.cash/api/near-intents/shield/status',
+        'https://functions.vizor.cash/api/near-intents/shield/maintenance-modes',
       ]);
-      transport.status = 403;
-      await expectLater(client.loadIncidents(), throwsA(isA<Exception>()));
+      expect(transport.cancelSignals, [cancel.future, cancel.future]);
+      for (final status in [403, 502, 504]) {
+        transport.status = status;
+        for (final load in [client.loadIncidents, client.loadMaintenance]) {
+          final callsBefore = transport.urls.length;
+          await expectLater(load(), throwsA(isA<HttpException>()));
+          expect(transport.urls.length, callsBefore + 1);
+        }
+      }
       transport.status = 200;
       transport.badJson = true;
-      await expectLater(client.loadMaintenance(), throwsFormatException);
+      for (final load in [client.loadIncidents, client.loadMaintenance]) {
+        final callsBefore = transport.urls.length;
+        await expectLater(load(), throwsFormatException);
+        expect(transport.urls.length, callsBefore + 1);
+      }
+      expect(
+        transport.urls,
+        everyElement(
+          startsWith('https://functions.vizor.cash/api/near-intents/shield/'),
+        ),
+      );
     },
   );
 }
@@ -253,6 +276,7 @@ void main() {
 class _Transport extends NetworkHttpClient {
   _Transport() : super(torDesired: () => false);
   final urls = <String>[];
+  final cancelSignals = <Future<void>?>[];
   int status = 200;
   bool badJson = false;
   @override
@@ -267,6 +291,7 @@ class _Transport extends NetworkHttpClient {
     int maxRedirects = 5,
   }) async {
     urls.add(uri.toString());
+    cancelSignals.add(cancelSignal);
     expect(method, 'GET');
     expect(headers, {'accept': 'application/json'});
     expect(timeout, const Duration(seconds: 15));
@@ -277,9 +302,12 @@ class _Transport extends NetworkHttpClient {
         utf8.encode(
           badJson
               ? 'not json'
-              : uri.host == 'shield.chaindefuser.com'
-              ? '{"activeIncidentCount":0,"activeIncidents":[]}'
-              : '[]',
+              : switch (uri.path) {
+                  '/api/near-intents/shield/status' =>
+                    '{"activeIncidentCount":0,"activeIncidents":[]}',
+                  '/api/near-intents/shield/maintenance-modes' => '[]',
+                  _ => throw StateError('Unexpected service status URL: $uri'),
+                },
         ),
       ),
     );

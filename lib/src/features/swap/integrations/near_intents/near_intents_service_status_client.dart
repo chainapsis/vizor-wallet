@@ -23,7 +23,10 @@ class NearIntentsServiceStatusClient implements NearIntentsServiceStatusSource {
   Future<List<NearIntentsServiceIssue>> loadIncidents({
     Future<void>? cancelSignal,
   }) async => parseNearIntentsIncidents(
-    await _get('https://shield.chaindefuser.com/public/status', cancelSignal),
+    await _get(
+      'https://functions.vizor.cash/api/near-intents/shield/status',
+      cancelSignal,
+    ),
   );
 
   @override
@@ -31,7 +34,7 @@ class NearIntentsServiceStatusClient implements NearIntentsServiceStatusSource {
     Future<void>? cancelSignal,
   }) async => parseNearIntentsMaintenance(
     await _get(
-      'https://partners.near-intents.org/api/shield/public/maintenance-modes',
+      'https://functions.vizor.cash/api/near-intents/shield/maintenance-modes',
       cancelSignal,
     ),
   );
