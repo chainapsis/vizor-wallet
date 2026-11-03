@@ -55,6 +55,7 @@ void main() {
         for (final status in [
           SwapIntentStatus.awaitingDeposit,
           SwapIntentStatus.processing,
+          SwapIntentStatus.incompleteDeposit,
           SwapIntentStatus.complete,
         ]) {
           final presentation = swapActivityStatusPresentationForIntent(
@@ -71,7 +72,7 @@ void main() {
             ),
           );
           expect(presentation.explorerUri?.toString(), lookup.expected);
-          if (pay) {
+          if (pay && status != SwapIntentStatus.incompleteDeposit) {
             expect(presentation.payStatus!.txIdUri, presentation.explorerUri);
           } else {
             final rows = presentation.details.where(
@@ -253,6 +254,7 @@ void main() {
       'You paid',
       'Rate',
       'Fees',
+      'Tx ID',
       'ZEC tx (shielded)',
       'USDC delivery tx',
     ]);

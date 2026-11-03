@@ -739,6 +739,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       ),
     if (failed && recordedRefundFee != null)
       SwapStatusDetailRowData(label: 'Refund fee', value: recordedRefundFee),
+    ?_swapActivityTxIdRow(intent),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: '$sourceSymbol tx (shielded)',
@@ -882,6 +883,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
         copyable: true,
         copyText: depositTxHash,
       ),
+    ?_swapActivityTxIdRow(intent),
   ];
 }
 
