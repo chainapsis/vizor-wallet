@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/figma_compare/figma_compare_configuration.dart';
 import 'package:zcash_wallet/src/core/layout/app_form_factor.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 
 import 'figma_compare_capture_support.dart';
 
@@ -38,6 +39,23 @@ void runSwapActivityCaptures(AppFormFactor formFactor) {
             findsOneWidget,
           );
           expect(find.text('View on NEAR Intents'), findsOneWidget);
+          final card = tester.getRect(
+            find.byKey(
+              ValueKey(
+                mobile
+                    ? 'mobile_swap_status_card'
+                    : pay
+                    ? 'pay_status_progress_card'
+                    : 'swap_status_detail_card',
+              ),
+            ),
+          );
+          final link = tester.getRect(
+            find.byKey(const ValueKey('swap_progress_explorer_link')),
+          );
+          expect(link.left - card.left, closeTo(AppSpacing.sm, 0.01));
+          expect(card.right - link.right, closeTo(AppSpacing.sm, 0.01));
+          expect(card.bottom - link.bottom, closeTo(AppSpacing.sm, 0.01));
           if (!details) return;
           await tester.tap(find.text('Transaction details'));
           await tester.pump();

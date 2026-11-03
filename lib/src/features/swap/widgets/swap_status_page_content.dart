@@ -279,6 +279,7 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             const SizedBox(height: AppSpacing.sm),
             if (widget.activeTab == SwapStatusTab.progress)
               _SwapDetailCard(
+                hasExplorerFooter: widget.explorerUri != null,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -437,14 +438,18 @@ class _PaymentStatusSummary extends StatelessWidget {
 /// Figma 'Review Wrap': the raised, rounded detail card that wraps the
 /// progress route and the detail rows. Built on the core [ReviewWrapCard].
 class _SwapDetailCard extends StatelessWidget {
-  const _SwapDetailCard({required this.child});
+  const _SwapDetailCard({required this.child, this.hasExplorerFooter = false});
 
   final Widget child;
+  final bool hasExplorerFooter;
 
   @override
   Widget build(BuildContext context) {
     return ReviewWrapCard(
       key: const ValueKey('swap_status_detail_card'),
+      padding: hasExplorerFooter
+          ? kReviewWrapCardPadding.copyWith(bottom: AppSpacing.sm)
+          : kReviewWrapCardPadding,
       children: [child],
     );
   }

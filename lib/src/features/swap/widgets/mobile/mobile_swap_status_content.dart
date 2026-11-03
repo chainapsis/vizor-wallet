@@ -78,6 +78,9 @@ class MobileSwapStatusContent extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           _StatusCard(
             key: const ValueKey('mobile_swap_status_card'),
+            hasExplorerFooter:
+                activeTab == SwapStatusTab.progress &&
+                presentation.explorerUri != null,
             child: activeTab == SwapStatusTab.progress
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
@@ -232,16 +235,23 @@ class _MobilePayRecipientPlaceholder extends StatelessWidget {
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.child, super.key});
+  const _StatusCard({
+    required this.child,
+    this.hasExplorerFooter = false,
+    super.key,
+  });
 
   final Widget child;
+  final bool hasExplorerFooter;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.base,
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.base,
+        AppSpacing.sm,
+        hasExplorerFooter ? AppSpacing.sm : AppSpacing.base,
       ),
       decoration: BoxDecoration(
         color: context.colors.background.ground,

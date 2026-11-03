@@ -99,6 +99,9 @@ class PayActivityStatusContent extends StatelessWidget {
             if (activeTab == SwapStatusTab.progress)
               ReviewWrapCard(
                 key: const ValueKey('pay_status_progress_card'),
+                padding: progress.explorerUri == null
+                    ? kReviewWrapCardPadding
+                    : kReviewWrapCardPadding.copyWith(bottom: AppSpacing.sm),
                 children: [
                   Column(
                     mainAxisSize: MainAxisSize.min,
