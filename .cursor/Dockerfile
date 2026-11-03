@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       lld llvm \
       # GTK / GLib and other native plugin deps
       libgtk-3-dev libglib2.0-dev liblzma-dev \
+      # Ledger HID (hidapi linux-static-hidraw) probes libudev at build time.
+      libudev-dev \
       # flutter_secure_storage_linux -> libsecret + jsoncpp
       libsecret-1-dev libjsoncpp-dev \
       # Software OpenGL for headless rendering under Xvfb (no GPU)

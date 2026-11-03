@@ -1245,6 +1245,19 @@ Constrained in `rust/Cargo.toml` and resolved in `rust/Cargo.lock`. Key crates: 
 
 Additional crates for multi-account: `uuid` 1.1, `zip32` 0.2, `jubjub` 0.10, `bls12_381` 0.8, `rand_core` 0.6.
 
+## Cursor Cloud specific instructions
+
+Linux desktop is the target in this environment. Use `fvm flutter`, not a
+system Flutter. `bash .cursor/install.sh` installs the SDK pinned in `.fvmrc`
+and runs `flutter pub get`; it is safe to repeat. Boot runs
+`bash .cursor/xvfb.sh`, which keeps `DISPLAY=:99` up. Launch the debug app
+with `bash .cursor/run-linux-app.sh` (testnet unless `ZCASH_DEFAULT_NETWORK`
+is set). That script rebuilds `build/linux/x64/debug/bundle/vizor` and starts
+an unlocked gnome-keyring so libsecret does not block on a prompt. Ledger HID
+builds need `libudev` (`libudev-dev`), which the Cloud Agent image installs.
+`cd rust && cargo test` is the Rust suite; ignored regtest tests need Docker
+and should not be run unless asked.
+
 ## Ignored Paths
 
 `onboarding/` — Developer onboarding documentation. Do not read or modify during normal development. Only update when explicitly asked.

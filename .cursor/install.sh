@@ -19,6 +19,11 @@ if ! command -v fvm >/dev/null 2>&1; then
   curl -fsSL https://fvm.app/install.sh | bash
 fi
 export PATH="$HOME/fvm/bin:$PATH"
+# Non-interactive login shells never source ~/.bashrc, so put fvm on the
+# default PATH for later agent commands.
+if [ -x "$HOME/fvm/bin/fvm" ]; then
+  sudo ln -sfn "$HOME/fvm/bin/fvm" /usr/local/bin/fvm
+fi
 
 # Install the Flutter SDK version pinned in .fvmrc, enable the Linux desktop
 # target, and resolve Dart packages.

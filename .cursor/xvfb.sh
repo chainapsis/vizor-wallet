@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Long-running headless display for launching the Vizor Linux desktop app.
-# Runs as a Cloud Agent terminal: starts a virtual X server (Xvfb) plus a
+# Cloud Agent start script: starts a virtual X server (Xvfb) plus a
 # lightweight window manager (openbox) on DISPLAY=:99 and stays in the
-# foreground so its logs and lifecycle remain visible/restartable.
+# foreground so the display lives for the whole session.
 set -euo pipefail
 
 export DISPLAY=:99

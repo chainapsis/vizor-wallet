@@ -5,10 +5,5 @@
     "dockerfile": "Dockerfile"
   },
   "install": "bash .cursor/install.sh",
-  "terminals": [
-    {
-      "name": "linux-display",
-      "command": "bash .cursor/xvfb.sh"
-    }
-  ]
+  "start": "bash .cursor/xvfb.sh"
 }
