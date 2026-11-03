@@ -227,6 +227,7 @@ class AppButton extends StatefulWidget {
     this.focusRingColor,
     this.disabledBackgroundColor,
     this.enabledBackgroundColor,
+    this.hoverBackgroundColor,
     this.pressedBackgroundColor,
     this.enabledLabelColor,
     this.pressedLabelColor,
@@ -293,6 +294,10 @@ class AppButton extends StatefulWidget {
   /// need the shared button's interaction, focus, disabled, and semantics
   /// behavior.
   final Color? enabledBackgroundColor;
+
+  /// Optional hover-only fill. When absent, retain the historical fallback
+  /// through [pressedBackgroundColor] before the variant's hover palette.
+  final Color? hoverBackgroundColor;
   final Color? pressedBackgroundColor;
   final Color? enabledLabelColor;
   final Color? pressedLabelColor;
@@ -368,7 +373,9 @@ class _AppButtonState extends State<AppButton> {
         : _pressed
         ? widget.pressedBackgroundColor ?? palette.bgPressed
         : _hovered
-        ? widget.pressedBackgroundColor ?? palette.bgHover
+        ? widget.hoverBackgroundColor ??
+              widget.pressedBackgroundColor ??
+              palette.bgHover
         : widget.enabledBackgroundColor ?? palette.bg;
 
     final Color labelColor = !_enabled

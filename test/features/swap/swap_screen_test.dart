@@ -1716,6 +1716,12 @@ void main() {
       expect(amountAssetIcon.showChainBadge, isTrue);
       expect(find.text('New address'), findsOneWidget);
       expect(find.text('0x529084...e4169ee7'), findsOneWidget);
+      expect(find.text('Payment progress'), findsOneWidget);
+      expect(find.text('View on NEAR Intents'), findsOneWidget);
+      expect(find.text('ZEC spent'), findsOneWidget);
+      expect(find.text('Tx ID'), findsNothing);
+      await tester.tap(find.text('Transaction details'));
+      await tester.pumpAndSettle();
       expect(find.text('In progress'), findsOneWidget);
       expect(find.text('Timestamp'), findsOneWidget);
       expect(find.text('Tx ID'), findsOneWidget);
@@ -1723,16 +1729,10 @@ void main() {
       expect(find.text('2.45125 ZEC'), findsOneWidget);
       expect(find.text('Tx fee'), findsOneWidget);
       expect(find.text('Not reported'), findsOneWidget);
-      expect(find.byKey(const ValueKey('swap_status_tabs')), findsNothing);
+      expect(find.byKey(const ValueKey('swap_status_tabs')), findsOneWidget);
       expect(find.byKey(const ValueKey('swap_review_info')), findsNothing);
       expect(find.byKey(const ValueKey('pay_status_summary')), findsNothing);
 
-      expect(
-        tester.getSize(
-          find.byKey(const ValueKey('pay_activity_status_content')),
-        ),
-        const Size(396, 549),
-      );
       expect(
         tester.getSize(find.byKey(const ValueKey('pay_status_review_info'))),
         const Size(396, 204),
@@ -1841,6 +1841,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.text('Transaction details'));
+      await tester.pumpAndSettle();
       expect(find.text('0.00015 ZEC'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -1873,6 +1875,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.text('Transaction details'));
+      await tester.pumpAndSettle();
       expect(find.text('0.00015 ZEC'), findsNothing);
       final txFeeRow = tester.widget<ReviewListRow>(
         find.byWidgetPredicate(
@@ -1930,6 +1934,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Transaction details'));
+    await tester.pumpAndSettle();
     expect(find.text('0.00015 ZEC'), findsOneWidget);
     expect(requests, [
       (accountUuid: 'account-1', walletTxid: depositWalletOrder),
@@ -7065,7 +7071,15 @@ void main() {
     await _openSwapStatusDetails(tester);
 
     expect(swapProvider.submittedDeposits, isEmpty);
-    expect(find.text('0xstored-deposit'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ReviewListRow &&
+            widget.label.startsWith('Deposit ') &&
+            widget.value == '0xstored-deposit',
+      ),
+      findsOneWidget,
+    );
     expect(sessionStore.savedIntents.single.depositAddress, '0xstored-deposit');
   });
 

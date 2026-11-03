@@ -13,6 +13,7 @@ import '../src/core/widgets/app_back_link.dart';
 import '../src/core/widgets/app_button.dart';
 import '../src/core/widgets/app_icon.dart';
 import '../src/core/widgets/app_pane_modal_overlay.dart';
+import '../src/features/swap/domain/near_intents_explorer.dart';
 import '../src/features/swap/models/swap_fiat_amount.dart';
 import '../src/features/swap/models/swap_activity_status_mapper.dart';
 import '../src/features/swap/models/swap_intent_presentation_mapper.dart';
@@ -1267,6 +1268,9 @@ class _SwapStatusPreviewState extends State<_SwapStatusPreview> {
       steps: widget.steps,
       details: widget.details,
       showTabs: widget.showTabs,
+      explorerUri: nearIntentsExplorerTransactionUri(
+        '0x123kjhc4e984ac1832f10aa4x98g20',
+      ),
       onTabChanged: widget.showTabs
           ? (tab) {
               setState(() {
