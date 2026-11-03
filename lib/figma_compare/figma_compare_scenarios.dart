@@ -1,3 +1,4 @@
+import 'near_intents_service_notice_capture.dart';
 import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
 import 'mobile_passcode_capture.dart';
@@ -102,6 +103,18 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'near-intents-service-current',
+    description: 'Current interruption notices above Swap and Pay actions',
+    builder: buildCurrentServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-upcoming',
+    description: 'Upcoming maintenance notices above Swap and Pay actions',
+    builder: buildUpcomingServiceNoticeCapture,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'mobile-shield-ledger-connection-help',
     description: 'Ledger pairing recovery inside the mobile shielding scene',

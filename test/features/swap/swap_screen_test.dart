@@ -7,6 +7,9 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_status.dart';
+import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
+import 'support/service_status_fixture.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -77,6 +80,69 @@ import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart'
 part 'support/swap_screen_test_fakes.dart';
 
 void main() {
+  testWidgets('service notice keeps the desktop Swap composer scrollable', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final router = GoRouter(initialLocation: '/swap', routes: [_swapRoute()]);
+    await tester.pumpWidget(
+      _routerHarness(router, serviceStatus: serviceStatusFixture(windows: 5)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Swaps may not work'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('swap_review_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey('swap_review_button')).hitTestable(),
+      findsOneWidget,
+    );
+    final noticeBottom = tester
+        .getRect(find.byKey(const ValueKey('near_intents_service_notice')))
+        .bottom;
+    expect(
+      noticeBottom,
+      lessThanOrEqualTo(
+        tester.getRect(find.byKey(const ValueKey('swap_review_button'))).top,
+      ),
+    );
+  });
+
+  testWidgets(
+    'service notice is advisory and only on the desktop Pay amount step',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+          serviceStatus: serviceStatusFixture(upcoming: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Maintenance scheduled'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_amount_input')),
+        '10',
+      );
+      await tester.pumpAndSettle();
+      final button = find.byKey(const ValueKey('pay_amount_continue_button'));
+      expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('pay_recipient_search_field')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('near_intents_service_notice')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   test('swapIntentProvider uses the Vizor proxy and referral', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -10549,6 +10615,7 @@ Widget _routerHarness(
   LedgerOperationCanceller? ledgerCanceller,
   LedgerSignedOperationService? ledgerOperationService,
   NetworkUpgradeWindowState? upgradeWindow,
+  NearIntentsServiceStatus? serviceStatus,
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -10558,6 +10625,9 @@ Widget _routerHarness(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      nearIntentsServiceStatusProvider.overrideWith(
+        () => FixtureServiceStatusNotifier(serviceStatus),
+      ),
       if (upgradeWindow != null)
         networkUpgradeWindowProvider.overrideWithValue(upgradeWindow),
       networkPrivacyProvider.overrideWith(

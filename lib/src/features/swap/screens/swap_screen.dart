@@ -27,12 +27,14 @@ import '../models/swap_activity_status_mapper.dart';
 import '../models/swap_models.dart';
 import '../models/swap_address_book_helpers.dart';
 import '../providers/swap_state_provider.dart';
+import '../providers/near_intents_service_status_provider.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../widgets/swap_address_edit_modal.dart';
 import '../widgets/swap_asset_selector_modal.dart';
 import '../widgets/swap_composer_panel.dart';
 import '../widgets/swap_near_intents_attribution.dart';
 import '../widgets/swap_slippage_modal.dart';
+import '../widgets/near_intents_service_notice.dart';
 
 class SwapScreen extends ConsumerStatefulWidget {
   const SwapScreen({super.key});
@@ -276,7 +278,23 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                     // flexes to center the widget between them. Pinning only
                     // engages when the pane offers the design height;
                     // shorter panes pack the column and scroll instead.
+                    final serviceNoticeVisible =
+                        (ModalRoute.of(context)?.isCurrent ?? true) &&
+                        ref
+                                .watch(nearIntentsServiceStatusProvider)
+                                .noticeFor(
+                                  inputChain: swapState.direction
+                                      .fromAsset(swapState.externalAsset)
+                                      .chainTicker,
+                                  outputChain: swapState.direction
+                                      .toAsset(swapState.externalAsset)
+                                      .chainTicker,
+                                ) !=
+                            null;
+                    // Variable-length maintenance windows need natural height
+                    // and the pane's scroll view, rather than a compressed ticket.
                     final pinned =
+                        !serviceNoticeVisible &&
                         constraints.minHeight >= _swapBodyPinnedMinHeight;
                     final column = Column(
                       mainAxisSize: MainAxisSize.min,
@@ -290,6 +308,10 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         const SizedBox(height: AppSpacing.md),
                         const _SwapAttributionSlot(),
                         const SizedBox(height: AppSpacing.md),
+                        NearIntentsServiceNotice(
+                          direction: swapState.direction,
+                          externalAsset: swapState.externalAsset,
+                        ),
                         _SwapReviewFooter(
                           state: swapState,
                           zecAvailableZatoshi: migrationSpendable,

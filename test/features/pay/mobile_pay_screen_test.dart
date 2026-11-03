@@ -4,6 +4,9 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_status.dart';
+import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
+import '../swap/support/service_status_fixture.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -54,6 +57,7 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 );
 
 Widget _app({
+  NearIntentsServiceStatus? serviceStatus,
   bool preservePreparedComposer = false,
   bool usePreparedComposer = false,
   SyncState? syncState,
@@ -61,6 +65,9 @@ Widget _app({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      nearIntentsServiceStatusProvider.overrideWith(
+        () => FixtureServiceStatusNotifier(serviceStatus),
+      ),
       if (usePreparedComposer)
         swapStateProvider.overrideWith(_PreparedPayNotifier.new),
       syncProvider.overrideWith(
@@ -332,6 +339,69 @@ Future<void> _setMobileViewport(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  testWidgets(
+    'service notice keeps mobile Pay actions reachable with multiple windows and keyboard',
+    (tester) async {
+      await _setMobileViewport(tester, const Size(320, 568));
+      addTearDown(tester.view.resetViewInsets);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 216);
+      await tester.pumpWidget(
+        _app(
+          serviceStatus: serviceStatusFixture(windows: 5),
+          usePreparedComposer: true,
+          preservePreparedComposer: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final button = find.byKey(
+        const ValueKey('mobile_pay_amount_continue_button'),
+      );
+      expect(button.hitTestable(), findsOneWidget);
+      expect(tester.getRect(button).bottom, lessThanOrEqualTo(352));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'service notice is advisory and only on the mobile Pay amount step',
+    (tester) async {
+      await _setMobileViewport(tester, const Size(320, 568));
+      await tester.pumpWidget(
+        _app(serviceStatus: serviceStatusFixture(upcoming: true)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Maintenance scheduled'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('mobile_pay_amount_input')),
+        '10',
+      );
+      await tester.pumpAndSettle();
+      final button = find.byKey(
+        const ValueKey('mobile_pay_amount_continue_button'),
+      );
+      expect(tester.widget<AppButton>(button).onPressed, isNotNull);
+      expect(
+        tester
+            .getRect(
+              find.byKey(const ValueKey('mobile_pay_service_notice_scroll')),
+            )
+            .bottom,
+        lessThanOrEqualTo(tester.getRect(button).top),
+      );
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('mobile_pay_recipient_step')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('near_intents_service_notice')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('slippage buttons stay above the keyboard on a compact route', (
     tester,
   ) async {

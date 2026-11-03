@@ -1,10 +1,13 @@
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../../swap/widgets/near_intents_service_notice.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/layout/mobile/mobile_bottom_safe_area.dart';
@@ -363,6 +366,11 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                   bottomPadding: AppSpacing.md,
                   child: switch (_step) {
                     _MobilePayStep.amount => MobilePayAmountStep(
+                      serviceNotice: NearIntentsServiceNotice(
+                        direction: SwapDirection.zecToExternal,
+                        externalAsset: swapState.externalAsset,
+                        payMode: true,
+                      ),
                       state: swapState,
                       controller: _amountController,
                       focusNode: _amountFocusNode,

@@ -1,10 +1,13 @@
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../widgets/near_intents_service_notice.dart';
 
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/zec_amount.dart';
@@ -403,6 +406,10 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                         )?.label,
                       ),
                       const SizedBox(height: AppSpacing.md),
+                      NearIntentsServiceNotice(
+                        direction: swapState.direction,
+                        externalAsset: swapState.externalAsset,
+                      ),
                       Row(
                         children: [
                           AppButton(

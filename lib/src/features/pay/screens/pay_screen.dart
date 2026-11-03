@@ -28,6 +28,7 @@ import '../../swap/screens/swap_review_screen.dart'
     show swapReviewFiatTextForAsset, swapReviewQuoteExceedsAvailableZec;
 import '../../swap/widgets/swap_asset_selector_modal.dart';
 import '../../swap/widgets/swap_slippage_modal.dart';
+import '../../swap/widgets/near_intents_service_notice.dart';
 import '../models/pay_recent_recipients.dart';
 import '../widgets/pay_add_contact_modal.dart';
 import '../widgets/pay_amount_step.dart';
@@ -403,7 +404,20 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                           setState(() => _payModal = _PayModalSurface.slippage),
                     )
                   : null,
-              actions: actions,
+              actions: _wizardStep == _PayWizardStep.amount && actions != null
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        NearIntentsServiceNotice(
+                          direction: SwapDirection.zecToExternal,
+                          externalAsset: swapState.externalAsset,
+                          payMode: true,
+                        ),
+                        actions,
+                      ],
+                    )
+                  : actions,
               onStepSelected: (index) =>
                   _goToStep(_PayWizardStep.values[index]),
               child: switch (_wizardStep) {
