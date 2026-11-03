@@ -3428,7 +3428,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           const SizedBox(height: AppSpacing.sm),
           SizedBox(
             key: const ValueKey('mobile_send_review_buttons'),
-            height: 112,
+            height: _isDonation ? AppButtonSizing.largeHeight : 112,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -3483,17 +3483,18 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         : 'Confirm & Send',
                   ),
                 ),
-                const SizedBox(height: AppSpacing.s),
-                AppButton(
-                  key: const ValueKey('mobile_send_cancel'),
-                  expand: true,
-                  constrainContent: _isDonation,
-                  variant: AppButtonVariant.ghost,
-                  onPressed: _isConfirmingSend || _pendingCancellation != null
-                      ? null
-                      : _cancelSend,
-                  child: const Text('Cancel'),
-                ),
+                if (!_isDonation) ...[
+                  const SizedBox(height: AppSpacing.s),
+                  AppButton(
+                    key: const ValueKey('mobile_send_cancel'),
+                    expand: true,
+                    variant: AppButtonVariant.ghost,
+                    onPressed: _isConfirmingSend || _pendingCancellation != null
+                        ? null
+                        : _cancelSend,
+                    child: const Text('Cancel'),
+                  ),
+                ],
               ],
             ),
           ),

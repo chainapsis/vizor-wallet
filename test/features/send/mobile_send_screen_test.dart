@@ -980,6 +980,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Review donation'), findsOneWidget);
+      expect(find.byKey(const ValueKey('mobile_send_cancel')), findsNothing);
       expect(find.text('Vizor Wallet'), findsOneWidget);
       expect(find.text('Total'), findsOneWidget);
       expect(find.byKey(const ValueKey('mobile_send_memo_row')), findsNothing);
