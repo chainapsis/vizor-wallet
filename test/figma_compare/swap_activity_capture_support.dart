@@ -42,6 +42,12 @@ void runSwapActivityCaptures(AppFormFactor formFactor) {
           await tester.tap(find.text('Transaction details'));
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
+          // Repaint the whole surface: retained header layers can otherwise
+          // be absent from a widget image after only the tab body repaints.
+          for (final view in tester.binding.renderViews) {
+            view.reassemble();
+          }
+          await tester.pump();
           expect(find.text('Tx ID'), findsOneWidget);
           expect(find.text('View on NEAR Intents'), findsNothing);
         },
