@@ -306,7 +306,7 @@ class MobileSettingsScreen extends ConsumerWidget {
                     rows: [
                       MobileListRow(
                         key: const ValueKey('mobile_settings_donation_row'),
-                        leading: _RowIcon(AppIcons.donation),
+                        leading: _RowIcon(AppIcons.donation, glyphSize: 16.5),
                         label: 'Support Vizor',
                         minRowHeight: _settingsRowHeight,
                         textStyle: settingsRowStyle,
@@ -764,15 +764,19 @@ class _SyncKeepAwakeToggle extends StatelessWidget {
 const _settingsRowHeight = 44.0;
 
 class _RowIcon extends StatelessWidget {
-  const _RowIcon(this.iconName);
+  const _RowIcon(this.iconName, {this.glyphSize = 20});
 
   final String iconName;
+  final double glyphSize;
 
   @override
   Widget build(BuildContext context) {
     // Muted per the Figma settings rows — the leading glyphs are
     // decorative, not max-contrast.
-    return AppIcon(iconName, size: 20, color: context.colors.icon.muted);
+    final icon = AppIcon(iconName, size: 20, color: context.colors.icon.muted);
+    return glyphSize == 20
+        ? icon
+        : Transform.scale(scale: glyphSize / 20, child: icon);
   }
 }
 
