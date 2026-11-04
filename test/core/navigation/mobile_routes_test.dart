@@ -36,6 +36,8 @@ import 'package:zcash_wallet/src/features/activity/screens/mobile/mobile_activit
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/home/widgets/mobile/shield/mobile_shield_scene.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
+import 'package:zcash_wallet/src/features/donation/screens/donation_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/send_proving_key_warmup.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import 'package:zcash_wallet/src/features/receive/screens/mobile/mobile_receive_screen.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
@@ -86,12 +88,12 @@ const _accountState = AccountState(
   activeAddress: 'u1routeraddress',
 );
 
-AppBootstrapState _bootstrap() => AppBootstrapState(
+AppBootstrapState _bootstrap({String network = 'main'}) => AppBootstrapState(
   initialLocation: '/home',
   initialAccountState: _accountState,
   initialSyncSnapshot: AppSyncSnapshot.empty,
-  network: 'main',
-  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  network: network,
+  rpcEndpointConfig: defaultRpcEndpointConfig(network),
   themeMode: ThemeMode.dark,
   privacyModeEnabled: false,
   isPasswordConfigured: true,
@@ -99,8 +101,8 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
   passwordRotationRecoveryFailed: false,
 );
 
-GoRouter _router() => GoRouter(
-  initialLocation: '/home',
+GoRouter _router({String initialLocation = '/home'}) => GoRouter(
+  initialLocation: initialLocation,
   routes: buildMobileRoutes(entryRoutes: const []),
 );
 
@@ -109,10 +111,12 @@ Widget _app(
   bool swapFeatureEnabled = true,
   AppThemeData theme = AppThemeData.dark,
   SyncState? initialSyncState,
+  String network = 'main',
   List<Override> overrides = const [],
 }) => ProviderScope(
   overrides: [
-    appBootstrapProvider.overrideWithValue(_bootstrap()),
+    appBootstrapProvider.overrideWithValue(_bootstrap(network: network)),
+    sendProvingKeyWarmupProvider.overrideWithValue(() {}),
     swapFeatureEnabledProvider.overrideWithValue(swapFeatureEnabled),
     // The coin bob loops forever, which would break pumpAndSettle here;
     // Funded so the home tab shows the Send action used by the push
@@ -185,6 +189,39 @@ List<({Color? fill, Color? label})> _sidebarPaints(WidgetTester tester) => [
 ];
 
 void main() {
+  for (final network in ['main', 'test', 'regtest']) {
+    testWidgets('mobile donation route checks its network: $network', (
+      tester,
+    ) async {
+      final router = _router(initialLocation: '/donation');
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_app(router, network: network));
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(DonationScreen),
+        network == 'main' ? findsOneWidget : findsNothing,
+      );
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        network == 'main' ? '/donation' : '/settings',
+      );
+      expect(
+        find.byType(AppMobileTabBar),
+        network == 'main' ? findsNothing : findsOneWidget,
+      );
+    });
+  }
+  testWidgets(
+    'a restored donation review without a draft returns to the composer',
+    (tester) async {
+      final router = _router(initialLocation: '/donation/review');
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_app(router));
+      await tester.pumpAndSettle();
+      expect(find.byType(DonationScreen), findsOneWidget);
+      expect(router.routeInformationProvider.value.uri.path, '/donation');
+    },
+  );
   for (final interrupted in ['none', 'different', 'same']) {
     testWidgets(
       'sidebar waits for cleanup, serializes input and respects route changes ($interrupted)',

@@ -75,6 +75,7 @@ Future<void> stopTorUpdateRelay() =>
 /// Tor is still bootstrapping waits for the route first, under the bootstrap's
 /// own deadline, and the caller's cancellation covers that wait.
 /// `max_body_bytes` stops reception before buffering a reply beyond its budget.
+/// The budget is always capped at 16 MiB, including when it is omitted.
 Future<NetworkHttpResponse> torHttpGet({
   required String url,
   required List<NetworkHttpHeader> headers,
@@ -96,6 +97,7 @@ Future<NetworkHttpResponse> torHttpGet({
 /// Tor is still bootstrapping waits for the route first, under the bootstrap's
 /// own deadline, and the caller's cancellation covers that wait.
 /// `max_body_bytes` stops reception before buffering a reply beyond its budget.
+/// The budget is always capped at 16 MiB, including when it is omitted.
 Future<NetworkHttpResponse> torHttpPost({
   required String url,
   required List<NetworkHttpHeader> headers,

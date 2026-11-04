@@ -861,8 +861,7 @@ fn pending_migration_policy_rebuild_message(
             network,
             run_id,
             chain_tip_height,
-        )?
-    {
+        )? {
         super::migration::resigning_parts_with_changed_fee_count(
             db_path,
             run_id,

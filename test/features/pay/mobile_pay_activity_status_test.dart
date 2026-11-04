@@ -541,6 +541,9 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
+      expect(find.text('View on NEAR Intents'), findsOneWidget);
+      await tester.tap(find.text('Transaction details'));
+      await tester.pump();
       expect(find.text('0.0001 ZEC'), findsOneWidget);
       expect(find.text('0.0125 ZEC'), findsNothing);
       expect(_tooltipWithMessage(kTxFeeHelpTooltip), findsOneWidget);

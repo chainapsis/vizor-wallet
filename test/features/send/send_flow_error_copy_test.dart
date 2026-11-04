@@ -6,6 +6,34 @@ import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 
 void main() {
   group('friendlyProposeSendError', () {
+    test('uses donation copy for an unknown donation proposal failure', () {
+      expect(
+        friendlyProposeSendError(
+          'proposal failed',
+          flowKind: SendFlowKind.donation,
+        ),
+        'Donation failed. Try again.',
+      );
+      expect(
+        friendlyProposeSendError('proposal failed'),
+        'Send failed. Try again.',
+      );
+    });
+
+    test('preserves actionable proposal errors in the donation flow', () {
+      for (final raw in [
+        'InsufficientFunds',
+        'Wallet must sync',
+        'grpc connect failed',
+        'proposal not found',
+      ]) {
+        expect(
+          friendlyProposeSendError(raw, flowKind: SendFlowKind.donation),
+          friendlyProposeSendError(raw),
+        );
+      }
+    });
+
     test("maps Rust's own no-tip wording onto the sync message", () {
       expect(
         friendlyProposeSendError(
