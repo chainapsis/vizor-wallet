@@ -564,7 +564,10 @@ String friendlyPaymentRequestCheckError(String raw) {
   return "Couldn't check this request — try again or edit the details";
 }
 
-String friendlyProposeSendError(String raw) {
+String friendlyProposeSendError(
+  String raw, {
+  SendFlowKind flowKind = SendFlowKind.send,
+}) {
   final upgradeHold = networkUpgradeHoldMessage(raw);
   if (upgradeHold != null) return upgradeHold;
   if (isTransparentLedgerNeedsNewerBuildError(raw)) {
@@ -601,7 +604,9 @@ String friendlyProposeSendError(String raw) {
       lower.contains('send flow mismatch')) {
     return 'Transaction expired before it could be sent. Try again.';
   }
-  return 'Send failed. Try again.';
+  return flowKind == SendFlowKind.donation
+      ? 'Donation failed. Try again.'
+      : 'Send failed. Try again.';
 }
 
 String friendlyBroadcastError(String raw) {

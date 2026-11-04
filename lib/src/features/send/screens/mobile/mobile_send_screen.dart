@@ -1916,7 +1916,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() {
         _isConfirmingSend = false;
         _phase = _SendPhase.failed;
-        _error = friendlyProposeSendError(e.toString());
+        _error = friendlyProposeSendError(
+          e.toString(),
+          flowKind: widget.flowKind,
+        );
       });
       return;
     }
@@ -3508,8 +3511,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final amountText =
         ZecAmount.tryParse(_amountText)?.receipt.toString() ??
         '$_amountText ZEC';
-    final toLabel =
-        _contactLabel ?? _truncateAddress(_addressController.text.trim());
+    final toLabel = _isDonation
+        ? 'Vizor Wallet'
+        : _contactLabel ?? _truncateAddress(_addressController.text.trim());
 
     return Padding(
       key: ValueKey('mobile_send_status_${_phase.name}'),
@@ -3527,7 +3531,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  'Send failed',
+                  _isDonation ? 'Donation failed' : 'Send failed',
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.accent,
@@ -3567,12 +3571,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             button: true,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => context.go('/home'),
+              onTap: () => context.go(_isDonation ? '/settings' : '/home'),
               child: SizedBox(
                 height: 44,
                 child: Center(
                   child: Text(
-                    'Back to wallet',
+                    _isDonation ? 'Return to settings' : 'Back to wallet',
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.primary,
                     ),

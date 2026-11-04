@@ -485,6 +485,7 @@ class _FakeAddressBookRepository implements AddressBookRepository {
 
 Widget _app({
   bool initialReview = false,
+  bool useRouteSteps = false,
   SendFlowKind flowKind = SendFlowKind.send,
   ValueChanged<SendReviewArgs>? onStatusRoute,
   List<AddressBookContact> contacts = const [],
@@ -525,6 +526,7 @@ Widget _app({
           initialAmount: initialAmount,
           initialAmountReady: initialAmountReady,
           initialReview: initialReview,
+          useRouteSteps: useRouteSteps,
           flowKind: flowKind,
           initialFeeZatoshi: initialFeeZatoshi,
           initialMemo: initialMemo,
@@ -992,6 +994,76 @@ void main() {
       expect(submitted?.amountZatoshi, BigInt.from(2000000));
     },
   );
+
+  testWidgets(
+    'donation proposal failure keeps donation copy and returns to settings',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          initialReview: true,
+          useRouteSteps: true,
+          flowKind: SendFlowKind.donation,
+          initialAmount: '0.02',
+          initialAmountReady: true,
+          initialFeeZatoshi: BigInt.from(10000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(_proposeCalls, 1);
+      expect(find.text('Donation failed'), findsNWidgets(2));
+      expect(find.textContaining('to Vizor Wallet'), findsOneWidget);
+      expect(find.text('Send failed'), findsNothing);
+      expect(find.text('Donation failed. Try again.'), findsOneWidget);
+      expect(find.text('Send failed. Try again.'), findsNothing);
+      expect(find.text('Back to wallet'), findsNothing);
+      expect(
+        find.textContaining(kVizorDonationAddress.substring(0, 13)),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Return to settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('settings'), findsOneWidget);
+      expect(find.text('home'), findsNothing);
+    },
+  );
+
+  testWidgets('donation proposal failure can retry the same donation', (
+    tester,
+  ) async {
+    SendReviewArgs? submitted;
+    await tester.pumpWidget(
+      _app(
+        initialReview: true,
+        useRouteSteps: true,
+        flowKind: SendFlowKind.donation,
+        initialAmount: '0.02',
+        initialAmountReady: true,
+        initialFeeZatoshi: BigInt.from(10000),
+        onStatusRoute: (args) => submitted = args,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Donation failed'), findsNWidgets(2));
+
+    await tester.tap(find.byKey(const ValueKey('mobile_send_try_again')));
+    await tester.pumpAndSettle();
+    expect(find.text('Review donation'), findsOneWidget);
+    expect(find.text('Vizor Wallet'), findsOneWidget);
+
+    _proposeSendSucceeds = true;
+    await tester.tap(find.byKey(const ValueKey('mobile_send_confirm')));
+    await tester.pumpAndSettle();
+    expect(_proposeCalls, 2);
+    expect(_lastProposeToAddress, kVizorDonationAddress);
+    expect(submitted?.flowKind, SendFlowKind.donation);
+    expect(submitted?.amountZatoshi, BigInt.from(2000000));
+  });
 
   testWidgets(
     'donation review uses existing Ledger signing with donation args',
