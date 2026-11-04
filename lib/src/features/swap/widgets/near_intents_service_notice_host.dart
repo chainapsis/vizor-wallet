@@ -47,11 +47,17 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
   ModalRoute<void>? _mobileRoute;
   bool _closing = false;
   NearIntentsServiceNoticeData? _candidate;
+  ProviderSubscription<NearIntentsServiceStatus>? _statusSubscription;
+  NearIntentsServiceStatus? _status;
+  bool _tickerEnabled = true;
   bool _scheduled = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // go_router's retained tab navigators disable TickerMode when inactive.
+    // A transparent sheet above this page leaves its ticker mode enabled.
+    _tickerEnabled = TickerMode.valuesOf(context).enabled;
     final pages = <ModalRoute<dynamic>>[];
     var route = ModalRoute.of(context);
     while (route != null) {
@@ -87,16 +93,20 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
 
   void _animationChanged(AnimationStatus _) => _schedule();
 
-  bool get _eligible =>
+  bool get _shouldPoll =>
       widget.enabled &&
       !widget.blocked &&
+      _tickerEnabled &&
       _pages.every(
         (page) =>
             page.isActive &&
             (page.isCurrent ||
                 (_mobileRoute?.isCurrent == true &&
                     page.navigator == _mobileRoute?.navigator)),
-      ) &&
+      );
+
+  bool get _eligible =>
+      _shouldPoll &&
       _observers.every((observer) => !observer.hasDepartingRoutes) &&
       _animations.every(
         (animation) => animation.status == AnimationStatus.completed,
@@ -114,6 +124,27 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
   }
 
   void _reconcile() {
+    // Navigation observers also wake this path when a nested parent route
+    // changes without rebuilding the composer. Keep the subscription here so
+    // route coverage and retained tabs govern polling as well as presentation.
+    if (!_shouldPoll) {
+      _statusSubscription?.close();
+      _statusSubscription = null;
+      _status = null;
+    } else {
+      _statusSubscription ??= ref.listenManual<NearIntentsServiceStatus>(
+        nearIntentsServiceStatusProvider,
+        (_, value) {
+          _status = value;
+          _schedule();
+        },
+        fireImmediately: true,
+      );
+    }
+    _candidate = _status?.noticeFor(
+      inputChain: widget.direction.fromAsset(widget.externalAsset).chainTicker,
+      outputChain: widget.direction.toAsset(widget.externalAsset).chainTicker,
+    );
     // A normal sheet pop keeps its contents throughout the exit animation.
     // The shared route's completion releases the data and our ownership.
     if (_closing || (_mobileRoute != null && !_mobileRoute!.isActive)) return;
@@ -196,6 +227,7 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
 
   @override
   void dispose() {
+    _statusSubscription?.close();
     for (final observer in _observers) {
       observer.removeListener(_schedule);
     }
@@ -214,13 +246,6 @@ class _NoticeHostState extends ConsumerState<NearIntentsServiceNoticeHost> {
 
   @override
   Widget build(BuildContext context) {
-    final status = widget.enabled
-        ? ref.watch(nearIntentsServiceStatusProvider)
-        : null;
-    _candidate = status?.noticeFor(
-      inputChain: widget.direction.fromAsset(widget.externalAsset).chainTicker,
-      outputChain: widget.direction.toAsset(widget.externalAsset).chainTicker,
-    );
     _schedule();
     if (kAppFormFactor == AppFormFactor.mobile) return widget.child;
     return Stack(

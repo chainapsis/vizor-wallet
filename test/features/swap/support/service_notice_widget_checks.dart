@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/near_intents_service_noti
 import 'package:zcash_wallet/src/features/swap/widgets/near_intents_service_notice_host.dart';
 
 import 'service_status_fixture.dart';
+import 'service_notice_polling_checks.dart';
 
 const _modal = ValueKey('near_intents_service_notice');
 const _ok = ValueKey('near_intents_service_notice_ok');
@@ -87,6 +88,7 @@ FixtureServiceStatusNotifier _notifier(WidgetTester tester) =>
         as FixtureServiceStatusNotifier;
 
 void serviceNoticeWidgetChecks() {
+  serviceNoticePollingChecks();
   testWidgets(
     'maintenance times identify their scope alongside an independent incident',
     (tester) async {
@@ -385,17 +387,26 @@ void serviceNoticeWidgetChecks() {
     tester,
   ) async {
     final navigator = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(_app(navigator: navigator, nested: true));
+    final source = _TrackingSource()..id = null;
+    await tester.pumpWidget(
+      _app(
+        navigator: navigator,
+        nested: true,
+        source: source,
+        clock: fakeServiceElapsed(tester),
+      ),
+    );
     await tester.pumpAndSettle();
-    final notifier = _notifier(tester);
     navigator.currentState!.push(
       MaterialPageRoute<void>(
         builder: (_) => const Scaffold(body: Text('Review')),
       ),
     );
     await tester.pumpAndSettle();
-    notifier.publish(_incident('A'));
+    source.id = 'A';
+    await tester.pump(const Duration(seconds: 30));
     await tester.pumpAndSettle();
+    expect(source.calls, 1);
     expect(find.byKey(_modal, skipOffstage: false), findsNothing);
     expect(find.text('Review'), findsOneWidget);
     navigator.currentState!.pop();
@@ -426,6 +437,7 @@ void serviceNoticeWidgetChecks() {
 
 class _TrackingSource implements NearIntentsServiceStatusSource {
   int calls = 0;
+  String? id = 'A';
   bool disposed = false;
   @override
   Future<NearIntentsServiceFeed> loadIncidents({
@@ -434,8 +446,8 @@ class _TrackingSource implements NearIntentsServiceStatusSource {
     calls++;
     return NearIntentsServiceFeed(
       serverTime: DateTime.utc(2026, 11, 3),
-      issues: const [
-        NearIntentsServiceIssue(id: 'A', chains: {'*'}),
+      issues: [
+        if (id != null) NearIntentsServiceIssue(id: id, chains: const {'*'}),
       ],
     );
   }
