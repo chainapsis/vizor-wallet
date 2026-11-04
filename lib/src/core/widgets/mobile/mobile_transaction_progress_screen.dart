@@ -48,6 +48,7 @@ class MobileTransactionProgressScreen extends StatelessWidget {
     this.successRippleKey,
     this.primaryActionKey,
     this.secondaryActionKey,
+    this.successBadge,
     super.key,
   });
 
@@ -70,6 +71,7 @@ class MobileTransactionProgressScreen extends StatelessWidget {
   final Key? successRippleKey;
   final Key? primaryActionKey;
   final Key? secondaryActionKey;
+  final Widget? successBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -106,101 +108,113 @@ class MobileTransactionProgressScreen extends StatelessWidget {
                   // content while the transaction is in flight.
                   const SizedBox(height: kMobileTopNavHeight),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                        vertical: AppSpacing.s,
-                      ),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            MobileTransactionProgressBadge(
-                              phase: phase,
-                              badgeKey: statusBadgeKey,
-                              progressIconKey: progressIconKey,
-                              successIconKey: successIconKey,
-                              failureIconKey: failureIconKey,
-                              successRippleKey: successRippleKey,
-                            ),
-                            const SizedBox(height: AppSpacing.xl),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md,
-                              ),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    title,
-                                    key: titleKey,
-                                    textAlign: TextAlign.center,
-                                    style: AppTypography.displayLarge.copyWith(
-                                      color: titleColor,
+                    child: _ProgressContentViewport(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: AppSpacing.s,
+                        ),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (phase ==
+                                      MobileTransactionProgressPhase
+                                          .succeeded &&
+                                  successBadge != null)
+                                successBadge!
+                              else
+                                MobileTransactionProgressBadge(
+                                  phase: phase,
+                                  badgeKey: statusBadgeKey,
+                                  progressIconKey: progressIconKey,
+                                  successIconKey: successIconKey,
+                                  failureIconKey: failureIconKey,
+                                  successRippleKey: successRippleKey,
+                                ),
+                              const SizedBox(height: AppSpacing.xl),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.md,
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      title,
+                                      key: titleKey,
+                                      textAlign: TextAlign.center,
+                                      style: AppTypography.displayLarge
+                                          .copyWith(color: titleColor),
                                     ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.s),
-                                  LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final requestedWidth = bodyMaxWidth;
-                                      final maxWidth = requestedWidth == null
-                                          ? constraints.maxWidth
-                                          : math.min(
-                                              requestedWidth,
-                                              constraints.maxWidth,
-                                            );
-                                      return ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          maxWidth: maxWidth,
-                                        ),
-                                        child: Text(
-                                          body,
-                                          key: bodyKey,
-                                          textAlign: TextAlign.center,
-                                          style: AppTypography.bodyMediumStrong
-                                              .copyWith(
-                                                color: colors.text.primary,
+                                    const SizedBox(height: AppSpacing.s),
+                                    LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final requestedWidth = bodyMaxWidth;
+                                        final maxWidth = requestedWidth == null
+                                            ? constraints.maxWidth
+                                            : math.min(
+                                                requestedWidth,
+                                                constraints.maxWidth,
+                                              );
+                                        return ConstrainedBox(
+                                          constraints: BoxConstraints(
+                                            maxWidth: maxWidth,
+                                          ),
+                                          child: Text(
+                                            body,
+                                            key: bodyKey,
+                                            textAlign: TextAlign.center,
+                                            style: AppTypography
+                                                .bodyMediumStrong
+                                                .copyWith(
+                                                  color: colors.text.primary,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.xl),
+                              SizedBox(
+                                width: _statusButtonWidth,
+                                child: showPrimary || showSecondary
+                                    ? Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          if (showPrimary)
+                                            AppButton(
+                                              key: primaryActionKey,
+                                              onPressed: onPrimaryAction,
+                                              expand: true,
+                                              constrainContent: true,
+                                              child: Text(primaryActionLabel!),
+                                            ),
+                                          if (showPrimary && showSecondary)
+                                            const SizedBox(
+                                              height: AppSpacing.s,
+                                            ),
+                                          if (showSecondary)
+                                            AppButton(
+                                              key: secondaryActionKey,
+                                              onPressed: onSecondaryAction,
+                                              expand: true,
+                                              constrainContent: true,
+                                              variant: AppButtonVariant.ghost,
+                                              child: Text(
+                                                secondaryActionLabel!,
                                               ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
+                                            ),
+                                        ],
+                                      )
+                                    : const SizedBox(
+                                        height: AppButtonSizing.largeHeight,
+                                      ),
                               ),
-                            ),
-                            const SizedBox(height: AppSpacing.xl),
-                            SizedBox(
-                              width: _statusButtonWidth,
-                              child: showPrimary || showSecondary
-                                  ? Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        if (showPrimary)
-                                          AppButton(
-                                            key: primaryActionKey,
-                                            onPressed: onPrimaryAction,
-                                            expand: true,
-                                            constrainContent: true,
-                                            child: Text(primaryActionLabel!),
-                                          ),
-                                        if (showPrimary && showSecondary)
-                                          const SizedBox(height: AppSpacing.s),
-                                        if (showSecondary)
-                                          AppButton(
-                                            key: secondaryActionKey,
-                                            onPressed: onSecondaryAction,
-                                            expand: true,
-                                            constrainContent: true,
-                                            variant: AppButtonVariant.ghost,
-                                            child: Text(secondaryActionLabel!),
-                                          ),
-                                      ],
-                                    )
-                                  : const SizedBox(
-                                      height: AppButtonSizing.largeHeight,
-                                    ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -213,6 +227,23 @@ class MobileTransactionProgressScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Keeps the normal centered composition while allowing long status copy and
+/// accessibility text to scroll on short viewports.
+class _ProgressContentViewport extends StatelessWidget {
+  const _ProgressContentViewport({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: child,
+      ),
+    ),
+  );
 }
 
 class MobileTransactionProgressBadge extends StatefulWidget {
