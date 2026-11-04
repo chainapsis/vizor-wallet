@@ -17,9 +17,8 @@ const _modal = ValueKey('near_intents_service_notice');
 const _ok = ValueKey('near_intents_service_notice_ok');
 NearIntentsServiceStatus _incident(String id, {String chain = '*'}) {
   final now = DateTime.utc(2026, 11, 3);
-  return NearIntentsServiceStatus(
-    now: now,
-    incidentsFetchedAt: now,
+  return serviceStatusSnapshot(
+    serverTime: now,
     incidents: [
       NearIntentsServiceIssue(chains: {chain}, id: id),
     ],
@@ -33,7 +32,7 @@ Widget _app({
   ServiceStatusPageLauncher? launcher,
   bool nested = false,
   _TrackingSource? source,
-  DateTime Function()? clock,
+  Duration Function()? clock,
 }) {
   final content =
       page ??
@@ -54,7 +53,7 @@ Widget _app({
           return source;
         }),
       if (clock != null)
-        nearIntentsServiceStatusClockProvider.overrideWithValue(clock),
+        nearIntentsServiceElapsedProvider.overrideWithValue(clock),
       if (launcher != null)
         nearIntentsServiceStatusPageLauncherProvider.overrideWithValue(
           launcher,
@@ -95,10 +94,8 @@ void serviceNoticeWidgetChecks() {
       final window = original.maintenance.single;
       await tester.pumpWidget(
         _app(
-          status: NearIntentsServiceStatus(
-            now: original.now,
-            incidentsFetchedAt: original.now,
-            maintenanceFetchedAt: original.now,
+          status: serviceStatusSnapshot(
+            serverTime: original.maintenanceFeed!.feed.serverTime,
             incidents: const [
               NearIntentsServiceIssue(id: 'outage', chains: {'*'}),
             ],
@@ -158,7 +155,7 @@ void serviceNoticeWidgetChecks() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       final source = _TrackingSource();
       await tester.pumpWidget(
-        _app(source: source, clock: tester.binding.clock.now),
+        _app(source: source, clock: fakeServiceElapsed(tester)),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(_modal), findsOneWidget);
@@ -295,7 +292,7 @@ void serviceNoticeWidgetChecks() {
       await tester.pumpAndSettle();
       for (final status in [
         _incident('A'),
-        NearIntentsServiceStatus(now: DateTime.utc(2026, 11, 3)),
+        const NearIntentsServiceStatus(),
         _incident('A'),
       ]) {
         notifier.publish(status);
@@ -305,9 +302,7 @@ void serviceNoticeWidgetChecks() {
       notifier.publish(_incident('B'));
       await tester.pumpAndSettle();
       expect(find.byKey(_modal), findsOneWidget);
-      notifier.publish(
-        NearIntentsServiceStatus(now: DateTime.utc(2026, 11, 3)),
-      );
+      notifier.publish(const NearIntentsServiceStatus());
       await tester.pumpAndSettle();
       expect(find.byKey(_modal), findsNothing);
       expect(find.text('Composer'), findsOneWidget);
@@ -328,9 +323,8 @@ void serviceNoticeWidgetChecks() {
       final original = serviceStatusFixture();
       final window = original.maintenance.single;
       notifier.publish(
-        NearIntentsServiceStatus(
-          now: original.now,
-          maintenanceFetchedAt: original.now,
+        serviceStatusSnapshot(
+          serverTime: original.maintenanceFeed!.feed.serverTime,
           maintenance: [
             NearIntentsServiceIssue(
               chains: window.chains,
@@ -434,17 +428,23 @@ class _TrackingSource implements NearIntentsServiceStatusSource {
   int calls = 0;
   bool disposed = false;
   @override
-  Future<List<NearIntentsServiceIssue>> loadIncidents({
+  Future<NearIntentsServiceFeed> loadIncidents({
     Future<void>? cancelSignal,
   }) async {
     calls++;
-    return const [
-      NearIntentsServiceIssue(id: 'A', chains: {'*'}),
-    ];
+    return NearIntentsServiceFeed(
+      serverTime: DateTime.utc(2026, 11, 3),
+      issues: const [
+        NearIntentsServiceIssue(id: 'A', chains: {'*'}),
+      ],
+    );
   }
 
   @override
-  Future<List<NearIntentsServiceIssue>> loadMaintenance({
+  Future<NearIntentsServiceFeed> loadMaintenance({
     Future<void>? cancelSignal,
-  }) async => [];
+  }) async => NearIntentsServiceFeed(
+    serverTime: DateTime.utc(2026, 11, 3),
+    issues: const [],
+  );
 }

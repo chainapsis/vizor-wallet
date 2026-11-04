@@ -49,51 +49,98 @@ class NearIntentsServiceNoticeData {
   bool get maintenanceOnly => issues.every((issue) => issue.isMaintenance);
 }
 
+/// One independently validated response, with time supplied by the Vizor proxy.
+class NearIntentsServiceFeed {
+  const NearIntentsServiceFeed({
+    required this.issues,
+    required this.serverTime,
+  });
+  final List<NearIntentsServiceIssue> issues;
+  final DateTime serverTime;
+}
+
+/// Anchors a feed to the local monotonic clock at receipt. Device wall time and
+/// network round-trip estimates are deliberately absent from this calculation.
+class NearIntentsServiceObservation {
+  const NearIntentsServiceObservation({
+    required this.feed,
+    required this.receivedAt,
+  });
+  final NearIntentsServiceFeed feed;
+  final Duration receivedAt;
+
+  Duration ageAt(Duration elapsed) => elapsed - receivedAt;
+  bool freshAt(Duration elapsed) {
+    final age = ageAt(elapsed);
+    return !age.isNegative && age < nearIntentsStatusFreshness;
+  }
+
+  DateTime serverTimeAt(Duration elapsed) =>
+      feed.serverTime.add(ageAt(elapsed));
+}
+
 class NearIntentsServiceStatus {
   const NearIntentsServiceStatus({
-    required this.now,
-    this.incidents = const [],
-    this.maintenance = const [],
-    this.incidentsFetchedAt,
-    this.maintenanceFetchedAt,
+    this.elapsed = Duration.zero,
+    this.incidentFeed,
+    this.maintenanceFeed,
   });
 
-  final DateTime now;
-  final List<NearIntentsServiceIssue> incidents;
-  final List<NearIntentsServiceIssue> maintenance;
-  final DateTime? incidentsFetchedAt;
-  final DateTime? maintenanceFetchedAt;
+  final Duration elapsed;
+  final NearIntentsServiceObservation? incidentFeed;
+  final NearIntentsServiceObservation? maintenanceFeed;
+  List<NearIntentsServiceIssue> get incidents =>
+      incidentFeed?.feed.issues ?? const [];
+  List<NearIntentsServiceIssue> get maintenance =>
+      maintenanceFeed?.feed.issues ?? const [];
 
   NearIntentsServiceNoticeData? noticeFor({
     required String inputChain,
     required String outputChain,
   }) {
-    bool fresh(DateTime? fetchedAt) =>
-        fetchedAt != null &&
-        !now.isBefore(fetchedAt) &&
-        now.difference(fetchedAt) < nearIntentsStatusFreshness;
-    final matching =
-        [
-              if (fresh(incidentsFetchedAt)) ...incidents,
-              if (fresh(maintenanceFetchedAt)) ...maintenance,
-            ]
-            .where(
-              (issue) =>
-                  issue.affects(inputChain, outputChain) &&
-                  issue.visibleAt(now),
-            )
-            .toList();
+    final matching = <NearIntentsServiceIssue>[
+      for (final observation in [incidentFeed, maintenanceFeed])
+        if (observation != null && observation.freshAt(elapsed))
+          for (final issue in observation.feed.issues)
+            if (issue.affects(inputChain, outputChain) &&
+                issue.visibleAt(observation.serverTimeAt(elapsed)))
+              issue,
+    ];
     if (matching.isEmpty) return null;
-    final selected = matching;
-    selected.sort((a, b) {
+    matching.sort((a, b) {
       final global = (b.chains.contains('*') ? 1 : 0).compareTo(
         a.chains.contains('*') ? 1 : 0,
       );
       if (global != 0) return global;
-      return (a.startsAt ?? now).compareTo(b.startsAt ?? now);
+      if (a.startsAt == null) return b.startsAt == null ? 0 : 1;
+      if (b.startsAt == null) return -1;
+      return a.startsAt!.compareTo(b.startsAt!);
     });
-    return NearIntentsServiceNoticeData(issues: selected);
+    return NearIntentsServiceNoticeData(issues: matching);
   }
+
+  /// Re-evaluate at expiry or a maintenance boundary, without another HTTP call.
+  Duration? get nextUpdateIn {
+    final delays = <Duration>[
+      for (final observation in [incidentFeed, maintenanceFeed])
+        if (observation != null && observation.freshAt(elapsed)) ...[
+          nearIntentsStatusFreshness - observation.ageAt(elapsed),
+          for (final issue in observation.feed.issues)
+            if (issue.isMaintenance && issue.active) ...[
+              issue.startsAt!.difference(observation.serverTimeAt(elapsed)),
+              issue.finishesAt!.difference(observation.serverTimeAt(elapsed)),
+            ],
+        ],
+    ].where((delay) => delay > Duration.zero).toList()..sort();
+    return delays.isEmpty ? null : delays.first;
+  }
+}
+
+DateTime parseNearIntentsServerTime(String value) {
+  if (!value.endsWith('Z')) {
+    throw const FormatException('Expected UTC service server time');
+  }
+  return _timestamp(value);
 }
 
 /// The public feed is not the authenticated /incident API. Ignore history and

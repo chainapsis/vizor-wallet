@@ -7,6 +7,8 @@ import 'package:zcash_wallet/src/features/swap/domain/near_intents_service_statu
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_service_status_client.dart';
 import 'package:zcash_wallet/src/features/swap/providers/near_intents_service_status_provider.dart';
 
+import 'support/service_status_fixture.dart';
+
 void main() {
   testWidgets(
     'independent failures remove old feed but preserve valid other feed',
@@ -15,8 +17,8 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           nearIntentsServiceStatusSourceProvider.overrideWithValue(source),
-          nearIntentsServiceStatusClockProvider.overrideWithValue(
-            tester.binding.clock.now,
+          nearIntentsServiceElapsedProvider.overrideWithValue(
+            fakeServiceElapsed(tester),
           ),
         ],
       );
@@ -38,7 +40,7 @@ void main() {
       await container.read(nearIntentsServiceStatusProvider.notifier).refresh();
       var state = container.read(nearIntentsServiceStatusProvider);
       expect(state.incidents, isEmpty);
-      expect(state.incidentsFetchedAt, isNull);
+      expect(state.incidentFeed, isNull);
       expect(state.maintenance, isNotEmpty);
       source.failMaintenance = true;
       await container.read(nearIntentsServiceStatusProvider.notifier).refresh();
@@ -87,7 +89,7 @@ void main() {
     tester,
   ) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    final source = _Source()..gate = Completer<List<NearIntentsServiceIssue>>();
+    final source = _Source()..gate = Completer<NearIntentsServiceFeed>();
     final container = ProviderContainer(
       overrides: [
         nearIntentsServiceStatusSourceProvider.overrideWithValue(source),
@@ -107,9 +109,14 @@ void main() {
     ]) {
       tester.binding.handleAppLifecycleStateChanged(state);
     }
-    source.gate!.complete([
-      const NearIntentsServiceIssue(chains: {'*'}),
-    ]);
+    source.gate!.complete(
+      NearIntentsServiceFeed(
+        serverTime: source.serverTime,
+        issues: const [
+          NearIntentsServiceIssue(chains: {'*'}),
+        ],
+      ),
+    );
     await tester.pump();
     expect(container.read(nearIntentsServiceStatusProvider).incidents, isEmpty);
     expect(
@@ -135,11 +142,62 @@ void main() {
     );
     container.dispose();
   });
+  testWidgets(
+    'monotonic expiry still clears notices while the next requests are pending',
+    (tester) async {
+      final source = _Source();
+      final container = ProviderContainer(
+        overrides: [
+          nearIntentsServiceStatusSourceProvider.overrideWithValue(source),
+          nearIntentsServiceElapsedProvider.overrideWithValue(
+            fakeServiceElapsed(tester),
+          ),
+        ],
+      );
+      final sub = container.listen(nearIntentsServiceStatusProvider, (_, _) {});
+      addTearDown(() {
+        sub.close();
+        container.dispose();
+      });
+      NearIntentsServiceStatus status() =>
+          container.read(nearIntentsServiceStatusProvider);
+      await tester.pump();
+      expect(
+        status().noticeFor(inputChain: 'zec', outputChain: 'eth'),
+        isNotNull,
+      );
+      source.gate = Completer<NearIntentsServiceFeed>();
+      source.maintenanceGate = Completer<NearIntentsServiceFeed>();
+      await tester.pump(const Duration(seconds: 30));
+      expect(source.incidentCalls, 2);
+      await tester.pump(const Duration(seconds: 29));
+      expect(
+        status().noticeFor(inputChain: 'zec', outputChain: 'eth'),
+        isNotNull,
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(status().elapsed, const Duration(seconds: 60));
+      expect(status().noticeFor(inputChain: 'zec', outputChain: 'eth'), isNull);
+      // Disposed/background generations must also ignore the late timed responses.
+      container.dispose();
+      final late = NearIntentsServiceFeed(
+        serverTime: DateTime.utc(2100),
+        issues: const [
+          NearIntentsServiceIssue(chains: {'*'}),
+        ],
+      );
+      source.gate!.complete(late);
+      source.maintenanceGate!.complete(late);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('time boundaries refresh presentation without waiting for HTTP', (
     tester,
   ) async {
-    final now = tester.binding.clock.now();
+    final now = DateTime.utc(2100, 1, 1);
     final source = _Source()
+      ..serverTime = now
       ..incidents = []
       ..maintenance = [
         NearIntentsServiceIssue(
@@ -151,8 +209,8 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         nearIntentsServiceStatusSourceProvider.overrideWithValue(source),
-        nearIntentsServiceStatusClockProvider.overrideWithValue(
-          tester.binding.clock.now,
+        nearIntentsServiceElapsedProvider.overrideWithValue(
+          fakeServiceElapsed(tester),
         ),
       ],
     );
@@ -180,7 +238,9 @@ class _Source implements NearIntentsServiceStatusSource {
   var maintenanceCalls = 0;
   var failIncidents = false;
   var failMaintenance = false;
-  Completer<List<NearIntentsServiceIssue>>? gate;
+  Completer<NearIntentsServiceFeed>? gate;
+  Completer<NearIntentsServiceFeed>? maintenanceGate;
+  DateTime serverTime = DateTime.utc(2026, 11, 2, 13);
   List<NearIntentsServiceIssue> incidents = [
     const NearIntentsServiceIssue(chains: {'*'}),
   ];
@@ -192,20 +252,24 @@ class _Source implements NearIntentsServiceStatusSource {
     ),
   ];
   @override
-  Future<List<NearIntentsServiceIssue>> loadIncidents({
+  Future<NearIntentsServiceFeed> loadIncidents({
     Future<void>? cancelSignal,
   }) async {
     incidentCalls++;
     if (failIncidents) throw const FormatException('Invalid JSON');
-    return gate?.future ?? Future.value(incidents);
+    return gate?.future ??
+        Future.value(
+          NearIntentsServiceFeed(issues: incidents, serverTime: serverTime),
+        );
   }
 
   @override
-  Future<List<NearIntentsServiceIssue>> loadMaintenance({
+  Future<NearIntentsServiceFeed> loadMaintenance({
     Future<void>? cancelSignal,
   }) async {
     maintenanceCalls++;
     if (failMaintenance) throw Exception('HTTP failure');
-    return maintenance;
+    return maintenanceGate?.future ??
+        NearIntentsServiceFeed(issues: maintenance, serverTime: serverTime);
   }
 }

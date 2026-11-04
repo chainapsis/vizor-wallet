@@ -194,7 +194,7 @@ void main() {
       final container = ProviderScope.containerOf(tester.element(host));
       (container.read(nearIntentsServiceStatusProvider.notifier)
               as FixtureServiceStatusNotifier)
-          .publish(NearIntentsServiceStatus(now: DateTime.utc(2026, 11, 3)));
+          .publish(const NearIntentsServiceStatus());
       await tester.pumpAndSettle();
       corners.complete(null);
       await tester.pumpAndSettle();

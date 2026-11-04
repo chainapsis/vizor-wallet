@@ -5,12 +5,8 @@ import '../../../../core/network/network_http_client.dart';
 import '../../domain/near_intents_service_status.dart';
 
 abstract interface class NearIntentsServiceStatusSource {
-  Future<List<NearIntentsServiceIssue>> loadIncidents({
-    Future<void>? cancelSignal,
-  });
-  Future<List<NearIntentsServiceIssue>> loadMaintenance({
-    Future<void>? cancelSignal,
-  });
+  Future<NearIntentsServiceFeed> loadIncidents({Future<void>? cancelSignal});
+  Future<NearIntentsServiceFeed> loadMaintenance({Future<void>? cancelSignal});
 }
 
 class NearIntentsServiceStatusClient implements NearIntentsServiceStatusSource {
@@ -20,26 +16,27 @@ class NearIntentsServiceStatusClient implements NearIntentsServiceStatusSource {
   final NetworkHttpClient _client;
 
   @override
-  Future<List<NearIntentsServiceIssue>> loadIncidents({
-    Future<void>? cancelSignal,
-  }) async => parseNearIntentsIncidents(
-    await _get(
-      'https://functions.vizor.cash/api/near-intents/shield/status',
-      cancelSignal,
-    ),
-  );
+  Future<NearIntentsServiceFeed> loadIncidents({Future<void>? cancelSignal}) =>
+      _get(
+        'https://functions.vizor.cash/api/near-intents/shield/status',
+        cancelSignal,
+        parseNearIntentsIncidents,
+      );
 
   @override
-  Future<List<NearIntentsServiceIssue>> loadMaintenance({
+  Future<NearIntentsServiceFeed> loadMaintenance({
     Future<void>? cancelSignal,
-  }) async => parseNearIntentsMaintenance(
-    await _get(
-      'https://functions.vizor.cash/api/near-intents/shield/maintenance-modes',
-      cancelSignal,
-    ),
+  }) => _get(
+    'https://functions.vizor.cash/api/near-intents/shield/maintenance-modes',
+    cancelSignal,
+    parseNearIntentsMaintenance,
   );
 
-  Future<Object?> _get(String url, Future<void>? cancelSignal) async {
+  Future<NearIntentsServiceFeed> _get(
+    String url,
+    Future<void>? cancelSignal,
+    List<NearIntentsServiceIssue> Function(Object?) parse,
+  ) async {
     final response = await _client.request(
       'GET',
       Uri.parse(url),
@@ -51,7 +48,15 @@ class NearIntentsServiceStatusClient implements NearIntentsServiceStatusSource {
     if (response.statusCode != 200) {
       throw HttpException('Service status returned ${response.statusCode}');
     }
-    return jsonDecode(utf8.decode(response.bodyBytes));
+    final values = response.headers['x-vizor-server-time'];
+    if (values == null || values.length != 1) {
+      throw const FormatException('Expected one Vizor server time header');
+    }
+    final serverTime = parseNearIntentsServerTime(values.single);
+    return NearIntentsServiceFeed(
+      issues: parse(jsonDecode(utf8.decode(response.bodyBytes))),
+      serverTime: serverTime,
+    );
   }
 
   void close() => _client.close(force: true);

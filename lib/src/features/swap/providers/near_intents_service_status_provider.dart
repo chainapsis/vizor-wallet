@@ -13,9 +13,11 @@ final nearIntentsServiceStatusSourceProvider =
       return client;
     });
 
-final nearIntentsServiceStatusClockProvider = Provider<DateTime Function()>(
-  (ref) => DateTime.now,
-);
+final nearIntentsServiceElapsedProvider = Provider<Duration Function()>((ref) {
+  final clock = Stopwatch()..start();
+  ref.onDispose(clock.stop);
+  return () => clock.elapsed;
+});
 
 final nearIntentsServiceStatusProvider =
     NotifierProvider.autoDispose<
@@ -32,14 +34,14 @@ class NearIntentsServiceStatusNotifier
   var _disposed = false;
   var _foreground = true;
   var _loading = false;
-  late DateTime Function() _now;
+  late Duration Function() _elapsed;
   late NearIntentsServiceStatusSource _source;
 
   @override
   NearIntentsServiceStatus build() {
     _disposed = false;
     _stop();
-    _now = ref.watch(nearIntentsServiceStatusClockProvider);
+    _elapsed = ref.watch(nearIntentsServiceElapsedProvider);
     _source = ref.watch(nearIntentsServiceStatusSourceProvider);
     _foreground =
         WidgetsBinding.instance.lifecycleState == null ||
@@ -52,7 +54,7 @@ class NearIntentsServiceStatusNotifier
           unawaited(refresh());
         } else {
           _stop();
-          state = NearIntentsServiceStatus(now: _now());
+          state = NearIntentsServiceStatus(elapsed: _elapsed());
         }
       },
     );
@@ -65,7 +67,7 @@ class NearIntentsServiceStatusNotifier
       _startPolling();
       unawaited(Future<void>.microtask(refresh));
     }
-    return NearIntentsServiceStatus(now: _now());
+    return NearIntentsServiceStatus(elapsed: _elapsed());
   }
 
   void _startPolling() {
@@ -92,30 +94,26 @@ class NearIntentsServiceStatusNotifier
     final cancel = _cancel = Completer<void>();
     final source = _source;
     Future<void> load(bool maintenance) async {
-      List<NearIntentsServiceIssue> issues;
-      DateTime? fetchedAt;
+      NearIntentsServiceObservation? observation;
       try {
-        issues = await (maintenance
+        final feed = await (maintenance
             ? source.loadMaintenance(cancelSignal: cancel.future)
             : source.loadIncidents(cancelSignal: cancel.future));
-        fetchedAt = _now();
+        observation = NearIntentsServiceObservation(
+          feed: feed,
+          receivedAt: _elapsed(),
+        );
       } catch (_) {
         // Fail silently and discard this feed's previous alerts, not the other
         // independent feed's successfully validated records.
-        issues = const [];
+        observation = null;
       }
       if (_disposed || generation != _generation) return;
       _publish(
         NearIntentsServiceStatus(
-          now: _now(),
-          incidents: maintenance ? state.incidents : issues,
-          maintenance: maintenance ? issues : state.maintenance,
-          incidentsFetchedAt: maintenance
-              ? state.incidentsFetchedAt
-              : fetchedAt,
-          maintenanceFetchedAt: maintenance
-              ? fetchedAt
-              : state.maintenanceFetchedAt,
+          elapsed: _elapsed(),
+          incidentFeed: maintenance ? state.incidentFeed : observation,
+          maintenanceFeed: maintenance ? observation : state.maintenanceFeed,
         ),
       );
     }
@@ -127,26 +125,15 @@ class NearIntentsServiceStatusNotifier
   void _publish(NearIntentsServiceStatus next) {
     _boundary?.cancel();
     state = next;
-    final boundaries = <DateTime>[
-      if (next.incidentsFetchedAt != null)
-        next.incidentsFetchedAt!.add(nearIntentsStatusFreshness),
-      if (next.maintenanceFetchedAt != null)
-        next.maintenanceFetchedAt!.add(nearIntentsStatusFreshness),
-      for (final issue in next.maintenance) ...[
-        issue.startsAt!,
-        issue.finishesAt!,
-      ],
-    ].where((time) => time.isAfter(next.now)).toList()..sort();
-    if (boundaries.isEmpty) return;
-    _boundary = Timer(boundaries.first.difference(next.now), () {
+    final delay = next.nextUpdateIn;
+    if (delay == null) return;
+    _boundary = Timer(delay, () {
       if (_disposed || !_foreground) return;
       _publish(
         NearIntentsServiceStatus(
-          now: _now(),
-          incidents: state.incidents,
-          maintenance: state.maintenance,
-          incidentsFetchedAt: state.incidentsFetchedAt,
-          maintenanceFetchedAt: state.maintenanceFetchedAt,
+          elapsed: _elapsed(),
+          incidentFeed: state.incidentFeed,
+          maintenanceFeed: state.maintenanceFeed,
         ),
       );
     });
