@@ -15,6 +15,7 @@ import '../models/swap_detail_tooltips.dart';
 import '../models/swap_models.dart';
 import '../models/swap_status_presentation.dart';
 import 'swap_review_info.dart';
+import 'swap_progress_explorer_footer.dart';
 
 export '../models/swap_status_presentation.dart';
 
@@ -52,6 +53,7 @@ class SwapStatusPageContent extends StatefulWidget {
     this.showTabs = true,
     this.onTabChanged,
     this.onCopy,
+    this.explorerUri,
     super.key,
   });
 
@@ -91,6 +93,7 @@ class SwapStatusPageContent extends StatefulWidget {
 
   /// Copy callback for the [SwapReviewInfo] address lines (clipboard + toast).
   final ValueChanged<String>? onCopy;
+  final Uri? explorerUri;
 
   @override
   State<SwapStatusPageContent> createState() => _SwapStatusPageContentState();
@@ -268,7 +271,7 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             // tab scroll at the reference window height. The page must fit
             // without a scrollbar (all status frames hide the Scrollbar
             // instance), so the inset is intentionally dropped.
-            _StatusTabs(
+            SwapStatusTabs(
               activeTab: widget.activeTab,
               progressLabel: widget.progressTabLabel,
               onChanged: widget.onTabChanged,
@@ -276,7 +279,16 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
             const SizedBox(height: AppSpacing.sm),
             if (widget.activeTab == SwapStatusTab.progress)
               _SwapDetailCard(
-                child: _SwapProgressRoute(steps: _displayedSteps()),
+                hasExplorerFooter: widget.explorerUri != null,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _SwapProgressRoute(steps: _displayedSteps()),
+                    if (widget.explorerUri case final uri?)
+                      SwapProgressExplorerFooter(uri: uri),
+                  ],
+                ),
               )
             else
               _SwapDetailCard(child: _SwapDetailRows(rows: widget.details)),
@@ -426,24 +438,29 @@ class _PaymentStatusSummary extends StatelessWidget {
 /// Figma 'Review Wrap': the raised, rounded detail card that wraps the
 /// progress route and the detail rows. Built on the core [ReviewWrapCard].
 class _SwapDetailCard extends StatelessWidget {
-  const _SwapDetailCard({required this.child});
+  const _SwapDetailCard({required this.child, this.hasExplorerFooter = false});
 
   final Widget child;
+  final bool hasExplorerFooter;
 
   @override
   Widget build(BuildContext context) {
     return ReviewWrapCard(
       key: const ValueKey('swap_status_detail_card'),
+      padding: hasExplorerFooter
+          ? kReviewWrapCardPadding.copyWith(bottom: AppSpacing.sm)
+          : kReviewWrapCardPadding,
       children: [child],
     );
   }
 }
 
-class _StatusTabs extends StatelessWidget {
-  const _StatusTabs({
+class SwapStatusTabs extends StatelessWidget {
+  const SwapStatusTabs({
     required this.activeTab,
     required this.progressLabel,
     required this.onChanged,
+    super.key,
   });
 
   final SwapStatusTab activeTab;
@@ -579,20 +596,17 @@ class _ProgressStep extends StatelessWidget {
     final pending = step.state == SwapStatusStepState.pending;
     final isLast = index == count - 1;
     const isMobile = kAppFormFactor == AppFormFactor.mobile;
-    // Fixed per-step heights reproduce the Figma connector lengths: the active
+    // Minimum step heights reproduce the Figma connector lengths: the active
     // step reserves room for its 2-line description (24 title + 8 gap + 58
     // padded description), pending/complete steps a single title row, and the
     // last step has no trailing connector.
     final height = active ? (isMobile ? 112.0 : 90.0) : (isLast ? 24.0 : 37.0);
     final title = step.titleForState(step.state);
     final content = Row(
-      crossAxisAlignment: isMobile
-          ? CrossAxisAlignment.stretch
-          : CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
           width: 24,
-          height: isMobile ? null : height,
           child: Stack(
             alignment: Alignment.topCenter,
             children: [
@@ -627,9 +641,9 @@ class _ProgressStep extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
+              ConstrainedBox(
                 key: ValueKey('swap_activity_route_step_${index}_title_row'),
-                height: 24,
+                constraints: const BoxConstraints(minHeight: 24),
                 child: Row(
                   children: [
                     Expanded(
@@ -710,18 +724,15 @@ class _ProgressStep extends StatelessWidget {
     final key = ValueKey(
       'swap_activity_route_step_${index}_${step.state.name}',
     );
-    if (isMobile) {
-      // Keep the reference connector length while allowing wrapped descriptions
-      // and larger text to extend the step and its connector together.
-      return IntrinsicHeight(
-        child: ConstrainedBox(
-          key: key,
-          constraints: BoxConstraints(minHeight: height),
-          child: content,
-        ),
-      );
-    }
-    return SizedBox(key: key, height: height, child: content);
+    // Let larger text extend the step and its connector together on both
+    // form factors, retaining the reference geometry at the default scale.
+    return IntrinsicHeight(
+      child: ConstrainedBox(
+        key: key,
+        constraints: BoxConstraints(minHeight: height),
+        child: content,
+      ),
+    );
   }
 }
 
