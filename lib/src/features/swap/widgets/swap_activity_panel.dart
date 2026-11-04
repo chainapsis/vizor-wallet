@@ -823,22 +823,12 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
   bool _detailsExpanded = false;
 
   @override
-  void initState() {
-    super.initState();
-    if (_usesMobilePayStatus(widget.intent, widget.layout)) {
-      _activeTab = SwapStatusTab.details;
-    }
-  }
-
-  @override
   void didUpdateWidget(covariant _SwapStatusForIntent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.intent.id != widget.intent.id ||
         oldWidget.intent.payMode != widget.intent.payMode ||
         oldWidget.layout != widget.layout) {
-      _activeTab = _usesMobilePayStatus(widget.intent, widget.layout)
-          ? SwapStatusTab.details
-          : SwapStatusTab.progress;
+      _activeTab = SwapStatusTab.progress;
       _detailsExpanded = false;
     }
   }
@@ -978,6 +968,9 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
         amountFiatText: presentation.receiveFiatText,
         recipientAddress: recipientAddress,
         recipientContact: recipientContact,
+        progressPresentation: presentation,
+        activeTab: _activeTab,
+        onTabChanged: (tab) => setState(() => _activeTab = tab),
         onShowFullAddress: () => widget.onShowPayRecipientAddress?.call(
           recipientAddress,
           recipientContact,
@@ -1011,6 +1004,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       progressTabLabel: presentation.progressTabLabel,
       paymentMode: presentation.paymentMode,
       showTabs: presentation.showTabs,
+      explorerUri: presentation.explorerUri,
       onTabChanged: (tab) {
         setState(() {
           _activeTab = tab;
@@ -1056,12 +1050,6 @@ String? _payDepositTxid(SwapIntent intent) {
   return providerDepositTxid == null || providerDepositTxid.isEmpty
       ? null
       : providerDepositTxid;
-}
-
-bool _usesMobilePayStatus(SwapIntent intent, SwapActivityDetailLayout layout) {
-  return layout == SwapActivityDetailLayout.mobile &&
-      intent.payMode &&
-      intent.direction == SwapDirection.zecToExternal;
 }
 
 /// Figma-style 6 ... 5 truncation for the header's "To:" line.
