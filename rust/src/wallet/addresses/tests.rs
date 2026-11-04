@@ -595,7 +595,12 @@ fn software_renewal_remains_current_after_reservation_and_reopen() {
         renewed
     );
     assert_eq!(
-        keys::get_address_from_db(path, WalletNetwork::Main, Some(&keys::list_accounts(path, WalletNetwork::Main).unwrap()[0].uuid)).unwrap(),
+        keys::get_address_from_db(
+            path,
+            WalletNetwork::Main,
+            Some(&keys::list_accounts(path, WalletNetwork::Main).unwrap()[0].uuid)
+        )
+        .unwrap(),
         renewed
     );
     let conn = rusqlite::Connection::open(path).unwrap();

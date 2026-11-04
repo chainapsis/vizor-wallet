@@ -44,6 +44,9 @@ import '../../../address_book/widgets/contact_name_inline.dart';
 import '../../../address_book/widgets/mobile_recipient_list.dart';
 import '../../../../providers/payment_request_flow_provider.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../donation/donation_config.dart';
+import '../../../donation/widgets/donation_views.dart';
+import '../../../donation/widgets/mobile/mobile_donation_views.dart';
 import '../../models/send_prefill_args.dart';
 import '../../models/send_scan_result.dart';
 import '../../services/send_flow.dart';
@@ -443,6 +446,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
     this.requestedAmountZatoshi,
     this.onMemoEdited,
     this.onAmountEdited,
+    this.flowKind = SendFlowKind.send,
     super.key,
   });
 
@@ -470,6 +474,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
   final bool preserveInitialMemoWhitespace;
   final String? initialSendFlowId;
   final bool useRouteSteps;
+  final SendFlowKind flowKind;
 
   /// Preview/test seam for recipient summary states.
   final String? initialContactLabel;
@@ -511,6 +516,7 @@ class MobileSendScreen extends ConsumerStatefulWidget {
 }
 
 class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
+  bool get _isDonation => widget.flowKind == SendFlowKind.donation;
   final _addressController = TextEditingController();
   final _addressFocus = FocusNode();
   final _amountController = TextEditingController();
@@ -588,7 +594,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     }
     _addressFocus.addListener(_handleAddressFocusChanged);
     _amountFocus.addListener(_handleAmountFocusChanged);
-    final initial = widget.initialRecipient;
+    final initial = _isDonation
+        ? kVizorDonationAddress
+        : widget.initialRecipient;
     var hasInitialAddressType = false;
     if (initial != null && initial.trim().isNotEmpty) {
       _addressController.text = initial.trim();
@@ -1611,6 +1619,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   // ── Review step ────────────────────────────────────────────────────
 
   String get _effectiveMemo {
+    if (_isDonation) return '';
     if (!_isShieldedAddress) return '';
     return _preserveMemoWhitespace ? _memo : _memo.trim();
   }
@@ -1813,7 +1822,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   void _openStatusRoute(Object extra) {
     if (widget.useRouteSteps) {
       final router = GoRouter.of(context);
-      router.go('/home');
+      router.go(_isDonation ? '/settings' : '/home');
       unawaited(router.push<void>('/send/status', extra: extra));
       return;
     }
@@ -1859,6 +1868,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
   }
 
   Future<void> _confirmAndSendHeld() async {
+    if (_isDonation &&
+        !donationFeatureEnabledForNetwork(
+          ref.read(rpcEndpointProvider).networkName,
+        )) {
+      context.go('/settings');
+      return;
+    }
     if (_isResolvingMax || (_isMaxMode && !_hasCurrentMaxQuote)) return;
     if (!_hasCurrentReviewFeeQuote) {
       unawaited(_refreshReviewQuote());
@@ -1892,6 +1908,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
         isPaymentRequest: _isAnsweringPaymentRequest,
+        flowKind: widget.flowKind,
       );
     } catch (e) {
       log('MobileSend: propose error: $e');
@@ -1899,7 +1916,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       setState(() {
         _isConfirmingSend = false;
         _phase = _SendPhase.failed;
-        _error = friendlyProposeSendError(e.toString());
+        _error = friendlyProposeSendError(
+          e.toString(),
+          flowKind: widget.flowKind,
+        );
       });
       return;
     }
@@ -2033,6 +2053,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
 
   void _cancelSend() {
     if (_isConfirmingSend || _pendingCancellation != null) return;
+    if (_isDonation) {
+      context.go('/settings');
+      return;
+    }
     if (widget.useRouteSteps) {
       context.go('/home');
       return;
@@ -2082,6 +2106,10 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       case _SendStep.review:
         if (widget.useRouteSteps && _canPopRoute) {
           context.pop();
+          return;
+        }
+        if (_isDonation) {
+          context.go('/donation');
           return;
         }
         // A review opened from the payment-request card enters through `go`,
@@ -2234,9 +2262,13 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
         _SendStep.recipient => 'Select Recipient',
         _SendStep.amount => 'Enter Amount',
         _SendStep.review =>
-          _isAnsweringPaymentRequest ? 'Review Payment' : 'Review Send',
+          _isDonation
+              ? 'Review donation'
+              : _isAnsweringPaymentRequest
+              ? 'Review Payment'
+              : 'Review Send',
       },
-      _SendPhase.failed => 'Send failed',
+      _SendPhase.failed => _isDonation ? 'Donation failed' : 'Send failed',
     };
 
     final body = switch (_phase) {
@@ -3307,35 +3339,56 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  SizedBox(
-                    key: const ValueKey('mobile_send_review_info'),
-                    height: _kMobileSendReviewInfoHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.md,
+                  if (_isDonation)
+                    MobileDonationReviewContent(
+                      amountText: amountText,
+                      fiatText: amountFiatText,
+                      feeText: feeText,
+                      totalText: amountZatoshi == null || _feeZatoshi == null
+                          ? '—'
+                          : ZecAmount.fromZatoshi(
+                              amountZatoshi + _feeZatoshi!,
+                            ).activityDetail.toString(),
+                      onFullAddress: () => unawaited(
+                        showMobileAddressVerifySheet(
+                          context,
+                          title: 'Vizor donation address',
+                          address: kVizorDonationAddress,
+                          leading: const DonationVizorBadge(size: 40),
+                        ),
                       ),
-                      child: ReviewInfoFlow(
-                        rows: [
-                          ReviewInfoRow(
-                            leading: const _ReviewZecIcon(),
-                            label: 'Amount',
-                            value: amountText,
-                            valueKey: const ValueKey(
-                              'mobile_send_review_amount',
+                      onFeeInfo: () => unawaited(_showFeeInfo()),
+                    )
+                  else
+                    SizedBox(
+                      key: const ValueKey('mobile_send_review_info'),
+                      height: _kMobileSendReviewInfoHeight,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.md,
+                        ),
+                        child: ReviewInfoFlow(
+                          rows: [
+                            ReviewInfoRow(
+                              leading: const _ReviewZecIcon(),
+                              label: 'Amount',
+                              value: amountText,
+                              valueKey: const ValueKey(
+                                'mobile_send_review_amount',
+                              ),
+                              bottomLeftText: amountFiatText,
+                              bottomLeftTextKey: const ValueKey(
+                                'mobile_send_review_amount_fiat',
+                              ),
                             ),
-                            bottomLeftText: amountFiatText,
-                            bottomLeftTextKey: const ValueKey(
-                              'mobile_send_review_amount_fiat',
+                            _reviewRecipientRow(
+                              address: address,
+                              recipient: recipient,
                             ),
-                          ),
-                          _reviewRecipientRow(
-                            address: address,
-                            recipient: recipient,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                   if (_requestedAmountNotice != null) ...[
                     const SizedBox(height: AppSpacing.xs),
                     Text(
@@ -3347,16 +3400,19 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: AppSpacing.base),
-                  _ReviewWrap(
-                    isShielded: _isShieldedAddress,
-                    memo: _effectiveMemo,
-                    feeText: feeText,
-                    onMemoTap: _isConfirmingSend || _pendingCancellation != null
-                        ? null
-                        : () => unawaited(_editMemo()),
-                    onFeeInfoTap: () => unawaited(_showFeeInfo()),
-                  ),
+                  if (!_isDonation) ...[
+                    const SizedBox(height: AppSpacing.base),
+                    _ReviewWrap(
+                      isShielded: _isShieldedAddress,
+                      memo: _effectiveMemo,
+                      feeText: feeText,
+                      onMemoTap:
+                          _isConfirmingSend || _pendingCancellation != null
+                          ? null
+                          : () => unawaited(_editMemo()),
+                      onFeeInfoTap: () => unawaited(_showFeeInfo()),
+                    ),
+                  ],
                   if (_reviewFeeNotice != null) ...[
                     const SizedBox(height: AppSpacing.s),
                     Text(
@@ -3375,13 +3431,14 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
           const SizedBox(height: AppSpacing.sm),
           SizedBox(
             key: const ValueKey('mobile_send_review_buttons'),
-            height: 112,
+            height: _isDonation ? AppButtonSizing.largeHeight : 112,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 AppButton(
                   key: const ValueKey('mobile_send_confirm'),
                   expand: true,
+                  constrainContent: _isDonation,
                   onPressed:
                       _isConfirmingSend ||
                           (_pendingCancellation == null &&
@@ -3402,6 +3459,8 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         ? AppIcons.qr
                         : isLedger
                         ? AppIcons.ledger
+                        : _isDonation
+                        ? AppIcons.donation
                         : AppIcons.plane,
                     size: 20,
                   ),
@@ -3422,19 +3481,23 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         ? 'Confirm with Ledger'
                         : isKeystone
                         ? 'Confirm with Keystone'
+                        : _isDonation
+                        ? 'Confirm donation'
                         : 'Confirm & Send',
                   ),
                 ),
-                const SizedBox(height: AppSpacing.s),
-                AppButton(
-                  key: const ValueKey('mobile_send_cancel'),
-                  expand: true,
-                  variant: AppButtonVariant.ghost,
-                  onPressed: _isConfirmingSend || _pendingCancellation != null
-                      ? null
-                      : _cancelSend,
-                  child: const Text('Cancel'),
-                ),
+                if (!_isDonation) ...[
+                  const SizedBox(height: AppSpacing.s),
+                  AppButton(
+                    key: const ValueKey('mobile_send_cancel'),
+                    expand: true,
+                    variant: AppButtonVariant.ghost,
+                    onPressed: _isConfirmingSend || _pendingCancellation != null
+                        ? null
+                        : _cancelSend,
+                    child: const Text('Cancel'),
+                  ),
+                ],
               ],
             ),
           ),
@@ -3448,8 +3511,9 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
     final amountText =
         ZecAmount.tryParse(_amountText)?.receipt.toString() ??
         '$_amountText ZEC';
-    final toLabel =
-        _contactLabel ?? _truncateAddress(_addressController.text.trim());
+    final toLabel = _isDonation
+        ? 'Vizor Wallet'
+        : _contactLabel ?? _truncateAddress(_addressController.text.trim());
 
     return Padding(
       key: ValueKey('mobile_send_status_${_phase.name}'),
@@ -3467,7 +3531,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  'Send failed',
+                  _isDonation ? 'Donation failed' : 'Send failed',
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLarge.copyWith(
                     color: colors.text.accent,
@@ -3507,12 +3571,12 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
             button: true,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => context.go('/home'),
+              onTap: () => context.go(_isDonation ? '/settings' : '/home'),
               child: SizedBox(
                 height: 44,
                 child: Center(
                   child: Text(
-                    'Back to wallet',
+                    _isDonation ? 'Return to settings' : 'Back to wallet',
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.primary,
                     ),

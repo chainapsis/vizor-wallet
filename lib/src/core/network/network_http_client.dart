@@ -63,7 +63,9 @@ class _DirectRequestOperation<T> {
 ///
 /// Implementations must apply each timeout to the underlying transport
 /// operation, not only to the Future returned to Dart. A supplied `maxBodyBytes`
-/// must stop reception before buffering more than the requested body budget.
+/// must stop reception before buffering more than the requested body budget,
+/// and an omitted one must still be bounded (the Rust bridge caps every
+/// buffered reply at 16 MiB; large files belong in `download`).
 abstract interface class TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
