@@ -27,8 +27,8 @@ enum PayActivityStatusPhase { inProgress, completed, failed, refunded }
 String payActivityStatusAmountLabel(PayActivityStatusPhase phase) =>
     switch (phase) {
       PayActivityStatusPhase.completed => 'You paid',
-      PayActivityStatusPhase.failed || PayActivityStatusPhase.refunded =>
-        'Amount',
+      PayActivityStatusPhase.failed ||
+      PayActivityStatusPhase.refunded => 'Amount',
       PayActivityStatusPhase.inProgress => "You're paying",
     };
 
@@ -97,6 +97,7 @@ class SwapActivityStatusPresentation {
     this.progressTabLabel = 'Swap progress',
     this.paymentMode = false,
     this.payStatus,
+    this.explorerUri,
     required this.showTabs,
   });
 
@@ -135,6 +136,7 @@ class SwapActivityStatusPresentation {
   final String progressTabLabel;
   final bool paymentMode;
   final PayActivityStatusPresentation? payStatus;
+  final Uri? explorerUri;
   final bool showTabs;
 }
 
@@ -241,6 +243,7 @@ SwapActivityStatusPresentation swapActivityStatusPresentationForIntent(
     progressTabLabel: payMode ? 'Payment progress' : 'Swap progress',
     paymentMode: payMode,
     payStatus: payStatus,
+    explorerUri: swapActivityExplorerUri(intent),
     // Mobile keeps the shared progress tabs while reading its detail values
     // from [payStatus]; desktop renders its dedicated Pay status content.
     showTabs: !intent.status.isTerminal,
@@ -267,25 +270,28 @@ PayActivityStatusPresentation? _payActivityStatusPresentation(
   final timestamp = phase != PayActivityStatusPhase.inProgress
       ? intent.completedAt ?? intent.updatedAt ?? intent.createdAt
       : intent.createdAt ?? intent.updatedAt;
-  final depositAddress = _firstNonEmpty([intent.depositAddress]);
+  final explorerId = _firstNonEmpty([
+    intent.depositAddress,
+    intent.nearIntentHash,
+    intent.depositTxHash,
+    intent.originChainTxHash,
+  ]);
 
   return PayActivityStatusPresentation(
     phase: phase,
     timestampText: timestamp == null
         ? 'Not reported'
         : formatDayMonthTime(timestamp),
-    txIdText: depositAddress == null
+    txIdText: explorerId == null
         ? 'Not reported'
         : compactSwapAddress(
-            depositAddress,
+            explorerId,
             maxLength: 19,
             prefixLength: 8,
             suffixLength: 8,
             separator: '...',
           ),
-    txIdUri: depositAddress == null
-        ? null
-        : nearIntentsExplorerTransactionUri(depositAddress),
+    txIdUri: swapActivityExplorerUri(intent),
     convertedFromText: intent.sellAmount,
     transactionFeeText:
         confirmedDepositFeeZatoshi != null &&
@@ -479,15 +485,8 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
   final originChainTxHash = intent.originChainTxHash?.trim();
   final destinationChainTxHash = intent.destinationChainTxHash?.trim();
   final depositTxHash = _firstNonEmpty([localDepositTxHash, originChainTxHash]);
-  // The Tx ID detail row is a mobile-only addition; desktop keeps the
-  // original detail set (the standalone "<symbol> deposit tx" row).
-  final txIdRow = kAppFormFactor == AppFormFactor.mobile
-      ? _swapActivityTxIdRow(
-          intent: intent,
-          depositTxHash: depositTxHash,
-          depositAddress: depositAddress,
-        )
-      : null;
+  // Keep the provider lookup separate from the copyable source-chain tx hash.
+  final txIdRow = _swapActivityTxIdRow(intent);
   final terminal = intent.status.isTerminal;
   final failed =
       intent.status == SwapIntentStatus.failed ||
@@ -525,11 +524,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     final timestamp = _swapActivityTimestampLabel(
       intent.completedAt ?? intent.createdAt,
     );
-    final explorerUri = nearIntentsExplorerUri(
-      nearIntentHash: intent.nearIntentHash,
-      depositTxHash: depositTxHash,
-      depositAddress: depositAddress,
-    );
+    final explorerUri = swapActivityExplorerUri(intent);
     return [
       if (!failed && !payMode)
         SwapStatusDetailRowData(
@@ -744,6 +739,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
       ),
     if (failed && recordedRefundFee != null)
       SwapStatusDetailRowData(label: 'Refund fee', value: recordedRefundFee),
+    ?_swapActivityTxIdRow(intent),
     if (depositTxHash != null && depositTxHash.isNotEmpty)
       SwapStatusDetailRowData(
         label: '$sourceSymbol tx (shielded)',
@@ -773,28 +769,25 @@ String? _recordedRefundFeeText(SwapProviderRefundInfo? info) {
   return _firstNonEmpty([info?.recordedRefundFeeText]);
 }
 
-SwapStatusDetailRowData? _swapActivityTxIdRow({
-  required SwapIntent intent,
-  required String? depositTxHash,
-  required String? depositAddress,
-}) {
-  final hasExplorerSource =
-      (intent.nearIntentHash?.trim().isNotEmpty ?? false) ||
-      (depositTxHash?.trim().isNotEmpty ?? false);
-  if (!hasExplorerSource) return null;
+Uri? swapActivityExplorerUri(SwapIntent intent) => nearIntentsExplorerUri(
+  depositAddress: intent.depositAddress,
+  nearIntentHash: intent.nearIntentHash,
+  depositTxHash: _firstNonEmpty([
+    intent.depositTxHash,
+    intent.originChainTxHash,
+  ]),
+);
 
+SwapStatusDetailRowData? _swapActivityTxIdRow(SwapIntent intent) {
   final txId = _firstNonEmpty([
-    depositAddress,
-    intent.nearIntentHash?.trim(),
-    depositTxHash,
+    intent.depositAddress,
+    intent.nearIntentHash,
+    intent.depositTxHash,
+    intent.originChainTxHash,
   ]);
   if (txId == null || txId.isEmpty) return null;
 
-  final linkUri = nearIntentsExplorerUri(
-    nearIntentHash: intent.nearIntentHash,
-    depositTxHash: depositTxHash,
-    depositAddress: depositAddress,
-  );
+  final linkUri = swapActivityExplorerUri(intent);
   if (linkUri == null) return null;
 
   return SwapStatusDetailRowData(
@@ -890,6 +883,7 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
         copyable: true,
         copyText: depositTxHash,
       ),
+    ?_swapActivityTxIdRow(intent),
   ];
 }
 

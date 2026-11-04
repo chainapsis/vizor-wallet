@@ -6,9 +6,7 @@ import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mappe
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
 void main() {
-  // The "Tx ID" detail row is a mobile-only addition; the desktop mapper test
-  // (swap_activity_status_mapper_test.dart) asserts it is absent on desktop.
-  // This mirrors that coverage in the mobile token lane, where the row exists.
+  // Mirror the shared provider lookup contract in the mobile token lane.
   test('mobile adds a NEAR Intents explorer link to the tx id detail row', () {
     final presentation = swapActivityStatusPresentationForIntent(
       _state(),
