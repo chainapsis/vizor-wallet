@@ -1,3 +1,4 @@
+import 'near_intents_service_notice_capture.dart';
 import 'activity_pagination_capture.dart';
 import 'mobile_shield_capture.dart';
 import 'mobile_passcode_capture.dart';
@@ -104,6 +105,24 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'near-intents-service-current',
+    description: 'Current NEAR Intents maintenance modal with affected chains',
+    builder: buildCurrentServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-all-chains',
+    description: 'Current NEAR Intents maintenance modal for all chains',
+    builder: buildAllChainsServiceNoticeCapture,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'near-intents-service-pay',
+    description: 'Current NEAR Intents service modal on Pay',
+    builder: buildPayServiceNoticeCapture,
+    mobile: true,
+  ),
   FigmaCompareScenario(
     id: 'activity-swap-processing',
     description: 'Production Activity swap detail while processing',
