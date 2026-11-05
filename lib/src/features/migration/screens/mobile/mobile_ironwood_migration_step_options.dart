@@ -111,7 +111,9 @@ class _MobileMigrationOptionCard extends StatelessWidget {
                                           vertical: AppSpacing.xxs,
                                         ),
                                         child: Text(
-                                          'Recommended',
+                                          context
+                                              .l10n
+                                              .migrationMobileRecommended,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: AppTypography.labelLarge

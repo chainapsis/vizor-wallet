@@ -2959,6 +2959,1255 @@
   "@lockUnlockToContinuePausedBody": {
     "description": "[security] Body on the sync lock screen after an interrupted sync asking the user to unlock the wallet."
   },
+  "migrationMobileActionAllTransactions": "All transactions",
+  "@migrationMobileActionAllTransactions": {
+    "description": "Label of the signing summary row when every migration transaction is signed in one Keystone step."
+  },
+  "migrationMobileActionBatch": "Batch #{number}",
+  "@migrationMobileActionBatch": {
+    "description": "Label of the signing summary row naming the migration batch. {number} starts at 1.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileActionInProgress": "Migration action in progress",
+  "@migrationMobileActionInProgress": {
+    "description": "Screen reader label of the spinner on the migration action button."
+  },
+  "migrationMobileActionNeedSignature": "Transactions needing signature",
+  "@migrationMobileActionNeedSignature": {
+    "description": "Label of the signing summary row listing the migration transactions that need to be signed again."
+  },
+  "migrationMobileActionPrepareBatch": "Prepare batch #{number}",
+  "@migrationMobileActionPrepareBatch": {
+    "description": "Action button that prepares the next migration batch. {number} starts at 1.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileActionPreparingBatch": "Preparing batch #{number}...",
+  "@migrationMobileActionPreparingBatch": {
+    "description": "Label of the action button while the next migration batch is being prepared. {number} starts at 1.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileActionResign": "Re-sign migration transactions",
+  "@migrationMobileActionResign": {
+    "description": "[security] Button label on the migration progress screen asking the user to sign the rebuilt migration transactions again on the Keystone device."
+  },
+  "migrationMobileActionSign": "Sign migration transactions",
+  "@migrationMobileActionSign": {
+    "description": "[security] Button label on the migration progress screen asking the user to sign the migration transactions on the Keystone device."
+  },
+  "migrationMobileActionSignBatch": "Sign batch #{number}",
+  "@migrationMobileActionSignBatch": {
+    "description": "[security] Default label of the button that signs a migration batch. {number} starts at 1.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileActionSubmitScheduled": "Submit scheduled transaction",
+  "@migrationMobileActionSubmitScheduled": {
+    "description": "Action button that submits a scheduled migration transaction whose time has passed."
+  },
+  "migrationMobileActionSubmittingScheduled": "Submitting scheduled transaction...",
+  "@migrationMobileActionSubmittingScheduled": {
+    "description": "Label of the action button while the late scheduled transaction is being submitted."
+  },
+  "migrationMobileAnnouncementBody": "Zcash’s latest shielded pool, bringing cutting-edge cryptography and formal verification.\n\nYour shielded balance needs a one-time migration to Ironwood.",
+  "@migrationMobileAnnouncementBody": {
+    "description": "Body of the bottom sheet announcing the Ironwood pool; two paragraphs separated by a blank line. The apostrophe is a curly one."
+  },
+  "migrationMobileAnnouncementOfficial": "Official announcement",
+  "@migrationMobileAnnouncementOfficial": {
+    "description": "Ghost button of the Ironwood announcement sheet that opens the official announcement in the browser."
+  },
+  "migrationMobileAnnouncementUpgrade": "Upgrade to Ironwood",
+  "@migrationMobileAnnouncementUpgrade": {
+    "description": "Primary button of the Ironwood announcement sheet that starts the migration flow."
+  },
+  "migrationMobileAttentionContinueTitle": "Continue your migration",
+  "@migrationMobileAttentionContinueTitle": {
+    "description": "Title of the Home sheet asking the user to continue the Ironwood migration."
+  },
+  "migrationMobileAttentionLateTitle": "A migration transaction needs attention",
+  "@migrationMobileAttentionLateTitle": {
+    "description": "Title of the Home sheet saying a scheduled migration transaction is late and needs the user."
+  },
+  "migrationMobileAttentionLater": "I’ll visit later",
+  "@migrationMobileAttentionLater": {
+    "description": "Ghost button of the Home sheet that dismisses it until later. The apostrophe is a curly one."
+  },
+  "migrationMobileAttentionOpen": "Go to migration page",
+  "@migrationMobileAttentionOpen": {
+    "description": "Primary button of the Home sheet that opens the migration screen."
+  },
+  "migrationMobileAttentionProofTitle": "Your next migration batch is ready",
+  "@migrationMobileAttentionProofTitle": {
+    "description": "Title of the Home sheet saying the next migration batch can be prepared."
+  },
+  "migrationMobileAttentionSignatureSheet": "{count, plural, =1{1 note is ready for your signature} other{{count} notes are ready for your signature}}",
+  "@migrationMobileAttentionSignatureSheet": {
+    "description": "Title of the Home sheet telling the user that migration notes wait for their signature. {count} is the number of notes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileAttentionStoppedTitle": "Migration stopped by network upgrade",
+  "@migrationMobileAttentionStoppedTitle": {
+    "description": "Title of the Home sheet saying a Zcash network upgrade stopped the migration."
+  },
+  "migrationMobileBackHome": "Back home",
+  "@migrationMobileBackHome": {
+    "description": "Default label of the secondary button that returns to Home from a mobile migration status screen."
+  },
+  "migrationMobileBackToHome": "Back to home",
+  "@migrationMobileBackToHome": {
+    "description": "Button on the migration progress screen that returns to Home."
+  },
+  "migrationMobileBannerInProgress": "Migration in progress",
+  "@migrationMobileBannerInProgress": {
+    "description": "Text of the Home migration banner while the migration runs and no amount is known."
+  },
+  "migrationMobileBannerLate": "Migration needs attention",
+  "@migrationMobileBannerLate": {
+    "description": "Text of the Home migration banner when a migration transaction is late."
+  },
+  "migrationMobileBannerPreparing": "Preparing migration",
+  "@migrationMobileBannerPreparing": {
+    "description": "Text of the Home migration banner while the balance is being prepared."
+  },
+  "migrationMobileBannerProof": "Next migration batch is ready",
+  "@migrationMobileBannerProof": {
+    "description": "Text of the Home migration banner when the next batch is ready."
+  },
+  "migrationMobileBannerRemaining": "{amount} ZEC still migrating",
+  "@migrationMobileBannerRemaining": {
+    "description": "Text of the Home migration banner showing the amount that is still migrating. {amount} is the formatted amount without the ZEC unit.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileBannerSignature": "{count, plural, =1{1 note is ready for signing} other{{count} notes are ready for signing}}",
+  "@migrationMobileBannerSignature": {
+    "description": "Text of the Home migration banner when notes wait for a signature. {count} is the number of notes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileBannerStart": "Migrate to Ironwood",
+  "@migrationMobileBannerStart": {
+    "description": "Text of the Home banner that starts the Ironwood migration."
+  },
+  "migrationMobileBannerStopped": "Migration stopped",
+  "@migrationMobileBannerStopped": {
+    "description": "Text of the Home migration banner when the migration was stopped by a network upgrade."
+  },
+  "migrationMobileBannerWaiting": "Waiting for confirmation...",
+  "@migrationMobileBannerWaiting": {
+    "description": "Text of the Home migration banner while waiting for network confirmations."
+  },
+  "migrationMobileBatchProgress": "{completed}/{total} Batch",
+  "@migrationMobileBatchProgress": {
+    "description": "Label inside the progress ring showing completed batches out of the total.",
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileCanLeave": "You can leave this screen.",
+  "@migrationMobileCanLeave": {
+    "description": "First line on the mobile migration progress screens saying the user may leave the screen."
+  },
+  "migrationMobileCompleteBody": "Migration went successfully and you can spend your funds as usual.",
+  "@migrationMobileCompleteBody": {
+    "description": "Body of the migration complete screen."
+  },
+  "migrationMobileCompleteHeading": "Your\n{amount}\nare on Ironwood!",
+  "@migrationMobileCompleteHeading": {
+    "description": "Large heading of the migration complete screen; line breaks are intentional. {amount} is the migrated amount with the ZEC unit.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileCompleteTitle": "You’re all set!",
+  "@migrationMobileCompleteTitle": {
+    "description": "Top bar title of the screen shown when the migration completed. The apostrophe is curly."
+  },
+  "migrationMobileContinueError": "Couldn't continue migration. Try again.",
+  "@migrationMobileContinueError": {
+    "description": "First line on the mobile migration progress screen when continuing the migration failed."
+  },
+  "migrationMobileContinueThisError": "Couldn't continue this migration. Try again.",
+  "@migrationMobileContinueThisError": {
+    "description": "Message on the migration progress screen when continuing the migration failed."
+  },
+  "migrationMobileCredentialsRestore": "Your migration credentials need to be restored before continuing.",
+  "@migrationMobileCredentialsRestore": {
+    "description": "[security] Message on the migration progress screen when the saved migration credentials must be restored first."
+  },
+  "migrationMobileErrorBroadcast": "Couldn't broadcast the migration transaction. Try again.",
+  "@migrationMobileErrorBroadcast": {
+    "description": "Error shown on the mobile migration screens when the network rejected or failed to receive the migration transaction."
+  },
+  "migrationMobileErrorPlanChanged": "The amount or fee changed. Review the updated details.",
+  "@migrationMobileErrorPlanChanged": {
+    "description": "Error shown on the mobile Immediate migration review when the amount or fee changed after the plan was calculated."
+  },
+  "migrationMobileErrorStart": "Couldn't start migration. Try again.",
+  "@migrationMobileErrorStart": {
+    "description": "Generic error shown on the mobile migration screens when the migration could not start."
+  },
+  "migrationMobileErrorSyncFirst": "Wait for sync to finish, then try again.",
+  "@migrationMobileErrorSyncFirst": {
+    "description": "Error shown on the mobile migration screens when the migration could not start because the wallet is still syncing."
+  },
+  "migrationMobileErrorUnlock": "Unlock Vizor before starting migration.",
+  "@migrationMobileErrorUnlock": {
+    "description": "Error shown on the mobile migration screens when the wallet is locked and the migration could not start."
+  },
+  "migrationMobileEstCompletion": "Est. completion",
+  "@migrationMobileEstCompletion": {
+    "description": "Label of the row showing the estimated time the migration finishes."
+  },
+  "migrationMobileFastConsiderOther": "Consider another option",
+  "@migrationMobileFastConsiderOther": {
+    "description": "Secondary button on the Immediate migration review that goes back to the option choice."
+  },
+  "migrationMobileFastContinueAnyway": "Continue anyway",
+  "@migrationMobileFastContinueAnyway": {
+    "description": "[security] Destructive button on the Immediate migration review that broadcasts the less private migration after the privacy warning."
+  },
+  "migrationMobileFastDurationRow": "Migration complete in",
+  "@migrationMobileFastDurationRow": {
+    "description": "Label of the row showing how long the Immediate migration takes on the review screen."
+  },
+  "migrationMobileFastFeesRow": "Fees (estimate)",
+  "@migrationMobileFastFeesRow": {
+    "description": "Label of the row showing the estimated network fee on the Immediate migration review."
+  },
+  "migrationMobileFastNoBalance": "No spendable Orchard balance is available for Immediate migration.",
+  "@migrationMobileFastNoBalance": {
+    "description": "Error under the Immediate migration review when there is no spendable Orchard balance to migrate."
+  },
+  "migrationMobileFastPlanCalculating": "Calculating…",
+  "@migrationMobileFastPlanCalculating": {
+    "description": "Placeholder value of the amount and fee rows on the Immediate migration review while the plan is being calculated."
+  },
+  "migrationMobileFastPlanError": "Couldn't calculate the Immediate migration fee. Sync and try again.",
+  "@migrationMobileFastPlanError": {
+    "description": "Error under the Immediate migration review when the plan or fee could not be calculated."
+  },
+  "migrationMobileFastPlanUnavailable": "Unavailable",
+  "@migrationMobileFastPlanUnavailable": {
+    "description": "Placeholder value of the amount and fee rows on the Immediate migration review when no plan could be made."
+  },
+  "migrationMobileFastPrivacyBodyHighlight": "easier to associate with your wallet",
+  "@migrationMobileFastPrivacyBodyHighlight": {
+    "description": "[security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence."
+  },
+  "migrationMobileFastPrivacyBodyLead": "Crosses in one visible step — your {amount} and timing are ",
+  "@migrationMobileFastPrivacyBodyLead": {
+    "description": "[security] First part of the sentence in the privacy warning card; it continues with the highlighted phrase. {amount} is the amount with the ZEC unit. Keep the trailing space.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileFastPrivacyConsiderPrivate": "Consider choosing a Private Migration option.",
+  "@migrationMobileFastPrivacyConsiderPrivate": {
+    "description": "Last sentence of the privacy warning card suggesting the Private migration option."
+  },
+  "migrationMobileFastPrivacyLedger": "Private migration is not available for Ledger accounts.",
+  "@migrationMobileFastPrivacyLedger": {
+    "description": "Last sentence of the privacy warning card for Ledger accounts."
+  },
+  "migrationMobileFastPrivacyTitle": "Privacy trade-off",
+  "@migrationMobileFastPrivacyTitle": {
+    "description": "[security] Heading of the privacy warning card on the Immediate migration review."
+  },
+  "migrationMobileFastRetryCalculation": "Retry calculation",
+  "@migrationMobileFastRetryCalculation": {
+    "description": "Ghost button on the Immediate migration review that recalculates the plan after a failure."
+  },
+  "migrationMobileFastSubmittedBody": "{amount} is on its way to Ironwood.",
+  "@migrationMobileFastSubmittedBody": {
+    "description": "Body of the success screen after the Immediate migration was broadcast. {amount} is the migrated amount with the ZEC unit, such as 1.50 ZEC.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileFastSubmittedTitle": "Migration submitted",
+  "@migrationMobileFastSubmittedTitle": {
+    "description": "Heading of the success screen after the Immediate migration was broadcast."
+  },
+  "migrationMobileFastTitle": "Fast Migration",
+  "@migrationMobileFastTitle": {
+    "description": "Title-case top bar title of the mobile Immediate (fast) migration success screen."
+  },
+  "migrationMobileGoHome": "Go home",
+  "@migrationMobileGoHome": {
+    "description": "Button on the mobile migration progress screens that leaves the screen and goes to Home."
+  },
+  "migrationMobileHeroBadge": "Migration",
+  "@migrationMobileHeroBadge": {
+    "description": "Badge text on the pool migration illustration at the top of the intro screen."
+  },
+  "migrationMobileHeroIronwoodPool": "Ironwood Pool",
+  "@migrationMobileHeroIronwoodPool": {
+    "description": "Label under the new pool in the migration illustration."
+  },
+  "migrationMobileHeroLegacy": "(Legacy)",
+  "@migrationMobileHeroLegacy": {
+    "description": "Small label above Orchard Pool in the migration illustration, marking the old pool."
+  },
+  "migrationMobileHeroOrchardPool": "Orchard Pool",
+  "@migrationMobileHeroOrchardPool": {
+    "description": "Label under the old pool in the migration illustration."
+  },
+  "migrationMobileHowItWorksNavTitle": "About",
+  "@migrationMobileHowItWorksNavTitle": {
+    "description": "Top bar title of the mobile screen that explains the migration steps."
+  },
+  "migrationMobileHowItWorksTitle": "How Migration Works",
+  "@migrationMobileHowItWorksTitle": {
+    "description": "Title-case heading of the mobile screen that explains the steps of the Ironwood migration."
+  },
+  "migrationMobileIntroBody": "Your {amount} ZEC is currently in Orchard. To keep using these funds for shielded payments, you'll need to move them to Ironwood. You'll review the migration plan before any funds move.",
+  "@migrationMobileIntroBody": {
+    "description": "Body on the first mobile migration screen explaining that the user's funds must move from the Orchard pool to the Ironwood pool. {amount} is the formatted Orchard balance without the ZEC unit.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileIntroReleaseNote": "Official release note",
+  "@migrationMobileIntroReleaseNote": {
+    "description": "Ghost button on the first mobile migration screen that opens the official Ironwood release note in the browser."
+  },
+  "migrationMobileIntroTagline": "A new shielded pool for Zcash.",
+  "@migrationMobileIntroTagline": {
+    "description": "Tagline under the Ironwood wordmark on the first mobile migration screen."
+  },
+  "migrationMobileIntroTitle": "Zcash Network Update",
+  "@migrationMobileIntroTitle": {
+    "description": "Title-case top bar title of the first mobile Ironwood migration screen, which announces the network update."
+  },
+  "migrationMobileKeepOpenUnlocked": "Keep Vizor open & unlocked.",
+  "@migrationMobileKeepOpenUnlocked": {
+    "description": "[security] First line on the mobile migration progress screen telling the user to keep the app open and unlocked so a step needing input can proceed."
+  },
+  "migrationMobileKeepRunning": "But keep Vizor open & running.",
+  "@migrationMobileKeepRunning": {
+    "description": "[security] Second line on the mobile migration progress screens telling the user to keep the app open and running so the migration continues."
+  },
+  "migrationMobileKeystoneConfirmPrepSemantics": "Confirm migration preparation with Keystone",
+  "@migrationMobileKeystoneConfirmPrepSemantics": {
+    "description": "[security] Screen reader label of the Keystone request screen for the preparation (note split) signing round."
+  },
+  "migrationMobileKeystoneConfirmTitle": "Confirm Migration with Keystone",
+  "@migrationMobileKeystoneConfirmTitle": {
+    "description": "[security] Title-case heading on the Keystone request screen while the QR code is still loading."
+  },
+  "migrationMobileKeystoneConfirmTransferSemantics": "Confirm migration transfer with Keystone",
+  "@migrationMobileKeystoneConfirmTransferSemantics": {
+    "description": "[security] Screen reader label of the Keystone request screen for the migration transfer signing round."
+  },
+  "migrationMobileKeystoneHelpPrompt": "Tap QR on your Keystone,\nthen scan this QR code.",
+  "@migrationMobileKeystoneHelpPrompt": {
+    "description": "Instruction text of the Keystone scanning help preview; the line break is intentional."
+  },
+  "migrationMobileKeystoneHelpSemantics": "Keystone QR scanning help",
+  "@migrationMobileKeystoneHelpSemantics": {
+    "description": "Screen reader label of the help button on the Keystone request screen."
+  },
+  "migrationMobileKeystoneLoadingQrSemantics": "Loading QR code",
+  "@migrationMobileKeystoneLoadingQrSemantics": {
+    "description": "Screen reader label of the placeholder shown while the Keystone request QR code loads."
+  },
+  "migrationMobileKeystoneLoadingQrText": "Loading QR code ...",
+  "@migrationMobileKeystoneLoadingQrText": {
+    "description": "Text under the placeholder while the Keystone request QR code is being built. Keep the space before the dots."
+  },
+  "migrationMobileKeystoneNextStep": "Next step",
+  "@migrationMobileKeystoneNextStep": {
+    "description": "Button on the Keystone request screen that moves on to scanning the signed result."
+  },
+  "migrationMobileKeystonePromptOnDevice": "on your Keystone,",
+  "@migrationMobileKeystonePromptOnDevice": {
+    "description": "Second fragment of the instruction on the Keystone request screen, shown after the QR icon."
+  },
+  "migrationMobileKeystonePromptTap": "Tap",
+  "@migrationMobileKeystonePromptTap": {
+    "description": "First fragment of the instruction on the Keystone request screen: Tap [QR icon] on your Keystone, then scan this QR code. The icon is shown between this and the next fragment."
+  },
+  "migrationMobileKeystonePromptThenScan": "then scan this QR code",
+  "@migrationMobileKeystonePromptThenScan": {
+    "description": "Last fragment of the instruction on the Keystone request screen; the help button follows it."
+  },
+  "migrationMobileKeystoneReconnect": "Reconnect or re-import your Keystone account to continue this migration.",
+  "@migrationMobileKeystoneReconnect": {
+    "description": "[security] Message on the migration progress screen telling the user to reconnect or re-import the Keystone account to continue."
+  },
+  "migrationMobileKeystoneRequestQrSemantics": "Keystone request QR code",
+  "@migrationMobileKeystoneRequestQrSemantics": {
+    "description": "[security] Screen reader label of the QR code that the Keystone device scans to sign the migration."
+  },
+  "migrationMobileKeystoneRequiredStatus": "Keystone account required",
+  "@migrationMobileKeystoneRequiredStatus": {
+    "description": "Status value on the migration progress screen when the Keystone account is missing from the wallet."
+  },
+  "migrationMobileKeystoneResignMessage": "Sign the rebuilt migration transactions with Keystone to continue.",
+  "@migrationMobileKeystoneResignMessage": {
+    "description": "[security] Message on the migration progress screen telling the user to sign the rebuilt migration transactions with the Keystone device."
+  },
+  "migrationMobileKeystoneScanCaption": "Scan the QR code on your\nKeystone to confirm",
+  "@migrationMobileKeystoneScanCaption": {
+    "description": "[security] Default caption on the scanner screen; the line break after 'your' is intentional."
+  },
+  "migrationMobileKeystoneScanPrepSemantics": "Scan the signed migration preparation from Keystone",
+  "@migrationMobileKeystoneScanPrepSemantics": {
+    "description": "[security] Screen reader label of the scanner screen for the signed preparation round."
+  },
+  "migrationMobileKeystoneScanProgress": "Scan progress",
+  "@migrationMobileKeystoneScanProgress": {
+    "description": "Screen reader label of the progress bar for the animated QR code the user scans from the Keystone device."
+  },
+  "migrationMobileKeystoneScanTitle": "Scan with Keystone",
+  "@migrationMobileKeystoneScanTitle": {
+    "description": "[security] Heading on the Keystone request screen once the QR code is ready; the user scans it with the device."
+  },
+  "migrationMobileKeystoneScanTransferSemantics": "Scan the signed migration transfer from Keystone",
+  "@migrationMobileKeystoneScanTransferSemantics": {
+    "description": "[security] Screen reader label of the scanner screen for the signed migration transfer round."
+  },
+  "migrationMobileKeystoneShowTxQr": "Show transaction QR",
+  "@migrationMobileKeystoneShowTxQr": {
+    "description": "Label of the scanner control that goes back to the request QR code."
+  },
+  "migrationMobileKeystoneStep1": "Step 1/2",
+  "@migrationMobileKeystoneStep1": {
+    "description": "Large step counter on the Keystone request screen of the migration signing: showing the request QR."
+  },
+  "migrationMobileKeystoneStep2": "Step 2/2",
+  "@migrationMobileKeystoneStep2": {
+    "description": "Large step counter on the Keystone scan screen of the migration signing: scanning the signed result."
+  },
+  "migrationMobileLeftToMigrate": "Left to migrate",
+  "@migrationMobileLeftToMigrate": {
+    "description": "Label of the row showing the amount that has not been migrated yet."
+  },
+  "migrationMobileManageCheckError": "Couldn't check the migration status. Please try again.",
+  "@migrationMobileManageCheckError": {
+    "description": "Message in the mobile manage-migration dialog when the migration status could not be loaded."
+  },
+  "migrationMobileManageChecking": "Checking migration status...",
+  "@migrationMobileManageChecking": {
+    "description": "Message in the mobile manage-migration dialog while the migration status is loading."
+  },
+  "migrationMobileManageConfirm": "Confirm",
+  "@migrationMobileManageConfirm": {
+    "description": "Confirm button of the manage-migration dialog."
+  },
+  "migrationMobileManageNoRevert": "Transactions already broadcast will not be reverted.",
+  "@migrationMobileManageNoRevert": {
+    "description": "[security] Note in the manage-migration dialog that transactions already sent to the network are not undone."
+  },
+  "migrationMobileManageRetryStatus": "Retry status check",
+  "@migrationMobileManageRetryStatus": {
+    "description": "Button in the manage-migration dialog that reloads the migration status after a failure."
+  },
+  "migrationMobileManageStopAction": "Stop migration",
+  "@migrationMobileManageStopAction": {
+    "description": "[security] Button in the manage-migration dialog that starts stopping the remaining migration."
+  },
+  "migrationMobileManageStopBody": "Stop the remaining migration. Funds already migrated will stay in Ironwood.",
+  "@migrationMobileManageStopBody": {
+    "description": "[security] Explanation in the manage-migration dialog before stopping the migration: funds already moved stay in Ironwood."
+  },
+  "migrationMobileManageStopTitle": "Stop migration?",
+  "@migrationMobileManageStopTitle": {
+    "description": "[security] Title of the manage-migration dialog confirmation step for stopping the migration."
+  },
+  "migrationMobileManageStopping": "Stopping...",
+  "@migrationMobileManageStopping": {
+    "description": "Label of the Confirm button of the manage-migration dialog while the migration is being stopped."
+  },
+  "migrationMobileManageSwitchAction": "Switch to Fast",
+  "@migrationMobileManageSwitchAction": {
+    "description": "Button in the manage-migration dialog that starts switching to the Fast migration."
+  },
+  "migrationMobileManageSwitchBody": "Stop the private schedule and review a Fast migration for your remaining balance. Fast migration increases traceability and cannot be reversed once submitted.",
+  "@migrationMobileManageSwitchBody": {
+    "description": "[security] Warning in the manage-migration dialog before switching to Fast migration: it lowers privacy and cannot be undone after it is submitted."
+  },
+  "migrationMobileManageSwitchTitle": "Switch to Fast?",
+  "@migrationMobileManageSwitchTitle": {
+    "description": "Title of the manage-migration dialog confirmation step for switching to the Fast migration."
+  },
+  "migrationMobileManageTitle": "Manage migration",
+  "@migrationMobileManageTitle": {
+    "description": "Title of the mobile dialog that lets the user switch to Fast migration or stop the migration."
+  },
+  "migrationMobileManageUnavailable": "This migration is no longer available to manage.",
+  "@migrationMobileManageUnavailable": {
+    "description": "Message in the mobile manage-migration dialog when the migration can no longer be stopped or changed."
+  },
+  "migrationMobileManageUpdateError": "The migration could not be updated. Please try again.",
+  "@migrationMobileManageUpdateError": {
+    "description": "Error in the mobile manage-migration dialog when stopping or switching the migration failed."
+  },
+  "migrationMobileManageWaitingBroadcast": "Waiting for any active broadcast to finish before stopping the remaining migration.",
+  "@migrationMobileManageWaitingBroadcast": {
+    "description": "Note in the manage-migration dialog while it waits for a transaction being broadcast to finish before stopping."
+  },
+  "migrationMobileNextConfirmationsArriving": "Confirmations are still arriving.\nYou can leave Vizor and check again later.",
+  "@migrationMobileNextConfirmationsArriving": {
+    "description": "Migration status text while transactions wait for confirmations; the second sentence is on its own line."
+  },
+  "migrationMobileNextExpectedIn": "Next migration step expected in\n{timing}.",
+  "@migrationMobileNextExpectedIn": {
+    "description": "First lines of the migration status text; the timing is on its own line. {timing} is an estimated duration such as ~in 5 minutes.",
+    "placeholders": {
+      "timing": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileNextMigration": "Next migration",
+  "@migrationMobileNextMigration": {
+    "description": "Label above the amount of the next scheduled migration part inside the progress ring."
+  },
+  "migrationMobileNextNotificationsOffBlock": "Notifications are disabled. Open Vizor after block {height} ({timing}) and approve the next migration batch.",
+  "@migrationMobileNextNotificationsOffBlock": {
+    "description": "[security] Status text when notifications are off: the user must open the app after the given block and approve the next batch. {height} is a block height; {timing} is an estimated time such as ~in 5 minutes.",
+    "placeholders": {
+      "height": {
+        "type": "int"
+      },
+      "timing": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileNextNotificationsOffNoTiming": "Notifications are disabled. Open Vizor again when the timing is available and approve the next migration batch.",
+  "@migrationMobileNextNotificationsOffNoTiming": {
+    "description": "[security] Status text when notifications are off and the next step's timing is not known: the user must open the app again and approve the next batch."
+  },
+  "migrationMobileNextNotificationsOffOpen": "Notifications are disabled. Open Vizor again to continue.",
+  "@migrationMobileNextNotificationsOffOpen": {
+    "description": "[security] Line of the migration status text saying notifications are off, so the user must reopen the app to continue."
+  },
+  "migrationMobileNextNotificationsOnLeave": "Notifications are on. You can leave Vizor and check back later.",
+  "@migrationMobileNextNotificationsOnLeave": {
+    "description": "Line of the migration status text saying notifications are on, so the user may leave the app."
+  },
+  "migrationMobileNextOnTheWay": "Next migration step is on the way.",
+  "@migrationMobileNextOnTheWay": {
+    "description": "First line of the migration status text while a step is being sent."
+  },
+  "migrationMobileNextReadyAuto": "The scheduled transaction is ready for automatic submission. Keep Vizor open.",
+  "@migrationMobileNextReadyAuto": {
+    "description": "[security] Migration status text when the scheduled transaction is ready to be sent automatically; the app must stay open."
+  },
+  "migrationMobileNextStepReady": "The next migration step is ready. Keep Vizor open to continue.",
+  "@migrationMobileNextStepReady": {
+    "description": "[security] Migration status text when the next step is ready now; the app must stay open."
+  },
+  "migrationMobileNextTimingUntil": "{timing} until the next migration step.\nNotifications are on; you can leave Vizor and check back later.",
+  "@migrationMobileNextTimingUntil": {
+    "description": "Migration status text with the wait until the next step; the notification sentence is on its own line. {timing} is an estimate such as ~in 5 minutes.",
+    "placeholders": {
+      "timing": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileNextTorDisclosure": "While Vizor is closed, migration continues over a direct connection.",
+  "@migrationMobileNextTorDisclosure": {
+    "description": "[security] Sentence for iOS users with Tor on, appended on a new line to the migration status text: the background migration uses a direct connection, not Tor, while the app is closed."
+  },
+  "migrationMobileNotifyAllow": "Allow notifications",
+  "@migrationMobileNotifyAllow": {
+    "description": "Button that asks the system permission for notifications, or opens Settings."
+  },
+  "migrationMobileNotifyBody": "Some migration steps require approval. We’ll notify you when it’s time, so you can respond quickly and avoid unnecessary delays.",
+  "@migrationMobileNotifyBody": {
+    "description": "Body of the notification permission screen explaining why notifications help. The apostrophes are curly."
+  },
+  "migrationMobileNotifyConfirmBody": "Without notifications, you’ll need to remember to open Vizor regularly and approve the next migration step when it’s ready.",
+  "@migrationMobileNotifyConfirmBody": {
+    "description": "[security] Body of the confirmation shown when the user declines notifications: they must open the app regularly to approve steps. The apostrophes are curly."
+  },
+  "migrationMobileNotifyConfirmNote": "Otherwise, your migration may take longer.",
+  "@migrationMobileNotifyConfirmNote": {
+    "description": "Second paragraph of the confirmation shown when the user declines notifications."
+  },
+  "migrationMobileNotifyConfirmTitle": "Continue without notifications?",
+  "@migrationMobileNotifyConfirmTitle": {
+    "description": "Heading of the confirmation shown when the user declines notifications for the private migration."
+  },
+  "migrationMobileNotifyContinueWithout": "Continue without notifications",
+  "@migrationMobileNotifyContinueWithout": {
+    "description": "Ghost button of the confirmation that continues the private migration without notifications."
+  },
+  "migrationMobileNotifyHeading": "Keep your migration on schedule",
+  "@migrationMobileNotifyHeading": {
+    "description": "Heading of the notification permission screen of the private migration."
+  },
+  "migrationMobileNotifyStillOff": "Notifications are still off. Allow them from Settings, or continue without notifications.",
+  "@migrationMobileNotifyStillOff": {
+    "description": "Error shown on the notification permission screen after the system dialog was dismissed and notifications are still off."
+  },
+  "migrationMobileNotifyTitle": "Enable notifications",
+  "@migrationMobileNotifyTitle": {
+    "description": "Top bar title of the mobile screen that asks the user to allow notifications for the private migration."
+  },
+  "migrationMobileOptionImmediateBody": "Migrates your entire balance in one batch. Fast ({estimate}) but less private.",
+  "@migrationMobileOptionImmediateBody": {
+    "description": "Body of the Immediate migration option card. {estimate} is a short completion time estimate such as ~2 hours.",
+    "placeholders": {
+      "estimate": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileOptionImmediateTitle": "Immediate",
+  "@migrationMobileOptionImmediateTitle": {
+    "description": "Title of the Immediate migration option card, which migrates everything in one batch."
+  },
+  "migrationMobileOptionPrivateBody": "Splits transactions into multiple parts to minimize traceability but will take several hours to days.",
+  "@migrationMobileOptionPrivateBody": {
+    "description": "Body of the Private migration option card."
+  },
+  "migrationMobileOptionPrivateTitle": "Private",
+  "@migrationMobileOptionPrivateTitle": {
+    "description": "Title of the Private migration option card."
+  },
+  "migrationMobileOptionPrivateUnavailableAndroid": "Not available on Android.",
+  "@migrationMobileOptionPrivateUnavailableAndroid": {
+    "description": "Body of the disabled Private migration option card on Android."
+  },
+  "migrationMobileOptionPrivateUnavailableLedger": "Not available for Ledger accounts.",
+  "@migrationMobileOptionPrivateUnavailableLedger": {
+    "description": "Body of the disabled Private migration option card for Ledger accounts."
+  },
+  "migrationMobileOptionsNavTitle": "How to Migrate",
+  "@migrationMobileOptionsNavTitle": {
+    "description": "Title-case top bar title of the mobile screen where the user chooses between Private and Immediate migration."
+  },
+  "migrationMobileOptionsOpenError": "Couldn't open migration preparation. Try again.",
+  "@migrationMobileOptionsOpenError": {
+    "description": "Error under the Continue button of the migration options screen when the private migration preparation screen could not be opened."
+  },
+  "migrationMobileOptionsSubtitle": "Choose between more privacy over time or a faster migration. You can review the details before anything moves.",
+  "@migrationMobileOptionsSubtitle": {
+    "description": "Subtitle of the migration options screen explaining the two choices."
+  },
+  "migrationMobileOptionsSubtitleAndroid": "Private migration is temporarily unavailable on Android. Choose immediate to continue.",
+  "@migrationMobileOptionsSubtitleAndroid": {
+    "description": "Subtitle of the migration options screen on Android, where private migration is temporarily unavailable."
+  },
+  "migrationMobileOptionsSubtitleAndroidRest": "{amount} ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose immediate to continue.",
+  "@migrationMobileOptionsSubtitleAndroidRest": {
+    "description": "Subtitle of the migration options screen on Android when part of the balance is already migrated. {amount} is the remaining Orchard balance without the ZEC unit.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileOptionsSubtitleLedger": "Private migration is not available for Ledger accounts. Choose Immediate to continue.",
+  "@migrationMobileOptionsSubtitleLedger": {
+    "description": "Subtitle of the migration options screen for a Ledger account. Immediate is the name of the fast option."
+  },
+  "migrationMobileOptionsSubtitleLedgerRest": "{amount} ZEC is still in Orchard. Private migration is not available for Ledger accounts. Choose Immediate to continue.",
+  "@migrationMobileOptionsSubtitleLedgerRest": {
+    "description": "Subtitle of the migration options screen for a Ledger account when part of the balance is already migrated. Immediate is the name of the fast option. {amount} is the remaining Orchard balance without the ZEC unit.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileOptionsSubtitleRest": "{amount} ZEC is still in Orchard. Choose between more privacy over time or a faster migration.",
+  "@migrationMobileOptionsSubtitleRest": {
+    "description": "Subtitle of the migration options screen when part of the balance is already migrated. {amount} is the formatted remaining Orchard balance without the ZEC unit.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileOptionsTitle": "Choose How to Migrate",
+  "@migrationMobileOptionsTitle": {
+    "description": "Title-case heading of the migration options screen where the user picks Private or Immediate migration."
+  },
+  "migrationMobileOptionsTitleRest": "How to Move the Rest",
+  "@migrationMobileOptionsTitleRest": {
+    "description": "Title-case heading of the migration options screen when part of the balance has already been migrated and the rest remains."
+  },
+  "migrationMobilePartConfirming": "Confirming · {count}/{target}",
+  "@migrationMobilePartConfirming": {
+    "description": "Status of a migration part waiting for network confirmations. {count} is the confirmations so far and {target} the number needed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "target": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobilePartLabel": "Part {number}",
+  "@migrationMobilePartLabel": {
+    "description": "Label of one migration part (one transaction of the split migration) in the progress list. {number} starts at 1.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobilePartProgress": "{part} progress {percent}%",
+  "@migrationMobilePartProgress": {
+    "description": "Screen reader label of a migration part's progress bar. {part} is the part label such as Part 2; {percent} is a whole number.",
+    "placeholders": {
+      "part": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobilePartQueued": "Queued",
+  "@migrationMobilePartQueued": {
+    "description": "Status of a migration part that is waiting for its turn and has no time estimate yet."
+  },
+  "migrationMobilePartsPlaceholder": "Migration parts will appear as transactions are prepared.",
+  "@migrationMobilePartsPlaceholder": {
+    "description": "Placeholder on the mobile migration progress screen while the list of migration parts is empty."
+  },
+  "migrationMobilePrepAdvancing": "Preparing the next transactions. Keep Vizor open.",
+  "@migrationMobilePrepAdvancing": {
+    "description": "[security] Text inside the preparation ring while the next preparation transactions are being made; the app must stay open."
+  },
+  "migrationMobilePrepBackgroundTracking": "Confirming in the background. You can close Vizor.",
+  "@migrationMobilePrepBackgroundTracking": {
+    "description": "Text inside the preparation ring while confirmations are tracked in the background; keep it two short sentences."
+  },
+  "migrationMobilePrepBackgroundUnsupported": "This device can’t confirm in the background. Keep Vizor open.",
+  "@migrationMobilePrepBackgroundUnsupported": {
+    "description": "[security] Text inside the preparation ring on a device that cannot track preparation while the app is closed; the app must stay open. The apostrophe is curly."
+  },
+  "migrationMobilePrepContinue": "Continue preparation",
+  "@migrationMobilePrepContinue": {
+    "description": "Button that resumes a paused preparation."
+  },
+  "migrationMobilePrepContinueKeystone": "Continue with Keystone",
+  "@migrationMobilePrepContinueKeystone": {
+    "description": "[security] Button that continues the preparation by signing again on the Keystone device."
+  },
+  "migrationMobilePrepDoneBody": "Preparation is complete. Check your migration status for progress and any action needed.",
+  "@migrationMobilePrepDoneBody": {
+    "description": "Body of the modal shown when the balance preparation finished."
+  },
+  "migrationMobilePrepDoneTitle": "Preparation is done",
+  "@migrationMobilePrepDoneTitle": {
+    "description": "Heading of the modal shown when the balance preparation finished."
+  },
+  "migrationMobilePrepDuration": "Preparation will\ntake 10–20 min",
+  "@migrationMobilePrepDuration": {
+    "description": "Text inside the preparation ring giving the typical preparation time; the line break is intentional and the dash is an en dash."
+  },
+  "migrationMobilePrepInfoOrganizing": "We’re organizing your balance into common-sized parts. This makes your migration harder to link.",
+  "@migrationMobilePrepInfoOrganizing": {
+    "description": "First line of the info card under the preparation ring. The apostrophe is curly."
+  },
+  "migrationMobilePrepInfoThenBegin": "Once preparation finishes, your migration can begin.",
+  "@migrationMobilePrepInfoThenBegin": {
+    "description": "Second line of the info card under the preparation ring."
+  },
+  "migrationMobilePrepKeystoneSignature": "Preparation needs another Keystone signature.",
+  "@migrationMobilePrepKeystoneSignature": {
+    "description": "[security] Text inside the preparation ring when the preparation needs another signature from the Keystone device."
+  },
+  "migrationMobilePrepNotificationsDisabled": "Allow notifications to continue in the background, or keep Vizor open.",
+  "@migrationMobilePrepNotificationsDisabled": {
+    "description": "[security] Text inside the preparation ring when notifications are off and the preparation cannot continue in the background."
+  },
+  "migrationMobilePrepPausedLeft": "Preparation was paused because you left.",
+  "@migrationMobilePrepPausedLeft": {
+    "description": "Text inside the preparation ring when the preparation paused because the user left the app."
+  },
+  "migrationMobilePrepSyncingWallet": "Syncing your wallet…",
+  "@migrationMobilePrepSyncingWallet": {
+    "description": "Text inside the preparation ring while the wallet syncs before preparation continues."
+  },
+  "migrationMobilePreparingBody": "Preparing your balance for migration. This step usually takes 10-20 mins.",
+  "@migrationMobilePreparingBody": {
+    "description": "Subtitle on the mobile migration preparation status screen while the balance is split into parts."
+  },
+  "migrationMobilePreparingTitle": "Preparing your migration",
+  "@migrationMobilePreparingTitle": {
+    "description": "Top bar title of the mobile private migration preparation screen."
+  },
+  "migrationMobileProcessChooseBody": "Compare a privacy-optimized schedule with a faster migration.",
+  "@migrationMobileProcessChooseBody": {
+    "description": "Body of step 1 on the how migration works screen."
+  },
+  "migrationMobileProcessChooseTitle": "Choose how you migrate",
+  "@migrationMobileProcessChooseTitle": {
+    "description": "Title of step 1 on the how migration works screen."
+  },
+  "migrationMobileProcessMoveBody": "Privacy-optimized migrations send parts at staggered times to reduce linkability.",
+  "@migrationMobileProcessMoveBody": {
+    "description": "Body of step 3 on the how migration works screen."
+  },
+  "migrationMobileProcessMoveTitle": "Move to Ironwood",
+  "@migrationMobileProcessMoveTitle": {
+    "description": "Title of step 3 on the how migration works screen."
+  },
+  "migrationMobileProcessPrepareBody": "Vizor reorganizes your balance into common-sized parts before migration begins.",
+  "@migrationMobileProcessPrepareBody": {
+    "description": "Body of step 2 on the how migration works screen."
+  },
+  "migrationMobileProcessPrepareTitle": "Prepare your balance",
+  "@migrationMobileProcessPrepareTitle": {
+    "description": "Title of step 2 on the how migration works screen."
+  },
+  "migrationMobileProcessSpendBody": "Each confirmed Ironwood amount is available to spend while the rest continues.",
+  "@migrationMobileProcessSpendBody": {
+    "description": "Body of the note below the steps explaining confirmed Ironwood funds can be spent while the migration continues."
+  },
+  "migrationMobileProcessSpendTitle": "Spend as funds arrive",
+  "@migrationMobileProcessSpendTitle": {
+    "description": "Title of the note below the steps explaining funds can be spent as they arrive."
+  },
+  "migrationMobileProgressAllClear": "All clear. Migration is in progress",
+  "@migrationMobileProgressAllClear": {
+    "description": "Title of the status card for a software account while the migration is processed."
+  },
+  "migrationMobileProgressAllClearBatch": "All clear. Processing batch #{number}",
+  "@migrationMobileProgressAllClearBatch": {
+    "description": "Title of the status card for a Keystone account while the migration batch is processed. {number} starts at 1.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileProgressBatchReady": "Batch #{number} is ready.",
+  "@migrationMobileProgressBatchReady": {
+    "description": "Body of the status card when a migration batch waits for the user's confirmation. {number} starts at 1.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileProgressConfirmations": "Waiting for confirmations",
+  "@migrationMobileProgressConfirmations": {
+    "description": "Title and value text shown while the migration waits for network confirmations."
+  },
+  "migrationMobileProgressNextStep": "Waiting for next migration step",
+  "@migrationMobileProgressNextStep": {
+    "description": "Title and value text shown while the migration waits for its next step."
+  },
+  "migrationMobileProgressReadyNow": "Ready now",
+  "@migrationMobileProgressReadyNow": {
+    "description": "Title of the status card when the scheduled transaction is ready now."
+  },
+  "migrationMobileProgressScheduledReady": "Scheduled transaction ready",
+  "@migrationMobileProgressScheduledReady": {
+    "description": "Value of the estimated completion row when a scheduled transaction is ready to submit."
+  },
+  "migrationMobileProgressSyncing": "Syncing",
+  "@migrationMobileProgressSyncing": {
+    "description": "Value of the estimated completion row while the migration progress is syncing."
+  },
+  "migrationMobileProgressSyncingBody": "Checking the latest confirmations and migration status.",
+  "@migrationMobileProgressSyncingBody": {
+    "description": "Body of the status card while the migration progress is syncing."
+  },
+  "migrationMobileProgressSyncingTitle": "Syncing migration progress",
+  "@migrationMobileProgressSyncingTitle": {
+    "description": "Title of the status card while the migration progress is syncing."
+  },
+  "migrationMobileProgressWaitingWindowBody": "Preparation is complete, but we are waiting\nfor the next available signing window.\nWe’ll let you know when it’s time to take action.",
+  "@migrationMobileProgressWaitingWindowBody": {
+    "description": "Body of the status card when preparation is complete and notifications are on; the line breaks are intentional."
+  },
+  "migrationMobileProgressYourConfirmation": "Waiting for your confirmation",
+  "@migrationMobileProgressYourConfirmation": {
+    "description": "[security] Title and value text shown while the migration waits for the user to confirm a step."
+  },
+  "migrationMobileRebuildAction": "Rebuild",
+  "@migrationMobileRebuildAction": {
+    "description": "Confirm button of the rebuild migration dialog."
+  },
+  "migrationMobileRebuildBody": "Vizor will first check that the pending transactions were not sent. It will then rebuild the migration for only your remaining balance. Any confirmed transfers will stay unchanged.",
+  "@migrationMobileRebuildBody": {
+    "description": "Body of the rebuild migration confirmation dialog."
+  },
+  "migrationMobileRebuildTitle": "Rebuild migration?",
+  "@migrationMobileRebuildTitle": {
+    "description": "Title of the confirmation dialog for rebuilding the migration."
+  },
+  "migrationMobileRecommended": "Recommended",
+  "@migrationMobileRecommended": {
+    "description": "Green badge on the recommended migration option card."
+  },
+  "migrationMobileRecover": "Recover",
+  "@migrationMobileRecover": {
+    "description": "Button on the mobile migration progress screen that starts rebuilding the migration from saved transactions."
+  },
+  "migrationMobileRecovering": "Recovering...",
+  "@migrationMobileRecovering": {
+    "description": "Label of the Recover button while the migration is being rebuilt."
+  },
+  "migrationMobileRecoveryRequired": "Migration recovery required.",
+  "@migrationMobileRecoveryRequired": {
+    "description": "First line on the mobile migration progress screen when saved transactions must be rebuilt."
+  },
+  "migrationMobileResume": "Resume",
+  "@migrationMobileResume": {
+    "description": "Button on the migration progress screen that resumes a paused migration."
+  },
+  "migrationMobileResuming": "Resuming...",
+  "@migrationMobileResuming": {
+    "description": "Label of the action button on the migration progress screen while a paused migration resumes."
+  },
+  "migrationMobileRetryAutomatically": "Vizor will retry automatically.",
+  "@migrationMobileRetryAutomatically": {
+    "description": "Second line on the mobile migration progress screen saying the app retries on its own."
+  },
+  "migrationMobileRetrying": "Retrying...",
+  "@migrationMobileRetrying": {
+    "description": "Label of the action button on the migration progress screen while a retry runs."
+  },
+  "migrationMobileReviewPlanTitle": "Review Migration Plan",
+  "@migrationMobileReviewPlanTitle": {
+    "description": "Title-case heading of the mobile migration review screen."
+  },
+  "migrationMobileSavedTxError": "Two saved transactions couldn't be reopened.",
+  "@migrationMobileSavedTxError": {
+    "description": "Second line on the mobile migration progress screen explaining why recovery is required."
+  },
+  "migrationMobileScheduleCalculating": "Calculating",
+  "@migrationMobileScheduleCalculating": {
+    "description": "Placeholder for the estimated duration or remaining rounds on the schedule screens while the chain height is not known yet."
+  },
+  "migrationMobileScheduleChange": "Change",
+  "@migrationMobileScheduleChange": {
+    "description": "Label of a split output that is change returned to the wallet, in the preparation schedule."
+  },
+  "migrationMobileScheduleConfirming": "Confirming {count}/{target}",
+  "@migrationMobileScheduleConfirming": {
+    "description": "Status of a transaction waiting for network confirmations. {count} is confirmations so far and {target} the number needed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "target": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileScheduleCurrentBlock": "Current block",
+  "@migrationMobileScheduleCurrentBlock": {
+    "description": "Label of the summary row showing the current block height."
+  },
+  "migrationMobileScheduleDueNow": "Due now",
+  "@migrationMobileScheduleDueNow": {
+    "description": "Status of a scheduled migration part whose block has just passed, within the grace period."
+  },
+  "migrationMobileScheduleDuration": "Duration",
+  "@migrationMobileScheduleDuration": {
+    "description": "Footer label on the migration schedule screen for the time left until the migration completes."
+  },
+  "migrationMobileScheduleLoading": "Loading migration schedule",
+  "@migrationMobileScheduleLoading": {
+    "description": "Screen reader label of the loading indicator on the mobile migration schedule screen."
+  },
+  "migrationMobileScheduleManage": "Manage",
+  "@migrationMobileScheduleManage": {
+    "description": "Ghost button on the migration schedule that opens the manage-migration dialog."
+  },
+  "migrationMobileScheduleMigrating": "Migrating…",
+  "@migrationMobileScheduleMigrating": {
+    "description": "Status of a migration part that is being sent, in the migration schedule list (with a single ellipsis character)."
+  },
+  "migrationMobileScheduleMigrationNote": "Migration note",
+  "@migrationMobileScheduleMigrationNote": {
+    "description": "Label of a split output that will be migrated, in the preparation schedule."
+  },
+  "migrationMobileScheduleNextRound": "Next round",
+  "@migrationMobileScheduleNextRound": {
+    "description": "Status of a preparation transaction that waits for the previous round, and label of an output that feeds the next round."
+  },
+  "migrationMobileScheduleOf": "{current} of {total}",
+  "@migrationMobileScheduleOf": {
+    "description": "Progress of split rounds. {current} is the current round or completed count and {total} the total.",
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileScheduleOverdue": "Overdue",
+  "@migrationMobileScheduleOverdue": {
+    "description": "Status of a scheduled migration part whose block has passed beyond the grace period."
+  },
+  "migrationMobileSchedulePending": "Schedule pending",
+  "@migrationMobileSchedulePending": {
+    "description": "Value of the estimated completion row on the mobile migration progress screen while no schedule exists yet."
+  },
+  "migrationMobileSchedulePreparationProgress": "Preparation progress",
+  "@migrationMobileSchedulePreparationProgress": {
+    "description": "Footer label on the preparation schedule screen for how many split transactions are done."
+  },
+  "migrationMobileSchedulePreparationTitle": "Preparation Schedule",
+  "@migrationMobileSchedulePreparationTitle": {
+    "description": "Title-case top bar title of the mobile schedule screen that lists the balance preparation (note split) rounds."
+  },
+  "migrationMobileSchedulePreparing": "Preparing schedule",
+  "@migrationMobileSchedulePreparing": {
+    "description": "Message in the empty list area of the schedule screens while the schedule is being prepared."
+  },
+  "migrationMobileSchedulePreparingState": "Preparing",
+  "@migrationMobileSchedulePreparingState": {
+    "description": "Status of a migration part that is still being prepared and has no time estimate."
+  },
+  "migrationMobileScheduleReadyIn": "Ready in",
+  "@migrationMobileScheduleReadyIn": {
+    "description": "Footer label on the preparation schedule screen for the time left until preparation is ready."
+  },
+  "migrationMobileScheduleReadyToSign": "Ready to sign",
+  "@migrationMobileScheduleReadyToSign": {
+    "description": "Status of a migration part that waits for the user to sign it on the schedule list."
+  },
+  "migrationMobileScheduleReturn": "Return",
+  "@migrationMobileScheduleReturn": {
+    "description": "Button on the migration schedule screens that goes back to the migration status."
+  },
+  "migrationMobileScheduleRound": "Round {round}",
+  "@migrationMobileScheduleRound": {
+    "description": "Label of a split output that feeds a later round. {round} is the round number.",
+    "placeholders": {
+      "round": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileScheduleRoundsRemaining": "Rounds remaining",
+  "@migrationMobileScheduleRoundsRemaining": {
+    "description": "Label of the summary row on the preparation schedule showing the current round out of the total."
+  },
+  "migrationMobileScheduleScheduled": "Scheduled",
+  "@migrationMobileScheduleScheduled": {
+    "description": "Status of a preparation transaction that is scheduled but not yet sent."
+  },
+  "migrationMobileScheduleSpendable": "Ironwood spendable",
+  "@migrationMobileScheduleSpendable": {
+    "description": "Footer label on the migration schedule screen for the already migrated, spendable Ironwood amount."
+  },
+  "migrationMobileScheduleSplitRound": "Split round {round}",
+  "@migrationMobileScheduleSplitRound": {
+    "description": "Heading of one round of note-splitting transactions on the preparation schedule screen.",
+    "placeholders": {
+      "round": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileScheduleTitle": "Migration Schedule",
+  "@migrationMobileScheduleTitle": {
+    "description": "Title-case top bar title of the mobile schedule screen that lists the migration parts."
+  },
+  "migrationMobileScheduleUnavailableBody": "Vizor couldn't load the latest schedule. Your saved migration state is unchanged.",
+  "@migrationMobileScheduleUnavailableBody": {
+    "description": "Body of the error state of the migration schedule screen."
+  },
+  "migrationMobileScheduleUnavailableTitle": "Migration schedule unavailable",
+  "@migrationMobileScheduleUnavailableTitle": {
+    "description": "Heading of the error state of the migration schedule screen."
+  },
+  "migrationMobileScheduleWaitingMined": "Waiting to be mined",
+  "@migrationMobileScheduleWaitingMined": {
+    "description": "Status of a preparation transaction that was broadcast and waits to be included in a block."
+  },
+  "migrationMobileScheduleWindow": "Window #{height}",
+  "@migrationMobileScheduleWindow": {
+    "description": "Status of a migration part that waits for a signing window. {height} is a block height with thousands separators.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationMobileSpendableBalance": "Currently spendable balance",
+  "@migrationMobileSpendableBalance": {
+    "description": "Label of the row showing the balance that can be spent right now while a migration is running."
+  },
+  "migrationMobileStartErrorFallback": "Try again when you are ready.",
+  "@migrationMobileStartErrorFallback": {
+    "description": "Body of the error state of the private migration preparation screen when there is no specific error message."
+  },
+  "migrationMobileStartErrorTitle": "Couldn't prepare your migration",
+  "@migrationMobileStartErrorTitle": {
+    "description": "Heading of the error state of the private migration preparation screen."
+  },
+  "migrationMobileStartLoadingBody": "Vizor is preparing your migration. This may take a moment.",
+  "@migrationMobileStartLoadingBody": {
+    "description": "Body under the loading indicator while Vizor prepares the private migration."
+  },
+  "migrationMobileStartMessageOrganizing": "Organizing migration batches...",
+  "@migrationMobileStartMessageOrganizing": {
+    "description": "Second rotating loading message on the mobile private migration preparation screen."
+  },
+  "migrationMobileStartMessagePlan": "Preparing your migration plan...",
+  "@migrationMobileStartMessagePlan": {
+    "description": "Third rotating loading message on the mobile private migration preparation screen."
+  },
+  "migrationMobileStartMessagePreparing": "Preparing your migration...",
+  "@migrationMobileStartMessagePreparing": {
+    "description": "First rotating loading message on the mobile private migration preparation screen."
+  },
+  "migrationMobileStartReadyBody": "Continue to sign the preparation transactions and migration batches together with Keystone.",
+  "@migrationMobileStartReadyBody": {
+    "description": "[security] Body explaining that the user will sign the preparation transactions and all migration batches in one Keystone signing step."
+  },
+  "migrationMobileStartReadyTitle": "Ready to sign",
+  "@migrationMobileStartReadyTitle": {
+    "description": "Heading shown when the Keystone signing request for the private migration is ready."
+  },
+  "migrationMobileStatusNotesCount": "{count} notes",
+  "@migrationMobileStatusNotesCount": {
+    "description": "Muted number of notes (migration parts) after the word Migration in the heading row of the progress screens.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileStatusNotesLead": "Migration ",
+  "@migrationMobileStatusNotesLead": {
+    "description": "Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space."
+  },
+  "migrationMobileStatusTitle": "Ironwood Migration",
+  "@migrationMobileStatusTitle": {
+    "description": "Title-case heading at the top of the mobile migration progress screens."
+  },
+  "migrationMobileStoppedMoved": "Moved to Ironwood",
+  "@migrationMobileStoppedMoved": {
+    "description": "Label of the row showing the amount already migrated after a network upgrade stopped the migration."
+  },
+  "migrationMobileStoppedRemaining": "Still in Orchard",
+  "@migrationMobileStoppedRemaining": {
+    "description": "Label of the row showing the amount still in Orchard after a network upgrade stopped the migration."
+  },
+  "migrationMobileSyncingProgress": "Syncing the migration progress.",
+  "@migrationMobileSyncingProgress": {
+    "description": "Message under the loading indicator while the migration progress is syncing."
+  },
+  "migrationMobileTimingUpdating": "Timing is updating",
+  "@migrationMobileTimingUpdating": {
+    "description": "Placeholder used as the timing of the next migration step while the estimate is not available."
+  },
+  "migrationMobileViewSchedule": "View schedule",
+  "@migrationMobileViewSchedule": {
+    "description": "Small button and its screen reader label that opens the migration schedule."
+  },
+  "migrationMobileWaitAutoStart": "Migration will start automatically once note split is complete.",
+  "@migrationMobileWaitAutoStart": {
+    "description": "Note under the note split card for software accounts: the migration starts by itself."
+  },
+  "migrationMobileWaitBlocks": "{count}/{target} blocks",
+  "@migrationMobileWaitBlocks": {
+    "description": "Progress of the confirmation wait. {count} is confirmed blocks and {target} the number needed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "target": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationMobileWaitConfirmation": "Wait for confirmation",
+  "@migrationMobileWaitConfirmation": {
+    "description": "Second step of the note split card: wait for blocks to confirm the split."
+  },
+  "migrationMobileWaitKeystoneAgain": "Another Keystone approval will be needed after these confirmations.",
+  "@migrationMobileWaitKeystoneAgain": {
+    "description": "Note under the note split card for Keystone accounts: another signing on the device is required afterwards."
+  },
+  "migrationMobileWaitLoopBatch": " the batch of transactions",
+  "@migrationMobileWaitLoopBatch": {
+    "description": "Second fragment of the bottom text on the animated loop; keep the leading space."
+  },
+  "migrationMobileWaitLoopCaption": "Repeat several times,\nwaiting could take 2–10\nhours",
+  "@migrationMobileWaitLoopCaption": {
+    "description": "Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash."
+  },
+  "migrationMobileWaitLoopForWindow": " for the window",
+  "@migrationMobileWaitLoopForWindow": {
+    "description": "Second fragment of the top text on the animated loop; keep the leading space."
+  },
+  "migrationMobileWaitLoopSign": "Sign",
+  "@migrationMobileWaitLoopSign": {
+    "description": "Highlighted first word of the bottom text on the animated loop; followed by the next fragment to read 'Sign the batch of transactions'."
+  },
+  "migrationMobileWaitLoopWait": "Wait",
+  "@migrationMobileWaitLoopWait": {
+    "description": "Highlighted first word of the top text on the animated loop; followed by the next fragment to read 'Wait for the window'."
+  },
+  "migrationMobileWaitNoteSplit": "Note Split",
+  "@migrationMobileWaitNoteSplit": {
+    "description": "Title-case heading of the card on the preparation screen that shows the note split steps."
+  },
+  "migrationMobileWaitSafeBlock": "Waiting for a safe block to continue.",
+  "@migrationMobileWaitSafeBlock": {
+    "description": "First line on the mobile migration progress screen while the next step waits for a block that is safe to use."
+  },
+  "migrationMobileWaitSplitInto": "Split Notes into {count} Migration Parts",
+  "@migrationMobileWaitSplitInto": {
+    "description": "Title-case first step of the note split card. {count} is the number of migration parts.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "navActivity": "Activity",
   "@navActivity": {
     "description": "Sidebar and tab bar destination: transaction history. Shared by: activity, nav."

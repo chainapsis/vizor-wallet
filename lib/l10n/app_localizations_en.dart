@@ -2249,6 +2249,985 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockUnlockToContinuePausedBody => 'Unlock Vizor to continue.';
 
   @override
+  String get migrationMobileActionAllTransactions => 'All transactions';
+
+  @override
+  String migrationMobileActionBatch(int number) {
+    return 'Batch #$number';
+  }
+
+  @override
+  String get migrationMobileActionInProgress => 'Migration action in progress';
+
+  @override
+  String get migrationMobileActionNeedSignature =>
+      'Transactions needing signature';
+
+  @override
+  String migrationMobileActionPrepareBatch(int number) {
+    return 'Prepare batch #$number';
+  }
+
+  @override
+  String migrationMobileActionPreparingBatch(int number) {
+    return 'Preparing batch #$number...';
+  }
+
+  @override
+  String get migrationMobileActionResign => 'Re-sign migration transactions';
+
+  @override
+  String get migrationMobileActionSign => 'Sign migration transactions';
+
+  @override
+  String migrationMobileActionSignBatch(int number) {
+    return 'Sign batch #$number';
+  }
+
+  @override
+  String get migrationMobileActionSubmitScheduled =>
+      'Submit scheduled transaction';
+
+  @override
+  String get migrationMobileActionSubmittingScheduled =>
+      'Submitting scheduled transaction...';
+
+  @override
+  String get migrationMobileAnnouncementBody =>
+      'Zcash’s latest shielded pool, bringing cutting-edge cryptography and formal verification.\n\nYour shielded balance needs a one-time migration to Ironwood.';
+
+  @override
+  String get migrationMobileAnnouncementOfficial => 'Official announcement';
+
+  @override
+  String get migrationMobileAnnouncementUpgrade => 'Upgrade to Ironwood';
+
+  @override
+  String get migrationMobileAttentionContinueTitle => 'Continue your migration';
+
+  @override
+  String get migrationMobileAttentionLateTitle =>
+      'A migration transaction needs attention';
+
+  @override
+  String get migrationMobileAttentionLater => 'I’ll visit later';
+
+  @override
+  String get migrationMobileAttentionOpen => 'Go to migration page';
+
+  @override
+  String get migrationMobileAttentionProofTitle =>
+      'Your next migration batch is ready';
+
+  @override
+  String migrationMobileAttentionSignatureSheet(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count notes are ready for your signature',
+      one: '1 note is ready for your signature',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationMobileAttentionStoppedTitle =>
+      'Migration stopped by network upgrade';
+
+  @override
+  String get migrationMobileBackHome => 'Back home';
+
+  @override
+  String get migrationMobileBackToHome => 'Back to home';
+
+  @override
+  String get migrationMobileBannerInProgress => 'Migration in progress';
+
+  @override
+  String get migrationMobileBannerLate => 'Migration needs attention';
+
+  @override
+  String get migrationMobileBannerPreparing => 'Preparing migration';
+
+  @override
+  String get migrationMobileBannerProof => 'Next migration batch is ready';
+
+  @override
+  String migrationMobileBannerRemaining(String amount) {
+    return '$amount ZEC still migrating';
+  }
+
+  @override
+  String migrationMobileBannerSignature(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count notes are ready for signing',
+      one: '1 note is ready for signing',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationMobileBannerStart => 'Migrate to Ironwood';
+
+  @override
+  String get migrationMobileBannerStopped => 'Migration stopped';
+
+  @override
+  String get migrationMobileBannerWaiting => 'Waiting for confirmation...';
+
+  @override
+  String migrationMobileBatchProgress(int completed, int total) {
+    return '$completed/$total Batch';
+  }
+
+  @override
+  String get migrationMobileCanLeave => 'You can leave this screen.';
+
+  @override
+  String get migrationMobileCompleteBody =>
+      'Migration went successfully and you can spend your funds as usual.';
+
+  @override
+  String migrationMobileCompleteHeading(String amount) {
+    return 'Your\n$amount\nare on Ironwood!';
+  }
+
+  @override
+  String get migrationMobileCompleteTitle => 'You’re all set!';
+
+  @override
+  String get migrationMobileContinueError =>
+      'Couldn\'t continue migration. Try again.';
+
+  @override
+  String get migrationMobileContinueThisError =>
+      'Couldn\'t continue this migration. Try again.';
+
+  @override
+  String get migrationMobileCredentialsRestore =>
+      'Your migration credentials need to be restored before continuing.';
+
+  @override
+  String get migrationMobileErrorBroadcast =>
+      'Couldn\'t broadcast the migration transaction. Try again.';
+
+  @override
+  String get migrationMobileErrorPlanChanged =>
+      'The amount or fee changed. Review the updated details.';
+
+  @override
+  String get migrationMobileErrorStart =>
+      'Couldn\'t start migration. Try again.';
+
+  @override
+  String get migrationMobileErrorSyncFirst =>
+      'Wait for sync to finish, then try again.';
+
+  @override
+  String get migrationMobileErrorUnlock =>
+      'Unlock Vizor before starting migration.';
+
+  @override
+  String get migrationMobileEstCompletion => 'Est. completion';
+
+  @override
+  String get migrationMobileFastConsiderOther => 'Consider another option';
+
+  @override
+  String get migrationMobileFastContinueAnyway => 'Continue anyway';
+
+  @override
+  String get migrationMobileFastDurationRow => 'Migration complete in';
+
+  @override
+  String get migrationMobileFastFeesRow => 'Fees (estimate)';
+
+  @override
+  String get migrationMobileFastNoBalance =>
+      'No spendable Orchard balance is available for Immediate migration.';
+
+  @override
+  String get migrationMobileFastPlanCalculating => 'Calculating…';
+
+  @override
+  String get migrationMobileFastPlanError =>
+      'Couldn\'t calculate the Immediate migration fee. Sync and try again.';
+
+  @override
+  String get migrationMobileFastPlanUnavailable => 'Unavailable';
+
+  @override
+  String get migrationMobileFastPrivacyBodyHighlight =>
+      'easier to associate with your wallet';
+
+  @override
+  String migrationMobileFastPrivacyBodyLead(String amount) {
+    return 'Crosses in one visible step — your $amount and timing are ';
+  }
+
+  @override
+  String get migrationMobileFastPrivacyConsiderPrivate =>
+      'Consider choosing a Private Migration option.';
+
+  @override
+  String get migrationMobileFastPrivacyLedger =>
+      'Private migration is not available for Ledger accounts.';
+
+  @override
+  String get migrationMobileFastPrivacyTitle => 'Privacy trade-off';
+
+  @override
+  String get migrationMobileFastRetryCalculation => 'Retry calculation';
+
+  @override
+  String migrationMobileFastSubmittedBody(String amount) {
+    return '$amount is on its way to Ironwood.';
+  }
+
+  @override
+  String get migrationMobileFastSubmittedTitle => 'Migration submitted';
+
+  @override
+  String get migrationMobileFastTitle => 'Fast Migration';
+
+  @override
+  String get migrationMobileGoHome => 'Go home';
+
+  @override
+  String get migrationMobileHeroBadge => 'Migration';
+
+  @override
+  String get migrationMobileHeroIronwoodPool => 'Ironwood Pool';
+
+  @override
+  String get migrationMobileHeroLegacy => '(Legacy)';
+
+  @override
+  String get migrationMobileHeroOrchardPool => 'Orchard Pool';
+
+  @override
+  String get migrationMobileHowItWorksNavTitle => 'About';
+
+  @override
+  String get migrationMobileHowItWorksTitle => 'How Migration Works';
+
+  @override
+  String migrationMobileIntroBody(String amount) {
+    return 'Your $amount ZEC is currently in Orchard. To keep using these funds for shielded payments, you\'ll need to move them to Ironwood. You\'ll review the migration plan before any funds move.';
+  }
+
+  @override
+  String get migrationMobileIntroReleaseNote => 'Official release note';
+
+  @override
+  String get migrationMobileIntroTagline => 'A new shielded pool for Zcash.';
+
+  @override
+  String get migrationMobileIntroTitle => 'Zcash Network Update';
+
+  @override
+  String get migrationMobileKeepOpenUnlocked => 'Keep Vizor open & unlocked.';
+
+  @override
+  String get migrationMobileKeepRunning => 'But keep Vizor open & running.';
+
+  @override
+  String get migrationMobileKeystoneConfirmPrepSemantics =>
+      'Confirm migration preparation with Keystone';
+
+  @override
+  String get migrationMobileKeystoneConfirmTitle =>
+      'Confirm Migration with Keystone';
+
+  @override
+  String get migrationMobileKeystoneConfirmTransferSemantics =>
+      'Confirm migration transfer with Keystone';
+
+  @override
+  String get migrationMobileKeystoneHelpPrompt =>
+      'Tap QR on your Keystone,\nthen scan this QR code.';
+
+  @override
+  String get migrationMobileKeystoneHelpSemantics =>
+      'Keystone QR scanning help';
+
+  @override
+  String get migrationMobileKeystoneLoadingQrSemantics => 'Loading QR code';
+
+  @override
+  String get migrationMobileKeystoneLoadingQrText => 'Loading QR code ...';
+
+  @override
+  String get migrationMobileKeystoneNextStep => 'Next step';
+
+  @override
+  String get migrationMobileKeystonePromptOnDevice => 'on your Keystone,';
+
+  @override
+  String get migrationMobileKeystonePromptTap => 'Tap';
+
+  @override
+  String get migrationMobileKeystonePromptThenScan => 'then scan this QR code';
+
+  @override
+  String get migrationMobileKeystoneReconnect =>
+      'Reconnect or re-import your Keystone account to continue this migration.';
+
+  @override
+  String get migrationMobileKeystoneRequestQrSemantics =>
+      'Keystone request QR code';
+
+  @override
+  String get migrationMobileKeystoneRequiredStatus =>
+      'Keystone account required';
+
+  @override
+  String get migrationMobileKeystoneResignMessage =>
+      'Sign the rebuilt migration transactions with Keystone to continue.';
+
+  @override
+  String get migrationMobileKeystoneScanCaption =>
+      'Scan the QR code on your\nKeystone to confirm';
+
+  @override
+  String get migrationMobileKeystoneScanPrepSemantics =>
+      'Scan the signed migration preparation from Keystone';
+
+  @override
+  String get migrationMobileKeystoneScanProgress => 'Scan progress';
+
+  @override
+  String get migrationMobileKeystoneScanTitle => 'Scan with Keystone';
+
+  @override
+  String get migrationMobileKeystoneScanTransferSemantics =>
+      'Scan the signed migration transfer from Keystone';
+
+  @override
+  String get migrationMobileKeystoneShowTxQr => 'Show transaction QR';
+
+  @override
+  String get migrationMobileKeystoneStep1 => 'Step 1/2';
+
+  @override
+  String get migrationMobileKeystoneStep2 => 'Step 2/2';
+
+  @override
+  String get migrationMobileLeftToMigrate => 'Left to migrate';
+
+  @override
+  String get migrationMobileManageCheckError =>
+      'Couldn\'t check the migration status. Please try again.';
+
+  @override
+  String get migrationMobileManageChecking => 'Checking migration status...';
+
+  @override
+  String get migrationMobileManageConfirm => 'Confirm';
+
+  @override
+  String get migrationMobileManageNoRevert =>
+      'Transactions already broadcast will not be reverted.';
+
+  @override
+  String get migrationMobileManageRetryStatus => 'Retry status check';
+
+  @override
+  String get migrationMobileManageStopAction => 'Stop migration';
+
+  @override
+  String get migrationMobileManageStopBody =>
+      'Stop the remaining migration. Funds already migrated will stay in Ironwood.';
+
+  @override
+  String get migrationMobileManageStopTitle => 'Stop migration?';
+
+  @override
+  String get migrationMobileManageStopping => 'Stopping...';
+
+  @override
+  String get migrationMobileManageSwitchAction => 'Switch to Fast';
+
+  @override
+  String get migrationMobileManageSwitchBody =>
+      'Stop the private schedule and review a Fast migration for your remaining balance. Fast migration increases traceability and cannot be reversed once submitted.';
+
+  @override
+  String get migrationMobileManageSwitchTitle => 'Switch to Fast?';
+
+  @override
+  String get migrationMobileManageTitle => 'Manage migration';
+
+  @override
+  String get migrationMobileManageUnavailable =>
+      'This migration is no longer available to manage.';
+
+  @override
+  String get migrationMobileManageUpdateError =>
+      'The migration could not be updated. Please try again.';
+
+  @override
+  String get migrationMobileManageWaitingBroadcast =>
+      'Waiting for any active broadcast to finish before stopping the remaining migration.';
+
+  @override
+  String get migrationMobileNextConfirmationsArriving =>
+      'Confirmations are still arriving.\nYou can leave Vizor and check again later.';
+
+  @override
+  String migrationMobileNextExpectedIn(String timing) {
+    return 'Next migration step expected in\n$timing.';
+  }
+
+  @override
+  String get migrationMobileNextMigration => 'Next migration';
+
+  @override
+  String migrationMobileNextNotificationsOffBlock(int height, String timing) {
+    return 'Notifications are disabled. Open Vizor after block $height ($timing) and approve the next migration batch.';
+  }
+
+  @override
+  String get migrationMobileNextNotificationsOffNoTiming =>
+      'Notifications are disabled. Open Vizor again when the timing is available and approve the next migration batch.';
+
+  @override
+  String get migrationMobileNextNotificationsOffOpen =>
+      'Notifications are disabled. Open Vizor again to continue.';
+
+  @override
+  String get migrationMobileNextNotificationsOnLeave =>
+      'Notifications are on. You can leave Vizor and check back later.';
+
+  @override
+  String get migrationMobileNextOnTheWay =>
+      'Next migration step is on the way.';
+
+  @override
+  String get migrationMobileNextReadyAuto =>
+      'The scheduled transaction is ready for automatic submission. Keep Vizor open.';
+
+  @override
+  String get migrationMobileNextStepReady =>
+      'The next migration step is ready. Keep Vizor open to continue.';
+
+  @override
+  String migrationMobileNextTimingUntil(String timing) {
+    return '$timing until the next migration step.\nNotifications are on; you can leave Vizor and check back later.';
+  }
+
+  @override
+  String get migrationMobileNextTorDisclosure =>
+      'While Vizor is closed, migration continues over a direct connection.';
+
+  @override
+  String get migrationMobileNotifyAllow => 'Allow notifications';
+
+  @override
+  String get migrationMobileNotifyBody =>
+      'Some migration steps require approval. We’ll notify you when it’s time, so you can respond quickly and avoid unnecessary delays.';
+
+  @override
+  String get migrationMobileNotifyConfirmBody =>
+      'Without notifications, you’ll need to remember to open Vizor regularly and approve the next migration step when it’s ready.';
+
+  @override
+  String get migrationMobileNotifyConfirmNote =>
+      'Otherwise, your migration may take longer.';
+
+  @override
+  String get migrationMobileNotifyConfirmTitle =>
+      'Continue without notifications?';
+
+  @override
+  String get migrationMobileNotifyContinueWithout =>
+      'Continue without notifications';
+
+  @override
+  String get migrationMobileNotifyHeading => 'Keep your migration on schedule';
+
+  @override
+  String get migrationMobileNotifyStillOff =>
+      'Notifications are still off. Allow them from Settings, or continue without notifications.';
+
+  @override
+  String get migrationMobileNotifyTitle => 'Enable notifications';
+
+  @override
+  String migrationMobileOptionImmediateBody(String estimate) {
+    return 'Migrates your entire balance in one batch. Fast ($estimate) but less private.';
+  }
+
+  @override
+  String get migrationMobileOptionImmediateTitle => 'Immediate';
+
+  @override
+  String get migrationMobileOptionPrivateBody =>
+      'Splits transactions into multiple parts to minimize traceability but will take several hours to days.';
+
+  @override
+  String get migrationMobileOptionPrivateTitle => 'Private';
+
+  @override
+  String get migrationMobileOptionPrivateUnavailableAndroid =>
+      'Not available on Android.';
+
+  @override
+  String get migrationMobileOptionPrivateUnavailableLedger =>
+      'Not available for Ledger accounts.';
+
+  @override
+  String get migrationMobileOptionsNavTitle => 'How to Migrate';
+
+  @override
+  String get migrationMobileOptionsOpenError =>
+      'Couldn\'t open migration preparation. Try again.';
+
+  @override
+  String get migrationMobileOptionsSubtitle =>
+      'Choose between more privacy over time or a faster migration. You can review the details before anything moves.';
+
+  @override
+  String get migrationMobileOptionsSubtitleAndroid =>
+      'Private migration is temporarily unavailable on Android. Choose immediate to continue.';
+
+  @override
+  String migrationMobileOptionsSubtitleAndroidRest(String amount) {
+    return '$amount ZEC is still in Orchard. Private migration is temporarily unavailable on Android. Choose immediate to continue.';
+  }
+
+  @override
+  String get migrationMobileOptionsSubtitleLedger =>
+      'Private migration is not available for Ledger accounts. Choose Immediate to continue.';
+
+  @override
+  String migrationMobileOptionsSubtitleLedgerRest(String amount) {
+    return '$amount ZEC is still in Orchard. Private migration is not available for Ledger accounts. Choose Immediate to continue.';
+  }
+
+  @override
+  String migrationMobileOptionsSubtitleRest(String amount) {
+    return '$amount ZEC is still in Orchard. Choose between more privacy over time or a faster migration.';
+  }
+
+  @override
+  String get migrationMobileOptionsTitle => 'Choose How to Migrate';
+
+  @override
+  String get migrationMobileOptionsTitleRest => 'How to Move the Rest';
+
+  @override
+  String migrationMobilePartConfirming(int count, int target) {
+    return 'Confirming · $count/$target';
+  }
+
+  @override
+  String migrationMobilePartLabel(int number) {
+    return 'Part $number';
+  }
+
+  @override
+  String migrationMobilePartProgress(String part, int percent) {
+    return '$part progress $percent%';
+  }
+
+  @override
+  String get migrationMobilePartQueued => 'Queued';
+
+  @override
+  String get migrationMobilePartsPlaceholder =>
+      'Migration parts will appear as transactions are prepared.';
+
+  @override
+  String get migrationMobilePrepAdvancing =>
+      'Preparing the next transactions. Keep Vizor open.';
+
+  @override
+  String get migrationMobilePrepBackgroundTracking =>
+      'Confirming in the background. You can close Vizor.';
+
+  @override
+  String get migrationMobilePrepBackgroundUnsupported =>
+      'This device can’t confirm in the background. Keep Vizor open.';
+
+  @override
+  String get migrationMobilePrepContinue => 'Continue preparation';
+
+  @override
+  String get migrationMobilePrepContinueKeystone => 'Continue with Keystone';
+
+  @override
+  String get migrationMobilePrepDoneBody =>
+      'Preparation is complete. Check your migration status for progress and any action needed.';
+
+  @override
+  String get migrationMobilePrepDoneTitle => 'Preparation is done';
+
+  @override
+  String get migrationMobilePrepDuration => 'Preparation will\ntake 10–20 min';
+
+  @override
+  String get migrationMobilePrepInfoOrganizing =>
+      'We’re organizing your balance into common-sized parts. This makes your migration harder to link.';
+
+  @override
+  String get migrationMobilePrepInfoThenBegin =>
+      'Once preparation finishes, your migration can begin.';
+
+  @override
+  String get migrationMobilePrepKeystoneSignature =>
+      'Preparation needs another Keystone signature.';
+
+  @override
+  String get migrationMobilePrepNotificationsDisabled =>
+      'Allow notifications to continue in the background, or keep Vizor open.';
+
+  @override
+  String get migrationMobilePrepPausedLeft =>
+      'Preparation was paused because you left.';
+
+  @override
+  String get migrationMobilePrepSyncingWallet => 'Syncing your wallet…';
+
+  @override
+  String get migrationMobilePreparingBody =>
+      'Preparing your balance for migration. This step usually takes 10-20 mins.';
+
+  @override
+  String get migrationMobilePreparingTitle => 'Preparing your migration';
+
+  @override
+  String get migrationMobileProcessChooseBody =>
+      'Compare a privacy-optimized schedule with a faster migration.';
+
+  @override
+  String get migrationMobileProcessChooseTitle => 'Choose how you migrate';
+
+  @override
+  String get migrationMobileProcessMoveBody =>
+      'Privacy-optimized migrations send parts at staggered times to reduce linkability.';
+
+  @override
+  String get migrationMobileProcessMoveTitle => 'Move to Ironwood';
+
+  @override
+  String get migrationMobileProcessPrepareBody =>
+      'Vizor reorganizes your balance into common-sized parts before migration begins.';
+
+  @override
+  String get migrationMobileProcessPrepareTitle => 'Prepare your balance';
+
+  @override
+  String get migrationMobileProcessSpendBody =>
+      'Each confirmed Ironwood amount is available to spend while the rest continues.';
+
+  @override
+  String get migrationMobileProcessSpendTitle => 'Spend as funds arrive';
+
+  @override
+  String get migrationMobileProgressAllClear =>
+      'All clear. Migration is in progress';
+
+  @override
+  String migrationMobileProgressAllClearBatch(int number) {
+    return 'All clear. Processing batch #$number';
+  }
+
+  @override
+  String migrationMobileProgressBatchReady(int number) {
+    return 'Batch #$number is ready.';
+  }
+
+  @override
+  String get migrationMobileProgressConfirmations =>
+      'Waiting for confirmations';
+
+  @override
+  String get migrationMobileProgressNextStep =>
+      'Waiting for next migration step';
+
+  @override
+  String get migrationMobileProgressReadyNow => 'Ready now';
+
+  @override
+  String get migrationMobileProgressScheduledReady =>
+      'Scheduled transaction ready';
+
+  @override
+  String get migrationMobileProgressSyncing => 'Syncing';
+
+  @override
+  String get migrationMobileProgressSyncingBody =>
+      'Checking the latest confirmations and migration status.';
+
+  @override
+  String get migrationMobileProgressSyncingTitle =>
+      'Syncing migration progress';
+
+  @override
+  String get migrationMobileProgressWaitingWindowBody =>
+      'Preparation is complete, but we are waiting\nfor the next available signing window.\nWe’ll let you know when it’s time to take action.';
+
+  @override
+  String get migrationMobileProgressYourConfirmation =>
+      'Waiting for your confirmation';
+
+  @override
+  String get migrationMobileRebuildAction => 'Rebuild';
+
+  @override
+  String get migrationMobileRebuildBody =>
+      'Vizor will first check that the pending transactions were not sent. It will then rebuild the migration for only your remaining balance. Any confirmed transfers will stay unchanged.';
+
+  @override
+  String get migrationMobileRebuildTitle => 'Rebuild migration?';
+
+  @override
+  String get migrationMobileRecommended => 'Recommended';
+
+  @override
+  String get migrationMobileRecover => 'Recover';
+
+  @override
+  String get migrationMobileRecovering => 'Recovering...';
+
+  @override
+  String get migrationMobileRecoveryRequired => 'Migration recovery required.';
+
+  @override
+  String get migrationMobileResume => 'Resume';
+
+  @override
+  String get migrationMobileResuming => 'Resuming...';
+
+  @override
+  String get migrationMobileRetryAutomatically =>
+      'Vizor will retry automatically.';
+
+  @override
+  String get migrationMobileRetrying => 'Retrying...';
+
+  @override
+  String get migrationMobileReviewPlanTitle => 'Review Migration Plan';
+
+  @override
+  String get migrationMobileSavedTxError =>
+      'Two saved transactions couldn\'t be reopened.';
+
+  @override
+  String get migrationMobileScheduleCalculating => 'Calculating';
+
+  @override
+  String get migrationMobileScheduleChange => 'Change';
+
+  @override
+  String migrationMobileScheduleConfirming(int count, int target) {
+    return 'Confirming $count/$target';
+  }
+
+  @override
+  String get migrationMobileScheduleCurrentBlock => 'Current block';
+
+  @override
+  String get migrationMobileScheduleDueNow => 'Due now';
+
+  @override
+  String get migrationMobileScheduleDuration => 'Duration';
+
+  @override
+  String get migrationMobileScheduleLoading => 'Loading migration schedule';
+
+  @override
+  String get migrationMobileScheduleManage => 'Manage';
+
+  @override
+  String get migrationMobileScheduleMigrating => 'Migrating…';
+
+  @override
+  String get migrationMobileScheduleMigrationNote => 'Migration note';
+
+  @override
+  String get migrationMobileScheduleNextRound => 'Next round';
+
+  @override
+  String migrationMobileScheduleOf(int current, int total) {
+    return '$current of $total';
+  }
+
+  @override
+  String get migrationMobileScheduleOverdue => 'Overdue';
+
+  @override
+  String get migrationMobileSchedulePending => 'Schedule pending';
+
+  @override
+  String get migrationMobileSchedulePreparationProgress =>
+      'Preparation progress';
+
+  @override
+  String get migrationMobileSchedulePreparationTitle => 'Preparation Schedule';
+
+  @override
+  String get migrationMobileSchedulePreparing => 'Preparing schedule';
+
+  @override
+  String get migrationMobileSchedulePreparingState => 'Preparing';
+
+  @override
+  String get migrationMobileScheduleReadyIn => 'Ready in';
+
+  @override
+  String get migrationMobileScheduleReadyToSign => 'Ready to sign';
+
+  @override
+  String get migrationMobileScheduleReturn => 'Return';
+
+  @override
+  String migrationMobileScheduleRound(int round) {
+    return 'Round $round';
+  }
+
+  @override
+  String get migrationMobileScheduleRoundsRemaining => 'Rounds remaining';
+
+  @override
+  String get migrationMobileScheduleScheduled => 'Scheduled';
+
+  @override
+  String get migrationMobileScheduleSpendable => 'Ironwood spendable';
+
+  @override
+  String migrationMobileScheduleSplitRound(int round) {
+    return 'Split round $round';
+  }
+
+  @override
+  String get migrationMobileScheduleTitle => 'Migration Schedule';
+
+  @override
+  String get migrationMobileScheduleUnavailableBody =>
+      'Vizor couldn\'t load the latest schedule. Your saved migration state is unchanged.';
+
+  @override
+  String get migrationMobileScheduleUnavailableTitle =>
+      'Migration schedule unavailable';
+
+  @override
+  String get migrationMobileScheduleWaitingMined => 'Waiting to be mined';
+
+  @override
+  String migrationMobileScheduleWindow(String height) {
+    return 'Window #$height';
+  }
+
+  @override
+  String get migrationMobileSpendableBalance => 'Currently spendable balance';
+
+  @override
+  String get migrationMobileStartErrorFallback =>
+      'Try again when you are ready.';
+
+  @override
+  String get migrationMobileStartErrorTitle =>
+      'Couldn\'t prepare your migration';
+
+  @override
+  String get migrationMobileStartLoadingBody =>
+      'Vizor is preparing your migration. This may take a moment.';
+
+  @override
+  String get migrationMobileStartMessageOrganizing =>
+      'Organizing migration batches...';
+
+  @override
+  String get migrationMobileStartMessagePlan =>
+      'Preparing your migration plan...';
+
+  @override
+  String get migrationMobileStartMessagePreparing =>
+      'Preparing your migration...';
+
+  @override
+  String get migrationMobileStartReadyBody =>
+      'Continue to sign the preparation transactions and migration batches together with Keystone.';
+
+  @override
+  String get migrationMobileStartReadyTitle => 'Ready to sign';
+
+  @override
+  String migrationMobileStatusNotesCount(int count) {
+    return '$count notes';
+  }
+
+  @override
+  String get migrationMobileStatusNotesLead => 'Migration ';
+
+  @override
+  String get migrationMobileStatusTitle => 'Ironwood Migration';
+
+  @override
+  String get migrationMobileStoppedMoved => 'Moved to Ironwood';
+
+  @override
+  String get migrationMobileStoppedRemaining => 'Still in Orchard';
+
+  @override
+  String get migrationMobileSyncingProgress =>
+      'Syncing the migration progress.';
+
+  @override
+  String get migrationMobileTimingUpdating => 'Timing is updating';
+
+  @override
+  String get migrationMobileViewSchedule => 'View schedule';
+
+  @override
+  String get migrationMobileWaitAutoStart =>
+      'Migration will start automatically once note split is complete.';
+
+  @override
+  String migrationMobileWaitBlocks(int count, int target) {
+    return '$count/$target blocks';
+  }
+
+  @override
+  String get migrationMobileWaitConfirmation => 'Wait for confirmation';
+
+  @override
+  String get migrationMobileWaitKeystoneAgain =>
+      'Another Keystone approval will be needed after these confirmations.';
+
+  @override
+  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
+
+  @override
+  String get migrationMobileWaitLoopCaption =>
+      'Repeat several times,\nwaiting could take 2–10\nhours';
+
+  @override
+  String get migrationMobileWaitLoopForWindow => ' for the window';
+
+  @override
+  String get migrationMobileWaitLoopSign => 'Sign';
+
+  @override
+  String get migrationMobileWaitLoopWait => 'Wait';
+
+  @override
+  String get migrationMobileWaitNoteSplit => 'Note Split';
+
+  @override
+  String get migrationMobileWaitSafeBlock =>
+      'Waiting for a safe block to continue.';
+
+  @override
+  String migrationMobileWaitSplitInto(int count) {
+    return 'Split Notes into $count Migration Parts';
+  }
+
+  @override
   String get navActivity => 'Activity';
 
   @override

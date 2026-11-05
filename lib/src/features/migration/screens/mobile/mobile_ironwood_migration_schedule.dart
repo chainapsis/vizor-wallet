@@ -163,8 +163,8 @@ class _MobileMigrationScheduleLoaderState
             children: [
               MobileTopNav.back(
                 title: widget.preparation
-                    ? 'Preparation Schedule'
-                    : 'Migration Schedule',
+                    ? context.l10n.migrationMobileSchedulePreparationTitle
+                    : context.l10n.migrationMobileScheduleTitle,
                 titleStyle: AppTypography.headlineSmall.copyWith(
                   color: context.colors.text.accent,
                 ),
@@ -174,11 +174,12 @@ class _MobileMigrationScheduleLoaderState
                 child: unavailable
                     ? _MobileMigrationScheduleError(onRetry: onRetry)
                     : status == null
-                    ? const Center(
+                    ? Center(
                         child: AppIcon(
                           AppIcons.loader,
                           size: 24,
-                          semanticLabel: 'Loading migration schedule',
+                          semanticLabel:
+                              context.l10n.migrationMobileScheduleLoading,
                         ),
                       )
                     : widget.preparation
@@ -247,9 +248,9 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
     final estimatedCompletionHeight =
         status.estimatedCompletionHeight ?? projectedCompletionHeight;
     final duration = estimatedCompletionHeight == null
-        ? 'Schedule pending'
+        ? context.l10n.migrationMobileSchedulePending
         : currentHeight <= 0
-        ? 'Calculating'
+        ? context.l10n.migrationMobileScheduleCalculating
         : migrationHeightRemainingDurationLabel(
             estimatedCompletionHeight,
             blockTimes: blockTimes,
@@ -269,7 +270,7 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
             child: parts.isEmpty
                 ? Center(
                     child: Text(
-                      'Preparing schedule',
+                      context.l10n.migrationMobileSchedulePreparing,
                       style: AppTypography.bodyMedium.copyWith(
                         color: context.colors.text.secondary,
                       ),
@@ -306,10 +307,11 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
           ),
           _MobileMigrationScheduleFooter(
             primaryIcon: AppIcons.wallet,
-            title: 'Ironwood spendable',
-            value: '${_migrationDisplayZec(completed)} ZEC',
+            title: context.l10n.migrationMobileScheduleSpendable,
+            value:
+                '${_migrationDisplayZec(completed)} ZEC', // l10n-ignore: amount format
             secondaryIcon: AppIcons.migrationTimer,
-            secondaryLabel: 'Duration',
+            secondaryLabel: context.l10n.migrationMobileScheduleDuration,
             secondaryValue: duration,
             onReturn: onReturn,
             onManage: onManage,
@@ -369,7 +371,7 @@ class _MobileMigrationPartScheduleRow extends StatelessWidget {
                 child: Text.rich(
                   TextSpan(
                     text:
-                        '$number. ${_migrationDisplayZec(part.valueZatoshi)} ZEC ',
+                        '$number. ${_migrationDisplayZec(part.valueZatoshi)} ZEC ', // l10n-ignore: amount format
                     style: AppTypography.labelLarge.copyWith(
                       color: context.colors.text.accent,
                       fontWeight: FontWeight.w500,
@@ -447,7 +449,7 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
           math.max(height, transaction.projectedCompletionHeight),
     );
     final duration = currentHeight <= 0
-        ? 'Calculating'
+        ? context.l10n.migrationMobileScheduleCalculating
         : migrationHeightRemainingDurationLabel(
             finalHeight,
             blockTimes: blockTimes,
@@ -465,8 +467,11 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
         children: [
           _MobilePreparationScheduleSummary(
             rounds: rounds.isEmpty
-                ? 'Calculating'
-                : '$currentRound of ${rounds.length}',
+                ? context.l10n.migrationMobileScheduleCalculating
+                : context.l10n.migrationMobileScheduleOf(
+                    currentRound,
+                    rounds.length,
+                  ),
             estimatedCompletion: duration,
             currentHeight: currentHeight,
           ),
@@ -475,7 +480,7 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
             child: transactions.isEmpty
                 ? Center(
                     child: Text(
-                      'Preparing schedule',
+                      context.l10n.migrationMobileSchedulePreparing,
                       style: AppTypography.bodyMedium.copyWith(
                         color: context.colors.text.secondary,
                       ),
@@ -498,12 +503,13 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
           ),
           _MobileMigrationScheduleFooter(
             primaryIcon: AppIcons.migrationSplit,
-            title: 'Preparation progress',
-            value:
-                '${status.denominationSplitCompletedCount} of '
-                '${status.denominationSplitTotalCount}',
+            title: context.l10n.migrationMobileSchedulePreparationProgress,
+            value: context.l10n.migrationMobileScheduleOf(
+              status.denominationSplitCompletedCount,
+              status.denominationSplitTotalCount,
+            ),
             secondaryIcon: AppIcons.migrationTimer,
-            secondaryLabel: 'Ready in',
+            secondaryLabel: context.l10n.migrationMobileScheduleReadyIn,
             secondaryValue: duration,
             onReturn: onReturn,
             onManage: onManage,
@@ -533,7 +539,7 @@ class _MobilePreparationRoundSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Split round $round',
+          context.l10n.migrationMobileScheduleSplitRound(round),
           style: AppTypography.labelLarge.copyWith(
             color: context.colors.text.accent,
             fontWeight: FontWeight.w500,
@@ -572,14 +578,18 @@ class _MobilePreparationTransactionCard extends StatelessWidget {
         state == rust_sync.MigrationPreparationTransactionState.confirming;
     final stateLabel = switch (state) {
       rust_sync.MigrationPreparationTransactionState.awaitingInputs =>
-        'Next round',
-      rust_sync.MigrationPreparationTransactionState.scheduled => 'Scheduled',
+        context.l10n.migrationMobileScheduleNextRound,
+      rust_sync.MigrationPreparationTransactionState.scheduled =>
+        context.l10n.migrationMobileScheduleScheduled,
       rust_sync.MigrationPreparationTransactionState.broadcasted =>
-        'Waiting to be mined',
+        context.l10n.migrationMobileScheduleWaitingMined,
       rust_sync.MigrationPreparationTransactionState.confirming =>
-        'Confirming ${transaction.confirmationCount}/'
-            '${transaction.confirmationTarget}',
-      rust_sync.MigrationPreparationTransactionState.completed => 'Completed',
+        context.l10n.migrationMobileScheduleConfirming(
+          transaction.confirmationCount,
+          transaction.confirmationTarget,
+        ),
+      rust_sync.MigrationPreparationTransactionState.completed =>
+        context.l10n.commonCompleted,
     };
     final stateColor = completed
         ? context.colors.text.positiveStrong
@@ -603,7 +613,7 @@ class _MobilePreparationTransactionCard extends StatelessWidget {
                         'mobile_ironwood_preparation_value_'
                         '${transaction.stageIndex}',
                       ),
-                      '${_migrationDisplayZec(transaction.approximateValueZatoshi)} ZEC '
+                      '${_migrationDisplayZec(transaction.approximateValueZatoshi)} ZEC ' // l10n-ignore: amount format
                       '${_mobileSchedulePercentage(transaction.approximateValueZatoshi, roundTotal)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -700,10 +710,14 @@ class _MobilePreparationOutputRow extends StatelessWidget {
         ? output.targetValueZatoshi ?? output.valueZatoshi
         : output.valueZatoshi;
     final destination = switch (output.kind) {
-      rust_sync.MigrationPreparationOutputKind.migration => 'Migration note',
-      rust_sync.MigrationPreparationOutputKind.change => 'Change',
+      rust_sync.MigrationPreparationOutputKind.migration =>
+        context.l10n.migrationMobileScheduleMigrationNote,
+      rust_sync.MigrationPreparationOutputKind.change =>
+        context.l10n.migrationMobileScheduleChange,
       rust_sync.MigrationPreparationOutputKind.continuation =>
-        output.nextRound == null ? 'Next round' : 'Round ${output.nextRound}',
+        output.nextRound == null
+            ? context.l10n.migrationMobileScheduleNextRound
+            : context.l10n.migrationMobileScheduleRound(output.nextRound!),
     };
     return SizedBox(
       height: 24,
@@ -717,7 +731,7 @@ class _MobilePreparationOutputRow extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           Expanded(
             child: Text(
-              '${_migrationDisplayZec(value)} ZEC',
+              '${_migrationDisplayZec(value)} ZEC', // l10n-ignore: amount format
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.accent,
               ),
@@ -757,18 +771,18 @@ class _MobilePreparationScheduleSummary extends StatelessWidget {
       child: Column(
         children: [
           _MobilePreparationScheduleInfoRow(
-            label: 'Rounds remaining',
+            label: context.l10n.migrationMobileScheduleRoundsRemaining,
             value: rounds,
             emphasized: true,
           ),
           const SizedBox(height: AppSpacing.sm),
           _MobilePreparationScheduleInfoRow(
-            label: 'Est. completion',
+            label: context.l10n.migrationMobileEstCompletion,
             value: estimatedCompletion,
           ),
           const SizedBox(height: AppSpacing.sm),
           _MobilePreparationScheduleInfoRow(
-            label: 'Current block',
+            label: context.l10n.migrationMobileScheduleCurrentBlock,
             value: currentHeight <= 0
                 ? '—'
                 : formatGroupedInteger(currentHeight),
@@ -883,7 +897,7 @@ class _MobileMigrationScheduleFooter extends StatelessWidget {
                 expand: true,
                 leading: const AppIcon(AppIcons.wrench, size: 20),
                 onPressed: onManage,
-                child: const Text('Manage'),
+                child: Text(context.l10n.migrationMobileScheduleManage),
               ),
             ],
             const SizedBox(height: AppSpacing.s),
@@ -894,7 +908,7 @@ class _MobileMigrationScheduleFooter extends StatelessWidget {
                 onPressed: onReturn,
                 expand: true,
                 height: 50,
-                child: const Text('Return'),
+                child: Text(context.l10n.migrationMobileScheduleReturn),
               ),
             ),
           ],
@@ -969,7 +983,7 @@ class _MobileMigrationScheduleError extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Migration schedule unavailable',
+              context.l10n.migrationMobileScheduleUnavailableTitle,
               textAlign: TextAlign.center,
               style: AppTypography.headlineSmall.copyWith(
                 color: context.colors.text.accent,
@@ -977,8 +991,7 @@ class _MobileMigrationScheduleError extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.s),
             Text(
-              "Vizor couldn't load the latest schedule. "
-              'Your saved migration state is unchanged.',
+              context.l10n.migrationMobileScheduleUnavailableBody,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.secondary,
@@ -986,7 +999,10 @@ class _MobileMigrationScheduleError extends StatelessWidget {
             ),
             if (onRetry != null) ...[
               const SizedBox(height: AppSpacing.sm),
-              AppButton(onPressed: onRetry, child: const Text('Retry')),
+              AppButton(
+                onPressed: onRetry,
+                child: Text(context.l10n.commonRetry),
+              ),
             ],
           ],
         ),
@@ -1034,40 +1050,46 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
   final showEstimateIcon = scheduledHeight == null && estimatedLabel != null;
   return switch (part.state) {
     rust_sync.MigrationPartState.completed => (
-      'Completed',
+      context.l10n.commonCompleted,
       AppIcons.checkCircle,
       20,
       context.colors.text.positiveStrong,
     ),
     rust_sync.MigrationPartState.confirming => (
-      'Confirming ${part.confirmationCount}/${part.confirmationTarget}',
+      context.l10n.migrationMobileScheduleConfirming(
+        part.confirmationCount,
+        part.confirmationTarget,
+      ),
       AppIcons.loader,
       20,
       context.colors.text.secondary,
     ),
     rust_sync.MigrationPartState.migrating => (
-      'Migrating…',
+      context.l10n.migrationMobileScheduleMigrating,
       AppIcons.loader,
       20,
       context.colors.text.secondary,
     ),
     rust_sync.MigrationPartState.needsInput => (
-      'Ready to sign',
+      context.l10n.migrationMobileScheduleReadyToSign,
       AppIcons.migrationSign,
       20,
       const Color(0xFFB83AD9),
     ),
     rust_sync.MigrationPartState.preparing => (
       waitingWindowHeight == null
-          ? (estimatedLabel ?? 'Preparing')
-          : 'Window #${formatGroupedInteger(waitingWindowHeight)}',
+          ? (estimatedLabel ??
+                context.l10n.migrationMobileSchedulePreparingState)
+          : context.l10n.migrationMobileScheduleWindow(
+              formatGroupedInteger(waitingWindowHeight),
+            ),
       AppIcons.block,
       16,
       context.colors.text.secondary,
     ),
     rust_sync.MigrationPartState.scheduled => (
       scheduledHeight == null
-          ? (estimatedLabel ?? 'Schedule pending')
+          ? (estimatedLabel ?? context.l10n.migrationMobileSchedulePending)
           : scheduledInFuture
           ? formatGroupedInteger(scheduledHeight)
           : _migrationScheduledPartIsOverdue(
@@ -1075,8 +1097,8 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
               currentHeight: currentHeight,
               blockSpacing: blockSpacing,
             )
-          ? 'Overdue'
-          : 'Due now',
+          ? context.l10n.migrationMobileScheduleOverdue
+          : context.l10n.migrationMobileScheduleDueNow,
       scheduledInFuture || showEstimateIcon ? AppIcons.block : null,
       scheduledInFuture || showEstimateIcon ? 16 : 0,
       context.colors.text.secondary,

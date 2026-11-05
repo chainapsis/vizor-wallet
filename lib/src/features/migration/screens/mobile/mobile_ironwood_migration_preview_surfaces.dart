@@ -2,9 +2,6 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 
 void _noopMigrationPreviewAction() {}
 
-const _keystonePreparationSignatureMessage =
-    'Preparation needs another Keystone signature.';
-
 enum _MigrationBackdropGlow { positive, neutral }
 
 class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
@@ -40,7 +37,7 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
         _MigrationPreparationPreview(
           state: _MigrationPreparationState.paused,
           isKeystone: true,
-          pausedMessage: _keystonePreparationSignatureMessage,
+          pausedMessage: context.l10n.migrationMobilePrepKeystoneSignature,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationSyncing =>
@@ -69,8 +66,8 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
             for (var index = 0; index < _migrationPreviewPartsPerBatch; index++)
               index,
           },
-          migratedAmountText: '777.888 ZEC',
-          totalAmountText: '999.999 ZEC',
+          migratedAmountText: '777.888 ZEC', // l10n-ignore: preview fixture
+          totalAmountText: '999.999 ZEC', // l10n-ignore: preview fixture
         ),
       MobileIronwoodMigrationPreviewSurface.migrationKeystoneSignAll =>
         _MigrationProgressPreview(
@@ -79,11 +76,11 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           currentSigningPartIndices: {
             for (var index = 0; index < 50; index++) index,
           },
-          migratedAmountText: '0 ZEC',
-          totalAmountText: '50 ZEC',
-          actionLabel: 'Sign migration transactions',
-          actionBatchLabel: 'All transactions',
-          actionBatchValue: '50 ZEC (100%)',
+          migratedAmountText: '0 ZEC', // l10n-ignore: preview fixture
+          totalAmountText: '50 ZEC', // l10n-ignore: preview fixture
+          actionLabel: context.l10n.migrationMobileActionSign,
+          actionBatchLabel: context.l10n.migrationMobileActionAllTransactions,
+          actionBatchValue: '50 ZEC (100%)', // l10n-ignore: preview fixture
         ),
       MobileIronwoodMigrationPreviewSurface.migrationBroadcasting =>
         _MigrationProgressPreview(
@@ -95,7 +92,9 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           ],
         ),
       MobileIronwoodMigrationPreviewSurface.migrationComplete =>
-        const _MigrationCompletePreview(amountText: '142.992 ZEC'),
+        const _MigrationCompletePreview(
+          amountText: '142.992 ZEC', // l10n-ignore: amount format
+        ), // l10n-ignore: preview fixture
       MobileIronwoodMigrationPreviewSurface.homeAttention =>
         const _MigrationHomeAttentionPreview(),
       MobileIronwoodMigrationPreviewSurface.homeAttentionModal =>
@@ -263,7 +262,7 @@ class _MobileMigrationNotificationPermissionScreenState
     extends ConsumerState<_MobileMigrationNotificationPermissionScreen> {
   AppLifecycleListener? _lifecycleListener;
   var _busy = false;
-  String? _continueError;
+  var _continueFailed = false;
 
   @override
   void initState() {
@@ -299,7 +298,7 @@ class _MobileMigrationNotificationPermissionScreenState
     if (_busy) return;
     setState(() {
       _busy = true;
-      _continueError = null;
+      _continueFailed = false;
     });
     try {
       final service = ref.read(ironwoodMigrationServiceProvider);
@@ -322,9 +321,7 @@ class _MobileMigrationNotificationPermissionScreenState
           // The system dialog was just dismissed, and the same button now
           // routes to Settings instead. Say so rather than looking inert.
           setState(() {
-            _continueError =
-                'Notifications are still off. Allow them from Settings, or '
-                'continue without notifications.';
+            _continueFailed = true;
           });
         }
       }
@@ -378,7 +375,9 @@ class _MobileMigrationNotificationPermissionScreenState
       onFallback: () => context.go('/migration/options'),
       child: _MigrationNotificationPromptPreview(
         busy: _busy,
-        errorMessage: _continueError,
+        errorMessage: _continueFailed
+            ? context.l10n.migrationMobileNotifyStillOff
+            : null,
         onBack: () => context.go('/migration/options'),
         onAllow: () => unawaited(_allowNotifications()),
         onNotNow: () => unawaited(_confirmNotNow()),
@@ -409,7 +408,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = _MigrationPreviewPage(
-      navTitle: 'Enable notifications',
+      navTitle: context.l10n.migrationMobileNotifyTitle,
       backgroundColor: const Color(0xFF007F49),
       navForegroundColor: const Color(0xFFFFFFFF),
       onBack: onBack,
@@ -436,7 +435,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
             pressedBackgroundColor: const Color(0x1A052C1B),
             enabledLabelColor: const Color(0xFF052C1B),
             pressedLabelColor: const Color(0xFF052C1B),
-            child: const Text('Not now'),
+            child: Text(context.l10n.onboardingNotNow),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -452,7 +451,11 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
             pressedLabelColor: const Color(0xFFDDEAE4),
             enabledBorderColor: const Color(0x1AFFFFFF),
             leading: const AppIcon(AppIcons.notificationBell, size: 20),
-            child: Text(busy ? 'Checking...' : 'Allow notifications'),
+            child: Text(
+              busy
+                  ? context.l10n.commonChecking
+                  : context.l10n.migrationMobileNotifyAllow,
+            ),
           ),
         ],
       ),
@@ -474,7 +477,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
                     child: SizedBox(
                       width: 310,
                       child: Text(
-                        'Keep your migration on schedule',
+                        context.l10n.migrationMobileNotifyHeading,
                         textAlign: TextAlign.center,
                         style: AppTypography.displayLarge.copyWith(
                           color: const Color(0xFFFFFFFF),
@@ -487,9 +490,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
                     child: SizedBox(
                       width: 320,
                       child: Text(
-                        'Some migration steps require approval. We’ll notify '
-                        'you when it’s time, so you can respond quickly and '
-                        'avoid unnecessary delays.',
+                        context.l10n.migrationMobileNotifyBody,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMedium.copyWith(
                           color: const Color(0xFFFFFFFF),
@@ -546,7 +547,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
           child: SizedBox(
             width: 260,
             child: Text(
-              'Continue without notifications?',
+              context.l10n.migrationMobileNotifyConfirmTitle,
               textAlign: TextAlign.center,
               style: AppTypography.bodyLarge.copyWith(
                 color: context.colors.text.accent,
@@ -560,8 +561,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
           child: SizedBox(
             width: 280,
             child: Text(
-              'Without notifications, you’ll need to remember to open Vizor '
-              'regularly and approve the next migration step when it’s ready.',
+              context.l10n.migrationMobileNotifyConfirmBody,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.primary,
               ),
@@ -570,7 +570,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Otherwise, your migration may take longer.',
+          context.l10n.migrationMobileNotifyConfirmNote,
           style: AppTypography.bodyMedium.copyWith(
             color: context.colors.text.primary,
           ),
@@ -581,7 +581,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
           constrainContent: true,
           height: 50,
           onPressed: busy ? null : onAllow,
-          child: const Text('Allow notifications'),
+          child: Text(context.l10n.migrationMobileNotifyAllow),
         ),
         const SizedBox(height: AppSpacing.s),
         AppButton(
@@ -590,7 +590,7 @@ class _MigrationNotificationConfirmationContent extends StatelessWidget {
           height: 50,
           variant: AppButtonVariant.ghost,
           onPressed: busy ? null : onContinueWithoutNotifications,
-          child: const Text('Continue without notifications'),
+          child: Text(context.l10n.migrationMobileNotifyContinueWithout),
         ),
       ],
     );
@@ -634,20 +634,6 @@ enum _MigrationPreparationState {
       this == active || this == advancing || this == backgroundTracking;
 }
 
-const _migrationPreparationAdvancingMessage =
-    'Preparing the next transactions. Keep Vizor open.';
-// Rendered inside the 200px-wide preparation ring — keep it two short
-// sentences or it fills the dial.
-const _migrationPreparationBackgroundTrackingMessage =
-    'Confirming in the background. You can close Vizor.';
-const _migrationPreparationNotificationsDisabledMessage =
-    'Allow notifications to continue in the background, or keep Vizor open.';
-// Deliberately distinct from the message above: this device has no background
-// preparation lane at all, so telling the user to allow notifications would
-// promise something granting them cannot deliver.
-const _migrationPreparationBackgroundUnsupportedMessage =
-    'This device can\u2019t confirm in the background. Keep Vizor open.';
-
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
@@ -676,7 +662,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final paused = state == _MigrationPreparationState.paused;
     return _MigrationPreviewPage(
-      navTitle: 'Preparing your migration',
+      navTitle: context.l10n.migrationMobilePreparingTitle,
       onBack: onBack,
       contentGap: AppSpacing.base,
       bottom: paused
@@ -696,8 +682,8 @@ class _MigrationPreparationPreview extends StatelessWidget {
                 ),
                 child: Text(
                   isKeystone
-                      ? 'Continue with Keystone'
-                      : 'Continue preparation',
+                      ? context.l10n.migrationMobilePrepContinueKeystone
+                      : context.l10n.migrationMobilePrepContinue,
                 ),
               ),
             )
@@ -772,21 +758,21 @@ class _MigrationPreparationDial extends StatelessWidget {
                   paused
                       ? deviceLimitMessage ??
                             pausedMessage ??
-                            'Preparation was paused because you left.'
+                            context.l10n.migrationMobilePrepPausedLeft
                       : syncing
-                      ? 'Syncing your wallet…'
+                      ? context.l10n.migrationMobilePrepSyncingWallet
                       : switch (state) {
                           _MigrationPreparationState.advancing =>
-                            _migrationPreparationAdvancingMessage,
+                            context.l10n.migrationMobilePrepAdvancing,
                           _MigrationPreparationState.backgroundTracking =>
-                            _migrationPreparationBackgroundTrackingMessage,
+                            context.l10n.migrationMobilePrepBackgroundTracking,
                           // A waiting device that cannot track in the
                           // background must say so here too: the neutral
                           // duration copy would let the user close Vizor and
                           // silently stall the run.
                           _ =>
                             deviceLimitMessage ??
-                                'Preparation will\ntake 10–20 min',
+                                context.l10n.migrationMobilePrepDuration,
                         },
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMediumStrong.copyWith(
@@ -1134,14 +1120,12 @@ class _MigrationPreparationInfoCard extends StatelessWidget {
         children: [
           _MigrationIconTextRow(
             icon: AppIcons.wallet,
-            text:
-                'We’re organizing your balance into common-sized parts. '
-                'This makes your migration harder to link.',
+            text: context.l10n.migrationMobilePrepInfoOrganizing,
           ),
           const SizedBox(height: AppSpacing.sm),
-          const _MigrationIconTextRow(
+          _MigrationIconTextRow(
             icon: AppIcons.history,
-            text: 'Once preparation finishes, your migration can begin.',
+            text: context.l10n.migrationMobilePrepInfoThenBegin,
           ),
         ],
       ),
@@ -1259,7 +1243,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     final resolvedNextActionPresentation =
         nextActionPresentation ??
         MigrationNextActionPresentation(
-          label: 'Next migration',
+          label: context.l10n.migrationMobileNextMigration,
           amountZatoshi: BigInt.from(2_000_000_000_000),
           detail: 'at',
           scheduledHeight: 3_428_143,
@@ -1270,7 +1254,7 @@ class _MigrationProgressPreview extends StatelessWidget {
       _ => _MigrationBackdropGlow.positive,
     };
     final body = _MigrationPreviewPage(
-      navTitle: 'Ironwood Migration',
+      navTitle: context.l10n.migrationMobileStatusTitle,
       onBack: onBack,
       contentGap: AppSpacing.md,
       scrollableContent: state != _MigrationProgressState.syncing,
@@ -1310,9 +1294,12 @@ class _MigrationProgressPreview extends StatelessWidget {
                   completedParts: resolvedCompletedParts,
                   state: state,
                   availableAmountText: availableAmountText,
-                  leftToMigrateText: leftToMigrateText ?? '142.23 ZEC',
+                  leftToMigrateText:
+                      leftToMigrateText ??
+                      '142.23 ZEC', // l10n-ignore: preview fixture
                   completionEstimateText:
-                      completionEstimateText ?? 'in ~4.5 hours',
+                      completionEstimateText ??
+                      'in ~4.5 hours', // l10n-ignore: preview fixture
                   statusValueOverride: statusValueOverride,
                 ),
                 const Spacer(),
@@ -1379,8 +1366,10 @@ class _MigrationBatchDial extends StatelessWidget {
   Widget build(BuildContext context) {
     final presentation = nextActionPresentation;
     final migrated = migratedAmountText?.replaceFirst(RegExp(r'\s+ZEC$'), '');
-    final total = totalAmountText ?? '100 ZEC';
-    final combinedAmount = migrated == null ? '0/100 ZEC' : '$migrated/$total';
+    final total = totalAmountText ?? '100 ZEC'; // l10n-ignore: preview fixture
+    final combinedAmount = migrated == null
+        ? '0/100 ZEC' // l10n-ignore: amount format
+        : '$migrated/$total'; // l10n-ignore: preview fixture
     final amountStyle = AppTypography.headlineSmall.copyWith(
       color: context.colors.text.accent,
     );
@@ -1408,7 +1397,8 @@ class _MigrationBatchDial extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                presentation?.label ?? 'Next migration',
+                presentation?.label ??
+                    context.l10n.migrationMobileNextMigration,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.accent,
                 ),
@@ -1420,7 +1410,7 @@ class _MigrationBatchDial extends StatelessWidget {
                     ? FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          '${_migrationDisplayZec(presentation.amountZatoshi)} ZEC',
+                          '${_migrationDisplayZec(presentation.amountZatoshi)} ZEC', // l10n-ignore: amount format
                           maxLines: 1,
                           style: amountStyle,
                         ),
@@ -1468,7 +1458,10 @@ class _MigrationBatchDial extends StatelessWidget {
                 )
               else
                 Text(
-                  '$completedBatches/$totalBatches Batch',
+                  context.l10n.migrationMobileBatchProgress(
+                    completedBatches,
+                    totalBatches,
+                  ),
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.accent,
                   ),
@@ -1538,13 +1531,13 @@ class _MigrationViewScheduleButton extends StatelessWidget {
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: Semantics(
-              label: 'View schedule',
+              label: context.l10n.migrationMobileViewSchedule,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'View schedule',
+                    context.l10n.migrationMobileViewSchedule,
                     style: AppTypography.labelMedium.copyWith(
                       color: context.colors.text.accent,
                     ),
@@ -1601,7 +1594,7 @@ class _MigrationSyncingContent extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Next migration',
+                    context.l10n.migrationMobileNextMigration,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
                     ),
@@ -1621,14 +1614,14 @@ class _MigrationSyncingContent extends StatelessWidget {
           ),
         ),
         SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
-        const _MigrationSummaryRows(
+        _MigrationSummaryRows(
           first: _MigrationSkeletonValueRow(
-            label: 'Left to migrate',
+            label: context.l10n.migrationMobileLeftToMigrate,
             valueWidth: 90,
             accented: true,
           ),
           second: _MigrationSkeletonValueRow(
-            label: 'Est. completion',
+            label: context.l10n.migrationMobileEstCompletion,
             valueWidth: 184,
           ),
         ),
@@ -1646,7 +1639,7 @@ class _MigrationSyncingContent extends StatelessWidget {
               ),
               SizedBox(height: compact ? AppSpacing.s : AppSpacing.md),
               Text(
-                'Syncing the migration progress.',
+                context.l10n.migrationMobileSyncingProgress,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.accent,
@@ -1830,27 +1823,32 @@ class _MigrationProgressSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return _MigrationSummaryRows(
       first: _MigrationValueRow(
-        label: 'Left to migrate',
+        label: context.l10n.migrationMobileLeftToMigrate,
         value:
             leftToMigrateText ??
             availableAmountText ??
-            (completedParts == 0 ? '100 ZEC' : '60 ZEC'),
+            (completedParts == 0
+                ? '100 ZEC' // l10n-ignore: amount format
+                : '60 ZEC'), // l10n-ignore: preview fixture
         accented: true,
       ),
       second: _MigrationValueRow(
-        label: 'Est. completion',
+        label: context.l10n.migrationMobileEstCompletion,
         value:
             statusValueOverride ??
             completionEstimateText ??
             switch (state) {
-              _MigrationProgressState.syncing => 'Syncing',
-              _MigrationProgressState.broadcasting => 'Migration in progress',
-              _MigrationProgressState.confirming => 'Waiting for confirmations',
+              _MigrationProgressState.syncing =>
+                context.l10n.migrationMobileProgressSyncing,
+              _MigrationProgressState.broadcasting =>
+                context.l10n.migrationMobileBannerInProgress,
+              _MigrationProgressState.confirming =>
+                context.l10n.migrationMobileProgressConfirmations,
               _MigrationProgressState.needsInput =>
-                'Waiting for your confirmation',
+                context.l10n.migrationMobileProgressYourConfirmation,
               _MigrationProgressState.readyToSubmit =>
-                'Scheduled transaction ready',
-              _ => 'Waiting for next migration step',
+                context.l10n.migrationMobileProgressScheduledReady,
+              _ => context.l10n.migrationMobileProgressNextStep,
             },
       ),
     );
@@ -1896,47 +1894,46 @@ class _MigrationProgressStatus extends StatelessWidget {
     final (icon, title, body) = switch (state) {
       _MigrationProgressState.syncing => (
         AppIcons.loader,
-        'Syncing migration progress',
-        'Checking the latest confirmations and migration status.',
+        context.l10n.migrationMobileProgressSyncingTitle,
+        context.l10n.migrationMobileProgressSyncingBody,
       ),
       _MigrationProgressState.waitingNotificationsOn => (
         AppIcons.notificationBell,
-        '~2 hrs 15 mins',
-        'Preparation is complete, but we are waiting\n'
-            'for the next available signing window.\n'
-            'We’ll let you know when it’s time to take action.',
+        '~2 hrs 15 mins', // l10n-ignore: preview fixture
+        context.l10n.migrationMobileProgressWaitingWindowBody,
       ),
       _MigrationProgressState.waitingNotificationsOff => (
         AppIcons.warningCircle,
-        'Waiting for next migration step',
-        'Notifications are disabled. Open Vizor after block 123456 '
-            '(~1 hr 30 mins) and approve the next migration batch.',
+        context.l10n.migrationMobileProgressNextStep,
+        context.l10n.migrationMobileNextNotificationsOffBlock(
+          123456, // l10n-ignore: preview fixture
+          '~1 hr 30 mins', // l10n-ignore: preview fixture
+        ),
       ),
       _MigrationProgressState.readyToSubmit => (
         AppIcons.migrationTimer,
-        'Ready now',
-        'The scheduled transaction is ready for automatic submission. '
-            'Keep Vizor open.',
+        context.l10n.migrationMobileProgressReadyNow,
+        context.l10n.migrationMobileNextReadyAuto,
       ),
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
         isHardware
-            ? 'All clear. Processing batch #$currentBatchNumber'
-            : 'All clear. Migration is in progress',
-        'Next migration step expected in\n'
-            '~2 hrs 15 mins.\n'
-            'Notifications are on. You can leave Vizor and check back later.',
+            ? context.l10n.migrationMobileProgressAllClearBatch(
+                currentBatchNumber,
+              )
+            : context.l10n.migrationMobileProgressAllClear,
+        '${context.l10n.migrationMobileNextExpectedIn('~2 hrs 15 mins')}\n' // l10n-ignore: preview fixture
+            '${context.l10n.migrationMobileNextNotificationsOnLeave}',
       ),
       _MigrationProgressState.confirming => (
         AppIcons.migrationTimer,
-        'Waiting for confirmations',
-        'Confirmations are still arriving.\nYou can leave Vizor and check '
-            'again later.',
+        context.l10n.migrationMobileProgressConfirmations,
+        context.l10n.migrationMobileNextConfirmationsArriving,
       ),
       _MigrationProgressState.needsInput => (
         AppIcons.migrationSign,
-        'Waiting for your confirmation',
-        'Batch #1 is ready.',
+        context.l10n.migrationMobileProgressYourConfirmation,
+        context.l10n.migrationMobileProgressBatchReady(1),
       ),
     };
     final waitingWithNotifications =
@@ -2065,8 +2062,9 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           _MigrationPreviewCard(
             child: _MigrationValueRow(
               icon: AppIcons.checkCircle,
-              label: batchLabel ?? 'Batch #1',
-              value: batchValue ?? '40 ZEC (30%)',
+              label: batchLabel ?? context.l10n.migrationMobileActionBatch(1),
+              value:
+                  batchValue ?? '40 ZEC (30%)', // l10n-ignore: preview fixture
               emphasized: true,
             ),
           ),
@@ -2075,8 +2073,8 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           _MigrationPreviewCard(
             child: _MigrationValueRow(
               icon: AppIcons.checkCircle,
-              label: 'Batch #1',
-              value: '40 ZEC (30%)',
+              label: context.l10n.migrationMobileActionBatch(1),
+              value: '40 ZEC (30%)', // l10n-ignore: preview fixture
               emphasized: true,
             ),
           ),
@@ -2089,14 +2087,16 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           height: 50,
           onPressed: actionRunning ? null : onAction ?? () {},
           leading: actionRunning
-              ? const AppIcon(
+              ? AppIcon(
                   AppIcons.loader,
-                  semanticLabel: 'Migration action in progress',
+                  semanticLabel: context.l10n.migrationMobileActionInProgress,
                 )
               : null,
           child: FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(actionLabel ?? 'Sign batch #1'),
+            child: Text(
+              actionLabel ?? context.l10n.migrationMobileActionSignBatch(1),
+            ),
           ),
         ),
       ],
@@ -2121,7 +2121,7 @@ class _PreparationCompleteModalBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Preparation is done',
+            context.l10n.migrationMobilePrepDoneTitle,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: context.colors.text.accent,
@@ -2129,8 +2129,7 @@ class _PreparationCompleteModalBody extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'Preparation is complete. Check your migration status for '
-            'progress and any action needed.',
+            context.l10n.migrationMobilePrepDoneBody,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
@@ -2150,7 +2149,7 @@ class _PreparationCompleteModalBody extends StatelessWidget {
             expand: true,
             height: 50,
             onPressed: onDone ?? () {},
-            child: const Text('Done'),
+            child: Text(context.l10n.commonDone),
           ),
         ],
       ),
@@ -2212,6 +2211,10 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
                 labelStyle: AppTypography.bodyLarge.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
+                waitText: context.l10n.migrationMobileWaitLoopWait,
+                forWindowText: context.l10n.migrationMobileWaitLoopForWindow,
+                signText: context.l10n.migrationMobileWaitLoopSign,
+                batchText: context.l10n.migrationMobileWaitLoopBatch,
               ),
             ),
           ),
@@ -2229,9 +2232,7 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
                 SizedBox(
                   width: 177,
                   child: Text(
-                    'Repeat several times,\n'
-                    'waiting could take 2–10\n'
-                    'hours',
+                    context.l10n.migrationMobileWaitLoopCaption,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
@@ -2269,7 +2270,7 @@ String migrationCompletedAmountText(
   final text = total > BigInt.zero
       ? ZecAmount.fromZatoshi(total).compactBalance.amountText
       : fallbackAmountText;
-  return '$text ZEC';
+  return '$text ZEC'; // l10n-ignore: amount format
 }
 
 /// The finished-migration result, with the behaviour that has to accompany it.
@@ -2355,8 +2356,8 @@ class _MigrationCompleteSurfaceState
 }
 
 const _previewUpgradeStop = IronwoodMigrationUpgradeStop(
-  migratedAmountText: '2.10 ZEC',
-  remainingAmountText: '3.40 ZEC',
+  migratedAmountText: '2.10 ZEC', // l10n-ignore: preview fixture
+  remainingAmountText: '3.40 ZEC', // l10n-ignore: preview fixture
   completedParts: 7,
   totalParts: 20,
 );
@@ -2389,11 +2390,11 @@ class _MigrationUpgradeStoppedView extends StatelessWidget {
     );
     final summary = _MigrationSummaryRows(
       first: _MigrationValueRow(
-        label: 'Moved to Ironwood',
+        label: context.l10n.migrationMobileStoppedMoved,
         value: stop.migratedAmountText,
       ),
       second: _MigrationValueRow(
-        label: 'Still in Orchard',
+        label: context.l10n.migrationMobileStoppedRemaining,
         value: stop.remainingAmountText,
         accented: true,
       ),
@@ -2451,7 +2452,7 @@ class _MigrationUpgradeStoppedView extends StatelessWidget {
       ),
     );
     return _MigrationPreviewPage(
-      navTitle: 'Ironwood Migration',
+      navTitle: context.l10n.migrationMobileStatusTitle,
       onBack: onBack,
       contentGap: AppSpacing.md,
       // Large text scrolls the page rather than shrinking the ring away.
@@ -2524,7 +2525,7 @@ class _MigrationCompletePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _MigrationPreviewPage(
-      navTitle: 'You’re all set!',
+      navTitle: context.l10n.migrationMobileCompleteTitle,
       onBack: onDone,
       backgroundColor: const Color(0xFF007F49),
       navForegroundColor: const Color(0xFFFFFFFF),
@@ -2541,7 +2542,7 @@ class _MigrationCompletePreview extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: Text(
-              'Done',
+              context.l10n.commonDone,
               style: AppTypography.labelLarge.copyWith(
                 color: const Color(0xFF1B1F1F),
               ),
@@ -2563,7 +2564,7 @@ class _MigrationCompletePreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(
-            'Your\n$amountText\nare on Ironwood!',
+            context.l10n.migrationMobileCompleteHeading(amountText),
             textAlign: TextAlign.center,
             style: AppTypography.displayLarge.copyWith(
               color: const Color(0xFFFFFFFF),
@@ -2571,8 +2572,7 @@ class _MigrationCompletePreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Migration went successfully and you can spend your funds as '
-            'usual.',
+            context.l10n.migrationMobileCompleteBody,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: const Color(0xFFFFFFFF),
@@ -2598,7 +2598,7 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = _MigrationPreviewPage(
-      navTitle: 'Wallet 1',
+      navTitle: 'Wallet 1', // l10n-ignore: preview fixture
       contentGap: AppSpacing.md,
       child: Column(
         children: [
@@ -2607,20 +2607,20 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Ironwood balance',
+                  context.l10n.activityBalanceIronwood,
                   style: AppTypography.labelLarge.copyWith(
                     color: context.colors.text.secondary,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  r'$1,200.12',
+                  r'$1,200.12', // l10n-ignore: preview fixture
                   style: AppTypography.displayLarge.copyWith(
                     color: context.colors.text.accent,
                   ),
                 ),
                 Text(
-                  '40.01 ZEC',
+                  '40.01 ZEC', // l10n-ignore: preview fixture
                   style: AppTypography.bodyMedium.copyWith(
                     color: context.colors.text.secondary,
                   ),
@@ -2640,7 +2640,7 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Recent activity',
+              context.l10n.homeRecentActivity,
               style: AppTypography.bodyLarge.copyWith(
                 color: context.colors.text.accent,
                 fontWeight: FontWeight.w600,
@@ -2648,10 +2648,10 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          const _MigrationValueRow(
+          _MigrationValueRow(
             icon: AppIcons.history,
-            label: 'Received',
-            value: '+31.10 ZEC',
+            label: context.l10n.activityTitleReceived,
+            value: '+31.10 ZEC', // l10n-ignore: preview fixture
           ),
         ],
       ),
@@ -2675,7 +2675,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = _MigrationPreviewPage(
-      navTitle: 'Step 1/2',
+      navTitle: context.l10n.migrationMobileKeystoneStep1,
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2683,7 +2683,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
             expand: true,
             height: 50,
             onPressed: () {},
-            child: const Text('Next step'),
+            child: Text(context.l10n.migrationMobileKeystoneNextStep),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -2691,7 +2691,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
             height: 50,
             variant: AppButtonVariant.ghost,
             onPressed: () {},
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
         ],
       ),
@@ -2699,7 +2699,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            'Scan with Keystone',
+            context.l10n.migrationMobileKeystoneScanTitle,
             style: appSerifDisplayStyle(color: context.colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.base),
@@ -2721,7 +2721,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
-            'Tap QR on your Keystone,\nthen scan this QR code.',
+            context.l10n.migrationMobileKeystoneHelpPrompt,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
@@ -3292,11 +3292,19 @@ class _MigrationWaitLoopPainter extends CustomPainter {
     required this.lineColor,
     required this.successColor,
     required this.labelStyle,
+    required this.waitText,
+    required this.forWindowText,
+    required this.signText,
+    required this.batchText,
   });
 
   final Color lineColor;
   final Color successColor;
   final TextStyle labelStyle;
+  final String waitText;
+  final String forWindowText;
+  final String signText;
+  final String batchText;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -3326,12 +3334,12 @@ class _MigrationWaitLoopPainter extends CustomPainter {
     }
 
     final topSegments = [
-      _MigrationArcTextSegment('Wait', successColor),
-      _MigrationArcTextSegment(' for the window', lineColor),
+      _MigrationArcTextSegment(waitText, successColor),
+      _MigrationArcTextSegment(forWindowText, lineColor),
     ];
     final bottomSegments = [
-      _MigrationArcTextSegment('Sign', successColor),
-      _MigrationArcTextSegment(' the batch of transactions', lineColor),
+      _MigrationArcTextSegment(signText, successColor),
+      _MigrationArcTextSegment(batchText, lineColor),
     ];
     const textRadius = 131.0;
     const labelClearance = 12.0;

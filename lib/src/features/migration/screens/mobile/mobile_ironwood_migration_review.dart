@@ -6,32 +6,38 @@ bool _keystoneTwoRoundPlanSupported(
   return plan.signingBatchLimit > 0;
 }
 
-String _mobilePrivateMigrationStartErrorMessage(Object error) {
+String _mobilePrivateMigrationStartErrorMessage(
+  AppLocalizations l10n,
+  Object error,
+) {
   final upgradeHold = networkUpgradeHoldMessage(error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('mnemonic')) {
-    return "Secret Passphrase isn't available for this account.";
+    return l10n.homeShieldErrorSeedUnavailable;
   }
   if (message.contains('secret storage') ||
       message.contains('unlocked session')) {
-    return 'Unlock Vizor before starting migration.';
+    return l10n.migrationMobileErrorUnlock;
   }
   if (message.contains('sync')) {
-    return 'Wait for sync to finish, then try again.';
+    return l10n.migrationMobileErrorSyncFirst;
   }
   if (message.contains('broadcast') || message.contains('sendtransaction')) {
-    return "Couldn't broadcast the migration transaction. Try again.";
+    return l10n.migrationMobileErrorBroadcast;
   }
-  return "Couldn't start migration. Try again.";
+  return l10n.migrationMobileErrorStart;
 }
 
-String _mobileImmediateMigrationStartErrorMessage(Object error) {
+String _mobileImmediateMigrationStartErrorMessage(
+  AppLocalizations l10n,
+  Object error,
+) {
   final message = error.toString().toLowerCase();
   if (message.contains('plan changed')) {
-    return 'The amount or fee changed. Review the updated details.';
+    return l10n.migrationMobileErrorPlanChanged;
   }
-  return _mobilePrivateMigrationStartErrorMessage(error);
+  return _mobilePrivateMigrationStartErrorMessage(l10n, error);
 }
 
 String _mobileImmediateMigratedAmountText(
@@ -40,11 +46,11 @@ String _mobileImmediateMigratedAmountText(
   final amount = ZecAmount.fromZatoshi(
     plan.migratedZatoshi,
   ).pretty(minFractionDigits: 2, maxFractionDigits: 2).amountText;
-  return '$amount ZEC';
+  return '$amount ZEC'; // l10n-ignore: amount format
 }
 
 String _mobileImmediateFeeText(rust_sync.OrchardMigrationImmediatePlan plan) {
-  return '${ZecAmount.fromZatoshi(plan.feeZatoshi).balance.amountText} ZEC';
+  return '${ZecAmount.fromZatoshi(plan.feeZatoshi).balance.amountText} ZEC'; // l10n-ignore: amount format
 }
 
 class _MobileMigrationFastReview extends ConsumerStatefulWidget {
@@ -114,7 +120,10 @@ class _MobileMigrationFastReviewState
         ref.invalidate(ironwoodMigrationImmediatePlanProvider);
       }
       setState(() {
-        _broadcastError = _mobileImmediateMigrationStartErrorMessage(error);
+        _broadcastError = _mobileImmediateMigrationStartErrorMessage(
+          context.l10n,
+          error,
+        );
       });
     } finally {
       if (mounted) {
@@ -186,7 +195,7 @@ class _MobileMigrationFastReviewState
       return _MobileIronwoodMigrationBackScope(
         onFallback: _openHome,
         child: _MigrationPreviewPage(
-          navTitle: 'Fast Migration',
+          navTitle: context.l10n.migrationMobileFastTitle,
           showBackButton: false,
           bottom: AppButton(
             key: const ValueKey('mobile_ironwood_immediate_done_button'),
@@ -194,7 +203,7 @@ class _MobileMigrationFastReviewState
             constrainContent: true,
             height: 50,
             onPressed: _openHome,
-            child: const Text('Done'),
+            child: Text(context.l10n.commonDone),
           ),
           child: Center(
             child: SizedBox(
@@ -210,7 +219,7 @@ class _MobileMigrationFastReviewState
                   ),
                   const SizedBox(height: AppSpacing.base),
                   Text(
-                    'Migration submitted',
+                    context.l10n.migrationMobileFastSubmittedTitle,
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineSmall.copyWith(
                       color: colors.text.accent,
@@ -218,8 +227,9 @@ class _MobileMigrationFastReviewState
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    '${_mobileImmediateMigratedAmountText(submittedPlan)} is '
-                    'on its way to Ironwood.',
+                    context.l10n.migrationMobileFastSubmittedBody(
+                      _mobileImmediateMigratedAmountText(submittedPlan),
+                    ),
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.primary,
@@ -255,7 +265,10 @@ class _MobileMigrationFastReviewState
     final planUnavailable = planAsync.asData != null && plan == null;
     final ledgerSigning = ledgerAccountUuid != null && ledgerPlan != null;
     final canBroadcast = plan != null && !_isBroadcasting && !ledgerSigning;
-    final placeholderText = planUnavailable ? 'Unavailable' : 'Calculating…';
+    final l10n = context.l10n;
+    final placeholderText = planUnavailable
+        ? l10n.migrationMobileFastPlanUnavailable
+        : l10n.migrationMobileFastPlanCalculating;
     final migratedText = plan == null
         ? placeholderText
         : _mobileImmediateMigratedAmountText(plan);
@@ -263,7 +276,7 @@ class _MobileMigrationFastReviewState
         ? placeholderText
         : _mobileImmediateFeeText(plan);
     final privacyAmountText = plan == null
-        ? '${widget.data.amountText} ZEC'
+        ? '${widget.data.amountText} ZEC' // l10n-ignore: amount format
         : _mobileImmediateMigratedAmountText(plan);
     final leaveReview = _isBroadcasting || ledgerSigning
         ? null
@@ -281,7 +294,11 @@ class _MobileMigrationFastReviewState
               height: 50,
               onPressed: leaveReview,
               leading: const AppIcon(AppIcons.chevronBackward, size: 20),
-              child: Text(isLedgerAccount ? 'Back' : 'Consider another option'),
+              child: Text(
+                isLedgerAccount
+                    ? l10n.commonBack
+                    : l10n.migrationMobileFastConsiderOther,
+              ),
             ),
             const SizedBox(height: AppSpacing.s),
             if (_broadcastError != null) ...[
@@ -303,7 +320,7 @@ class _MobileMigrationFastReviewState
                 expand: true,
                 height: 50,
                 onPressed: _isBroadcasting ? null : _retryPlanCalculation,
-                child: const Text('Retry calculation'),
+                child: Text(l10n.migrationMobileFastRetryCalculation),
               ),
               const SizedBox(height: AppSpacing.s),
             ],
@@ -322,7 +339,11 @@ class _MobileMigrationFastReviewState
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const AppIcon(AppIcons.warning, size: 20),
-              child: Text(_isBroadcasting ? 'Sending...' : 'Continue anyway'),
+              child: Text(
+                _isBroadcasting
+                    ? l10n.commonSending
+                    : l10n.migrationMobileFastContinueAnyway,
+              ),
             ),
           ],
         ),
@@ -338,19 +359,19 @@ class _MobileMigrationFastReviewState
                 child: Column(
                   children: [
                     _ReviewRow(
-                      label: 'Amount',
+                      label: l10n.commonAmount,
                       value: migratedText,
                       height: 32,
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     _ReviewRow(
-                      label: 'Fees (estimate)',
+                      label: l10n.migrationMobileFastFeesRow,
                       value: feeText,
                       height: 32,
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     _ReviewRow(
-                      label: 'Migration complete in',
+                      label: l10n.migrationMobileFastDurationRow,
                       value: ironwoodImmediateMigrationCompletionEstimate(
                         blockTimes,
                       ),
@@ -395,7 +416,7 @@ class _MobileMigrationFastReviewState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Privacy trade-off',
+                              l10n.migrationMobileFastPrivacyTitle,
                               style: AppTypography.bodySmall.copyWith(
                                 color: colors.text.homeCard,
                                 fontWeight: FontWeight.w600,
@@ -414,23 +435,23 @@ class _MobileMigrationFastReviewState
                                 ),
                                 children: [
                                   TextSpan(
-                                    text:
-                                        'Crosses in one visible step — your '
-                                        '$privacyAmountText and '
-                                        'timing are ',
+                                    text: l10n
+                                        .migrationMobileFastPrivacyBodyLead(
+                                          privacyAmountText,
+                                        ),
                                   ),
-                                  const TextSpan(
-                                    text:
-                                        'easier to associate with your wallet',
-                                    style: TextStyle(color: Color(0xFFC06ECE)),
+                                  TextSpan(
+                                    text: l10n
+                                        .migrationMobileFastPrivacyBodyHighlight,
+                                    style: const TextStyle(
+                                      color: Color(0xFFC06ECE),
+                                    ),
                                   ),
                                   const TextSpan(text: '. '),
                                   TextSpan(
                                     text: isLedgerAccount
-                                        ? 'Private migration is not available '
-                                              'for Ledger accounts.'
-                                        : 'Consider choosing a Private '
-                                              'Migration option.',
+                                        ? l10n.migrationMobileFastPrivacyLedger
+                                        : l10n.migrationMobileFastPrivacyConsiderPrivate,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -449,7 +470,7 @@ class _MobileMigrationFastReviewState
             if (planAsync.hasError) ...[
               const SizedBox(height: AppSpacing.s),
               Text(
-                "Couldn't calculate the Immediate migration fee. Sync and try again.",
+                l10n.migrationMobileFastPlanError,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,
@@ -458,7 +479,7 @@ class _MobileMigrationFastReviewState
             ] else if (planUnavailable) ...[
               const SizedBox(height: AppSpacing.s),
               Text(
-                'No spendable Orchard balance is available for Immediate migration.',
+                l10n.migrationMobileFastNoBalance,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,
