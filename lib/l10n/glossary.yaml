@@ -1,0 +1,194 @@
+# Vizor terminology, one entry per concept.
+#
+# Translators use the `term` for their locale whenever the English source
+# contains `en`. `status: candidate` marks a proposal that a native reviewer has
+# not confirmed yet; confirm it by changing the status to `confirmed`.
+#
+# test/l10n/l10n_gates_test.dart enforces:
+#   - `dnt: true` terms stay verbatim in every translation of a message that
+#     contains them;
+#   - `forbidden` variants never appear in a translation of a message that
+#     contains the English term;
+#   - `confirmed` terms appear in every translation of a message that contains
+#     the English term.
+# Candidates are guidance only.
+#
+# Sources for candidates: Keplr's ko and zh-cn strings (consistency within the
+# company; several of them disagree with each other, so none is copied
+# blindly), common usage in Korean and Chinese wallets and exchanges, and the
+# Zcash community. See docs/i18n/ for the style guides.
+
+terms:
+  # Names and symbols that are never translated.
+  - {id: vizor, en: Vizor, dnt: true}
+  - {id: zcash, en: Zcash, dnt: true}
+  - {id: zec, en: ZEC, dnt: true}
+  - {id: usdc, en: USDC, dnt: true}
+  - {id: usdt, en: USDT, dnt: true}
+  - {id: near, en: NEAR, dnt: true}
+  - {id: orchard, en: Orchard, dnt: true}
+  - {id: sapling, en: Sapling, dnt: true}
+  - {id: ironwood, en: Ironwood, dnt: true}
+  - {id: keystone, en: Keystone, dnt: true}
+  - {id: ledger, en: Ledger, dnt: true}
+  - {id: tor, en: Tor, dnt: true}
+  - {id: zip321, en: ZIP-321, dnt: true}
+
+  # Wallet basics.
+  - id: wallet
+    en: wallet
+    ko: {term: 지갑, status: candidate}
+    zh: {term: 钱包, status: candidate}
+  - id: account
+    en: account
+    ko: {term: 계정, status: candidate}
+    zh: {term: 账户, status: candidate}
+  - id: balance
+    en: balance
+    ko: {term: 잔액, status: candidate}
+    zh: {term: 余额, status: candidate}
+  - id: send
+    en: send
+    definition: Transferring funds to another address (verb or button).
+    ko: {term: 보내기, status: candidate, note: "Keplr uses 전송 and 토큰 전송; pick one."}
+    zh: {term: 发送, status: candidate, note: "Keplr uses both 发送 and 转账; a transaction type may read better as 转账."}
+  - id: receive
+    en: receive
+    ko: {term: 받기, status: candidate}
+    zh: {term: 接收, status: candidate, note: "收款 for payment requests."}
+  - id: swap
+    en: swap
+    ko: {term: 스왑, status: candidate, note: "Keplr uses 교환 and 토큰 교환."}
+    zh: {term: 兑换, status: candidate, note: "Keplr uses both 交换 and 兑换."}
+  - id: fee
+    en: fee
+    ko: {term: 수수료, status: candidate}
+    zh: {term: 手续费, status: candidate, note: "Keplr uses 费用; network fee may read 网络手续费."}
+  - id: transaction
+    en: transaction
+    ko: {term: 거래, status: candidate}
+    zh: {term: 交易, status: candidate}
+  - id: address
+    en: address
+    ko: {term: 주소, status: candidate}
+    zh: {term: 地址, status: candidate}
+  - id: memo
+    en: memo
+    ko: {term: 메모, status: candidate}
+    zh: {term: 备注, status: candidate}
+  - id: amount
+    en: amount
+    ko: {term: 금액, status: candidate}
+    zh: {term: 金额, status: candidate}
+  - id: pending
+    en: pending
+    ko: {term: 대기 중, status: candidate}
+    zh: {term: 处理中, status: candidate}
+  - id: confirmations
+    en: confirmations
+    ko: {term: 확인 수, status: candidate}
+    zh: {term: 确认数, status: candidate}
+  - id: sync
+    en: sync
+    ko: {term: 동기화, status: candidate}
+    zh: {term: 同步, status: candidate}
+  - id: endpoint
+    en: endpoint
+    ko: {term: 엔드포인트, status: candidate, note: "Keplr uses 노드 주소."}
+    zh: {term: 节点, status: candidate, note: "Keplr uses 端点."}
+  - id: explorer
+    en: explorer
+    ko: {term: 블록 탐색기, status: candidate}
+    zh: {term: 区块浏览器, status: candidate}
+  - id: address_book
+    en: address book
+    ko: {term: 주소록, status: candidate}
+    zh: {term: 地址簿, status: candidate}
+  - id: network
+    en: network
+    ko: {term: 네트워크, status: candidate}
+    zh: {term: 网络, status: candidate}
+  - id: block_height
+    en: block height
+    ko: {term: 블록 높이, status: candidate}
+    zh: {term: 区块高度, status: candidate}
+
+  # Zcash concepts. None of these exist in Keplr's strings.
+  - id: shielded
+    en: shielded
+    definition: Funds or addresses in an encrypted Zcash pool (Orchard, Sapling, Ironwood).
+    ko: {term: 차폐됨, status: candidate, note: "Alternatives 보호됨, 실드. Confirm with Korean Zcash users."}
+    zh: {term: 屏蔽, status: candidate, note: "Zcash community usage, but everyday 屏蔽 also means blocked or muted; check that a label cannot read as 'blocked'."}
+  - id: transparent
+    en: transparent
+    definition: Funds or addresses whose amounts and parties are public on chain.
+    ko: {term: 투명, status: candidate}
+    zh: {term: 透明, status: candidate}
+  - id: shield_verb
+    en: shield
+    definition: Move transparent funds into a shielded pool.
+    ko: {term: 차폐하기, status: candidate}
+    zh: {term: 屏蔽, status: candidate}
+  - id: unified_address
+    en: unified address
+    ko: {term: 통합 주소, status: candidate}
+    zh: {term: 统一地址, status: candidate}
+  - id: viewing_key
+    en: viewing key
+    ko: {term: 뷰잉 키, status: candidate, note: "Keplr writes 뷰잉키."}
+    zh: {term: 查看密钥, status: candidate, forbidden: [查看秘钥]}
+  - id: pool
+    en: pool
+    ko: {term: 풀, status: candidate}
+    zh: {term: 资金池, status: candidate}
+  - id: wallet_birthday
+    en: wallet birthday
+    definition: The block height a wallet starts scanning from.
+    ko: {term: 지갑 생성 높이, status: candidate}
+    zh: {term: 钱包创建高度, status: candidate}
+  - id: private_queries
+    en: private queries
+    ko: {term: 비공개 조회, status: candidate}
+    zh: {term: 隐私查询, status: candidate}
+
+  # Security. Every message with one of these terms is a [security] string.
+  - id: secret_passphrase
+    en: secret passphrase
+    definition: Vizor's name for the BIP-39 mnemonic word list. Not the optional BIP-39 passphrase (25th word).
+    tags: [security]
+    ko: {term: 복구 문구, status: candidate, note: "Keplr uses 복구 문구. Avoid a literal 비밀 암호문."}
+    zh: {term: 助记词, status: candidate, forbidden: [密码短语]}
+  - id: password
+    en: password
+    tags: [security]
+    ko: {term: 비밀번호, status: candidate}
+    zh: {term: 密码, status: candidate}
+  - id: passcode
+    en: passcode
+    definition: The 6-digit mobile unlock code.
+    tags: [security]
+    ko: {term: 암호, status: candidate, note: "iOS Korean calls the device passcode 암호; 패스코드 also seen."}
+    zh: {term: 数字密码, status: candidate, note: "Keep distinct from 密码 (password)."}
+  - id: hardware_wallet
+    en: hardware wallet
+    ko: {term: 하드웨어 지갑, status: candidate}
+    zh: {term: 硬件钱包, status: candidate}
+  - id: sign
+    en: sign
+    tags: [security]
+    ko: {term: 서명, status: candidate}
+    zh: {term: 签名, status: candidate}
+
+  # Features.
+  - id: gift_card
+    en: gift card
+    ko: {term: 기프트 카드, status: candidate}
+    zh: {term: 礼品卡, status: candidate}
+  - id: payment_request
+    en: payment request
+    ko: {term: 결제 요청, status: candidate}
+    zh: {term: 收款请求, status: candidate}
+  - id: voting
+    en: voting
+    ko: {term: 투표, status: candidate}
+    zh: {term: 投票, status: candidate}

@@ -1,0 +1,132 @@
+// Translation quality gates. Run in the default test lane, so a translation
+// that drops a placeholder, invents a URL or number, breaks the glossary, or a
+// migrated directory that gains a hardcoded string fails `fvm flutter test`.
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:yaml/yaml.dart';
+import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+
+import '../../tool/l10n/strings.dart';
+
+Map<String, Object?> _readArb(String tag) =>
+    (jsonDecode(File('lib/l10n/app_$tag.arb').readAsStringSync()) as Map)
+        .cast<String, Object?>();
+
+List<String> _messageKeys(Map<String, Object?> arb) =>
+    arb.keys.where((k) => !k.startsWith('@')).toList();
+
+Set<String> _placeholders(String message) => RegExp(
+  r'\{(\w+)\s*[,}]',
+).allMatches(message).map((m) => m.group(1)!).toSet();
+
+Set<String> _urls(String message) =>
+    RegExp(r'https?://[^\s"}]+').allMatches(message).map((m) => m[0]!).toSet();
+
+Set<String> _numbers(String message) => RegExp(r'\d+(?:[.,]\d+)?')
+    .allMatches(message.replaceAll(RegExp(r'=\d+\s*\{'), '{'))
+    .map((m) => m[0]!)
+    .toSet();
+
+bool _containsWord(String text, String word) => RegExp(
+  '(^|[^A-Za-z])${RegExp.escape(word)}(\$|[^A-Za-z])',
+  caseSensitive: false,
+).hasMatch(text);
+
+void main() {
+  final template = _readArb('en');
+  final keys = _messageKeys(template);
+  final translations = {
+    for (final language in AppLanguage.values)
+      if (language != AppLanguage.en) language: _readArb(language.tag),
+  };
+  final glossary =
+      (loadYaml(File('lib/l10n/glossary.yaml').readAsStringSync())
+              as YamlMap)['terms']
+          as YamlList;
+
+  test('message keys are sorted so parallel changes rarely conflict', () {
+    expect(keys, [...keys]..sort());
+    for (final arb in translations.values) {
+      final translated = _messageKeys(arb);
+      expect(translated, [...translated]..sort());
+    }
+  });
+
+  for (final MapEntry(key: language, value: arb) in translations.entries) {
+    group(language.tag, () {
+      test('has no keys missing from the English template', () {
+        expect(_messageKeys(arb).toSet().difference(keys.toSet()), isEmpty);
+      });
+
+      if (language.released) {
+        test('a released language translates every message', () {
+          expect(keys.toSet().difference(_messageKeys(arb).toSet()), isEmpty);
+        });
+      }
+
+      test('keeps placeholders, URLs and numbers of the source', () {
+        for (final key in _messageKeys(arb)) {
+          final source = template[key]! as String;
+          final message = arb[key]! as String;
+          expect(
+            _placeholders(message),
+            _placeholders(source),
+            reason: '$key placeholders',
+          );
+          expect(_urls(message), _urls(source), reason: '$key URLs');
+          expect(
+            _numbers(source).containsAll(_numbers(message)),
+            isTrue,
+            reason: '$key adds a number the source does not have',
+          );
+        }
+      });
+
+      test('follows the glossary', () {
+        for (final key in _messageKeys(arb)) {
+          final source = template[key]! as String;
+          final message = arb[key]! as String;
+          for (final term in glossary.cast<YamlMap>()) {
+            final en = term['en'] as String;
+            if (term['dnt'] == true) {
+              if (source.contains(en)) {
+                expect(message, contains(en), reason: '$key keeps "$en"');
+              }
+              continue;
+            }
+            if (!_containsWord(source, en)) continue;
+            final entry = term[language.tag] as YamlMap?;
+            if (entry == null) continue;
+            for (final forbidden in (entry['forbidden'] as YamlList?) ?? []) {
+              expect(
+                message,
+                isNot(contains(forbidden)),
+                reason: '$key uses forbidden "$forbidden" for "$en"',
+              );
+            }
+            if (entry['status'] == 'confirmed') {
+              expect(
+                message,
+                contains(entry['term']),
+                reason: '$key translates "$en" as "${entry['term']}"',
+              );
+            }
+          }
+        }
+      });
+    });
+  }
+
+  test('migrated directories have no hardcoded user-facing strings', () {
+    final findings = scan(migratedDirs());
+    expect(
+      findings.map((f) => '${f.file}:${f.line}: "${f.text}"'),
+      isEmpty,
+      reason:
+          'Move these to lib/l10n, or add `// l10n-ignore: <reason>` when a '
+          'literal is not user copy.',
+    );
+  });
+}

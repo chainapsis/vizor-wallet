@@ -210,6 +210,11 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
 - Every `app_en.arb` key needs an `@key` description
   (`required-resource-attributes`). Never translate Rust error strings or
   strings that code matches with `.contains` or uses as keys.
+- `test/l10n/l10n_gates_test.dart` checks sorted keys, placeholders, URLs,
+  numbers and `lib/l10n/glossary.yaml`, and fails when a directory listed in
+  `tool/l10n/migrated_dirs.txt` gains a hardcoded string.
+  `fvm dart run tool/l10n/strings.dart list <dir>` lists what is left to move.
+  Translation rules live in `docs/i18n/`.
 
 ## Mainnet Block-Time Table
 
