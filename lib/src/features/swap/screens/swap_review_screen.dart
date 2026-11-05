@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -174,7 +175,9 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                           const [],
                       userExternalContactId: swapState.userExternalContactId,
                       expired: swapState.quoteExpired,
-                      amountWarning: swapState.reviewAmountDifferenceWarning,
+                      amountWarning: swapState.reviewAmountDifferenceWarning(
+                        context.l10n,
+                      ),
                       startError: swapState.statusError,
                       startBlockedReason: startBlockedReason,
                       payFiatTextOverride: swapReviewFiatTextForAsset(

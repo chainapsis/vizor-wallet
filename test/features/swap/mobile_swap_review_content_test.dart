@@ -1,6 +1,7 @@
 @Tags(['mobile'])
 library;
 
+import '../../support/test_l10n.dart';
 import 'package:flutter/material.dart'
     show MaterialApp, SingleChildScrollView, Tooltip;
 import 'package:flutter/widgets.dart';
@@ -179,10 +180,10 @@ void main() {
     await tester.pumpWidget(_harness(_content()));
 
     expect(
-      _tooltipWithMessage(swapMinimumReceiveTooltip('USDC')),
+      _tooltipWithMessage(swapMinimumReceiveTooltip(testL10n, 'USDC')),
       findsOneWidget,
     );
-    expect(_tooltipWithMessage(swapFeeTooltip), findsOneWidget);
+    expect(_tooltipWithMessage(swapFeeTooltip(testL10n)), findsOneWidget);
   });
 
   testWidgets('external address compact text keeps a single middle ellipsis', (

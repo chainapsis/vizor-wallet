@@ -794,7 +794,10 @@ class _MobileFinalDetailRow extends StatelessWidget {
                             color: actionIconColor,
                             tooltipMessage: row.help
                                 ? row.helpTooltip ??
-                                      _mobileStatusHelpTooltip(row.label)
+                                      _mobileStatusHelpTooltip(
+                                        context.l10n,
+                                        row.label,
+                                      )
                                 : null,
                           ),
                         ],
@@ -913,11 +916,11 @@ class _MobileStatusDetailActionIcon extends StatelessWidget {
   }
 }
 
-String _mobileStatusHelpTooltip(String label) {
+String _mobileStatusHelpTooltip(AppLocalizations l10n, String label) {
   return switch (label) {
-    'Swap fee' => swapFeeTooltip,
-    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip,
-    'Total fees' => swapTotalFeesTooltip,
-    _ => swapStatusDetailTooltip,
+    'Swap fee' => swapFeeTooltip(l10n),
+    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip(l10n),
+    'Total fees' => swapTotalFeesTooltip(l10n),
+    _ => swapStatusDetailTooltip(l10n),
   };
 }

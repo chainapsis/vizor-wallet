@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Material, MaterialType;
@@ -363,9 +364,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                         ),
                         _SwapModalSurface.contactPicker =>
                           AddressBookContactPickerModal(
-                            title: swapContactPickerTitle(swapState),
+                            title: swapContactPickerTitle(
+                              context.l10n,
+                              swapState,
+                            ),
                             networks: swapContactPickerNetworks(swapState),
-                            emptyTitle: swapContactPickerEmptyTitle(swapState),
+                            emptyTitle: swapContactPickerEmptyTitle(
+                              context.l10n,
+                              swapState,
+                            ),
                             onSelected: _selectAddressBookContact,
                             onCancel: _openAddressEditor,
                           ),

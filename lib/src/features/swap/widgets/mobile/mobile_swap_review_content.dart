@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/theme/app_theme.dart';
@@ -164,7 +165,10 @@ class _ReviewCard extends StatelessWidget {
           _ReviewRow(
             label: 'Guaranteed minimum',
             value: compactSwapAmountText(quote.minimumReceiveText),
-            helpTooltip: swapMinimumReceiveTooltip(quote.receiveAsset.symbol),
+            helpTooltip: swapMinimumReceiveTooltip(
+              context.l10n,
+              quote.receiveAsset.symbol,
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           // Figma `border/neutral/default`.
@@ -173,7 +177,7 @@ class _ReviewCard extends StatelessWidget {
           _ReviewRow(
             label: 'Swap fee',
             value: quote.feeLabel,
-            helpTooltip: swapFeeTooltip,
+            helpTooltip: swapFeeTooltip(context.l10n),
           ),
         ],
       ),

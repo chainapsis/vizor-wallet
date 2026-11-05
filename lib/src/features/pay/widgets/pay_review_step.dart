@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -89,7 +90,7 @@ class PayReviewStep extends StatelessWidget {
                 ReviewInfoRow(
                   key: const ValueKey('pay_review_paying_row'),
                   rowHeight: 76,
-                  label: 'Paying',
+                  label: context.l10n.payReviewPaying,
                   value: quote.receiveEstimateText,
                   valueStyle: valueStyle,
                   leading: SwapAssetIcon(asset: quote.externalAsset, size: 32),
@@ -99,7 +100,7 @@ class PayReviewStep extends StatelessWidget {
                 ReviewInfoRow(
                   key: const ValueKey('pay_review_to_row'),
                   rowHeight: 76,
-                  label: 'To',
+                  label: context.l10n.payReviewTo,
                   value: contact?.label ?? compactRecipient,
                   valueStyle: valueStyle,
                   leading: contact != null
@@ -110,8 +111,8 @@ class PayReviewStep extends StatelessWidget {
                       : const ReviewInfoIconCircle(iconName: AppIcons.wallet),
                   bottomLeftText: contact != null
                       ? compactRecipient
-                      : 'Unknown address',
-                  trailingActionLabel: 'Show full address',
+                      : context.l10n.payReviewUnknownAddress,
+                  trailingActionLabel: context.l10n.payReviewShowFullAddress,
                   trailingActionKey: const ValueKey(
                     'pay_review_show_full_address',
                   ),
@@ -137,8 +138,8 @@ class PayReviewStep extends StatelessWidget {
                         children: [
                           TextSpan(
                             text: expired
-                                ? 'Quote expired'
-                                : 'Quote expires in ',
+                                ? context.l10n.payReviewQuoteExpired
+                                : context.l10n.payReviewQuoteExpiresIn,
                             style: AppTypography.labelLarge.copyWith(
                               color: expired
                                   ? colors.text.destructive
@@ -176,7 +177,7 @@ class PayReviewStep extends StatelessWidget {
               child: ReviewInfoRow(
                 key: const ValueKey('pay_review_converted_row'),
                 rowHeight: 76,
-                label: 'Converted amount',
+                label: context.l10n.payReviewConvertedAmount,
                 value: quote.sellAmountText,
                 valueStyle: valueStyle,
                 leading: const SwapAssetIcon(
@@ -264,12 +265,12 @@ class PayReviewAction extends StatelessWidget {
               : const AppIcon(AppIcons.paid, size: 20),
           child: Text(
             expired
-                ? 'Refresh the quote'
+                ? context.l10n.payReviewRefreshTheQuote
                 : startBlockedReason != null
-                ? 'Not enough ZEC'
+                ? context.l10n.payNotEnoughZec
                 : starting
-                ? 'Paying'
-                : 'Confirm & pay',
+                ? context.l10n.payReviewPaying
+                : context.l10n.payReviewConfirmPay,
           ),
         ),
       ],

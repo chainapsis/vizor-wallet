@@ -1343,6 +1343,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockSyncPausedTitle => 'Sync paused';
 
   @override
+  String get lockSyncedSemantics => 'Vizor is synced';
+
+  @override
   String get lockSyncingMessage => 'Vizor is syncing';
 
   @override
@@ -2079,6 +2082,261 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get passwordsDoNotMatch => 'Passwords do not match.';
+
+  @override
+  String get payAddLabelHint => 'Add label 1-20 characters';
+
+  @override
+  String get payAddToContacts => 'Add to contacts';
+
+  @override
+  String get payAddressLabel => 'Address label';
+
+  @override
+  String payAddressSemantics(String address) {
+    return 'Address $address';
+  }
+
+  @override
+  String get payAmountChooseAsset => 'Choose payment asset';
+
+  @override
+  String payAmountEnterIn(String symbol) {
+    return 'Enter amount in $symbol';
+  }
+
+  @override
+  String get payAmountEnterInUsd => 'Enter amount in USD';
+
+  @override
+  String get payAmountEstimated => 'Estimated:';
+
+  @override
+  String get payAmountEstimatedSpend => 'Estimated spend';
+
+  @override
+  String get payAmountPayingFrom => 'Paying from your';
+
+  @override
+  String get payAmountPayingIn => 'Paying in';
+
+  @override
+  String get payAmountShieldedBalance => 'Shielded balance';
+
+  @override
+  String get payBackHome => 'Home';
+
+  @override
+  String payChainAddressHint(String chain) {
+    return '$chain address';
+  }
+
+  @override
+  String get payChainAndAddress => 'Chain & address';
+
+  @override
+  String get payChangeContactPicture => 'Change contact picture';
+
+  @override
+  String get payClearContactLabel => 'Clear contact label';
+
+  @override
+  String get payContacts => 'Contacts';
+
+  @override
+  String get payFetchingQuote => 'Fetching quote';
+
+  @override
+  String get payInsufficientZec =>
+      'You don\'t have enough ZEC for this payment. Try a smaller amount.';
+
+  @override
+  String get payNewAddressDetected => 'New address detected.';
+
+  @override
+  String get payNewAddressWarning =>
+      'You haven\'t interacted with this address before.';
+
+  @override
+  String get payNotEnoughZec => 'Not enough ZEC';
+
+  @override
+  String payRecentDaysAgo(int days) {
+    return '${days}d ago';
+  }
+
+  @override
+  String payRecentHoursAgo(int hours) {
+    return '${hours}h ago';
+  }
+
+  @override
+  String get payRecentJustNow => 'just now';
+
+  @override
+  String payRecentMinutesAgo(int minutes) {
+    return '${minutes}m ago';
+  }
+
+  @override
+  String get payRecentlySent => 'Recently sent';
+
+  @override
+  String get payRecents => 'Recents';
+
+  @override
+  String get payRecipientAddressHint => 'Paste an address or scan QR code';
+
+  @override
+  String get payRecipientAddressLabel => 'Recipient address';
+
+  @override
+  String get payRecipientScanQr => 'Scan QR code';
+
+  @override
+  String get payRefreshingQuote => 'Refreshing quote';
+
+  @override
+  String get payReviewConfirmPay => 'Confirm & pay';
+
+  @override
+  String get payReviewConvertedAmount => 'Converted amount';
+
+  @override
+  String get payReviewFullAddress => 'Full address';
+
+  @override
+  String get payReviewPaying => 'Paying';
+
+  @override
+  String get payReviewQuoteExpired => 'Quote expired';
+
+  @override
+  String get payReviewQuoteExpiresIn => 'Quote expires in ';
+
+  @override
+  String get payReviewRefreshQuote => 'Refresh quote';
+
+  @override
+  String get payReviewRefreshTheQuote => 'Refresh the quote';
+
+  @override
+  String get payReviewReturnToPay => 'Return to pay';
+
+  @override
+  String get payReviewShowFullAddress => 'Show full address';
+
+  @override
+  String get payReviewTo => 'To';
+
+  @override
+  String get payReviewUnknownAddress => 'Unknown address';
+
+  @override
+  String get paySave => 'Save';
+
+  @override
+  String get paySaveContact => 'Save contact';
+
+  @override
+  String get paySaveContactError => 'Couldn\'t save this contact. Try again.';
+
+  @override
+  String get paySaving => 'Saving';
+
+  @override
+  String get payScanBarrierDismiss => 'Dismiss';
+
+  @override
+  String get payScanCaption => 'Scan the recipient address QR code';
+
+  @override
+  String get payScanNoAddress => 'QR code did not include an address.';
+
+  @override
+  String get payScanPermissionTitle => 'Scan the recipient address';
+
+  @override
+  String get payScanQrSubtitle => 'Scan an address using camera';
+
+  @override
+  String get payScanQrTitle => 'Scan a QR code';
+
+  @override
+  String get payScanSteadyHint => 'Keep the QR code steady and fully visible.';
+
+  @override
+  String get paySelectContactPicture => 'Select contact picture';
+
+  @override
+  String get paySelectRecipient => 'Select recipient';
+
+  @override
+  String get paySelectedContact => 'Selected contact';
+
+  @override
+  String get payStepAmount => 'Amount';
+
+  @override
+  String get payStepRecipient => 'Recipient';
+
+  @override
+  String get payStepReview => 'Review';
+
+  @override
+  String get paySubmittedDone => 'Done';
+
+  @override
+  String get paySubmittedFailedBody =>
+      'The payment could not be submitted. Try again.';
+
+  @override
+  String get paySubmittedFailedTitle => 'Payment failed';
+
+  @override
+  String get paySubmittedGoToActivity => 'Go to activity';
+
+  @override
+  String get paySubmittedReturnHome => 'Return home';
+
+  @override
+  String get paySubmittedStatusUncertainNotice =>
+      'The payment status is uncertain. Check Activity before trying again.';
+
+  @override
+  String get paySubmittedSubmittingBody =>
+      'Submitting your payment to the network...';
+
+  @override
+  String get paySubmittedSubmittingTitle => 'Submitting payment...';
+
+  @override
+  String get paySubmittedSucceededBody =>
+      'It will confirm on-chain shortly.\nTrack it in Activity.';
+
+  @override
+  String get paySubmittedSucceededTitle => 'Payment\nSubmitted';
+
+  @override
+  String get paySubmittedUnavailableNotice =>
+      'We couldn\'t load this payment. Check Activity for its latest status.';
+
+  @override
+  String get paySubmittedUnavailableTitle => 'Payment unavailable';
+
+  @override
+  String get paySubmittedUncertainTitle => 'Payment status\nuncertain';
+
+  @override
+  String payTitleAmount(String symbol) {
+    return 'Pay in $symbol';
+  }
+
+  @override
+  String get payTitleRecipient => 'Select Recipient';
+
+  @override
+  String get payTitleReview => 'Review Payment';
 
   @override
   String get poolShielded => 'Shielded';
@@ -2994,6 +3252,509 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sidebarShowBalance => 'Show balance';
+
+  @override
+  String swapActivityAddressBookRecipient(String symbol) {
+    return '$symbol recipient';
+  }
+
+  @override
+  String swapActivityAddressBookRefund(String symbol) {
+    return '$symbol refund';
+  }
+
+  @override
+  String get swapActivityAmount => 'Amount';
+
+  @override
+  String swapActivityDeadlineHours(int hours) {
+    return '${hours}hrs';
+  }
+
+  @override
+  String swapActivityDeadlineMinutes(int minutes) {
+    return '${minutes}mins';
+  }
+
+  @override
+  String get swapActivityDeadlineOneHour => '1hr';
+
+  @override
+  String get swapActivityDeadlineOneMinute => '1min';
+
+  @override
+  String get swapActivityDepositAmount => 'Deposit amount';
+
+  @override
+  String get swapActivityDepositAssetFallback => 'deposit asset';
+
+  @override
+  String swapActivityDepositInstructionDepositLabel(String symbol) {
+    return '$symbol deposit';
+  }
+
+  @override
+  String get swapActivityDepositInstructionReuseWarning =>
+      'Do not reuse this address';
+
+  @override
+  String swapActivityDepositInstructionSendFromSource(String symbol) {
+    return 'Send $symbol from source chain';
+  }
+
+  @override
+  String swapActivityDepositInstructionSourceDepositLabel(String symbol) {
+    return '$symbol source deposit';
+  }
+
+  @override
+  String swapActivityDepositInstructionSubmit(String symbol) {
+    return 'Submit $symbol deposit';
+  }
+
+  @override
+  String swapActivityDepositInstructionTxHashHint(String symbol) {
+    return '$symbol source-chain transaction hash';
+  }
+
+  @override
+  String swapActivityDepositInstructionTxHashLabel(String symbol) {
+    return '$symbol deposit tx hash';
+  }
+
+  @override
+  String get swapActivityDetailConfiguredQuote => 'Configured quote';
+
+  @override
+  String swapActivityDetailDeliveryTx(String symbol) {
+    return '$symbol delivery tx';
+  }
+
+  @override
+  String get swapActivityDetailDepositDeadline => 'Deposit deadline';
+
+  @override
+  String swapActivityDetailDepositTo(String symbol) {
+    return 'Deposit $symbol to';
+  }
+
+  @override
+  String swapActivityDetailDepositTx(String symbol) {
+    return '$symbol deposit tx';
+  }
+
+  @override
+  String get swapActivityDetailDetectedDeposit => 'Detected deposit';
+
+  @override
+  String get swapActivityDetailFees => 'Fees';
+
+  @override
+  String get swapActivityDetailGuaranteedMinimum => 'Guaranteed minimum';
+
+  @override
+  String get swapActivityDetailIncluded => 'Included';
+
+  @override
+  String get swapActivityDetailIncludedInRate => 'Included in shown rate';
+
+  @override
+  String get swapActivityDetailMemo => 'Memo';
+
+  @override
+  String get swapActivityDetailMissingDeposit => 'Missing deposit';
+
+  @override
+  String get swapActivityDetailNetworkConversionFees =>
+      'Network + conversion fees';
+
+  @override
+  String get swapActivityDetailRate => 'Rate';
+
+  @override
+  String get swapActivityDetailRealizedSlippage => 'Realized slippage';
+
+  @override
+  String swapActivityDetailRecipient(String symbol) {
+    return '$symbol recipient';
+  }
+
+  @override
+  String swapActivityDetailRefundAddress(String symbol) {
+    return '$symbol refund address';
+  }
+
+  @override
+  String get swapActivityDetailRefundFee => 'Refund fee';
+
+  @override
+  String get swapActivityDetailRefundTo => 'Refund to';
+
+  @override
+  String get swapActivityDetailRefundedAmount => 'Refunded amount';
+
+  @override
+  String get swapActivityDetailRequiredDeposit => 'Required deposit';
+
+  @override
+  String get swapActivityDetailSlippageTolerance => 'Slippage tolerance';
+
+  @override
+  String swapActivityDetailSourceTxShielded(String symbol) {
+    return '$symbol tx (shielded)';
+  }
+
+  @override
+  String get swapActivityDetailSwapFee => 'Swap fee';
+
+  @override
+  String get swapActivityDetailTimestamp => 'Timestamp';
+
+  @override
+  String get swapActivityDetailTotalFees => 'Total fees';
+
+  @override
+  String get swapActivityDetailTxId => 'Tx ID';
+
+  @override
+  String get swapActivityExpectedToReceive => 'Expected to receive';
+
+  @override
+  String get swapActivityIncompleteDeposit => 'Incomplete deposit';
+
+  @override
+  String get swapActivityIncompletePayment => 'Incomplete payment';
+
+  @override
+  String get swapActivityLastCheckJustNow => 'Last check: just now';
+
+  @override
+  String swapActivityLastCheckMinutesAgo(int minutes) {
+    return 'Last check: ${minutes}m ago';
+  }
+
+  @override
+  String get swapActivityNotReported => 'Not reported';
+
+  @override
+  String get swapActivityPaidSuccessfullyTitle => 'Paid successfully';
+
+  @override
+  String get swapActivityPayInProgressTitle => 'Pay in progress...';
+
+  @override
+  String get swapActivityPayStatusCompleted => 'Completed';
+
+  @override
+  String get swapActivityPayStatusFailed => 'Failed';
+
+  @override
+  String get swapActivityPayStatusInProgress => 'In progress';
+
+  @override
+  String get swapActivityPayStatusRefunded => 'Refunded';
+
+  @override
+  String get swapActivityPaymentComplete => 'Payment complete';
+
+  @override
+  String get swapActivityPaymentFailed => 'Payment failed';
+
+  @override
+  String get swapActivityPaymentInProgress => 'Payment in progress';
+
+  @override
+  String get swapActivityPaymentProgressTab => 'Payment progress';
+
+  @override
+  String get swapActivityPaymentRefunded => 'Payment refunded';
+
+  @override
+  String swapActivityPickerNoRecipients(String symbol) {
+    return 'No saved $symbol recipients';
+  }
+
+  @override
+  String swapActivityPickerNoRefunds(String symbol) {
+    return 'No saved $symbol refunds';
+  }
+
+  @override
+  String swapActivityPickerRecipientsTitle(String symbol) {
+    return '$symbol recipients';
+  }
+
+  @override
+  String swapActivityPickerRefundsTitle(String symbol) {
+    return '$symbol refunds';
+  }
+
+  @override
+  String get swapActivityPrivatelyFromShielded =>
+      'Privately, from shielded balance';
+
+  @override
+  String get swapActivityReceiveAssetFallback => 'receive asset';
+
+  @override
+  String get swapActivityRecipientGets => 'Recipient gets';
+
+  @override
+  String get swapActivityRecipientReceived => 'Recipient received';
+
+  @override
+  String swapActivityRefundToAddress(String address) {
+    return 'Refund to: $address';
+  }
+
+  @override
+  String swapActivityStateAddressHint(String chain) {
+    return '$chain address';
+  }
+
+  @override
+  String swapActivityStateAddressOrAccountHint(String chain) {
+    return '$chain address or account';
+  }
+
+  @override
+  String swapActivityStateAssetUnsupported(String symbol, String chain) {
+    return '$symbol on $chain is not currently supported.';
+  }
+
+  @override
+  String swapActivityStateDecimalPlaces(String symbol, int decimals) {
+    return '$symbol supports up to $decimals decimal places.';
+  }
+
+  @override
+  String get swapActivityStateDestination => 'Destination';
+
+  @override
+  String swapActivityStateQuoteHigher(String percent) {
+    return 'Live quote is $percent% higher than the earlier estimate. Check the guaranteed minimum before you continue.';
+  }
+
+  @override
+  String swapActivityStateQuoteLower(String percent) {
+    return 'Live quote is $percent% lower than the earlier estimate. Check the guaranteed minimum before you continue.';
+  }
+
+  @override
+  String swapActivityStateQuoteUsesDifferentSell(
+    String liveAmount,
+    String estimateAmount,
+    String symbol,
+  ) {
+    return 'Live quote uses $liveAmount $symbol instead of $estimateAmount $symbol. Check the guaranteed minimum before you continue.';
+  }
+
+  @override
+  String swapActivityStateRefundAddressLabel(String symbol) {
+    return '$symbol refund address';
+  }
+
+  @override
+  String get swapActivityStatusAwaitingDeposit => 'Awaiting deposit';
+
+  @override
+  String get swapActivityStatusAwaitingExternalDeposit =>
+      'Awaiting external deposit';
+
+  @override
+  String get swapActivityStatusCheckingStatus => 'Checking status';
+
+  @override
+  String get swapActivityStatusComplete => 'Complete';
+
+  @override
+  String get swapActivityStatusDepositObserved => 'Deposit observed';
+
+  @override
+  String get swapActivityStatusExpired => 'Expired';
+
+  @override
+  String get swapActivityStatusProcessing => 'Processing';
+
+  @override
+  String get swapActivityStepConvert => 'Convert';
+
+  @override
+  String get swapActivityStepConvertDescription =>
+      'Converting the shielded spend into the payment asset.';
+
+  @override
+  String get swapActivityStepConverting => 'Converting...';
+
+  @override
+  String swapActivityStepDeliver(String symbol) {
+    return 'Deliver $symbol';
+  }
+
+  @override
+  String swapActivityStepDeliverActive(String symbol) {
+    return 'Deliver $symbol...';
+  }
+
+  @override
+  String get swapActivityStepDeliverPayDescription =>
+      'Delivering the payment to the recipient address.';
+
+  @override
+  String get swapActivityStepDeliverSwapDescription =>
+      'Delivering the output asset to the recipient address.';
+
+  @override
+  String swapActivityStepDelivering(String symbol) {
+    return 'Delivering $symbol...';
+  }
+
+  @override
+  String swapActivityStepDeposit(String symbol) {
+    return 'Deposit $symbol';
+  }
+
+  @override
+  String get swapActivityStepDepositConfirmation => 'Deposit confirmation';
+
+  @override
+  String get swapActivityStepDepositConfirmationActive =>
+      'Deposit confirmation...';
+
+  @override
+  String get swapActivityStepDepositConfirmationDescription =>
+      'Confirming the deposit before the swap route starts.';
+
+  @override
+  String swapActivityStepDeposited(String symbol) {
+    return '$symbol Deposited';
+  }
+
+  @override
+  String swapActivityStepDepositing(String symbol) {
+    return 'Depositing $symbol...';
+  }
+
+  @override
+  String get swapActivityStepRecipientReceives => 'Recipient receives';
+
+  @override
+  String swapActivityStepRecipientReceivesAsset(String symbol) {
+    return 'Recipient receives $symbol...';
+  }
+
+  @override
+  String get swapActivityStepRecipientReceivesDescription =>
+      'Confirming the recipient-side payment.';
+
+  @override
+  String swapActivityStepSend(String symbol) {
+    return 'Send $symbol';
+  }
+
+  @override
+  String swapActivityStepSendActive(String symbol) {
+    return 'Send $symbol...';
+  }
+
+  @override
+  String swapActivityStepSending(String symbol) {
+    return 'Sending $symbol...';
+  }
+
+  @override
+  String swapActivityStepSent(String symbol) {
+    return '$symbol sent';
+  }
+
+  @override
+  String get swapActivityStepSourceDescription =>
+      'Confirm waiting for the source chain and provider to recognise the deposit';
+
+  @override
+  String swapActivityStepSpend(String symbol) {
+    return 'Spend $symbol';
+  }
+
+  @override
+  String get swapActivityStepSpendDescription =>
+      'Spending from shielded balance.';
+
+  @override
+  String swapActivityStepSpending(String symbol) {
+    return 'Spending $symbol...';
+  }
+
+  @override
+  String swapActivityStepSpent(String symbol) {
+    return '$symbol spent';
+  }
+
+  @override
+  String get swapActivityStepSwap => 'Swap';
+
+  @override
+  String get swapActivityStepSwapActive => 'Swap...';
+
+  @override
+  String get swapActivityStepSwapDescription =>
+      'The provider is executing the swap route.';
+
+  @override
+  String get swapActivitySwapCompleted => 'Swap completed';
+
+  @override
+  String get swapActivitySwapFailed => 'Swap failed';
+
+  @override
+  String get swapActivitySwapInProgress => 'Swap in progress...';
+
+  @override
+  String get swapActivitySwapProgressTab => 'Swap progress';
+
+  @override
+  String get swapActivitySwapRefunded => 'Swap refunded';
+
+  @override
+  String swapActivityToAddressOnChain(String address, String chain) {
+    return 'To: $address on $chain';
+  }
+
+  @override
+  String get swapActivityTooltipFees =>
+      'Covers our fee and the route providers\' costs to process this swap. Already included in the rate above.';
+
+  @override
+  String swapActivityTooltipMinimumReceive(String symbol) {
+    return 'The lowest amount of $symbol you\'ll get after slippage. You may get more, never less.';
+  }
+
+  @override
+  String get swapActivityTooltipMinimumReceiveGeneric =>
+      'The lowest amount you\'ll get after slippage. You may get more, never less.';
+
+  @override
+  String get swapActivityTooltipPriceProtection =>
+      'How much of the received amount your slippage tolerance protects. The swap is refunded if the rate moves past this.';
+
+  @override
+  String get swapActivityTooltipStatusDetail =>
+      'Details are based on the latest swap record and provider status.';
+
+  @override
+  String get swapActivityYouPaid => 'You paid';
+
+  @override
+  String get swapActivityYouPay => 'You pay';
+
+  @override
+  String get swapActivityYouReceived => 'You received';
+
+  @override
+  String get swapActivityYourePaying => 'You\'re paying';
+
+  @override
+  String get swapActivityYoureReceiving => 'You\'re receiving';
 
   @override
   String syncCheckingPercentSemantics(String percent) {

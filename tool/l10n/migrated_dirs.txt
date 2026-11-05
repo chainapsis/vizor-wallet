@@ -10,3 +10,5 @@ lib/src/features/accounts
 lib/src/features/home
 lib/src/features/onboarding
 lib/src/features/settings
+lib/src/features/pay
+lib/src/features/swap/models

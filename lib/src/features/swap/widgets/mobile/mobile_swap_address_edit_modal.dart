@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart' show TextInputAction;
@@ -149,7 +150,7 @@ class _MobileSwapAddressEditModalState
     final title = sendsZec
         ? '${asset.symbol} recipient address'
         : '${asset.symbol} refund address';
-    final hint = widget.state.destinationFieldHint;
+    final hint = widget.state.destinationFieldHint(context.l10n);
     final description = sendsZec
         ? 'Your ${asset.symbol} will be delivered to this address.'
         : "If the swap fails or the rate moves, you'll be refunded in "

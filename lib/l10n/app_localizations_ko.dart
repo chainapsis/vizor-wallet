@@ -1308,6 +1308,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get lockSyncPausedTitle => '동⁠기⁠화 일⁠시 중⁠지⁠됨';
 
   @override
+  String get lockSyncedSemantics => 'Vizor 동⁠기⁠화⁠됨';
+
+  @override
   String get lockSyncingMessage => 'Vizor 동⁠기⁠화 중';
 
   @override
@@ -2031,6 +2034,259 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get passwordsDoNotMatch => '비⁠밀⁠번⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get payAddLabelHint => '이⁠름⁠을 1~20⁠자⁠로 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get payAddToContacts => '연⁠락⁠처⁠에 추⁠가';
+
+  @override
+  String get payAddressLabel => '주⁠소 이⁠름';
+
+  @override
+  String payAddressSemantics(String address) {
+    return '주⁠소 $address';
+  }
+
+  @override
+  String get payAmountChooseAsset => '결⁠제 자⁠산 선⁠택';
+
+  @override
+  String payAmountEnterIn(String symbol) {
+    return '$symbol 단⁠위⁠로 금⁠액 입⁠력';
+  }
+
+  @override
+  String get payAmountEnterInUsd => 'USD 단⁠위⁠로 금⁠액 입⁠력';
+
+  @override
+  String get payAmountEstimated => '예⁠상:';
+
+  @override
+  String get payAmountEstimatedSpend => '예⁠상 지⁠출';
+
+  @override
+  String get payAmountPayingFrom => '결⁠제 출⁠처';
+
+  @override
+  String get payAmountPayingIn => '결⁠제 자⁠산';
+
+  @override
+  String get payAmountShieldedBalance => '차⁠폐⁠된 잔⁠액';
+
+  @override
+  String get payBackHome => '홈';
+
+  @override
+  String payChainAddressHint(String chain) {
+    return '$chain 주⁠소';
+  }
+
+  @override
+  String get payChainAndAddress => '체⁠인 및 주⁠소';
+
+  @override
+  String get payChangeContactPicture => '연⁠락⁠처 사⁠진 변⁠경';
+
+  @override
+  String get payClearContactLabel => '연⁠락⁠처 이⁠름 지⁠우⁠기';
+
+  @override
+  String get payContacts => '연⁠락⁠처';
+
+  @override
+  String get payFetchingQuote => '견⁠적 가⁠져⁠오⁠는 중';
+
+  @override
+  String get payInsufficientZec =>
+      '이 결⁠제⁠에 필⁠요⁠한 ZEC⁠가 부⁠족⁠해⁠요. 더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠해 보⁠세⁠요.';
+
+  @override
+  String get payNewAddressDetected => '새 주⁠소⁠가 감⁠지⁠되⁠었⁠어⁠요.';
+
+  @override
+  String get payNewAddressWarning => '이 주⁠소⁠와 거⁠래⁠한 적⁠이 없⁠어⁠요.';
+
+  @override
+  String get payNotEnoughZec => 'ZEC⁠가 부⁠족⁠해⁠요';
+
+  @override
+  String payRecentDaysAgo(int days) {
+    return '$days⁠일 전';
+  }
+
+  @override
+  String payRecentHoursAgo(int hours) {
+    return '$hours⁠시⁠간 전';
+  }
+
+  @override
+  String get payRecentJustNow => '방⁠금 전';
+
+  @override
+  String payRecentMinutesAgo(int minutes) {
+    return '$minutes⁠분 전';
+  }
+
+  @override
+  String get payRecentlySent => '최⁠근 보⁠낸 주⁠소';
+
+  @override
+  String get payRecents => '최⁠근';
+
+  @override
+  String get payRecipientAddressHint => '주⁠소⁠를 붙⁠여⁠넣⁠거⁠나 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get payRecipientAddressLabel => '받⁠는 주⁠소';
+
+  @override
+  String get payRecipientScanQr => 'QR 코⁠드 스⁠캔';
+
+  @override
+  String get payRefreshingQuote => '견⁠적 새⁠로⁠고⁠침 중';
+
+  @override
+  String get payReviewConfirmPay => '확⁠인 및 결⁠제';
+
+  @override
+  String get payReviewConvertedAmount => '변⁠환 금⁠액';
+
+  @override
+  String get payReviewFullAddress => '전⁠체 주⁠소';
+
+  @override
+  String get payReviewPaying => '결⁠제 금⁠액';
+
+  @override
+  String get payReviewQuoteExpired => '견⁠적⁠이 만⁠료⁠되⁠었⁠어⁠요';
+
+  @override
+  String get payReviewQuoteExpiresIn => '견⁠적 만⁠료⁠까⁠지 ';
+
+  @override
+  String get payReviewRefreshQuote => '견⁠적 새⁠로⁠고⁠침';
+
+  @override
+  String get payReviewRefreshTheQuote => '견⁠적 새⁠로⁠고⁠침';
+
+  @override
+  String get payReviewReturnToPay => '결⁠제⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get payReviewShowFullAddress => '전⁠체 주⁠소 보⁠기';
+
+  @override
+  String get payReviewTo => '받⁠는 사⁠람';
+
+  @override
+  String get payReviewUnknownAddress => '알 수 없⁠는 주⁠소';
+
+  @override
+  String get paySave => '저⁠장';
+
+  @override
+  String get paySaveContact => '연⁠락⁠처 저⁠장';
+
+  @override
+  String get paySaveContactError => '연⁠락⁠처⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paySaving => '저⁠장 중';
+
+  @override
+  String get payScanBarrierDismiss => '닫⁠기';
+
+  @override
+  String get payScanCaption => '받⁠는 주⁠소 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get payScanNoAddress => 'QR 코⁠드⁠에 주⁠소⁠가 없⁠어⁠요.';
+
+  @override
+  String get payScanPermissionTitle => '받⁠는 주⁠소 스⁠캔';
+
+  @override
+  String get payScanQrSubtitle => '카⁠메⁠라⁠로 주⁠소⁠를 스⁠캔⁠해⁠요';
+
+  @override
+  String get payScanQrTitle => 'QR 코⁠드 스⁠캔';
+
+  @override
+  String get payScanSteadyHint => 'QR 코⁠드⁠가 모⁠두 보⁠이⁠도⁠록 고⁠정⁠해 주⁠세⁠요.';
+
+  @override
+  String get paySelectContactPicture => '연⁠락⁠처 사⁠진 선⁠택';
+
+  @override
+  String get paySelectRecipient => '받⁠는 사⁠람 선⁠택';
+
+  @override
+  String get paySelectedContact => '선⁠택⁠된 연⁠락⁠처';
+
+  @override
+  String get payStepAmount => '금⁠액';
+
+  @override
+  String get payStepRecipient => '받⁠는 사⁠람';
+
+  @override
+  String get payStepReview => '검⁠토';
+
+  @override
+  String get paySubmittedDone => '완⁠료';
+
+  @override
+  String get paySubmittedFailedBody =>
+      '결⁠제⁠를 제⁠출⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get paySubmittedFailedTitle => '결⁠제⁠에 실⁠패⁠했⁠어⁠요';
+
+  @override
+  String get paySubmittedGoToActivity => '활⁠동 내⁠역⁠으⁠로 이⁠동';
+
+  @override
+  String get paySubmittedReturnHome => '홈⁠으⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get paySubmittedStatusUncertainNotice =>
+      '결⁠제 상⁠태⁠가 확⁠실⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동 내⁠역⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get paySubmittedSubmittingBody => '결⁠제⁠를 네⁠트⁠워⁠크⁠에 제⁠출⁠하⁠고 있⁠어⁠요...';
+
+  @override
+  String get paySubmittedSubmittingTitle => '결⁠제 제⁠출 중...';
+
+  @override
+  String get paySubmittedSucceededBody =>
+      '곧 온⁠체⁠인⁠에⁠서 확⁠인⁠될 거⁠예⁠요.\n활⁠동 내⁠역⁠에⁠서 확⁠인⁠해 보⁠세⁠요.';
+
+  @override
+  String get paySubmittedSucceededTitle => '결⁠제⁠를\n제⁠출⁠했⁠어⁠요';
+
+  @override
+  String get paySubmittedUnavailableNotice =>
+      '이 결⁠제⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 최⁠신 상⁠태⁠는 활⁠동 내⁠역⁠에⁠서 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get paySubmittedUnavailableTitle => '결⁠제⁠를 불⁠러⁠올 수 없⁠어⁠요';
+
+  @override
+  String get paySubmittedUncertainTitle => '결⁠제 상⁠태⁠가\n확⁠실⁠하⁠지 않⁠아⁠요';
+
+  @override
+  String payTitleAmount(String symbol) {
+    return '$symbol⁠로 결⁠제';
+  }
+
+  @override
+  String get payTitleRecipient => '받⁠는 사⁠람 선⁠택';
+
+  @override
+  String get payTitleReview => '결⁠제 검⁠토';
 
   @override
   String get poolShielded => '차⁠폐⁠됨';
@@ -2932,6 +3188,504 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sidebarShowBalance => '잔⁠액 보⁠기';
+
+  @override
+  String swapActivityAddressBookRecipient(String symbol) {
+    return '$symbol 수⁠신⁠자';
+  }
+
+  @override
+  String swapActivityAddressBookRefund(String symbol) {
+    return '$symbol 환⁠불';
+  }
+
+  @override
+  String get swapActivityAmount => '금⁠액';
+
+  @override
+  String swapActivityDeadlineHours(int hours) {
+    return '$hours⁠시⁠간';
+  }
+
+  @override
+  String swapActivityDeadlineMinutes(int minutes) {
+    return '$minutes⁠분';
+  }
+
+  @override
+  String get swapActivityDeadlineOneHour => '1⁠시⁠간';
+
+  @override
+  String get swapActivityDeadlineOneMinute => '1⁠분';
+
+  @override
+  String get swapActivityDepositAmount => '입⁠금 금⁠액';
+
+  @override
+  String get swapActivityDepositAssetFallback => '입⁠금 자⁠산';
+
+  @override
+  String swapActivityDepositInstructionDepositLabel(String symbol) {
+    return '$symbol 입⁠금';
+  }
+
+  @override
+  String get swapActivityDepositInstructionReuseWarning =>
+      '이 주⁠소⁠를 다⁠시 사⁠용⁠하⁠지 마⁠세⁠요';
+
+  @override
+  String swapActivityDepositInstructionSendFromSource(String symbol) {
+    return '출⁠발 체⁠인⁠에⁠서 $symbol 보⁠내⁠기';
+  }
+
+  @override
+  String swapActivityDepositInstructionSourceDepositLabel(String symbol) {
+    return '$symbol 출⁠발 체⁠인 입⁠금';
+  }
+
+  @override
+  String swapActivityDepositInstructionSubmit(String symbol) {
+    return '$symbol 입⁠금 제⁠출';
+  }
+
+  @override
+  String swapActivityDepositInstructionTxHashHint(String symbol) {
+    return '$symbol 출⁠발 체⁠인 거⁠래 해⁠시';
+  }
+
+  @override
+  String swapActivityDepositInstructionTxHashLabel(String symbol) {
+    return '$symbol 입⁠금 거⁠래 해⁠시';
+  }
+
+  @override
+  String get swapActivityDetailConfiguredQuote => '견⁠적 설⁠정⁠값';
+
+  @override
+  String swapActivityDetailDeliveryTx(String symbol) {
+    return '$symbol 전⁠달 거⁠래';
+  }
+
+  @override
+  String get swapActivityDetailDepositDeadline => '입⁠금 기⁠한';
+
+  @override
+  String swapActivityDetailDepositTo(String symbol) {
+    return '$symbol 입⁠금 주⁠소';
+  }
+
+  @override
+  String swapActivityDetailDepositTx(String symbol) {
+    return '$symbol 입⁠금 거⁠래';
+  }
+
+  @override
+  String get swapActivityDetailDetectedDeposit => '확⁠인⁠된 입⁠금⁠액';
+
+  @override
+  String get swapActivityDetailFees => '수⁠수⁠료';
+
+  @override
+  String get swapActivityDetailGuaranteedMinimum => '최⁠소 보⁠장 수⁠량';
+
+  @override
+  String get swapActivityDetailIncluded => '포⁠함⁠됨';
+
+  @override
+  String get swapActivityDetailIncludedInRate => '표⁠시⁠된 환⁠율⁠에 포⁠함⁠됨';
+
+  @override
+  String get swapActivityDetailMemo => '메⁠모';
+
+  @override
+  String get swapActivityDetailMissingDeposit => '부⁠족⁠한 입⁠금⁠액';
+
+  @override
+  String get swapActivityDetailNetworkConversionFees => '네⁠트⁠워⁠크 + 변⁠환 수⁠수⁠료';
+
+  @override
+  String get swapActivityDetailRate => '환⁠율';
+
+  @override
+  String get swapActivityDetailRealizedSlippage => '실⁠제 슬⁠리⁠피⁠지';
+
+  @override
+  String swapActivityDetailRecipient(String symbol) {
+    return '$symbol 수⁠신⁠자';
+  }
+
+  @override
+  String swapActivityDetailRefundAddress(String symbol) {
+    return '$symbol 환⁠불 주⁠소';
+  }
+
+  @override
+  String get swapActivityDetailRefundFee => '환⁠불 수⁠수⁠료';
+
+  @override
+  String get swapActivityDetailRefundTo => '환⁠불 주⁠소';
+
+  @override
+  String get swapActivityDetailRefundedAmount => '환⁠불 금⁠액';
+
+  @override
+  String get swapActivityDetailRequiredDeposit => '필⁠요⁠한 입⁠금⁠액';
+
+  @override
+  String get swapActivityDetailSlippageTolerance => '슬⁠리⁠피⁠지 허⁠용⁠치';
+
+  @override
+  String swapActivityDetailSourceTxShielded(String symbol) {
+    return '$symbol 거⁠래(차⁠폐)';
+  }
+
+  @override
+  String get swapActivityDetailSwapFee => '스⁠왑 수⁠수⁠료';
+
+  @override
+  String get swapActivityDetailTimestamp => '일⁠시';
+
+  @override
+  String get swapActivityDetailTotalFees => '총 수⁠수⁠료';
+
+  @override
+  String get swapActivityDetailTxId => '거⁠래 ID';
+
+  @override
+  String get swapActivityExpectedToReceive => '예⁠상 수⁠령 금⁠액';
+
+  @override
+  String get swapActivityIncompleteDeposit => '입⁠금⁠이 완⁠료⁠되⁠지 않⁠았⁠어⁠요';
+
+  @override
+  String get swapActivityIncompletePayment => '결⁠제⁠가 완⁠료⁠되⁠지 않⁠았⁠어⁠요';
+
+  @override
+  String get swapActivityLastCheckJustNow => '마⁠지⁠막 확⁠인: 방⁠금 전';
+
+  @override
+  String swapActivityLastCheckMinutesAgo(int minutes) {
+    return '마⁠지⁠막 확⁠인: $minutes⁠분 전';
+  }
+
+  @override
+  String get swapActivityNotReported => '보⁠고⁠되⁠지 않⁠음';
+
+  @override
+  String get swapActivityPaidSuccessfullyTitle => '결⁠제⁠를 완⁠료⁠했⁠어⁠요';
+
+  @override
+  String get swapActivityPayInProgressTitle => '결⁠제 진⁠행 중...';
+
+  @override
+  String get swapActivityPayStatusCompleted => '완⁠료';
+
+  @override
+  String get swapActivityPayStatusFailed => '실⁠패';
+
+  @override
+  String get swapActivityPayStatusInProgress => '진⁠행 중';
+
+  @override
+  String get swapActivityPayStatusRefunded => '환⁠불⁠됨';
+
+  @override
+  String get swapActivityPaymentComplete => '결⁠제 완⁠료';
+
+  @override
+  String get swapActivityPaymentFailed => '결⁠제⁠에 실⁠패⁠했⁠어⁠요';
+
+  @override
+  String get swapActivityPaymentInProgress => '결⁠제 진⁠행 중';
+
+  @override
+  String get swapActivityPaymentProgressTab => '결⁠제 진⁠행 상⁠황';
+
+  @override
+  String get swapActivityPaymentRefunded => '결⁠제⁠가 환⁠불⁠되⁠었⁠어⁠요';
+
+  @override
+  String swapActivityPickerNoRecipients(String symbol) {
+    return '저⁠장⁠된 $symbol 수⁠신⁠자⁠가 없⁠어⁠요';
+  }
+
+  @override
+  String swapActivityPickerNoRefunds(String symbol) {
+    return '저⁠장⁠된 $symbol 환⁠불 주⁠소⁠가 없⁠어⁠요';
+  }
+
+  @override
+  String swapActivityPickerRecipientsTitle(String symbol) {
+    return '$symbol 수⁠신⁠자';
+  }
+
+  @override
+  String swapActivityPickerRefundsTitle(String symbol) {
+    return '$symbol 환⁠불';
+  }
+
+  @override
+  String get swapActivityPrivatelyFromShielded => '차⁠폐⁠된 잔⁠액⁠에⁠서 비⁠공⁠개⁠로';
+
+  @override
+  String get swapActivityReceiveAssetFallback => '수⁠령 자⁠산';
+
+  @override
+  String get swapActivityRecipientGets => '수⁠신⁠자⁠가 받⁠을 금⁠액';
+
+  @override
+  String get swapActivityRecipientReceived => '수⁠신⁠자⁠가 받⁠은 금⁠액';
+
+  @override
+  String swapActivityRefundToAddress(String address) {
+    return '환⁠불 주⁠소: $address';
+  }
+
+  @override
+  String swapActivityStateAddressHint(String chain) {
+    return '$chain 주⁠소';
+  }
+
+  @override
+  String swapActivityStateAddressOrAccountHint(String chain) {
+    return '$chain 주⁠소 또⁠는 계⁠정';
+  }
+
+  @override
+  String swapActivityStateAssetUnsupported(String symbol, String chain) {
+    return '$chain⁠의 $symbol⁠은(는) 현⁠재 지⁠원⁠되⁠지 않⁠아⁠요.';
+  }
+
+  @override
+  String swapActivityStateDecimalPlaces(String symbol, int decimals) {
+    return '$symbol⁠은(는) 소⁠수⁠점 $decimals⁠자⁠리⁠까⁠지 지⁠원⁠해⁠요.';
+  }
+
+  @override
+  String get swapActivityStateDestination => '받⁠는 주⁠소';
+
+  @override
+  String swapActivityStateQuoteHigher(String percent) {
+    return '실⁠시⁠간 견⁠적⁠이 이⁠전 예⁠상⁠보⁠다 $percent% 높⁠아⁠요. 계⁠속⁠하⁠기 전⁠에 최⁠소 보⁠장 수⁠량⁠을 확⁠인⁠하⁠세⁠요.';
+  }
+
+  @override
+  String swapActivityStateQuoteLower(String percent) {
+    return '실⁠시⁠간 견⁠적⁠이 이⁠전 예⁠상⁠보⁠다 $percent% 낮⁠아⁠요. 계⁠속⁠하⁠기 전⁠에 최⁠소 보⁠장 수⁠량⁠을 확⁠인⁠하⁠세⁠요.';
+  }
+
+  @override
+  String swapActivityStateQuoteUsesDifferentSell(
+    String liveAmount,
+    String estimateAmount,
+    String symbol,
+  ) {
+    return '실⁠시⁠간 견⁠적⁠은 $estimateAmount $symbol 대⁠신 $liveAmount $symbol⁠을(를) 사⁠용⁠해⁠요. 계⁠속⁠하⁠기 전⁠에 최⁠소 보⁠장 수⁠량⁠을 확⁠인⁠하⁠세⁠요.';
+  }
+
+  @override
+  String swapActivityStateRefundAddressLabel(String symbol) {
+    return '$symbol 환⁠불 주⁠소';
+  }
+
+  @override
+  String get swapActivityStatusAwaitingDeposit => '입⁠금 대⁠기 중';
+
+  @override
+  String get swapActivityStatusAwaitingExternalDeposit => '외⁠부 입⁠금 대⁠기 중';
+
+  @override
+  String get swapActivityStatusCheckingStatus => '상⁠태 확⁠인 중';
+
+  @override
+  String get swapActivityStatusComplete => '완⁠료';
+
+  @override
+  String get swapActivityStatusDepositObserved => '입⁠금 확⁠인⁠됨';
+
+  @override
+  String get swapActivityStatusExpired => '만⁠료⁠됨';
+
+  @override
+  String get swapActivityStatusProcessing => '처⁠리 중';
+
+  @override
+  String get swapActivityStepConvert => '변⁠환';
+
+  @override
+  String get swapActivityStepConvertDescription =>
+      '차⁠폐⁠된 지⁠출⁠을 결⁠제 자⁠산⁠으⁠로 변⁠환⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get swapActivityStepConverting => '변⁠환 중...';
+
+  @override
+  String swapActivityStepDeliver(String symbol) {
+    return '$symbol 전⁠달';
+  }
+
+  @override
+  String swapActivityStepDeliverActive(String symbol) {
+    return '$symbol 전⁠달...';
+  }
+
+  @override
+  String get swapActivityStepDeliverPayDescription =>
+      '결⁠제 금⁠액⁠을 받⁠는 주⁠소⁠로 전⁠달⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get swapActivityStepDeliverSwapDescription =>
+      '받⁠을 자⁠산⁠을 받⁠는 주⁠소⁠로 전⁠달⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String swapActivityStepDelivering(String symbol) {
+    return '$symbol 전⁠달 중...';
+  }
+
+  @override
+  String swapActivityStepDeposit(String symbol) {
+    return '$symbol 입⁠금';
+  }
+
+  @override
+  String get swapActivityStepDepositConfirmation => '입⁠금 확⁠인';
+
+  @override
+  String get swapActivityStepDepositConfirmationActive => '입⁠금 확⁠인 중...';
+
+  @override
+  String get swapActivityStepDepositConfirmationDescription =>
+      '스⁠왑 경⁠로⁠를 시⁠작⁠하⁠기 전⁠에 입⁠금⁠을 확⁠인⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String swapActivityStepDeposited(String symbol) {
+    return '$symbol 입⁠금 완⁠료';
+  }
+
+  @override
+  String swapActivityStepDepositing(String symbol) {
+    return '$symbol 입⁠금 중...';
+  }
+
+  @override
+  String get swapActivityStepRecipientReceives => '수⁠신⁠자 수⁠령';
+
+  @override
+  String swapActivityStepRecipientReceivesAsset(String symbol) {
+    return '수⁠신⁠자⁠가 $symbol 수⁠령 중...';
+  }
+
+  @override
+  String get swapActivityStepRecipientReceivesDescription =>
+      '수⁠신⁠자 쪽 결⁠제⁠를 확⁠인⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String swapActivityStepSend(String symbol) {
+    return '$symbol 보⁠내⁠기';
+  }
+
+  @override
+  String swapActivityStepSendActive(String symbol) {
+    return '$symbol 보⁠내⁠는 중...';
+  }
+
+  @override
+  String swapActivityStepSending(String symbol) {
+    return '$symbol 보⁠내⁠는 중...';
+  }
+
+  @override
+  String swapActivityStepSent(String symbol) {
+    return '$symbol 전⁠송 완⁠료';
+  }
+
+  @override
+  String get swapActivityStepSourceDescription =>
+      '출⁠발 체⁠인⁠과 제⁠공⁠자⁠가 입⁠금⁠을 인⁠식⁠할 때⁠까⁠지 기⁠다⁠리⁠고 있⁠어⁠요';
+
+  @override
+  String swapActivityStepSpend(String symbol) {
+    return '$symbol 사⁠용';
+  }
+
+  @override
+  String get swapActivityStepSpendDescription => '차⁠폐⁠된 잔⁠액⁠에⁠서 사⁠용⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String swapActivityStepSpending(String symbol) {
+    return '$symbol 사⁠용 중...';
+  }
+
+  @override
+  String swapActivityStepSpent(String symbol) {
+    return '$symbol 사⁠용 완⁠료';
+  }
+
+  @override
+  String get swapActivityStepSwap => '스⁠왑';
+
+  @override
+  String get swapActivityStepSwapActive => '스⁠왑 중...';
+
+  @override
+  String get swapActivityStepSwapDescription =>
+      '제⁠공⁠자⁠가 스⁠왑 경⁠로⁠를 실⁠행⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get swapActivitySwapCompleted => '스⁠왑 완⁠료';
+
+  @override
+  String get swapActivitySwapFailed => '스⁠왑⁠에 실⁠패⁠했⁠어⁠요';
+
+  @override
+  String get swapActivitySwapInProgress => '스⁠왑 진⁠행 중...';
+
+  @override
+  String get swapActivitySwapProgressTab => '스⁠왑 진⁠행 상⁠황';
+
+  @override
+  String get swapActivitySwapRefunded => '스⁠왑⁠이 환⁠불⁠되⁠었⁠어⁠요';
+
+  @override
+  String swapActivityToAddressOnChain(String address, String chain) {
+    return '받⁠는 주⁠소: $address ($chain)';
+  }
+
+  @override
+  String get swapActivityTooltipFees =>
+      '당⁠사 수⁠수⁠료⁠와 경⁠로 제⁠공⁠자⁠가 이 스⁠왑⁠을 처⁠리⁠하⁠는 데 드⁠는 비⁠용⁠이 포⁠함⁠돼⁠요. 위 환⁠율⁠에 이⁠미 반⁠영⁠되⁠어 있⁠어⁠요.';
+
+  @override
+  String swapActivityTooltipMinimumReceive(String symbol) {
+    return '슬⁠리⁠피⁠지⁠가 반⁠영⁠된 $symbol 최⁠소 수⁠령 금⁠액⁠이⁠에⁠요. 더 받⁠을 수⁠는 있⁠지⁠만 이⁠보⁠다 적⁠게 받⁠지⁠는 않⁠아⁠요.';
+  }
+
+  @override
+  String get swapActivityTooltipMinimumReceiveGeneric =>
+      '슬⁠리⁠피⁠지⁠가 반⁠영⁠된 최⁠소 수⁠령 금⁠액⁠이⁠에⁠요. 더 받⁠을 수⁠는 있⁠지⁠만 이⁠보⁠다 적⁠게 받⁠지⁠는 않⁠아⁠요.';
+
+  @override
+  String get swapActivityTooltipPriceProtection =>
+      '슬⁠리⁠피⁠지 허⁠용⁠치⁠가 보⁠호⁠하⁠는 수⁠령 금⁠액⁠의 범⁠위⁠예⁠요. 환⁠율⁠이 이 범⁠위⁠를 넘⁠어 변⁠하⁠면 스⁠왑⁠이 환⁠불⁠돼⁠요.';
+
+  @override
+  String get swapActivityTooltipStatusDetail =>
+      '최⁠신 스⁠왑 기⁠록⁠과 제⁠공⁠자 상⁠태⁠를 바⁠탕⁠으⁠로 한 정⁠보⁠예⁠요.';
+
+  @override
+  String get swapActivityYouPaid => '지⁠불⁠한 금⁠액';
+
+  @override
+  String get swapActivityYouPay => '지⁠불 금⁠액';
+
+  @override
+  String get swapActivityYouReceived => '받⁠은 금⁠액';
+
+  @override
+  String get swapActivityYourePaying => '지⁠불⁠하⁠는 금⁠액';
+
+  @override
+  String get swapActivityYoureReceiving => '받⁠는 금⁠액';
 
   @override
   String syncCheckingPercentSemantics(String percent) {

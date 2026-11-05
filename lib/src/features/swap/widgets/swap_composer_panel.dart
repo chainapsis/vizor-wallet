@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/material.dart' show InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
@@ -133,8 +134,8 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final targetDirection = state.direction.toggled;
     final rateText = _rateTextForState(state);
     final quoteError =
-        state.quoteAmountPrecisionError ??
-        state.externalAssetSupportError ??
+        state.quoteAmountPrecisionError(context.l10n) ??
+        state.externalAssetSupportError(context.l10n) ??
         state.quoteError;
     final zecAmountOverAvailable = _zecAmountOverAvailable(
       state,

@@ -1,20 +1,17 @@
-String swapMinimumReceiveTooltip(String receiveSymbol) =>
-    "The lowest amount of $receiveSymbol you'll get after slippage. "
-    'You may get more, never less.';
+import '../../../core/l10n/l10n.dart';
 
-const swapGenericMinimumReceiveTooltip =
-    "The lowest amount you'll get after slippage. "
-    'You may get more, never less.';
+String swapMinimumReceiveTooltip(AppLocalizations l10n, String receiveSymbol) =>
+    l10n.swapActivityTooltipMinimumReceive(receiveSymbol);
 
-const swapPriceProtectionTooltip =
-    'How much of the received amount your slippage tolerance protects. '
-    'The swap is refunded if the rate moves past this.';
+String swapGenericMinimumReceiveTooltip(AppLocalizations l10n) =>
+    l10n.swapActivityTooltipMinimumReceiveGeneric;
 
-const swapFeeTooltip =
-    "Covers our fee and the route providers' costs to process this swap. "
-    'Already included in the rate above.';
+String swapPriceProtectionTooltip(AppLocalizations l10n) =>
+    l10n.swapActivityTooltipPriceProtection;
 
-const swapTotalFeesTooltip = swapFeeTooltip;
+String swapFeeTooltip(AppLocalizations l10n) => l10n.swapActivityTooltipFees;
 
-const swapStatusDetailTooltip =
-    'Details are based on the latest swap record and provider status.';
+String swapTotalFeesTooltip(AppLocalizations l10n) => swapFeeTooltip(l10n);
+
+String swapStatusDetailTooltip(AppLocalizations l10n) =>
+    l10n.swapActivityTooltipStatusDetail;

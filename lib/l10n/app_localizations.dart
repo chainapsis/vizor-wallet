@@ -2379,6 +2379,12 @@ abstract class AppLocalizations {
   /// **'Sync paused'**
   String get lockSyncPausedTitle;
 
+  /// Screen-reader label of the sync lock screen when sync has finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is synced'**
+  String get lockSyncedSemantics;
+
   /// Screen-reader label and caption on the sync lock screen while sync is running.
   ///
   /// In en, this message translates to:
@@ -3671,6 +3677,474 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Passwords do not match.'**
   String get passwordsDoNotMatch;
+
+  /// Placeholder of the contact name field: the name must be 1 to 20 characters.
+  ///
+  /// In en, this message translates to:
+  /// **'Add label 1-20 characters'**
+  String get payAddLabelHint;
+
+  /// Button that saves the new Pay recipient address to the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to contacts'**
+  String get payAddToContacts;
+
+  /// Label of the contact name field in the Pay add-contact form.
+  ///
+  /// In en, this message translates to:
+  /// **'Address label'**
+  String get payAddressLabel;
+
+  /// Accessibility label of the read-only address in the mobile Pay add-contact card.
+  ///
+  /// In en, this message translates to:
+  /// **'Address {address}'**
+  String payAddressSemantics(String address);
+
+  /// Accessibility label of the asset picker on the mobile Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose payment asset'**
+  String get payAmountChooseAsset;
+
+  /// Accessibility label of the toggle that switches the mobile Pay amount input to the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in {symbol}'**
+  String payAmountEnterIn(String symbol);
+
+  /// Accessibility label of the toggle that switches the mobile Pay amount input to US dollars.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in USD'**
+  String get payAmountEnterInUsd;
+
+  /// Label before the estimated ZEC cost on the mobile Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated:'**
+  String get payAmountEstimated;
+
+  /// Label before the estimated ZEC cost on the desktop Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated spend'**
+  String get payAmountEstimatedSpend;
+
+  /// Text before the shielded balance chip on the desktop Pay amount step; reads 'Paying from your Shielded balance'.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying from your'**
+  String get payAmountPayingFrom;
+
+  /// Label next to the asset picker on the Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying in'**
+  String get payAmountPayingIn;
+
+  /// Chip naming the balance the payment is paid from, on the desktop Pay amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded balance'**
+  String get payAmountShieldedBalance;
+
+  /// Back link of the first Pay step; goes to Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get payBackHome;
+
+  /// Placeholder of the Pay recipient field on mobile; names the chain the address must belong to.
+  ///
+  /// In en, this message translates to:
+  /// **'{chain} address'**
+  String payChainAddressHint(String chain);
+
+  /// Heading above the chain and address of the contact being added.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain & address'**
+  String get payChainAndAddress;
+
+  /// Accessibility label of the contact picture button in the mobile Pay add-contact card.
+  ///
+  /// In en, this message translates to:
+  /// **'Change contact picture'**
+  String get payChangeContactPicture;
+
+  /// Accessibility label of the button that clears the contact name field.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear contact label'**
+  String get payClearContactLabel;
+
+  /// Title of the list of address book contacts on the Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Contacts'**
+  String get payContacts;
+
+  /// Disabled button label while the Pay quote is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching quote'**
+  String get payFetchingQuote;
+
+  /// Error on the Pay recipient step when the quote costs more ZEC than is spendable.
+  ///
+  /// In en, this message translates to:
+  /// **'You don\'t have enough ZEC for this payment. Try a smaller amount.'**
+  String get payInsufficientZec;
+
+  /// Heading of the warning shown when the pasted Pay recipient address is not in the address book or recents.
+  ///
+  /// In en, this message translates to:
+  /// **'New address detected.'**
+  String get payNewAddressDetected;
+
+  /// Warning text under the new-address heading on the Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'You haven\'t interacted with this address before.'**
+  String get payNewAddressWarning;
+
+  /// Error or disabled button label on Pay steps when the spendable ZEC balance is too low.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough ZEC'**
+  String get payNotEnoughZec;
+
+  /// Relative time of a recent Pay recipient used this many days ago; 'd' abbreviates days.
+  ///
+  /// In en, this message translates to:
+  /// **'{days}d ago'**
+  String payRecentDaysAgo(int days);
+
+  /// Relative time of a recent Pay recipient used this many hours ago; 'h' abbreviates hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours}h ago'**
+  String payRecentHoursAgo(int hours);
+
+  /// Relative time of a recent Pay recipient used less than a minute ago.
+  ///
+  /// In en, this message translates to:
+  /// **'just now'**
+  String get payRecentJustNow;
+
+  /// Relative time of a recent Pay recipient used this many minutes ago; 'm' abbreviates minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes}m ago'**
+  String payRecentMinutesAgo(int minutes);
+
+  /// Title of the list of recent Pay recipients on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently sent'**
+  String get payRecentlySent;
+
+  /// Title of the list of recent Pay recipients on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Recents'**
+  String get payRecents;
+
+  /// Placeholder of the Pay recipient search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste an address or scan QR code'**
+  String get payRecipientAddressHint;
+
+  /// Accessibility label of the Pay recipient search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient address'**
+  String get payRecipientAddressLabel;
+
+  /// Accessibility label of the button that opens the QR scanner on the Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR code'**
+  String get payRecipientScanQr;
+
+  /// Disabled button label on the Pay review step while a new quote is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Refreshing quote'**
+  String get payRefreshingQuote;
+
+  /// Primary button of the Pay review step that sends the payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & pay'**
+  String get payReviewConfirmPay;
+
+  /// Label of the row with the ZEC amount converted for the payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Converted amount'**
+  String get payReviewConvertedAmount;
+
+  /// Link on the mobile Pay review recipient row that shows the whole address.
+  ///
+  /// In en, this message translates to:
+  /// **'Full address'**
+  String get payReviewFullAddress;
+
+  /// Label of the paying amount row on the Pay review step; also the disabled button label while the payment starts.
+  ///
+  /// In en, this message translates to:
+  /// **'Paying'**
+  String get payReviewPaying;
+
+  /// Text of the Pay review countdown after the quote expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote expired'**
+  String get payReviewQuoteExpired;
+
+  /// Text before the countdown on the Pay review step; a trailing space separates it from the time.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote expires in '**
+  String get payReviewQuoteExpiresIn;
+
+  /// Button on the mobile Pay review step when the quote expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh quote'**
+  String get payReviewRefreshQuote;
+
+  /// Button on the desktop Pay review step when the quote expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh the quote'**
+  String get payReviewRefreshTheQuote;
+
+  /// Button on the mobile Pay review step when the quote is no longer active.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to pay'**
+  String get payReviewReturnToPay;
+
+  /// Link on the desktop Pay review recipient row that shows the whole address.
+  ///
+  /// In en, this message translates to:
+  /// **'Show full address'**
+  String get payReviewShowFullAddress;
+
+  /// Label of the recipient row on the Pay review step.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get payReviewTo;
+
+  /// Caption of the recipient row when the address is not a saved contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown address'**
+  String get payReviewUnknownAddress;
+
+  /// Button that saves the contact in the Pay add-contact modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get paySave;
+
+  /// Button that saves the contact in the mobile Pay add-contact card.
+  ///
+  /// In en, this message translates to:
+  /// **'Save contact'**
+  String get paySaveContact;
+
+  /// Error in the Pay add-contact form when saving fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save this contact. Try again.'**
+  String get paySaveContactError;
+
+  /// Button label while the Pay add-contact card is saving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving'**
+  String get paySaving;
+
+  /// Accessibility label of the tappable area that dismisses the mobile Pay modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get payScanBarrierDismiss;
+
+  /// Caption of the camera scanner for the Pay recipient address.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the recipient address QR code'**
+  String get payScanCaption;
+
+  /// Error when the scanned QR code holds no address.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code did not include an address.'**
+  String get payScanNoAddress;
+
+  /// Title of the camera permission prompt of the Pay recipient scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the recipient address'**
+  String get payScanPermissionTitle;
+
+  /// Subtitle of the card that opens the QR scanner on the mobile Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan an address using camera'**
+  String get payScanQrSubtitle;
+
+  /// Title of the card that opens the QR scanner on the mobile Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan a QR code'**
+  String get payScanQrTitle;
+
+  /// Hint under the Pay recipient scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the QR code steady and fully visible.'**
+  String get payScanSteadyHint;
+
+  /// Title of the contact picture picker opened from the Pay add-contact modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Select contact picture'**
+  String get paySelectContactPicture;
+
+  /// Button that confirms the Pay recipient and goes to the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Select recipient'**
+  String get paySelectRecipient;
+
+  /// Accessibility label of the check icon on the selected contact in the Pay recipient list.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected contact'**
+  String get paySelectedContact;
+
+  /// Label of the Pay wizard step where the user enters the amount; also the back link from the recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get payStepAmount;
+
+  /// Label of the Pay wizard step where the user picks the recipient; also the back link from the review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient'**
+  String get payStepRecipient;
+
+  /// Label of the Pay wizard step where the user reviews the payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get payStepReview;
+
+  /// Primary button of the mobile Pay submitted screen; goes to Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get paySubmittedDone;
+
+  /// Body of the mobile Pay submitted screen when submitting failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment could not be submitted. Try again.'**
+  String get paySubmittedFailedBody;
+
+  /// Title of the mobile Pay submitted screen when the payment could not be submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment failed'**
+  String get paySubmittedFailedTitle;
+
+  /// Secondary button of the mobile Pay submitted screen; opens Activity.
+  ///
+  /// In en, this message translates to:
+  /// **'Go to activity'**
+  String get paySubmittedGoToActivity;
+
+  /// Primary button of the mobile Pay submitted screen after a failure; goes to Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Return home'**
+  String get paySubmittedReturnHome;
+
+  /// Notice on the mobile Pay submitted screen when the broadcast result is unknown; Activity is the app's transaction list.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment status is uncertain. Check Activity before trying again.'**
+  String get paySubmittedStatusUncertainNotice;
+
+  /// Body of the mobile Pay submitted screen while the payment is being broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting your payment to the network...'**
+  String get paySubmittedSubmittingBody;
+
+  /// Title of the mobile Pay submitted screen while the payment is being broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting payment...'**
+  String get paySubmittedSubmittingTitle;
+
+  /// Body of the mobile Pay submitted screen after broadcast; the line break is intentional and Activity is the app's transaction list.
+  ///
+  /// In en, this message translates to:
+  /// **'It will confirm on-chain shortly.\nTrack it in Activity.'**
+  String get paySubmittedSucceededBody;
+
+  /// Title of the mobile Pay submitted screen after the payment was broadcast; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment\nSubmitted'**
+  String get paySubmittedSucceededTitle;
+
+  /// Notice on the mobile Pay submitted screen when the payment record is missing.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t load this payment. Check Activity for its latest status.'**
+  String get paySubmittedUnavailableNotice;
+
+  /// Title of the mobile Pay submitted screen when the payment record is missing.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment unavailable'**
+  String get paySubmittedUnavailableTitle;
+
+  /// Title of the mobile Pay submitted screen when the broadcast result is unknown; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment status\nuncertain'**
+  String get paySubmittedUncertainTitle;
+
+  /// Title of the Pay amount step; the symbol is the asset the user pays in.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay in {symbol}'**
+  String payTitleAmount(String symbol);
+
+  /// Title of the Pay recipient step.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Recipient'**
+  String get payTitleRecipient;
+
+  /// Title of the Pay review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Payment'**
+  String get payTitleReview;
 
   /// Badge naming a shielded pool or address. See the glossary entry for shielded.
   ///
@@ -5255,6 +5729,790 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show balance'**
   String get sidebarShowBalance;
+
+  /// Default contact label suggestion when saving a swap recipient to the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} recipient'**
+  String swapActivityAddressBookRecipient(String symbol);
+
+  /// Default contact label suggestion when saving a swap refund address to the address book.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} refund'**
+  String swapActivityAddressBookRefund(String symbol);
+
+  /// Neutral label of the amount on a failed, refunded or expired payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get swapActivityAmount;
+
+  /// Compact countdown until the deposit deadline in hours (two or more); 'hrs' abbreviates hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours}hrs'**
+  String swapActivityDeadlineHours(int hours);
+
+  /// Compact countdown until the deposit deadline in minutes (two or more); 'mins' abbreviates minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes}mins'**
+  String swapActivityDeadlineMinutes(int minutes);
+
+  /// Compact countdown until the deposit deadline when exactly one hour remains; 'hr' abbreviates hour.
+  ///
+  /// In en, this message translates to:
+  /// **'1hr'**
+  String get swapActivityDeadlineOneHour;
+
+  /// Compact countdown until the deposit deadline when exactly one minute remains; 'min' abbreviates minute.
+  ///
+  /// In en, this message translates to:
+  /// **'1min'**
+  String get swapActivityDeadlineOneMinute;
+
+  /// Label of the deposited amount on a failed or refunded swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit amount'**
+  String get swapActivityDepositAmount;
+
+  /// Lowercase fallback name of the deposited asset when a swap record has no symbol.
+  ///
+  /// In en, this message translates to:
+  /// **'deposit asset'**
+  String get swapActivityDepositAssetFallback;
+
+  /// Label of the deposit address field when the user sends the asset from Vizor.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} deposit'**
+  String swapActivityDepositInstructionDepositLabel(String symbol);
+
+  /// Warning under a one-time deposit address QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not reuse this address'**
+  String get swapActivityDepositInstructionReuseWarning;
+
+  /// Instruction title telling the user to send the asset from its own chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Send {symbol} from source chain'**
+  String swapActivityDepositInstructionSendFromSource(String symbol);
+
+  /// Label of the deposit address field when the user sends the asset from its source chain.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} source deposit'**
+  String swapActivityDepositInstructionSourceDepositLabel(String symbol);
+
+  /// Button that submits the deposit transaction hash.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit {symbol} deposit'**
+  String swapActivityDepositInstructionSubmit(String symbol);
+
+  /// Placeholder of the field where the user enters the deposit transaction hash.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} source-chain transaction hash'**
+  String swapActivityDepositInstructionTxHashHint(String symbol);
+
+  /// Label of the field where the user enters the deposit transaction hash.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} deposit tx hash'**
+  String swapActivityDepositInstructionTxHashLabel(String symbol);
+
+  /// Value of the slippage tolerance row when the swap used the quote's own setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured quote'**
+  String get swapActivityDetailConfiguredQuote;
+
+  /// Label of a status detail row holding the transaction hash that delivered the asset to the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} delivery tx'**
+  String swapActivityDetailDeliveryTx(String symbol);
+
+  /// Label of a status detail row with the time by which the deposit must arrive.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit deadline'**
+  String get swapActivityDetailDepositDeadline;
+
+  /// Label of a status detail row holding the address the user deposits the asset to.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit {symbol} to'**
+  String swapActivityDetailDepositTo(String symbol);
+
+  /// Label of a status detail row holding the transaction hash of the deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} deposit tx'**
+  String swapActivityDetailDepositTx(String symbol);
+
+  /// Label of a status detail row with the deposit amount the provider detected.
+  ///
+  /// In en, this message translates to:
+  /// **'Detected deposit'**
+  String get swapActivityDetailDetectedDeposit;
+
+  /// Label of a status detail row with the fees of a payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Fees'**
+  String get swapActivityDetailFees;
+
+  /// Label of a status detail row with the minimum amount the swap is guaranteed to deliver.
+  ///
+  /// In en, this message translates to:
+  /// **'Guaranteed minimum'**
+  String get swapActivityDetailGuaranteedMinimum;
+
+  /// Value of the fees row when the fee is already included in the quote.
+  ///
+  /// In en, this message translates to:
+  /// **'Included'**
+  String get swapActivityDetailIncluded;
+
+  /// Value of the swap fee row when the fee is already part of the displayed rate.
+  ///
+  /// In en, this message translates to:
+  /// **'Included in shown rate'**
+  String get swapActivityDetailIncludedInRate;
+
+  /// Label of a status detail row holding the deposit memo the user must include.
+  ///
+  /// In en, this message translates to:
+  /// **'Memo'**
+  String get swapActivityDetailMemo;
+
+  /// Label of a status detail row with how much more the user must deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing deposit'**
+  String get swapActivityDetailMissingDeposit;
+
+  /// Label of a status detail row with the network and conversion fees of a payment in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Network + conversion fees'**
+  String get swapActivityDetailNetworkConversionFees;
+
+  /// Label of a status detail row with the exchange rate.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate'**
+  String get swapActivityDetailRate;
+
+  /// Label of a status detail row with the slippage a finished swap actually had.
+  ///
+  /// In en, this message translates to:
+  /// **'Realized slippage'**
+  String get swapActivityDetailRealizedSlippage;
+
+  /// Label of a status detail row holding the recipient address of the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} recipient'**
+  String swapActivityDetailRecipient(String symbol);
+
+  /// Label of a status detail row holding the address a refund of the asset goes to.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} refund address'**
+  String swapActivityDetailRefundAddress(String symbol);
+
+  /// Label of a status detail row with the fee charged for the refund.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund fee'**
+  String get swapActivityDetailRefundFee;
+
+  /// Label of a status detail row holding the address a refund goes to.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund to'**
+  String get swapActivityDetailRefundTo;
+
+  /// Label of a status detail row with the amount refunded.
+  ///
+  /// In en, this message translates to:
+  /// **'Refunded amount'**
+  String get swapActivityDetailRefundedAmount;
+
+  /// Label of a status detail row with the deposit amount the swap requires.
+  ///
+  /// In en, this message translates to:
+  /// **'Required deposit'**
+  String get swapActivityDetailRequiredDeposit;
+
+  /// Label of a status detail row with the slippage tolerance of the quote.
+  ///
+  /// In en, this message translates to:
+  /// **'Slippage tolerance'**
+  String get swapActivityDetailSlippageTolerance;
+
+  /// Label of a status detail row holding the shielded transaction hash that spent the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} tx (shielded)'**
+  String swapActivityDetailSourceTxShielded(String symbol);
+
+  /// Label of a status detail row with the swap fee.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap fee'**
+  String get swapActivityDetailSwapFee;
+
+  /// Label of a status detail row with the date and time of a swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Timestamp'**
+  String get swapActivityDetailTimestamp;
+
+  /// Label of a status detail row with the total fees of a swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Total fees'**
+  String get swapActivityDetailTotalFees;
+
+  /// Label of a status detail row holding a transaction identifier that links to the explorer; 'Tx' abbreviates transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx ID'**
+  String get swapActivityDetailTxId;
+
+  /// Label of the quoted receive amount on a failed or refunded swap status screen, since nothing was delivered.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected to receive'**
+  String get swapActivityExpectedToReceive;
+
+  /// Title and status of a swap whose deposit was smaller than required.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete deposit'**
+  String get swapActivityIncompleteDeposit;
+
+  /// Title of a payment status screen when the deposit was smaller than required.
+  ///
+  /// In en, this message translates to:
+  /// **'Incomplete payment'**
+  String get swapActivityIncompletePayment;
+
+  /// Under a progress step: the provider status was checked less than a minute ago.
+  ///
+  /// In en, this message translates to:
+  /// **'Last check: just now'**
+  String get swapActivityLastCheckJustNow;
+
+  /// Under a progress step: the provider status was checked this many minutes ago; 'm' abbreviates minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Last check: {minutes}m ago'**
+  String swapActivityLastCheckMinutesAgo(int minutes);
+
+  /// Value shown in a status row when the provider or wallet has no data for it yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Not reported'**
+  String get swapActivityNotReported;
+
+  /// Title of the pay status header after a payment completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Paid successfully'**
+  String get swapActivityPaidSuccessfullyTitle;
+
+  /// Title of the pay status header while a payment is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay in progress...'**
+  String get swapActivityPayInProgressTitle;
+
+  /// Status value of a payment that completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get swapActivityPayStatusCompleted;
+
+  /// Status value of a payment that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get swapActivityPayStatusFailed;
+
+  /// Status value of a payment that is still in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get swapActivityPayStatusInProgress;
+
+  /// Status value of a payment or swap that was refunded.
+  ///
+  /// In en, this message translates to:
+  /// **'Refunded'**
+  String get swapActivityPayStatusRefunded;
+
+  /// Title of a payment status screen after the payment completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment complete'**
+  String get swapActivityPaymentComplete;
+
+  /// Title of a payment status screen when the payment failed or expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment failed'**
+  String get swapActivityPaymentFailed;
+
+  /// Title of a payment status screen while the payment is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment in progress'**
+  String get swapActivityPaymentInProgress;
+
+  /// Label of the progress tab on a payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment progress'**
+  String get swapActivityPaymentProgressTab;
+
+  /// Title of a payment status screen when the payment was refunded.
+  ///
+  /// In en, this message translates to:
+  /// **'Payment refunded'**
+  String get swapActivityPaymentRefunded;
+
+  /// Empty state of the contact picker for recipients.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved {symbol} recipients'**
+  String swapActivityPickerNoRecipients(String symbol);
+
+  /// Empty state of the contact picker for refund addresses.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved {symbol} refunds'**
+  String swapActivityPickerNoRefunds(String symbol);
+
+  /// Title of the contact picker when choosing a recipient of the swapped asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} recipients'**
+  String swapActivityPickerRecipientsTitle(String symbol);
+
+  /// Title of the contact picker when choosing a refund address for the deposited asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} refunds'**
+  String swapActivityPickerRefundsTitle(String symbol);
+
+  /// Line under the paid amount on a payment status screen, saying the payment is spent privately from the shielded balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Privately, from shielded balance'**
+  String get swapActivityPrivatelyFromShielded;
+
+  /// Lowercase fallback name of the received asset when a swap record has no symbol.
+  ///
+  /// In en, this message translates to:
+  /// **'receive asset'**
+  String get swapActivityReceiveAssetFallback;
+
+  /// Label of the amount the payment recipient will receive, on an in-progress payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient gets'**
+  String get swapActivityRecipientGets;
+
+  /// Label of the amount the payment recipient received, on a completed payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient received'**
+  String get swapActivityRecipientReceived;
+
+  /// Line under the paid amount of a swap status screen: the address a refund goes to.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund to: {address}'**
+  String swapActivityRefundToAddress(String address);
+
+  /// Hint of the swap refund address field: an address on the named chain.
+  ///
+  /// In en, this message translates to:
+  /// **'{chain} address'**
+  String swapActivityStateAddressHint(String chain);
+
+  /// Hint of the swap destination field: an address or account on the named chain.
+  ///
+  /// In en, this message translates to:
+  /// **'{chain} address or account'**
+  String swapActivityStateAddressOrAccountHint(String chain);
+
+  /// Error when the selected asset on the selected chain cannot be swapped.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} on {chain} is not currently supported.'**
+  String swapActivityStateAssetUnsupported(String symbol, String chain);
+
+  /// Error under the amount field when the entered amount has more decimals than the asset supports.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} supports up to {decimals} decimal places.'**
+  String swapActivityStateDecimalPlaces(String symbol, int decimals);
+
+  /// Label of the address field of the swap address modal when the user sends ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Destination'**
+  String get swapActivityStateDestination;
+
+  /// Warning on review when the live quote delivers more than the earlier estimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Live quote is {percent}% higher than the earlier estimate. Check the guaranteed minimum before you continue.'**
+  String swapActivityStateQuoteHigher(String percent);
+
+  /// Warning on review when the live quote delivers less than the earlier estimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Live quote is {percent}% lower than the earlier estimate. Check the guaranteed minimum before you continue.'**
+  String swapActivityStateQuoteLower(String percent);
+
+  /// Warning on review when the live quote needs a different amount of the sold asset than the earlier estimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Live quote uses {liveAmount} {symbol} instead of {estimateAmount} {symbol}. Check the guaranteed minimum before you continue.'**
+  String swapActivityStateQuoteUsesDifferentSell(
+    String liveAmount,
+    String estimateAmount,
+    String symbol,
+  );
+
+  /// Label of the address field of the swap address modal when the user deposits an external asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} refund address'**
+  String swapActivityStateRefundAddressLabel(String symbol);
+
+  /// Status label of a swap that is waiting for the deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting deposit'**
+  String get swapActivityStatusAwaitingDeposit;
+
+  /// Status label of a swap that is waiting for the user to send a deposit from another chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting external deposit'**
+  String get swapActivityStatusAwaitingExternalDeposit;
+
+  /// Status label of a swap whose provider status is being checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking status'**
+  String get swapActivityStatusCheckingStatus;
+
+  /// Status label of a completed swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete'**
+  String get swapActivityStatusComplete;
+
+  /// Status label of a swap whose deposit was seen by the provider.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit observed'**
+  String get swapActivityStatusDepositObserved;
+
+  /// Status label of a swap whose quote or deposit window expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Expired'**
+  String get swapActivityStatusExpired;
+
+  /// Status label of a swap that the provider is processing.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing'**
+  String get swapActivityStatusProcessing;
+
+  /// Title of the second payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert'**
+  String get swapActivityStepConvert;
+
+  /// Description of the second payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Converting the shielded spend into the payment asset.'**
+  String get swapActivityStepConvertDescription;
+
+  /// Title of the active second payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Converting...'**
+  String get swapActivityStepConverting;
+
+  /// Title of a progress step: the provider delivers the asset to the recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Deliver {symbol}'**
+  String swapActivityStepDeliver(String symbol);
+
+  /// Title of the active swap delivery progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Deliver {symbol}...'**
+  String swapActivityStepDeliverActive(String symbol);
+
+  /// Description of the payment delivery progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivering the payment to the recipient address.'**
+  String get swapActivityStepDeliverPayDescription;
+
+  /// Description of the last swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivering the output asset to the recipient address.'**
+  String get swapActivityStepDeliverSwapDescription;
+
+  /// Title of the active payment delivery progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivering {symbol}...'**
+  String swapActivityStepDelivering(String symbol);
+
+  /// Title of the pending first swap progress step when the user deposits an external asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit {symbol}'**
+  String swapActivityStepDeposit(String symbol);
+
+  /// Title of the second swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit confirmation'**
+  String get swapActivityStepDepositConfirmation;
+
+  /// Title of the active second swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit confirmation...'**
+  String get swapActivityStepDepositConfirmationActive;
+
+  /// Description of the second swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming the deposit before the swap route starts.'**
+  String get swapActivityStepDepositConfirmationDescription;
+
+  /// Title of the completed first swap progress step when the user deposits an external asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} Deposited'**
+  String swapActivityStepDeposited(String symbol);
+
+  /// Title of the active first swap progress step when the user deposits an external asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Depositing {symbol}...'**
+  String swapActivityStepDepositing(String symbol);
+
+  /// Title of the last payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient receives'**
+  String get swapActivityStepRecipientReceives;
+
+  /// Title of the active last payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Recipient receives {symbol}...'**
+  String swapActivityStepRecipientReceivesAsset(String symbol);
+
+  /// Description of the last payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming the recipient-side payment.'**
+  String get swapActivityStepRecipientReceivesDescription;
+
+  /// Title of a progress step or button: send the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Send {symbol}'**
+  String swapActivityStepSend(String symbol);
+
+  /// Title of the active swap delivery progress step when the provider sends the external asset to the user.
+  ///
+  /// In en, this message translates to:
+  /// **'Send {symbol}...'**
+  String swapActivityStepSendActive(String symbol);
+
+  /// Title of the active first swap progress step when the user sends the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending {symbol}...'**
+  String swapActivityStepSending(String symbol);
+
+  /// Title of the completed first swap progress step when the user sends the asset.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} sent'**
+  String swapActivityStepSent(String symbol);
+
+  /// Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm waiting for the source chain and provider to recognise the deposit'**
+  String get swapActivityStepSourceDescription;
+
+  /// Title of the first payment progress step: spending the asset from the shielded balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Spend {symbol}'**
+  String swapActivityStepSpend(String symbol);
+
+  /// Description of the first payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Spending from shielded balance.'**
+  String get swapActivityStepSpendDescription;
+
+  /// Title of the active first payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Spending {symbol}...'**
+  String swapActivityStepSpending(String symbol);
+
+  /// Title of the completed first payment progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'{symbol} spent'**
+  String swapActivityStepSpent(String symbol);
+
+  /// Title of the third swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap'**
+  String get swapActivityStepSwap;
+
+  /// Title of the active third swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap...'**
+  String get swapActivityStepSwapActive;
+
+  /// Description of the third swap progress step.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider is executing the swap route.'**
+  String get swapActivityStepSwapDescription;
+
+  /// Title of a swap status screen after the swap completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap completed'**
+  String get swapActivitySwapCompleted;
+
+  /// Title of a swap status screen when the swap failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap failed'**
+  String get swapActivitySwapFailed;
+
+  /// Title of a swap status screen while the swap is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap in progress...'**
+  String get swapActivitySwapInProgress;
+
+  /// Label of the progress tab on a swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap progress'**
+  String get swapActivitySwapProgressTab;
+
+  /// Title of a swap status screen when the swap was refunded.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap refunded'**
+  String get swapActivitySwapRefunded;
+
+  /// Line under the received amount of a swap or payment status screen: the recipient address followed by the blockchain it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'To: {address} on {chain}'**
+  String swapActivityToAddressOnChain(String address, String chain);
+
+  /// Tooltip of the swap fee rows.
+  ///
+  /// In en, this message translates to:
+  /// **'Covers our fee and the route providers\' costs to process this swap. Already included in the rate above.'**
+  String get swapActivityTooltipFees;
+
+  /// Tooltip of the guaranteed minimum row, naming the received asset.
+  ///
+  /// In en, this message translates to:
+  /// **'The lowest amount of {symbol} you\'ll get after slippage. You may get more, never less.'**
+  String swapActivityTooltipMinimumReceive(String symbol);
+
+  /// Tooltip of the guaranteed minimum row when no asset is named.
+  ///
+  /// In en, this message translates to:
+  /// **'The lowest amount you\'ll get after slippage. You may get more, never less.'**
+  String get swapActivityTooltipMinimumReceiveGeneric;
+
+  /// Tooltip explaining the slippage tolerance row.
+  ///
+  /// In en, this message translates to:
+  /// **'How much of the received amount your slippage tolerance protects. The swap is refunded if the rate moves past this.'**
+  String get swapActivityTooltipPriceProtection;
+
+  /// Tooltip of a status detail row without its own explanation.
+  ///
+  /// In en, this message translates to:
+  /// **'Details are based on the latest swap record and provider status.'**
+  String get swapActivityTooltipStatusDetail;
+
+  /// Label of the amount the user paid, on a completed swap or payment status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You paid'**
+  String get swapActivityYouPaid;
+
+  /// Label of the amount the user pays, on a payment status screen before the payment completes.
+  ///
+  /// In en, this message translates to:
+  /// **'You pay'**
+  String get swapActivityYouPay;
+
+  /// Label of the amount received on a completed swap status screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You received'**
+  String get swapActivityYouReceived;
+
+  /// Label of the amount being paid while a swap or payment is still in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re paying'**
+  String get swapActivityYourePaying;
+
+  /// Label of the amount being received while a swap is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re receiving'**
+  String get swapActivityYoureReceiving;
 
   /// Screen-reader sync status while Vizor re-checks the wallet.
   ///

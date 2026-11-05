@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -13,7 +14,11 @@ class PayWizardStepper extends StatelessWidget {
     super.key,
   });
 
-  static const labels = ['Amount', 'Recipient', 'Review'];
+  static List<String> labels(AppLocalizations l10n) => [
+    l10n.payStepAmount,
+    l10n.payStepRecipient,
+    l10n.payStepReview,
+  ];
 
   /// 0-based index of the active step.
   final int currentIndex;
@@ -26,6 +31,7 @@ class PayWizardStepper extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final children = <Widget>[];
+    final labels = PayWizardStepper.labels(context.l10n);
     for (var i = 0; i < labels.length; i++) {
       if (i > 0) {
         children

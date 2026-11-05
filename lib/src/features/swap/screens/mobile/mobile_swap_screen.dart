@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 
@@ -223,9 +224,12 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
                 onClose: _openAddressEditor,
               ),
               _SwapModalSurface.contactPicker => AddressBookContactPickerModal(
-                title: swapContactPickerTitle(swapState),
+                title: swapContactPickerTitle(context.l10n, swapState),
                 networks: swapContactPickerNetworks(swapState),
-                emptyTitle: swapContactPickerEmptyTitle(swapState),
+                emptyTitle: swapContactPickerEmptyTitle(
+                  context.l10n,
+                  swapState,
+                ),
                 onSelected: _selectAddressBookContact,
                 onCancel: _openAddressEditor,
               ),
@@ -354,8 +358,8 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     }
 
     final quoteError =
-        swapState.quoteAmountPrecisionError ??
-        swapState.externalAssetSupportError ??
+        swapState.quoteAmountPrecisionError(context.l10n) ??
+        swapState.externalAssetSupportError(context.l10n) ??
         swapState.quoteError;
 
     return NearIntentsServiceNoticeHost(

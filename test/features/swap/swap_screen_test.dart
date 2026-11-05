@@ -73,6 +73,8 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import 'support/swap_activity_fixture_intents.dart';
 
+import '../../support/localized_test_scope.dart';
+import '../../support/test_l10n.dart';
 import '../../support/leading_decimal_input.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart';
@@ -1259,7 +1261,7 @@ void main() {
     expect(state.externalAsset, savedBaseUsdc);
     expect(container.read(paySelectedAssetProvider), savedBaseUsdc);
     expect(
-      state.externalAssetSupportError,
+      state.externalAssetSupportError(testL10n),
       'USDC on Base is not currently supported.',
     );
     expect(find.byKey(const ValueKey('pay_amount_error')), findsOneWidget);
@@ -1702,9 +1704,9 @@ void main() {
     expect(find.text('Slippage tolerance'), findsOneWidget);
     expect(find.text('Guaranteed minimum'), findsOneWidget);
     expect(find.text('Price protection'), findsNothing);
-    expect(_tooltipWithMessage(swapFeeTooltip), findsOneWidget);
+    expect(_tooltipWithMessage(swapFeeTooltip(testL10n)), findsOneWidget);
     expect(
-      _tooltipWithMessage(swapGenericMinimumReceiveTooltip),
+      _tooltipWithMessage(swapGenericMinimumReceiveTooltip(testL10n)),
       findsOneWidget,
     );
 
@@ -10841,10 +10843,7 @@ Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
 Widget _themeHarnessWithOverlay(Widget child) {
   return AppTheme(
     data: AppThemeData.light,
-    child: Directionality(
-      textDirection: TextDirection.ltr,
-      child: _OverlayHarness(child: child),
-    ),
+    child: LocalizedTestScope(child: _OverlayHarness(child: child)),
   );
 }
 

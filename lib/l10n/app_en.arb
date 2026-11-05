@@ -1722,6 +1722,10 @@
   "@lockSyncPausedTitle": {
     "description": "Title on the sync lock screen and passcode screen header when sync was interrupted."
   },
+  "lockSyncedSemantics": "Vizor is synced",
+  "@lockSyncedSemantics": {
+    "description": "Screen-reader label of the sync lock screen when sync has finished."
+  },
   "lockSyncingMessage": "Vizor is syncing",
   "@lockSyncingMessage": {
     "description": "Screen-reader label and caption on the sync lock screen while sync is running."
@@ -2640,6 +2644,353 @@
   "passwordsDoNotMatch": "Passwords do not match.",
   "@passwordsDoNotMatch": {
     "description": "[security] Error when the two new password entries differ."
+  },
+  "payAddLabelHint": "Add label 1-20 characters",
+  "@payAddLabelHint": {
+    "description": "Placeholder of the contact name field: the name must be 1 to 20 characters."
+  },
+  "payAddToContacts": "Add to contacts",
+  "@payAddToContacts": {
+    "description": "Button that saves the new Pay recipient address to the address book."
+  },
+  "payAddressLabel": "Address label",
+  "@payAddressLabel": {
+    "description": "Label of the contact name field in the Pay add-contact form."
+  },
+  "payAddressSemantics": "Address {address}",
+  "@payAddressSemantics": {
+    "description": "Accessibility label of the read-only address in the mobile Pay add-contact card.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "payAmountChooseAsset": "Choose payment asset",
+  "@payAmountChooseAsset": {
+    "description": "Accessibility label of the asset picker on the mobile Pay amount step."
+  },
+  "payAmountEnterIn": "Enter amount in {symbol}",
+  "@payAmountEnterIn": {
+    "description": "Accessibility label of the toggle that switches the mobile Pay amount input to the asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "payAmountEnterInUsd": "Enter amount in USD",
+  "@payAmountEnterInUsd": {
+    "description": "Accessibility label of the toggle that switches the mobile Pay amount input to US dollars."
+  },
+  "payAmountEstimated": "Estimated:",
+  "@payAmountEstimated": {
+    "description": "Label before the estimated ZEC cost on the mobile Pay amount step."
+  },
+  "payAmountEstimatedSpend": "Estimated spend",
+  "@payAmountEstimatedSpend": {
+    "description": "Label before the estimated ZEC cost on the desktop Pay amount step."
+  },
+  "payAmountPayingFrom": "Paying from your",
+  "@payAmountPayingFrom": {
+    "description": "Text before the shielded balance chip on the desktop Pay amount step; reads 'Paying from your Shielded balance'."
+  },
+  "payAmountPayingIn": "Paying in",
+  "@payAmountPayingIn": {
+    "description": "Label next to the asset picker on the Pay amount step."
+  },
+  "payAmountShieldedBalance": "Shielded balance",
+  "@payAmountShieldedBalance": {
+    "description": "Chip naming the balance the payment is paid from, on the desktop Pay amount step."
+  },
+  "payBackHome": "Home",
+  "@payBackHome": {
+    "description": "Back link of the first Pay step; goes to Home."
+  },
+  "payChainAddressHint": "{chain} address",
+  "@payChainAddressHint": {
+    "description": "Placeholder of the Pay recipient field on mobile; names the chain the address must belong to.",
+    "placeholders": {
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "payChainAndAddress": "Chain & address",
+  "@payChainAndAddress": {
+    "description": "Heading above the chain and address of the contact being added."
+  },
+  "payChangeContactPicture": "Change contact picture",
+  "@payChangeContactPicture": {
+    "description": "Accessibility label of the contact picture button in the mobile Pay add-contact card."
+  },
+  "payClearContactLabel": "Clear contact label",
+  "@payClearContactLabel": {
+    "description": "Accessibility label of the button that clears the contact name field."
+  },
+  "payContacts": "Contacts",
+  "@payContacts": {
+    "description": "Title of the list of address book contacts on the Pay recipient step."
+  },
+  "payFetchingQuote": "Fetching quote",
+  "@payFetchingQuote": {
+    "description": "Disabled button label while the Pay quote is loading."
+  },
+  "payInsufficientZec": "You don't have enough ZEC for this payment. Try a smaller amount.",
+  "@payInsufficientZec": {
+    "description": "Error on the Pay recipient step when the quote costs more ZEC than is spendable."
+  },
+  "payNewAddressDetected": "New address detected.",
+  "@payNewAddressDetected": {
+    "description": "Heading of the warning shown when the pasted Pay recipient address is not in the address book or recents."
+  },
+  "payNewAddressWarning": "You haven't interacted with this address before.",
+  "@payNewAddressWarning": {
+    "description": "Warning text under the new-address heading on the Pay recipient step."
+  },
+  "payNotEnoughZec": "Not enough ZEC",
+  "@payNotEnoughZec": {
+    "description": "Error or disabled button label on Pay steps when the spendable ZEC balance is too low."
+  },
+  "payRecentDaysAgo": "{days}d ago",
+  "@payRecentDaysAgo": {
+    "description": "Relative time of a recent Pay recipient used this many days ago; 'd' abbreviates days.",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "payRecentHoursAgo": "{hours}h ago",
+  "@payRecentHoursAgo": {
+    "description": "Relative time of a recent Pay recipient used this many hours ago; 'h' abbreviates hours.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "payRecentJustNow": "just now",
+  "@payRecentJustNow": {
+    "description": "Relative time of a recent Pay recipient used less than a minute ago."
+  },
+  "payRecentMinutesAgo": "{minutes}m ago",
+  "@payRecentMinutesAgo": {
+    "description": "Relative time of a recent Pay recipient used this many minutes ago; 'm' abbreviates minutes.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "payRecentlySent": "Recently sent",
+  "@payRecentlySent": {
+    "description": "Title of the list of recent Pay recipients on desktop."
+  },
+  "payRecents": "Recents",
+  "@payRecents": {
+    "description": "Title of the list of recent Pay recipients on mobile."
+  },
+  "payRecipientAddressHint": "Paste an address or scan QR code",
+  "@payRecipientAddressHint": {
+    "description": "Placeholder of the Pay recipient search field."
+  },
+  "payRecipientAddressLabel": "Recipient address",
+  "@payRecipientAddressLabel": {
+    "description": "Accessibility label of the Pay recipient search field."
+  },
+  "payRecipientScanQr": "Scan QR code",
+  "@payRecipientScanQr": {
+    "description": "Accessibility label of the button that opens the QR scanner on the Pay recipient step."
+  },
+  "payRefreshingQuote": "Refreshing quote",
+  "@payRefreshingQuote": {
+    "description": "Disabled button label on the Pay review step while a new quote is loading."
+  },
+  "payReviewConfirmPay": "Confirm & pay",
+  "@payReviewConfirmPay": {
+    "description": "Primary button of the Pay review step that sends the payment."
+  },
+  "payReviewConvertedAmount": "Converted amount",
+  "@payReviewConvertedAmount": {
+    "description": "Label of the row with the ZEC amount converted for the payment."
+  },
+  "payReviewFullAddress": "Full address",
+  "@payReviewFullAddress": {
+    "description": "Link on the mobile Pay review recipient row that shows the whole address."
+  },
+  "payReviewPaying": "Paying",
+  "@payReviewPaying": {
+    "description": "Label of the paying amount row on the Pay review step; also the disabled button label while the payment starts."
+  },
+  "payReviewQuoteExpired": "Quote expired",
+  "@payReviewQuoteExpired": {
+    "description": "Text of the Pay review countdown after the quote expired."
+  },
+  "payReviewQuoteExpiresIn": "Quote expires in ",
+  "@payReviewQuoteExpiresIn": {
+    "description": "Text before the countdown on the Pay review step; a trailing space separates it from the time."
+  },
+  "payReviewRefreshQuote": "Refresh quote",
+  "@payReviewRefreshQuote": {
+    "description": "Button on the mobile Pay review step when the quote expired."
+  },
+  "payReviewRefreshTheQuote": "Refresh the quote",
+  "@payReviewRefreshTheQuote": {
+    "description": "Button on the desktop Pay review step when the quote expired."
+  },
+  "payReviewReturnToPay": "Return to pay",
+  "@payReviewReturnToPay": {
+    "description": "Button on the mobile Pay review step when the quote is no longer active."
+  },
+  "payReviewShowFullAddress": "Show full address",
+  "@payReviewShowFullAddress": {
+    "description": "Link on the desktop Pay review recipient row that shows the whole address."
+  },
+  "payReviewTo": "To",
+  "@payReviewTo": {
+    "description": "Label of the recipient row on the Pay review step."
+  },
+  "payReviewUnknownAddress": "Unknown address",
+  "@payReviewUnknownAddress": {
+    "description": "Caption of the recipient row when the address is not a saved contact."
+  },
+  "paySave": "Save",
+  "@paySave": {
+    "description": "Button that saves the contact in the Pay add-contact modal."
+  },
+  "paySaveContact": "Save contact",
+  "@paySaveContact": {
+    "description": "Button that saves the contact in the mobile Pay add-contact card."
+  },
+  "paySaveContactError": "Couldn't save this contact. Try again.",
+  "@paySaveContactError": {
+    "description": "Error in the Pay add-contact form when saving fails."
+  },
+  "paySaving": "Saving",
+  "@paySaving": {
+    "description": "Button label while the Pay add-contact card is saving."
+  },
+  "payScanBarrierDismiss": "Dismiss",
+  "@payScanBarrierDismiss": {
+    "description": "Accessibility label of the tappable area that dismisses the mobile Pay modal."
+  },
+  "payScanCaption": "Scan the recipient address QR code",
+  "@payScanCaption": {
+    "description": "Caption of the camera scanner for the Pay recipient address."
+  },
+  "payScanNoAddress": "QR code did not include an address.",
+  "@payScanNoAddress": {
+    "description": "Error when the scanned QR code holds no address."
+  },
+  "payScanPermissionTitle": "Scan the recipient address",
+  "@payScanPermissionTitle": {
+    "description": "Title of the camera permission prompt of the Pay recipient scanner."
+  },
+  "payScanQrSubtitle": "Scan an address using camera",
+  "@payScanQrSubtitle": {
+    "description": "Subtitle of the card that opens the QR scanner on the mobile Pay recipient step."
+  },
+  "payScanQrTitle": "Scan a QR code",
+  "@payScanQrTitle": {
+    "description": "Title of the card that opens the QR scanner on the mobile Pay recipient step."
+  },
+  "payScanSteadyHint": "Keep the QR code steady and fully visible.",
+  "@payScanSteadyHint": {
+    "description": "Hint under the Pay recipient scanner."
+  },
+  "paySelectContactPicture": "Select contact picture",
+  "@paySelectContactPicture": {
+    "description": "Title of the contact picture picker opened from the Pay add-contact modal."
+  },
+  "paySelectRecipient": "Select recipient",
+  "@paySelectRecipient": {
+    "description": "Button that confirms the Pay recipient and goes to the review step."
+  },
+  "paySelectedContact": "Selected contact",
+  "@paySelectedContact": {
+    "description": "Accessibility label of the check icon on the selected contact in the Pay recipient list."
+  },
+  "payStepAmount": "Amount",
+  "@payStepAmount": {
+    "description": "Label of the Pay wizard step where the user enters the amount; also the back link from the recipient step."
+  },
+  "payStepRecipient": "Recipient",
+  "@payStepRecipient": {
+    "description": "Label of the Pay wizard step where the user picks the recipient; also the back link from the review step."
+  },
+  "payStepReview": "Review",
+  "@payStepReview": {
+    "description": "Label of the Pay wizard step where the user reviews the payment."
+  },
+  "paySubmittedDone": "Done",
+  "@paySubmittedDone": {
+    "description": "Primary button of the mobile Pay submitted screen; goes to Home."
+  },
+  "paySubmittedFailedBody": "The payment could not be submitted. Try again.",
+  "@paySubmittedFailedBody": {
+    "description": "Body of the mobile Pay submitted screen when submitting failed."
+  },
+  "paySubmittedFailedTitle": "Payment failed",
+  "@paySubmittedFailedTitle": {
+    "description": "Title of the mobile Pay submitted screen when the payment could not be submitted."
+  },
+  "paySubmittedGoToActivity": "Go to activity",
+  "@paySubmittedGoToActivity": {
+    "description": "Secondary button of the mobile Pay submitted screen; opens Activity."
+  },
+  "paySubmittedReturnHome": "Return home",
+  "@paySubmittedReturnHome": {
+    "description": "Primary button of the mobile Pay submitted screen after a failure; goes to Home."
+  },
+  "paySubmittedStatusUncertainNotice": "The payment status is uncertain. Check Activity before trying again.",
+  "@paySubmittedStatusUncertainNotice": {
+    "description": "Notice on the mobile Pay submitted screen when the broadcast result is unknown; Activity is the app's transaction list."
+  },
+  "paySubmittedSubmittingBody": "Submitting your payment to the network...",
+  "@paySubmittedSubmittingBody": {
+    "description": "Body of the mobile Pay submitted screen while the payment is being broadcast."
+  },
+  "paySubmittedSubmittingTitle": "Submitting payment...",
+  "@paySubmittedSubmittingTitle": {
+    "description": "Title of the mobile Pay submitted screen while the payment is being broadcast."
+  },
+  "paySubmittedSucceededBody": "It will confirm on-chain shortly.\nTrack it in Activity.",
+  "@paySubmittedSucceededBody": {
+    "description": "Body of the mobile Pay submitted screen after broadcast; the line break is intentional and Activity is the app's transaction list."
+  },
+  "paySubmittedSucceededTitle": "Payment\nSubmitted",
+  "@paySubmittedSucceededTitle": {
+    "description": "Title of the mobile Pay submitted screen after the payment was broadcast; the line break is intentional."
+  },
+  "paySubmittedUnavailableNotice": "We couldn't load this payment. Check Activity for its latest status.",
+  "@paySubmittedUnavailableNotice": {
+    "description": "Notice on the mobile Pay submitted screen when the payment record is missing."
+  },
+  "paySubmittedUnavailableTitle": "Payment unavailable",
+  "@paySubmittedUnavailableTitle": {
+    "description": "Title of the mobile Pay submitted screen when the payment record is missing."
+  },
+  "paySubmittedUncertainTitle": "Payment status\nuncertain",
+  "@paySubmittedUncertainTitle": {
+    "description": "Title of the mobile Pay submitted screen when the broadcast result is unknown; the line break is intentional."
+  },
+  "payTitleAmount": "Pay in {symbol}",
+  "@payTitleAmount": {
+    "description": "Title of the Pay amount step; the symbol is the asset the user pays in.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "payTitleRecipient": "Select Recipient",
+  "@payTitleRecipient": {
+    "description": "Title of the Pay recipient step."
+  },
+  "payTitleReview": "Review Payment",
+  "@payTitleReview": {
+    "description": "Title of the Pay review step."
   },
   "poolShielded": "Shielded",
   "@poolShielded": {
@@ -3781,6 +4132,771 @@
   "sidebarShowBalance": "Show balance",
   "@sidebarShowBalance": {
     "description": "Screen-reader label of the sidebar button that shows hidden amounts."
+  },
+  "swapActivityAddressBookRecipient": "{symbol} recipient",
+  "@swapActivityAddressBookRecipient": {
+    "description": "Default contact label suggestion when saving a swap recipient to the address book.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityAddressBookRefund": "{symbol} refund",
+  "@swapActivityAddressBookRefund": {
+    "description": "Default contact label suggestion when saving a swap refund address to the address book.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityAmount": "Amount",
+  "@swapActivityAmount": {
+    "description": "Neutral label of the amount on a failed, refunded or expired payment status screen."
+  },
+  "swapActivityDeadlineHours": "{hours}hrs",
+  "@swapActivityDeadlineHours": {
+    "description": "Compact countdown until the deposit deadline in hours (two or more); 'hrs' abbreviates hours.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "swapActivityDeadlineMinutes": "{minutes}mins",
+  "@swapActivityDeadlineMinutes": {
+    "description": "Compact countdown until the deposit deadline in minutes (two or more); 'mins' abbreviates minutes.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "swapActivityDeadlineOneHour": "1hr",
+  "@swapActivityDeadlineOneHour": {
+    "description": "Compact countdown until the deposit deadline when exactly one hour remains; 'hr' abbreviates hour."
+  },
+  "swapActivityDeadlineOneMinute": "1min",
+  "@swapActivityDeadlineOneMinute": {
+    "description": "Compact countdown until the deposit deadline when exactly one minute remains; 'min' abbreviates minute."
+  },
+  "swapActivityDepositAmount": "Deposit amount",
+  "@swapActivityDepositAmount": {
+    "description": "Label of the deposited amount on a failed or refunded swap status screen."
+  },
+  "swapActivityDepositAssetFallback": "deposit asset",
+  "@swapActivityDepositAssetFallback": {
+    "description": "Lowercase fallback name of the deposited asset when a swap record has no symbol."
+  },
+  "swapActivityDepositInstructionDepositLabel": "{symbol} deposit",
+  "@swapActivityDepositInstructionDepositLabel": {
+    "description": "Label of the deposit address field when the user sends the asset from Vizor.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDepositInstructionReuseWarning": "Do not reuse this address",
+  "@swapActivityDepositInstructionReuseWarning": {
+    "description": "Warning under a one-time deposit address QR code."
+  },
+  "swapActivityDepositInstructionSendFromSource": "Send {symbol} from source chain",
+  "@swapActivityDepositInstructionSendFromSource": {
+    "description": "Instruction title telling the user to send the asset from its own chain.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDepositInstructionSourceDepositLabel": "{symbol} source deposit",
+  "@swapActivityDepositInstructionSourceDepositLabel": {
+    "description": "Label of the deposit address field when the user sends the asset from its source chain.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDepositInstructionSubmit": "Submit {symbol} deposit",
+  "@swapActivityDepositInstructionSubmit": {
+    "description": "Button that submits the deposit transaction hash.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDepositInstructionTxHashHint": "{symbol} source-chain transaction hash",
+  "@swapActivityDepositInstructionTxHashHint": {
+    "description": "Placeholder of the field where the user enters the deposit transaction hash.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDepositInstructionTxHashLabel": "{symbol} deposit tx hash",
+  "@swapActivityDepositInstructionTxHashLabel": {
+    "description": "Label of the field where the user enters the deposit transaction hash.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDetailConfiguredQuote": "Configured quote",
+  "@swapActivityDetailConfiguredQuote": {
+    "description": "Value of the slippage tolerance row when the swap used the quote's own setting."
+  },
+  "swapActivityDetailDeliveryTx": "{symbol} delivery tx",
+  "@swapActivityDetailDeliveryTx": {
+    "description": "Label of a status detail row holding the transaction hash that delivered the asset to the recipient.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDetailDepositDeadline": "Deposit deadline",
+  "@swapActivityDetailDepositDeadline": {
+    "description": "Label of a status detail row with the time by which the deposit must arrive."
+  },
+  "swapActivityDetailDepositTo": "Deposit {symbol} to",
+  "@swapActivityDetailDepositTo": {
+    "description": "Label of a status detail row holding the address the user deposits the asset to.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDetailDepositTx": "{symbol} deposit tx",
+  "@swapActivityDetailDepositTx": {
+    "description": "Label of a status detail row holding the transaction hash of the deposit.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDetailDetectedDeposit": "Detected deposit",
+  "@swapActivityDetailDetectedDeposit": {
+    "description": "Label of a status detail row with the deposit amount the provider detected."
+  },
+  "swapActivityDetailFees": "Fees",
+  "@swapActivityDetailFees": {
+    "description": "Label of a status detail row with the fees of a payment."
+  },
+  "swapActivityDetailGuaranteedMinimum": "Guaranteed minimum",
+  "@swapActivityDetailGuaranteedMinimum": {
+    "description": "Label of a status detail row with the minimum amount the swap is guaranteed to deliver."
+  },
+  "swapActivityDetailIncluded": "Included",
+  "@swapActivityDetailIncluded": {
+    "description": "Value of the fees row when the fee is already included in the quote."
+  },
+  "swapActivityDetailIncludedInRate": "Included in shown rate",
+  "@swapActivityDetailIncludedInRate": {
+    "description": "Value of the swap fee row when the fee is already part of the displayed rate."
+  },
+  "swapActivityDetailMemo": "Memo",
+  "@swapActivityDetailMemo": {
+    "description": "Label of a status detail row holding the deposit memo the user must include."
+  },
+  "swapActivityDetailMissingDeposit": "Missing deposit",
+  "@swapActivityDetailMissingDeposit": {
+    "description": "Label of a status detail row with how much more the user must deposit."
+  },
+  "swapActivityDetailNetworkConversionFees": "Network + conversion fees",
+  "@swapActivityDetailNetworkConversionFees": {
+    "description": "Label of a status detail row with the network and conversion fees of a payment in progress."
+  },
+  "swapActivityDetailRate": "Rate",
+  "@swapActivityDetailRate": {
+    "description": "Label of a status detail row with the exchange rate."
+  },
+  "swapActivityDetailRealizedSlippage": "Realized slippage",
+  "@swapActivityDetailRealizedSlippage": {
+    "description": "Label of a status detail row with the slippage a finished swap actually had."
+  },
+  "swapActivityDetailRecipient": "{symbol} recipient",
+  "@swapActivityDetailRecipient": {
+    "description": "Label of a status detail row holding the recipient address of the asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDetailRefundAddress": "{symbol} refund address",
+  "@swapActivityDetailRefundAddress": {
+    "description": "Label of a status detail row holding the address a refund of the asset goes to.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDetailRefundFee": "Refund fee",
+  "@swapActivityDetailRefundFee": {
+    "description": "Label of a status detail row with the fee charged for the refund."
+  },
+  "swapActivityDetailRefundTo": "Refund to",
+  "@swapActivityDetailRefundTo": {
+    "description": "Label of a status detail row holding the address a refund goes to."
+  },
+  "swapActivityDetailRefundedAmount": "Refunded amount",
+  "@swapActivityDetailRefundedAmount": {
+    "description": "Label of a status detail row with the amount refunded."
+  },
+  "swapActivityDetailRequiredDeposit": "Required deposit",
+  "@swapActivityDetailRequiredDeposit": {
+    "description": "Label of a status detail row with the deposit amount the swap requires."
+  },
+  "swapActivityDetailSlippageTolerance": "Slippage tolerance",
+  "@swapActivityDetailSlippageTolerance": {
+    "description": "Label of a status detail row with the slippage tolerance of the quote."
+  },
+  "swapActivityDetailSourceTxShielded": "{symbol} tx (shielded)",
+  "@swapActivityDetailSourceTxShielded": {
+    "description": "Label of a status detail row holding the shielded transaction hash that spent the asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityDetailSwapFee": "Swap fee",
+  "@swapActivityDetailSwapFee": {
+    "description": "Label of a status detail row with the swap fee."
+  },
+  "swapActivityDetailTimestamp": "Timestamp",
+  "@swapActivityDetailTimestamp": {
+    "description": "Label of a status detail row with the date and time of a swap."
+  },
+  "swapActivityDetailTotalFees": "Total fees",
+  "@swapActivityDetailTotalFees": {
+    "description": "Label of a status detail row with the total fees of a swap."
+  },
+  "swapActivityDetailTxId": "Tx ID",
+  "@swapActivityDetailTxId": {
+    "description": "Label of a status detail row holding a transaction identifier that links to the explorer; 'Tx' abbreviates transaction."
+  },
+  "swapActivityExpectedToReceive": "Expected to receive",
+  "@swapActivityExpectedToReceive": {
+    "description": "Label of the quoted receive amount on a failed or refunded swap status screen, since nothing was delivered."
+  },
+  "swapActivityIncompleteDeposit": "Incomplete deposit",
+  "@swapActivityIncompleteDeposit": {
+    "description": "Title and status of a swap whose deposit was smaller than required."
+  },
+  "swapActivityIncompletePayment": "Incomplete payment",
+  "@swapActivityIncompletePayment": {
+    "description": "Title of a payment status screen when the deposit was smaller than required."
+  },
+  "swapActivityLastCheckJustNow": "Last check: just now",
+  "@swapActivityLastCheckJustNow": {
+    "description": "Under a progress step: the provider status was checked less than a minute ago."
+  },
+  "swapActivityLastCheckMinutesAgo": "Last check: {minutes}m ago",
+  "@swapActivityLastCheckMinutesAgo": {
+    "description": "Under a progress step: the provider status was checked this many minutes ago; 'm' abbreviates minutes.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "swapActivityNotReported": "Not reported",
+  "@swapActivityNotReported": {
+    "description": "Value shown in a status row when the provider or wallet has no data for it yet."
+  },
+  "swapActivityPaidSuccessfullyTitle": "Paid successfully",
+  "@swapActivityPaidSuccessfullyTitle": {
+    "description": "Title of the pay status header after a payment completed."
+  },
+  "swapActivityPayInProgressTitle": "Pay in progress...",
+  "@swapActivityPayInProgressTitle": {
+    "description": "Title of the pay status header while a payment is in progress."
+  },
+  "swapActivityPayStatusCompleted": "Completed",
+  "@swapActivityPayStatusCompleted": {
+    "description": "Status value of a payment that completed."
+  },
+  "swapActivityPayStatusFailed": "Failed",
+  "@swapActivityPayStatusFailed": {
+    "description": "Status value of a payment that failed."
+  },
+  "swapActivityPayStatusInProgress": "In progress",
+  "@swapActivityPayStatusInProgress": {
+    "description": "Status value of a payment that is still in progress."
+  },
+  "swapActivityPayStatusRefunded": "Refunded",
+  "@swapActivityPayStatusRefunded": {
+    "description": "Status value of a payment or swap that was refunded."
+  },
+  "swapActivityPaymentComplete": "Payment complete",
+  "@swapActivityPaymentComplete": {
+    "description": "Title of a payment status screen after the payment completed."
+  },
+  "swapActivityPaymentFailed": "Payment failed",
+  "@swapActivityPaymentFailed": {
+    "description": "Title of a payment status screen when the payment failed or expired."
+  },
+  "swapActivityPaymentInProgress": "Payment in progress",
+  "@swapActivityPaymentInProgress": {
+    "description": "Title of a payment status screen while the payment is in progress."
+  },
+  "swapActivityPaymentProgressTab": "Payment progress",
+  "@swapActivityPaymentProgressTab": {
+    "description": "Label of the progress tab on a payment status screen."
+  },
+  "swapActivityPaymentRefunded": "Payment refunded",
+  "@swapActivityPaymentRefunded": {
+    "description": "Title of a payment status screen when the payment was refunded."
+  },
+  "swapActivityPickerNoRecipients": "No saved {symbol} recipients",
+  "@swapActivityPickerNoRecipients": {
+    "description": "Empty state of the contact picker for recipients.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityPickerNoRefunds": "No saved {symbol} refunds",
+  "@swapActivityPickerNoRefunds": {
+    "description": "Empty state of the contact picker for refund addresses.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityPickerRecipientsTitle": "{symbol} recipients",
+  "@swapActivityPickerRecipientsTitle": {
+    "description": "Title of the contact picker when choosing a recipient of the swapped asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityPickerRefundsTitle": "{symbol} refunds",
+  "@swapActivityPickerRefundsTitle": {
+    "description": "Title of the contact picker when choosing a refund address for the deposited asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityPrivatelyFromShielded": "Privately, from shielded balance",
+  "@swapActivityPrivatelyFromShielded": {
+    "description": "Line under the paid amount on a payment status screen, saying the payment is spent privately from the shielded balance."
+  },
+  "swapActivityReceiveAssetFallback": "receive asset",
+  "@swapActivityReceiveAssetFallback": {
+    "description": "Lowercase fallback name of the received asset when a swap record has no symbol."
+  },
+  "swapActivityRecipientGets": "Recipient gets",
+  "@swapActivityRecipientGets": {
+    "description": "Label of the amount the payment recipient will receive, on an in-progress payment status screen."
+  },
+  "swapActivityRecipientReceived": "Recipient received",
+  "@swapActivityRecipientReceived": {
+    "description": "Label of the amount the payment recipient received, on a completed payment status screen."
+  },
+  "swapActivityRefundToAddress": "Refund to: {address}",
+  "@swapActivityRefundToAddress": {
+    "description": "Line under the paid amount of a swap status screen: the address a refund goes to.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStateAddressHint": "{chain} address",
+  "@swapActivityStateAddressHint": {
+    "description": "Hint of the swap refund address field: an address on the named chain.",
+    "placeholders": {
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStateAddressOrAccountHint": "{chain} address or account",
+  "@swapActivityStateAddressOrAccountHint": {
+    "description": "Hint of the swap destination field: an address or account on the named chain.",
+    "placeholders": {
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStateAssetUnsupported": "{symbol} on {chain} is not currently supported.",
+  "@swapActivityStateAssetUnsupported": {
+    "description": "Error when the selected asset on the selected chain cannot be swapped.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      },
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStateDecimalPlaces": "{symbol} supports up to {decimals} decimal places.",
+  "@swapActivityStateDecimalPlaces": {
+    "description": "Error under the amount field when the entered amount has more decimals than the asset supports.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      },
+      "decimals": {
+        "type": "int"
+      }
+    }
+  },
+  "swapActivityStateDestination": "Destination",
+  "@swapActivityStateDestination": {
+    "description": "Label of the address field of the swap address modal when the user sends ZEC."
+  },
+  "swapActivityStateQuoteHigher": "Live quote is {percent}% higher than the earlier estimate. Check the guaranteed minimum before you continue.",
+  "@swapActivityStateQuoteHigher": {
+    "description": "Warning on review when the live quote delivers more than the earlier estimate.",
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStateQuoteLower": "Live quote is {percent}% lower than the earlier estimate. Check the guaranteed minimum before you continue.",
+  "@swapActivityStateQuoteLower": {
+    "description": "Warning on review when the live quote delivers less than the earlier estimate.",
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStateQuoteUsesDifferentSell": "Live quote uses {liveAmount} {symbol} instead of {estimateAmount} {symbol}. Check the guaranteed minimum before you continue.",
+  "@swapActivityStateQuoteUsesDifferentSell": {
+    "description": "Warning on review when the live quote needs a different amount of the sold asset than the earlier estimate.",
+    "placeholders": {
+      "liveAmount": {
+        "type": "String"
+      },
+      "estimateAmount": {
+        "type": "String"
+      },
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStateRefundAddressLabel": "{symbol} refund address",
+  "@swapActivityStateRefundAddressLabel": {
+    "description": "Label of the address field of the swap address modal when the user deposits an external asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStatusAwaitingDeposit": "Awaiting deposit",
+  "@swapActivityStatusAwaitingDeposit": {
+    "description": "Status label of a swap that is waiting for the deposit."
+  },
+  "swapActivityStatusAwaitingExternalDeposit": "Awaiting external deposit",
+  "@swapActivityStatusAwaitingExternalDeposit": {
+    "description": "Status label of a swap that is waiting for the user to send a deposit from another chain."
+  },
+  "swapActivityStatusCheckingStatus": "Checking status",
+  "@swapActivityStatusCheckingStatus": {
+    "description": "Status label of a swap whose provider status is being checked."
+  },
+  "swapActivityStatusComplete": "Complete",
+  "@swapActivityStatusComplete": {
+    "description": "Status label of a completed swap."
+  },
+  "swapActivityStatusDepositObserved": "Deposit observed",
+  "@swapActivityStatusDepositObserved": {
+    "description": "Status label of a swap whose deposit was seen by the provider."
+  },
+  "swapActivityStatusExpired": "Expired",
+  "@swapActivityStatusExpired": {
+    "description": "Status label of a swap whose quote or deposit window expired."
+  },
+  "swapActivityStatusProcessing": "Processing",
+  "@swapActivityStatusProcessing": {
+    "description": "Status label of a swap that the provider is processing."
+  },
+  "swapActivityStepConvert": "Convert",
+  "@swapActivityStepConvert": {
+    "description": "Title of the second payment progress step."
+  },
+  "swapActivityStepConvertDescription": "Converting the shielded spend into the payment asset.",
+  "@swapActivityStepConvertDescription": {
+    "description": "Description of the second payment progress step."
+  },
+  "swapActivityStepConverting": "Converting...",
+  "@swapActivityStepConverting": {
+    "description": "Title of the active second payment progress step."
+  },
+  "swapActivityStepDeliver": "Deliver {symbol}",
+  "@swapActivityStepDeliver": {
+    "description": "Title of a progress step: the provider delivers the asset to the recipient.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepDeliverActive": "Deliver {symbol}...",
+  "@swapActivityStepDeliverActive": {
+    "description": "Title of the active swap delivery progress step.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepDeliverPayDescription": "Delivering the payment to the recipient address.",
+  "@swapActivityStepDeliverPayDescription": {
+    "description": "Description of the payment delivery progress step."
+  },
+  "swapActivityStepDeliverSwapDescription": "Delivering the output asset to the recipient address.",
+  "@swapActivityStepDeliverSwapDescription": {
+    "description": "Description of the last swap progress step."
+  },
+  "swapActivityStepDelivering": "Delivering {symbol}...",
+  "@swapActivityStepDelivering": {
+    "description": "Title of the active payment delivery progress step.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepDeposit": "Deposit {symbol}",
+  "@swapActivityStepDeposit": {
+    "description": "Title of the pending first swap progress step when the user deposits an external asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepDepositConfirmation": "Deposit confirmation",
+  "@swapActivityStepDepositConfirmation": {
+    "description": "Title of the second swap progress step."
+  },
+  "swapActivityStepDepositConfirmationActive": "Deposit confirmation...",
+  "@swapActivityStepDepositConfirmationActive": {
+    "description": "Title of the active second swap progress step."
+  },
+  "swapActivityStepDepositConfirmationDescription": "Confirming the deposit before the swap route starts.",
+  "@swapActivityStepDepositConfirmationDescription": {
+    "description": "Description of the second swap progress step."
+  },
+  "swapActivityStepDeposited": "{symbol} Deposited",
+  "@swapActivityStepDeposited": {
+    "description": "Title of the completed first swap progress step when the user deposits an external asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepDepositing": "Depositing {symbol}...",
+  "@swapActivityStepDepositing": {
+    "description": "Title of the active first swap progress step when the user deposits an external asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepRecipientReceives": "Recipient receives",
+  "@swapActivityStepRecipientReceives": {
+    "description": "Title of the last payment progress step."
+  },
+  "swapActivityStepRecipientReceivesAsset": "Recipient receives {symbol}...",
+  "@swapActivityStepRecipientReceivesAsset": {
+    "description": "Title of the active last payment progress step.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepRecipientReceivesDescription": "Confirming the recipient-side payment.",
+  "@swapActivityStepRecipientReceivesDescription": {
+    "description": "Description of the last payment progress step."
+  },
+  "swapActivityStepSend": "Send {symbol}",
+  "@swapActivityStepSend": {
+    "description": "Title of a progress step or button: send the asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepSendActive": "Send {symbol}...",
+  "@swapActivityStepSendActive": {
+    "description": "Title of the active swap delivery progress step when the provider sends the external asset to the user.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepSending": "Sending {symbol}...",
+  "@swapActivityStepSending": {
+    "description": "Title of the active first swap progress step when the user sends the asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepSent": "{symbol} sent",
+  "@swapActivityStepSent": {
+    "description": "Title of the completed first swap progress step when the user sends the asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepSourceDescription": "Confirm waiting for the source chain and provider to recognise the deposit",
+  "@swapActivityStepSourceDescription": {
+    "description": "Description of the first swap progress step: waiting for the source chain and provider to recognise the deposit."
+  },
+  "swapActivityStepSpend": "Spend {symbol}",
+  "@swapActivityStepSpend": {
+    "description": "Title of the first payment progress step: spending the asset from the shielded balance.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepSpendDescription": "Spending from shielded balance.",
+  "@swapActivityStepSpendDescription": {
+    "description": "Description of the first payment progress step."
+  },
+  "swapActivityStepSpending": "Spending {symbol}...",
+  "@swapActivityStepSpending": {
+    "description": "Title of the active first payment progress step.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepSpent": "{symbol} spent",
+  "@swapActivityStepSpent": {
+    "description": "Title of the completed first payment progress step.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityStepSwap": "Swap",
+  "@swapActivityStepSwap": {
+    "description": "Title of the third swap progress step."
+  },
+  "swapActivityStepSwapActive": "Swap...",
+  "@swapActivityStepSwapActive": {
+    "description": "Title of the active third swap progress step."
+  },
+  "swapActivityStepSwapDescription": "The provider is executing the swap route.",
+  "@swapActivityStepSwapDescription": {
+    "description": "Description of the third swap progress step."
+  },
+  "swapActivitySwapCompleted": "Swap completed",
+  "@swapActivitySwapCompleted": {
+    "description": "Title of a swap status screen after the swap completed."
+  },
+  "swapActivitySwapFailed": "Swap failed",
+  "@swapActivitySwapFailed": {
+    "description": "Title of a swap status screen when the swap failed."
+  },
+  "swapActivitySwapInProgress": "Swap in progress...",
+  "@swapActivitySwapInProgress": {
+    "description": "Title of a swap status screen while the swap is in progress."
+  },
+  "swapActivitySwapProgressTab": "Swap progress",
+  "@swapActivitySwapProgressTab": {
+    "description": "Label of the progress tab on a swap status screen."
+  },
+  "swapActivitySwapRefunded": "Swap refunded",
+  "@swapActivitySwapRefunded": {
+    "description": "Title of a swap status screen when the swap was refunded."
+  },
+  "swapActivityToAddressOnChain": "To: {address} on {chain}",
+  "@swapActivityToAddressOnChain": {
+    "description": "Line under the received amount of a swap or payment status screen: the recipient address followed by the blockchain it is on.",
+    "placeholders": {
+      "address": {
+        "type": "String"
+      },
+      "chain": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityTooltipFees": "Covers our fee and the route providers' costs to process this swap. Already included in the rate above.",
+  "@swapActivityTooltipFees": {
+    "description": "Tooltip of the swap fee rows."
+  },
+  "swapActivityTooltipMinimumReceive": "The lowest amount of {symbol} you'll get after slippage. You may get more, never less.",
+  "@swapActivityTooltipMinimumReceive": {
+    "description": "Tooltip of the guaranteed minimum row, naming the received asset.",
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
+  "swapActivityTooltipMinimumReceiveGeneric": "The lowest amount you'll get after slippage. You may get more, never less.",
+  "@swapActivityTooltipMinimumReceiveGeneric": {
+    "description": "Tooltip of the guaranteed minimum row when no asset is named."
+  },
+  "swapActivityTooltipPriceProtection": "How much of the received amount your slippage tolerance protects. The swap is refunded if the rate moves past this.",
+  "@swapActivityTooltipPriceProtection": {
+    "description": "Tooltip explaining the slippage tolerance row."
+  },
+  "swapActivityTooltipStatusDetail": "Details are based on the latest swap record and provider status.",
+  "@swapActivityTooltipStatusDetail": {
+    "description": "Tooltip of a status detail row without its own explanation."
+  },
+  "swapActivityYouPaid": "You paid",
+  "@swapActivityYouPaid": {
+    "description": "Label of the amount the user paid, on a completed swap or payment status screen."
+  },
+  "swapActivityYouPay": "You pay",
+  "@swapActivityYouPay": {
+    "description": "Label of the amount the user pays, on a payment status screen before the payment completes."
+  },
+  "swapActivityYouReceived": "You received",
+  "@swapActivityYouReceived": {
+    "description": "Label of the amount received on a completed swap status screen."
+  },
+  "swapActivityYourePaying": "You're paying",
+  "@swapActivityYourePaying": {
+    "description": "Label of the amount being paid while a swap or payment is still in progress."
+  },
+  "swapActivityYoureReceiving": "You're receiving",
+  "@swapActivityYoureReceiving": {
+    "description": "Label of the amount being received while a swap is in progress."
   },
   "syncCheckingPercentSemantics": "Checking {percent} percent",
   "@syncCheckingPercentSemantics": {

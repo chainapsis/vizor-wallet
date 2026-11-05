@@ -557,7 +557,7 @@ class _SwapActivityDetailPaneContent extends StatelessWidget {
         leading: returnTarget == null
             ? const SizedBox.shrink()
             : AppBackLink(
-                label: returnTarget.label,
+                label: returnTarget.label(context.l10n),
                 minWidth: 60,
                 onTap: () => context.go(returnTarget.path),
               ),
@@ -711,6 +711,7 @@ class _SwapActivityFlowContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final depositInstruction = SwapActivityDepositInstruction.fromIntent(
+      context.l10n,
       intent,
     );
     final statusError = intent.statusError ?? state.statusError;
@@ -738,7 +739,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
           amountText: intent.sellAmount,
           depositAddress: depositInstruction.address,
-          expiresInLabel: swapDepositDeadlineLabel(intent) ?? '2hrs',
+          expiresInLabel:
+              swapDepositDeadlineLabel(context.l10n, intent) ?? '2hrs',
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           checking: depositChecking || state.statusRefreshing,
@@ -751,7 +753,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
           asset: swapActivitySellAsset(intent) ?? SwapAsset.zec,
           amountText: intent.sellAmount,
           depositAddress: depositInstruction.address,
-          expiresInLabel: swapDepositDeadlineLabel(intent) ?? '2hrs',
+          expiresInLabel:
+              swapDepositDeadlineLabel(context.l10n, intent) ?? '2hrs',
           expiresAt: intent.depositDeadline,
           memo: depositInstruction.memo,
           onDepositZec: () => onSignZecDeposit(intent),
@@ -903,7 +906,10 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
                 asset: presentation.receiveAsset,
                 amountText: trimSwapAmountText(presentation.receiveAmountText),
                 fiatText: presentation.receiveFiatText,
-                label: payActivityStatusAmountLabel(payStatus.phase),
+                label: payActivityStatusAmountLabel(
+                  context.l10n,
+                  payStatus.phase,
+                ),
                 recipientAddress: recipient,
                 recipientName: recipientContact?.label,
                 recipientProfilePictureId: recipientContact?.profilePictureId,

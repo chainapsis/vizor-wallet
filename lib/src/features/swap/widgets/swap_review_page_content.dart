@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -499,6 +500,7 @@ class _SwapReviewDetailCard extends StatelessWidget {
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.icon.muted,
               trailingIconTooltip: swapMinimumReceiveTooltip(
+                context.l10n,
                 quote.receiveAsset.symbol,
               ),
             ),
@@ -510,7 +512,7 @@ class _SwapReviewDetailCard extends StatelessWidget {
           value: quote.feeLabel,
           trailingIconName: AppIcons.help,
           trailingIconColor: colors.icon.muted,
-          trailingIconTooltip: swapFeeTooltip,
+          trailingIconTooltip: swapFeeTooltip(context.l10n),
         ),
       ],
     );

@@ -79,7 +79,7 @@ class PayActivityStatusContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            status.title,
+            status.title(context.l10n),
             key: const ValueKey('pay_activity_status_title'),
             textAlign: TextAlign.center,
             style: AppTypography.bodyLarge.copyWith(
@@ -147,7 +147,7 @@ class PayActivityStatusContent extends StatelessWidget {
           rows: [
             ReviewInfoRow(
               key: const ValueKey('pay_status_amount_row'),
-              label: payActivityStatusAmountLabel(status.phase),
+              label: payActivityStatusAmountLabel(context.l10n, status.phase),
               value: amountText,
               leading: SwapAssetIcon(
                 asset: amountAsset,
@@ -212,7 +212,7 @@ class PayActivityStatusContent extends StatelessWidget {
             child: ReviewListRow(
               key: const ValueKey('pay_status_status_row'),
               label: 'Status',
-              value: status.statusLabel,
+              value: status.statusLabel(context.l10n),
               valueColor: statusColor,
               leadingIconName: statusIcon,
             ),

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/test_l10n.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
 void main() {
@@ -64,14 +65,14 @@ void main() {
     );
 
     expect(
-      state.quoteAmountPrecisionError,
+      state.quoteAmountPrecisionError(testL10n),
       'USDC supports up to 6 decimal places.',
     );
     expect(state.canReviewQuote, isFalse);
 
     final valid = state.copyWith(receiveAmountText: '105.123456');
 
-    expect(valid.quoteAmountPrecisionError, isNull);
+    expect(valid.quoteAmountPrecisionError(testL10n), isNull);
     expect(valid.canReviewQuote, isTrue);
   });
 
@@ -126,7 +127,7 @@ void main() {
 
     expect(state.externalAssetIsSupported, isFalse);
     expect(
-      state.externalAssetSupportError,
+      state.externalAssetSupportError(testL10n),
       'USDC on Base is not currently supported.',
     );
     expect(state.canReviewQuote, isFalse);
@@ -134,7 +135,7 @@ void main() {
     final supported = state.copyWith(supportedExternalAssets: [liveBaseUsdc]);
 
     expect(supported.externalAssetIsSupported, isTrue);
-    expect(supported.externalAssetSupportError, isNull);
+    expect(supported.externalAssetSupportError(testL10n), isNull);
     expect(supported.canReviewQuote, isTrue);
   });
 
@@ -156,7 +157,7 @@ void main() {
 
     expect(state.externalAssetIsSupported, isTrue);
     expect(state.externalAssetIsAvailable, isFalse);
-    expect(state.externalAssetSupportError, error);
+    expect(state.externalAssetSupportError(testL10n), error);
     expect(state.canReviewQuote, isFalse);
 
     final cleared = state.copyWith(clearSupportedAssetsError: true);
@@ -208,7 +209,7 @@ void main() {
     );
 
     expect(
-      state.reviewAmountDifferenceWarning,
+      state.reviewAmountDifferenceWarning(testL10n),
       'Live quote uses 2.00 USDC instead of 1.50 USDC. Check the guaranteed minimum before you continue.',
     );
   });

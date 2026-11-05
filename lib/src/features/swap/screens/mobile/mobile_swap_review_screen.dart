@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 
@@ -385,7 +386,9 @@ class _MobileSwapReviewScreenState
                             expired: paymentQuoteExpired,
                           ),
                           for (final message in [
-                            swapState.reviewAmountDifferenceWarning,
+                            swapState.reviewAmountDifferenceWarning(
+                              context.l10n,
+                            ),
                             swapState.statusError,
                             startBlockedReason,
                             if (inactiveReview)
@@ -413,7 +416,9 @@ class _MobileSwapReviewScreenState
                         expired: widget.payMode
                             ? paymentQuoteExpired
                             : swapState.quoteExpired,
-                        amountWarning: swapState.reviewAmountDifferenceWarning,
+                        amountWarning: swapState.reviewAmountDifferenceWarning(
+                          context.l10n,
+                        ),
                         startError: swapState.statusError,
                         startBlockedReason: startBlockedReason,
                         inactiveMessage: inactiveReview

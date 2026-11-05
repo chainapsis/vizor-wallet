@@ -212,12 +212,12 @@ void main() {
     expect(refund.copyText, '0xrefund-address');
   });
 
-  const details = [
+  final details = [
     SwapStatusDetailRowData(
       label: 'Total fees',
       value: 'Included',
       help: true,
-      helpTooltip: swapTotalFeesTooltip,
+      helpTooltip: swapTotalFeesTooltip(testL10n),
     ),
     SwapStatusDetailRowData(label: 'Timestamp', value: 'May 20, 2026 13:20'),
   ];
@@ -270,7 +270,7 @@ void main() {
     );
     // The terminal card itself still renders.
     expect(find.text('Completed'), findsOneWidget);
-    expect(_tooltipWithMessage(swapTotalFeesTooltip), findsOneWidget);
+    expect(_tooltipWithMessage(swapTotalFeesTooltip(testL10n)), findsOneWidget);
   });
 
   testWidgets('refunded terminal status shows Refunded instead of Failed', (

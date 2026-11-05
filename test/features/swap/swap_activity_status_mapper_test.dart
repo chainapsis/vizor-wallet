@@ -93,18 +93,22 @@ void main() {
 
   test('labels the Pay amount by outcome', () {
     expect(
-      payActivityStatusAmountLabel(PayActivityStatusPhase.inProgress),
+      payActivityStatusAmountLabel(testL10n, PayActivityStatusPhase.inProgress),
       "You're paying",
     );
     expect(
-      payActivityStatusAmountLabel(PayActivityStatusPhase.completed),
+      payActivityStatusAmountLabel(testL10n, PayActivityStatusPhase.completed),
       'You paid',
     );
     for (final phase in [
       PayActivityStatusPhase.failed,
       PayActivityStatusPhase.refunded,
     ]) {
-      expect(payActivityStatusAmountLabel(phase), 'Amount', reason: phase.name);
+      expect(
+        payActivityStatusAmountLabel(testL10n, phase),
+        'Amount',
+        reason: phase.name,
+      );
     }
   });
 
@@ -187,11 +191,11 @@ void main() {
     );
     expect(
       _detailRow(presentation.details, 'Swap fee').helpTooltip,
-      swapFeeTooltip,
+      swapFeeTooltip(testL10n),
     );
     expect(
       _detailRow(presentation.details, 'Guaranteed minimum').helpTooltip,
-      swapMinimumReceiveTooltip('USDC'),
+      swapMinimumReceiveTooltip(testL10n, 'USDC'),
     );
     expect(
       _detailRow(presentation.details, 'ZEC refund address').copyable,
@@ -233,8 +237,8 @@ void main() {
     expect(presentation.paymentMode, isTrue);
     expect(presentation.showTabs, isFalse);
     expect(presentation.payStatus, isNotNull);
-    expect(presentation.payStatus!.title, 'Paid successfully');
-    expect(presentation.payStatus!.statusLabel, 'Completed');
+    expect(presentation.payStatus!.title(testL10n), 'Paid successfully');
+    expect(presentation.payStatus!.statusLabel(testL10n), 'Completed');
     expect(presentation.payStatus!.phase, PayActivityStatusPhase.completed);
     expect(presentation.payStatus!.timestampText, '25 May, 13:30');
     expect(presentation.payStatus!.txIdText, 't1bufats...CvaAzeBo');
@@ -486,8 +490,8 @@ void main() {
     expect(presentation.paymentMode, isTrue);
     expect(presentation.showTabs, isTrue);
     expect(presentation.payStatus, isNotNull);
-    expect(presentation.payStatus!.title, 'Pay in progress...');
-    expect(presentation.payStatus!.statusLabel, 'In progress');
+    expect(presentation.payStatus!.title(testL10n), 'Pay in progress...');
+    expect(presentation.payStatus!.statusLabel(testL10n), 'In progress');
     expect(presentation.payStatus!.phase, PayActivityStatusPhase.inProgress);
     expect(presentation.payStatus!.timestampText, '25 May, 13:30');
     expect(presentation.payStatus!.txIdText, 'Not reported');
@@ -807,7 +811,7 @@ void main() {
     );
     expect(_detailRow(presentation.details, 'Timestamp').value, isNotEmpty);
     final fees = _detailRow(presentation.details, 'Total fees');
-    expect(fees.helpTooltip, swapTotalFeesTooltip);
+    expect(fees.helpTooltip, swapTotalFeesTooltip(testL10n));
     expect(presentation.details.last.label, 'Total fees');
   });
 
@@ -1186,6 +1190,7 @@ void main() {
 
   test('maps deposit instructions by swap direction', () {
     final zecInstruction = SwapActivityDepositInstruction.fromIntent(
+      testL10n,
       _intent(
         status: SwapIntentStatus.awaitingDeposit,
         direction: SwapDirection.zecToExternal,
@@ -1202,6 +1207,7 @@ void main() {
     expect(zecInstruction?.qr, isNull);
 
     final externalInstruction = SwapActivityDepositInstruction.fromIntent(
+      testL10n,
       _intent(
         status: SwapIntentStatus.awaitingExternalDeposit,
         direction: SwapDirection.externalToZec,
@@ -1273,7 +1279,10 @@ void main() {
       direction: SwapDirection.zecToExternal,
       externalAsset: SwapAsset.usdc,
     );
-    expect(SwapActivityDepositInstruction.fromIntent(expired), isNull);
+    expect(
+      SwapActivityDepositInstruction.fromIntent(testL10n, expired),
+      isNull,
+    );
     expect(
       swapActivityShowsDepositPage(expired, intentIsHardware: false),
       isTrue,

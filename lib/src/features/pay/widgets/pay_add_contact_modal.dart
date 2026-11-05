@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
@@ -86,7 +87,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _saveError = "Couldn't save this contact. Try again.";
+        _saveError = context.l10n.paySaveContactError;
       });
     }
   }
@@ -96,7 +97,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
     final colors = context.colors;
     if (_pickingPicture) {
       return AppProfilePicturePickerModal(
-        title: 'Select contact picture',
+        title: context.l10n.paySelectContactPicture,
         currentProfilePictureId: _profilePictureId,
         onCancel: () => setState(() => _pickingPicture = false),
         onUpdate: (id) async {
@@ -156,9 +157,9 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
           const SizedBox(height: AppSpacing.md),
           AppTextField(
             key: const ValueKey('pay_add_contact_label_field'),
-            label: 'Address label',
+            label: context.l10n.payAddressLabel,
             controller: _labelController,
-            hintText: 'Add label 1-20 characters',
+            hintText: context.l10n.payAddLabelHint,
             autofocus: true,
             inputFormatters: [LengthLimitingTextInputFormatter(20)],
             onSubmitted: (_) => _save(),
@@ -170,7 +171,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Chain & address',
+                  context.l10n.payChainAndAddress,
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.secondary,
                   ),
@@ -226,7 +227,7 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
             cancelKey: const ValueKey('pay_add_contact_cancel_button'),
             actionKey: const ValueKey('pay_add_contact_save_button'),
             onCancel: widget.onCancel,
-            actionLabel: 'Save',
+            actionLabel: context.l10n.paySave,
             onAction: _canSave ? _save : null,
           ),
         ],

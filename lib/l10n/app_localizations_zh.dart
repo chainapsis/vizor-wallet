@@ -1236,6 +1236,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lockSyncPausedTitle => '同步已暂停';
 
   @override
+  String get lockSyncedSemantics => 'Vizor 已同步';
+
+  @override
   String get lockSyncingMessage => 'Vizor 正在同步';
 
   @override
@@ -1923,6 +1926,254 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get passwordsDoNotMatch => '两次输入的密码不一致。';
+
+  @override
+  String get payAddLabelHint => '添加 1-20 个字符的标签';
+
+  @override
+  String get payAddToContacts => '添加到联系人';
+
+  @override
+  String get payAddressLabel => '地址标签';
+
+  @override
+  String payAddressSemantics(String address) {
+    return '地址 $address';
+  }
+
+  @override
+  String get payAmountChooseAsset => '选择支付资产';
+
+  @override
+  String payAmountEnterIn(String symbol) {
+    return '以 $symbol 输入金额';
+  }
+
+  @override
+  String get payAmountEnterInUsd => '以 USD 输入金额';
+
+  @override
+  String get payAmountEstimated => '预估：';
+
+  @override
+  String get payAmountEstimatedSpend => '预估支出';
+
+  @override
+  String get payAmountPayingFrom => '从你的';
+
+  @override
+  String get payAmountPayingIn => '支付币种';
+
+  @override
+  String get payAmountShieldedBalance => '屏蔽余额';
+
+  @override
+  String get payBackHome => '首页';
+
+  @override
+  String payChainAddressHint(String chain) {
+    return '$chain 地址';
+  }
+
+  @override
+  String get payChainAndAddress => '链和地址';
+
+  @override
+  String get payChangeContactPicture => '更换联系人头像';
+
+  @override
+  String get payClearContactLabel => '清除联系人标签';
+
+  @override
+  String get payContacts => '联系人';
+
+  @override
+  String get payFetchingQuote => '正在获取报价';
+
+  @override
+  String get payInsufficientZec => '你的 ZEC 不足以完成此支付。请尝试较小的金额。';
+
+  @override
+  String get payNewAddressDetected => '检测到新地址。';
+
+  @override
+  String get payNewAddressWarning => '你之前未与此地址交互过。';
+
+  @override
+  String get payNotEnoughZec => 'ZEC 不足';
+
+  @override
+  String payRecentDaysAgo(int days) {
+    return '$days 天前';
+  }
+
+  @override
+  String payRecentHoursAgo(int hours) {
+    return '$hours 小时前';
+  }
+
+  @override
+  String get payRecentJustNow => '刚刚';
+
+  @override
+  String payRecentMinutesAgo(int minutes) {
+    return '$minutes 分钟前';
+  }
+
+  @override
+  String get payRecentlySent => '最近发送';
+
+  @override
+  String get payRecents => '最近';
+
+  @override
+  String get payRecipientAddressHint => '粘贴地址或扫描二维码';
+
+  @override
+  String get payRecipientAddressLabel => '收款地址';
+
+  @override
+  String get payRecipientScanQr => '扫描二维码';
+
+  @override
+  String get payRefreshingQuote => '正在刷新报价';
+
+  @override
+  String get payReviewConfirmPay => '确认并支付';
+
+  @override
+  String get payReviewConvertedAmount => '兑换金额';
+
+  @override
+  String get payReviewFullAddress => '完整地址';
+
+  @override
+  String get payReviewPaying => '支付金额';
+
+  @override
+  String get payReviewQuoteExpired => '报价已过期';
+
+  @override
+  String get payReviewQuoteExpiresIn => '报价将在 ';
+
+  @override
+  String get payReviewRefreshQuote => '刷新报价';
+
+  @override
+  String get payReviewRefreshTheQuote => '刷新报价';
+
+  @override
+  String get payReviewReturnToPay => '返回支付';
+
+  @override
+  String get payReviewShowFullAddress => '显示完整地址';
+
+  @override
+  String get payReviewTo => '收款方';
+
+  @override
+  String get payReviewUnknownAddress => '未知地址';
+
+  @override
+  String get paySave => '保存';
+
+  @override
+  String get paySaveContact => '保存联系人';
+
+  @override
+  String get paySaveContactError => '无法保存此联系人。请重试。';
+
+  @override
+  String get paySaving => '正在保存';
+
+  @override
+  String get payScanBarrierDismiss => '关闭';
+
+  @override
+  String get payScanCaption => '扫描收款地址二维码';
+
+  @override
+  String get payScanNoAddress => '二维码中不包含地址。';
+
+  @override
+  String get payScanPermissionTitle => '扫描收款地址';
+
+  @override
+  String get payScanQrSubtitle => '使用相机扫描地址';
+
+  @override
+  String get payScanQrTitle => '扫描二维码';
+
+  @override
+  String get payScanSteadyHint => '请保持二维码稳定且完整可见。';
+
+  @override
+  String get paySelectContactPicture => '选择联系人头像';
+
+  @override
+  String get paySelectRecipient => '选择收款方';
+
+  @override
+  String get paySelectedContact => '已选联系人';
+
+  @override
+  String get payStepAmount => '金额';
+
+  @override
+  String get payStepRecipient => '收款方';
+
+  @override
+  String get payStepReview => '确认';
+
+  @override
+  String get paySubmittedDone => '完成';
+
+  @override
+  String get paySubmittedFailedBody => '无法提交支付。请重试。';
+
+  @override
+  String get paySubmittedFailedTitle => '支付失败';
+
+  @override
+  String get paySubmittedGoToActivity => '前往活动记录';
+
+  @override
+  String get paySubmittedReturnHome => '返回首页';
+
+  @override
+  String get paySubmittedStatusUncertainNotice => '支付状态不确定。重试之前请先查看活动记录。';
+
+  @override
+  String get paySubmittedSubmittingBody => '正在将你的支付提交到网络...';
+
+  @override
+  String get paySubmittedSubmittingTitle => '正在提交支付...';
+
+  @override
+  String get paySubmittedSucceededBody => '很快将在链上确认。\n可在活动记录中跟踪。';
+
+  @override
+  String get paySubmittedSucceededTitle => '支付\n已提交';
+
+  @override
+  String get paySubmittedUnavailableNotice => '无法加载此支付。请在活动记录中查看最新状态。';
+
+  @override
+  String get paySubmittedUnavailableTitle => '支付不可用';
+
+  @override
+  String get paySubmittedUncertainTitle => '支付状态\n不确定';
+
+  @override
+  String payTitleAmount(String symbol) {
+    return '使用 $symbol 支付';
+  }
+
+  @override
+  String get payTitleRecipient => '选择收款方';
+
+  @override
+  String get payTitleReview => '确认支付';
 
   @override
   String get poolShielded => '屏蔽';
@@ -2774,6 +3025,494 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sidebarShowBalance => '显示余额';
+
+  @override
+  String swapActivityAddressBookRecipient(String symbol) {
+    return '$symbol 收款方';
+  }
+
+  @override
+  String swapActivityAddressBookRefund(String symbol) {
+    return '$symbol 退款';
+  }
+
+  @override
+  String get swapActivityAmount => '金额';
+
+  @override
+  String swapActivityDeadlineHours(int hours) {
+    return '$hours 小时';
+  }
+
+  @override
+  String swapActivityDeadlineMinutes(int minutes) {
+    return '$minutes 分钟';
+  }
+
+  @override
+  String get swapActivityDeadlineOneHour => '1 小时';
+
+  @override
+  String get swapActivityDeadlineOneMinute => '1 分钟';
+
+  @override
+  String get swapActivityDepositAmount => '存入金额';
+
+  @override
+  String get swapActivityDepositAssetFallback => '存入资产';
+
+  @override
+  String swapActivityDepositInstructionDepositLabel(String symbol) {
+    return '$symbol 存入';
+  }
+
+  @override
+  String get swapActivityDepositInstructionReuseWarning => '请勿重复使用此地址';
+
+  @override
+  String swapActivityDepositInstructionSendFromSource(String symbol) {
+    return '从源链发送 $symbol';
+  }
+
+  @override
+  String swapActivityDepositInstructionSourceDepositLabel(String symbol) {
+    return '$symbol 源链存入';
+  }
+
+  @override
+  String swapActivityDepositInstructionSubmit(String symbol) {
+    return '提交 $symbol 存入';
+  }
+
+  @override
+  String swapActivityDepositInstructionTxHashHint(String symbol) {
+    return '$symbol 源链交易哈希';
+  }
+
+  @override
+  String swapActivityDepositInstructionTxHashLabel(String symbol) {
+    return '$symbol 存入交易哈希';
+  }
+
+  @override
+  String get swapActivityDetailConfiguredQuote => '报价设置';
+
+  @override
+  String swapActivityDetailDeliveryTx(String symbol) {
+    return '$symbol 交付交易';
+  }
+
+  @override
+  String get swapActivityDetailDepositDeadline => '存入截止时间';
+
+  @override
+  String swapActivityDetailDepositTo(String symbol) {
+    return '$symbol 存入地址';
+  }
+
+  @override
+  String swapActivityDetailDepositTx(String symbol) {
+    return '$symbol 存入交易';
+  }
+
+  @override
+  String get swapActivityDetailDetectedDeposit => '检测到的存入金额';
+
+  @override
+  String get swapActivityDetailFees => '费用';
+
+  @override
+  String get swapActivityDetailGuaranteedMinimum => '保证最低金额';
+
+  @override
+  String get swapActivityDetailIncluded => '已包含';
+
+  @override
+  String get swapActivityDetailIncludedInRate => '已包含在所示汇率中';
+
+  @override
+  String get swapActivityDetailMemo => '备注';
+
+  @override
+  String get swapActivityDetailMissingDeposit => '缺少的存入金额';
+
+  @override
+  String get swapActivityDetailNetworkConversionFees => '网络 + 兑换手续费';
+
+  @override
+  String get swapActivityDetailRate => '汇率';
+
+  @override
+  String get swapActivityDetailRealizedSlippage => '实际滑点';
+
+  @override
+  String swapActivityDetailRecipient(String symbol) {
+    return '$symbol 收款方';
+  }
+
+  @override
+  String swapActivityDetailRefundAddress(String symbol) {
+    return '$symbol 退款地址';
+  }
+
+  @override
+  String get swapActivityDetailRefundFee => '退款手续费';
+
+  @override
+  String get swapActivityDetailRefundTo => '退款地址';
+
+  @override
+  String get swapActivityDetailRefundedAmount => '退款金额';
+
+  @override
+  String get swapActivityDetailRequiredDeposit => '所需存入金额';
+
+  @override
+  String get swapActivityDetailSlippageTolerance => '滑点容忍度';
+
+  @override
+  String swapActivityDetailSourceTxShielded(String symbol) {
+    return '$symbol 交易（屏蔽）';
+  }
+
+  @override
+  String get swapActivityDetailSwapFee => '兑换手续费';
+
+  @override
+  String get swapActivityDetailTimestamp => '时间';
+
+  @override
+  String get swapActivityDetailTotalFees => '总费用';
+
+  @override
+  String get swapActivityDetailTxId => '交易 ID';
+
+  @override
+  String get swapActivityExpectedToReceive => '预计收到金额';
+
+  @override
+  String get swapActivityIncompleteDeposit => '存入未完成';
+
+  @override
+  String get swapActivityIncompletePayment => '支付未完成';
+
+  @override
+  String get swapActivityLastCheckJustNow => '上次检查：刚刚';
+
+  @override
+  String swapActivityLastCheckMinutesAgo(int minutes) {
+    return '上次检查：$minutes 分钟前';
+  }
+
+  @override
+  String get swapActivityNotReported => '未提供';
+
+  @override
+  String get swapActivityPaidSuccessfullyTitle => '支付成功';
+
+  @override
+  String get swapActivityPayInProgressTitle => '支付进行中...';
+
+  @override
+  String get swapActivityPayStatusCompleted => '已完成';
+
+  @override
+  String get swapActivityPayStatusFailed => '失败';
+
+  @override
+  String get swapActivityPayStatusInProgress => '进行中';
+
+  @override
+  String get swapActivityPayStatusRefunded => '已退款';
+
+  @override
+  String get swapActivityPaymentComplete => '支付完成';
+
+  @override
+  String get swapActivityPaymentFailed => '支付失败';
+
+  @override
+  String get swapActivityPaymentInProgress => '支付进行中';
+
+  @override
+  String get swapActivityPaymentProgressTab => '支付进度';
+
+  @override
+  String get swapActivityPaymentRefunded => '支付已退款';
+
+  @override
+  String swapActivityPickerNoRecipients(String symbol) {
+    return '没有已保存的 $symbol 收款方';
+  }
+
+  @override
+  String swapActivityPickerNoRefunds(String symbol) {
+    return '没有已保存的 $symbol 退款地址';
+  }
+
+  @override
+  String swapActivityPickerRecipientsTitle(String symbol) {
+    return '$symbol 收款方';
+  }
+
+  @override
+  String swapActivityPickerRefundsTitle(String symbol) {
+    return '$symbol 退款';
+  }
+
+  @override
+  String get swapActivityPrivatelyFromShielded => '从屏蔽余额私密支付';
+
+  @override
+  String get swapActivityReceiveAssetFallback => '接收资产';
+
+  @override
+  String get swapActivityRecipientGets => '收款方将收到金额';
+
+  @override
+  String get swapActivityRecipientReceived => '收款方已收到金额';
+
+  @override
+  String swapActivityRefundToAddress(String address) {
+    return '退款地址：$address';
+  }
+
+  @override
+  String swapActivityStateAddressHint(String chain) {
+    return '$chain 地址';
+  }
+
+  @override
+  String swapActivityStateAddressOrAccountHint(String chain) {
+    return '$chain 地址或账户';
+  }
+
+  @override
+  String swapActivityStateAssetUnsupported(String symbol, String chain) {
+    return '目前不支持 $chain 上的 $symbol。';
+  }
+
+  @override
+  String swapActivityStateDecimalPlaces(String symbol, int decimals) {
+    return '$symbol 最多支持 $decimals 位小数。';
+  }
+
+  @override
+  String get swapActivityStateDestination => '收款地址';
+
+  @override
+  String swapActivityStateQuoteHigher(String percent) {
+    return '实时报价比之前的预估高 $percent%。继续之前请确认保证最低金额。';
+  }
+
+  @override
+  String swapActivityStateQuoteLower(String percent) {
+    return '实时报价比之前的预估低 $percent%。继续之前请确认保证最低金额。';
+  }
+
+  @override
+  String swapActivityStateQuoteUsesDifferentSell(
+    String liveAmount,
+    String estimateAmount,
+    String symbol,
+  ) {
+    return '实时报价使用 $liveAmount $symbol，而非 $estimateAmount $symbol。继续之前请确认保证最低金额。';
+  }
+
+  @override
+  String swapActivityStateRefundAddressLabel(String symbol) {
+    return '$symbol 退款地址';
+  }
+
+  @override
+  String get swapActivityStatusAwaitingDeposit => '等待存入';
+
+  @override
+  String get swapActivityStatusAwaitingExternalDeposit => '等待外部存入';
+
+  @override
+  String get swapActivityStatusCheckingStatus => '正在检查状态';
+
+  @override
+  String get swapActivityStatusComplete => '已完成';
+
+  @override
+  String get swapActivityStatusDepositObserved => '已检测到存入';
+
+  @override
+  String get swapActivityStatusExpired => '已过期';
+
+  @override
+  String get swapActivityStatusProcessing => '处理中';
+
+  @override
+  String get swapActivityStepConvert => '兑换';
+
+  @override
+  String get swapActivityStepConvertDescription => '正在将屏蔽支出兑换为支付资产。';
+
+  @override
+  String get swapActivityStepConverting => '兑换中...';
+
+  @override
+  String swapActivityStepDeliver(String symbol) {
+    return '交付 $symbol';
+  }
+
+  @override
+  String swapActivityStepDeliverActive(String symbol) {
+    return '交付 $symbol...';
+  }
+
+  @override
+  String get swapActivityStepDeliverPayDescription => '正在将付款交付到收款地址。';
+
+  @override
+  String get swapActivityStepDeliverSwapDescription => '正在将兑换所得资产交付到收款地址。';
+
+  @override
+  String swapActivityStepDelivering(String symbol) {
+    return '正在交付 $symbol...';
+  }
+
+  @override
+  String swapActivityStepDeposit(String symbol) {
+    return '存入 $symbol';
+  }
+
+  @override
+  String get swapActivityStepDepositConfirmation => '存入确认';
+
+  @override
+  String get swapActivityStepDepositConfirmationActive => '存入确认中...';
+
+  @override
+  String get swapActivityStepDepositConfirmationDescription => '兑换路径开始前正在确认存入。';
+
+  @override
+  String swapActivityStepDeposited(String symbol) {
+    return '已存入 $symbol';
+  }
+
+  @override
+  String swapActivityStepDepositing(String symbol) {
+    return '正在存入 $symbol...';
+  }
+
+  @override
+  String get swapActivityStepRecipientReceives => '收款方接收';
+
+  @override
+  String swapActivityStepRecipientReceivesAsset(String symbol) {
+    return '收款方正在接收 $symbol...';
+  }
+
+  @override
+  String get swapActivityStepRecipientReceivesDescription => '正在确认收款方的到账。';
+
+  @override
+  String swapActivityStepSend(String symbol) {
+    return '发送 $symbol';
+  }
+
+  @override
+  String swapActivityStepSendActive(String symbol) {
+    return '发送 $symbol...';
+  }
+
+  @override
+  String swapActivityStepSending(String symbol) {
+    return '正在发送 $symbol...';
+  }
+
+  @override
+  String swapActivityStepSent(String symbol) {
+    return '已发送 $symbol';
+  }
+
+  @override
+  String get swapActivityStepSourceDescription => '等待源链和服务商确认存入';
+
+  @override
+  String swapActivityStepSpend(String symbol) {
+    return '花费 $symbol';
+  }
+
+  @override
+  String get swapActivityStepSpendDescription => '正在从屏蔽余额中支付。';
+
+  @override
+  String swapActivityStepSpending(String symbol) {
+    return '正在花费 $symbol...';
+  }
+
+  @override
+  String swapActivityStepSpent(String symbol) {
+    return '已花费 $symbol';
+  }
+
+  @override
+  String get swapActivityStepSwap => '兑换';
+
+  @override
+  String get swapActivityStepSwapActive => '兑换中...';
+
+  @override
+  String get swapActivityStepSwapDescription => '服务商正在执行兑换路径。';
+
+  @override
+  String get swapActivitySwapCompleted => '兑换完成';
+
+  @override
+  String get swapActivitySwapFailed => '兑换失败';
+
+  @override
+  String get swapActivitySwapInProgress => '兑换进行中...';
+
+  @override
+  String get swapActivitySwapProgressTab => '兑换进度';
+
+  @override
+  String get swapActivitySwapRefunded => '兑换已退款';
+
+  @override
+  String swapActivityToAddressOnChain(String address, String chain) {
+    return '收款地址：$address（$chain）';
+  }
+
+  @override
+  String get swapActivityTooltipFees => '包含我们的手续费以及路径服务商处理此兑换的成本。已计入上方汇率。';
+
+  @override
+  String swapActivityTooltipMinimumReceive(String symbol) {
+    return '滑点后你最少会收到的 $symbol 数量。可能更多，但不会更少。';
+  }
+
+  @override
+  String get swapActivityTooltipMinimumReceiveGeneric =>
+      '滑点后你最少会收到的数量。可能更多，但不会更少。';
+
+  @override
+  String get swapActivityTooltipPriceProtection =>
+      '滑点容忍度所保护的接收金额范围。若汇率变动超出此范围，兑换将被退款。';
+
+  @override
+  String get swapActivityTooltipStatusDetail => '详情基于最新的兑换记录和服务商状态。';
+
+  @override
+  String get swapActivityYouPaid => '已支付金额';
+
+  @override
+  String get swapActivityYouPay => '支付金额';
+
+  @override
+  String get swapActivityYouReceived => '已收到金额';
+
+  @override
+  String get swapActivityYourePaying => '正在支付金额';
+
+  @override
+  String get swapActivityYoureReceiving => '正在接收金额';
 
   @override
   String syncCheckingPercentSemantics(String percent) {

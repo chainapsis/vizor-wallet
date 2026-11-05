@@ -1,3 +1,4 @@
+import '../../../core/l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -972,7 +973,7 @@ class _DetailRow extends StatelessWidget {
         trailingIconName: AppIcons.help,
         trailingIconColor: colors.icon.muted,
         trailingIconTooltip:
-            row.helpTooltip ?? _swapStatusHelpTooltip(row.label),
+            row.helpTooltip ?? _swapStatusHelpTooltip(context.l10n, row.label),
       );
     }
 
@@ -1133,12 +1134,12 @@ class _StatusDetailActionIcon extends StatelessWidget {
   }
 }
 
-String _swapStatusHelpTooltip(String label) {
+String _swapStatusHelpTooltip(AppLocalizations l10n, String label) {
   return switch (label) {
-    'Swap fee' => swapFeeTooltip,
-    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip,
-    'Total fees' => swapTotalFeesTooltip,
-    _ => swapStatusDetailTooltip,
+    'Swap fee' => swapFeeTooltip(l10n),
+    'Guaranteed minimum' => swapGenericMinimumReceiveTooltip(l10n),
+    'Total fees' => swapTotalFeesTooltip(l10n),
+    _ => swapStatusDetailTooltip(l10n),
   };
 }
 
