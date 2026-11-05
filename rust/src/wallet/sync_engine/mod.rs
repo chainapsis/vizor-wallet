@@ -2744,6 +2744,13 @@ pub async fn run_sync_inner(
         {
             Ok(()) => return Ok(()),
             Err(sync_err) => {
+                // A sustained slow body already consumed its transfer budget.
+                // Repeating it here would pin the caller to the same endpoint
+                // for four such budgets before Dart can choose another server.
+                // Custom endpoints still surface the error without switching.
+                if lwd::is_slow_endpoint_error(&sync_err) {
+                    return Err(sync_err.to_string());
+                }
                 // Inspect the typed error's recovery strategy before
                 // flattening to a `String` at the public boundary. Fatal
                 // variants (`Db`, `Parse`) bail out immediately with no

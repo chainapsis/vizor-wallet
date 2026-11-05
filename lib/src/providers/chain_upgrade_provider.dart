@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/config/rpc_endpoint_config.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
+import 'app_security_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 
 String ironwoodActiveSeenStorageKey(String network) {
@@ -64,6 +65,16 @@ class ChainUpgradeStatusState {
     this.lightwalletdUpgradeHeight,
     this.endpointMatchesNetwork,
   });
+
+  factory ChainUpgradeStatusState.unobserved(RpcEndpointConfig endpoint) {
+    return ChainUpgradeStatusState(
+      network: endpoint.networkName,
+      endpointUrl: endpoint.normalizedLightwalletdUrl,
+      tipHeight: BigInt.zero,
+      nu63ActivationHeight: null,
+      ironwoodActiveAtTip: false,
+    );
+  }
 
   factory ChainUpgradeStatusState.fromLightwalletd(
     rust_wallet.ChainUpgradeStatus status,
@@ -224,17 +235,29 @@ class ChainUpgradeStatusNotifier
   @override
   Future<ChainUpgradeStatusState> build() async {
     final generation = ++_generation;
-    final endpoint = ref.watch(
+    var endpoint = ref.watch(
       rpcEndpointFailoverProvider.select((state) => state.current),
     );
     final store = ref.watch(ironwoodActivationStoreProvider);
+    final getChainUpgradeStatus = ref.watch(chainUpgradeStatusGetterProvider);
+    final locked = ref.watch(
+      appSecurityProvider.select((security) => security.requiresUnlock),
+    );
     if (await store.isActiveSeen(endpoint.networkName)) {
       return ChainUpgradeStatusState.cachedActive(
         endpoint,
         previous: state.value,
       );
     }
-    final getChainUpgradeStatus = ref.watch(chainUpgradeStatusGetterProvider);
+    if (locked) {
+      final previous = state.value;
+      return previous?.network == endpoint.networkName
+          ? previous!
+          : ChainUpgradeStatusState.unobserved(endpoint);
+    }
+    endpoint = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
     final status = await getChainUpgradeStatus(
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       network: endpoint.networkName,
@@ -254,9 +277,10 @@ class ChainUpgradeStatusNotifier
   }
 
   Future<void> refresh() async {
+    if (ref.read(appSecurityProvider).requiresUnlock) return;
     final generation = ++_generation;
     final previous = state.value;
-    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    var endpoint = ref.read(rpcEndpointFailoverProvider).current;
     if (previous == null) {
       state = const AsyncLoading();
     }
@@ -269,6 +293,10 @@ class ChainUpgradeStatusNotifier
         );
         return;
       }
+      endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
+      if (generation != _generation) return;
       final status = await ref.read(chainUpgradeStatusGetterProvider)(
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,

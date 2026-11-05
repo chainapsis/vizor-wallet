@@ -1,0 +1,203 @@
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../core/storage/app_secure_store.dart';
+import '../rust/api/wallet.dart' as rust_wallet;
+
+/// Selection uses public chain metadata only, never a wallet-derived request.
+class RpcEndpointCandidateSample {
+  const RpcEndpointCandidateSample({
+    required this.url,
+    required this.height,
+    required this.latency,
+  });
+
+  final String url;
+  final BigInt height;
+  final Duration latency;
+}
+
+typedef RpcEndpointCandidatesProbe =
+    Future<List<RpcEndpointCandidateSample>> Function({
+      required List<String> urls,
+      required String network,
+      required String selectionId,
+      required Duration probeTimeout,
+      required Duration totalTimeout,
+      required int maxConcurrency,
+    });
+
+final rpcEndpointCandidatesProbeProvider = Provider<RpcEndpointCandidatesProbe>(
+  (_) =>
+      ({
+        required urls,
+        required network,
+        required selectionId,
+        required probeTimeout,
+        required totalTimeout,
+        required maxConcurrency,
+      }) async {
+        // Reserve synchronously before the FRB worker can queue. Cancellation
+        // then remains authoritative even if that worker starts much later.
+        rust_wallet.beginLightwalletdSelection(selectionId: selectionId);
+        final results = await rust_wallet.probeLightwalletdCandidates(
+          lightwalletdUrls: urls,
+          expectedNetwork: network,
+          selectionId: selectionId,
+          probeTimeoutMs: probeTimeout.inMilliseconds,
+          totalTimeoutMs: totalTimeout.inMilliseconds,
+          maxConcurrency: maxConcurrency,
+        );
+        return [
+          for (final result in results)
+            RpcEndpointCandidateSample(
+              url: result.url,
+              height: result.height,
+              latency: Duration(milliseconds: result.latencyMs),
+            ),
+        ];
+      },
+);
+
+final rpcEndpointSelectionCancelProvider = Provider<void Function(String)>(
+  (_) =>
+      (id) => rust_wallet.cancelLightwalletdSelection(selectionId: id),
+);
+
+class AutomaticRpcEndpointSettings {
+  const AutomaticRpcEndpointSettings({
+    this.directBudget = const Duration(seconds: 6),
+    this.torBudget = const Duration(seconds: 15),
+    this.directProbeTimeout = const Duration(seconds: 3),
+    this.torProbeTimeout = const Duration(seconds: 8),
+    this.cacheMaxAge = const Duration(hours: 12),
+    this.recheckInterval = const Duration(minutes: 15),
+    this.provisionalRecheckInterval = const Duration(minutes: 1),
+    this.minimumResidence = const Duration(minutes: 5),
+    this.slowResponse = const Duration(seconds: 2),
+    this.slowTorResponse = const Duration(seconds: 5),
+    this.failureCooldown = const Duration(minutes: 1),
+  });
+
+  final Duration directBudget;
+  final Duration torBudget;
+  final Duration directProbeTimeout;
+  final Duration torProbeTimeout;
+  final Duration cacheMaxAge;
+  final Duration recheckInterval;
+  final Duration provisionalRecheckInterval;
+  final Duration minimumResidence;
+  final Duration slowResponse;
+  final Duration slowTorResponse;
+  final Duration failureCooldown;
+}
+
+final automaticRpcEndpointSettingsProvider =
+    Provider<AutomaticRpcEndpointSettings>(
+      (_) => const AutomaticRpcEndpointSettings(),
+    );
+
+class AutomaticRpcEndpointCache {
+  const AutomaticRpcEndpointCache({
+    required this.presetId,
+    required this.observedAt,
+  });
+
+  final String presetId;
+  final DateTime observedAt;
+}
+
+abstract interface class AutomaticRpcEndpointStore {
+  Future<AutomaticRpcEndpointCache?> read(String network, bool tor);
+  Future<void> write(String network, bool tor, AutomaticRpcEndpointCache cache);
+  Future<void> clear();
+}
+
+/// Uses the existing wallet store, so a full secure-storage wipe also removes
+/// connection history. Cache failures never prevent a network operation.
+class SecureAutomaticRpcEndpointStore implements AutomaticRpcEndpointStore {
+  const SecureAutomaticRpcEndpointStore();
+
+  String _key(String network, bool tor) =>
+      'zcash_automatic_rpc_v1_${network}_${tor ? 'tor' : 'direct'}';
+
+  @override
+  Future<AutomaticRpcEndpointCache?> read(String network, bool tor) async {
+    final raw = await AppSecureStore.instance.readPlain(_key(network, tor));
+    if (raw == null) return null;
+    final value = jsonDecode(raw) as Map<String, dynamic>;
+    return AutomaticRpcEndpointCache(
+      presetId: value['preset'] as String,
+      observedAt: DateTime.parse(value['observedAt'] as String),
+    );
+  }
+
+  @override
+  Future<void> write(
+    String network,
+    bool tor,
+    AutomaticRpcEndpointCache cache,
+  ) => AppSecureStore.instance.writePlain(
+    _key(network, tor),
+    jsonEncode({
+      'preset': cache.presetId,
+      'observedAt': cache.observedAt.toUtc().toIso8601String(),
+    }),
+  );
+
+  @override
+  Future<void> clear() async {
+    await AppSecureStore.instance.delete(_key('main', false));
+    await AppSecureStore.instance.delete(_key('main', true));
+  }
+}
+
+final automaticRpcEndpointStoreProvider = Provider<AutomaticRpcEndpointStore>(
+  (_) => const SecureAutomaticRpcEndpointStore(),
+);
+
+/// Prefer the fastest member of a plausible height cluster. One high outlier
+/// must not evict all agreeing servers; an isolated success remains provisional.
+List<RpcEndpointCandidateSample> rankAutomaticRpcEndpointSamples(
+  List<RpcEndpointCandidateSample> samples, {
+  BigInt? minimumHeight,
+  bool requireCorroboration = false,
+}) {
+  if (samples.isEmpty) return const [];
+  // A repeated response from one host is not an independent observation.
+  final distinct = {
+    for (final sample in samples) sample.url: sample,
+  }.values.toList();
+  final byHeight = [...distinct]..sort((a, b) => a.height.compareTo(b.height));
+  final tolerance = BigInt.from(2);
+  var start = 0;
+  var bestStart = 0;
+  var bestEnd = 0;
+  for (var end = 0; end < byHeight.length; end++) {
+    while (byHeight[end].height - byHeight[start].height > tolerance) {
+      start++;
+    }
+    // Prefer a fresher cluster when equally many peers agree. With no pair
+    // agreeing, keep responses provisional rather than trusting one maximum.
+    if (end - start >= bestEnd - bestStart) {
+      bestStart = start;
+      bestEnd = end;
+    }
+  }
+  final hasCluster = bestEnd > bestStart;
+  if (requireCorroboration && !hasCluster) return const [];
+  final low = byHeight[bestStart].height;
+  final high = byHeight[bestEnd].height;
+  final ranked =
+      distinct
+          .where(
+            (sample) =>
+                (!hasCluster ||
+                    (sample.height >= low && sample.height <= high)) &&
+                (minimumHeight == null || sample.height >= minimumHeight),
+          )
+          .toList()
+        ..sort((a, b) => a.latency.compareTo(b.latency));
+  return ranked;
+}

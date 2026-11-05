@@ -1,9 +1,17 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../core/config/rpc_endpoint_config.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'rpc_endpoint_provider.dart';
+import 'automatic_rpc_endpoint_selection.dart';
+import 'network_privacy_provider.dart';
+import 'app_security_provider.dart';
+import '../core/layout/app_process_work_policy.dart';
+import '../core/lifecycle/app_shutdown_signal.dart';
 
 typedef RpcEndpointChainNameGetter =
     Future<String> Function(String lightwalletdUrl);
@@ -65,6 +73,8 @@ class RpcEndpointFailoverState {
     this.heightWindowStartHeight,
     this.lastObservedHeight,
     this.lastObservedAt,
+    this.automaticReady = true,
+    this.automaticProvisional = false,
   });
 
   final RpcEndpointConfig primary;
@@ -79,11 +89,14 @@ class RpcEndpointFailoverState {
   final BigInt? heightWindowStartHeight;
   final BigInt? lastObservedHeight;
   final DateTime? lastObservedAt;
+  final bool automaticReady;
+  final bool automaticProvisional;
 
   RpcEndpointConfig? get fallback =>
       fallbackCandidates.isEmpty ? null : fallbackCandidates.first;
 
   bool get isUsingFallback =>
+      !isAutomaticRpcEndpointConfig(primary) &&
       current.normalizedLightwalletdUrl != primary.normalizedLightwalletdUrl;
 
   RpcEndpointFailoverState copyWith({
@@ -105,8 +118,12 @@ class RpcEndpointFailoverState {
     bool clearLastObservedHeight = false,
     DateTime? lastObservedAt,
     bool clearLastObservedAt = false,
+    bool? automaticReady,
+    bool? automaticProvisional,
   }) {
     return RpcEndpointFailoverState(
+      automaticReady: automaticReady ?? this.automaticReady,
+      automaticProvisional: automaticProvisional ?? this.automaticProvisional,
       primary: primary ?? this.primary,
       current: current ?? this.current,
       fallbackCandidates: fallbackCandidates ?? this.fallbackCandidates,
@@ -231,34 +248,753 @@ final rpcEndpointFailoverLatestBlockHeightGetterProvider =
 class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   int _eventSequence = 0;
   int _configGeneration = 0;
+  int _automaticEpoch = 0;
+  int _selectionPauseCount = 0;
+  static int _selectionSequence = 0;
+  Future<RpcEndpointConfig>? _automaticSelection;
+  bool _selectionIsValidation = false;
+  DateTime? _validationDueAt;
+  Duration? _selectedLatency;
+  String? _selectionExcludeUrl;
+  BigInt? _selectionMinimumHeight;
+  String? _selectionId;
+  void Function(String)? _cancelProbe;
+  Completer<void>? _selectionCancelled;
+  Future<void> _cacheWrites = Future.value();
+  DateTime? _selectedAt;
+  DateTime? _checkedAt;
+  DateTime? _retryAt;
+  int _failedSelections = 0;
+  int _slowResponses = 0;
+  final Map<String, DateTime> _cooldowns = {};
+  bool _inForeground = true;
+  AppLifecycleListener? _automaticLifecycle;
 
   @override
   RpcEndpointFailoverState build() {
     _configGeneration += 1;
+    _cancelAutomaticWork();
+    _selectedAt = null;
+    _selectedLatency = null;
+    _validationDueAt = null;
+    _checkedAt = null;
+    _retryAt = null;
+    _failedSelections = 0;
+    _cooldowns.clear();
+    ref.onDispose(() {
+      _cancelAutomaticWork();
+      _automaticLifecycle?.dispose();
+      _automaticLifecycle = null;
+    });
+    final shutdown = ref.read(appShutdownSignalProvider);
+    shutdown.addListener(cancelAutomaticSelection);
+    ref.onDispose(() => shutdown.removeListener(cancelAutomaticSelection));
+    ref.listen(networkPrivacyProvider, (previous, next) {
+      if (previous == null) return;
+      if ((previous.targetTorEnabled ?? previous.torEnabled) !=
+              (next.targetTorEnabled ?? next.torEnabled) ||
+          (!previous.isBusy && next.isBusy) ||
+          next.status == NetworkPrivacyConnectionStatus.failed) {
+        _retryAt = null;
+        _failedSelections = 0;
+        _cooldowns.clear();
+        cancelAutomaticSelection();
+      }
+    });
+    ref.listen(appSecurityProvider.select((s) => s.requiresUnlock), (
+      _,
+      locked,
+    ) {
+      if (locked) cancelAutomaticSelection();
+    });
     final primary = ref.watch(rpcEndpointProvider);
     return RpcEndpointFailoverState(
       primary: primary,
       current: primary,
+      automaticReady: !isAutomaticRpcEndpointConfig(primary),
       fallbackCandidates: fallbackRpcEndpointCandidatesFor(primary),
     );
   }
 
   RpcEndpointConfig get currentEndpoint => state.current;
 
+  /// A single network boundary for all automatic-mode consumers. Reading the
+  /// preference or building a settings widget never starts endpoint probes.
+  Future<RpcEndpointConfig> ensureReady() async {
+    if (!isAutomaticRpcEndpointConfig(state.primary)) return state.current;
+    _trackAutomaticLifecycle();
+    if (_selectionPauseCount > 0 ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        !canRunAppProcessWork(
+          isInForeground: _inForeground,
+          shutdownSignal: ref.read(appShutdownSignalProvider),
+        )) {
+      throw StateError('Automatic endpoint selection is paused.');
+    }
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    if (state.automaticReady) {
+      final current = state.current;
+      if (state.automaticProvisional) {
+        _startProvisionalValidationIfDue();
+      } else if (_checkedAt == null ||
+          now.difference(_checkedAt!) >= settings.recheckInterval) {
+        unawaited(
+          _ensureAutomatic(force: true).then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stack) {
+              log('Automatic endpoint recheck failed: $error');
+            },
+          ),
+        );
+      }
+      return current;
+    }
+    return _ensureAutomatic();
+  }
+
+  void _trackAutomaticLifecycle() {
+    if (_automaticLifecycle != null) return;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _inForeground =
+        lifecycle != AppLifecycleState.hidden &&
+        lifecycle != AppLifecycleState.paused &&
+        lifecycle != AppLifecycleState.detached;
+    _automaticLifecycle = AppLifecycleListener(
+      onResume: () => _inForeground = true,
+      onHide: () {
+        _inForeground = false;
+        if (!canRunAppProcessWork(isInForeground: false)) {
+          cancelAutomaticSelection();
+        }
+      },
+    );
+  }
+
+  void _cancelAutomaticWork() {
+    ++_automaticEpoch;
+    final id = _selectionId;
+    if (id != null) _cancelProbe?.call(id);
+    final signal = _selectionCancelled;
+    if (signal != null && !signal.isCompleted) signal.complete();
+    _selectionId = null;
+    _automaticSelection = null;
+    _selectionIsValidation = false;
+    _selectionCancelled = null;
+  }
+
+  void cancelAutomaticSelection() {
+    _cancelAutomaticWork();
+    _checkedAt = null;
+    if (ref.mounted && isAutomaticRpcEndpointConfig(state.primary)) {
+      state = state.copyWith(automaticReady: false);
+    }
+  }
+
+  void pauseAutomaticSelection() {
+    _selectionPauseCount++;
+    cancelAutomaticSelection();
+  }
+
+  void resumeAutomaticSelection() {
+    if (_selectionPauseCount > 0) _selectionPauseCount--;
+  }
+
+  Future<void> clearAutomaticSelectionCache() async {
+    cancelAutomaticSelection();
+    _cooldowns.clear();
+    _retryAt = null;
+    _failedSelections = 0;
+    await _cacheWrites;
+    try {
+      await ref.read(automaticRpcEndpointStoreProvider).clear();
+    } catch (error) {
+      log('Automatic endpoint cache cleanup failed: $error');
+    }
+  }
+
+  Future<bool> _waitForRoute(Completer<void> cancelled) async {
+    bool ready(NetworkPrivacyState route) =>
+        !route.isBusy &&
+        (route.status == NetworkPrivacyConnectionStatus.off ||
+            route.status == NetworkPrivacyConnectionStatus.connected);
+    var route = ref.read(networkPrivacyProvider);
+    if (!ready(route) && route.isBusy) {
+      final changed = Completer<void>();
+      final subscription = ref.listen(networkPrivacyProvider, (_, next) {
+        if (!next.isBusy && !changed.isCompleted) changed.complete();
+      });
+      try {
+        await Future.any([changed.future, cancelled.future]);
+      } finally {
+        subscription.close();
+      }
+      if (cancelled.isCompleted || !ref.mounted) {
+        throw StateError('Automatic endpoint selection cancelled.');
+      }
+      route = ref.read(networkPrivacyProvider);
+    }
+    if (!ready(route)) {
+      throw StateError('Network privacy blocked automatic endpoint selection.');
+    }
+    return route.torEnabled;
+  }
+
+  Future<RpcEndpointConfig> _ensureAutomatic({
+    bool force = false,
+    String? excludeUrl,
+    BigInt? minimumHeight,
+  }) {
+    if (!ref.mounted) {
+      return Future.error(
+        StateError('Automatic endpoint selection cancelled.'),
+      );
+    }
+    _trackAutomaticLifecycle();
+    if (_selectionPauseCount > 0 ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        !canRunAppProcessWork(
+          isInForeground: _inForeground,
+          shutdownSignal: ref.read(appShutdownSignalProvider),
+        )) {
+      return Future.error(
+        StateError('Automatic endpoint selection is paused.'),
+      );
+    }
+    final pending = _automaticSelection;
+    if (pending != null) {
+      if ((excludeUrl == null && minimumHeight == null) ||
+          (!_selectionIsValidation &&
+              excludeUrl == _selectionExcludeUrl &&
+              minimumHeight == _selectionMinimumHeight)) {
+        return pending;
+      }
+      _cancelAutomaticWork();
+    }
+    _selectionIsValidation = false;
+    _selectionExcludeUrl = excludeUrl;
+    _selectionMinimumHeight = minimumHeight;
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    if (_retryAt != null && now.isBefore(_retryAt!)) {
+      return Future.error(
+        StateError('No automatic endpoint is available; retry pending.'),
+      );
+    }
+    final epoch = _automaticEpoch;
+    final cancelled = Completer<void>();
+    _selectionCancelled = cancelled;
+    late final Future<RpcEndpointConfig> selection;
+    selection =
+        _selectAutomatic(
+          epoch: epoch,
+          cancelled: cancelled,
+          force: force,
+          excludeUrl: excludeUrl,
+          minimumHeight: minimumHeight,
+        ).whenComplete(() {
+          if (identical(_automaticSelection, selection)) {
+            _automaticSelection = null;
+            _selectionId = null;
+            _selectionCancelled = null;
+          }
+        });
+    _automaticSelection = selection;
+    return selection;
+  }
+
+  Future<RpcEndpointConfig> _selectAutomatic({
+    required int epoch,
+    required Completer<void> cancelled,
+    required bool force,
+    String? excludeUrl,
+    BigInt? minimumHeight,
+  }) async {
+    final tor = await _waitForRoute(cancelled);
+    void requireCurrent() {
+      if (!ref.mounted || epoch != _automaticEpoch || cancelled.isCompleted) {
+        throw StateError('Automatic endpoint selection cancelled.');
+      }
+    }
+
+    requireCurrent();
+    final primary = state.primary;
+    final previous = state.current;
+    final hadReady = state.automaticReady;
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final clock = ref.read(rpcEndpointFailoverClockProvider);
+    final store = ref.read(automaticRpcEndpointStoreProvider);
+    final probe = ref.read(rpcEndpointCandidatesProbeProvider);
+    _cancelProbe = ref.read(rpcEndpointSelectionCancelProvider);
+    final now = clock();
+    final candidates = automaticRpcEndpointCandidatesFor(primary).where((
+      candidate,
+    ) {
+      final url = candidate.normalizedLightwalletdUrl;
+      return url != excludeUrl && !(_cooldowns[url]?.isAfter(now) ?? false);
+    }).toList();
+    if (candidates.isEmpty) {
+      final deadlines =
+          _cooldowns.values.where((at) => at.isAfter(now)).toList()..sort();
+      _retryAt = deadlines.firstOrNull;
+      throw StateError(
+        'No automatic endpoint is available; all candidates are cooling down.',
+      );
+    }
+    // Rotate a region/operator-diverse list. Cache preference is applied below;
+    // no geography service or device location permission is needed.
+    final offset = _selectionSequence++ % candidates.length;
+    final ordered = [...candidates.skip(offset), ...candidates.take(offset)];
+    if (hadReady) {
+      final index = ordered.indexWhere(
+        (c) =>
+            c.normalizedLightwalletdUrl == previous.normalizedLightwalletdUrl,
+      );
+      if (index > 0) ordered.insert(0, ordered.removeAt(index));
+    }
+    AutomaticRpcEndpointCache? cached;
+    if (!force && !hadReady) {
+      try {
+        cached = await Future.any<AutomaticRpcEndpointCache?>([
+          store.read(primary.networkName, tor),
+          cancelled.future.then((_) => null),
+        ]).timeout(const Duration(milliseconds: 250));
+      } catch (_) {
+        /* Optional cache; connectivity is independent of storage. */
+      }
+    }
+    requireCurrent();
+    final budget = tor ? settings.torBudget : settings.directBudget;
+    final timeout = tor
+        ? settings.torProbeTimeout
+        : settings.directProbeTimeout;
+    final stopwatch = Stopwatch()..start();
+    final samples = <RpcEndpointCandidateSample>[];
+    Future<List<RpcEndpointCandidateSample>> check(
+      List<RpcEndpointConfig> targets,
+      Duration remaining,
+    ) => _probeAutomaticCandidates(
+      targets: targets,
+      primary: primary,
+      epoch: epoch,
+      cancelled: cancelled,
+      probe: probe,
+      probeTimeout: timeout,
+      remaining: remaining,
+      maxConcurrency: tor ? 2 : 4,
+    );
+
+    try {
+      final cacheAge = cached == null
+          ? null
+          : now.difference(cached.observedAt);
+      final preferred = ordered
+          .where((c) => c.presetId == cached?.presetId)
+          .firstOrNull;
+      if (preferred != null &&
+          cacheAge != null &&
+          !cacheAge.isNegative &&
+          cacheAge < settings.cacheMaxAge) {
+        // A cached endpoint gets a short head start, never an entire long
+        // request timeout before other regions become eligible.
+        try {
+          samples.addAll(
+            await check(
+              [preferred],
+              (tor
+                          ? const Duration(seconds: 2)
+                          : const Duration(milliseconds: 750)) <
+                      budget
+                  ? (tor
+                        ? const Duration(seconds: 2)
+                        : const Duration(milliseconds: 750))
+                  : budget,
+            ),
+          );
+        } catch (_) {
+          requireCurrent();
+        }
+      }
+      requireCurrent();
+      final remaining = budget - stopwatch.elapsed;
+      if (samples.isEmpty && remaining > Duration.zero) {
+        samples.addAll(await check(ordered, remaining));
+      }
+      requireCurrent();
+      final allowed = {
+        for (final c in candidates) c.normalizedLightwalletdUrl: c,
+      };
+      final valid = samples.where((s) => allowed.containsKey(s.url)).toList();
+      final ranked = rankAutomaticRpcEndpointSamples(
+        valid,
+        minimumHeight: minimumHeight,
+      );
+      if (ranked.isEmpty) {
+        throw StateError('No healthy automatic endpoint is available.');
+      }
+      var winner = ranked.first;
+      final residence = _selectedAt == null
+          ? Duration.zero
+          : now.difference(_selectedAt!);
+      if (hadReady &&
+          excludeUrl == null &&
+          minimumHeight == null &&
+          residence < settings.minimumResidence) {
+        _checkedAt = clock();
+        return previous;
+      }
+      // Performance-driven rechecks retain a healthy current server unless a
+      // materially faster candidate justifies paying for a new connection.
+      final currentSample = ranked
+          .where((s) => s.url == previous.normalizedLightwalletdUrl)
+          .firstOrNull;
+      if (hadReady &&
+          excludeUrl == null &&
+          minimumHeight == null &&
+          currentSample != null) {
+        final residence = _selectedAt == null
+            ? Duration.zero
+            : now.difference(_selectedAt!);
+        final improvement =
+            currentSample.latency.inMilliseconds -
+            winner.latency.inMilliseconds;
+        if (residence < settings.minimumResidence ||
+            improvement < 150 ||
+            winner.latency.inMicroseconds >
+                currentSample.latency.inMicroseconds * 0.7) {
+          winner = currentSample;
+        }
+      }
+      final provisional = rankAutomaticRpcEndpointSamples(
+        valid,
+        requireCorroboration: true,
+      ).isEmpty;
+      final selected = _publishAutomaticEndpoint(
+        selected: allowed[winner.url]!,
+        sample: winner,
+        primary: primary,
+        tor: tor,
+        epoch: epoch,
+        provisional: provisional,
+      );
+      if (provisional) {
+        _validationDueAt = clock();
+        // The selection slot must be released before independent validation
+        // starts. Its result never holds up the first usable operation.
+        final completed = _automaticSelection;
+        if (completed != null) {
+          unawaited(
+            completed.then<void>((_) {
+              if (ref.mounted && epoch == _automaticEpoch) {
+                _startProvisionalValidationIfDue();
+              }
+            }, onError: (Object _, StackTrace _) {}),
+          );
+        }
+      }
+      return selected;
+    } catch (error) {
+      requireCurrent();
+      if (hadReady && excludeUrl == null && minimumHeight == null) {
+        // An exploratory check must not turn a working connection into an
+        // outage when no better alternative could be measured.
+        _checkedAt = clock();
+        return previous;
+      }
+      final message = error.toString().toLowerCase();
+      if (message.contains('network privacy blocked') ||
+          message.contains('cancelled')) {
+        rethrow;
+      }
+      _failedSelections++;
+      final seconds = (5 * (1 << (_failedSelections - 1).clamp(0, 4))).clamp(
+        5,
+        60,
+      );
+      _retryAt = clock().add(Duration(seconds: seconds));
+      if (!hadReady || excludeUrl != null) {
+        state = state.copyWith(
+          automaticReady: false,
+          lastFailure: error.toString(),
+        );
+      }
+      rethrow;
+    }
+  }
+
+  Future<List<RpcEndpointCandidateSample>> _probeAutomaticCandidates({
+    required List<RpcEndpointConfig> targets,
+    required RpcEndpointConfig primary,
+    required int epoch,
+    required Completer<void> cancelled,
+    required RpcEndpointCandidatesProbe probe,
+    required Duration probeTimeout,
+    required Duration remaining,
+    required int maxConcurrency,
+  }) async {
+    if (!ref.mounted || epoch != _automaticEpoch || cancelled.isCompleted) {
+      throw StateError('Automatic endpoint selection cancelled.');
+    }
+    final id =
+        '${DateTime.now().microsecondsSinceEpoch}-${_selectionSequence++}';
+    _selectionId = id;
+    final samples =
+        await Future.any([
+          probe(
+            urls: targets.map((c) => c.normalizedLightwalletdUrl).toList(),
+            network: primary.networkName,
+            selectionId: id,
+            probeTimeout: probeTimeout < remaining ? probeTimeout : remaining,
+            totalTimeout: remaining,
+            maxConcurrency: maxConcurrency,
+          ),
+          cancelled.future.then<List<RpcEndpointCandidateSample>>(
+            (_) => throw StateError('Automatic endpoint selection cancelled.'),
+          ),
+        ]).timeout(
+          remaining,
+          onTimeout: () {
+            _cancelProbe?.call(id);
+            throw TimeoutException(
+              'Automatic endpoint selection timed out.',
+              remaining,
+            );
+          },
+        );
+    final allowed = targets.map((c) => c.normalizedLightwalletdUrl).toSet();
+    return samples.where((sample) => allowed.contains(sample.url)).toList();
+  }
+
+  RpcEndpointConfig _publishAutomaticEndpoint({
+    required RpcEndpointConfig selected,
+    required RpcEndpointCandidateSample sample,
+    required RpcEndpointConfig primary,
+    required bool tor,
+    required int epoch,
+    required bool provisional,
+  }) {
+    final observedAt = ref.read(rpcEndpointFailoverClockProvider)();
+    if (!_sameEndpointIdentity(selected, state.current)) {
+      _selectedAt = observedAt;
+    }
+    _selectedAt ??= observedAt;
+    _selectedLatency = sample.latency;
+    _checkedAt = observedAt;
+    _retryAt = null;
+    _failedSelections = 0;
+    _slowResponses = 0;
+    state = state.copyWith(
+      current: selected,
+      automaticReady: true,
+      automaticProvisional: provisional,
+      clearLastFailure: true,
+      heightWindowStartedAt: observedAt,
+      heightWindowStartHeight: sample.height,
+      lastObservedHeight: sample.height,
+      lastObservedAt: observedAt,
+    );
+    final store = ref.read(automaticRpcEndpointStoreProvider);
+    final cache = AutomaticRpcEndpointCache(
+      presetId: selected.presetId!,
+      observedAt: observedAt,
+    );
+    _cacheWrites = _cacheWrites.then((_) async {
+      if (!ref.mounted || epoch != _automaticEpoch) return;
+      try {
+        await store.write(primary.networkName, tor, cache);
+      } catch (error) {
+        log('Automatic endpoint cache write failed: $error');
+      }
+    });
+    return selected;
+  }
+
+  void _startProvisionalValidationIfDue() {
+    if (!ref.mounted ||
+        _automaticSelection != null ||
+        !state.automaticReady ||
+        !state.automaticProvisional ||
+        _selectionPauseCount > 0 ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        !canRunAppProcessWork(
+          isInForeground: _inForeground,
+          shutdownSignal: ref.read(appShutdownSignalProvider),
+        )) {
+      return;
+    }
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    if (_validationDueAt != null && now.isBefore(_validationDueAt!)) return;
+    _validationDueAt = now.add(
+      ref.read(automaticRpcEndpointSettingsProvider).provisionalRecheckInterval,
+    );
+    final epoch = _automaticEpoch;
+    final cancelled = Completer<void>();
+    _selectionCancelled = cancelled;
+    _selectionIsValidation = true;
+    _selectionExcludeUrl = state.current.normalizedLightwalletdUrl;
+    _selectionMinimumHeight = null;
+    late final Future<RpcEndpointConfig> validation;
+    validation = _validateProvisionalEndpoint(epoch, cancelled).whenComplete(
+      () {
+        if (identical(_automaticSelection, validation)) {
+          _automaticSelection = null;
+          _selectionIsValidation = false;
+          _selectionId = null;
+          _selectionCancelled = null;
+        }
+      },
+    );
+    _automaticSelection = validation;
+    unawaited(
+      validation.then<void>(
+        (_) {},
+        onError: (Object error, StackTrace _) {
+          log('Automatic endpoint freshness validation failed: $error');
+        },
+      ),
+    );
+  }
+
+  Future<RpcEndpointConfig> _validateProvisionalEndpoint(
+    int epoch,
+    Completer<void> cancelled,
+  ) async {
+    final primary = state.primary;
+    final current = state.current;
+    void requireCurrent() {
+      if (!ref.mounted ||
+          epoch != _automaticEpoch ||
+          cancelled.isCompleted ||
+          !_sameEndpointIdentity(current, state.current) ||
+          !state.automaticReady) {
+        throw StateError('Automatic endpoint selection cancelled.');
+      }
+    }
+
+    final tor = await _waitForRoute(cancelled);
+    requireCurrent();
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final clock = ref.read(rpcEndpointFailoverClockProvider);
+    final probe = ref.read(rpcEndpointCandidatesProbeProvider);
+    _cancelProbe = ref.read(rpcEndpointSelectionCancelProvider);
+    final budget = tor ? settings.torBudget : settings.directBudget;
+    final timeout = tor
+        ? settings.torProbeTimeout
+        : settings.directProbeTimeout;
+    final watch = Stopwatch()..start();
+    final now = clock();
+    final peers = automaticRpcEndpointCandidatesFor(primary)
+        .where(
+          (candidate) =>
+              candidate.normalizedLightwalletdUrl !=
+                  current.normalizedLightwalletdUrl &&
+              !(_cooldowns[candidate.normalizedLightwalletdUrl]?.isAfter(now) ??
+                  false),
+        )
+        .toList();
+    final observations = <String, RpcEndpointCandidateSample>{};
+    RpcEndpointCandidateSample currentSample() => RpcEndpointCandidateSample(
+      url: current.normalizedLightwalletdUrl,
+      height: state.lastObservedHeight!,
+      latency: _selectedLatency ?? Duration.zero,
+    );
+    List<RpcEndpointCandidateSample> corroborated() =>
+        rankAutomaticRpcEndpointSamples([
+          currentSample(),
+          ...observations.values,
+        ], requireCorroboration: true);
+    try {
+      var ranked = <RpcEndpointCandidateSample>[];
+      // Every successful round removes at least one distinct host from the
+      // remaining targets. Keep looking through conflicting fast peers until
+      // a cluster agrees, the finite pool is exhausted, or the one budget ends.
+      while (ranked.isEmpty) {
+        final remaining = budget - watch.elapsed;
+        final targets = peers
+            .where(
+              (candidate) => !observations.containsKey(
+                candidate.normalizedLightwalletdUrl,
+              ),
+            )
+            .toList();
+        if (remaining <= Duration.zero || targets.isEmpty) break;
+        final observedBefore = observations.length;
+        final samples = await _probeAutomaticCandidates(
+          targets: targets,
+          primary: primary,
+          epoch: epoch,
+          cancelled: cancelled,
+          probe: probe,
+          probeTimeout: timeout,
+          remaining: remaining,
+          maxConcurrency: tor ? 2 : 4,
+        );
+        requireCurrent();
+        for (final sample in samples) {
+          observations[sample.url] = sample;
+        }
+        // Empty or invalid replies cannot spin without making progress.
+        if (observations.length == observedBefore) break;
+        ranked = corroborated();
+      }
+      requireCurrent();
+      if (ranked.isEmpty) return current;
+      var winner = ranked.first;
+      final verifiedCurrent = ranked
+          .where((s) => s.url == current.normalizedLightwalletdUrl)
+          .firstOrNull;
+      if (verifiedCurrent != null) {
+        final residence = _selectedAt == null
+            ? Duration.zero
+            : clock().difference(_selectedAt!);
+        final improvement =
+            verifiedCurrent.latency.inMilliseconds -
+            winner.latency.inMilliseconds;
+        if (residence < settings.minimumResidence ||
+            improvement < 150 ||
+            winner.latency.inMicroseconds >
+                verifiedCurrent.latency.inMicroseconds * 0.7) {
+          winner = verifiedCurrent;
+        }
+      }
+      final selected = winner.url == current.normalizedLightwalletdUrl
+          ? current
+          : peers.firstWhere((c) => c.normalizedLightwalletdUrl == winner.url);
+      return _publishAutomaticEndpoint(
+        selected: selected,
+        sample: winner,
+        primary: primary,
+        tor: tor,
+        epoch: epoch,
+        provisional: false,
+      );
+    } catch (error) {
+      requireCurrent();
+      // A provisional success is still usable while independent peers are
+      // unavailable. The next ordinary operation retries at the due time.
+      log('Automatic endpoint freshness validation unresolved: $error');
+      return current;
+    }
+  }
+
   Future<BigInt> getLatestBlockHeight() async {
     const operation = 'latest block height';
+    await ensureReady();
     await maybeProbePrimary();
     final endpoint = state.current;
+    final operationEpoch = _automaticEpoch;
     final getLatestBlockHeight = ref.read(
       rpcEndpointFailoverLatestBlockHeightGetterProvider,
     );
+    final stopwatch = Stopwatch()..start();
 
     try {
       final height = await getLatestBlockHeight(
         endpoint.normalizedLightwalletdUrl,
         endpoint.networkName,
       );
+      if (!ref.mounted || operationEpoch != _automaticEpoch) return height;
       _recordEndpointSuccess(endpoint);
+      unawaited(_recordAutomaticResponse(endpoint, stopwatch.elapsed));
       final slowFallback = await _maybeSwitchFromSlowHeight(
         endpoint,
         height,
@@ -266,6 +1002,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       );
       return slowFallback?.height ?? height;
     } catch (e, st) {
+      if (!ref.mounted || operationEpoch != _automaticEpoch) {
+        Error.throwWithStackTrace(e, st);
+      }
       final switched = await switchToFallbackFor(
         e,
         endpoint: endpoint,
@@ -297,13 +1036,19 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     bool Function(Object error) shouldFallback =
         shouldFallbackFromLightwalletdError,
   }) async {
+    await ensureReady();
     await maybeProbePrimary();
     final endpoint = state.current;
+    final operationEpoch = _automaticEpoch;
     try {
       final result = await action(endpoint);
+      if (!ref.mounted || operationEpoch != _automaticEpoch) return result;
       _recordEndpointSuccess(endpoint);
       return result;
     } catch (e, st) {
+      if (!ref.mounted || operationEpoch != _automaticEpoch) {
+        Error.throwWithStackTrace(e, st);
+      }
       final switched = allowFallback
           ? await switchToFallbackFor(
               e,
@@ -336,12 +1081,61 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   }) async {
     final attempted = endpoint ?? state.current;
     final context = _captureContext();
-    if (!_sameEndpointIdentity(attempted, context.current) ||
-        !shouldFallback(error)) {
-      return false;
+    if (!shouldFallback(error)) return false;
+    if (!_sameEndpointIdentity(attempted, context.current)) {
+      // A performance recheck may already have selected B while an existing
+      // sync is still finishing on A. Reuse B rather than recording an outage
+      // or starting a second recovery; never cross a manual/custom preference.
+      return isAutomaticRpcEndpointConfig(context.primary) &&
+          state.automaticReady &&
+          _selectionPauseCount == 0 &&
+          !ref.read(appSecurityProvider).requiresUnlock &&
+          canRunAppProcessWork(
+            isInForeground: _inForeground,
+            shutdownSignal: ref.read(appShutdownSignalProvider),
+          ) &&
+          automaticRpcEndpointCandidatesFor(
+            context.primary,
+          ).any((candidate) => _sameEndpointIdentity(candidate, attempted));
     }
 
     final attemptedUrl = attempted.normalizedLightwalletdUrl;
+    if (isAutomaticRpcEndpointConfig(context.primary)) {
+      _cooldowns[attemptedUrl] = ref
+          .read(rpcEndpointFailoverClockProvider)()
+          .add(ref.read(automaticRpcEndpointSettingsProvider).failureCooldown);
+      if (!ref.mounted ||
+          _selectionPauseCount > 0 ||
+          ref.read(appSecurityProvider).requiresUnlock ||
+          !canRunAppProcessWork(
+            isInForeground: _inForeground,
+            shutdownSignal: ref.read(appShutdownSignalProvider),
+          )) {
+        return false;
+      }
+      state = state.copyWith(automaticReady: false);
+      _checkedAt = null;
+      try {
+        final selection = _ensureAutomatic(
+          force: true,
+          excludeUrl: attemptedUrl,
+        );
+        final selectionEpoch = _automaticEpoch;
+        final selected = await selection;
+        return ref.mounted &&
+            context.generation == _configGeneration &&
+            selectionEpoch == _automaticEpoch &&
+            _sameEndpointIdentity(context.primary, state.primary) &&
+            state.automaticReady &&
+            _sameEndpointIdentity(selected, state.current) &&
+            selected.normalizedLightwalletdUrl != attemptedUrl;
+      } catch (selectionError) {
+        log(
+          'Automatic endpoint recovery failed after $operation: $selectionError',
+        );
+        return false;
+      }
+    }
     final failedPrimary = _sameEndpointIdentity(attempted, context.primary);
     final nextFailureCount = failedPrimary
         ? state.primaryFailureCount + 1
@@ -439,6 +1233,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   }
 
   Future<bool> maybeProbePrimary({bool force = false}) async {
+    if (isAutomaticRpcEndpointConfig(state.primary)) return false;
     if (!state.isUsingFallback) return false;
 
     final context = _captureContext();
@@ -563,6 +1358,35 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return null;
     }
 
+    if (isAutomaticRpcEndpointConfig(context.primary)) {
+      try {
+        final requiredHeight =
+            height + BigInt.from(settings.slowFallbackLeadBlocks);
+        final selection = _ensureAutomatic(
+          force: true,
+          minimumHeight: requiredHeight,
+        );
+        final selectionEpoch = _automaticEpoch;
+        await selection;
+        if (!ref.mounted ||
+            selectionEpoch != _automaticEpoch ||
+            context.generation != _configGeneration ||
+            !state.automaticReady ||
+            _isCurrentEndpoint(endpoint) ||
+            state.lastObservedHeight! < requiredHeight) {
+          return null;
+        }
+        return RpcEndpointHealth(
+          chainName: state.current.networkName,
+          height: state.lastObservedHeight!,
+        );
+      } catch (_) {
+        if (_isCurrentContext(context)) {
+          _resetHeightWindow(endpoint, height, now: now);
+        }
+        return null;
+      }
+    }
     final fallback = await _findFallbackAheadOf(
       endpoint,
       candidates: context.fallbackCandidates,
@@ -647,6 +1471,29 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       }
     }
     return null;
+  }
+
+  Future<void> _recordAutomaticResponse(
+    RpcEndpointConfig endpoint,
+    Duration elapsed,
+  ) async {
+    if (!isAutomaticRpcEndpointConfig(state.primary) ||
+        !_isCurrentEndpoint(endpoint)) {
+      return;
+    }
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final tor = ref.read(networkPrivacyProvider).torEnabled;
+    if (elapsed < (tor ? settings.slowTorResponse : settings.slowResponse)) {
+      _slowResponses = 0;
+      return;
+    }
+    if (++_slowResponses < 2) return;
+    _slowResponses = 0;
+    try {
+      await _ensureAutomatic(force: true);
+    } catch (_) {
+      /* A slow success is still a success when alternatives fail. */
+    }
   }
 
   void _resetHeightWindow(

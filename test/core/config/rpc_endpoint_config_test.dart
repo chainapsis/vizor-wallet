@@ -93,7 +93,7 @@ void main() {
           'us.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Default',
+        'Americas',
       );
       expect(
         findRpcEndpointPresetByUrl(
@@ -157,7 +157,7 @@ void main() {
         networkName: 'main',
       );
 
-      expect(preset?.id, kDefaultRpcEndpointPresetId);
+      expect(preset?.id, kManualUsRpcEndpointPresetId);
     });
 
     test('keeps the previous zec.rocks default as a selectable fallback', () {
@@ -193,7 +193,7 @@ void main() {
       );
     });
 
-    test('uses Stardust US as the mainnet default endpoint', () {
+    test('keeps a compatibility URL for the automatic mainnet default', () {
       final defaultEndpoint = defaultRpcEndpointConfig('main');
 
       expect(defaultEndpoint.networkName, 'main');
@@ -358,6 +358,76 @@ void main() {
     });
   });
 
+  group('automatic selection intent', () {
+    test('default ID enables automatic mainnet selection', () {
+      final endpoint = defaultRpcEndpointConfig('main');
+      expect(isAutomaticRpcEndpointConfig(endpoint), isTrue);
+      expect(explicitRpcEndpointPresetFor(endpoint)?.label, 'Automatic');
+      for (final network in ['test', 'regtest']) {
+        expect(
+          isAutomaticRpcEndpointConfig(defaultRpcEndpointConfig(network)),
+          isFalse,
+        );
+      }
+    });
+
+    test('custom and manual US retain intent even at the default URL', () {
+      final endpoint = defaultRpcEndpointConfig('main');
+      for (final id in [
+        kCustomRpcEndpointPresetId,
+        kManualUsRpcEndpointPresetId,
+      ]) {
+        expect(
+          isAutomaticRpcEndpointConfig(endpoint.copyWith(presetId: id)),
+          isFalse,
+        );
+        expect(
+          automaticRpcEndpointCandidatesFor(endpoint.copyWith(presetId: id)),
+          isEmpty,
+        );
+      }
+    });
+
+    test('automatic pool contains distinct concrete reviewed servers', () {
+      final candidates = automaticRpcEndpointCandidatesFor(
+        defaultRpcEndpointConfig('main'),
+      );
+      expect(
+        candidates.map((entry) => entry.presetId),
+        contains(kManualUsRpcEndpointPresetId),
+      );
+      expect(candidates.any(isAutomaticRpcEndpointConfig), isFalse);
+      expect(
+        candidates
+            .map((entry) => entry.normalizedLightwalletdUrl)
+            .toSet()
+            .length,
+        candidates.length,
+      );
+      expect(
+        candidates.every(
+          (entry) => explicitRpcEndpointPresetFor(entry)?.region != 'Community',
+        ),
+        isTrue,
+      );
+      expect(
+        candidates
+            .map((entry) => explicitRpcEndpointPresetFor(entry)?.region)
+            .toSet(),
+        containsAll(['Americas', 'Europe', 'Asia Pacific']),
+      );
+    });
+
+    test('restores saved default intent without using its stored URL', () {
+      final config = resolveStoredRpcEndpointConfig(
+        networkName: 'main',
+        storedUrl: 'https://obsolete.example:443',
+        storedPresetId: kDefaultRpcEndpointPresetId,
+      );
+      expect(isAutomaticRpcEndpointConfig(config), isTrue);
+    });
+  });
+
   group('fallbackRpcEndpointCandidatesFor', () {
     test('uses preset order when the mainnet default is primary', () {
       final candidates = fallbackRpcEndpointCandidatesFor(
@@ -460,7 +530,7 @@ void main() {
       );
 
       expect(candidates.take(4).map((candidate) => candidate.presetId), [
-        kDefaultRpcEndpointPresetId,
+        kManualUsRpcEndpointPresetId,
         'eu-zec-stardust',
         'zec-rocks',
         'na-zec-rocks',

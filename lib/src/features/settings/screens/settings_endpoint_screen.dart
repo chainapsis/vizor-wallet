@@ -13,6 +13,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 
@@ -328,7 +329,7 @@ class _SettingsEndpointPaneState extends State<_SettingsEndpointPane> {
   }
 }
 
-class _CurrentEndpointSubtitle extends StatelessWidget {
+class _CurrentEndpointSubtitle extends ConsumerWidget {
   const _CurrentEndpointSubtitle({
     required this.current,
     required this.latencyState,
@@ -338,18 +339,21 @@ class _CurrentEndpointSubtitle extends StatelessWidget {
   final RpcEndpointLatencyState latencyState;
 
   @override
-  Widget build(BuildContext context) {
-    final preset = findRpcEndpointPresetByUrl(
-      current.normalizedLightwalletdUrl,
-      networkName: current.networkName,
-    );
-    final latency = latencyState.sampleForUrl(
-      current.normalizedLightwalletdUrl,
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = ref.watch(rpcEndpointFailoverProvider);
+    final selected = effective.current;
+    final latency = automatic && !effective.automaticReady
+        ? null
+        : latencyState.sampleForUrl(selected.normalizedLightwalletdUrl);
     final text = [
-      'Current: ${current.hostPort}',
+      if (automatic)
+        effective.automaticReady
+            ? 'Automatic · ${selected.hostPort}'
+            : 'Automatic · Selecting...'
+      else
+        'Current: ${selected.hostPort}',
       if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
     ].join(' ');
 
     return Text(
@@ -530,7 +534,9 @@ class _PresetRegionSegment extends StatelessWidget {
         for (var i = 0; i < presets.length; i++) ...[
           _PresetCard(
             preset: presets[i],
-            latency: latencyState.sampleForUrl(presets[i].url),
+            latency: presets[i].isAutomatic
+                ? null
+                : latencyState.sampleForUrl(presets[i].url),
             isCurrent: presets[i].id == currentPresetId,
             isSelected: presets[i].id == pendingPresetId,
             onTap: () => onSelect(presets[i].id),
@@ -614,7 +620,7 @@ class _PresetCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        preset.hostPort,
+                        preset.displayLabel,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelMedium.copyWith(
                           color: colors.text.accent,

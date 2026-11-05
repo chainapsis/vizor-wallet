@@ -119,7 +119,7 @@ final ledgerSignedOperationServiceProvider =
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         loadWalletDbPath: ref.watch(ledgerWalletDbPathProvider),
         readBroadcastEndpoint: () =>
-            ref.read(rpcEndpointFailoverProvider).current,
+            ref.read(rpcEndpointFailoverProvider.notifier).ensureReady(),
         reportBroadcastFailure: (error, attemptedEndpoint) async {
           final switched = await ref
               .read(rpcEndpointFailoverProvider.notifier)
@@ -167,7 +167,7 @@ class RustLedgerSignedOperationService
   // Resolve after loading the DB, on every call, including when startup recovery
   // holds this service across multiple operations. Fixed URLs remain available
   // to standalone integration harnesses.
-  final RpcEndpointConfig Function()? readBroadcastEndpoint;
+  final FutureOr<RpcEndpointConfig> Function()? readBroadcastEndpoint;
   final Future<void> Function(Object, RpcEndpointConfig)?
   reportBroadcastFailure;
 
@@ -242,7 +242,7 @@ class RustLedgerSignedOperationService
     String? outputParamsPath,
   }) => _run(() async {
     final dbPath = await loadWalletDbPath();
-    final endpoint = readBroadcastEndpoint?.call();
+    final endpoint = await readBroadcastEndpoint?.call();
     if (endpoint != null && endpoint.networkName != network) {
       throw StateError('Ledger operation belongs to a different network.');
     }

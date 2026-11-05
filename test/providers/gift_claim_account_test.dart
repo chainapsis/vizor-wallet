@@ -1562,12 +1562,21 @@ rust_wallet.AccountInfo _listed(String uuid) => rust_wallet.AccountInfo(
   isHardware: false,
 );
 
+// Setup recovery fixtures pin a server so they exercise account and storage
+// failures independently of the automatic selection transport.
+RpcEndpointConfig _fixedEndpoint() {
+  final endpoint = defaultRpcEndpointConfig(kZcashDefaultNetworkName);
+  return endpoint.network == ZcashNetwork.mainnet
+      ? endpoint.copyWith(presetId: kManualUsRpcEndpointPresetId)
+      : endpoint;
+}
+
 final _noWalletBootstrap = AppBootstrapState(
   initialLocation: '/welcome',
   initialAccountState: const AccountState(),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: kZcashDefaultNetworkName,
-  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  rpcEndpointConfig: _fixedEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: false,
@@ -1597,7 +1606,7 @@ AppBootstrapState _bootstrappedGiftAccount({
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: kZcashDefaultNetworkName,
-  rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+  rpcEndpointConfig: _fixedEndpoint(),
   themeMode: ThemeMode.system,
   privacyModeEnabled: false,
   isPasswordConfigured: true,

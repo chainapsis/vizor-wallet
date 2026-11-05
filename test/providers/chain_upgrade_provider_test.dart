@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +8,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
@@ -42,6 +45,61 @@ void main() {
     expect(status.ironwoodActiveAtTip, isTrue);
     expect(status.endpointMatchesNetwork, isTrue);
     expect(status.hasLightwalletdMetadata, isTrue);
+  });
+
+  test('waits for endpoint selection before fetching chain metadata', () async {
+    const endpoint = RpcEndpointConfig(
+      networkName: 'main',
+      lightwalletdUrl: 'https://seed.example:443',
+    );
+    const selected = RpcEndpointConfig(
+      networkName: 'main',
+      lightwalletdUrl: 'https://selected.example:443',
+    );
+    final selection = Completer<RpcEndpointConfig>();
+    final calls = <String>[];
+    final container = _container(
+      endpoint: endpoint,
+      resolver: () => _DeferredRoute(endpoint, selection.future),
+      getChainUpgradeStatus:
+          ({required lightwalletdUrl, required network}) async {
+            calls.add(lightwalletdUrl);
+            return _fullStatus(
+              network: network,
+              lightwalletdUrl: lightwalletdUrl,
+              tipHeight: 3_500_000,
+              ironwoodActive: true,
+            );
+          },
+    );
+    addTearDown(container.dispose);
+    final pending = container.read(chainUpgradeStatusProvider.future);
+    await pumpEventQueue();
+    expect(calls, isEmpty);
+    selection.complete(selected);
+    final status = await pending;
+    expect(calls, ['https://selected.example:443']);
+    expect(status.endpointUrl, 'https://selected.example:443');
+  });
+
+  test('locked automatic startup keeps chain metadata unobserved', () async {
+    var calls = 0;
+    final container = _container(
+      endpoint: defaultRpcEndpointConfig('main'),
+      locked: true,
+      getChainUpgradeStatus:
+          ({required lightwalletdUrl, required network}) async {
+            calls++;
+            throw StateError('locked startup must not query lightwalletd');
+          },
+    );
+    addTearDown(container.dispose);
+
+    final status = await container.read(chainUpgradeStatusProvider.future);
+    expect(status.hasLightwalletdMetadata, isFalse);
+    expect(status.endpointMatchesNetwork, isNull);
+    expect(status.tipHeight, BigInt.zero);
+    expect(calls, 0);
   });
 
   test('cached active status skips the full lightwalletd fetch', () async {
@@ -271,10 +329,15 @@ ProviderContainer _container({
   required ChainUpgradeStatusGetter getChainUpgradeStatus,
   ChainUpgradeStatusAtHeightGetter? getChainUpgradeStatusAtHeight,
   IronwoodActivationStore? store,
+  RpcEndpointFailoverNotifier Function()? resolver,
+  bool locked = false,
 }) {
   return ProviderContainer(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap(endpoint)),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(endpoint, locked: locked),
+      ),
+      if (resolver != null) rpcEndpointFailoverProvider.overrideWith(resolver),
       chainUpgradeStatusGetterProvider.overrideWithValue(getChainUpgradeStatus),
       ironwoodActivationStoreProvider.overrideWithValue(
         store ?? _FakeIronwoodActivationStore(),
@@ -290,6 +353,23 @@ ProviderContainer _container({
       ),
     ],
   );
+}
+
+class _DeferredRoute extends RpcEndpointFailoverNotifier {
+  _DeferredRoute(this.endpoint, this.selection);
+
+  final RpcEndpointConfig endpoint;
+  final Future<RpcEndpointConfig> selection;
+
+  @override
+  RpcEndpointFailoverState build() => RpcEndpointFailoverState(
+    primary: endpoint,
+    current: endpoint,
+    fallbackCandidates: const [],
+  );
+
+  @override
+  Future<RpcEndpointConfig> ensureReady() => selection;
 }
 
 class _FakeIronwoodActivationStore implements IronwoodActivationStore {
@@ -343,7 +423,10 @@ rust_wallet.ChainUpgradeActivationStatus _activationStatus({
   );
 }
 
-AppBootstrapState _bootstrap(RpcEndpointConfig endpoint) {
+AppBootstrapState _bootstrap(
+  RpcEndpointConfig endpoint, {
+  bool locked = false,
+}) {
   return AppBootstrapState(
     initialLocation: '/welcome',
     initialAccountState: const AccountState(),
@@ -352,8 +435,8 @@ AppBootstrapState _bootstrap(RpcEndpointConfig endpoint) {
     rpcEndpointConfig: endpoint,
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
-    isPasswordConfigured: false,
-    isUnlocked: false,
+    isPasswordConfigured: locked,
+    isUnlocked: !locked,
     passwordRotationRecoveryFailed: false,
   );
 }

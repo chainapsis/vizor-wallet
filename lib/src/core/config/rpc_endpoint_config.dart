@@ -5,6 +5,7 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
+const kManualUsRpcEndpointPresetId = 'us-zec-stardust';
 const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
@@ -58,17 +59,27 @@ class RpcEndpointPreset {
   final bool isDefault;
 
   String get hostPort => rpcEndpointHostPort(url);
+
+  bool get isAutomatic => id == kDefaultRpcEndpointPresetId;
+
+  String get displayLabel => isAutomatic ? label : hostPort;
 }
 
-// Public lightwalletd presets. Keep the mainnet default aligned with Zodl's
-// default endpoint while preserving zec.rocks as a selectable fallback.
+// The default ID stores automatic selection intent. Its URL remains a local
+// compatibility seed; network operations resolve the actual server separately.
 final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,
     region: 'Default',
-    label: 'Stardust US',
+    label: 'Automatic',
     url: ZcashNetwork.mainnet.lightwalletdUrl,
     isDefault: true,
+  ),
+  RpcEndpointPreset(
+    id: kManualUsRpcEndpointPresetId,
+    region: 'Americas',
+    label: 'Stardust US',
+    url: ZcashNetwork.mainnet.lightwalletdUrl,
   ),
   const RpcEndpointPreset(
     id: 'eu-zec-stardust',
@@ -195,6 +206,37 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
   );
 }
 
+bool isAutomaticRpcEndpointConfig(RpcEndpointConfig config) =>
+    config.network == ZcashNetwork.mainnet &&
+    config.presetId == kDefaultRpcEndpointPresetId;
+
+/// Reviewed public servers eligible for automatic selection. Community
+/// endpoints remain available for explicit selection and legacy failover.
+List<RpcEndpointConfig> automaticRpcEndpointCandidatesFor(
+  RpcEndpointConfig config,
+) {
+  if (!isAutomaticRpcEndpointConfig(config)) return const [];
+  const ids = [
+    kManualUsRpcEndpointPresetId,
+    'eu-zec-rocks',
+    'kr-zec-stardust',
+    'zec-rocks',
+    'eu-zec-stardust',
+    'ap-zec-rocks',
+    'na-zec-rocks',
+    'sa-zec-rocks',
+  ];
+  return List.unmodifiable([
+    for (final id in ids)
+      if (findRpcEndpointPresetById(config.networkName, id) case final preset?)
+        RpcEndpointConfig(
+          networkName: config.networkName,
+          lightwalletdUrl: preset.url,
+          presetId: preset.id,
+        ),
+  ]);
+}
+
 bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
   return config.presetId == kCustomRpcEndpointPresetId;
 }
@@ -221,6 +263,7 @@ List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
   final candidates = <RpcEndpointConfig>[];
 
   for (final preset in rpcEndpointPresetsForNetwork(primary.networkName)) {
+    if (preset.isAutomatic) continue;
     final normalized = normalizeRpcEndpointUrl(
       preset.url,
       allowDefaultPort: true,
@@ -327,6 +370,7 @@ RpcEndpointPreset? findRpcEndpointPresetByUrl(
         ]
       : rpcEndpointPresetsForNetwork(networkName);
   for (final preset in presets) {
+    if (preset.isAutomatic) continue;
     if (normalizeRpcEndpointUrl(preset.url, allowDefaultPort: true) ==
         normalized) {
       return preset;

@@ -15,6 +15,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../../providers/rpc_endpoint_latency_provider.dart';
+import '../../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_provider.dart';
 
@@ -321,7 +322,9 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
             _PresetCard(
               key: ValueKey('mobile_endpoint_preset_${preset.id}'),
               preset: preset,
-              latencyLabel: latencyState.sampleForUrl(preset.url)?.label,
+              latencyLabel: preset.isAutomatic
+                  ? null
+                  : latencyState.sampleForUrl(preset.url)?.label,
               selected: preset.id == _selectedPresetId,
               onTap: _isSubmitting
                   ? null
@@ -554,7 +557,7 @@ class _ModeTab extends StatelessWidget {
   }
 }
 
-class _MobileCurrentEndpointText extends StatelessWidget {
+class _MobileCurrentEndpointText extends ConsumerWidget {
   const _MobileCurrentEndpointText({
     required this.current,
     required this.latencyState,
@@ -564,30 +567,31 @@ class _MobileCurrentEndpointText extends StatelessWidget {
   final RpcEndpointLatencyState latencyState;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    final preset = findRpcEndpointPresetByUrl(
-      current.normalizedLightwalletdUrl,
-      networkName: current.networkName,
-    );
-    final latency = latencyState.sampleForUrl(
-      current.normalizedLightwalletdUrl,
-    );
-    final suffix = [
-      if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
-    ].join(' ');
+    final automatic = isAutomaticRpcEndpointConfig(current);
+    final effective = ref.watch(rpcEndpointFailoverProvider);
+    final selected = effective.current;
+    final latency = automatic && !effective.automaticReady
+        ? null
+        : latencyState.sampleForUrl(selected.normalizedLightwalletdUrl);
+    final suffix = latency?.label ?? '';
+    final hostLabel = automatic
+        ? effective.automaticReady
+              ? 'Automatic · ${selected.hostPort}'
+              : 'Automatic · Selecting...'
+        : selected.hostPort;
 
     return Text.rich(
       TextSpan(
-        text: 'Current: ',
+        text: automatic ? '' : 'Current: ',
         style: AppTypography.labelMedium.copyWith(
           fontWeight: FontWeight.w500,
           color: colors.text.primary,
         ),
         children: [
           TextSpan(
-            text: current.hostPort,
+            text: hostLabel,
             style: AppTypography.labelMedium.copyWith(
               fontWeight: FontWeight.w400,
               color: colors.text.accent,
@@ -637,7 +641,7 @@ class _PresetCard extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: preset.hostPort,
+      label: preset.displayLabel,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -691,7 +695,7 @@ class _PresetCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        preset.hostPort,
+                        preset.displayLabel,
                         overflow: TextOverflow.ellipsis,
                         style: titleStyle,
                       ),

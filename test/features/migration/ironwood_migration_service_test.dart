@@ -2127,6 +2127,8 @@ void main() {
     'startSoftwarePrivateMigration reuses pending tx salt and zeroizes mnemonic bytes',
     () async {
       final returnedMnemonicBytes = <Uint8List>[];
+      final endpointSelection = Completer<RpcEndpointConfig>();
+      final seenUrls = <String>[];
       final seenSalts = <String>[];
       final seenMnemonicPayloads = <List<int>>[];
       final service = IronwoodMigrationService(
@@ -2145,6 +2147,7 @@ void main() {
           networkName: 'test',
           lightwalletdUrl: 'https://lwd.example:443',
         ),
+        resolveEndpoint: () => endpointSelection.future,
         getSessionPassword: () => 'test-password',
         getMnemonicBytesForAccount: (_) async {
           final bytes = Uint8List.fromList([1, 2, 3, 4]);
@@ -2163,21 +2166,32 @@ void main() {
               required password,
               required saltBase64,
             }) {
+              seenUrls.add(lightwalletdUrl);
               seenSalts.add(saltBase64);
               seenMnemonicPayloads.add(List<int>.from(mnemonicBytes));
               return Future.value(_migrationResult());
             },
       );
 
-      await service.startSoftwarePrivateMigration(
+      final firstStart = service.startSoftwarePrivateMigration(
         accountUuid: 'account-1',
         approvedSchedule: const [],
       );
+      await pumpEventQueue();
+      expect(returnedMnemonicBytes, isEmpty);
+      endpointSelection.complete(
+        const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://selected.example:443',
+        ),
+      );
+      await firstStart;
       await service.startSoftwarePrivateMigration(
         accountUuid: 'account-1',
         approvedSchedule: const [],
       );
 
+      expect(seenUrls, List.filled(2, 'https://selected.example:443'));
       expect(seenSalts, hasLength(2));
       expect(seenSalts[1], seenSalts[0]);
       expect(seenMnemonicPayloads, [

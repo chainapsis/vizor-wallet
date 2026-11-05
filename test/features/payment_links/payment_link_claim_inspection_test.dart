@@ -223,7 +223,9 @@ void main() {
     test(
       'a failed configured endpoint resumes checking on an existing fallback',
       () async {
-        final primary = defaultRpcEndpointConfig('main');
+        final primary = defaultRpcEndpointConfig(
+          'main',
+        ).copyWith(presetId: kManualUsRpcEndpointPresetId);
         (container.read(rpcEndpointProvider.notifier) as _RpcNotifier)
             .setEndpointForTest(primary);
         api.failCheckOnce = true;

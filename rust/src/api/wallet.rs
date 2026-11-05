@@ -265,6 +265,68 @@ pub fn probe_lightwalletd_endpoint(
     })
 }
 
+/// A healthy public candidate measured on one routed connection. No wallet
+/// address, transaction identifier or birthday is sent by the measurement.
+pub struct LightwalletdCandidateProbe {
+    pub url: String,
+    pub height: u64,
+    pub latency_ms: u32,
+    pub connect_ms: u32,
+    pub rpc_ms: u32,
+}
+
+/// Probe a bounded set of public candidates without waiting for the slowest.
+/// Each selection ID must first be reserved with [begin_lightwalletd_selection].
+/// The caller waits for route readiness before starting; route failures are
+/// returned separately from server health.
+pub fn probe_lightwalletd_candidates(
+    lightwalletd_urls: Vec<String>,
+    expected_network: String,
+    selection_id: String,
+    probe_timeout_ms: u32,
+    total_timeout_ms: u32,
+    max_concurrency: u32,
+) -> Result<Vec<LightwalletdCandidateProbe>, String> {
+    catch(|| {
+        crate::wallet::endpoint_selection::probe_candidates(
+            lightwalletd_urls,
+            &expected_network,
+            &selection_id,
+            probe_timeout_ms,
+            total_timeout_ms,
+            max_concurrency,
+        )
+        .map(|probes| {
+            probes
+                .into_iter()
+                .map(|probe| LightwalletdCandidateProbe {
+                    url: probe.url,
+                    height: probe.height,
+                    latency_ms: probe.latency_ms,
+                    connect_ms: probe.connect_ms,
+                    rpc_ms: probe.rpc_ms,
+                })
+                .collect()
+        })
+    })
+}
+
+/// Reserves one bounded selection slot before its async FRB dispatch. IDs
+/// must be unique. A cancelled queued call keeps this slot until its worker
+/// consumes it, so queue delays can never make cancelled work live again.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_lightwalletd_selection(selection_id: String) -> Result<(), String> {
+    crate::wallet::endpoint_selection::begin_selection(&selection_id)
+}
+
+/// Cancels only the selection with this ID, including a call whose FRB worker
+/// has not started yet. Kept synchronous so busy workers cannot delay a lock
+/// or route change behind a slow probe.
+#[flutter_rust_bridge::frb(sync)]
+pub fn cancel_lightwalletd_selection(selection_id: String) {
+    crate::wallet::endpoint_selection::cancel_selection(&selection_id);
+}
+
 /// Get the connected chain upgrade state used to decide whether Ironwood is active.
 pub fn get_chain_upgrade_status(
     lightwalletd_url: String,

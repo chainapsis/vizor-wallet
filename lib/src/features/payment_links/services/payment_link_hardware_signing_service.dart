@@ -255,7 +255,9 @@ class RustPaymentLinkHardwareSigningService
             accountUuid: accountUuid,
             operation: () async {
               final dbPath = await getWalletDbPath();
-              final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+              final endpoint = await _ref
+                  .read(rpcEndpointFailoverProvider.notifier)
+                  .ensureReady();
               BigInt? proposalId;
               var consumed = false;
               try {
@@ -446,7 +448,9 @@ class RustPaymentLinkHardwareSigningService
     FutureOr<void> Function()? onSubmissionStarted,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    final endpoint = await _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .ensureReady();
     final rust_sync.StoreAndBroadcastPcztsResult stored;
     try {
       // The durable marker lands before the broadcast: a draft without it

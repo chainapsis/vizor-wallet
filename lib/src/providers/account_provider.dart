@@ -1307,7 +1307,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
       final network = isFirstWalletAccount
@@ -1338,7 +1340,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .ensureReady();
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
       final network = isFirstWalletAccount
@@ -1908,8 +1912,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     var restoreAfterFailure = false;
     var resumeClaimLifecycle = false;
     var resetCompleted = false;
-    final cacheDrained = balanceCache.suspendAndDrain();
+    final automaticEndpoints = ref.read(rpcEndpointFailoverProvider.notifier);
+    automaticEndpoints.pauseAutomaticSelection();
     try {
+      final cacheDrained = balanceCache.suspendAndDrain();
       await cacheDrained;
       await ledgerLifecycle.quiesceAndDrain();
       await publicLoads.quiesceAndDrain();
@@ -1937,6 +1943,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // reuses this registry; stale registrations re-read the now-empty store.
       if (resetCompleted || restoreAfterFailure) giftTracking.resume();
       shareTracking.resume();
+      automaticEndpoints.resumeAutomaticSelection();
       if (restoreAfterFailure) shareTracking.requestRestore();
     }
   }
@@ -2047,6 +2054,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
       await _resetVotingProcessStateForAccount(account.uuid, dbPath: dbPath);
     }
+
+    // Cancel selection and drain its cache writes before destroying wallet state.
+    await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .clearAutomaticSelectionCache();
 
     var dbDeleted = false;
     try {

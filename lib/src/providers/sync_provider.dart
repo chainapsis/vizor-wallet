@@ -1299,7 +1299,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ref.read(walletTransparentPrivateProvider.notifier).update(private);
       });
     });
-    unawaited(ref.read(chainUpgradeStatusProvider.future));
+    unawaited(
+      ref
+          .read(chainUpgradeStatusProvider.future)
+          .then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stack) {
+              log('Sync: chain upgrade warmup failed: $error');
+            },
+          ),
+    );
     final shutdown = ref.read(appShutdownSignalProvider);
     shutdown.addListener(_stopForAppExit);
     ref.onDispose(() => shutdown.removeListener(_stopForAppExit));
@@ -1583,6 +1592,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Quiesce scan/poll work without waiting on network I/O or cancelling durable
   /// sends. Generation changes also reject preflight completions already queued.
   void _stopForAppExit() {
+    ref.read(rpcEndpointFailoverProvider.notifier).cancelAutomaticSelection();
     _resumeTipCheckPending = false;
     _queuedSyncStart = null;
     ++_syncGen;
@@ -2494,6 +2504,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> clearSensitiveStateForLock() async {
+    ref.read(rpcEndpointFailoverProvider.notifier).cancelAutomaticSelection();
     // A public details load the user started stores nothing after a lock.
     ref.read(publicDetailsLoadsProvider).cancel();
     _resumeTipCheckPending = false;
@@ -2674,6 +2685,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ref.read(pendingActivityEvidenceProvider.notifier).setForeground(false);
     ++_foregroundEpoch;
     if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
+      ref.read(rpcEndpointFailoverProvider.notifier).cancelAutomaticSelection();
       _stopPolling();
       _queuedSyncStart = null;
     }
