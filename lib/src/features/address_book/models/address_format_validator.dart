@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:ui' show Locale;
-
 import '../../../core/config/network_config.dart';
 import '../../../core/crypto/base58check.dart';
 import '../../../core/crypto/bech32.dart';
@@ -45,11 +43,6 @@ class AddressFormatFinding {
     AddressFormatKind.invalidZcash => l10n.addressBookInvalidZcash,
     AddressFormatKind.nearMissingSuffix => l10n.addressBookNearSuffixWarning,
   };
-
-  /// The English text, for callers that keep a plain string in state (swap
-  /// and pay). Display code with a [BuildContext] uses [localizedMessage].
-  String get message =>
-      localizedMessage(lookupAppLocalizations(const Locale('en')));
 }
 
 /// Conservative, best-effort address format check keyed on [network].
@@ -114,13 +107,13 @@ AddressFormatFinding? addressFormatCheck(
   }
 }
 
-/// Hard-gate view of [addressFormatCheck]: only error-severity messages.
+/// Hard-gate view of [addressFormatCheck]: only error-severity findings.
 ///
 /// Returns `null` for valid addresses *and* for warning-severity findings, so
 /// callers that block submission (the swap review/destination paths) never
 /// reject a syntactically valid address. Callers that can display advisory
 /// text should use [addressFormatCheck] directly.
-String? addressFormatIssue(
+AddressFormatFinding? addressFormatIssue(
   AddressBookNetwork network,
   String address, {
   ZcashNetwork? zcashNetwork,
@@ -131,9 +124,7 @@ String? addressFormatIssue(
     zcashNetwork: zcashNetwork,
   );
   if (finding == null) return null;
-  return finding.severity == AddressFormatSeverity.error
-      ? finding.message
-      : null;
+  return finding.severity == AddressFormatSeverity.error ? finding : null;
 }
 
 final _evm = RegExp(r'^0[xX][0-9a-fA-F]{40}$');

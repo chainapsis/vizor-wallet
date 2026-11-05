@@ -503,7 +503,8 @@ class _MobileSwapReviewButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
-    final destinationFormatError = state.destinationAddressFormatError;
+    final destinationFormatError = state.destinationAddressFormatIssue
+        ?.localizedMessage(context.l10n);
     final balanceExceeded = _balanceExceeded;
     final canReview = state.canReviewQuote && !balanceExceeded;
     final onPressed = needsDestinationAddress

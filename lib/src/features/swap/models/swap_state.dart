@@ -211,7 +211,7 @@ class SwapState {
   /// the address looks valid; otherwise a short reason. Used as a hard gate on
   /// the swap review path so a malformed recipient/refund address cannot be
   /// committed into a 1Click quote.
-  String? get destinationAddressFormatError {
+  AddressFormatFinding? get destinationAddressFormatIssue {
     final trimmed = destinationText.trim();
     if (trimmed.isEmpty) return null;
     final network = AddressBookNetwork.tryFromChainTicker(
@@ -253,7 +253,7 @@ class SwapState {
       quoteAmount != null &&
       !hasQuoteAmountPrecisionError &&
       draftAddressPlan != null &&
-      destinationAddressFormatError == null &&
+      destinationAddressFormatIssue == null &&
       externalAssetIsAvailable &&
       !quoteLoading;
 

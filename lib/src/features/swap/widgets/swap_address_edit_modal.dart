@@ -108,7 +108,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
   String? get _formatError {
     final finding = _formatFinding;
     return finding?.severity == AddressFormatSeverity.error
-        ? finding!.message
+        ? finding!.localizedMessage(context.l10n)
         : null;
   }
 
@@ -204,7 +204,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                   height: 16,
                   child: formatFinding != null
                       ? Text(
-                          formatFinding.message,
+                          formatFinding.localizedMessage(context.l10n),
                           key:
                               formatFinding.severity ==
                                   AddressFormatSeverity.error

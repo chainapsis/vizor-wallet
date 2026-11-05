@@ -277,7 +277,10 @@ class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
   Widget build(BuildContext context) {
     final issue = _typedAddress.isEmpty
         ? null
-        : addressFormatIssue(AddressBookNetwork.ethereum, _typedAddress);
+        : addressFormatIssue(
+            AddressBookNetwork.ethereum,
+            _typedAddress,
+          )?.localizedMessage(context.l10n);
     final actions = PayRecipientActions(
       typedAddress: _typedAddress,
       addressError: issue,

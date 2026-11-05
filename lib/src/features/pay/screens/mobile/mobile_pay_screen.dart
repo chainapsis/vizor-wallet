@@ -399,7 +399,8 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                       _MobilePayStep.recipient => MobilePayRecipientStep(
                         controller: _recipientController,
                         typedAddress: swapState.destinationText,
-                        addressError: swapState.destinationAddressFormatError,
+                        addressError: swapState.destinationAddressFormatIssue
+                            ?.localizedMessage(context.l10n),
                         quoteError:
                             swapState.externalAssetSupportError(context.l10n) ??
                             swapState.quoteError,

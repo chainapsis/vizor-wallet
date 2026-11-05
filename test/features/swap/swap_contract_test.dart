@@ -90,12 +90,12 @@ void main() {
         quoteMode: SwapQuoteMode.exactOutput,
       );
 
-      expect(state.destinationAddressFormatError, isNotNull);
+      expect(state.destinationAddressFormatIssue, isNotNull);
       expect(state.canReviewQuote, isFalse);
 
       final fixed = state.copyWith(destinationText: validEvmRecipient);
 
-      expect(fixed.destinationAddressFormatError, isNull);
+      expect(fixed.destinationAddressFormatIssue, isNull);
       expect(fixed.canReviewQuote, isTrue);
     },
   );

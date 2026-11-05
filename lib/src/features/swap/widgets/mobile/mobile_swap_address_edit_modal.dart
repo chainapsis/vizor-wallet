@@ -124,7 +124,7 @@ class _MobileSwapAddressEditModalState
       widget.state.externalAsset.chainTicker,
     );
     if (network == null) return null;
-    return addressFormatIssue(network, trimmed);
+    return addressFormatIssue(network, trimmed)?.localizedMessage(context.l10n);
   }
 
   /// Saved contact matching the entered address on the destination chain.

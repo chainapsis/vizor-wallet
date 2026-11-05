@@ -343,7 +343,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     };
     final recipientActions = PayRecipientActions(
       typedAddress: swapState.destinationText,
-      addressError: swapState.destinationAddressFormatError,
+      addressError: swapState.destinationAddressFormatIssue?.localizedMessage(
+        context.l10n,
+      ),
       contacts: contacts,
       busy: swapState.quoteLoading,
       enabled: swapState.externalAssetIsAvailable && !addressBookInitialLoading,
@@ -435,7 +437,8 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                   _PayWizardStep.recipient => PayRecipientStep(
                     controller: _recipientController,
                     typedAddress: swapState.destinationText,
-                    addressError: swapState.destinationAddressFormatError,
+                    addressError: swapState.destinationAddressFormatIssue
+                        ?.localizedMessage(context.l10n),
                     network: network,
                     contacts: contacts,
                     recents: recents,

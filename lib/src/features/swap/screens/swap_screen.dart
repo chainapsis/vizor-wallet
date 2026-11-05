@@ -456,7 +456,8 @@ class _SwapReviewFooter extends StatelessWidget {
       zecAvailableZatoshi,
     );
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
-    final destinationFormatError = state.destinationAddressFormatError;
+    final destinationFormatError = state.destinationAddressFormatIssue
+        ?.localizedMessage(context.l10n);
     final canReview = state.canReviewQuote && !balanceExceeded;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
