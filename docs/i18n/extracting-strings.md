@@ -108,6 +108,6 @@ labels): that text has to stay visible to the scanner as remaining work.
 2. `fvm flutter test test/l10n test/tool`
 3. The tests of the screens you changed, in both lanes when mobile files
    changed.
-4. Add a directory (or file) whose scanner list is now empty to
-   `tool/l10n/migrated_dirs.txt`. The gate test then fails when new
-   hard-coded copy appears there.
+4. `fvm dart run tool/l10n/strings.dart list lib/src` stays empty. All of
+   `lib/src` is listed in `tool/l10n/migrated_dirs.txt`, so the gate test
+   fails on any new hard-coded copy, in new directories too.

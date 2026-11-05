@@ -42,6 +42,7 @@ import '../widgets/app_tooltip.dart';
 import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
 import 'desktop_sidebar_spacing.dart';
+import '../l10n/locale_typography.dart';
 
 final _sidebarThousandZatoshi = zatoshiPerZec * BigInt.from(1000);
 final _sidebarMillionZatoshi = zatoshiPerZec * BigInt.from(1000000);
@@ -1814,7 +1815,10 @@ class _SidebarSyncStaticLabel extends StatelessWidget {
         if (!constraints.maxWidth.isFinite) return labelText();
 
         final painter = TextPainter(
-          text: TextSpan(text: label, style: style),
+          text: TextSpan(
+            text: label,
+            style: withLocaleFontFallback(context, style),
+          ),
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
           ellipsis: '...',

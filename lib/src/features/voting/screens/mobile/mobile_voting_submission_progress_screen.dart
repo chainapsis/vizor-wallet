@@ -9,6 +9,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_transaction_progress_screen.dart';
 import '../voting_status_screen.dart';
+import '../../../../core/l10n/locale_typography.dart';
 
 const _referenceContentHeight = 701.0;
 const _minimumContentHeight = 317.0;
@@ -111,21 +112,24 @@ class MobileVotingSubmissionProgressScreen extends StatelessWidget {
                             constraints.maxWidth - AppSpacing.sm * 2;
                         final noticeHeight = _measureTextHeight(
                           text: noticeText,
-                          style: noticeStyle,
+                          style: withLocaleFontFallback(context, noticeStyle),
                           maxWidth: contentWidth,
                           textDirection: textDirection,
                           textScaler: textScaler,
                         );
                         final titleHeight = _measureTextHeight(
                           text: context.l10n.votingMobileSubmittingTitle,
-                          style: titleStyle,
+                          style: withLocaleFontFallback(context, titleStyle),
                           maxWidth: contentWidth,
                           textDirection: textDirection,
                           textScaler: textScaler,
                         );
                         final proofNoticeHeight = _measureTextHeight(
                           text: context.l10n.votingMobileProofNotice,
-                          style: proofNoticeStyle,
+                          style: withLocaleFontFallback(
+                            context,
+                            proofNoticeStyle,
+                          ),
                           maxWidth: contentWidth - 66,
                           textDirection: textDirection,
                           textScaler: textScaler,

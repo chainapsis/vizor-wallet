@@ -211,9 +211,9 @@ UI strings come from Flutter `gen-l10n`: `l10n.yaml` reads
   (`required-resource-attributes`). Never translate Rust error strings or
   strings that code matches with `.contains` or uses as keys.
 - `test/l10n/l10n_gates_test.dart` checks sorted keys, placeholders, URLs,
-  numbers and `lib/l10n/glossary.yaml`, and fails when a directory listed in
-  `tool/l10n/migrated_dirs.txt` gains a hardcoded string.
-  `fvm dart run tool/l10n/strings.dart list <dir>` lists what is left to move;
+  numbers and `lib/l10n/glossary.yaml`, and fails when a path listed in
+  `tool/l10n/migrated_dirs.txt` (all of `lib/src`) gains a hardcoded string.
+  `fvm dart run tool/l10n/strings.dart list <dir>` lists offending literals;
   `docs/i18n/extracting-strings.md` has the key naming, what stays a literal
   (`// l10n-ignore:`), and the finishing steps. Translation rules live in
   `docs/i18n/`.

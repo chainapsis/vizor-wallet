@@ -8,6 +8,7 @@ import 'package:flutter/material.dart'
 import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
+import '../l10n/locale_typography.dart';
 
 enum AppToastTone { neutral, destructive }
 
@@ -153,7 +154,10 @@ class AppToast extends StatelessWidget {
     final direction = Directionality.of(context);
     double textWidth(String value, TextStyle style) {
       final painter = TextPainter(
-        text: TextSpan(text: value, style: style),
+        text: TextSpan(
+          text: value,
+          style: withLocaleFontFallback(context, style),
+        ),
         textDirection: direction,
         textScaler: textScaler,
       )..layout();

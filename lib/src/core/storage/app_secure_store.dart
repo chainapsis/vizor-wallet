@@ -467,7 +467,9 @@ class AppSecureStore {
     return _secretMutationLock.run(() async {
       _checkSessionGeneration(generation);
       final payload = await _encryptSecretString(value, generation);
-      await _runStorageOperation('write secret "$key"', () async {
+      final label =
+          'write secret "$key"'; // l10n-ignore: storage diagnostic label
+      await _runStorageOperation(label, () async {
         _checkSessionGeneration(generation);
         await _writeValue(_storage, key, payload);
       });
