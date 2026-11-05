@@ -32,18 +32,17 @@ void main() {
     );
     addTearDown(container.dispose);
     final evidence = container.read(pendingActivityEvidenceProvider.notifier);
-    String? label() => container
-        .read(pendingActivityEvidenceProvider)
-        .labelFor('a', 'tx', 100);
+    ActivityEta? label() =>
+        container.read(pendingActivityEvidenceProvider).etaFor('a', 'tx', 100);
     evidence.observe(accountUuid: 'a', txids: ['tx']);
     evidence.networkChecked(100);
     evidence.setForeground(false);
     now = started.add(const Duration(seconds: 12));
     evidence.setForeground(true);
-    expect(label(), 'Est. 1–3 min');
+    expect(label(), ActivityEta.standard);
     now = started.add(const Duration(seconds: 29));
     evidence.setForeground(true);
-    expect(label(), 'Est. 1–3 min');
+    expect(label(), ActivityEta.standard);
     now = started.add(const Duration(seconds: 30));
     evidence.setForeground(true);
     expect(label(), isNull);
@@ -83,17 +82,13 @@ void main() {
         isFalse,
       );
       expect(
-        container
-            .read(pendingActivityEvidenceProvider)
-            .labelFor('a', 'tx', 100),
+        container.read(pendingActivityEvidenceProvider).etaFor('a', 'tx', 100),
         isNull,
       );
       controller.setForeground(true);
       expect(
-        container
-            .read(pendingActivityEvidenceProvider)
-            .labelFor('a', 'tx', 100),
-        'Est. 1–3 min',
+        container.read(pendingActivityEvidenceProvider).etaFor('a', 'tx', 100),
+        ActivityEta.standard,
       );
     },
   );
@@ -162,19 +157,19 @@ void main() {
         foreground: foreground,
         observedAt: observed == null ? const {} : {('a', 'tx'): observed},
       );
-      expect(evidence(checked: started).labelFor('a', 'tx', 100), isNull);
-      expect(evidence(observed: started).labelFor('a', 'tx', 100), isNull);
+      expect(evidence(checked: started).etaFor('a', 'tx', 100), isNull);
+      expect(evidence(observed: started).etaFor('a', 'tx', 100), isNull);
       final ready = evidence(checked: started, observed: started);
-      expect(ready.labelFor('a', 'tx', 100), 'Est. 1–3 min');
-      expect(ready.labelFor('other-account', 'tx', 100), isNull);
-      expect(ready.labelFor('a', 'other-tx', 100), isNull);
-      expect(ready.labelFor('a', 'tx', 99), isNull);
+      expect(ready.etaFor('a', 'tx', 100), ActivityEta.standard);
+      expect(ready.etaFor('other-account', 'tx', 100), isNull);
+      expect(ready.etaFor('a', 'other-tx', 100), isNull);
+      expect(ready.etaFor('a', 'tx', 99), isNull);
       expect(
         evidence(
           checked: started,
           observed: started,
           now: started.add(kActivityEtaFreshness),
-        ).labelFor('a', 'tx', 100),
+        ).etaFor('a', 'tx', 100),
         isNull,
       );
       expect(
@@ -182,7 +177,7 @@ void main() {
           checked: started,
           observed: started,
           foreground: false,
-        ).labelFor('a', 'tx', 100),
+        ).etaFor('a', 'tx', 100),
         isNull,
       );
       expect(
@@ -190,7 +185,7 @@ void main() {
           checked: started,
           observed: started,
           now: started.subtract(const Duration(seconds: 1)),
-        ).labelFor('a', 'tx', 100),
+        ).etaFor('a', 'tx', 100),
         isNull,
       );
     },
@@ -207,25 +202,25 @@ void main() {
       final controller = container.read(
         pendingActivityEvidenceProvider.notifier,
       );
-      String? label() => container
+      ActivityEta? label() => container
           .read(pendingActivityEvidenceProvider)
-          .labelFor('a', 'tx', 100);
+          .etaFor('a', 'tx', 100);
       controller.observe(accountUuid: 'a', txids: ['tx']);
       controller.networkChecked(100);
-      expect(label(), 'Est. 1–3 min');
+      expect(label(), ActivityEta.standard);
       now = started.add(kActivityEtaFreshness);
       await tester.pump(const Duration(seconds: 30));
       expect(label(), isNull);
       now = started.add(kActivityLongWait);
       controller.observe(accountUuid: 'a', txids: ['tx']);
       controller.networkChecked(100);
-      expect(label(), 'Taking longer');
+      expect(label(), ActivityEta.takingLonger);
       controller.setForeground(false);
       expect(label(), isNull);
       controller.setForeground(true);
-      expect(label(), 'Taking longer');
+      expect(label(), ActivityEta.takingLonger);
       controller.networkChecked(100);
-      expect(label(), 'Taking longer');
+      expect(label(), ActivityEta.takingLonger);
       controller.invalidateNetwork();
       expect(label(), isNull);
       controller.networkChecked(100);
@@ -245,20 +240,20 @@ void main() {
         observedAt: {('a', 'tx'): started},
       );
       expect(
-        at(const Duration(minutes: 5)).labelFor('a', 'tx', 100),
-        'Taking longer',
+        at(const Duration(minutes: 5)).etaFor('a', 'tx', 100),
+        ActivityEta.takingLonger,
       );
       expect(
         at(
           const Duration(minutes: 5),
-        ).labelFor('a', 'tx', 100, waitingForFunding: true),
-        'Est. 2–6 min',
+        ).etaFor('a', 'tx', 100, waitingForFunding: true),
+        ActivityEta.funding,
       );
       expect(
         at(
           const Duration(minutes: 8),
-        ).labelFor('a', 'tx', 100, waitingForFunding: true),
-        'Taking longer',
+        ).etaFor('a', 'tx', 100, waitingForFunding: true),
+        ActivityEta.takingLonger,
       );
     },
   );
@@ -283,7 +278,7 @@ void main() {
       controller.networkChecked(100);
       final evidence = container.read(pendingActivityEvidenceProvider);
       expect(evidence.observedAt, hasLength(1));
-      expect(evidence.labelFor('a', reverse, 100), 'Taking longer');
+      expect(evidence.etaFor('a', reverse, 100), ActivityEta.takingLonger);
       controller.clear();
     },
   );
@@ -298,29 +293,32 @@ void main() {
             parentHeight: height,
             parentExpired: expired,
           );
-      const labels = {'child': 'Est. 1–3 min', 'funding:child': 'Est. 2–6 min'};
+      const labels = {
+        'child': ActivityEta.standard,
+        'funding:child': ActivityEta.funding,
+      };
       expect(
-        activityEtaLabelFor(
+        activityEtaFor(
           transaction: tx(height: BigInt.zero),
           labels: labels,
         ),
-        'Est. 2–6 min',
+        ActivityEta.funding,
       );
       expect(
-        activityEtaLabelFor(
+        activityEtaFor(
           transaction: tx(height: BigInt.one),
           labels: labels,
         ),
-        'Est. 1–3 min',
+        ActivityEta.standard,
       );
       expect(
-        activityEtaLabelFor(
+        activityEtaFor(
           transaction: tx(height: BigInt.zero, expired: true),
           labels: labels,
         ),
         isNull,
       );
-      expect(activityEtaLabelFor(transaction: tx(), labels: labels), isNull);
+      expect(activityEtaFor(transaction: tx(), labels: labels), isNull);
     },
   );
 
@@ -331,8 +329,8 @@ void main() {
       checkedTip: 100,
       observedAt: {('a', 'tx'): started},
     );
-    String? label(Duration elapsed, {bool funding = false}) =>
-        after(elapsed).labelFor(
+    ActivityEta? label(Duration elapsed, {bool funding = false}) =>
+        after(elapsed).etaFor(
           'a',
           'tx',
           100,
@@ -340,39 +338,45 @@ void main() {
           blocksPerReferenceBlock: 3,
         );
 
-    expect(label(Duration.zero), kActivityNu7EtaLabel);
-    expect(label(Duration.zero, funding: true), kActivityNu7FundingEtaLabel);
-    expect(label(const Duration(seconds: 99)), kActivityNu7EtaLabel);
-    expect(label(const Duration(seconds: 100)), kActivityTakingLongerLabel);
+    expect(label(Duration.zero), ActivityEta.nu7);
+    expect(label(Duration.zero, funding: true), ActivityEta.nu7Funding);
+    expect(label(const Duration(seconds: 99)), ActivityEta.nu7);
+    expect(label(const Duration(seconds: 100)), ActivityEta.takingLonger);
     expect(
       label(const Duration(seconds: 160), funding: true),
-      kActivityTakingLongerLabel,
+      ActivityEta.takingLonger,
     );
   });
 
   test('Gift Card ETA covers every leg rather than the representative row', () {
-    String? label(
+    ActivityEta? label(
       List<rust_sync.TransactionInfo> txs,
-      Map<String, String> labels,
-    ) => giftCardClaimEtaLabel(
+      Map<String, ActivityEta> labels,
+    ) => giftCardClaimEta(
       ids: {'first', 'second'},
       transactions: txs,
       scannedHeight: 100,
       labels: labels,
     );
     expect(
-      label([_tx('first', mined: BigInt.from(99))], {'second': 'Est. 1–3 min'}),
-      'Est. 1–3 min',
+      label(
+        [_tx('first', mined: BigInt.from(99))],
+        {'second': ActivityEta.standard},
+      ),
+      ActivityEta.standard,
     );
     expect(label([_tx('first', mined: BigInt.from(99))], {}), isNull);
     expect(
-      label([], {'first': 'Est. 1–3 min', 'second': 'Taking longer'}),
-      'Taking longer',
+      label([], {
+        'first': ActivityEta.standard,
+        'second': ActivityEta.takingLonger,
+      }),
+      ActivityEta.takingLonger,
     );
     expect(
       label(
         [_tx('first', expired: true)],
-        {'first': 'Est. 1–3 min', 'second': 'Est. 1–3 min'},
+        {'first': ActivityEta.standard, 'second': ActivityEta.standard},
       ),
       isNull,
     );
@@ -386,7 +390,7 @@ void main() {
     expect(
       label(
         [_tx('first', mined: BigInt.from(101))],
-        {'second': 'Est. 1–3 min'},
+        {'second': ActivityEta.standard},
       ),
       isNull,
     );
@@ -480,7 +484,7 @@ void main() {
         }
         expect(
           container.read(activityEtaLabelsProvider)['gift-card:card'],
-          fail ? isNull : 'Est. 1–3 min',
+          fail ? isNull : ActivityEta.standard,
         );
         if (!fail) {
           final snapshot = container.read(syncProvider).value!;
@@ -496,7 +500,7 @@ void main() {
           expect(reads, 1);
           expect(
             container.read(activityEtaLabelsProvider)['gift-card:card'],
-            'Est. 1–3 min',
+            ActivityEta.standard,
           );
           sync.emit(
             snapshot.copyWith(
@@ -597,7 +601,10 @@ void main() {
       evidence.networkChecked(100);
       await container.read(giftCardActivityIndexProvider('a').future);
       await container.read(swapActivityRecordsProvider('a').future);
-      expect(container.read(activityEtaLabelsProvider)['tx'], 'Est. 1–3 min');
+      expect(
+        container.read(activityEtaLabelsProvider)['tx'],
+        ActivityEta.standard,
+      );
       for (final unavailable in [
         synced.copyWith(isSyncing: true),
         synced.copyWith(isSyncComplete: false),

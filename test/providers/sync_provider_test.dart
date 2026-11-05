@@ -570,8 +570,8 @@ void main() {
       expect(
         container
             .read(pendingActivityEvidenceProvider)
-            .labelFor(_accountUuid, 'pending', 100),
-        'Est. 1–3 min',
+            .etaFor(_accountUuid, 'pending', 100),
+        ActivityEta.standard,
       );
       if (fails) {
         tipRead.completeError(StateError('network connection refused'));
@@ -586,8 +586,8 @@ void main() {
       expect(
         container
             .read(pendingActivityEvidenceProvider)
-            .labelFor(_accountUuid, 'pending', 100),
-        'Est. 1–3 min',
+            .etaFor(_accountUuid, 'pending', 100),
+        ActivityEta.standard,
       );
       expect(
         container.read(pendingActivityEvidenceProvider).connectionFailed,
@@ -681,7 +681,7 @@ void main() {
     expect(
       container
           .read(pendingActivityEvidenceProvider)
-          .labelFor(_accountUuid, 'pending', 100),
+          .etaFor(_accountUuid, 'pending', 100),
       isNull,
     );
     evidence.clear();
@@ -768,7 +768,7 @@ void main() {
       evidence.networkChecked(100);
       expect(
         container.read(activityEtaLabelsProvider)['pending'],
-        'Est. 1–3 min',
+        ActivityEta.standard,
       );
       sync.failHistory = true;
       await sync.refreshAfterSend();
@@ -778,7 +778,7 @@ void main() {
       await sync.refreshAfterSend();
       expect(
         container.read(activityEtaLabelsProvider)['pending'],
-        'Est. 1–3 min',
+        ActivityEta.standard,
       );
     },
   );

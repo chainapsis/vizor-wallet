@@ -28,7 +28,9 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 import '../../support/wallet_path_read_blocker.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 
 const _accountState = AccountState(
   accounts: [
@@ -118,7 +120,8 @@ SwapIntentRecord _payActivityRecord({
 
 Widget _app(
   MobileActivityHistoryLoader loader, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
+  ActivityPendingFallback? pendingFallback,
   FakeSyncNotifier? syncNotifier,
   SwapActivityStore? swapActivityStore,
   GiftCardActivityIndex giftCardActivityIndex = GiftCardActivityIndex.empty,
@@ -131,6 +134,8 @@ Widget _app(
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
       if (etaLabels != null)
         activityEtaLabelsProvider.overrideWithValue(etaLabels),
+      if (pendingFallback != null)
+        activityPendingFallbackLabelProvider.overrideWithValue(pendingFallback),
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       syncProvider.overrideWith(
         () =>
@@ -188,9 +193,7 @@ class _FakeSwapActivityStore implements SwapActivityStore {
 }
 
 void main() {
-  testWidgets('disabled swaps leave normal Activity visible', (
-    tester,
-  ) async {
+  testWidgets('disabled swaps leave normal Activity visible', (tester) async {
     final store = _FakeSwapActivityStore([
       _payActivityRecord(id: 'disabled-pay', depositTxHash: 'deposit'),
     ]);
@@ -234,7 +237,7 @@ void main() {
             return isRefreshing ? refreshing.future : [pending];
           },
           syncNotifier: sync,
-          etaLabels: const {'pending': 'Est. 1–3 min'},
+          etaLabels: const {'pending': ActivityEta.standard},
         ),
       );
       await tester.pump(const Duration(milliseconds: 300));
@@ -288,7 +291,7 @@ void main() {
             return refreshed.future;
           },
           syncNotifier: sync,
-          etaLabels: const {'old-pending': 'Est. 1–3 min'},
+          etaLabels: const {'old-pending': ActivityEta.standard},
         ),
       );
       await tester.pump(const Duration(milliseconds: 300));
@@ -341,39 +344,45 @@ void main() {
     await (FontLoader(
       'Geist',
     )..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))).load();
-    final labels = [
-      'Est. 1–3 min',
-      'Est. 2–6 min',
-      'Taking longer',
-      'Checking status',
-      'Waiting for connection',
+    const etas = [
+      ActivityEta.standard,
+      ActivityEta.funding,
+      ActivityEta.takingLonger,
     ];
-    await tester.pumpWidget(
-      _app(
-        (_) async => [
-          for (var i = 0; i < labels.length; i++)
-            _tx(
-              txidHex: 'pending-$i',
-              blockTime: BigInt.zero,
-              minedHeight: BigInt.zero,
-              kind: 'sent',
-            ),
-        ],
-        etaLabels: {
-          for (var i = 0; i < labels.length; i++) 'pending-$i': labels[i],
-        },
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
-    for (final label in labels) {
-      expect(
-        tester
-            .renderObject<RenderParagraph>(find.text(label))
-            .didExceedMaxLines,
-        isFalse,
-        reason: label,
+    // The last pending row has no estimate, so it shows the fallback status.
+    for (final fallback in ActivityPendingFallback.values) {
+      final labels = [
+        for (final eta in etas) eta.label(testL10n),
+        fallback.text(testL10n),
+      ];
+      await tester.pumpWidget(
+        _app(
+          (_) async => [
+            for (var i = 0; i < labels.length; i++)
+              _tx(
+                txidHex: 'pending-$i',
+                blockTime: BigInt.zero,
+                minedHeight: BigInt.zero,
+                kind: 'sent',
+              ),
+          ],
+          etaLabels: {
+            for (var i = 0; i < etas.length; i++) 'pending-$i': etas[i],
+          },
+          pendingFallback: fallback,
+        ),
       );
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      for (final label in labels) {
+        expect(
+          tester
+              .renderObject<RenderParagraph>(find.text(label))
+              .didExceedMaxLines,
+          isFalse,
+          reason: label,
+        );
+      }
     }
     expect(tester.takeException(), isNull);
   });
@@ -392,7 +401,10 @@ void main() {
           ),
           _tx(txidHex: 'mined', blockTime: BigInt.from(1800000000)),
         ],
-        etaLabels: const {'pending': 'Est. 1–3 min', 'mined': 'Est. 1–3 min'},
+        etaLabels: const {
+          'pending': ActivityEta.standard,
+          'mined': ActivityEta.standard,
+        },
       ),
     );
     await tester.pump(const Duration(milliseconds: 300));

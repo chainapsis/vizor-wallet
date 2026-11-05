@@ -208,6 +208,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityDetailsUnknownRecipient => '未知收款方';
 
   @override
+  String get activityEtaFunding => '预计 2–6 分钟';
+
+  @override
+  String get activityEtaNu7 => '预计 1 分钟内';
+
+  @override
+  String get activityEtaNu7Funding => '预计 1–2 分钟';
+
+  @override
+  String get activityEtaStandard => '预计 1–3 分钟';
+
+  @override
+  String get activityEtaTakingLonger => '耗时较长';
+
+  @override
   String get activityFeedEmpty => '暂无活动';
 
   @override

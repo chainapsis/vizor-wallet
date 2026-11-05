@@ -8,7 +8,7 @@ import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/pending_activity_evidence_provider.dart'
-    show kActivityEtaLabels;
+    show ActivityEta;
 import '../../rust/api/sync.dart' as rust_sync;
 import 'activity_amount_text.dart';
 import 'gift_card_activity_index.dart';
@@ -36,7 +36,8 @@ ActivityRowData buildTransactionActivityRow({
   String? giftCardStableId,
   DateTime? giftCardActivityTimestamp,
   String? giftCardDisplayPool,
-  String? pendingLabel,
+  ActivityEta? pendingEta,
+  String? pendingFallbackLabel,
   bool showPendingEstimate = true,
   bool privacyModeEnabled = false,
   bool privateQueriesEnabled = false,
@@ -73,7 +74,9 @@ ActivityRowData buildTransactionActivityRow({
   final replacesPool =
       showPendingEstimate && isPending && (isInbound || isSent || isShielded);
   final subtitle = replacesPool
-      ? pendingLabel ?? l10n.activityRowCheckingStatus
+      ? pendingEta?.label(l10n) ??
+            pendingFallbackLabel ??
+            l10n.activityRowCheckingStatus
       : isMigration
       ? 'Orchard → Ironwood' // l10n-ignore: product names only
       : isNetChange
@@ -126,7 +129,7 @@ ActivityRowData buildTransactionActivityRow({
     leadingIconColor: colors.icon.regular,
     subtitle: subtitle,
     subtitleIconName: replacesPool
-        ? (kActivityEtaLabels.contains(subtitle) ? AppIcons.time : null)
+        ? (pendingEta != null ? AppIcons.time : null)
         : isNetChange
         ? null
         : _poolIcon(normalizeActivityPool(displayPool), ordinary: isPayment),

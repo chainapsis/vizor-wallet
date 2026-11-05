@@ -13,6 +13,11 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import '../../fixtures/private_shielding_activity.dart';
 import '../../support/localized_test_scope.dart';
 import '../../support/test_l10n.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
+
+/// The estimate whose English text is [label], or null for fallback copy.
+ActivityEta? _etaFor(String? label) =>
+    {for (final eta in ActivityEta.values) eta.label(testL10n): eta}[label];
 
 void main() {
   Future<ActivityRowData> mapRow(
@@ -38,7 +43,10 @@ void main() {
                 context: context,
                 transaction: transaction,
                 privateQueriesEnabled: privateQueriesEnabled,
-                pendingLabel: pendingLabel,
+                pendingEta: _etaFor(pendingLabel),
+                pendingFallbackLabel: _etaFor(pendingLabel) == null
+                    ? pendingLabel
+                    : null,
                 showPendingEstimate: showPendingEstimate,
                 giftCardKind: giftCardKind,
                 giftCardAmountZatoshi: giftCardAmountZatoshi,

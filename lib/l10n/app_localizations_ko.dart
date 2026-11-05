@@ -216,6 +216,21 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityDetailsUnknownRecipient => '알 수 없⁠는 받⁠는 사⁠람';
 
   @override
+  String get activityEtaFunding => '약 2–6⁠분';
+
+  @override
+  String get activityEtaNu7 => '약 1⁠분 이⁠내';
+
+  @override
+  String get activityEtaNu7Funding => '약 1–2⁠분';
+
+  @override
+  String get activityEtaStandard => '약 1–3⁠분';
+
+  @override
+  String get activityEtaTakingLonger => '시⁠간⁠이 더 걸⁠리⁠고 있⁠어⁠요';
+
+  @override
   String get activityFeedEmpty => '아⁠직 활⁠동⁠이 없⁠어⁠요';
 
   @override

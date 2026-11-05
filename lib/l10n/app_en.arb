@@ -270,6 +270,26 @@
   "@activityDetailsUnknownRecipient": {
     "description": "Value of the To row of a send whose recipient the account did not record."
   },
+  "activityEtaFunding": "Est. 2–6 min",
+  "@activityEtaFunding": {
+    "description": "Estimated time for a pending TEX transfer that first waits for its funding transaction."
+  },
+  "activityEtaNu7": "Est. under 1 min",
+  "@activityEtaNu7": {
+    "description": "Estimated confirmation time after NU7, when blocks come faster."
+  },
+  "activityEtaNu7Funding": "Est. 1–2 min",
+  "@activityEtaNu7Funding": {
+    "description": "Estimated time for a pending TEX transfer after NU7."
+  },
+  "activityEtaStandard": "Est. 1–3 min",
+  "@activityEtaStandard": {
+    "description": "Estimated confirmation time beside a pending transaction (about 1 to 3 minutes)."
+  },
+  "activityEtaTakingLonger": "Taking longer",
+  "@activityEtaTakingLonger": {
+    "description": "Shown beside a pending transaction that is taking longer than estimated."
+  },
   "activityFeedEmpty": "No activity yet",
   "@activityFeedEmpty": {
     "description": "Message shown when the activity list is empty."

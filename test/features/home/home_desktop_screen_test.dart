@@ -49,6 +49,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_sync_notifier.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 
 void main() {
   // Render with the real app fonts instead of the square-glyph test font.
@@ -1117,7 +1118,7 @@ void main() {
       _appHarness(
         '/home',
         swapEnabled: false,
-        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+        etaLabels: const {'pending-receive': ActivityEta.standard},
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -2015,7 +2016,7 @@ rust_sync.MigrationStatus _migrationStatus(
 
 Widget _appHarness(
   String initialLocation, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   GoRouter? router,
   bool? swapEnabled,
   bool privacyModeEnabled = false,

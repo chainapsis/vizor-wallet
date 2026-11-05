@@ -251,17 +251,19 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         showPendingEstimate: !ref
             .watch(activityEtaExcludedTxidsProvider)
             .contains(activityTxidKey(transaction.txidHex)),
-        pendingLabel:
+        pendingEta:
             (_hasFreshTransactionHistory &&
-                    _transactionsSnapshot ==
-                        activityHistorySnapshot(ref.watch(syncProvider).value)
-                ? activityEtaLabelFor(
-                    transaction: transaction,
-                    labels: ref.watch(activityEtaLabelsProvider),
-                    giftCard: giftCard,
-                  )
-                : null) ??
-            ref.watch(activityPendingFallbackLabelProvider).text(context.l10n),
+                _transactionsSnapshot ==
+                    activityHistorySnapshot(ref.watch(syncProvider).value)
+            ? activityEtaFor(
+                transaction: transaction,
+                labels: ref.watch(activityEtaLabelsProvider),
+                giftCard: giftCard,
+              )
+            : null),
+        pendingFallbackLabel: ref
+            .watch(activityPendingFallbackLabelProvider)
+            .text(context.l10n),
         giftCardKind: giftCard?.kind,
         giftCardAmountZatoshi: giftCard?.amountZatoshi,
         giftCardClaimInFlight: giftCard?.isClaimInFlight ?? false,

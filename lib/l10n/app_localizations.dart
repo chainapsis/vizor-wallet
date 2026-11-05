@@ -478,6 +478,36 @@ abstract class AppLocalizations {
   /// **'Unknown recipient'**
   String get activityDetailsUnknownRecipient;
 
+  /// Estimated time for a pending TEX transfer that first waits for its funding transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Est. 2–6 min'**
+  String get activityEtaFunding;
+
+  /// Estimated confirmation time after NU7, when blocks come faster.
+  ///
+  /// In en, this message translates to:
+  /// **'Est. under 1 min'**
+  String get activityEtaNu7;
+
+  /// Estimated time for a pending TEX transfer after NU7.
+  ///
+  /// In en, this message translates to:
+  /// **'Est. 1–2 min'**
+  String get activityEtaNu7Funding;
+
+  /// Estimated confirmation time beside a pending transaction (about 1 to 3 minutes).
+  ///
+  /// In en, this message translates to:
+  /// **'Est. 1–3 min'**
+  String get activityEtaStandard;
+
+  /// Shown beside a pending transaction that is taking longer than estimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Taking longer'**
+  String get activityEtaTakingLonger;
+
   /// Message shown when the activity list is empty.
   ///
   /// In en, this message translates to:

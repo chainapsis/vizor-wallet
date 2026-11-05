@@ -232,6 +232,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityDetailsUnknownRecipient => 'Unknown recipient';
 
   @override
+  String get activityEtaFunding => 'Est. 2–6 min';
+
+  @override
+  String get activityEtaNu7 => 'Est. under 1 min';
+
+  @override
+  String get activityEtaNu7Funding => 'Est. 1–2 min';
+
+  @override
+  String get activityEtaStandard => 'Est. 1–3 min';
+
+  @override
+  String get activityEtaTakingLonger => 'Taking longer';
+
+  @override
   String get activityFeedEmpty => 'No activity yet';
 
   @override

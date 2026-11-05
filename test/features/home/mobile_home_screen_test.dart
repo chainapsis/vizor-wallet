@@ -59,6 +59,7 @@ import '../../fakes/fake_sync_notifier.dart';
 import '../../support/app_test_fonts.dart';
 import '../../support/wallet_path_read_blocker.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
+import 'package:zcash_wallet/src/providers/pending_activity_evidence_provider.dart';
 
 /// Skips the secure-storage write so toggling works without a platform
 /// channel in widget tests.
@@ -232,7 +233,7 @@ class _HomeParticipationRecorder extends VotingParticipationCoordinator {
 
 Widget _app(
   SyncState syncState, {
-  Map<String, String>? etaLabels,
+  Map<String, ActivityEta>? etaLabels,
   ZecMarketData? marketData = const ZecMarketData(
     usdPrice: 70,
     change24hPct: 13.12,
@@ -743,6 +744,7 @@ void main() {
     );
     return feedback;
   }
+
   testWidgets('Home displays ETA in place of the pool subtitle', (
     tester,
   ) async {
@@ -771,7 +773,7 @@ void main() {
           orchardBalance: BigInt.from(100000000),
         ).copyWith(recentTransactions: [pending]),
         showVoting: false,
-        etaLabels: const {'pending-receive': 'Est. 1–3 min'},
+        etaLabels: const {'pending-receive': ActivityEta.standard},
       ),
     );
     for (var i = 0; i < 10; i++) {
