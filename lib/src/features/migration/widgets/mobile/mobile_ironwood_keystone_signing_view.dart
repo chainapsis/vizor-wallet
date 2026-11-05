@@ -190,7 +190,7 @@ class _StepOneContent extends StatelessWidget {
                     ),
                     SizedBox(height: compact ? AppSpacing.xxs : AppSpacing.s),
                     Text(
-                      context.l10n.migrationMobileKeystoneStep1,
+                      context.l10n.commonStepOneOfTwo,
                       key: const ValueKey(
                         'mobile_ironwood_keystone_signing_step',
                       ),
@@ -201,8 +201,8 @@ class _StepOneContent extends StatelessWidget {
                     SizedBox(height: compact ? AppSpacing.xxs : AppSpacing.s),
                     Text(
                       loading
-                          ? context.l10n.migrationMobileKeystoneConfirmTitle
-                          : context.l10n.migrationMobileKeystoneScanTitle,
+                          ? context.l10n.migrationKeystoneConfirmTitle
+                          : context.l10n.commonScanWithKeystone,
                       key: loading
                           ? const ValueKey(
                               'mobile_ironwood_keystone_signing_title',
@@ -239,7 +239,7 @@ class _StepOneContent extends StatelessWidget {
                     SizedBox(height: compact ? AppSpacing.s : 38),
                     if (loading)
                       Text(
-                        context.l10n.migrationMobileKeystoneLoadingQrText,
+                        context.l10n.commonLoadingQRCode,
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_loading',
                         ),
@@ -270,9 +270,7 @@ class _StepOneContent extends StatelessWidget {
                             AppIcons.chevronForward,
                             size: 20,
                           ),
-                          child: Text(
-                            context.l10n.migrationMobileKeystoneNextStep,
-                          ),
+                          child: Text(context.l10n.commonNextStep),
                         ),
                       ),
                     ),
@@ -395,12 +393,9 @@ class _KeystoneScanPrompt extends StatelessWidget {
           spacing: 6,
           runSpacing: 2,
           children: [
-            Text(context.l10n.migrationMobileKeystonePromptTap, style: style),
+            Text(context.l10n.commonTap, style: style),
             const _KeystoneScanPromptIcon(),
-            Text(
-              context.l10n.migrationMobileKeystonePromptOnDevice,
-              style: style,
-            ),
+            Text(context.l10n.commonOnYourKeystone, style: style),
           ],
         ),
         const SizedBox(height: 2),
@@ -413,7 +408,7 @@ class _KeystoneScanPrompt extends StatelessWidget {
             Flexible(
               fit: FlexFit.loose,
               child: Text(
-                context.l10n.migrationMobileKeystonePromptThenScan,
+                context.l10n.commonThenScanThisQRCode,
                 textAlign: TextAlign.center,
                 style: style,
               ),
@@ -592,13 +587,13 @@ class _ScannerContent extends StatelessWidget {
             final topInset = MediaQuery.paddingOf(context).top;
             final displayHeight = _measuredTextHeight(
               context,
-              text: context.l10n.migrationMobileKeystoneStep2,
+              text: context.l10n.commonStepTwoOfTwo,
               style: AppTypography.displayLarge,
               maxWidth: constraints.maxWidth,
             );
             final titleHeight = _measuredTextHeight(
               context,
-              text: context.l10n.sendKeystoneConfirmTitle,
+              text: context.l10n.commonConfirmWithKeystone,
               style: AppTypography.bodyMediumStrong,
               maxWidth: constraints.maxWidth,
             );
@@ -687,14 +682,14 @@ class _ScannerContent extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.s),
                       Text(
-                        context.l10n.migrationMobileKeystoneStep2,
+                        context.l10n.commonStepTwoOfTwo,
                         style: AppTypography.displayLarge.copyWith(
                           color: const Color(0xFFFFFFFF),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.s),
                       Text(
-                        context.l10n.sendKeystoneConfirmTitle,
+                        context.l10n.commonConfirmWithKeystone,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: const Color(0xFFFFFFFF),
                         ),
@@ -781,7 +776,7 @@ class _ScannerContent extends StatelessWidget {
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_qr_action',
                         ),
-                        label: context.l10n.migrationMobileKeystoneShowTxQr,
+                        label: context.l10n.commonShowTransactionQR,
                         onPressed: onShowRequestQr,
                         child: AppIcon(
                           AppIcons.qr,

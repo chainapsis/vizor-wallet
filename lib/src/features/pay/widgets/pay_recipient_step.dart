@@ -119,7 +119,7 @@ class PayRecipientStep extends StatelessWidget {
           trailing: AppIconHoverButton(
             key: const ValueKey('pay_recipient_scan_button'),
             icon: AppIcons.qr,
-            semanticLabel: context.l10n.payRecipientScanQr,
+            semanticLabel: context.l10n.commonScanQrCodeSentenceCase,
             iconSize: 20,
             iconColor: colors.icon.regular,
             onTap: onOpenScanner,

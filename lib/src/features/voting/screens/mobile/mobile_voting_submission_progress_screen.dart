@@ -655,7 +655,7 @@ class _ActiveStepIndicator extends StatelessWidget {
     return Semantics(
       label: context.l10n.votingMobileProgressSemantics,
       value: clampedProgress == null
-          ? context.l10n.votingProgressUnknown
+          ? context.l10n.commonUnknown
           : '${(clampedProgress * 100).round()}%',
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: 0, end: clampedProgress ?? 0),

@@ -205,11 +205,11 @@ class LedgerSigningModal extends ConsumerWidget {
         stage == LedgerSigningStage.preparing) {
       switch (readiness.phase) {
         case LedgerAppReadinessPhase.checkingDevice:
-          title = l10n.ledgerSigningTitleChecking;
+          title = l10n.commonCheckingYourLedger;
           statusLabel = l10n.ledgerSigningStatusCheckingDevice;
-          message = l10n.ledgerSigningCheckingZcashReady;
+          message = l10n.commonVizorIsCheckingWhetherTheZcash;
         case LedgerAppReadinessPhase.confirmOpening:
-          title = l10n.ledgerSigningTitleConfirmOpening;
+          title = l10n.commonConfirmOpeningZcash;
           statusLabel = l10n.ledgerSigningStatusOpeningZcash;
           message = l10n.ledgerSigningConfirmRequestReconnect;
         case LedgerAppReadinessPhase.idle ||

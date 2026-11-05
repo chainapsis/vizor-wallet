@@ -432,10 +432,10 @@ class MobileSettingsScreen extends ConsumerWidget {
   static String _profilePictureDisplayLabel(AppLocalizations l10n, String id) {
     final option = resolveProfilePictureOption(id);
     return switch (option.id) {
-      'pfp-01' => l10n.settingsPfpKnight,
+      'pfp-01' => l10n.commonKnight,
       'pfp-02' => l10n.settingsPfpViking,
       'pfp-03' => l10n.settingsPfpSamurai,
-      'pfp-11' => l10n.settingsPfpWizard,
+      'pfp-11' => l10n.commonWizard,
       _ => option.label,
     };
   }
@@ -722,7 +722,7 @@ class _SyncKeepAwakeSettingsCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
-              context.l10n.settingsSectionSyncing,
+              context.l10n.commonSyncing,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),

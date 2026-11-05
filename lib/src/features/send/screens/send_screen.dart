@@ -2247,7 +2247,7 @@ class _SendAmountConversionRow extends StatelessWidget {
       child: Semantics(
         button: true,
         enabled: enabled,
-        label: context.l10n.sendEnterAmountInCurrency(
+        label: context.l10n.commonEnterAmountIn(
           enterUsdMode
               ? 'USD' // l10n-ignore: currency code
               : kZcashDefaultCurrencyTicker,

@@ -789,7 +789,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final copyLabel = this.copyLabel ?? context.l10n.paymentLinkCopyLink;
+    final copyLabel = this.copyLabel ?? context.l10n.commonCopyLink;
     final backLabel = this.backLabel ?? context.l10n.navHome;
     final waitingStatusLabel =
         this.waitingStatusLabel ?? context.l10n.paymentLinkWaitingStatusLabel;
@@ -965,7 +965,7 @@ class PaymentLinkShareQrDesktopView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final saveLabel = this.saveLabel ?? context.l10n.paymentLinkSaveQrCode;
-    final copyLabel = this.copyLabel ?? context.l10n.paymentLinkCopyLink;
+    final copyLabel = this.copyLabel ?? context.l10n.commonCopyLink;
     return PaymentLinkPane(
       backLabel: context.l10n.paymentLinkGiftCardsLowerBreadcrumb,
       onBack: onBack,
@@ -1458,7 +1458,7 @@ class _PaymentLinkCardsDesktopViewState
                 children: [
                   PaymentLinkTabAction(
                     icon: AppIcons.plane,
-                    label: context.l10n.paymentLinkCreatedTabLabel,
+                    label: context.l10n.commonCreated,
                     selected: widget.activeTab == PaymentLinkCardsTab.created,
                     onTap: widget.onTabSelected == null
                         ? null
@@ -1469,7 +1469,7 @@ class _PaymentLinkCardsDesktopViewState
                   const SizedBox(width: AppSpacing.sm),
                   PaymentLinkTabAction(
                     icon: AppIcons.importWallet,
-                    label: context.l10n.paymentLinkReceivedTabLabel,
+                    label: context.l10n.commonReceived,
                     selected: widget.activeTab == PaymentLinkCardsTab.received,
                     onTap: widget.onTabSelected == null
                         ? null
@@ -1622,7 +1622,7 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
               Text(
                 title ??
                     (loading
-                        ? context.l10n.paymentLinkCheckingLabel
+                        ? context.l10n.commonCheckingEllipsis
                         : context.l10n.paymentLinkRedeemTheCardTitle),
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineLarge.copyWith(
@@ -1754,6 +1754,6 @@ class PaymentLinkRedeemDesktopView extends StatelessWidget {
     size: AppButtonSize.mediumLarge,
     variant: AppButtonVariant.secondary,
     leading: const AppIcon(AppIcons.qr),
-    child: Text(context.l10n.paymentLinkScanQrCode),
+    child: Text(context.l10n.commonScanQrCodeSentenceCase),
   );
 }

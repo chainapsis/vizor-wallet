@@ -166,7 +166,7 @@ class GiftCardActivityDetailView extends StatelessWidget {
                       ),
                       if (batch != null)
                         ReviewListRow(
-                          label: context.l10n.activityReceiptCards,
+                          label: context.l10n.commonCards,
                           value:
                               '${batch.count} × $amountText ZEC', // l10n-ignore: amount format
                         ),

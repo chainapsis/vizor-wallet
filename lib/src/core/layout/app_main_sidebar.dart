@@ -763,10 +763,10 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
             child: AppSidebarItem(
               key: ValueKey('sidebar_migration_progress_button'),
               label: stopped
-                  ? context.l10n.sidebarMigrationStopped
+                  ? context.l10n.commonMigrationStopped
                   : needsInput
                   ? context.l10n.sidebarMigrationNeedsInput
-                  : context.l10n.sidebarMigrating,
+                  : context.l10n.commonMigrating,
               leading: SizedBox(
                 width: _SidebarMigrationGlow.visualWidth,
                 height: _SidebarMigrationGlow.visualHeight,
@@ -1397,7 +1397,7 @@ class _SidebarAccountsPopoverState extends State<_SidebarAccountsPopover> {
                             borderRadius: BorderRadius.circular(AppRadii.full),
                           ),
                           child: Text(
-                            context.l10n.sidebarManageAccounts,
+                            context.l10n.commonManage,
                             style: AppTypography.labelLarge.copyWith(
                               color: colors.button.secondary.label,
                             ),

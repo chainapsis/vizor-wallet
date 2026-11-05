@@ -259,7 +259,7 @@ class _MobileLedgerAccessContentState
                               : l10n.ledgerStatusStillSearching,
                         LedgerPairingStage.verifying =>
                           c.sameSavedDevice
-                              ? l10n.ledgerStatusConnecting
+                              ? l10n.commonConnecting
                               : l10n.ledgerStatusFollowPrompts,
                         LedgerPairingStage.saving =>
                           l10n.ledgerStatusSavingConnection,

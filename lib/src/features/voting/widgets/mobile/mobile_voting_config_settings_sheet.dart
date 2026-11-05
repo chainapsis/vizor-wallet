@@ -224,7 +224,7 @@ class _MobileVotingConfigSettingsSheetState
                 _MobileSourceRow(
                   key: const ValueKey('mobile_voting_source_default'),
                   title: context.l10n.votingTokenHolderTitle,
-                  subtitle: context.l10n.votingConfigBadgeDefault,
+                  subtitle: context.l10n.commonDefault,
                   selected: state.isDefault,
                   onTap: _busy
                       ? null

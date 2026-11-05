@@ -462,7 +462,7 @@ class _MobileLedgerSendSignScreenState
       action = _LedgerSendRecoveryAction.createNewTransaction;
     } else if (guidance != null) {
       presentation = LedgerSigningFailurePresentation(
-        title: context.l10n.sendLedgerNeedsAttentionTitle,
+        title: context.l10n.commonLedgerNeedsAttention,
         requestFailure: LedgerRequestFailure.fromError(error),
         statusLabel: context.l10n.commonActionNeeded,
         message: guidance.message,
@@ -484,7 +484,7 @@ class _MobileLedgerSendSignScreenState
                 appInstruction: appInstruction,
               ) ??
               context.l10n.sendLedgerConnectAndUnlock(appInstruction),
-        _ => context.l10n.sendLedgerSigningIncomplete,
+        _ => context.l10n.commonLedgerSigningCouldNotBeCompleted,
       };
       presentation = LedgerSigningFailurePresentation(
         title: context.l10n.commonLedgerSigningFailed,

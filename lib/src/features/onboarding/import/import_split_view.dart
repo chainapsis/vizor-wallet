@@ -24,7 +24,7 @@ extension ImportOnboardingStepX on ImportOnboardingStep {
     ImportOnboardingStep.walletBirthdayHeight =>
       l10n.onboardingStepWalletBirthdayHeight,
     ImportOnboardingStep.setPassword => l10n.onboardingStepSetPassword,
-    ImportOnboardingStep.customiseAccount => l10n.onboardingStepCustomiseWallet,
+    ImportOnboardingStep.customiseAccount => l10n.commonCustomiseWallet,
   };
 
   String get iconName => switch (this) {

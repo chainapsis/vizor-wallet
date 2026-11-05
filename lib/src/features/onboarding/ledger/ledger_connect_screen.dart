@@ -62,13 +62,13 @@ class LedgerOnboardingShell extends ConsumerWidget {
             OnboardingSidebarStepData(
               label: switch (step) {
                 LedgerOnboardingStep.connect =>
-                  context.l10n.onboardingConnectLedger,
+                  context.l10n.commonConnectLedger,
                 LedgerOnboardingStep.birthday =>
                   context.l10n.onboardingStepWalletBirthdayHeight,
                 LedgerOnboardingStep.setPassword =>
                   context.l10n.onboardingStepSetPassword,
                 LedgerOnboardingStep.customiseAccount =>
-                  context.l10n.onboardingStepCustomiseWallet,
+                  context.l10n.commonCustomiseWallet,
               },
               iconName: switch (step) {
                 LedgerOnboardingStep.connect => AppIcons.ledger,
@@ -495,7 +495,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        context.l10n.onboardingConnectLedger,
+                        context.l10n.commonConnectLedger,
                         style: AppTypography.displayLarge.copyWith(
                           fontFamily: 'Young Serif',
                           fontWeight: FontWeight.w400,
@@ -602,7 +602,7 @@ class _LedgerConnectScreenState extends ConsumerState<LedgerConnectScreen> {
                 variant: AppButtonVariant.primary,
                 growWithContent: true,
                 minWidth: 196,
-                child: Text(context.l10n.onboardingConnectLedger),
+                child: Text(context.l10n.commonConnectLedger),
               ),
             ),
           ],

@@ -25,7 +25,7 @@ void main() {
     );
     List<PaymentLinkCardsSection> sections({required bool detected}) => [
       PaymentLinkCardsSection(
-        label: testL10n.paymentLinkPendingSectionLabel,
+        label: testL10n.commonPending,
         cards: detected ? const [] : [row(movingKey, 'Checking use')],
       ),
       PaymentLinkCardsSection(
@@ -184,7 +184,7 @@ void main() {
       tester,
       sections: [
         PaymentLinkCardsSection(
-          label: testL10n.paymentLinkPendingSectionLabel,
+          label: testL10n.commonPending,
           cards: [
             PaymentLinkCardListMobileRow(
               thumbnail: const SizedBox(),
@@ -201,7 +201,7 @@ void main() {
 
     expect(find.text('4.45 ZEC'), findsOneWidget);
     expect(find.text('August 7'), findsOneWidget);
-    expect(find.text(testL10n.paymentLinkPendingSectionLabel), findsOneWidget);
+    expect(find.text(testL10n.commonPending), findsOneWidget);
     // A funded card shows the copy action instead of a status label — this is
     // the affordance that was missing once the user left the Ready page.
     expect(
@@ -227,7 +227,7 @@ void main() {
       tester,
       sections: [
         PaymentLinkCardsSection(
-          label: testL10n.paymentLinkPendingSectionLabel,
+          label: testL10n.commonPending,
           cards: [
             PaymentLinkCardListMobileRow(
               thumbnail: SizedBox(),
@@ -258,7 +258,7 @@ void main() {
       activeTab: PaymentLinkCardsTab.received,
       sections: [
         PaymentLinkCardsSection(
-          label: testL10n.paymentLinkReceivedTabLabel,
+          label: testL10n.commonReceived,
           cards: [
             PaymentLinkCardListMobileRow(
               thumbnail: SizedBox(),

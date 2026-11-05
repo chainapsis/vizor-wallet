@@ -275,7 +275,7 @@ class _LedgerAccessRecoveryModalState
     );
     if (_transport == null) {
       return frame(
-        l10n.ledgerConnectTitle,
+        l10n.commonConnectLedger,
         Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -290,7 +290,7 @@ class _LedgerAccessRecoveryModalState
     }
     if (_transport == LedgerConnectionTransport.usb) {
       return frame(
-        l10n.ledgerConnectTitle,
+        l10n.commonConnectLedger,
         _usbContent(context),
         label: _usbError == null ? null : l10n.commonTryAgain,
         action: _usbError == null ? null : () => unawaited(_connectUsb()),
@@ -362,7 +362,7 @@ class _LedgerAccessRecoveryModalState
             ? c.pairingInvalid
                   ? l10n.ledgerTitlePairAgain
                   : c.requestFailure.title(l10n)
-            : l10n.ledgerConnectTitle;
+            : l10n.commonConnectLedger;
         final label = c.busy
             ? null
             : switch (c.stage) {
@@ -401,7 +401,7 @@ class _LedgerAccessRecoveryModalState
                     child: AppButton(
                       onPressed: c.busy ? null : c.settings,
                       variant: AppButtonVariant.ghost,
-                      child: Text(l10n.ledgerOpenSettings),
+                      child: Text(l10n.commonOpenSettings),
                     ),
                   ),
                 const SizedBox(height: AppSpacing.sm),

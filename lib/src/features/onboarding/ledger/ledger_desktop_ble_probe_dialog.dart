@@ -471,7 +471,7 @@ class _LedgerDesktopConnectModalState
                   : _resumingStep ?? 1);
     return LedgerModalContent(
       title: procedure
-          ? context.l10n.onboardingConnectLedger
+          ? context.l10n.commonConnectLedger
           : context.l10n.ledgerCouldNotConnect,
       identity:
           '${_device == null ? 'Ledger' /* l10n-ignore: product name */ : ledgerDeviceLabel(_device!)} · ${_bluetooth ? context.l10n.ledgerTransportBluetooth : context.l10n.ledgerTransportUsb}',
@@ -497,7 +497,7 @@ class _LedgerDesktopConnectModalState
               currentStep: current,
               steps: [
                 LedgerStep(
-                  context.l10n.onboardingConnectLedger,
+                  context.l10n.commonConnectLedger,
                   message: current == 0
                       ? context.l10n.ledgerKeepNearbyUnlocked
                       : null,

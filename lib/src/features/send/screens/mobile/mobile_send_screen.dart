@@ -3237,7 +3237,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
       child: Center(
         child: Semantics(
           button: true,
-          label: context.l10n.sendEnterAmountInCurrency(
+          label: context.l10n.commonEnterAmountIn(
             _amountInputIsUsd ? 'ZEC' : 'USD', // l10n-ignore: currency codes
           ),
           enabled: canToggle,
@@ -3486,7 +3486,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                   ),
                   child: Text(
                     _isConfirmingSend
-                        ? context.l10n.sendReviewPreparing
+                        ? context.l10n.commonPreparingDots
                         : _pendingCancellation != null ||
                               _reviewFeeRetryAvailable
                         ? context.l10n.commonTryAgain
@@ -3500,7 +3500,7 @@ class _MobileSendScreenState extends ConsumerState<MobileSendScreen> {
                         : isLedger
                         ? context.l10n.sendReviewConfirmWithLedger
                         : isKeystone
-                        ? context.l10n.sendKeystoneConfirmTitle
+                        ? context.l10n.commonConfirmWithKeystone
                         : _isDonation
                         ? context.l10n.sendReviewConfirmDonation
                         : context.l10n.sendReviewConfirmAndSendMobile,

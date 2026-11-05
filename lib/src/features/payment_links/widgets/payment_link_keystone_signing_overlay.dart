@@ -237,7 +237,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       log('PaymentLinkKeystoneSigning._getSignature: $error\n$stackTrace');
       if (!mounted) return;
       setState(() {
-        _error = context.l10n.paymentLinkKeystoneQrMismatch;
+        _error = context.l10n.commonThisQRCodeDoesNotMatch;
       });
     }
   }
@@ -514,10 +514,10 @@ class _PaymentLinkKeystoneSigningOverlayState
                   ? context.l10n.paymentLinkKeystoneBroadcastingTitle
                   : context.l10n.paymentLinkKeystoneSignTitle,
               subtitle: isBroadcasting
-                  ? context.l10n.paymentLinkKeystoneSubmittingTransaction
-                  : context.l10n.paymentLinkKeystoneScanToSign,
+                  ? context.l10n.commonSubmittingTransaction
+                  : context.l10n.commonScanToSign,
               instruction: isBroadcasting
-                  ? context.l10n.paymentLinkKeystoneKeepOpen
+                  ? context.l10n.commonKeepVizorOpenWhileTheTransaction
                   : _phase == _PaymentLinkKeystonePhase.failed
                   ? null
                   : context.l10n.commonKeystoneAfterScan,
@@ -571,7 +571,7 @@ class _PaymentLinkKeystoneSigningOverlayState
               description: context.l10n.commonKeystoneScanTransaction,
               scanCaption: context.l10n.paymentLinkKeystoneScanCaption,
               readingSignatureLabel:
-                  context.l10n.paymentLinkKeystoneReadingSignature,
+                  context.l10n.commonReadingSignatureEllipsis,
               finalizingSignatureLabel:
                   context.l10n.paymentLinkKeystoneCreatingGiftCard,
               keyPrefix: 'payment_link_keystone_sign',
@@ -612,7 +612,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       return context.l10n.paymentLinkKeystoneBroadcastFailed;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return context.l10n.paymentLinkKeystoneSignatureFailed;
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
     return context.l10n.paymentLinkKeystoneSigningFailed;
   }

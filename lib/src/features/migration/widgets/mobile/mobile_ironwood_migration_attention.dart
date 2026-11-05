@@ -36,7 +36,7 @@ class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
       MobileIronwoodMigrationAttentionKind.lateBroadcast =>
         context.l10n.migrationMobileAttentionLateTitle,
       MobileIronwoodMigrationAttentionKind.upgradeStopped =>
-        context.l10n.migrationMobileAttentionStoppedTitle,
+        context.l10n.commonMigrationStoppedByNetworkUpgrade,
     };
     final caution = switch (kind) {
       MobileIronwoodMigrationAttentionKind.lateBroadcast ||
@@ -183,19 +183,19 @@ class _MobileIronwoodMigrationBannerState
             MobileIronwoodMigrationAttentionKind.lateBroadcast =>
               context.l10n.migrationMobileBannerLate,
             MobileIronwoodMigrationAttentionKind.upgradeStopped =>
-              context.l10n.migrationMobileBannerStopped,
+              context.l10n.commonMigrationStopped,
           }
         : widget.inProgress
         ? widget.preparing
-              ? context.l10n.migrationMobileBannerPreparing
+              ? context.l10n.migrationNextActionDetailPreparing
               : widget.waitingForConfirmation
-              ? context.l10n.migrationMobileBannerWaiting
+              ? context.l10n.commonWaitingForConfirmation
               : widget.remainingText == null
-              ? context.l10n.migrationMobileBannerInProgress
+              ? context.l10n.migrationStatusDefaultButton
               : context.l10n.migrationMobileBannerRemaining(
                   widget.remainingText!,
                 )
-        : context.l10n.migrationMobileBannerStart;
+        : context.l10n.commonMigrateToIronwood;
     final contentColor = colors.text.homeCard;
     final stopped =
         widget.attentionKind ==

@@ -498,7 +498,8 @@ class IronwoodHomeMigrationCtaState {
   String buttonLabel(AppLocalizations l10n) => switch (mode) {
     IronwoodHomeMigrationCtaMode.start => l10n.migrationCtaStart,
     IronwoodHomeMigrationCtaMode.resume => l10n.migrationContinueMigration,
-    IronwoodHomeMigrationCtaMode.stopped => l10n.migrationCtaStopped,
+    IronwoodHomeMigrationCtaMode.stopped =>
+      l10n.commonMigrationStoppedByNetworkUpgrade,
     IronwoodHomeMigrationCtaMode.hidden => '',
   };
 }

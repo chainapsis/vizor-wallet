@@ -424,7 +424,7 @@ class _MigrationInProgressBadge extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Text(
-                context.l10n.migrationPrivacyLockInProgress,
+                context.l10n.migrationStatusDefaultButton,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.positiveStrong,
                 ),
@@ -479,7 +479,7 @@ class _MigrationLoaderState extends State<_MigrationLoader>
         AppIcons.ironwoodMigrationLoader,
         size: 28,
         color: widget.color,
-        semanticLabel: context.l10n.migrationPrivacyLockInProgress,
+        semanticLabel: context.l10n.migrationStatusDefaultButton,
       ),
     );
   }

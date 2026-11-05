@@ -42,12 +42,12 @@ enum PaymentLinkCardArtwork {
 
   /// Name read aloud for the artwork.
   String semanticLabel(AppLocalizations l10n) => switch (this) {
-    PaymentLinkCardArtwork.knight => l10n.paymentLinkArtworkKnight,
+    PaymentLinkCardArtwork.knight => l10n.commonKnight,
     PaymentLinkCardArtwork.chestLava => l10n.paymentLinkArtworkChestLava,
     PaymentLinkCardArtwork.chestCave => l10n.paymentLinkArtworkChestCave,
     PaymentLinkCardArtwork.dragon => l10n.paymentLinkArtworkDragon,
     PaymentLinkCardArtwork.knightMagic => l10n.paymentLinkArtworkKnightMagic,
-    PaymentLinkCardArtwork.gandalf => l10n.paymentLinkArtworkGandalf,
+    PaymentLinkCardArtwork.gandalf => l10n.commonWizard,
     PaymentLinkCardArtwork.crystal => l10n.paymentLinkArtworkCrystal,
     PaymentLinkCardArtwork.diamond => l10n.paymentLinkArtworkDiamond,
     PaymentLinkCardArtwork.ruby => l10n.paymentLinkArtworkRuby,
@@ -431,8 +431,7 @@ class _PaymentLinkGiftCardState extends State<PaymentLinkGiftCard> {
                 supportingLoading: widget.supportingLoading,
                 currencySymbol: widget.currencySymbol,
                 emptyAmountLabel:
-                    widget.emptyAmountLabel ??
-                    context.l10n.paymentLinkAmountEnterAmount,
+                    widget.emptyAmountLabel ?? context.l10n.commonEnterAmount,
                 semanticLabel: label,
                 showCaret: widget.showCaret,
                 motion: motion,

@@ -68,7 +68,7 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                                       ),
                                       const SizedBox(width: AppSpacing.xxs),
                                       Text(
-                                        context.l10n.migrationMobileHeroBadge,
+                                        context.l10n.migrationStageMigration,
                                         style: AppTypography.bodyMediumStrong
                                             .copyWith(
                                               color: colors.text.inverse,
@@ -131,13 +131,13 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          context.l10n.migrationMobileHeroLegacy,
+                          context.l10n.migrationPoolLegacy,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.muted,
                           ),
                         ),
                         Text(
-                          context.l10n.migrationMobileHeroOrchardPool,
+                          context.l10n.migrationPoolOrchard,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.accent,
                           ),
@@ -157,7 +157,7 @@ class _MobilePoolMigrationHero extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          context.l10n.migrationMobileHeroIronwoodPool,
+                          context.l10n.migrationPoolIronwood,
                           style: AppTypography.labelLarge.copyWith(
                             color: colors.text.positiveStrong,
                           ),

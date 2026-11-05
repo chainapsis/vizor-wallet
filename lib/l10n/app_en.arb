@@ -418,14 +418,6 @@
   "@activityGiftRedemptionFailed": {
     "description": "Title of a gift card that could not be redeemed."
   },
-  "activityGiftStatusCreated": "Created",
-  "@activityGiftStatusCreated": {
-    "description": "Status of a gift card receipt after the card was created."
-  },
-  "activityGiftStatusCreating": "Creating…",
-  "@activityGiftStatusCreating": {
-    "description": "Status of a gift card receipt while the card is being created."
-  },
   "activityGiftStatusRedeemed": "Redeemed",
   "@activityGiftStatusRedeemed": {
     "description": "Status of a gift card receipt after the card was redeemed."
@@ -538,10 +530,6 @@
   "@activityReceiptCardFee": {
     "description": "Label of a row on a transaction receipt: the fee for creating a gift card."
   },
-  "activityReceiptCards": "Cards",
-  "@activityReceiptCards": {
-    "description": "Label of a row on a transaction receipt: the number of gift cards in a batch."
-  },
   "activityReceiptDetails": "Details",
   "@activityReceiptDetails": {
     "description": "Label of a row on a transaction receipt: a notice about transaction details."
@@ -578,10 +566,6 @@
   "@activityReceiptNetChange": {
     "description": "Label of a row on a transaction receipt: the balance change of a transaction that is not shown as an external payment."
   },
-  "activityReceiptNetworkFee": "Network fee",
-  "@activityReceiptNetworkFee": {
-    "description": "Label of a row on a transaction receipt: the total network fee of the transaction."
-  },
   "activityReceiptOutput": "Output",
   "@activityReceiptOutput": {
     "description": "Label of a row on a transaction receipt: one transparent output of the transaction, followed by its address and amount."
@@ -597,10 +581,6 @@
   "activityReceiptUnattributedFeeHelp": "Total fee for this transaction. Your account's share of this fee is unknown.",
   "@activityReceiptUnattributedFeeHelp": {
     "description": "Tooltip explaining a network fee when the account's share of it is not known."
-  },
-  "activityReceiptUnknownFee": "Unknown",
-  "@activityReceiptUnknownFee": {
-    "description": "Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero."
   },
   "activityRowToday": "Today, {time}",
   "@activityRowToday": {
@@ -747,10 +727,6 @@
   "activityTitleReceiveInProgress": "Receive in progress...",
   "@activityTitleReceiveInProgress": {
     "description": "Title of the desktop receipt of an incoming transaction that is pending."
-  },
-  "activityTitleReceived": "Received",
-  "@activityTitleReceived": {
-    "description": "Title of an activity row or receipt for an incoming transaction."
   },
   "activityTitleReceivedSuccessfully": "Received successfully",
   "@activityTitleReceivedSuccessfully": {
@@ -1033,49 +1009,17 @@
   "@addressScanCloseScanner": {
     "description": "Accessibility label of the close button of the QR scanner."
   },
-  "addressScanDefaultCamera": "Default camera",
-  "@addressScanDefaultCamera": {
-    "description": "Fallback name of the camera in the desktop QR scanner footer."
-  },
   "addressScanDeniedTitle": "You've denied Camera access",
   "@addressScanDeniedTitle": {
     "description": "Title in the desktop QR scanner when the camera permission was denied."
-  },
-  "addressScanEnableWindowsAccess": "Enable Windows camera access",
-  "@addressScanEnableWindowsAccess": {
-    "description": "Title in the desktop QR scanner when Windows blocks the camera."
   },
   "addressScanGrantAccess": "Grant access to your camera",
   "@addressScanGrantAccess": {
     "description": "Title of the desktop QR scanner while waiting for the camera permission."
   },
-  "addressScanLoadingCamera": "Loading camera...",
-  "@addressScanLoadingCamera": {
-    "description": "Footer label of the desktop QR scanner while cameras are being listed."
-  },
-  "addressScanLoadingEllipsis": "Loading...",
-  "@addressScanLoadingEllipsis": {
-    "description": "Label next to a spinner in the mobile QR scanner while the camera starts."
-  },
-  "addressScanNoCamera": "No camera found",
-  "@addressScanNoCamera": {
-    "description": "Footer label of the desktop QR scanner when the device has no camera."
-  },
-  "addressScanNoCameraOpened": "No camera could be opened. Check that a camera is connected and not in use by another app.",
-  "@addressScanNoCameraOpened": {
-    "description": "Description in the desktop QR scanner when the camera cannot be opened."
-  },
-  "addressScanOpenSettings": "Open settings",
-  "@addressScanOpenSettings": {
-    "description": "Button that opens the system settings page for the camera permission."
-  },
   "addressScanTitle": "Scan the address QR code",
   "@addressScanTitle": {
     "description": "Title of the QR scanner that reads an address."
-  },
-  "addressScanWindowsAccessHint": "Turn on Camera access and Let desktop apps access your camera in Windows Settings.",
-  "@addressScanWindowsAccessHint": {
-    "description": "Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names."
   },
   "addressScanZcashPrompt": "Scan a Zcash QR code to continue",
   "@addressScanZcashPrompt": {
@@ -1097,10 +1041,6 @@
   "@appBackReceive": {
     "description": "Back-link name of the Receive screen."
   },
-  "appBackResults": "Results",
-  "@appBackResults": {
-    "description": "Back-link name of the voting results screen."
-  },
   "appBackReview": "Review",
   "@appBackReview": {
     "description": "Back-link name of a review step (send, swap, vote)."
@@ -1121,17 +1061,9 @@
   "@appBackTransaction": {
     "description": "Back-link name of a transaction detail screen."
   },
-  "appBackVotingRound": "Voting round",
-  "@appBackVotingRound": {
-    "description": "Back-link name of a coinholder voting round screen."
-  },
   "appExitBackHint": "Go back again to exit",
   "@appExitBackHint": {
     "description": "Hint shown on Android after the first Back press at the root, telling the user to press Back again to exit the app."
-  },
-  "appGiftCloseCardFailed": "Couldn’t close the card. Try again.",
-  "@appGiftCloseCardFailed": {
-    "description": "Toast shown when cancelling a gift card claim during wallet setup fails."
   },
   "appLinuxUpdateAvailable": "Vizor {version} is available.",
   "@appLinuxUpdateAvailable": {
@@ -1212,10 +1144,6 @@
   "appUpdateDownloadingTitle": "Downloading update",
   "@appUpdateDownloadingTitle": {
     "description": "Title of the in-app update prompt while the update downloads."
-  },
-  "appUpdateFailedTitle": "Update failed",
-  "@appUpdateFailedTitle": {
-    "description": "Title of the in-app update prompt when the update failed."
   },
   "appUpdateLater": "Later",
   "@appUpdateLater": {
@@ -1321,7 +1249,7 @@
   },
   "commonAmount": "Amount",
   "@commonAmount": {
-    "description": "Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap."
+    "description": "Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap. Shared by: common, migration."
   },
   "commonBack": "Back",
   "@commonBack": {
@@ -1340,6 +1268,18 @@
   "commonBackToWallet": "Back to wallet",
   "@commonBackToWallet": {
     "description": "Button on the shield result screens that returns to the wallet. Shared by: home, send."
+  },
+  "commonCalculatingEllipsis": "Calculating…",
+  "@commonCalculatingEllipsis": {
+    "description": "Placeholder shown for the amount, fee or button while the Immediate migration plan is being calculated."
+  },
+  "commonCalculatingTotal": "Calculating total",
+  "@commonCalculatingTotal": {
+    "description": "Shown instead of the overall progress while the total number of migration transactions is not known yet. Shared by: migration, payment."
+  },
+  "commonCamera": "Camera",
+  "@commonCamera": {
+    "description": "Label of the camera row on the Keystone scanner and the camera picker. Shared by: keystone, migration."
   },
   "commonCameraDeniedTitle": "You've denied camera access",
   "@commonCameraDeniedTitle": {
@@ -1373,6 +1313,10 @@
   "@commonCancelFailedRetry": {
     "description": "Error on the shield screens when cancelling could not release the pending work. Shared by: home, send, swap."
   },
+  "commonCancelShielding": "Cancel shielding",
+  "@commonCancelShielding": {
+    "description": "Screen-reader label of the close button on the mobile Ledger shield panel while shielding can still be cancelled. Shared by: home, ledger."
+  },
   "commonCancellationFailed": "Could not finish cancellation. Try again.",
   "@commonCancellationFailed": {
     "description": "Toast when leaving a flow could not cancel its pending work."
@@ -1385,6 +1329,10 @@
   "@commonCannotBeUndone": {
     "description": "[security] Warning that a destructive action is permanent."
   },
+  "commonCards": "Cards",
+  "@commonCards": {
+    "description": "Label of a row on a transaction receipt: the number of gift cards in a batch. Shared by: activity, payment."
+  },
   "commonChainAndAddress": "Chain & address",
   "@commonChainAndAddress": {
     "description": "Section label above the network selector and address field in the contact dialog. Shared by: address, pay."
@@ -1393,17 +1341,25 @@
   "@commonChangeContactPicture": {
     "description": "Accessibility label of the avatar button in the contact dialog. Shared by: address, pay."
   },
+  "commonCheckAgain": "Check again",
+  "@commonCheckAgain": {
+    "description": "Button label to re-check Bluetooth access. Shared by: ledger, payment, send, voting."
+  },
   "commonChecking": "Checking...",
   "@commonChecking": {
     "description": "Status while Vizor checks something."
   },
   "commonCheckingEllipsis": "Checking…",
   "@commonCheckingEllipsis": {
-    "description": "Label of the primary button on the payment request card while the request is being checked. Shared by: send, settings."
+    "description": "Label of the primary button on the payment request card while the request is being checked. Shared by: send, settings. Shared by: common, payment."
   },
   "commonCheckingStatus": "Checking status",
   "@commonCheckingStatus": {
     "description": "Subtitle of a pending activity row while the app checks the transaction status. Shared by: activity, swap."
+  },
+  "commonCheckingYourLedger": "Checking your Ledger",
+  "@commonCheckingYourLedger": {
+    "description": "Title while Vizor checks that the Zcash app is ready on the Ledger. Shared by: ledger, voting."
   },
   "commonClear": "Clear",
   "@commonClear": {
@@ -1433,6 +1389,26 @@
   "@commonCompleted": {
     "description": "Status value of a transaction or swap that finished. Shared by: activity, send, swap."
   },
+  "commonConfirmOpeningZcash": "Confirm opening Zcash",
+  "@commonConfirmOpeningZcash": {
+    "description": "Title asking the user to confirm on the Ledger that the Zcash app may open. Shared by: ledger, voting."
+  },
+  "commonConfirmWithKeystone": "Confirm with Keystone",
+  "@commonConfirmWithKeystone": {
+    "description": "[security] Subtitle of the second step: the user confirms on the Keystone and scans its signature QR code. Shared by: keystone, send."
+  },
+  "commonConfirming": "Confirming",
+  "@commonConfirming": {
+    "description": "Status label while migration transfers wait for network confirmations. Shared by: migration, payment."
+  },
+  "commonConnectLedger": "Connect Ledger",
+  "@commonConnectLedger": {
+    "description": "Title of the Ledger connection dialog. Shared by: ledger, onboarding."
+  },
+  "commonConnecting": "Connecting…",
+  "@commonConnecting": {
+    "description": "Status while connecting to the saved Ledger. Shared by: ledger, settings."
+  },
   "commonContactLabelHint": "Add label 1-20 characters",
   "@commonContactLabelHint": {
     "description": "Placeholder of the contact name field in the desktop dialog. Shared by: address, pay."
@@ -1444,6 +1420,14 @@
   "commonContinue": "Continue",
   "@commonContinue": {
     "description": "Button that moves to the next step."
+  },
+  "commonContinueAnyway": "Continue anyway",
+  "@commonContinueAnyway": {
+    "description": "[security] Destructive button on the Immediate migration review that broadcasts the less private migration after the privacy warning. Shared by: migration, onboarding."
+  },
+  "commonContinueToReview": "Continue to review",
+  "@commonContinueToReview": {
+    "description": "Primary button label on the mobile swap screen that opens the review. Shared by: swap, voting."
   },
   "commonCopied": "Copied",
   "@commonCopied": {
@@ -1457,9 +1441,41 @@
   "@commonCopyAddress": {
     "description": "Button that copies an address to the clipboard."
   },
+  "commonCopyLink": "Copy link",
+  "@commonCopyLink": {
+    "description": "Button that copies the Gift Card link to the clipboard. Shared by: payment, receive."
+  },
   "commonCopyShieldedAddress": "Copy shielded address",
   "@commonCopyShieldedAddress": {
     "description": "Button label and accessibility label that copies the shielded address. Shared by: receive, sidebar."
+  },
+  "commonCouldnTCloseTheCardTry": "Couldn’t close the card. Try again.",
+  "@commonCouldnTCloseTheCardTry": {
+    "description": "Toast shown when cancelling a gift card claim during wallet setup fails. Shared by: app, payment."
+  },
+  "commonCreated": "Created",
+  "@commonCreated": {
+    "description": "Status of a gift card receipt after the card was created. Shared by: activity, payment."
+  },
+  "commonCreating": "Creating…",
+  "@commonCreating": {
+    "description": "Status of a gift card receipt while the card is being created. Shared by: activity, payment."
+  },
+  "commonCustomiseAccount": "Customise Account",
+  "@commonCustomiseAccount": {
+    "description": "Heading of the step where the user names the account and picks a profile picture; also the back label pointing to it. Shared by: onboarding, payment."
+  },
+  "commonCustomiseWallet": "Customise wallet",
+  "@commonCustomiseWallet": {
+    "description": "Onboarding step for naming the wallet and picking a picture. Shared by: onboarding, payment."
+  },
+  "commonDefault": "Default",
+  "@commonDefault": {
+    "description": "Detail tag in the camera picker for the default camera. Shared by: keystone, voting."
+  },
+  "commonDefaultCamera": "Default camera",
+  "@commonDefaultCamera": {
+    "description": "Fallback name of the camera in the desktop QR scanner footer. Shared by: address, keystone."
   },
   "commonDismissNotification": "Dismiss notification",
   "@commonDismissNotification": {
@@ -1485,6 +1501,23 @@
   "@commonEdit": {
     "description": "Button that edits the value shown next to it. Shared by: onboarding, send."
   },
+  "commonEnableWindowsCameraAccess": "Enable Windows camera access",
+  "@commonEnableWindowsCameraAccess": {
+    "description": "Title in the desktop QR scanner when Windows blocks the camera. Shared by: address, keystone."
+  },
+  "commonEnterAmount": "Enter amount",
+  "@commonEnterAmount": {
+    "description": "Placeholder of the Gift Card amount field. Shared by: payment, send."
+  },
+  "commonEnterAmountIn": "Enter amount in {currency}",
+  "@commonEnterAmountIn": {
+    "description": "Screen reader label of a currency toggle on the Gift Card amount field; {currency} is ZEC or USD. Shared by: payment, send.",
+    "placeholders": {
+      "currency": {
+        "type": "String"
+      }
+    }
+  },
   "commonEnterAmountInUsd": "Enter amount in USD",
   "@commonEnterAmountInUsd": {
     "description": "Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive."
@@ -1503,11 +1536,15 @@
   },
   "commonGetSignature": "Get signature",
   "@commonGetSignature": {
-    "description": "[security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device. Shared by: send, swap."
+    "description": "[security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device. Shared by: send, swap. Shared by: common, migration."
   },
   "commonGoBack": "Go back",
   "@commonGoBack": {
     "description": "Button that returns to the previous screen."
+  },
+  "commonGoHome": "Go home",
+  "@commonGoHome": {
+    "description": "Button that leaves the migration screen and returns to the home screen. Shared by: migration, payment, voting."
   },
   "commonGuaranteedMinimum": "Guaranteed minimum",
   "@commonGuaranteedMinimum": {
@@ -1531,15 +1568,19 @@
   },
   "commonKeepQrSteady": "Keep the QR code steady and fully visible.",
   "@commonKeepQrSteady": {
-    "description": "Hint while scanning a QR code from a device screen. Shared by: common, pay."
+    "description": "Hint while scanning a QR code from a device screen. Shared by: common, pay. Shared by: common, migration, voting."
   },
   "commonKeepScreenAwake": "Keep screen awake",
   "@commonKeepScreenAwake": {
     "description": "Setting and button that keep the screen on while Vizor syncs."
   },
+  "commonKeepVizorOpenWhileTheTransaction": "Keep Vizor open while the transaction is sent.",
+  "@commonKeepVizorOpenWhileTheTransaction": {
+    "description": "Instruction in the desktop Keystone shield dialog while the transaction is being sent. Shared by: home, payment."
+  },
   "commonKeystoneAfterScan": "After you scanned, click Get signature.",
   "@commonKeystoneAfterScan": {
-    "description": "[security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap."
+    "description": "[security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap. Shared by: common, migration."
   },
   "commonKeystoneScanSignatureResult": "Open the signature result QR on Keystone, then scan again.",
   "@commonKeystoneScanSignatureResult": {
@@ -1548,6 +1589,26 @@
   "commonKeystoneScanTransaction": "Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.",
   "@commonKeystoneScanTransaction": {
     "description": "[security] Instruction on the mobile Keystone screen to scan the transaction QR code with the Keystone device and follow its prompts. Shared by: send, swap."
+  },
+  "commonKeystoneSignatureCouldNotBeApplied": "Keystone signature could not be applied.",
+  "@commonKeystoneSignatureCouldNotBeApplied": {
+    "description": "Error on the Keystone shield screens when the scanned signature could not be added to the transaction. Shared by: home, migration, payment."
+  },
+  "commonKeystoneSigningCouldNotBePrepared": "Keystone signing could not be prepared.",
+  "@commonKeystoneSigningCouldNotBePrepared": {
+    "description": "Error on the mobile Keystone shield screen when the signing request was not ready when the user started scanning. Shared by: home, keystone."
+  },
+  "commonKnight": "Knight",
+  "@commonKnight": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings."
+  },
+  "commonLedgerNeedsAttention": "Ledger needs attention",
+  "@commonLedgerNeedsAttention": {
+    "description": "Title of the failure panel when the Ledger device needs the user to act (unlock, open the app, reconnect). Shared by: send, voting."
+  },
+  "commonLedgerSigningCouldNotBeCompleted": "Ledger signing could not be completed. Check your device and try again.",
+  "@commonLedgerSigningCouldNotBeCompleted": {
+    "description": "Message on the Ledger signing screen when signing failed for another reason. Shared by: payment, send."
   },
   "commonLedgerSigningFailed": "Ledger signing failed",
   "@commonLedgerSigningFailed": {
@@ -1561,6 +1622,26 @@
   "@commonLoadingActivity": {
     "description": "Screen-reader label of the activity list loading placeholder. Shared by: activity, home."
   },
+  "commonLoadingCamera": "Loading camera...",
+  "@commonLoadingCamera": {
+    "description": "Footer label of the desktop QR scanner while cameras are being listed. Shared by: address, keystone."
+  },
+  "commonLoadingDots": "Loading...",
+  "@commonLoadingDots": {
+    "description": "Label next to a spinner in the mobile QR scanner while the camera starts. Shared by: address, migration."
+  },
+  "commonLoadingQRCode": "Loading QR code ...",
+  "@commonLoadingQRCode": {
+    "description": "Status while the transaction QR code is prepared. Shared by: keystone, migration."
+  },
+  "commonMakeSureTheRoomIsWell": "Make sure the room is well-lit and the QR code isn't reflecting glare.",
+  "@commonMakeSureTheRoomIsWell": {
+    "description": "Scanning tip on QR scanners. Shared by: keystone, send."
+  },
+  "commonManage": "Manage",
+  "@commonManage": {
+    "description": "Button on the migration schedule that opens the Manage Migration dialog. Shared by: migration, sidebar."
+  },
   "commonMemo": "Memo",
   "@commonMemo": {
     "description": "Label of a status detail row holding the deposit memo the user must include."
@@ -1573,9 +1654,37 @@
   "@commonMessageIsTooLong": {
     "description": "Error shown when the payment request message exceeds the size limit. Shared by: receive, send."
   },
+  "commonMigrateToIronwood": "Migrate to Ironwood",
+  "@commonMigrateToIronwood": {
+    "description": "Desktop Home button that starts the Ironwood pool migration. Shared by: home, migration."
+  },
+  "commonMigrating": "Migrating...",
+  "@commonMigrating": {
+    "description": "Heading of the migration status screen while the migration transaction is sent or confirming. Shared by: migration, sidebar."
+  },
+  "commonMigrationStopped": "Migration stopped",
+  "@commonMigrationStopped": {
+    "description": "Text of the Home migration banner when the migration was stopped by a network upgrade. Shared by: migration, sidebar."
+  },
+  "commonMigrationStoppedByNetworkUpgrade": "Migration stopped by network upgrade",
+  "@commonMigrationStoppedByNetworkUpgrade": {
+    "description": "Desktop Home migration button text after a network upgrade stopped the Ironwood migration. Shared by: home, migration."
+  },
+  "commonMoveTheQRCodeAFew": "Move the QR code a few inches further from the camera so it can focus.",
+  "@commonMoveTheQRCodeAFew": {
+    "description": "Scanning tip on the gift card QR scanner. Shared by: keystone, send."
+  },
   "commonNetworkConversionFees": "Network + conversion fees",
   "@commonNetworkConversionFees": {
     "description": "Label of a status detail row with the network and conversion fees of a payment in progress."
+  },
+  "commonNetworkFee": "Network fee",
+  "@commonNetworkFee": {
+    "description": "Label of a row on a transaction receipt: the total network fee of the transaction. Shared by: activity, payment."
+  },
+  "commonNextStep": "Next step",
+  "@commonNextStep": {
+    "description": "Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature. Shared by: home, keystone, migration."
   },
   "commonNoActiveAccount": "No active account",
   "@commonNoActiveAccount": {
@@ -1584,6 +1693,14 @@
   "commonNoActiveAccountSentence": "No active account.",
   "@commonNoActiveAccountSentence": {
     "description": "Error shown when a receipt is opened with no active account. Shared by: activity, home."
+  },
+  "commonNoCameraCouldBeOpenedCheck": "No camera could be opened. Check that a camera is connected and not in use by another app.",
+  "@commonNoCameraCouldBeOpenedCheck": {
+    "description": "Description in the desktop QR scanner when the camera cannot be opened. Shared by: address, keystone."
+  },
+  "commonNoCameraFound": "No camera found",
+  "@commonNoCameraFound": {
+    "description": "Footer label of the desktop QR scanner when the device has no camera. Shared by: address, keystone."
   },
   "commonNotAvailableYet": "Not available yet",
   "@commonNotAvailableYet": {
@@ -1596,6 +1713,22 @@
   "commonOk": "OK",
   "@commonOk": {
     "description": "Button that acknowledges a message and closes it."
+  },
+  "commonOnAMacYouCanUse": "On a Mac, you can use Continuity Camera to scan with your iPhone instead.",
+  "@commonOnAMacYouCanUse": {
+    "description": "Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name. Shared by: keystone, send."
+  },
+  "commonOnYourKeystone": "on your Keystone,",
+  "@commonOnYourKeystone": {
+    "description": "Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration."
+  },
+  "commonOpenSettings": "Open settings",
+  "@commonOpenSettings": {
+    "description": "Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger."
+  },
+  "commonOpenTheSignedTransactionQROn": "Open the signed transaction QR on Keystone, then scan again.",
+  "@commonOpenTheSignedTransactionQROn": {
+    "description": "Hint when the scanned QR code is not the signed transaction. Shared by: keystone, send."
   },
   "commonPayInsufficientZec": "You don't have enough ZEC for this payment. Try a smaller amount.",
   "@commonPayInsufficientZec": {
@@ -1621,6 +1754,30 @@
   "@commonPaymentRequest": {
     "description": "Title of the payment request card that opens when the user follows a zcash: link or scans a payment request QR code."
   },
+  "commonPending": "Pending",
+  "@commonPending": {
+    "description": "Status of a migration transfer that has not been sent yet. Shared by: migration, payment."
+  },
+  "commonPleaseWait": "Please wait",
+  "@commonPleaseWait": {
+    "description": "Short status chip while waiting. Shared by: ledger, swap."
+  },
+  "commonPrepareYourKeystoneWallet": "Prepare your Keystone wallet",
+  "@commonPrepareYourKeystoneWallet": {
+    "description": "Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready. Shared by: keystone, migration."
+  },
+  "commonPreparing": "Preparing",
+  "@commonPreparing": {
+    "description": "Disabled button label while the Keystone request is being prepared. Shared by: migration, send, wallet."
+  },
+  "commonPreparingDots": "Preparing...",
+  "@commonPreparingDots": {
+    "description": "Heading of the migration status screen while the balance is being split. Shared by: migration, send, voting."
+  },
+  "commonPreparingEllipsis": "Preparing…",
+  "@commonPreparingEllipsis": {
+    "description": "Button label while a Gift Card claim is being prepared."
+  },
   "commonPrivatelyFromShieldedBalance": "Privately, from shielded balance",
   "@commonPrivatelyFromShieldedBalance": {
     "description": "Line under the paid amount on a payment status screen, saying the payment is spent privately from the shielded balance."
@@ -1640,6 +1797,18 @@
   "commonRate": "Rate",
   "@commonRate": {
     "description": "Label of a status detail row with the exchange rate."
+  },
+  "commonReadingSignature": "Reading signature...",
+  "@commonReadingSignature": {
+    "description": "Status while the signature QR code from the Keystone is decoded. Shared by: keystone, migration, send, voting."
+  },
+  "commonReadingSignatureEllipsis": "Reading signature…",
+  "@commonReadingSignatureEllipsis": {
+    "description": "Status text on the mobile Keystone scanner while the scanned signature QR is decoded. Shared by: home, payment."
+  },
+  "commonReceived": "Received",
+  "@commonReceived": {
+    "description": "Title of an activity row or receipt for an incoming transaction. Shared by: activity, payment."
   },
   "commonRecipientGets": "Recipient gets",
   "@commonRecipientGets": {
@@ -1682,6 +1851,14 @@
   "@commonResetVizor": {
     "description": "[security] Button that erases every account and wallet data on this device."
   },
+  "commonResults": "Results",
+  "@commonResults": {
+    "description": "Back-link name of the voting results screen. Shared by: app, voting."
+  },
+  "commonResume": "Resume",
+  "@commonResume": {
+    "description": "Button on the migration progress screen that resumes a paused migration. Shared by: migration, voting."
+  },
   "commonRetry": "Retry",
   "@commonRetry": {
     "description": "Button that retries a failed step."
@@ -1718,13 +1895,37 @@
   "@commonSaveContact": {
     "description": "Button that saves an edited contact on mobile. Shared by: address, pay."
   },
+  "commonSaving": "Saving",
+  "@commonSaving": {
+    "description": "Disabled button label while saving. Shared by: ledger, pay."
+  },
+  "commonScanAgain": "Scan again",
+  "@commonScanAgain": {
+    "description": "Button that reopens the QR scanner after a failed scan. Shared by: payment, wallet."
+  },
   "commonScanOriginalQr": "Scan original QR",
   "@commonScanOriginalQr": {
     "description": "Button that opens the camera to scan the requester's original payment request QR code."
   },
   "commonScanQrCode": "Scan QR Code",
   "@commonScanQrCode": {
-    "description": "Title of a QR code scanning screen."
+    "description": "Title of a QR code scanning screen. Shared by: common, migration."
+  },
+  "commonScanQrCodeSentenceCase": "Scan QR code",
+  "@commonScanQrCodeSentenceCase": {
+    "description": "Accessibility label of the button that opens the QR scanner on the Pay recipient step. Shared by: pay, payment."
+  },
+  "commonScanToSign": "Scan to sign",
+  "@commonScanToSign": {
+    "description": "Subtitle of the Keystone signing screen that shows the QR code to scan. Shared by: payment, swap."
+  },
+  "commonScanWithKeystone": "Scan with Keystone",
+  "@commonScanWithKeystone": {
+    "description": "Subtitle of the first step: the Keystone scans the QR code shown by Vizor. Shared by: keystone, migration."
+  },
+  "commonScanWithYourKeystone": "Scan with your Keystone",
+  "@commonScanWithYourKeystone": {
+    "description": "[security] Subtitle of the Keystone signing modal asking the user to scan the QR with Keystone. Shared by: migration, send."
   },
   "commonSelectAccount": "Select account",
   "@commonSelectAccount": {
@@ -1782,6 +1983,10 @@
   "@commonShowFullAddress": {
     "description": "Ghost button on a receipt row that opens the full address of the sender or recipient. Shared by: activity, pay, send, swap."
   },
+  "commonShowTransactionQR": "Show transaction QR",
+  "@commonShowTransactionQR": {
+    "description": "Screen-reader label of the button that returns to the transaction QR code. Shared by: keystone, migration."
+  },
   "commonSigningCancelledBeforeParams": "Signing was cancelled before proving parameters were downloaded.",
   "@commonSigningCancelledBeforeParams": {
     "description": "Error shown when the user declined the proving-parameter download during Keystone signing. Shared by: send, swap."
@@ -1793,6 +1998,18 @@
   "commonSlippageTolerance": "Slippage tolerance",
   "@commonSlippageTolerance": {
     "description": "Label of a status detail row with the slippage tolerance of the quote."
+  },
+  "commonStepOneOfTwo": "Step 1/2",
+  "@commonStepOneOfTwo": {
+    "description": "Step indicator in the mobile Keystone signing flow (first of two steps). Shared by: keystone, migration."
+  },
+  "commonStepTwoOfTwo": "Step 2/2",
+  "@commonStepTwoOfTwo": {
+    "description": "Step indicator in the mobile Keystone signing flow (second of two steps). Shared by: keystone, migration."
+  },
+  "commonSubmittingTransaction": "Submitting transaction",
+  "@commonSubmittingTransaction": {
+    "description": "Subtitle of the desktop Keystone shield dialog while the transaction is being sent. Shared by: home, payment."
   },
   "commonSupportVizor": "Support Vizor",
   "@commonSupportVizor": {
@@ -1832,6 +2049,30 @@
       }
     }
   },
+  "commonSyncing": "Syncing",
+  "@commonSyncing": {
+    "description": "Value of the estimated completion row while the migration progress is syncing. Shared by: migration, settings."
+  },
+  "commonTap": "Tap",
+  "@commonTap": {
+    "description": "Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration."
+  },
+  "commonThenScanThisQRCode": "then scan this QR code",
+  "@commonThenScanThisQRCode": {
+    "description": "End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration."
+  },
+  "commonThisQRCodeCouldNotBe": "This QR code could not be decoded as a Keystone signature.",
+  "@commonThisQRCodeCouldNotBe": {
+    "description": "Hint under the mobile Keystone scanner when the scanned QR is not a valid signature. Shared by: home, keystone."
+  },
+  "commonThisQRCodeDoesNotMatch": "This QR code does not match the current Keystone request.",
+  "@commonThisQRCodeDoesNotMatch": {
+    "description": "Error on the Keystone signing screen when the scanned QR code belongs to a different request. Shared by: payment, swap."
+  },
+  "commonTimeSUp": "Time’s up",
+  "@commonTimeSUp": {
+    "description": "Heading on the swap timeout screen shown when the quote deposit window has expired. Shared by: swap, wallet."
+  },
   "commonTimestamp": "Timestamp",
   "@commonTimestamp": {
     "description": "Label of a row on a transaction receipt: the date and time of the transaction. Shared by: activity, send, swap."
@@ -1856,6 +2097,10 @@
   "@commonToggleFlashlight": {
     "description": "Accessibility label of the flashlight button of the QR scanner. Shared by: address, home."
   },
+  "commonTotal": "Total",
+  "@commonTotal": {
+    "description": "Label of the last row on the mobile donation summary showing amount plus fee. Shared by: donation, voting."
+  },
   "commonTransactionExpired": "Transaction expired",
   "@commonTransactionExpired": {
     "description": "Title of the Ledger failure panel when the transaction proposal expired before it could be signed. Shared by: send, swap."
@@ -1872,9 +2117,17 @@
   "@commonTryAgain": {
     "description": "Button that repeats an action that failed."
   },
+  "commonTurnOnCameraAccessAndLet": "Turn on Camera access and Let desktop apps access your camera in Windows Settings.",
+  "@commonTurnOnCameraAccessAndLet": {
+    "description": "Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names. Shared by: address, keystone."
+  },
   "commonTxId": "Tx ID",
   "@commonTxId": {
     "description": "Label of a row on a transaction receipt: the transaction ID, tapping it opens a block explorer. Shared by: activity, send, swap."
+  },
+  "commonUnknown": "Unknown",
+  "@commonUnknown": {
+    "description": "Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero. Shared by: activity, voting."
   },
   "commonUnlockVizor": "Unlock Vizor",
   "@commonUnlockVizor": {
@@ -1884,13 +2137,41 @@
   "@commonUpdate": {
     "description": "Button that applies a setting chosen in a picker modal or sheet (theme, language)."
   },
+  "commonUpdateFailed": "Update failed",
+  "@commonUpdateFailed": {
+    "description": "Title of the in-app update prompt when the update failed. Shared by: app, payment."
+  },
   "commonUpdating": "Updating...",
   "@commonUpdating": {
     "description": "The Update button label while the change is being saved."
   },
+  "commonView": "View",
+  "@commonView": {
+    "description": "Link on the legacy migration card that opens the batch schedule. Shared by: migration, voting."
+  },
+  "commonVizorIsCheckingWhetherTheZcash": "Vizor is checking whether the Zcash app is ready.",
+  "@commonVizorIsCheckingWhetherTheZcash": {
+    "description": "Message while Vizor checks that the Zcash app on the Ledger is ready. Shared by: ledger, voting."
+  },
+  "commonVotingRound": "Voting round",
+  "@commonVotingRound": {
+    "description": "Back-link name of a coinholder voting round screen. Shared by: app, voting."
+  },
+  "commonWaitingForConfirmation": "Waiting for confirmation...",
+  "@commonWaitingForConfirmation": {
+    "description": "Desktop Home migration button text while a migration transaction waits for confirmations. Shared by: home, migration."
+  },
+  "commonWaitingForWalletSync": "Waiting for wallet sync",
+  "@commonWaitingForWalletSync": {
+    "description": "Ring sub-caption: migration cannot continue until the wallet finishes syncing. Shared by: migration, voting."
+  },
   "commonWelcomeBack": "Welcome Back",
   "@commonWelcomeBack": {
     "description": "Title of the unlock screen."
+  },
+  "commonWizard": "Wizard",
+  "@commonWizard": {
+    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings."
   },
   "commonYouPay": "You pay",
   "@commonYouPay": {
@@ -1939,10 +2220,6 @@
   "donationThanksTitle": "Thank you for supporting Vizor",
   "@donationThanksTitle": {
     "description": "Headline of the desktop screen shown after a donation succeeded."
-  },
-  "donationTotal": "Total",
-  "@donationTotal": {
-    "description": "Label of the last row on the mobile donation summary showing amount plus fee."
   },
   "endpointCurrent": "Current: {endpoint}",
   "@endpointCurrent": {
@@ -2059,10 +2336,6 @@
   "@homeLedgerBroadcastUnknown": {
     "description": "Warning on the Ledger shield dialog when the broadcast outcome is unknown."
   },
-  "homeLedgerCancelShielding": "Cancel shielding",
-  "@homeLedgerCancelShielding": {
-    "description": "Screen-reader label of the close button on the mobile Ledger shield panel while shielding can still be cancelled."
-  },
   "homeLedgerContextChanged": "The selected account or network changed. Return to your wallet.",
   "@homeLedgerContextChanged": {
     "description": "Ledger shield dialog message when the user switched account or network while shielding was in progress."
@@ -2147,10 +2420,6 @@
       }
     }
   },
-  "homeMigrateToIronwood": "Migrate to Ironwood",
-  "@homeMigrateToIronwood": {
-    "description": "Desktop Home button that starts the Ironwood pool migration."
-  },
   "homeMigrationRequired": "Migration required",
   "@homeMigrationRequired": {
     "description": "Pill on the mobile Home balance card shown when the Ironwood migration needs the user to act."
@@ -2168,14 +2437,6 @@
         "example": "1.5 ZEC"
       }
     }
-  },
-  "homeMigrationStoppedByUpgrade": "Migration stopped by network upgrade",
-  "@homeMigrationStoppedByUpgrade": {
-    "description": "Desktop Home migration button text after a network upgrade stopped the Ironwood migration."
-  },
-  "homeMigrationWaitingConfirmation": "Waiting for confirmation...",
-  "@homeMigrationWaitingConfirmation": {
-    "description": "Desktop Home migration button text while a migration transaction waits for confirmations."
   },
   "homeNu7FasterBody": "Average wait for first confirmation drops from ~75s to ~25s.",
   "@homeNu7FasterBody": {
@@ -2325,14 +2586,6 @@
   "@homeShieldErrorSeedUnavailable": {
     "description": "[security] Shield error when the account's seed phrase cannot be read."
   },
-  "homeShieldErrorSignatureNotApplied": "Keystone signature could not be applied.",
-  "@homeShieldErrorSignatureNotApplied": {
-    "description": "Error on the Keystone shield screens when the scanned signature could not be added to the transaction."
-  },
-  "homeShieldErrorSigningNotPrepared": "Keystone signing could not be prepared.",
-  "@homeShieldErrorSigningNotPrepared": {
-    "description": "Error on the mobile Keystone shield screen when the signing request was not ready when the user started scanning."
-  },
   "homeShieldErrorSyncFirst": "Sync the wallet before shielding transparent balance.",
   "@homeShieldErrorSyncFirst": {
     "description": "Error on the Keystone and Ledger shield dialogs when the wallet is not synced yet."
@@ -2353,17 +2606,9 @@
   "@homeShieldGetSignature": {
     "description": "Button in the desktop Keystone shield dialog that opens the camera to read the signature QR."
   },
-  "homeShieldKeepOpen": "Keep Vizor open while the transaction is sent.",
-  "@homeShieldKeepOpen": {
-    "description": "Instruction in the desktop Keystone shield dialog while the transaction is being sent."
-  },
   "homeShieldKeystoneQrSemantics": "Keystone transaction QR",
   "@homeShieldKeystoneQrSemantics": {
     "description": "Screen-reader label of the transaction QR code the Keystone device scans."
-  },
-  "homeShieldNextStep": "Next step",
-  "@homeShieldNextStep": {
-    "description": "Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature."
   },
   "homeShieldNow": "Shield now",
   "@homeShieldNow": {
@@ -2377,17 +2622,9 @@
   "@homeShieldQueuedTitle": {
     "description": "Title of the mobile software-account shield screen when the shielding transaction is queued for retry."
   },
-  "homeShieldReadingSignature": "Reading signature…",
-  "@homeShieldReadingSignature": {
-    "description": "Status text on the mobile Keystone scanner while the scanned signature QR is decoded."
-  },
   "homeShieldReject": "Reject",
   "@homeShieldReject": {
     "description": "Button in the desktop Keystone shield dialog that cancels shielding."
-  },
-  "homeShieldScanDecodeFailed": "This QR code could not be decoded as a Keystone signature.",
-  "@homeShieldScanDecodeFailed": {
-    "description": "Hint under the mobile Keystone scanner when the scanned QR is not a valid signature."
   },
   "homeShieldScanTitle": "Scan your Keystone signature",
   "@homeShieldScanTitle": {
@@ -2422,10 +2659,6 @@
   "homeShieldStatusUncertain": "The shield transaction status is uncertain. Check activity before trying again.",
   "@homeShieldStatusUncertain": {
     "description": "Warning on the Keystone and Ledger shield dialogs when the outcome of the broadcast is unclear."
-  },
-  "homeShieldSubmitting": "Submitting transaction",
-  "@homeShieldSubmitting": {
-    "description": "Subtitle of the desktop Keystone shield dialog while the transaction is being sent."
   },
   "homeShieldWaitingForPrivateRecovery": "Private recovery is catching up with the latest block. Try again in a moment; your Keystone signature is kept.",
   "@homeShieldWaitingForPrivateRecovery": {
@@ -2611,10 +2844,6 @@
   "@keystoneBirthdaySubtitle": {
     "description": "Subtitle under the wallet birthday heading explaining why the date is asked."
   },
-  "keystoneCameraDefault": "Default",
-  "@keystoneCameraDefault": {
-    "description": "Detail tag in the camera picker for the default camera."
-  },
   "keystoneCameraDeniedTitle": "You've denied the Camera access",
   "@keystoneCameraDeniedTitle": {
     "description": "Title when camera access was denied."
@@ -2638,10 +2867,6 @@
   "keystoneCameraGiftBody": "A camera is required to scan the gift card QR code.\nYou can revert this in settings anytime later.",
   "@keystoneCameraGiftBody": {
     "description": "Permission explanation on the gift card QR scanner; the two lines are separated by a line break."
-  },
-  "keystoneCameraLabel": "Camera",
-  "@keystoneCameraLabel": {
-    "description": "Label of the camera row on the Keystone scanner and the camera picker."
   },
   "keystoneCameraNameDefault": "{name} (Default)",
   "@keystoneCameraNameDefault": {
@@ -2677,14 +2902,6 @@
   "@keystoneConfirmSelection": {
     "description": "Button that confirms the chosen Keystone account and continues the import."
   },
-  "keystoneConfirmWithKeystone": "Confirm with Keystone",
-  "@keystoneConfirmWithKeystone": {
-    "description": "[security] Subtitle of the second step: the user confirms on the Keystone and scans its signature QR code."
-  },
-  "keystoneDefaultCamera": "Default camera",
-  "@keystoneDefaultCamera": {
-    "description": "Fallback name for the default camera."
-  },
   "keystoneFirmwareBody": "Make sure your Keystone is on the latest Cypherpunk firmware. ",
   "@keystoneFirmwareBody": {
     "description": "Sentence ending in a trailing space, followed by an inline link button labelled 'link' that opens the firmware download page. Keep the trailing space."
@@ -2713,26 +2930,6 @@
   "@keystoneImReadyNow": {
     "description": "Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions."
   },
-  "keystoneLoadingCamera": "Loading camera...",
-  "@keystoneLoadingCamera": {
-    "description": "Label in the camera chip while cameras are listed."
-  },
-  "keystoneLoadingQrCode": "Loading QR code ...",
-  "@keystoneLoadingQrCode": {
-    "description": "Status while the transaction QR code is prepared."
-  },
-  "keystoneNextStep": "Next step",
-  "@keystoneNextStep": {
-    "description": "Button that moves from the transaction QR code to the camera scan."
-  },
-  "keystoneNoCameraFound": "No camera found",
-  "@keystoneNoCameraFound": {
-    "description": "Label in the camera chip when the device has no camera."
-  },
-  "keystoneNoCameraOpened": "No camera could be opened. Check that a camera is connected and not in use by another app.",
-  "@keystoneNoCameraOpened": {
-    "description": "Shown when no camera could be started."
-  },
   "keystoneOnVizor": "On Vizor",
   "@keystoneOnVizor": {
     "description": "Heading of the group of steps the user performs in the Vizor app."
@@ -2740,22 +2937,6 @@
   "keystoneOnYourKeystone": "On your Keystone",
   "@keystoneOnYourKeystone": {
     "description": "Heading of the group of steps the user performs on the Keystone device itself."
-  },
-  "keystoneOpenSettings": "Open settings",
-  "@keystoneOpenSettings": {
-    "description": "Button on the Keystone camera scanner that opens the system settings for the camera permission."
-  },
-  "keystoneOpenSignedQr": "Open the signed transaction QR on Keystone, then scan again.",
-  "@keystoneOpenSignedQr": {
-    "description": "Hint when the scanned QR code is not the signed transaction."
-  },
-  "keystonePcztPrepareFailed": "Keystone signing could not be prepared.",
-  "@keystonePcztPrepareFailed": {
-    "description": "Error shown when the Keystone signing request could not be created."
-  },
-  "keystonePrepareSubtitle": "Prepare your Keystone wallet",
-  "@keystonePrepareSubtitle": {
-    "description": "Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready."
   },
   "keystonePrepareToConnectTitle": "Prepare to connect",
   "@keystonePrepareToConnectTitle": {
@@ -2768,10 +2949,6 @@
   "keystoneReadingQr": "Reading QR...",
   "@keystoneReadingQr": {
     "description": "Status while a scanned Keystone QR code is decoded."
-  },
-  "keystoneReadingSignature": "Reading signature...",
-  "@keystoneReadingSignature": {
-    "description": "Status while the signature QR code from the Keystone is decoded."
   },
   "keystoneScanCameraRequired": "Keystone import uses camera QR scanning only. Connect a camera and try again.",
   "@keystoneScanCameraRequired": {
@@ -2815,45 +2992,17 @@
       }
     }
   },
-  "keystoneScanPromptOnKeystone": "on your Keystone,",
-  "@keystoneScanPromptOnKeystone": {
-    "description": "Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon."
-  },
-  "keystoneScanPromptTap": "Tap",
-  "@keystoneScanPromptTap": {
-    "description": "Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon."
-  },
-  "keystoneScanPromptThenScan": "then scan this QR code",
-  "@keystoneScanPromptThenScan": {
-    "description": "End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'."
-  },
   "keystoneScanReadingAccounts": "Reading accounts...",
   "@keystoneScanReadingAccounts": {
     "description": "Status text on the Keystone QR scanner while the scanned accounts are being decoded."
-  },
-  "keystoneScanWithKeystone": "Scan with Keystone",
-  "@keystoneScanWithKeystone": {
-    "description": "Subtitle of the first step: the Keystone scans the QR code shown by Vizor."
   },
   "keystoneSelectCamera": "Select Camera",
   "@keystoneSelectCamera": {
     "description": "Title of the camera picker."
   },
-  "keystoneShowTransactionQr": "Show transaction QR",
-  "@keystoneShowTransactionQr": {
-    "description": "Screen-reader label of the button that returns to the transaction QR code."
-  },
-  "keystoneSignatureQrNotDecoded": "This QR code could not be decoded as a Keystone signature.",
-  "@keystoneSignatureQrNotDecoded": {
-    "description": "Error when the scanned QR code is not a Keystone signature."
-  },
   "keystoneStepHowToConnect": "How to Connect",
   "@keystoneStepHowToConnect": {
     "description": "Sidebar step label and back-link text for the first Keystone onboarding step (how to connect the device). Title Case is intentional."
-  },
-  "keystoneStepOneOfTwo": "Step 1/2",
-  "@keystoneStepOneOfTwo": {
-    "description": "Step indicator in the mobile Keystone signing flow (first of two steps)."
   },
   "keystoneStepOpenSoftwareWallet": "Tap ••• (top right), then Connect software wallet.",
   "@keystoneStepOpenSoftwareWallet": {
@@ -2871,29 +3020,13 @@
   "@keystoneStepSelectVizor": {
     "description": "Device step: pick Vizor (or ZODL) from the software wallet list shown on the Keystone device. Vizor and ZODL are wallet names and stay in Latin script."
   },
-  "keystoneStepTwoOfTwo": "Step 2/2",
-  "@keystoneStepTwoOfTwo": {
-    "description": "Step indicator in the mobile Keystone signing flow (second of two steps)."
-  },
   "keystoneSubmittingTransaction": "Submitting the transaction",
   "@keystoneSubmittingTransaction": {
     "description": "Label next to a spinner while a signed transaction is submitted."
   },
-  "keystoneTipContinuityCamera": "On a Mac, you can use Continuity Camera to scan with your iPhone instead.",
-  "@keystoneTipContinuityCamera": {
-    "description": "Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name."
-  },
   "keystoneTipGiftFullScreen": "Open the gift card QR code full screen on another device.",
   "@keystoneTipGiftFullScreen": {
     "description": "Scanning tip on the gift card QR scanner."
-  },
-  "keystoneTipGiftMoveFurther": "Move the QR code a few inches further from the camera so it can focus.",
-  "@keystoneTipGiftMoveFurther": {
-    "description": "Scanning tip on the gift card QR scanner."
-  },
-  "keystoneTipGlare": "Make sure the room is well-lit and the QR code isn't reflecting glare.",
-  "@keystoneTipGlare": {
-    "description": "Scanning tip on QR scanners."
   },
   "keystoneTipMoveKeystoneFurther": "Move your Keystone a few inches further from the camera so it can focus.",
   "@keystoneTipMoveKeystoneFurther": {
@@ -2910,14 +3043,6 @@
   "keystoneTryAgainWithKeystone": "Try again with Keystone",
   "@keystoneTryAgainWithKeystone": {
     "description": "Subtitle of the signing flow after a failure."
-  },
-  "keystoneWindowsCameraBody": "Turn on Camera access and Let desktop apps access your camera in Windows Settings.",
-  "@keystoneWindowsCameraBody": {
-    "description": "Instruction on Windows. 'Camera access' and 'Let desktop apps access your camera' are Windows Settings labels; use the localized Windows names."
-  },
-  "keystoneWindowsCameraTitle": "Enable Windows camera access",
-  "@keystoneWindowsCameraTitle": {
-    "description": "Title when camera access is denied on Windows."
   },
   "languageSystemOption": "System ({language})",
   "@languageSystemOption": {
@@ -3080,17 +3205,9 @@
   "@ledgerBtLabelAllowAccess": {
     "description": "Button label that asks the system to show the permission prompt."
   },
-  "ledgerBtLabelCheckAgain": "Check again",
-  "@ledgerBtLabelCheckAgain": {
-    "description": "Button label to re-check Bluetooth access."
-  },
   "ledgerBtLabelChecking": "Checking access",
   "@ledgerBtLabelChecking": {
     "description": "Button label while access is being checked."
-  },
-  "ledgerBtLabelOpenSettings": "Open settings",
-  "@ledgerBtLabelOpenSettings": {
-    "description": "Button label that opens the system settings."
   },
   "ledgerBtLabelReconnect": "Reconnect",
   "@ledgerBtLabelReconnect": {
@@ -3208,10 +3325,6 @@
   "@ledgerButtonConnecting": {
     "description": "Disabled button label while connecting."
   },
-  "ledgerButtonSaving": "Saving",
-  "@ledgerButtonSaving": {
-    "description": "Disabled button label while saving."
-  },
   "ledgerButtonSearching": "Searching",
   "@ledgerButtonSearching": {
     "description": "Disabled button label while searching."
@@ -3219,10 +3332,6 @@
   "ledgerCancelFailed": "Could not finish cancelling. Try again.",
   "@ledgerCancelFailed": {
     "description": "Error in the mobile Add Ledger account sheet when cancelling the Ledger request failed."
-  },
-  "ledgerCancelShielding": "Cancel shielding",
-  "@ledgerCancelShielding": {
-    "description": "Close button label in the Ledger sheet shown during shielding."
   },
   "ledgerCancellingRequest": "Cancelling request",
   "@ledgerCancellingRequest": {
@@ -3299,10 +3408,6 @@
   "ledgerConnectSubtitle": "Prepare your Ledger wallet.",
   "@ledgerConnectSubtitle": {
     "description": "Subtitle under the Connect Ledger heading, asking the user to get their Ledger ready."
-  },
-  "ledgerConnectTitle": "Connect Ledger",
-  "@ledgerConnectTitle": {
-    "description": "Title of the Ledger connection dialog."
   },
   "ledgerConnectUsbCable": "Connect with a USB cable.",
   "@ledgerConnectUsbCable": {
@@ -3880,10 +3985,6 @@
   "@ledgerOpenBluetoothSettingsManually": {
     "description": "Error in the mobile connection help when the Bluetooth settings could not be opened automatically."
   },
-  "ledgerOpenSettings": "Open settings",
-  "@ledgerOpenSettings": {
-    "description": "Button label that opens the system Bluetooth settings."
-  },
   "ledgerOpenZcashThenTryAgain": "Open the Zcash app, then try again.",
   "@ledgerOpenZcashThenTryAgain": {
     "description": "Instruction inserted into a USB error message: the user must open the Zcash app on the Ledger and retry."
@@ -4070,10 +4171,6 @@
   "@ledgerSigningCheckAmountRecipient": {
     "description": "[security] Step message asking the user to verify the amount and recipient on the Ledger screen before approving."
   },
-  "ledgerSigningCheckingZcashReady": "Vizor is checking whether the Zcash app is ready.",
-  "@ledgerSigningCheckingZcashReady": {
-    "description": "Message while Vizor checks that the Zcash app on the Ledger is ready."
-  },
   "ledgerSigningCloseSemantics": "Close Ledger",
   "@ledgerSigningCloseSemantics": {
     "description": "Screen-reader label of the close button on the mobile Ledger signing surface."
@@ -4144,10 +4241,6 @@
   "@ledgerSigningStatusReview": {
     "description": "[security] Short status chip asking the user to review on the Ledger."
   },
-  "ledgerSigningStatusWait": "Please wait",
-  "@ledgerSigningStatusWait": {
-    "description": "Short status chip while waiting."
-  },
   "ledgerSigningStatusWaitingApproval": "Waiting for your approval",
   "@ledgerSigningStatusWaitingApproval": {
     "description": "[security] Mobile status chip while waiting for the user to approve on the Ledger."
@@ -4164,17 +4257,9 @@
   "@ledgerSigningStepReview": {
     "description": "[security] Second step label of the Ledger signing procedure: review and approve on the device."
   },
-  "ledgerSigningTitleChecking": "Checking your Ledger",
-  "@ledgerSigningTitleChecking": {
-    "description": "Title while Vizor checks that the Zcash app is ready on the Ledger."
-  },
   "ledgerSigningTitleConfirmOnLedger": "Confirm on your Ledger",
   "@ledgerSigningTitleConfirmOnLedger": {
     "description": "[security] Mobile title asking the user to confirm the transaction on the Ledger."
-  },
-  "ledgerSigningTitleConfirmOpening": "Confirm opening Zcash",
-  "@ledgerSigningTitleConfirmOpening": {
-    "description": "Title asking the user to confirm on the Ledger that the Zcash app may open."
   },
   "ledgerSigningTitleFinishing": "Finishing transaction",
   "@ledgerSigningTitleFinishing": {
@@ -4217,10 +4302,6 @@
   "ledgerSigningWaitInstruction": "Ledger is preparing to sign. It may seem unresponsive for a few seconds.",
   "@ledgerSigningWaitInstruction": {
     "description": "Explains that the Ledger may look frozen for a few seconds while preparing to sign."
-  },
-  "ledgerStatusConnecting": "Connecting…",
-  "@ledgerStatusConnecting": {
-    "description": "Status while connecting to the saved Ledger."
   },
   "ledgerStatusFollowPrompts": "Follow the prompts on your Ledger",
   "@ledgerStatusFollowPrompts": {
@@ -4579,10 +4660,6 @@
       }
     }
   },
-  "migrationBroadcastPending": "Pending",
-  "@migrationBroadcastPending": {
-    "description": "Status of a migration transfer that has not been sent yet."
-  },
   "migrationBroadcastSubmitted": "Submitted",
   "@migrationBroadcastSubmitted": {
     "description": "Status of a migration transfer that was sent to the network."
@@ -4608,10 +4685,6 @@
       }
     }
   },
-  "migrationConfirming": "Confirming",
-  "@migrationConfirming": {
-    "description": "Status label while migration transfers wait for network confirmations."
-  },
   "migrationContinueMigration": "Continue migration",
   "@migrationContinueMigration": {
     "description": "Button that continues the migration with its next step."
@@ -4623,10 +4696,6 @@
   "migrationCtaStart": "Migrate to Ironwood Pool",
   "@migrationCtaStart": {
     "description": "Label of the home call-to-action that starts the Ironwood migration."
-  },
-  "migrationCtaStopped": "Migration stopped by network upgrade",
-  "@migrationCtaStopped": {
-    "description": "Label of the home call-to-action when a network upgrade stopped the migration."
   },
   "migrationCurrentBatch": "Current Batch",
   "@migrationCurrentBatch": {
@@ -4792,10 +4861,6 @@
   "@migrationFlowTitle": {
     "description": "Title of the Ironwood migration screens."
   },
-  "migrationGoHome": "Go home",
-  "@migrationGoHome": {
-    "description": "Button that leaves the migration screen and returns to the home screen."
-  },
   "migrationHowDelayedBody": "Vizor slowly sends parts at staggered intervals across multiple batches to reduce traceability.",
   "@migrationHowDelayedBody": {
     "description": "Explains that parts are sent slowly at staggered times to make tracing harder."
@@ -4863,10 +4928,6 @@
   "@migrationHowTitle": {
     "description": "Title of the \"How the Migration Works\" screen."
   },
-  "migrationImmediateAmount": "Amount",
-  "@migrationImmediateAmount": {
-    "description": "Row label for the amount moved by the one-step migration."
-  },
   "migrationImmediateAuthoriseAnyway": "Authorise anyway",
   "@migrationImmediateAuthoriseAnyway": {
     "description": "[security] Button that authorises the one-step migration despite its privacy trade-off."
@@ -4878,10 +4939,6 @@
   "migrationImmediateAuthorisingSemantics": "Authorising migration",
   "@migrationImmediateAuthorisingSemantics": {
     "description": "[security] Screen-reader label of the spinner shown while the one-step migration is being authorised."
-  },
-  "migrationImmediateCalculating": "Calculating…",
-  "@migrationImmediateCalculating": {
-    "description": "Placeholder shown for the amount, fee or button while the Immediate migration plan is being calculated."
   },
   "migrationImmediateConsiderOther": "Consider another option",
   "@migrationImmediateConsiderOther": {
@@ -4966,10 +5023,6 @@
   "@migrationIntroTagline": {
     "description": "Tagline on the migration introduction screen."
   },
-  "migrationKeystoneAfterScanInstruction": "After you scanned, click Get signature.",
-  "@migrationKeystoneAfterScanInstruction": {
-    "description": "[security] Instruction in the Keystone signing modal after the QR was scanned."
-  },
   "migrationKeystoneApplyingSignature": "Applying the Keystone signature.",
   "@migrationKeystoneApplyingSignature": {
     "description": "[security] Status while the Keystone signature is being applied."
@@ -4989,10 +5042,6 @@
   "migrationKeystoneBeginSigning": "Begin signing",
   "@migrationKeystoneBeginSigning": {
     "description": "[security] Button that starts the Keystone signing rounds."
-  },
-  "migrationKeystoneCamera": "Camera",
-  "@migrationKeystoneCamera": {
-    "description": "Label of the camera picker row."
   },
   "migrationKeystoneCameraAccess": "Allow camera access to scan the signed Keystone QR.",
   "@migrationKeystoneCameraAccess": {
@@ -5026,14 +5075,6 @@
   "@migrationKeystoneFirmwareUpdate": {
     "description": "[security] Error shown when the Keystone firmware is too old to sign Ironwood migrations."
   },
-  "migrationKeystoneGetSignature": "Get signature",
-  "@migrationKeystoneGetSignature": {
-    "description": "[security] Button that starts scanning the signed QR code shown on Keystone."
-  },
-  "migrationKeystoneKeepQrSteady": "Keep the QR code steady and fully visible.",
-  "@migrationKeystoneKeepQrSteady": {
-    "description": "Hint shown when the QR code could not be read."
-  },
   "migrationKeystoneMobileTitle": "Keystone migration",
   "@migrationKeystoneMobileTitle": {
     "description": "Title of the mobile Keystone migration screen."
@@ -5057,14 +5098,6 @@
   "migrationKeystonePrepareFailed": "Keystone signing could not be prepared. Try again.",
   "@migrationKeystonePrepareFailed": {
     "description": "[security] Error shown when the Keystone signing request could not be prepared."
-  },
-  "migrationKeystonePrepareWallet": "Prepare your Keystone wallet",
-  "@migrationKeystonePrepareWallet": {
-    "description": "[security] Instruction asking the user to get the Keystone ready before scanning."
-  },
-  "migrationKeystonePreparing": "Preparing",
-  "@migrationKeystonePreparing": {
-    "description": "Disabled button label while the Keystone request is being prepared."
   },
   "migrationKeystonePreparingQr": "Preparing QR codes...",
   "@migrationKeystonePreparingQr": {
@@ -5122,10 +5155,6 @@
   "@migrationKeystoneQrBodyRound": {
     "description": "[security] Instruction under the request QR: after signing, Keystone shows a new signed QR code."
   },
-  "migrationKeystoneReadingSignature": "Reading signature...",
-  "@migrationKeystoneReadingSignature": {
-    "description": "[security] Label shown while the signed QR code from Keystone is being read."
-  },
   "migrationKeystoneRequestCancelled": "This signing request was cancelled. Prepare it again.",
   "@migrationKeystoneRequestCancelled": {
     "description": "[security] Error shown after the Keystone signing request was cancelled."
@@ -5179,10 +5208,6 @@
   "@migrationKeystoneScanNewQr": {
     "description": "[security] Instruction to scan the new signed QR code displayed by Keystone."
   },
-  "migrationKeystoneScanQrCode": "Scan QR Code",
-  "@migrationKeystoneScanQrCode": {
-    "description": "Heading above the camera view while scanning the Keystone QR."
-  },
   "migrationKeystoneScanRequest": "Scan request with Keystone",
   "@migrationKeystoneScanRequest": {
     "description": "[security] Heading above the request QR asking the user to scan it with Keystone."
@@ -5190,10 +5215,6 @@
   "migrationKeystoneScanSignature": "Scan Keystone signature",
   "@migrationKeystoneScanSignature": {
     "description": "[security] Heading and button for scanning the signed QR shown on Keystone."
-  },
-  "migrationKeystoneScanSubtitle": "Scan with your Keystone",
-  "@migrationKeystoneScanSubtitle": {
-    "description": "[security] Subtitle of the Keystone signing modal asking the user to scan the QR with Keystone."
   },
   "migrationKeystoneSignBatch": "Sign Ironwood batch",
   "@migrationKeystoneSignBatch": {
@@ -5206,10 +5227,6 @@
   "migrationKeystoneSignPrivateSplit": "Sign private split",
   "@migrationKeystoneSignPrivateSplit": {
     "description": "[security] Title of the Keystone signing step that signs the note-splitting transactions."
-  },
-  "migrationKeystoneSignatureFailed": "Keystone signature could not be applied.",
-  "@migrationKeystoneSignatureFailed": {
-    "description": "[security] Error shown when the Keystone signature could not be applied."
   },
   "migrationKeystoneSignsAll": "Signs {transactions}",
   "@migrationKeystoneSignsAll": {
@@ -5323,10 +5340,6 @@
       }
     }
   },
-  "migrationManage": "Manage",
-  "@migrationManage": {
-    "description": "Button on the migration schedule that opens the Manage Migration dialog."
-  },
   "migrationManageCancelling": "Cancelling...",
   "@migrationManageCancelling": {
     "description": "Label of the confirm button while the migration is being cancelled."
@@ -5354,10 +5367,6 @@
   "migrationManageImmediateIntro": "Process the remaining migration immediately.",
   "@migrationManageImmediateIntro": {
     "description": "[security] Intro line of the dialog that switches the remaining migration to Immediate."
-  },
-  "migrationManageLoading": "Loading...",
-  "@migrationManageLoading": {
-    "description": "Label of the action button in the Manage Migration dialog while it is busy."
   },
   "migrationManageNoBalance": "There is no remaining Orchard balance to migrate.",
   "@migrationManageNoBalance": {
@@ -5496,29 +5505,13 @@
       }
     }
   },
-  "migrationMobileAttentionStoppedTitle": "Migration stopped by network upgrade",
-  "@migrationMobileAttentionStoppedTitle": {
-    "description": "Title of the Home sheet saying a Zcash network upgrade stopped the migration."
-  },
-  "migrationMobileBackHome": "Back home",
-  "@migrationMobileBackHome": {
-    "description": "Default label of the secondary button that returns to Home from a mobile migration status screen."
-  },
   "migrationMobileBackToHome": "Back to home",
   "@migrationMobileBackToHome": {
     "description": "Button on the migration progress screen that returns to Home."
   },
-  "migrationMobileBannerInProgress": "Migration in progress",
-  "@migrationMobileBannerInProgress": {
-    "description": "Text of the Home migration banner while the migration runs and no amount is known."
-  },
   "migrationMobileBannerLate": "Migration needs attention",
   "@migrationMobileBannerLate": {
     "description": "Text of the Home migration banner when a migration transaction is late."
-  },
-  "migrationMobileBannerPreparing": "Preparing migration",
-  "@migrationMobileBannerPreparing": {
-    "description": "Text of the Home migration banner while the balance is being prepared."
   },
   "migrationMobileBannerProof": "Next migration batch is ready",
   "@migrationMobileBannerProof": {
@@ -5541,18 +5534,6 @@
         "type": "int"
       }
     }
-  },
-  "migrationMobileBannerStart": "Migrate to Ironwood",
-  "@migrationMobileBannerStart": {
-    "description": "Text of the Home banner that starts the Ironwood migration."
-  },
-  "migrationMobileBannerStopped": "Migration stopped",
-  "@migrationMobileBannerStopped": {
-    "description": "Text of the Home migration banner when the migration was stopped by a network upgrade."
-  },
-  "migrationMobileBannerWaiting": "Waiting for confirmation...",
-  "@migrationMobileBannerWaiting": {
-    "description": "Text of the Home migration banner while waiting for network confirmations."
   },
   "migrationMobileBatchProgress": "{completed}/{total} Batch",
   "@migrationMobileBatchProgress": {
@@ -5587,10 +5568,6 @@
   "@migrationMobileCompleteTitle": {
     "description": "Top bar title of the screen shown when the migration completed. The apostrophe is curly."
   },
-  "migrationMobileContinueError": "Couldn't continue migration. Try again.",
-  "@migrationMobileContinueError": {
-    "description": "First line on the mobile migration progress screen when continuing the migration failed."
-  },
   "migrationMobileContinueThisError": "Couldn't continue this migration. Try again.",
   "@migrationMobileContinueThisError": {
     "description": "Message on the migration progress screen when continuing the migration failed."
@@ -5598,54 +5575,6 @@
   "migrationMobileCredentialsRestore": "Your migration credentials need to be restored before continuing.",
   "@migrationMobileCredentialsRestore": {
     "description": "[security] Message on the migration progress screen when the saved migration credentials must be restored first."
-  },
-  "migrationMobileErrorBroadcast": "Couldn't broadcast the migration transaction. Try again.",
-  "@migrationMobileErrorBroadcast": {
-    "description": "Error shown on the mobile migration screens when the network rejected or failed to receive the migration transaction."
-  },
-  "migrationMobileErrorPlanChanged": "The amount or fee changed. Review the updated details.",
-  "@migrationMobileErrorPlanChanged": {
-    "description": "Error shown on the mobile Immediate migration review when the amount or fee changed after the plan was calculated."
-  },
-  "migrationMobileErrorStart": "Couldn't start migration. Try again.",
-  "@migrationMobileErrorStart": {
-    "description": "Generic error shown on the mobile migration screens when the migration could not start."
-  },
-  "migrationMobileErrorSyncFirst": "Wait for sync to finish, then try again.",
-  "@migrationMobileErrorSyncFirst": {
-    "description": "Error shown on the mobile migration screens when the migration could not start because the wallet is still syncing."
-  },
-  "migrationMobileErrorUnlock": "Unlock Vizor before starting migration.",
-  "@migrationMobileErrorUnlock": {
-    "description": "Error shown on the mobile migration screens when the wallet is locked and the migration could not start."
-  },
-  "migrationMobileEstCompletion": "Est. completion",
-  "@migrationMobileEstCompletion": {
-    "description": "Label of the row showing the estimated time the migration finishes."
-  },
-  "migrationMobileFastConsiderOther": "Consider another option",
-  "@migrationMobileFastConsiderOther": {
-    "description": "Secondary button on the Immediate migration review that goes back to the option choice."
-  },
-  "migrationMobileFastContinueAnyway": "Continue anyway",
-  "@migrationMobileFastContinueAnyway": {
-    "description": "[security] Destructive button on the Immediate migration review that broadcasts the less private migration after the privacy warning."
-  },
-  "migrationMobileFastDurationRow": "Migration complete in",
-  "@migrationMobileFastDurationRow": {
-    "description": "Label of the row showing how long the Immediate migration takes on the review screen."
-  },
-  "migrationMobileFastFeesRow": "Fees (estimate)",
-  "@migrationMobileFastFeesRow": {
-    "description": "Label of the row showing the estimated network fee on the Immediate migration review."
-  },
-  "migrationMobileFastNoBalance": "No spendable Orchard balance is available for Immediate migration.",
-  "@migrationMobileFastNoBalance": {
-    "description": "Error under the Immediate migration review when there is no spendable Orchard balance to migrate."
-  },
-  "migrationMobileFastPlanCalculating": "Calculating…",
-  "@migrationMobileFastPlanCalculating": {
-    "description": "Placeholder value of the amount and fee rows on the Immediate migration review while the plan is being calculated."
   },
   "migrationMobileFastPlanError": "Couldn't calculate the Immediate migration fee. Sync and try again.",
   "@migrationMobileFastPlanError": {
@@ -5659,15 +5588,6 @@
   "@migrationMobileFastPrivacyBodyHighlight": {
     "description": "[security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence."
   },
-  "migrationMobileFastPrivacyBodyLead": "Crosses in one visible step — your {amount} and timing are ",
-  "@migrationMobileFastPrivacyBodyLead": {
-    "description": "[security] First part of the sentence in the privacy warning card; it continues with the highlighted phrase. {amount} is the amount with the ZEC unit. Keep the trailing space.",
-    "placeholders": {
-      "amount": {
-        "type": "String"
-      }
-    }
-  },
   "migrationMobileFastPrivacyConsiderPrivate": "Consider choosing a Private Migration option.",
   "@migrationMobileFastPrivacyConsiderPrivate": {
     "description": "Last sentence of the privacy warning card suggesting the Private migration option."
@@ -5675,14 +5595,6 @@
   "migrationMobileFastPrivacyLedger": "Private migration is not available for Ledger accounts.",
   "@migrationMobileFastPrivacyLedger": {
     "description": "Last sentence of the privacy warning card for Ledger accounts."
-  },
-  "migrationMobileFastPrivacyTitle": "Privacy trade-off",
-  "@migrationMobileFastPrivacyTitle": {
-    "description": "[security] Heading of the privacy warning card on the Immediate migration review."
-  },
-  "migrationMobileFastRetryCalculation": "Retry calculation",
-  "@migrationMobileFastRetryCalculation": {
-    "description": "Ghost button on the Immediate migration review that recalculates the plan after a failure."
   },
   "migrationMobileFastSubmittedBody": "{amount} is on its way to Ironwood.",
   "@migrationMobileFastSubmittedBody": {
@@ -5701,33 +5613,9 @@
   "@migrationMobileFastTitle": {
     "description": "Title-case top bar title of the mobile Immediate (fast) migration success screen."
   },
-  "migrationMobileGoHome": "Go home",
-  "@migrationMobileGoHome": {
-    "description": "Button on the mobile migration progress screens that leaves the screen and goes to Home."
-  },
-  "migrationMobileHeroBadge": "Migration",
-  "@migrationMobileHeroBadge": {
-    "description": "Badge text on the pool migration illustration at the top of the intro screen."
-  },
-  "migrationMobileHeroIronwoodPool": "Ironwood Pool",
-  "@migrationMobileHeroIronwoodPool": {
-    "description": "Label under the new pool in the migration illustration."
-  },
-  "migrationMobileHeroLegacy": "(Legacy)",
-  "@migrationMobileHeroLegacy": {
-    "description": "Small label above Orchard Pool in the migration illustration, marking the old pool."
-  },
-  "migrationMobileHeroOrchardPool": "Orchard Pool",
-  "@migrationMobileHeroOrchardPool": {
-    "description": "Label under the old pool in the migration illustration."
-  },
   "migrationMobileHowItWorksNavTitle": "About",
   "@migrationMobileHowItWorksNavTitle": {
     "description": "Top bar title of the mobile screen that explains the migration steps."
-  },
-  "migrationMobileHowItWorksTitle": "How Migration Works",
-  "@migrationMobileHowItWorksTitle": {
-    "description": "Title-case heading of the mobile screen that explains the steps of the Ironwood migration."
   },
   "migrationMobileIntroBody": "Your {amount} ZEC is currently in Orchard. To keep using these funds for shielded payments, you'll need to move them to Ironwood. You'll review the migration plan before any funds move.",
   "@migrationMobileIntroBody": {
@@ -5741,10 +5629,6 @@
   "migrationMobileIntroReleaseNote": "Official release note",
   "@migrationMobileIntroReleaseNote": {
     "description": "Ghost button on the first mobile migration screen that opens the official Ironwood release note in the browser."
-  },
-  "migrationMobileIntroTagline": "A new shielded pool for Zcash.",
-  "@migrationMobileIntroTagline": {
-    "description": "Tagline under the Ironwood wordmark on the first mobile migration screen."
   },
   "migrationMobileIntroTitle": "Zcash Network Update",
   "@migrationMobileIntroTitle": {
@@ -5762,10 +5646,6 @@
   "@migrationMobileKeystoneConfirmPrepSemantics": {
     "description": "[security] Screen reader label of the Keystone request screen for the preparation (note split) signing round."
   },
-  "migrationMobileKeystoneConfirmTitle": "Confirm Migration with Keystone",
-  "@migrationMobileKeystoneConfirmTitle": {
-    "description": "[security] Title-case heading on the Keystone request screen while the QR code is still loading."
-  },
   "migrationMobileKeystoneConfirmTransferSemantics": "Confirm migration transfer with Keystone",
   "@migrationMobileKeystoneConfirmTransferSemantics": {
     "description": "[security] Screen reader label of the Keystone request screen for the migration transfer signing round."
@@ -5781,26 +5661,6 @@
   "migrationMobileKeystoneLoadingQrSemantics": "Loading QR code",
   "@migrationMobileKeystoneLoadingQrSemantics": {
     "description": "Screen reader label of the placeholder shown while the Keystone request QR code loads."
-  },
-  "migrationMobileKeystoneLoadingQrText": "Loading QR code ...",
-  "@migrationMobileKeystoneLoadingQrText": {
-    "description": "Text under the placeholder while the Keystone request QR code is being built. Keep the space before the dots."
-  },
-  "migrationMobileKeystoneNextStep": "Next step",
-  "@migrationMobileKeystoneNextStep": {
-    "description": "Button on the Keystone request screen that moves on to scanning the signed result."
-  },
-  "migrationMobileKeystonePromptOnDevice": "on your Keystone,",
-  "@migrationMobileKeystonePromptOnDevice": {
-    "description": "Second fragment of the instruction on the Keystone request screen, shown after the QR icon."
-  },
-  "migrationMobileKeystonePromptTap": "Tap",
-  "@migrationMobileKeystonePromptTap": {
-    "description": "First fragment of the instruction on the Keystone request screen: Tap [QR icon] on your Keystone, then scan this QR code. The icon is shown between this and the next fragment."
-  },
-  "migrationMobileKeystonePromptThenScan": "then scan this QR code",
-  "@migrationMobileKeystonePromptThenScan": {
-    "description": "Last fragment of the instruction on the Keystone request screen; the help button follows it."
   },
   "migrationMobileKeystoneReconnect": "Reconnect or re-import your Keystone account to continue this migration.",
   "@migrationMobileKeystoneReconnect": {
@@ -5830,29 +5690,9 @@
   "@migrationMobileKeystoneScanProgress": {
     "description": "Screen reader label of the progress bar for the animated QR code the user scans from the Keystone device."
   },
-  "migrationMobileKeystoneScanTitle": "Scan with Keystone",
-  "@migrationMobileKeystoneScanTitle": {
-    "description": "[security] Heading on the Keystone request screen once the QR code is ready; the user scans it with the device."
-  },
   "migrationMobileKeystoneScanTransferSemantics": "Scan the signed migration transfer from Keystone",
   "@migrationMobileKeystoneScanTransferSemantics": {
     "description": "[security] Screen reader label of the scanner screen for the signed migration transfer round."
-  },
-  "migrationMobileKeystoneShowTxQr": "Show transaction QR",
-  "@migrationMobileKeystoneShowTxQr": {
-    "description": "Label of the scanner control that goes back to the request QR code."
-  },
-  "migrationMobileKeystoneStep1": "Step 1/2",
-  "@migrationMobileKeystoneStep1": {
-    "description": "Large step counter on the Keystone request screen of the migration signing: showing the request QR."
-  },
-  "migrationMobileKeystoneStep2": "Step 2/2",
-  "@migrationMobileKeystoneStep2": {
-    "description": "Large step counter on the Keystone scan screen of the migration signing: scanning the signed result."
-  },
-  "migrationMobileLeftToMigrate": "Left to migrate",
-  "@migrationMobileLeftToMigrate": {
-    "description": "Label of the row showing the amount that has not been migrated yet."
   },
   "migrationMobileManageCheckError": "Couldn't check the migration status. Please try again.",
   "@migrationMobileManageCheckError": {
@@ -5861,10 +5701,6 @@
   "migrationMobileManageChecking": "Checking migration status...",
   "@migrationMobileManageChecking": {
     "description": "Message in the mobile manage-migration dialog while the migration status is loading."
-  },
-  "migrationMobileManageConfirm": "Confirm",
-  "@migrationMobileManageConfirm": {
-    "description": "Confirm button of the manage-migration dialog."
   },
   "migrationMobileManageNoRevert": "Transactions already broadcast will not be reverted.",
   "@migrationMobileManageNoRevert": {
@@ -5886,10 +5722,6 @@
   "@migrationMobileManageStopTitle": {
     "description": "[security] Title of the manage-migration dialog confirmation step for stopping the migration."
   },
-  "migrationMobileManageStopping": "Stopping...",
-  "@migrationMobileManageStopping": {
-    "description": "Label of the Confirm button of the manage-migration dialog while the migration is being stopped."
-  },
   "migrationMobileManageSwitchAction": "Switch to Fast",
   "@migrationMobileManageSwitchAction": {
     "description": "Button in the manage-migration dialog that starts switching to the Fast migration."
@@ -5910,10 +5742,6 @@
   "@migrationMobileManageUnavailable": {
     "description": "Message in the mobile manage-migration dialog when the migration can no longer be stopped or changed."
   },
-  "migrationMobileManageUpdateError": "The migration could not be updated. Please try again.",
-  "@migrationMobileManageUpdateError": {
-    "description": "Error in the mobile manage-migration dialog when stopping or switching the migration failed."
-  },
   "migrationMobileManageWaitingBroadcast": "Waiting for any active broadcast to finish before stopping the remaining migration.",
   "@migrationMobileManageWaitingBroadcast": {
     "description": "Note in the manage-migration dialog while it waits for a transaction being broadcast to finish before stopping."
@@ -5930,10 +5758,6 @@
         "type": "String"
       }
     }
-  },
-  "migrationMobileNextMigration": "Next migration",
-  "@migrationMobileNextMigration": {
-    "description": "Label above the amount of the next scheduled migration part inside the progress ring."
   },
   "migrationMobileNextNotificationsOffBlock": "Notifications are disabled. Open Vizor after block {height} ({timing}) and approve the next migration batch.",
   "@migrationMobileNextNotificationsOffBlock": {
@@ -6029,25 +5853,13 @@
       }
     }
   },
-  "migrationMobileOptionImmediateTitle": "Immediate",
-  "@migrationMobileOptionImmediateTitle": {
-    "description": "Title of the Immediate migration option card, which migrates everything in one batch."
-  },
   "migrationMobileOptionPrivateBody": "Splits transactions into multiple parts to minimize traceability but will take several hours to days.",
   "@migrationMobileOptionPrivateBody": {
     "description": "Body of the Private migration option card."
   },
-  "migrationMobileOptionPrivateTitle": "Private",
-  "@migrationMobileOptionPrivateTitle": {
-    "description": "Title of the Private migration option card."
-  },
   "migrationMobileOptionPrivateUnavailableAndroid": "Not available on Android.",
   "@migrationMobileOptionPrivateUnavailableAndroid": {
     "description": "Body of the disabled Private migration option card on Android."
-  },
-  "migrationMobileOptionPrivateUnavailableLedger": "Not available for Ledger accounts.",
-  "@migrationMobileOptionPrivateUnavailableLedger": {
-    "description": "Body of the disabled Private migration option card for Ledger accounts."
   },
   "migrationMobileOptionsNavTitle": "How to Migrate",
   "@migrationMobileOptionsNavTitle": {
@@ -6056,10 +5868,6 @@
   "migrationMobileOptionsOpenError": "Couldn't open migration preparation. Try again.",
   "@migrationMobileOptionsOpenError": {
     "description": "Error under the Continue button of the migration options screen when the private migration preparation screen could not be opened."
-  },
-  "migrationMobileOptionsSubtitle": "Choose between more privacy over time or a faster migration. You can review the details before anything moves.",
-  "@migrationMobileOptionsSubtitle": {
-    "description": "Subtitle of the migration options screen explaining the two choices."
   },
   "migrationMobileOptionsSubtitleAndroid": "Private migration is temporarily unavailable on Android. Choose immediate to continue.",
   "@migrationMobileOptionsSubtitleAndroid": {
@@ -6081,15 +5889,6 @@
   "migrationMobileOptionsSubtitleLedgerRest": "{amount} ZEC is still in Orchard. Private migration is not available for Ledger accounts. Choose Immediate to continue.",
   "@migrationMobileOptionsSubtitleLedgerRest": {
     "description": "Subtitle of the migration options screen for a Ledger account when part of the balance is already migrated. Immediate is the name of the fast option. {amount} is the remaining Orchard balance without the ZEC unit.",
-    "placeholders": {
-      "amount": {
-        "type": "String"
-      }
-    }
-  },
-  "migrationMobileOptionsSubtitleRest": "{amount} ZEC is still in Orchard. Choose between more privacy over time or a faster migration.",
-  "@migrationMobileOptionsSubtitleRest": {
-    "description": "Subtitle of the migration options screen when part of the balance is already migrated. {amount} is the formatted remaining Orchard balance without the ZEC unit.",
     "placeholders": {
       "amount": {
         "type": "String"
@@ -6177,10 +5976,6 @@
   "@migrationMobilePrepDuration": {
     "description": "Text inside the preparation ring giving the typical preparation time; the line break is intentional and the dash is an en dash."
   },
-  "migrationMobilePrepInfoOrganizing": "We’re organizing your balance into common-sized parts. This makes your migration harder to link.",
-  "@migrationMobilePrepInfoOrganizing": {
-    "description": "First line of the info card under the preparation ring. The apostrophe is curly."
-  },
   "migrationMobilePrepInfoThenBegin": "Once preparation finishes, your migration can begin.",
   "@migrationMobilePrepInfoThenBegin": {
     "description": "Second line of the info card under the preparation ring."
@@ -6263,10 +6058,6 @@
       }
     }
   },
-  "migrationMobileProgressConfirmations": "Waiting for confirmations",
-  "@migrationMobileProgressConfirmations": {
-    "description": "Title and value text shown while the migration waits for network confirmations."
-  },
   "migrationMobileProgressNextStep": "Waiting for next migration step",
   "@migrationMobileProgressNextStep": {
     "description": "Title and value text shown while the migration waits for its next step."
@@ -6278,10 +6069,6 @@
   "migrationMobileProgressScheduledReady": "Scheduled transaction ready",
   "@migrationMobileProgressScheduledReady": {
     "description": "Value of the estimated completion row when a scheduled transaction is ready to submit."
-  },
-  "migrationMobileProgressSyncing": "Syncing",
-  "@migrationMobileProgressSyncing": {
-    "description": "Value of the estimated completion row while the migration progress is syncing."
   },
   "migrationMobileProgressSyncingBody": "Checking the latest confirmations and migration status.",
   "@migrationMobileProgressSyncingBody": {
@@ -6311,10 +6098,6 @@
   "@migrationMobileRebuildTitle": {
     "description": "Title of the confirmation dialog for rebuilding the migration."
   },
-  "migrationMobileRecommended": "Recommended",
-  "@migrationMobileRecommended": {
-    "description": "Green badge on the recommended migration option card."
-  },
   "migrationMobileRecover": "Recover",
   "@migrationMobileRecover": {
     "description": "Button on the mobile migration progress screen that starts rebuilding the migration from saved transactions."
@@ -6327,10 +6110,6 @@
   "@migrationMobileRecoveryRequired": {
     "description": "First line on the mobile migration progress screen when saved transactions must be rebuilt."
   },
-  "migrationMobileResume": "Resume",
-  "@migrationMobileResume": {
-    "description": "Button on the migration progress screen that resumes a paused migration."
-  },
   "migrationMobileResuming": "Resuming...",
   "@migrationMobileResuming": {
     "description": "Label of the action button on the migration progress screen while a paused migration resumes."
@@ -6339,21 +6118,9 @@
   "@migrationMobileRetryAutomatically": {
     "description": "Second line on the mobile migration progress screen saying the app retries on its own."
   },
-  "migrationMobileRetrying": "Retrying...",
-  "@migrationMobileRetrying": {
-    "description": "Label of the action button on the migration progress screen while a retry runs."
-  },
-  "migrationMobileReviewPlanTitle": "Review Migration Plan",
-  "@migrationMobileReviewPlanTitle": {
-    "description": "Title-case heading of the mobile migration review screen."
-  },
   "migrationMobileSavedTxError": "Two saved transactions couldn't be reopened.",
   "@migrationMobileSavedTxError": {
     "description": "Second line on the mobile migration progress screen explaining why recovery is required."
-  },
-  "migrationMobileScheduleCalculating": "Calculating",
-  "@migrationMobileScheduleCalculating": {
-    "description": "Placeholder for the estimated duration or remaining rounds on the schedule screens while the chain height is not known yet."
   },
   "migrationMobileScheduleChange": "Change",
   "@migrationMobileScheduleChange": {
@@ -6371,14 +6138,6 @@
       }
     }
   },
-  "migrationMobileScheduleCurrentBlock": "Current block",
-  "@migrationMobileScheduleCurrentBlock": {
-    "description": "Label of the summary row showing the current block height."
-  },
-  "migrationMobileScheduleDueNow": "Due now",
-  "@migrationMobileScheduleDueNow": {
-    "description": "Status of a scheduled migration part whose block has just passed, within the grace period."
-  },
   "migrationMobileScheduleDuration": "Duration",
   "@migrationMobileScheduleDuration": {
     "description": "Footer label on the migration schedule screen for the time left until the migration completes."
@@ -6386,10 +6145,6 @@
   "migrationMobileScheduleLoading": "Loading migration schedule",
   "@migrationMobileScheduleLoading": {
     "description": "Screen reader label of the loading indicator on the mobile migration schedule screen."
-  },
-  "migrationMobileScheduleManage": "Manage",
-  "@migrationMobileScheduleManage": {
-    "description": "Ghost button on the migration schedule that opens the manage-migration dialog."
   },
   "migrationMobileScheduleMigrating": "Migrating…",
   "@migrationMobileScheduleMigrating": {
@@ -6419,33 +6174,13 @@
   "@migrationMobileScheduleOverdue": {
     "description": "Status of a scheduled migration part whose block has passed beyond the grace period."
   },
-  "migrationMobileSchedulePending": "Schedule pending",
-  "@migrationMobileSchedulePending": {
-    "description": "Value of the estimated completion row on the mobile migration progress screen while no schedule exists yet."
-  },
   "migrationMobileSchedulePreparationProgress": "Preparation progress",
   "@migrationMobileSchedulePreparationProgress": {
     "description": "Footer label on the preparation schedule screen for how many split transactions are done."
   },
-  "migrationMobileSchedulePreparationTitle": "Preparation Schedule",
-  "@migrationMobileSchedulePreparationTitle": {
-    "description": "Title-case top bar title of the mobile schedule screen that lists the balance preparation (note split) rounds."
-  },
-  "migrationMobileSchedulePreparing": "Preparing schedule",
-  "@migrationMobileSchedulePreparing": {
-    "description": "Message in the empty list area of the schedule screens while the schedule is being prepared."
-  },
-  "migrationMobileSchedulePreparingState": "Preparing",
-  "@migrationMobileSchedulePreparingState": {
-    "description": "Status of a migration part that is still being prepared and has no time estimate."
-  },
   "migrationMobileScheduleReadyIn": "Ready in",
   "@migrationMobileScheduleReadyIn": {
     "description": "Footer label on the preparation schedule screen for the time left until preparation is ready."
-  },
-  "migrationMobileScheduleReadyToSign": "Ready to sign",
-  "@migrationMobileScheduleReadyToSign": {
-    "description": "Status of a migration part that waits for the user to sign it on the schedule list."
   },
   "migrationMobileScheduleReturn": "Return",
   "@migrationMobileScheduleReturn": {
@@ -6464,10 +6199,6 @@
   "@migrationMobileScheduleRoundsRemaining": {
     "description": "Label of the summary row on the preparation schedule showing the current round out of the total."
   },
-  "migrationMobileScheduleScheduled": "Scheduled",
-  "@migrationMobileScheduleScheduled": {
-    "description": "Status of a preparation transaction that is scheduled but not yet sent."
-  },
   "migrationMobileScheduleSpendable": "Ironwood spendable",
   "@migrationMobileScheduleSpendable": {
     "description": "Footer label on the migration schedule screen for the already migrated, spendable Ironwood amount."
@@ -6481,30 +6212,9 @@
       }
     }
   },
-  "migrationMobileScheduleTitle": "Migration Schedule",
-  "@migrationMobileScheduleTitle": {
-    "description": "Title-case top bar title of the mobile schedule screen that lists the migration parts."
-  },
   "migrationMobileScheduleUnavailableBody": "Vizor couldn't load the latest schedule. Your saved migration state is unchanged.",
   "@migrationMobileScheduleUnavailableBody": {
     "description": "Body of the error state of the migration schedule screen."
-  },
-  "migrationMobileScheduleUnavailableTitle": "Migration schedule unavailable",
-  "@migrationMobileScheduleUnavailableTitle": {
-    "description": "Heading of the error state of the migration schedule screen."
-  },
-  "migrationMobileScheduleWaitingMined": "Waiting to be mined",
-  "@migrationMobileScheduleWaitingMined": {
-    "description": "Status of a preparation transaction that was broadcast and waits to be included in a block."
-  },
-  "migrationMobileScheduleWindow": "Window #{height}",
-  "@migrationMobileScheduleWindow": {
-    "description": "Status of a migration part that waits for a signing window. {height} is a block height with thousands separators.",
-    "placeholders": {
-      "height": {
-        "type": "String"
-      }
-    }
   },
   "migrationMobileSpendableBalance": "Currently spendable balance",
   "@migrationMobileSpendableBalance": {
@@ -6526,10 +6236,6 @@
   "@migrationMobileStartMessageOrganizing": {
     "description": "Second rotating loading message on the mobile private migration preparation screen."
   },
-  "migrationMobileStartMessagePlan": "Preparing your migration plan...",
-  "@migrationMobileStartMessagePlan": {
-    "description": "Third rotating loading message on the mobile private migration preparation screen."
-  },
   "migrationMobileStartMessagePreparing": "Preparing your migration...",
   "@migrationMobileStartMessagePreparing": {
     "description": "First rotating loading message on the mobile private migration preparation screen."
@@ -6537,10 +6243,6 @@
   "migrationMobileStartReadyBody": "Continue to sign the preparation transactions and migration batches together with Keystone.",
   "@migrationMobileStartReadyBody": {
     "description": "[security] Body explaining that the user will sign the preparation transactions and all migration batches in one Keystone signing step."
-  },
-  "migrationMobileStartReadyTitle": "Ready to sign",
-  "@migrationMobileStartReadyTitle": {
-    "description": "Heading shown when the Keystone signing request for the private migration is ready."
   },
   "migrationMobileStatusNotesCount": "{count} notes",
   "@migrationMobileStatusNotesCount": {
@@ -6554,18 +6256,6 @@
   "migrationMobileStatusNotesLead": "Migration ",
   "@migrationMobileStatusNotesLead": {
     "description": "Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space."
-  },
-  "migrationMobileStatusTitle": "Ironwood Migration",
-  "@migrationMobileStatusTitle": {
-    "description": "Title-case heading at the top of the mobile migration progress screens."
-  },
-  "migrationMobileStoppedMoved": "Moved to Ironwood",
-  "@migrationMobileStoppedMoved": {
-    "description": "Label of the row showing the amount already migrated after a network upgrade stopped the migration."
-  },
-  "migrationMobileStoppedRemaining": "Still in Orchard",
-  "@migrationMobileStoppedRemaining": {
-    "description": "Label of the row showing the amount still in Orchard after a network upgrade stopped the migration."
   },
   "migrationMobileSyncingProgress": "Syncing the migration progress.",
   "@migrationMobileSyncingProgress": {
@@ -6667,10 +6357,6 @@
   "migrationNextActionDetailWaitingForConfirmations": "Waiting for confirmations",
   "@migrationNextActionDetailWaitingForConfirmations": {
     "description": "Ring sub-caption: all transfers are sent and waiting for network confirmations."
-  },
-  "migrationNextActionDetailWaitingForSync": "Waiting for wallet sync",
-  "@migrationNextActionDetailWaitingForSync": {
-    "description": "Ring sub-caption: migration cannot continue until the wallet finishes syncing."
   },
   "migrationNextActionLabelAwaitingMining": "Awaiting mining",
   "@migrationNextActionLabelAwaitingMining": {
@@ -6784,10 +6470,6 @@
   "@migrationOptionsTitleMoveRest": {
     "description": "Title of the options screen when part of the balance was already migrated."
   },
-  "migrationOverallCalculatingTotal": "Calculating total",
-  "@migrationOverallCalculatingTotal": {
-    "description": "Shown instead of the overall progress while the total number of migration transactions is not known yet."
-  },
   "migrationOverallProgress": "{completed} of {total} complete",
   "@migrationOverallProgress": {
     "description": "Overall migration progress, for example \"3 of 9 complete\".",
@@ -6880,10 +6562,6 @@
   "migrationPrivacyLockDescription": "We auto-locked Vizor after 10 minutes of inactivity.",
   "@migrationPrivacyLockDescription": {
     "description": "[security] Text on the lock screen shown during a running migration, explaining that the wallet auto-locked after inactivity."
-  },
-  "migrationPrivacyLockInProgress": "Migration in progress",
-  "@migrationPrivacyLockInProgress": {
-    "description": "Label next to the spinner on the lock screen shown during a running migration, and its screen-reader label."
   },
   "migrationProgressTipBlockTime": "Each Zcash block takes about {seconds} seconds to create, but timing can vary with network conditions.",
   "@migrationProgressTipBlockTime": {
@@ -7085,10 +6763,6 @@
   "@migrationSchedulePending": {
     "description": "Placeholder shown where a migration time or duration is not yet scheduled."
   },
-  "migrationSchedulePreparing": "Preparing",
-  "@migrationSchedulePreparing": {
-    "description": "Value shown for the current round before the rounds are known."
-  },
   "migrationScheduleReadyToMigrate": "Ready to migrate",
   "@migrationScheduleReadyToMigrate": {
     "description": "Summary row label for the block height at which preparation is expected to finish."
@@ -7144,10 +6818,6 @@
         "type": "String"
       }
     }
-  },
-  "migrationScheduleSemanticsCompleted": "completed",
-  "@migrationScheduleSemanticsCompleted": {
-    "description": "Lowercase screen-reader state of a completed transaction."
   },
   "migrationScheduleSemanticsCompletedAt": "completed at block {height}",
   "@migrationScheduleSemanticsCompletedAt": {
@@ -7420,10 +7090,6 @@
   "@migrationStatusBroadcastingBody": {
     "description": "Explains that Vizor is sending the prepared migration transaction."
   },
-  "migrationStatusBroadcastingButton": "Broadcasting",
-  "@migrationStatusBroadcastingButton": {
-    "description": "Disabled button label while the migration transaction is being sent."
-  },
   "migrationStatusCompleteBody": "Your funds have moved into the Ironwood pool.",
   "@migrationStatusCompleteBody": {
     "description": "Confirms the funds were moved into the Ironwood pool."
@@ -7464,10 +7130,6 @@
   "@migrationStatusLedgerUnsupported": {
     "description": "Footer note on the migration status screen for Ledger accounts, whose device flow cannot do batched signing."
   },
-  "migrationStatusMigratingTitle": "Migrating...",
-  "@migrationStatusMigratingTitle": {
-    "description": "Heading of the migration status screen while the migration transaction is sent or confirming."
-  },
   "migrationStatusPausedBody": "The private migration is paused before the next action.",
   "@migrationStatusPausedBody": {
     "description": "Explains that the private migration is paused before its next step."
@@ -7491,10 +7153,6 @@
   "migrationStatusPreparingBody": "This usually takes around 30 minutes per split.",
   "@migrationStatusPreparingBody": {
     "description": "Explains how long each note-splitting step usually takes."
-  },
-  "migrationStatusPreparingTitle": "Preparing...",
-  "@migrationStatusPreparingTitle": {
-    "description": "Heading of the migration status screen while the balance is being split."
   },
   "migrationStatusReadyBody": "The private split is ready. The next step will prepare the Ironwood migration batch.",
   "@migrationStatusReadyBody": {
@@ -7592,10 +7250,6 @@
   "migrationUpgradeStopRingMessage": "Stopped by the\nnetwork upgrade",
   "@migrationUpgradeStopRingMessage": {
     "description": "Ironwood migration ring message, split over two lines, shown when the network upgrade stopped a migration partway."
-  },
-  "migrationView": "View",
-  "@migrationView": {
-    "description": "Link on the legacy migration card that opens the batch schedule."
   },
   "migrationViewSchedule": "View Schedule",
   "@migrationViewSchedule": {
@@ -7865,25 +7519,13 @@
   "@onboardingConnectKeystone": {
     "description": "Import method and screen title for connecting a Keystone device."
   },
-  "onboardingConnectLedger": "Connect Ledger",
-  "@onboardingConnectLedger": {
-    "description": "Import method and screen title for connecting a Ledger device."
-  },
   "onboardingContinueAnywayDesktop": "Continue Anyway",
   "@onboardingContinueAnywayDesktop": {
     "description": "Confirm button of the desktop unknown-birthday dialog."
   },
-  "onboardingContinueAnywayMobile": "Continue anyway",
-  "@onboardingContinueAnywayMobile": {
-    "description": "Confirm button of the mobile unknown-birthday sheet."
-  },
   "onboardingCreatingWallet": "Creating wallet...",
   "@onboardingCreatingWallet": {
     "description": "Disabled primary button label while the new wallet is being created."
-  },
-  "onboardingCustomiseAccount": "Customise Account",
-  "@onboardingCustomiseAccount": {
-    "description": "Heading of the step where the user names the account and picks a profile picture; also the back label pointing to it."
   },
   "onboardingCustomiseAccountSubtitle": "Add personality to your account by setting an account name and choosing a profile picture.",
   "@onboardingCustomiseAccountSubtitle": {
@@ -8300,10 +7942,6 @@
   "@onboardingStepAddressTypes": {
     "description": "Sidebar step label for the explanation of shielded and transparent address types."
   },
-  "onboardingStepCustomiseWallet": "Customise wallet",
-  "@onboardingStepCustomiseWallet": {
-    "description": "Onboarding step for naming the wallet and picking a picture."
-  },
   "onboardingStepImportContacts": "Import contacts",
   "@onboardingStepImportContacts": {
     "description": "Step and screen title for importing contacts from a linked wallet."
@@ -8577,10 +8215,6 @@
   "@payRecipientAddressLabel": {
     "description": "Accessibility label of the Pay recipient search field."
   },
-  "payRecipientScanQr": "Scan QR code",
-  "@payRecipientScanQr": {
-    "description": "Accessibility label of the button that opens the QR scanner on the Pay recipient step."
-  },
   "payRefreshingQuote": "Refreshing quote",
   "@payRefreshingQuote": {
     "description": "Disabled button label on the Pay review step while a new quote is loading."
@@ -8624,10 +8258,6 @@
   "paySaveContactError": "Couldn't save this contact. Try again.",
   "@paySaveContactError": {
     "description": "Error in the Pay add-contact form when saving fails."
-  },
-  "paySaving": "Saving",
-  "@paySaving": {
-    "description": "Button label while the Pay add-contact card is saving."
   },
   "payScanBarrierDismiss": "Dismiss",
   "@payScanBarrierDismiss": {
@@ -8746,19 +8376,6 @@
       }
     }
   },
-  "paymentLinkAmountCurrencySemantic": "Enter amount in {currency}",
-  "@paymentLinkAmountCurrencySemantic": {
-    "description": "Screen reader label of a currency toggle on the Gift Card amount field; {currency} is ZEC or USD.",
-    "placeholders": {
-      "currency": {
-        "type": "String"
-      }
-    }
-  },
-  "paymentLinkAmountEnterAmount": "Enter amount",
-  "@paymentLinkAmountEnterAmount": {
-    "description": "Placeholder of the Gift Card amount field."
-  },
   "paymentLinkAmountEnterDollars": "Enter dollars",
   "@paymentLinkAmountEnterDollars": {
     "description": "Placeholder of the Gift Card amount field when the amount is entered in US dollars."
@@ -8816,16 +8433,8 @@
   "@paymentLinkArtworkDragon": {
     "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
   },
-  "paymentLinkArtworkGandalf": "Wizard",
-  "@paymentLinkArtworkGandalf": {
-    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
-  },
   "paymentLinkArtworkGift": "Gift box",
   "@paymentLinkArtworkGift": {
-    "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
-  },
-  "paymentLinkArtworkKnight": "Knight",
-  "@paymentLinkArtworkKnight": {
     "description": "Name of a built-in Gift Card artwork, read aloud by screen readers."
   },
   "paymentLinkArtworkKnightMagic": "Magic knight",
@@ -9159,10 +8768,6 @@
   "@paymentLinkCardUpdateFailed": {
     "description": "Toast shown when archiving or restoring a Gift Card failed."
   },
-  "paymentLinkCardsLabel": "Cards",
-  "@paymentLinkCardsLabel": {
-    "description": "Breadcrumb and tab label for the list of Gift Cards."
-  },
   "paymentLinkCardsLoadFailed": "Gift cards could not be loaded.",
   "@paymentLinkCardsLoadFailed": {
     "description": "Error shown in place of the Gift Cards list when loading it failed."
@@ -9222,10 +8827,6 @@
   "@paymentLinkCheckingGiftFull": {
     "description": "Invisible sizing placeholder that reserves the width of the Gift Card check progress text."
   },
-  "paymentLinkCheckingLabel": "Checking…",
-  "@paymentLinkCheckingLabel": {
-    "description": "Status label while a Gift Card is being checked."
-  },
   "paymentLinkChooseReceivingAccount": "Choose receiving account",
   "@paymentLinkChooseReceivingAccount": {
     "description": "Title and screen reader label of the sheet where the user picks which account receives a Gift Card."
@@ -9233,10 +8834,6 @@
   "paymentLinkClaimAccountPrepareFailed": "Couldn’t prepare this gift. Try again or choose another account.",
   "@paymentLinkClaimAccountPrepareFailed": {
     "description": "Error in the receiving-account sheet when preparing the Gift Card claim failed."
-  },
-  "paymentLinkClaimActionCheckAgain": "Check again",
-  "@paymentLinkClaimActionCheckAgain": {
-    "description": "Button that rechecks a received Gift Card that showed no balance."
   },
   "paymentLinkClaimActionCreateAccount": "Create an account to claim",
   "@paymentLinkClaimActionCreateAccount": {
@@ -9257,10 +8854,6 @@
   "paymentLinkClaimCheckingHeading": "Checking your\ngift card",
   "@paymentLinkClaimCheckingHeading": {
     "description": "Two-line heading shown while a received Gift Card is checked; the line break is intentional."
-  },
-  "paymentLinkClaimCloseFailed": "Couldn’t close the card. Try again.",
-  "@paymentLinkClaimCloseFailed": {
-    "description": "Toast shown when closing a received Gift Card before account setup failed."
   },
   "paymentLinkClaimFailedMaybePending": "Gift card claim failed. It may still be waiting for confirmation or may already be spent.",
   "@paymentLinkClaimFailedMaybePending": {
@@ -9386,10 +8979,6 @@
   "@paymentLinkConfirmGiftCardTitle": {
     "description": "Title of the hardware wallet signing screen for creating a Gift Card."
   },
-  "paymentLinkCopyLink": "Copy link",
-  "@paymentLinkCopyLink": {
-    "description": "Button that copies the Gift Card link to the clipboard."
-  },
   "paymentLinkCopyLinkAgainHint": "You can copy this link again from Settings → My gift cards.",
   "@paymentLinkCopyLinkAgainHint": {
     "description": "Hint on the Gift Card ready screen that the link can be copied again later from the settings."
@@ -9419,10 +9008,6 @@
   "@paymentLinkCostCalculatingFee": {
     "description": "Screen reader label shown while the network fee of a batch is calculated."
   },
-  "paymentLinkCostCalculatingTotal": "Calculating total",
-  "@paymentLinkCostCalculatingTotal": {
-    "description": "Screen reader label shown while the total cost of a batch is calculated."
-  },
   "paymentLinkCostCardsMultiplier": "× {count} cards",
   "@paymentLinkCostCardsMultiplier": {
     "description": "Label of the cost row showing the number of cards the per-card cost is multiplied by.",
@@ -9435,10 +9020,6 @@
   "paymentLinkCostMessageOnEveryCard": "Message on every card",
   "@paymentLinkCostMessageOnEveryCard": {
     "description": "Label of the row showing the message printed on every card in a batch."
-  },
-  "paymentLinkCostNetworkFee": "Network fee",
-  "@paymentLinkCostNetworkFee": {
-    "description": "Label of the cost row showing the network fee of a batch."
   },
   "paymentLinkCostPerCard": "Per card",
   "@paymentLinkCostPerCard": {
@@ -9480,25 +9061,9 @@
   "@paymentLinkCreateNewCard": {
     "description": "Button that starts creating a new Gift Card on desktop."
   },
-  "paymentLinkCreatedTabLabel": "Created",
-  "@paymentLinkCreatedTabLabel": {
-    "description": "Tab label on the Gift Cards page listing cards the user created."
-  },
-  "paymentLinkCreating": "Creating…",
-  "@paymentLinkCreating": {
-    "description": "Button label while a Gift Card is being created."
-  },
   "paymentLinkCreationFailed": "Gift card creation failed. Try again.",
   "@paymentLinkCreationFailed": {
     "description": "Error shown when creating a Gift Card failed."
-  },
-  "paymentLinkCustomiseAccountStep": "Customise Account",
-  "@paymentLinkCustomiseAccountStep": {
-    "description": "Title of the setup step where the user customises the new account created from a Gift Card."
-  },
-  "paymentLinkCustomiseWalletStep": "Customise wallet",
-  "@paymentLinkCustomiseWalletStep": {
-    "description": "Label of the desktop setup step where the user customises the new wallet."
   },
   "paymentLinkDeleteMessageSemantic": "Delete gift card message",
   "@paymentLinkDeleteMessageSemantic": {
@@ -9629,10 +9194,6 @@
   "@paymentLinkGiftMessageLabel": {
     "description": "Label of the message attached to a Gift Card."
   },
-  "paymentLinkGoHome": "Go home",
-  "@paymentLinkGoHome": {
-    "description": "Button that returns to the home screen after a Gift Card was created or received."
-  },
   "paymentLinkGroupConfirmingPayment": "Confirming payment",
   "@paymentLinkGroupConfirmingPayment": {
     "description": "Status of a group of Gift Cards while its payment is confirming."
@@ -9678,10 +9239,6 @@
   "paymentLinkGroupPaymentPending": "Payment status pending",
   "@paymentLinkGroupPaymentPending": {
     "description": "Status of a group of Gift Cards whose payment status is unknown."
-  },
-  "paymentLinkGroupReadyToShare": "Ready to share",
-  "@paymentLinkGroupReadyToShare": {
-    "description": "Status of a group of Gift Cards whose links are ready to share."
   },
   "paymentLinkGroupSomeNotReady": "Some cards aren’t ready",
   "@paymentLinkGroupSomeNotReady": {
@@ -9771,41 +9328,17 @@
   "@paymentLinkKeystoneFundingUncertain": {
     "description": "Error on the Keystone signing screen when the network response did not confirm the funding transaction."
   },
-  "paymentLinkKeystoneKeepOpen": "Keep Vizor open while the transaction is sent.",
-  "@paymentLinkKeystoneKeepOpen": {
-    "description": "Instruction on the Keystone signing screen while the transaction is being sent."
-  },
-  "paymentLinkKeystoneQrMismatch": "This QR code does not match the current Keystone request.",
-  "@paymentLinkKeystoneQrMismatch": {
-    "description": "Error on the Keystone signing screen when the scanned QR code belongs to a different request."
-  },
-  "paymentLinkKeystoneReadingSignature": "Reading signature…",
-  "@paymentLinkKeystoneReadingSignature": {
-    "description": "Status on the mobile Keystone signing screen while the signature QR code is read."
-  },
   "paymentLinkKeystoneScanCaption": "Scan the QR code on your Keystone to finish creating",
   "@paymentLinkKeystoneScanCaption": {
     "description": "Caption on the mobile Keystone signing screen asking the user to scan the signature QR code shown on the device."
-  },
-  "paymentLinkKeystoneScanToSign": "Scan to sign",
-  "@paymentLinkKeystoneScanToSign": {
-    "description": "Subtitle of the Keystone signing screen that shows the QR code to scan."
   },
   "paymentLinkKeystoneSignTitle": "Sign gift card on Keystone",
   "@paymentLinkKeystoneSignTitle": {
     "description": "Title of the Keystone signing screen on desktop."
   },
-  "paymentLinkKeystoneSignatureFailed": "Keystone signature could not be applied.",
-  "@paymentLinkKeystoneSignatureFailed": {
-    "description": "Error on the Keystone signing screen when the signature returned by the device could not be applied."
-  },
   "paymentLinkKeystoneSigningFailed": "Gift card signing could not be completed.",
   "@paymentLinkKeystoneSigningFailed": {
     "description": "Error on the Keystone signing screen when signing failed for another reason."
-  },
-  "paymentLinkKeystoneSubmittingTransaction": "Submitting transaction",
-  "@paymentLinkKeystoneSubmittingTransaction": {
-    "description": "Subtitle of the Keystone signing screen while the funding transaction is being sent."
   },
   "paymentLinkLeaveSaveMany": "Save these gift cards before leaving this screen.",
   "@paymentLinkLeaveSaveMany": {
@@ -9826,10 +9359,6 @@
   "paymentLinkLedgerSavedForRecovery": "Gift card funding is saved for recovery. Try again to check its status and finish saving.",
   "@paymentLinkLedgerSavedForRecovery": {
     "description": "Message on the Ledger signing screen when the funding transaction was already saved and the user should retry to finish."
-  },
-  "paymentLinkLedgerSigningIncomplete": "Ledger signing could not be completed. Check your device and try again.",
-  "@paymentLinkLedgerSigningIncomplete": {
-    "description": "Message on the Ledger signing screen when signing failed for another reason."
   },
   "paymentLinkLinkCopied": "Gift link copied",
   "@paymentLinkLinkCopied": {
@@ -9946,18 +9475,6 @@
   "@paymentLinkPasteLabel": {
     "description": "Button that pastes the Gift Card link from the clipboard."
   },
-  "paymentLinkPendingSectionLabel": "Pending",
-  "@paymentLinkPendingSectionLabel": {
-    "description": "Section heading above Gift Cards whose funding is still being confirmed."
-  },
-  "paymentLinkPreparing": "Preparing…",
-  "@paymentLinkPreparing": {
-    "description": "Button label while a Gift Card claim is being prepared."
-  },
-  "paymentLinkPreparingStatus": "Preparing…",
-  "@paymentLinkPreparingStatus": {
-    "description": "Status label while a Gift Card is being prepared."
-  },
   "paymentLinkPrivacyModeOff": "Turn off privacy mode",
   "@paymentLinkPrivacyModeOff": {
     "description": "Tooltip and screen reader label of the button that turns privacy mode off, which hides amounts."
@@ -10017,10 +9534,6 @@
   "paymentLinkReceivedHeadingDesktop": "You’ve received\na gift card!",
   "@paymentLinkReceivedHeadingDesktop": {
     "description": "Two-line heading on the desktop screen for a received Gift Card; the line break is intentional."
-  },
-  "paymentLinkReceivedTabLabel": "Received",
-  "@paymentLinkReceivedTabLabel": {
-    "description": "Tab label on the Gift Cards page listing cards the user received."
   },
   "paymentLinkReceivingAccountChangedReopen": "Receiving account changed. Open the gift card again to continue.",
   "@paymentLinkReceivingAccountChangedReopen": {
@@ -10111,10 +9624,6 @@
   "@paymentLinkSaving": {
     "description": "Button label while a Gift Card is being saved."
   },
-  "paymentLinkScanAgain": "Scan again",
-  "@paymentLinkScanAgain": {
-    "description": "Button that reopens the QR scanner after a failed scan."
-  },
   "paymentLinkScanAgainOrPaste": "Scan again or paste another card link.",
   "@paymentLinkScanAgainOrPaste": {
     "description": "Hint shown when a scanned Gift Card QR code could not be read."
@@ -10122,10 +9631,6 @@
   "paymentLinkScanCameraHint": "Connect a camera to scan the gift card QR code, or go back to paste the card link.",
   "@paymentLinkScanCameraHint": {
     "description": "Message shown on the desktop scan screen when no camera is available."
-  },
-  "paymentLinkScanQrCode": "Scan QR code",
-  "@paymentLinkScanQrCode": {
-    "description": "Button that opens the camera to scan a Gift Card QR code."
   },
   "paymentLinkScanSheetSemantic": "Scan the gift card QR code",
   "@paymentLinkScanSheetSemantic": {
@@ -10276,10 +9781,6 @@
       }
     }
   },
-  "paymentLinkUsageConfirming": "Confirming",
-  "@paymentLinkUsageConfirming": {
-    "description": "Usage status of a Gift Card whose funding transaction is still being confirmed."
-  },
   "paymentLinkUsageFundingNotObserved": "The funding transaction could not yet be verified in the tracking history.",
   "@paymentLinkUsageFundingNotObserved": {
     "description": "Explanation of the Unverified usage status: the funding transaction was not found in the scanned history."
@@ -10338,10 +9839,6 @@
   "paymentLinkUsageUnverified": "Unverified",
   "@paymentLinkUsageUnverified": {
     "description": "Usage status of a Gift Card whose usage could not be verified."
-  },
-  "paymentLinkUsageUpdateFailed": "Update failed",
-  "@paymentLinkUsageUpdateFailed": {
-    "description": "Short status shown on a Gift Card row when refreshing its usage failed."
   },
   "paymentLinkUsageUseDetected": "Use detected",
   "@paymentLinkUsageUseDetected": {
@@ -10627,10 +10124,6 @@
   "@receiveRequestCopyFailed": {
     "description": "Error toast on the mobile payment request when copying the link fails."
   },
-  "receiveRequestCopyLink": "Copy link",
-  "@receiveRequestCopyLink": {
-    "description": "Button and accessibility label on the mobile payment request result that copies the request link."
-  },
   "receiveRequestCopyRequestLink": "Copy request link",
   "@receiveRequestCopyRequestLink": {
     "description": "Button on the desktop payment request result that copies the request link."
@@ -10796,15 +10289,6 @@
   "@sendEnterAddressToContinue": {
     "description": "Label of the disabled primary button on the mobile recipient step before an address is entered."
   },
-  "sendEnterAmountInCurrency": "Enter amount in {currency}",
-  "@sendEnterAmountInCurrency": {
-    "description": "Accessibility label of the control that switches the amount input to {currency}, such as ZEC or USD.",
-    "placeholders": {
-      "currency": {
-        "type": "String"
-      }
-    }
-  },
   "sendEnterValidAddress": "Enter a valid address",
   "@sendEnterValidAddress": {
     "description": "[security] Error shown when the user tries to continue without a valid recipient address."
@@ -10927,10 +10411,6 @@
   "@sendInvalidAmount": {
     "description": "Error under the amount field when the entered amount cannot be parsed."
   },
-  "sendKeystoneConfirmTitle": "Confirm with Keystone",
-  "@sendKeystoneConfirmTitle": {
-    "description": "[security] Title of the desktop Keystone signing modal and label of the review button for a Keystone account."
-  },
   "sendKeystonePrepareFailedGoBack": "Keystone signing could not be prepared. Go back and try again.",
   "@sendKeystonePrepareFailedGoBack": {
     "description": "Error on the mobile review screen when the Keystone signing request could not be prepared."
@@ -10938,10 +10418,6 @@
   "sendKeystonePrepareFailedReturnToSend": "Keystone signing could not be prepared. Return to Send and try again.",
   "@sendKeystonePrepareFailedReturnToSend": {
     "description": "Error on the desktop review screen when the Keystone signing request could not be prepared."
-  },
-  "sendKeystonePreparing": "Preparing",
-  "@sendKeystonePreparing": {
-    "description": "Disabled primary button label in the desktop Keystone modal while proofs are being prepared."
   },
   "sendKeystoneQrMismatch": "This QR code does not match the current Keystone signing request.",
   "@sendKeystoneQrMismatch": {
@@ -10963,21 +10439,9 @@
   "@sendKeystoneScanNow": {
     "description": "[security] Instruction in the desktop Keystone modal while proofs are still being prepared."
   },
-  "sendKeystoneScanReading": "Reading signature...",
-  "@sendKeystoneScanReading": {
-    "description": "Label shown over the scanner while the signature QR code is being decoded."
-  },
-  "sendKeystoneScanSubtitle": "Scan with your Keystone",
-  "@sendKeystoneScanSubtitle": {
-    "description": "[security] Subtitle of the desktop Keystone signing modal asking the user to scan the QR code with the device."
-  },
   "sendKeystoneScanToFinish": "Scan the QR code on your Keystone to finish sending",
   "@sendKeystoneScanToFinish": {
     "description": "Caption under the camera view asking the user to scan the signature QR code shown on the Keystone to finish sending."
-  },
-  "sendKeystoneScanUnexpectedTransaction": "Open the signed transaction QR on Keystone, then scan again.",
-  "@sendKeystoneScanUnexpectedTransaction": {
-    "description": "Hint when the scanned QR code is of the wrong type; asks to open the signed transaction QR code on the Keystone device."
   },
   "sendKeystoneTexTwoApprovals": "This TEX send requires two Keystone approvals. Scan transaction {index} of 2.",
   "@sendKeystoneTexTwoApprovals": {
@@ -11038,10 +10502,6 @@
   "@sendLedgerKeepOpenRetrySaving": {
     "description": "[security] Message telling the user to keep Vizor open and retry saving the signed transaction; no new Ledger approval is needed."
   },
-  "sendLedgerNeedsAttentionTitle": "Ledger needs attention",
-  "@sendLedgerNeedsAttentionTitle": {
-    "description": "Title of the failure panel when the Ledger device needs the user to act (unlock, open the app, reconnect)."
-  },
   "sendLedgerRejectedOnDevice": "The transaction was rejected on your Ledger.",
   "@sendLedgerRejectedOnDevice": {
     "description": "[security] Failure message when the user declined the transaction on their Ledger device."
@@ -11053,10 +10513,6 @@
   "sendLedgerSignedNeedsAttentionTitle": "Signed transaction needs attention",
   "@sendLedgerSignedNeedsAttentionTitle": {
     "description": "[security] Title shown when the signed transaction could not be verified and must not be signed or sent again."
-  },
-  "sendLedgerSigningIncomplete": "Ledger signing could not be completed. Check your device and try again.",
-  "@sendLedgerSigningIncomplete": {
-    "description": "Generic Ledger failure message asking the user to check the device and retry."
   },
   "sendLedgerSigningUnavailableTitle": "Ledger signing unavailable",
   "@sendLedgerSigningUnavailableTitle": {
@@ -11143,10 +10599,6 @@
   "@sendPaymentRequestAmountNotSpecified": {
     "description": "[security] Shown on the payment request card instead of an amount when the link does not ask for a specific amount."
   },
-  "sendPaymentRequestCheckAgain": "Check again",
-  "@sendPaymentRequestCheckAgain": {
-    "description": "Label of the primary button on the payment request card that reruns the check."
-  },
   "sendPaymentRequestCheckBeforePayBody": "Other apps can change the address or amount in a request link.",
   "@sendPaymentRequestCheckBeforePayBody": {
     "description": "[security] Warning that a payment request link can be altered by other apps, so the address or amount may not be what the requester intended."
@@ -11190,10 +10642,6 @@
   "sendPaymentRequestConfirmWithSender": "Confirm the details with the person who sent it.",
   "@sendPaymentRequestConfirmWithSender": {
     "description": "[security] Advice in the check-before-you-pay notice to confirm the payment details with the sender when no QR code can be scanned."
-  },
-  "sendPaymentRequestEnterAmount": "Enter amount",
-  "@sendPaymentRequestEnterAmount": {
-    "description": "Label of the primary button on the payment request card for a request without an amount."
   },
   "sendPaymentRequestHideFullAddress": "Hide full recipient address",
   "@sendPaymentRequestHideFullAddress": {
@@ -11411,18 +10859,6 @@
   "@sendRequestScanSubtitle": {
     "description": "Subtitle of the payment request scan screen."
   },
-  "sendRequestScanTipContinuity": "On a Mac, you can use Continuity Camera to scan with your iPhone instead.",
-  "@sendRequestScanTipContinuity": {
-    "description": "Troubleshooting tip suggesting Continuity Camera on a Mac."
-  },
-  "sendRequestScanTipDistance": "Move the QR code a few inches further from the camera so it can focus.",
-  "@sendRequestScanTipDistance": {
-    "description": "Troubleshooting tip when the QR code cannot be scanned."
-  },
-  "sendRequestScanTipLight": "Make sure the room is well-lit and the QR code isn't reflecting glare.",
-  "@sendRequestScanTipLight": {
-    "description": "Troubleshooting tip when the QR code cannot be scanned."
-  },
   "sendRequestScanTipOriginal": "Open the requester’s original QR code full screen on another device.",
   "@sendRequestScanTipOriginal": {
     "description": "Troubleshooting tip when the payment request QR code cannot be scanned."
@@ -11466,10 +10902,6 @@
   "sendReviewFinishingSyncButton": "Finishing wallet sync...",
   "@sendReviewFinishingSyncButton": {
     "description": "Label of the disabled review button while the wallet finishes syncing."
-  },
-  "sendReviewPreparing": "Preparing...",
-  "@sendReviewPreparing": {
-    "description": "Label of the review button while the transaction is being prepared."
   },
   "sendReviewRequestedAmount": "Requested {amount}",
   "@sendReviewRequestedAmount": {
@@ -11991,10 +11423,6 @@
   "@settingsPasswordUpdateFailed": {
     "description": "[security] Error shown when changing the wallet password failed."
   },
-  "settingsPfpKnight": "Knight",
-  "@settingsPfpKnight": {
-    "description": "Name of a built-in profile picture (a knight character)."
-  },
   "settingsPfpSamurai": "Samurai",
   "@settingsPfpSamurai": {
     "description": "Name of a built-in profile picture (a samurai character)."
@@ -12002,10 +11430,6 @@
   "settingsPfpViking": "Viking",
   "@settingsPfpViking": {
     "description": "Name of a built-in profile picture (a viking character)."
-  },
-  "settingsPfpWizard": "Wizard",
-  "@settingsPfpWizard": {
-    "description": "Name of a built-in profile picture (a wizard character)."
   },
   "settingsPirCheckingUpdates": "Checking for updates…",
   "@settingsPirCheckingUpdates": {
@@ -12186,10 +11610,6 @@
   "settingsSectionPersonal": "Personal",
   "@settingsSectionPersonal": {
     "description": "Heading of the Settings group with personal items such as gift cards and address book."
-  },
-  "settingsSectionSyncing": "Syncing",
-  "@settingsSectionSyncing": {
-    "description": "Heading of the Settings card that holds the keep-screen-awake option."
   },
   "settingsSectionSystem": "System",
   "@settingsSectionSystem": {
@@ -12374,10 +11794,6 @@
   "settingsTorStatusConnected": "Connected",
   "@settingsTorStatusConnected": {
     "description": "Tor status label when requests go through Tor."
-  },
-  "settingsTorStatusConnecting": "Connecting…",
-  "@settingsTorStatusConnecting": {
-    "description": "Tor status label while the Tor connection is being established."
   },
   "settingsTorStatusConnectionFailed": "Connection failed",
   "@settingsTorStatusConnectionFailed": {
@@ -12753,21 +12169,9 @@
   "@sidebarHideBalance": {
     "description": "Screen-reader label of the sidebar button that hides amounts."
   },
-  "sidebarManageAccounts": "Manage",
-  "@sidebarManageAccounts": {
-    "description": "Button in the sidebar account menu that opens account management."
-  },
-  "sidebarMigrating": "Migrating...",
-  "@sidebarMigrating": {
-    "description": "Sidebar Ironwood migration item while the migration runs."
-  },
   "sidebarMigrationNeedsInput": "Needs input",
   "@sidebarMigrationNeedsInput": {
     "description": "Sidebar Ironwood migration item when the user must act."
-  },
-  "sidebarMigrationStopped": "Migration stopped",
-  "@sidebarMigrationStopped": {
-    "description": "Sidebar Ironwood migration item after a network upgrade stopped it."
   },
   "sidebarMyAccounts": "My accounts",
   "@sidebarMyAccounts": {
@@ -12788,10 +12192,6 @@
   "swapActionAddRefundAddress": "Add refund address",
   "@swapActionAddRefundAddress": {
     "description": "Primary button label on the swap screen that opens the refund address editor."
-  },
-  "swapActionContinueToReview": "Continue to review",
-  "@swapActionContinueToReview": {
-    "description": "Primary button label on the mobile swap screen that opens the review."
   },
   "swapActionGettingQuote": "Getting quote",
   "@swapActionGettingQuote": {
@@ -13665,17 +13065,9 @@
   "@swapKeystoneNoTex": {
     "description": "[security] Error in swap Keystone signing when the transaction is a TEX send."
   },
-  "swapKeystoneQrMismatch": "This QR code does not match the current Keystone request.",
-  "@swapKeystoneQrMismatch": {
-    "description": "[security] Error in the swap Keystone signing overlay when the scanned signature QR belongs to another request."
-  },
   "swapKeystoneScanCaption": "Scan the QR code on your Keystone to finish the ZEC deposit",
   "@swapKeystoneScanCaption": {
     "description": "[security] Caption under the signature scanner on the mobile swap Keystone screen."
-  },
-  "swapKeystoneScanToSign": "Scan to sign",
-  "@swapKeystoneScanToSign": {
-    "description": "[security] Subtitle of the swap Keystone signing overlay above the QR code."
   },
   "swapKeystoneSignTitle": "Sign ZEC deposit on Keystone",
   "@swapKeystoneSignTitle": {
@@ -13728,10 +13120,6 @@
   "swapLedgerStatusSaving": "Saving transaction",
   "@swapLedgerStatusSaving": {
     "description": "[security] Status chip in the swap Ledger recovery modal while the sent transaction is saved locally."
-  },
-  "swapLedgerStatusWait": "Please wait",
-  "@swapLedgerStatusWait": {
-    "description": "[security] Status chip in the swap Ledger modal while another operation finishes the transaction."
   },
   "swapLedgerTitlePending": "Transaction status pending",
   "@swapLedgerTitlePending": {
@@ -14042,10 +13430,6 @@
   "@swapTimeoutRestart": {
     "description": "Button on the swap timeout screen that returns to the swap composer."
   },
-  "swapTimeoutTitle": "Time’s up",
-  "@swapTimeoutTitle": {
-    "description": "Heading on the swap timeout screen shown when the quote deposit window has expired."
-  },
   "swapViewOnNearIntents": "View on NEAR Intents",
   "@swapViewOnNearIntents": {
     "description": "Button label on the swap progress footer that opens the swap in the NEAR Intents explorer."
@@ -14196,10 +13580,6 @@
   "@updateRestart": {
     "description": "Button that restarts Vizor to apply a downloaded update."
   },
-  "votingActionResume": "Resume",
-  "@votingActionResume": {
-    "description": "Button on a voting round card that continues an unfinished vote submission."
-  },
   "votingActionRetryEligibility": "Retry eligibility",
   "@votingActionRetryEligibility": {
     "description": "Label of the bottom button that re-checks whether the account may vote."
@@ -14215,10 +13595,6 @@
   "votingActionUnavailable": "Unavailable",
   "@votingActionUnavailable": {
     "description": "Label of the bottom button of a voting round when voting is not available for this account."
-  },
-  "votingActionView": "View",
-  "@votingActionView": {
-    "description": "Button on a voting round card of a round this account cannot vote in; opens the round details."
   },
   "votingActionViewResults": "View results",
   "@votingActionViewResults": {
@@ -14277,10 +13653,6 @@
       }
     }
   },
-  "votingCheckAgain": "Check again",
-  "@votingCheckAgain": {
-    "description": "Button that re-checks whether this account's funds were already used to vote."
-  },
   "votingChoiceFallback": "Choice {number}",
   "@votingChoiceFallback": {
     "description": "Label of an answer option whose name is unknown; {number} is the option number.",
@@ -14293,10 +13665,6 @@
   "votingConfigAddCustomSource": "Add custom source",
   "@votingConfigAddCustomSource": {
     "description": "Button or title for adding a custom voting config source URL."
-  },
-  "votingConfigBadgeDefault": "Default",
-  "@votingConfigBadgeDefault": {
-    "description": "Badge on the default voting config source."
   },
   "votingConfigCloseSettings": "Close voting config settings",
   "@votingConfigCloseSettings": {
@@ -14474,10 +13842,6 @@
   "@votingConfirmationUpdatingRounds": {
     "description": "Shown on the voting confirmation screen while the voting rounds list refreshes after Done was pressed."
   },
-  "votingContinueToReview": "Continue to review",
-  "@votingContinueToReview": {
-    "description": "Dialog button that goes on to the review screen although some questions are unanswered."
-  },
   "votingContinueVoting": "Continue voting",
   "@votingContinueVoting": {
     "description": "Button that resumes an unfinished vote submission."
@@ -14648,30 +14012,6 @@
   "@votingLedgerApprovalNotice": {
     "description": "[security] Notice on the Ledger panel: approving on the device authorizes the delegation, and the memo must be checked in Vizor because the device may not show it verbatim."
   },
-  "votingLedgerBundleOf": "Bundle {number} of {total}",
-  "@votingLedgerBundleOf": {
-    "description": "Progress of the Ledger approval; a bundle is a group of notes signed together.",
-    "placeholders": {
-      "number": {
-        "type": "int"
-      },
-      "total": {
-        "type": "int"
-      }
-    }
-  },
-  "votingLedgerChecking": "Checking your Ledger",
-  "@votingLedgerChecking": {
-    "description": "Title of the Ledger panel while the device is checked."
-  },
-  "votingLedgerCheckingBody": "Vizor is checking whether the Zcash app is ready.",
-  "@votingLedgerCheckingBody": {
-    "description": "Body of the Ledger panel while the device is checked."
-  },
-  "votingLedgerConfirmOpen": "Confirm opening Zcash",
-  "@votingLedgerConfirmOpen": {
-    "description": "Title of the Ledger panel while the user must approve opening the Zcash app on the device."
-  },
   "votingLedgerConfirmOpenBody": "Approve the request to open the Zcash app on your Ledger.",
   "@votingLedgerConfirmOpenBody": {
     "description": "Body of the Ledger panel asking the user to approve opening the Zcash app on the device."
@@ -14679,10 +14019,6 @@
   "votingLedgerFinishing": "Finishing voting delegation",
   "@votingLedgerFinishing": {
     "description": "Title of the Ledger panel while the delegation is finished."
-  },
-  "votingLedgerNeedsAttention": "Ledger needs attention",
-  "@votingLedgerNeedsAttention": {
-    "description": "Title of the Ledger panel when the device has a problem."
   },
   "votingLedgerPanelTitle": "Voting delegation",
   "@votingLedgerPanelTitle": {
@@ -14708,10 +14044,6 @@
         "type": "String"
       }
     }
-  },
-  "votingMobileGoHome": "Go home",
-  "@votingMobileGoHome": {
-    "description": "Button on the mobile vote-submitted screen that returns to the home screen."
   },
   "votingMobileHeaderTitle": "Voting",
   "@votingMobileHeaderTitle": {
@@ -14963,10 +14295,6 @@
   "@votingPowerUnavailableTitle": {
     "description": "Short note in the voting round summary when the account's voting power could not be determined."
   },
-  "votingPreparingEllipsis": "Preparing...",
-  "@votingPreparingEllipsis": {
-    "description": "Value of the voting power row while the voting power is being calculated."
-  },
   "votingPreparingPower": "Preparing voting power.",
   "@votingPreparingPower": {
     "description": "Message shown while the wallet calculates how much voting power the account has."
@@ -15014,10 +14342,6 @@
       }
     }
   },
-  "votingProgressUnknown": "Unknown",
-  "@votingProgressUnknown": {
-    "description": "Accessibility value of the progress ring when the progress is not known."
-  },
   "votingProgressWaitingConfirmation": "Waiting for submission and confirmation{suffix}",
   "@votingProgressWaitingConfirmation": {
     "description": "Detail under the proving step while waiting for the chain; {suffix} is empty or a dash followed by a proved-bundles count.",
@@ -15030,10 +14354,6 @@
   "votingReceiptPower": "Voting power",
   "@votingReceiptPower": {
     "description": "Label of the receipt row showing the account's voting power in ZEC."
-  },
-  "votingReceiptRound": "Voting round",
-  "@votingReceiptRound": {
-    "description": "Label of the receipt row naming the voting round."
   },
   "votingRemainingBundles": "{count} of {total} remaining bundles",
   "@votingRemainingBundles": {
@@ -15050,10 +14370,6 @@
   "votingResultsFallbackTitle": "Voting results",
   "@votingResultsFallbackTitle": {
     "description": "Title of the voting results screen when the round has no title."
-  },
-  "votingResultsHeading": "Results",
-  "@votingResultsHeading": {
-    "description": "Heading above the list of proposal results on the desktop voting results screen."
   },
   "votingResultsHideDescription": "Hide description",
   "@votingResultsHideDescription": {
@@ -15089,10 +14405,6 @@
   "@votingResultsShowDescription": {
     "description": "Button that expands a proposal's long description on the results screen."
   },
-  "votingResultsTotal": "Total",
-  "@votingResultsTotal": {
-    "description": "Label of the total votes row in a proposal result."
-  },
   "votingResultsTotalAmount": "Total: {amount}",
   "@votingResultsTotalAmount": {
     "description": "Line on a proposal result with the total voting weight cast; {amount} is a ZEC amount.",
@@ -15101,10 +14413,6 @@
         "type": "String"
       }
     }
-  },
-  "votingResultsVoted": "Voted",
-  "@votingResultsVoted": {
-    "description": "Badge on a proposal result showing the user voted on it."
   },
   "votingResultsVotedFor": "Voted: {choice}",
   "@votingResultsVotedFor": {
@@ -15155,14 +14463,6 @@
   "votingScanNoCamera": "Keystone voting uses camera QR scanning only. Connect a camera and try again.",
   "@votingScanNoCamera": {
     "description": "Message on the desktop scan screen when no camera is available."
-  },
-  "votingScanReading": "Reading signature...",
-  "@votingScanReading": {
-    "description": "Status on the desktop scan screen while the signature is decoded."
-  },
-  "votingScanSteady": "Keep the QR code steady and fully visible.",
-  "@votingScanSteady": {
-    "description": "Hint on the desktop scan screen when the QR code could not be read."
   },
   "votingScanTitle": "Scan voting signature",
   "@votingScanTitle": {
@@ -15323,10 +14623,6 @@
   "votingSyncWaitingBody": "Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.",
   "@votingSyncWaitingBody": {
     "description": "Body of the box shown while the wallet is still syncing up to the voting snapshot."
-  },
-  "votingSyncWaitingTitle": "Waiting for wallet sync",
-  "@votingSyncWaitingTitle": {
-    "description": "Title of the box shown while the wallet is still syncing up to the voting snapshot."
   },
   "votingTerminalBundle": "bundle {number} ({reason})",
   "@votingTerminalBundle": {
@@ -15501,10 +14797,6 @@
   "@walletLinkDesktopExpiredBody": {
     "description": "Body of the expired-link screen on desktop."
   },
-  "walletLinkDesktopExpiredTitle": "Time’s up",
-  "@walletLinkDesktopExpiredTitle": {
-    "description": "Title of the screen shown when the one-time link code expired."
-  },
   "walletLinkDesktopExpiresIn": "Expires in {time}",
   "@walletLinkDesktopExpiresIn": {
     "description": "Countdown under the QR code; {time} is the remaining time such as 0:45.",
@@ -15541,10 +14833,6 @@
   "walletLinkDesktopLinkedTitle": "Vizor Mobile linked successfully",
   "@walletLinkDesktopLinkedTitle": {
     "description": "Title of the success screen after the phone finished linking."
-  },
-  "walletLinkDesktopPreparing": "Preparing",
-  "@walletLinkDesktopPreparing": {
-    "description": "Label of the start button on the desktop link screen while the link is being prepared."
   },
   "walletLinkDesktopReadyToScan": "1/1 Ready to scan...",
   "@walletLinkDesktopReadyToScan": {
@@ -15649,10 +14937,6 @@
   "walletLinkReadingLink": "Reading link...",
   "@walletLinkReadingLink": {
     "description": "Caption under the camera view while the scanned link is being read."
-  },
-  "walletLinkScanAgain": "Scan again",
-  "@walletLinkScanAgain": {
-    "description": "Button on the scan error card that returns to the scanner."
   },
   "walletLinkScanCaption": "Scan the Vizor desktop QR",
   "@walletLinkScanCaption": {

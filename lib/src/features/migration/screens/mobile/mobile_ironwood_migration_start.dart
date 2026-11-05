@@ -405,7 +405,7 @@ class _MobileIronwoodMigrationStartScreenState
     final messages = [
       l10n.migrationMobileStartMessagePreparing,
       l10n.migrationMobileStartMessageOrganizing,
-      l10n.migrationMobileStartMessagePlan,
+      l10n.migrationAnalyzingPreparingPlan,
     ];
     final loading = _phase == _MobileMigrationStartPhase.loading;
     final ready = _phase == _MobileMigrationStartPhase.keystoneReady;
@@ -617,7 +617,7 @@ class _MobileMigrationStartReadyContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.base),
         Text(
-          context.l10n.migrationMobileStartReadyTitle,
+          context.l10n.migrationNextActionDetailReadyToSign,
           textAlign: TextAlign.center,
           style: AppTypography.headlineSmall.copyWith(
             color: context.colors.text.accent,

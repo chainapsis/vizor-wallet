@@ -227,7 +227,7 @@ class RequestAmountSheetResult extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           Semantics(
             button: true,
-            label: context.l10n.receiveRequestCopyLink,
+            label: context.l10n.commonCopyLink,
             excludeSemantics: true,
             child: AppButton(
               key: const ValueKey('request_copy_link_button'),
@@ -236,7 +236,7 @@ class RequestAmountSheetResult extends StatelessWidget {
               constrainContent: true,
               onPressed: request.isReady ? (onCopyLink ?? _noop) : null,
               child: Text(
-                context.l10n.receiveRequestCopyLink,
+                context.l10n.commonCopyLink,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

@@ -503,7 +503,7 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
       sections: _activeTab == PaymentLinkCardsTab.created
           ? [
               PaymentLinkCardsSection(
-                label: context.l10n.paymentLinkPendingSectionLabel,
+                label: context.l10n.commonPending,
                 cards: [
                   _createdCard(
                     address: 'confirming',
@@ -592,7 +592,7 @@ class _PaymentLinkCardsFixtureState extends State<_PaymentLinkCardsFixture> {
             ]
           : [
               PaymentLinkCardsSection(
-                label: context.l10n.paymentLinkReceivedTabLabel,
+                label: context.l10n.commonReceived,
                 cards: [
                   PaymentLinkCardListMobileRow(
                     thumbnail: _PaymentLinkThumbnail(

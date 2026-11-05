@@ -44,7 +44,7 @@ class _MobileStatusBackHomeButton extends StatelessWidget {
         height: 50,
         variant: AppButtonVariant.secondary,
         onPressed: onPressed,
-        child: Text(label ?? context.l10n.migrationMobileBackHome),
+        child: Text(label ?? context.l10n.migrationBackHome),
       ),
     );
   }

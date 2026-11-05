@@ -46,7 +46,7 @@ class LedgerBluetoothRestrictedHelp extends ConsumerWidget {
               constrainContent: true,
               growWithContent: true,
               onPressed: model.onOpenSettings,
-              child: Text(l10n.ledgerBtLabelOpenSettings),
+              child: Text(l10n.commonOpenSettings),
             ),
           ),
         ],

@@ -461,7 +461,7 @@ class _ImportWalletBirthdayScreenState
       return LedgerOnboardingShell(
         activeStep: LedgerOnboardingStep.birthday,
         backTarget: OnboardingBackTarget.route(
-          label: context.l10n.onboardingConnectLedger,
+          label: context.l10n.commonConnectLedger,
           routePath: desktopImportLocation(context, '/onboarding/ledger'),
         ),
         overlay: overlay,

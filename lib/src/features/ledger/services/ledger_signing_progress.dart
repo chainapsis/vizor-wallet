@@ -91,6 +91,6 @@ extension LedgerSigningStageCopy on LedgerSigningStage {
   String status(AppLocalizations l10n) => switch (this) {
     LedgerSigningStage.sending => l10n.ledgerSigningStatusPreparing,
     LedgerSigningStage.reviewing => l10n.ledgerSigningStatusReview,
-    _ => l10n.ledgerSigningStatusWait,
+    _ => l10n.commonPleaseWait,
   };
 }

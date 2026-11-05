@@ -113,7 +113,7 @@ class _GiftClaimScreenState extends ConsumerState<GiftClaimScreen> {
       if (mounted) {
         showAppToast(
           context,
-          context.l10n.paymentLinkClaimCloseFailed,
+          context.l10n.commonCouldnTCloseTheCardTry,
           iconName: AppIcons.warning,
         );
       }
@@ -786,7 +786,7 @@ class MobileGiftCardEntryView extends StatelessWidget {
             constrainContent: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 10),
             leading: const AppIcon(AppIcons.qr, size: 20),
-            child: Text(context.l10n.paymentLinkScanQrCode),
+            child: Text(context.l10n.commonScanQrCodeSentenceCase),
           ),
         ],
       ),
@@ -1055,10 +1055,7 @@ class _GiftClaimActions extends ConsumerWidget {
       GiftClaimPhase.inspected => [
         // An empty scan is not proof the Card will never be funded.
         if (inspection!.availability == PaymentLinkAvailability.noBalance)
-          _primary(
-            context.l10n.paymentLinkClaimActionCheckAgain,
-            notifier.recheck,
-          ),
+          _primary(context.l10n.commonCheckAgain, notifier.recheck),
         _secondary(context.l10n.commonGoBack, onClose),
       ],
     };

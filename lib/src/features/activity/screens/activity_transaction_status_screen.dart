@@ -187,7 +187,7 @@ class _ActivityTransactionStatusScreenState
       unattributedReceiptNetworkFee(tx, matchingReceiptDetailFor(tx)) != null;
 
   String _feeLabel(rust_sync.TransactionInfo tx) => _showsNetworkFee(tx)
-      ? context.l10n.activityReceiptNetworkFee
+      ? context.l10n.commonNetworkFee
       : context.l10n.txFeeInfoTitle;
 
   String _feeHelpText(rust_sync.TransactionInfo tx) => _showsNetworkFee(tx)
@@ -209,7 +209,7 @@ class _ActivityTransactionStatusScreenState
       );
     }
     if (tx != null && _showUnknownFee(tx)) {
-      return context.l10n.activityReceiptUnknownFee;
+      return context.l10n.commonUnknown;
     }
     if (tx == null || tx.fee <= BigInt.zero) return '--';
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
@@ -471,11 +471,11 @@ class _ActivityTransactionStatusScreenState
       final reserve = giftCard.claimFeeReserveZatoshi!;
       final feeUnknown = _showUnknownFee(tx);
       final networkFeeText = feeUnknown
-          ? context.l10n.activityReceiptUnknownFee
+          ? context.l10n.commonUnknown
           : '${privateAmount(tx.fee)} ZEC'; // l10n-ignore: amount format
       final networkFeeLabel = isInFlight || isFailed
           ? context.l10n.activityReceiptEstimatedNetworkFee
-          : context.l10n.activityReceiptNetworkFee;
+          : context.l10n.commonNetworkFee;
       return GiftCardActivityDetailView.batch(
         batch: GiftCardActivityBatch(
           count: batchCount,
@@ -485,7 +485,7 @@ class _ActivityTransactionStatusScreenState
               ? context.l10n.activityGiftTotalSubmitted
               : context.l10n.activityGiftTotalSpent,
           totalText: feeUnknown
-              ? context.l10n.activityReceiptUnknownFee
+              ? context.l10n.commonUnknown
               : '${privateAmount(giftCard.amountZatoshi + reserve + tx.fee)} ZEC', // l10n-ignore: amount format
           breakdownText: context.l10n.activityGiftBatchBreakdown(
             privateAmount(giftCard.amountZatoshi),

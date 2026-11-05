@@ -3200,7 +3200,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           ),
         if (pendingCards.isNotEmpty)
           PaymentLinkCardsSection(
-            label: context.l10n.paymentLinkPendingSectionLabel,
+            label: context.l10n.commonPending,
             cards: pendingCards,
           ),
         if (unusedCards.isNotEmpty)
@@ -3229,7 +3229,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     return <PaymentLinkCardsSection>[
       if (receivedCards.isNotEmpty || claimedElsewhereCards.isEmpty)
         PaymentLinkCardsSection(
-          label: context.l10n.paymentLinkReceivedTabLabel,
+          label: context.l10n.commonReceived,
           cards: receivedCards.isNotEmpty
               ? receivedCards.map(receivedRow).toList()
               : emptyReceivedCards,
@@ -3271,7 +3271,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     return (
       canUseLink: canUseLink,
       statusText: checkingDraft
-          ? context.l10n.paymentLinkCheckingLabel
+          ? context.l10n.commonCheckingEllipsis
           : record.state == PaymentLinkRecoveryState.draft
           ? context.l10n.paymentLinkFundingIncompleteStatus
           : (usage ?? record.usage).label(context.l10n),
@@ -3319,8 +3319,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
                   record.availability == PaymentLinkAvailability.rejected)
               ? context.l10n.paymentLinkAvailabilityCheckingResult
               : context.l10n.paymentLinkReceivingStatus,
-        PaymentLinkReceivedStatus.received =>
-          context.l10n.paymentLinkReceivedTabLabel,
+        PaymentLinkReceivedStatus.received => context.l10n.commonReceived,
       },
       actionLabel:
           record.status == PaymentLinkReceivedStatus.received ||
@@ -3449,9 +3448,9 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       statusText:
           usageSummary ??
           (!ready && checkingFunding
-              ? context.l10n.paymentLinkCheckingLabel
+              ? context.l10n.commonCheckingEllipsis
               : ready
-              ? context.l10n.paymentLinkGroupReadyToShare
+              ? context.l10n.paymentLinkReadyHeading
               : switch (_batchPendingKind(members)) {
                   PaymentLinkBatchPendingKind.incomplete =>
                     context.l10n.paymentLinkGroupSomeNotReady,
@@ -3612,7 +3611,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       // Saved classifications are visible before sharing becomes available.
       sections: [
         PaymentLinkCardsSection(
-          label: context.l10n.paymentLinkPendingSectionLabel,
+          label: context.l10n.commonPending,
           cards: pendingCards,
         ),
         PaymentLinkCardsSection(
@@ -3792,7 +3791,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           : context.l10n.paymentLinkSaveQrCode,
       copyLabel: copying
           ? context.l10n.paymentLinkCopying
-          : context.l10n.paymentLinkCopyLink,
+          : context.l10n.commonCopyLink,
     );
   }
 
@@ -3923,7 +3922,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       supportingText: _amountSupportingText,
       supportingTextIsError: _amountSupportingTextIsError,
       emptyActionLabel: _amountSupportingTextIsError
-          ? context.l10n.paymentLinkAmountEnterAmount
+          ? context.l10n.commonEnterAmount
           : context.l10n.commonContinue,
     );
   }
@@ -4022,7 +4021,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       onStepSelected: _operationInProgress ? null : _selectWizardStep,
       confirmLabel: _operationInProgress
           ? _pendingFundingMetadata == null
-                ? context.l10n.paymentLinkCreating
+                ? context.l10n.commonCreating
                 : context.l10n.paymentLinkSaving
           : _pendingFundingMetadata == null
           ? context.l10n.paymentLinkCreateCardButton
@@ -4082,7 +4081,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       waitingStatusLabel: _estimatedLinkWaitLabel(fundingProgress),
       copyLabel: copying
           ? context.l10n.paymentLinkCopying
-          : context.l10n.paymentLinkCopyLink,
+          : context.l10n.commonCopyLink,
     );
   }
 
@@ -4144,7 +4143,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
           : checkLabel != null ||
                 (session?.waitingForFundingConfirmations ?? false)
           ? context.l10n.navHome
-          : context.l10n.paymentLinkCardsLabel,
+          : context.l10n.commonCards,
       waitingStatusLabel:
           checkLabel ??
           ((session?.waitingForFundingConfirmations ?? false)

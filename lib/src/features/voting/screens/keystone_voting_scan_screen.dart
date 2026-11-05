@@ -52,7 +52,7 @@ class _KeystoneVotingScanScreenState
     if (!mounted || _decoding) return;
     final message = error.toString().contains('Unexpected UR type')
         ? context.l10n.votingKeystoneUnexpectedUr
-        : context.l10n.votingScanSteady;
+        : context.l10n.commonKeepQrSteady;
     if (_error == message) return;
     setState(() {
       _error = message;
@@ -127,7 +127,7 @@ class _KeystoneVotingScanScreenState
                         },
                         onDecodeError: _handleDecodeError,
                         onComplete: _handleScanComplete,
-                        decodingLabel: context.l10n.votingScanReading,
+                        decodingLabel: context.l10n.commonReadingSignature,
                         unavailableMessage: context.l10n.votingScanNoCamera,
                       ),
                     ],

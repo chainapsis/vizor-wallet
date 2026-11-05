@@ -353,7 +353,7 @@ class _MigrationManageButton extends StatelessWidget {
         expand: false,
         leading: const AppIcon(AppIcons.wrench, size: 16),
         onPressed: onPressed,
-        child: Text(context.l10n.migrationManage),
+        child: Text(context.l10n.commonManage),
       ),
     );
   }
@@ -438,7 +438,7 @@ class _MigrationManageModal extends StatelessWidget {
         AppModalActions(
           onCancel: submitting ? null : onCancel,
           actionLabel: submitting
-              ? context.l10n.migrationManageLoading
+              ? context.l10n.commonLoadingDots
               : context.l10n.commonContinue,
           onAction: submitting || !choiceIsAvailable ? null : onContinue,
           actionLeading: submitting
@@ -793,7 +793,7 @@ class _MigrationPreparationScheduleContent extends ConsumerWidget {
                     _MigrationSummaryMetric(
                       label: context.l10n.migrationScheduleCurrentRound,
                       value: rounds.isEmpty
-                          ? context.l10n.migrationSchedulePreparing
+                          ? context.l10n.commonPreparing
                           : context.l10n.migrationScheduleRoundProgress(
                               currentRound.toString(),
                               rounds.length.toString(),
@@ -1226,7 +1226,7 @@ String _preparationScheduleRowSemantics(
       ),
     rust_sync.MigrationPreparationTransactionState.completed =>
       transaction.minedHeight == null
-          ? l10n.migrationScheduleSemanticsCompleted
+          ? l10n.migrationRingStatusCompleted
           : l10n.migrationScheduleSemanticsCompletedAt(
               transaction.minedHeight.toString(),
             ),
@@ -1554,7 +1554,7 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
               ),
       rust_sync.MigrationPartState.preparing =>
         waitingWindowHeight == null
-            ? context.l10n.migrationSchedulePreparing
+            ? context.l10n.commonPreparing
             : context.l10n.migrationScheduleWindow(
                 formatGroupedInteger(waitingWindowHeight!),
               ),
@@ -1650,7 +1650,7 @@ String _migrationScheduleRowSemantics(
             ),
     rust_sync.MigrationPartState.completed =>
       minedHeight == null
-          ? l10n.migrationScheduleSemanticsCompleted
+          ? l10n.migrationRingStatusCompleted
           : l10n.migrationScheduleSemanticsCompletedAt(
               formatGroupedInteger(minedHeight),
             ),

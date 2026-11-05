@@ -215,7 +215,7 @@ class PaymentLinkBulkDesktopFlow extends StatelessWidget {
     if (submitting) {
       label = retrySaving
           ? context.l10n.paymentLinkSaving
-          : context.l10n.paymentLinkCreating;
+          : context.l10n.commonCreating;
     } else if (retrySaving) {
       label = context.l10n.paymentLinkTrySavingAgain;
     } else {

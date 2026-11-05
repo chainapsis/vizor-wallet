@@ -249,7 +249,7 @@ class VotingResultsContent extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           if (kAppFormFactor != AppFormFactor.mobile) ...[
             Text(
-              context.l10n.votingResultsHeading,
+              context.l10n.commonResults,
               style: AppTypography.headlineSmall.copyWith(
                 color: context.colors.text.accent,
               ),
@@ -326,7 +326,7 @@ class _MobileResultsHeader extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Text(
-                    context.l10n.votingResultsVoted,
+                    context.l10n.votingStatusVoted,
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.positiveStrong,
                       letterSpacing: -0.04,
@@ -680,7 +680,7 @@ class _MobileResultCard extends StatelessWidget {
                   runSpacing: AppSpacing.xs,
                   children: [
                     Text(
-                      context.l10n.votingResultsTotal,
+                      context.l10n.commonTotal,
                       style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                         fontWeight: FontWeight.w500,

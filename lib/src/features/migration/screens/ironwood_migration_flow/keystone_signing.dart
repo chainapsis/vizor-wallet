@@ -1353,15 +1353,15 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 urParts: _urParts,
                 error: _error,
                 title: context.l10n.migrationKeystoneConfirmTitle,
-                subtitle: context.l10n.migrationKeystoneScanSubtitle,
+                subtitle: context.l10n.commonScanWithYourKeystone,
                 instruction: failed
                     ? null
-                    : context.l10n.migrationKeystoneAfterScanInstruction,
+                    : context.l10n.commonKeystoneAfterScan,
                 primaryLabel: failed
                     ? context.l10n.commonTryAgain
                     : ready
-                    ? context.l10n.migrationKeystoneGetSignature
-                    : context.l10n.migrationKeystonePreparing,
+                    ? context.l10n.commonGetSignature
+                    : context.l10n.commonPreparing,
                 onPrimary: failed
                     ? () => unawaited(_retryRequest())
                     : ready && _urParts.isNotEmpty
@@ -1521,7 +1521,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           onComplete: (result) => unawaited(_handleScanComplete(result)),
           decodingLabel: waitingForProofs
               ? context.l10n.migrationKeystoneProofsPreparingEllipsis
-              : context.l10n.migrationKeystoneReadingSignature,
+              : context.l10n.commonReadingSignature,
           unavailableMessage: context.l10n.migrationKeystoneCameraAccess,
           cardWidth: constraints.maxWidth,
           cameraHeight: constraints.maxHeight,
@@ -1921,7 +1921,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ],
           Text(
             widget.step == _KeystonePrivateSignStep.immediate
-                ? context.l10n.migrationKeystoneScanQrCode
+                ? context.l10n.commonScanQrCode
                 : context.l10n.migrationKeystoneScanSignature,
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
@@ -1935,7 +1935,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               widget.step == _KeystonePrivateSignStep.immediate &&
                       !completing &&
                       !waitingForProofs
-                  ? context.l10n.migrationKeystonePrepareWallet
+                  ? context.l10n.commonPrepareYourKeystoneWallet
                   : completing
                   ? context.l10n.migrationKeystoneApplyingToPlan
                   : waitingForProofs
@@ -1966,7 +1966,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               },
               onDecodeError: _handleDecodeError,
               onComplete: (result) => unawaited(_handleScanComplete(result)),
-              decodingLabel: context.l10n.migrationKeystoneReadingSignature,
+              decodingLabel: context.l10n.commonReadingSignature,
               unavailableMessage: context.l10n.migrationKeystoneCameraOnly,
             ),
         ],
@@ -2066,7 +2066,7 @@ class _ImmediateKeystoneScannerPreviewCard extends StatelessWidget {
               AppIcon(AppIcons.camera, size: 18, color: colors.icon.regular),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                context.l10n.migrationKeystoneCamera,
+                context.l10n.commonCamera,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -2281,7 +2281,7 @@ String ironwoodMigrationKeystoneScanErrorMessage(
   if (message.contains('Unexpected UR type')) {
     return l10n.migrationKeystoneOpenSignedQr;
   }
-  return l10n.migrationKeystoneKeepQrSteady;
+  return l10n.commonKeepQrSteady;
 }
 
 bool _keystoneMigrationProofStillPendingError(Object error) {
@@ -2326,7 +2326,7 @@ String ironwoodMigrationKeystoneSigningErrorMessage(
     return l10n.migrationKeystoneRequestExpired;
   }
   if (lower.contains('signature') || lower.contains('qr')) {
-    return l10n.migrationKeystoneSignatureFailed;
+    return l10n.commonKeystoneSignatureCouldNotBeApplied;
   }
   return l10n.migrationKeystonePrepareFailed;
 }

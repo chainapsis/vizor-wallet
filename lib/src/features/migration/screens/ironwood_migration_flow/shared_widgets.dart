@@ -263,7 +263,7 @@ String _transferEstimatedArrival(
   }
 
   if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
-    return l10n.migrationConfirming;
+    return l10n.commonConfirming;
   }
 
   return l10n.migrationBlocksEstimate(

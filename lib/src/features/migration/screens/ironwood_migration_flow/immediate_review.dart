@@ -127,12 +127,12 @@ class _IronwoodMigrationImmediateReviewContentState
     final amount = plan != null
         ? '${_formatZecAmountCompact(plan.migratedZatoshi)} ZEC' // l10n-ignore: amount format
         : planLoading
-        ? context.l10n.migrationImmediateCalculating
+        ? context.l10n.commonCalculatingEllipsis
         : context.l10n.migrationImmediateUnavailable;
     final fee = plan != null
         ? '~${_formatZecAmountCompact(plan.feeZatoshi)} ZEC' // l10n-ignore: amount format
         : planLoading
-        ? context.l10n.migrationImmediateCalculating
+        ? context.l10n.commonCalculatingEllipsis
         : context.l10n.migrationImmediateUnavailable;
     final planMessage = planFailed
         ? context.l10n.migrationImmediatePlanFailed
@@ -176,7 +176,7 @@ class _IronwoodMigrationImmediateReviewContentState
                     child: Column(
                       children: [
                         _ImmediateReviewRow(
-                          label: context.l10n.migrationImmediateAmount,
+                          label: context.l10n.commonAmount,
                           value: amount,
                         ),
                         const SizedBox(height: 8),
@@ -327,7 +327,7 @@ class _IronwoodMigrationImmediateReviewContentState
                         : planFailed
                         ? context.l10n.migrationImmediateRetryCalculation
                         : planLoading
-                        ? context.l10n.migrationImmediateCalculating
+                        ? context.l10n.commonCalculatingEllipsis
                         : planUnavailable
                         ? context.l10n.migrationImmediateUnavailable
                         : context.l10n.migrationImmediateAuthoriseAnyway,

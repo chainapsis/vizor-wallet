@@ -1083,7 +1083,7 @@ void main() {
         expect(find.text(expected[index]), findsOneWidget);
         expect(find.text('Tx fee'), findsOneWidget);
         expect(find.text('0.0002 ZEC'), findsNothing);
-        expect(find.text(testL10n.activityReceiptUnknownFee), findsOneWidget);
+        expect(find.text(testL10n.commonUnknown), findsOneWidget);
       }
     },
   );
@@ -1225,7 +1225,7 @@ void main() {
       );
       expect(find.text('Network fee'), findsOneWidget);
       expect(find.text('0.00015 ZEC'), findsOneWidget);
-      expect(find.text(testL10n.activityReceiptUnknownFee), findsNothing);
+      expect(find.text(testL10n.commonUnknown), findsNothing);
       expect(find.text('0.01 ZEC'), findsOneWidget);
       expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
       expect(tx.fee, BigInt.zero);
@@ -1259,7 +1259,7 @@ void main() {
 
       expect(find.byType(SendStatusContentView), findsNothing);
       expect(find.text('Tx fee'), findsOneWidget);
-      expect(find.text(testL10n.activityReceiptUnknownFee), findsOneWidget);
+      expect(find.text(testL10n.commonUnknown), findsOneWidget);
       expect(find.text('Details'), findsOneWidget);
       expect(find.text('Incomplete'), findsOneWidget);
     },
@@ -1395,7 +1395,7 @@ void main() {
             privateQueriesEnabled ? findsOneWidget : findsNothing,
           );
           expect(
-            find.text(testL10n.activityReceiptUnknownFee),
+            find.text(testL10n.commonUnknown),
             privateQueriesEnabled && kind != 'received'
                 ? findsOneWidget
                 : findsNothing,
@@ -1430,7 +1430,7 @@ void main() {
       await tester.pump();
       expect(find.text('Incomplete'), enabled ? findsOneWidget : findsNothing);
       expect(
-        find.text(testL10n.activityReceiptUnknownFee),
+        find.text(testL10n.commonUnknown),
         enabled ? findsOneWidget : findsNothing,
       );
       expect(find.text('Tx fee'), enabled ? findsOneWidget : findsNothing);
@@ -1521,7 +1521,7 @@ void main() {
     );
 
     expect(find.text('Details'), findsNothing);
-    expect(find.text(testL10n.activityReceiptUnknownFee), findsNothing);
+    expect(find.text(testL10n.commonUnknown), findsNothing);
   });
 
   testWidgets('shows the loading/not-found fallback when no tx is available', (

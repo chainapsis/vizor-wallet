@@ -32,7 +32,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aboutOpenSourceBody =>
-      'Vizor 采用 Apache 许可证。您的密钥只保存在您的设备上。\n我们看不到您的余额或交易。';
+      'Vizor 采用 Apache 许可证。你的密钥只保存在你的设备上。\n我们看不到你的余额或交易。';
 
   @override
   String get aboutOpenSourceHeading => '开源，自主托管';
@@ -308,12 +308,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityGiftRedemptionFailed => '礼品卡兑换失败';
 
   @override
-  String get activityGiftStatusCreated => '已创建';
-
-  @override
-  String get activityGiftStatusCreating => '创建中…';
-
-  @override
   String get activityGiftStatusRedeemed => '已兑换';
 
   @override
@@ -399,9 +393,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityReceiptCardFee => '卡片手续费';
 
   @override
-  String get activityReceiptCards => '卡片';
-
-  @override
   String get activityReceiptDetails => '详情';
 
   @override
@@ -430,9 +421,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityReceiptNetChange => '净变动';
 
   @override
-  String get activityReceiptNetworkFee => '网络手续费';
-
-  @override
   String get activityReceiptOutput => '输出';
 
   @override
@@ -443,9 +431,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityReceiptUnattributedFeeHelp => '此交易的总手续费。你的账户承担的部分未知。';
-
-  @override
-  String get activityReceiptUnknownFee => '未知';
 
   @override
   String activityRowToday(String time) {
@@ -532,9 +517,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityTitleReceiveInProgress => '接收中...';
-
-  @override
-  String get activityTitleReceived => '已接收';
 
   @override
   String get activityTitleReceivedSuccessfully => '接收成功';
@@ -739,38 +721,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressScanCloseScanner => '关闭扫描器';
 
   @override
-  String get addressScanDefaultCamera => '默认摄像头';
-
-  @override
   String get addressScanDeniedTitle => '你已拒绝摄像头访问';
-
-  @override
-  String get addressScanEnableWindowsAccess => '请启用 Windows 摄像头访问';
 
   @override
   String get addressScanGrantAccess => '请授予摄像头访问权限';
 
   @override
-  String get addressScanLoadingCamera => '正在加载摄像头...';
-
-  @override
-  String get addressScanLoadingEllipsis => '正在加载...';
-
-  @override
-  String get addressScanNoCamera => '未找到摄像头';
-
-  @override
-  String get addressScanNoCameraOpened => '无法打开摄像头。请确认摄像头已连接且未被其他应用占用。';
-
-  @override
-  String get addressScanOpenSettings => '打开设置';
-
-  @override
   String get addressScanTitle => '扫描地址二维码';
-
-  @override
-  String get addressScanWindowsAccessHint =>
-      '请在 Windows 设置中开启“摄像头访问”和“允许桌面应用访问你的摄像头”。';
 
   @override
   String get addressScanZcashPrompt => '请扫描 Zcash 二维码以继续';
@@ -788,9 +745,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appBackReceive => '接收';
 
   @override
-  String get appBackResults => '结果';
-
-  @override
   String get appBackReview => '确认';
 
   @override
@@ -806,13 +760,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appBackTransaction => '交易';
 
   @override
-  String get appBackVotingRound => '投票轮次';
-
-  @override
   String get appExitBackHint => '再次返回即可退出';
-
-  @override
-  String get appGiftCloseCardFailed => '无法关闭卡片。请重试。';
 
   @override
   String appLinuxUpdateAvailable(String version) {
@@ -866,9 +814,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get appUpdateDownloadingTitle => '正在下载更新';
-
-  @override
-  String get appUpdateFailedTitle => '更新失败';
 
   @override
   String get appUpdateLater => '稍后';
@@ -943,6 +888,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonBackToWallet => '返回钱包';
 
   @override
+  String get commonCalculatingEllipsis => '正在计算…';
+
+  @override
+  String get commonCalculatingTotal => '正在计算总数';
+
+  @override
+  String get commonCamera => '摄像头';
+
+  @override
   String get commonCameraDeniedTitle => '你已拒绝摄像头访问';
 
   @override
@@ -967,6 +921,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCancelFailedRetry => '无法完成取消，请重试。';
 
   @override
+  String get commonCancelShielding => '取消屏蔽';
+
+  @override
   String get commonCancellationFailed => '无法完成取消，请重试。';
 
   @override
@@ -976,10 +933,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCannotBeUndone => '此操作无法撤销。';
 
   @override
+  String get commonCards => '卡片';
+
+  @override
   String get commonChainAndAddress => '链和地址';
 
   @override
   String get commonChangeContactPicture => '更换联系人头像';
+
+  @override
+  String get commonCheckAgain => '重新检查';
 
   @override
   String get commonChecking => '正在检查...';
@@ -989,6 +952,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonCheckingStatus => '正在检查状态';
+
+  @override
+  String get commonCheckingYourLedger => '正在检查你的 Ledger';
 
   @override
   String get commonClear => '清除';
@@ -1012,6 +978,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCompleted => '已完成';
 
   @override
+  String get commonConfirmOpeningZcash => '请确认打开 Zcash';
+
+  @override
+  String get commonConfirmWithKeystone => '使用 Keystone 确认';
+
+  @override
+  String get commonConfirming => '确认中';
+
+  @override
+  String get commonConnectLedger => '连接 Ledger';
+
+  @override
+  String get commonConnecting => '正在连接…';
+
+  @override
   String get commonContactLabelHint => '添加 1-20 个字符的标签';
 
   @override
@@ -1019,6 +1000,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonContinue => '继续';
+
+  @override
+  String get commonContinueAnyway => '仍然继续';
+
+  @override
+  String get commonContinueToReview => '继续查看';
 
   @override
   String get commonCopied => '已复制';
@@ -1030,7 +1017,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonCopyAddress => '复制地址';
 
   @override
+  String get commonCopyLink => '复制链接';
+
+  @override
   String get commonCopyShieldedAddress => '复制屏蔽地址';
+
+  @override
+  String get commonCouldnTCloseTheCardTry => '无法关闭卡片。请重试。';
+
+  @override
+  String get commonCreated => '已创建';
+
+  @override
+  String get commonCreating => '创建中…';
+
+  @override
+  String get commonCustomiseAccount => '自定义账户';
+
+  @override
+  String get commonCustomiseWallet => '自定义钱包';
+
+  @override
+  String get commonDefault => '默认';
+
+  @override
+  String get commonDefaultCamera => '默认摄像头';
 
   @override
   String get commonDismissNotification => '关闭通知';
@@ -1051,6 +1062,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonEdit => '编辑';
 
   @override
+  String get commonEnableWindowsCameraAccess => '请启用 Windows 摄像头访问';
+
+  @override
+  String get commonEnterAmount => '输入金额';
+
+  @override
+  String commonEnterAmountIn(String currency) {
+    return '以 $currency 输入金额';
+  }
+
+  @override
   String get commonEnterAmountInUsd => '以 USD 输入金额';
 
   @override
@@ -1067,6 +1089,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonGoBack => '返回';
+
+  @override
+  String get commonGoHome => '返回首页';
 
   @override
   String get commonGuaranteedMinimum => '保证最低金额';
@@ -1090,6 +1115,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonKeepScreenAwake => '保持屏幕常亮';
 
   @override
+  String get commonKeepVizorOpenWhileTheTransaction => '交易发送期间请保持 Vizor 打开。';
+
+  @override
   String get commonKeystoneAfterScan => '扫描后，请点击“获取签名”。';
 
   @override
@@ -1101,6 +1129,22 @@ class AppLocalizationsZh extends AppLocalizations {
       '请用 Keystone 钱包扫描此交易二维码，并按设备上的步骤操作。';
 
   @override
+  String get commonKeystoneSignatureCouldNotBeApplied => '无法应用 Keystone 签名。';
+
+  @override
+  String get commonKeystoneSigningCouldNotBePrepared => '无法准备 Keystone 签名。';
+
+  @override
+  String get commonKnight => '骑士';
+
+  @override
+  String get commonLedgerNeedsAttention => 'Ledger 需要处理';
+
+  @override
+  String get commonLedgerSigningCouldNotBeCompleted =>
+      '无法完成 Ledger 签名。请检查设备后重试。';
+
+  @override
   String get commonLedgerSigningFailed => 'Ledger 签名失败';
 
   @override
@@ -1108,6 +1152,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonLoadingActivity => '正在加载活动';
+
+  @override
+  String get commonLoadingCamera => '正在加载摄像头...';
+
+  @override
+  String get commonLoadingDots => '正在加载...';
+
+  @override
+  String get commonLoadingQRCode => '正在加载二维码 ...';
+
+  @override
+  String get commonMakeSureTheRoomIsWell => '请确保房间光线充足，且二维码没有反光。';
+
+  @override
+  String get commonManage => '管理';
 
   @override
   String get commonMemo => '备注';
@@ -1119,13 +1178,40 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonMessageIsTooLong => '留言太长';
 
   @override
+  String get commonMigrateToIronwood => '迁移到 Ironwood';
+
+  @override
+  String get commonMigrating => '正在迁移...';
+
+  @override
+  String get commonMigrationStopped => '迁移已停止';
+
+  @override
+  String get commonMigrationStoppedByNetworkUpgrade => '迁移因网络升级而停止';
+
+  @override
+  String get commonMoveTheQRCodeAFew => '请将二维码移到离摄像头稍远几英寸的位置，以便对焦。';
+
+  @override
   String get commonNetworkConversionFees => '网络 + 兑换手续费';
+
+  @override
+  String get commonNetworkFee => '网络手续费';
+
+  @override
+  String get commonNextStep => '下一步';
 
   @override
   String get commonNoActiveAccount => '没有活跃的账户';
 
   @override
   String get commonNoActiveAccountSentence => '没有活跃账户。';
+
+  @override
+  String get commonNoCameraCouldBeOpenedCheck => '无法打开摄像头。请确认摄像头已连接且未被其他应用占用。';
+
+  @override
+  String get commonNoCameraFound => '未找到摄像头';
 
   @override
   String get commonNotAvailableYet => '暂不可用';
@@ -1135,6 +1221,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonOk => '好';
+
+  @override
+  String get commonOnAMacYouCanUse => '在 Mac 上，你也可以使用连续互通相机，改用 iPhone 进行扫描。';
+
+  @override
+  String get commonOnYourKeystone => '按钮（位于你的 Keystone），';
+
+  @override
+  String get commonOpenSettings => '打开设置';
+
+  @override
+  String get commonOpenTheSignedTransactionQROn =>
+      '请在 Keystone 上打开已签名交易的二维码，然后重新扫描。';
 
   @override
   String get commonPayInsufficientZec => '你的 ZEC 不足以完成此支付。请尝试较小的金额。';
@@ -1155,6 +1254,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonPaymentRequest => '收款请求';
 
   @override
+  String get commonPending => '待处理';
+
+  @override
+  String get commonPleaseWait => '请稍候';
+
+  @override
+  String get commonPrepareYourKeystoneWallet => '请准备好你的 Keystone 钱包';
+
+  @override
+  String get commonPreparing => '准备中';
+
+  @override
+  String get commonPreparingDots => '准备中...';
+
+  @override
+  String get commonPreparingEllipsis => '准备中…';
+
+  @override
   String get commonPrivatelyFromShieldedBalance => '从屏蔽余额私密支付';
 
   @override
@@ -1168,6 +1285,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonRate => '汇率';
+
+  @override
+  String get commonReadingSignature => '正在读取签名...';
+
+  @override
+  String get commonReadingSignatureEllipsis => '正在读取签名…';
+
+  @override
+  String get commonReceived => '已接收';
 
   @override
   String get commonRecipientGets => '收款方将收到金额';
@@ -1199,6 +1325,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonResetVizor => '重置 Vizor';
 
   @override
+  String get commonResults => '结果';
+
+  @override
+  String get commonResume => '继续';
+
+  @override
   String get commonRetry => '重试';
 
   @override
@@ -1226,10 +1358,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonSaveContact => '保存联系人';
 
   @override
+  String get commonSaving => '正在保存';
+
+  @override
+  String get commonScanAgain => '重新扫描';
+
+  @override
   String get commonScanOriginalQr => '扫描原始二维码';
 
   @override
   String get commonScanQrCode => '扫描二维码';
+
+  @override
+  String get commonScanQrCodeSentenceCase => '扫描二维码';
+
+  @override
+  String get commonScanToSign => '扫码签名';
+
+  @override
+  String get commonScanWithKeystone => '使用 Keystone 扫描';
+
+  @override
+  String get commonScanWithYourKeystone => '使用你的 Keystone 扫描';
 
   @override
   String get commonSelectAccount => '选择账户';
@@ -1274,6 +1424,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonShowFullAddress => '显示完整地址';
 
   @override
+  String get commonShowTransactionQR => '显示交易二维码';
+
+  @override
   String get commonSigningCancelledBeforeParams => '在下载证明参数之前，签名已取消。';
 
   @override
@@ -1281,6 +1434,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonSlippageTolerance => '滑点容忍度';
+
+  @override
+  String get commonStepOneOfTwo => '第 1/2 步';
+
+  @override
+  String get commonStepTwoOfTwo => '第 2/2 步';
+
+  @override
+  String get commonSubmittingTransaction => '正在提交交易';
 
   @override
   String get commonSupportVizor => '支持 Vizor';
@@ -1308,6 +1470,24 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get commonSyncing => '正在同步';
+
+  @override
+  String get commonTap => '点按';
+
+  @override
+  String get commonThenScanThisQRCode => '然后扫描此二维码';
+
+  @override
+  String get commonThisQRCodeCouldNotBe => '无法将此二维码解码为 Keystone 签名。';
+
+  @override
+  String get commonThisQRCodeDoesNotMatch => '此二维码与当前 Keystone 请求不匹配。';
+
+  @override
+  String get commonTimeSUp => '时间到了';
+
+  @override
   String get commonTimestamp => '时间';
 
   @override
@@ -1322,6 +1502,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonToggleFlashlight => '切换手电筒';
 
   @override
+  String get commonTotal => '合计';
+
+  @override
   String get commonTransactionExpired => '交易已过期';
 
   @override
@@ -1334,7 +1517,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonTryAgain => '重试';
 
   @override
+  String get commonTurnOnCameraAccessAndLet =>
+      '请在 Windows 设置中开启“摄像头访问”和“允许桌面应用访问你的摄像头”。';
+
+  @override
   String get commonTxId => '交易 ID';
+
+  @override
+  String get commonUnknown => '未知';
 
   @override
   String get commonUnlockVizor => '解锁 Vizor';
@@ -1343,10 +1533,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonUpdate => '更改';
 
   @override
+  String get commonUpdateFailed => '更新失败';
+
+  @override
   String get commonUpdating => '正在更改...';
 
   @override
+  String get commonView => '查看';
+
+  @override
+  String get commonVizorIsCheckingWhetherTheZcash =>
+      'Vizor 正在检查 Zcash 应用是否已就绪。';
+
+  @override
+  String get commonVotingRound => '投票轮次';
+
+  @override
+  String get commonWaitingForConfirmation => '正在等待确认...';
+
+  @override
+  String get commonWaitingForWalletSync => '等待钱包同步';
+
+  @override
   String get commonWelcomeBack => '欢迎回来';
+
+  @override
+  String get commonWizard => '巫师';
 
   @override
   String get commonYouPay => '你支付';
@@ -1376,16 +1588,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get donationSendingFrom => '发送自';
 
   @override
-  String get donationSendingFromYour => '发送自您的';
+  String get donationSendingFromYour => '发送自你的';
 
   @override
   String get donationSwitchCurrency => '在 ZEC 和 USD 之间切换';
 
   @override
-  String get donationThanksTitle => '感谢您支持 Vizor';
-
-  @override
-  String get donationTotal => '合计';
+  String get donationThanksTitle => '感谢你支持 Vizor';
 
   @override
   String endpointCurrent(String endpoint) {
@@ -1470,9 +1679,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeLedgerBroadcastUnknown => '屏蔽交易可能已到达网络。重试前请先查看活动。';
 
   @override
-  String get homeLedgerCancelShielding => '取消屏蔽';
-
-  @override
   String get homeLedgerContextChanged => '所选账户或网络已更改。请返回钱包。';
 
   @override
@@ -1526,9 +1732,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get homeMigrateToIronwood => '迁移到 Ironwood';
-
-  @override
   String get homeMigrationRequired => '需要迁移';
 
   @override
@@ -1538,12 +1741,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String homeMigrationStillMigrating(String amount) {
     return '$amount 仍在迁移';
   }
-
-  @override
-  String get homeMigrationStoppedByUpgrade => '迁移因网络升级而停止';
-
-  @override
-  String get homeMigrationWaitingConfirmation => '正在等待确认...';
 
   @override
   String get homeNu7FasterBody => '首次确认的平均等待时间从约 75 秒缩短到约 25 秒。';
@@ -1658,12 +1855,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldErrorSeedUnavailable => '此账户的助记词不可用。';
 
   @override
-  String get homeShieldErrorSignatureNotApplied => '无法应用 Keystone 签名。';
-
-  @override
-  String get homeShieldErrorSigningNotPrepared => '无法准备 Keystone 签名。';
-
-  @override
   String get homeShieldErrorSyncFirst => '屏蔽透明余额之前，请先同步钱包。';
 
   @override
@@ -1679,13 +1870,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldGetSignature => '获取签名';
 
   @override
-  String get homeShieldKeepOpen => '交易发送期间请保持 Vizor 打开。';
-
-  @override
   String get homeShieldKeystoneQrSemantics => 'Keystone 交易二维码';
-
-  @override
-  String get homeShieldNextStep => '下一步';
 
   @override
   String get homeShieldNow => '立即屏蔽';
@@ -1697,13 +1882,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldQueuedTitle => '屏蔽已加入队列';
 
   @override
-  String get homeShieldReadingSignature => '正在读取签名…';
-
-  @override
   String get homeShieldReject => '拒绝';
-
-  @override
-  String get homeShieldScanDecodeFailed => '无法将此二维码解码为 Keystone 签名。';
 
   @override
   String get homeShieldScanTitle => '扫描 Keystone 签名';
@@ -1727,9 +1906,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeShieldStatusUncertain => '屏蔽交易的状态不确定。重试前请先查看活动。';
-
-  @override
-  String get homeShieldSubmitting => '正在提交交易';
 
   @override
   String get homeShieldWaitingForPrivateRecovery =>
@@ -1869,9 +2045,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneBirthdaySubtitle => '这有助于我们更快地导入你的钱包。';
 
   @override
-  String get keystoneCameraDefault => '默认';
-
-  @override
   String get keystoneCameraDeniedTitle => '你已拒绝摄像头权限';
 
   @override
@@ -1888,9 +2061,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get keystoneCameraGiftBody => '扫描礼品卡二维码需要使用摄像头。\n你之后可以随时在设置中更改。';
-
-  @override
-  String get keystoneCameraLabel => '摄像头';
 
   @override
   String keystoneCameraNameDefault(String name) {
@@ -1917,12 +2087,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneConfirmSelection => '确认选择';
 
   @override
-  String get keystoneConfirmWithKeystone => '使用 Keystone 确认';
-
-  @override
-  String get keystoneDefaultCamera => '默认摄像头';
-
-  @override
   String get keystoneFirmwareBody => '请确认你的 Keystone 已升级到最新的 Cypherpunk 固件。 ';
 
   @override
@@ -1944,37 +2108,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneImReadyNow => '我已准备好';
 
   @override
-  String get keystoneLoadingCamera => '正在加载摄像头...';
-
-  @override
-  String get keystoneLoadingQrCode => '正在加载二维码 ...';
-
-  @override
-  String get keystoneNextStep => '下一步';
-
-  @override
-  String get keystoneNoCameraFound => '未找到摄像头';
-
-  @override
-  String get keystoneNoCameraOpened => '无法打开任何摄像头。请检查摄像头是否已连接，且未被其他应用占用。';
-
-  @override
   String get keystoneOnVizor => '在 Vizor 中';
 
   @override
   String get keystoneOnYourKeystone => '在 Keystone 上';
-
-  @override
-  String get keystoneOpenSettings => '打开设置';
-
-  @override
-  String get keystoneOpenSignedQr => '请在 Keystone 上打开已签名交易的二维码，然后重新扫描。';
-
-  @override
-  String get keystonePcztPrepareFailed => '无法准备 Keystone 签名。';
-
-  @override
-  String get keystonePrepareSubtitle => '请准备好你的 Keystone 钱包';
 
   @override
   String get keystonePrepareToConnectTitle => '准备连接';
@@ -1984,9 +2121,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get keystoneReadingQr => '正在读取二维码...';
-
-  @override
-  String get keystoneReadingSignature => '正在读取签名...';
 
   @override
   String get keystoneScanCameraRequired =>
@@ -2019,34 +2153,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get keystoneScanPromptOnKeystone => '按钮（位于你的 Keystone），';
-
-  @override
-  String get keystoneScanPromptTap => '点按';
-
-  @override
-  String get keystoneScanPromptThenScan => '然后扫描此二维码';
-
-  @override
   String get keystoneScanReadingAccounts => '正在读取账户...';
-
-  @override
-  String get keystoneScanWithKeystone => '使用 Keystone 扫描';
 
   @override
   String get keystoneSelectCamera => '选择摄像头';
 
   @override
-  String get keystoneShowTransactionQr => '显示交易二维码';
-
-  @override
-  String get keystoneSignatureQrNotDecoded => '无法将此二维码解码为 Keystone 签名。';
-
-  @override
   String get keystoneStepHowToConnect => '连接方法';
-
-  @override
-  String get keystoneStepOneOfTwo => '第 1/2 步';
 
   @override
   String get keystoneStepOpenSoftwareWallet =>
@@ -2062,23 +2175,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneStepSelectVizor => '选择 Vizor（或 ZODL）';
 
   @override
-  String get keystoneStepTwoOfTwo => '第 2/2 步';
-
-  @override
   String get keystoneSubmittingTransaction => '正在提交交易';
 
   @override
-  String get keystoneTipContinuityCamera =>
-      '在 Mac 上，你也可以使用连续互通相机，改用 iPhone 进行扫描。';
-
-  @override
   String get keystoneTipGiftFullScreen => '请在另一台设备上全屏打开礼品卡二维码。';
-
-  @override
-  String get keystoneTipGiftMoveFurther => '请将二维码移到离摄像头稍远几英寸的位置，以便对焦。';
-
-  @override
-  String get keystoneTipGlare => '请确保房间光线充足，且二维码没有反光。';
 
   @override
   String get keystoneTipMoveKeystoneFurther =>
@@ -2092,13 +2192,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get keystoneTryAgainWithKeystone => '使用 Keystone 重试';
-
-  @override
-  String get keystoneWindowsCameraBody =>
-      '请在 Windows 设置中开启“摄像头访问”和“允许桌面应用访问你的摄像头”。';
-
-  @override
-  String get keystoneWindowsCameraTitle => '请启用 Windows 摄像头权限';
 
   @override
   String languageSystemOption(String language) {
@@ -2219,13 +2312,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerBtLabelAllowAccess => '允许访问';
 
   @override
-  String get ledgerBtLabelCheckAgain => '重新检查';
-
-  @override
   String get ledgerBtLabelChecking => '正在检查权限';
-
-  @override
-  String get ledgerBtLabelOpenSettings => '打开设置';
 
   @override
   String get ledgerBtLabelReconnect => '重新连接';
@@ -2319,16 +2406,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerButtonConnecting => '正在连接';
 
   @override
-  String get ledgerButtonSaving => '正在保存';
-
-  @override
   String get ledgerButtonSearching => '正在搜索';
 
   @override
   String get ledgerCancelFailed => '无法完成取消。请重试。';
-
-  @override
-  String get ledgerCancelShielding => '取消屏蔽';
 
   @override
   String get ledgerCancellingRequest => '正在取消请求';
@@ -2390,9 +2471,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ledgerConnectSubtitle => '请准备好你的 Ledger 钱包。';
-
-  @override
-  String get ledgerConnectTitle => '连接 Ledger';
 
   @override
   String get ledgerConnectUsbCable => '使用 USB 数据线连接。';
@@ -2815,9 +2893,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerOpenBluetoothSettingsManually => '请手动打开蓝牙设置以移除旧的配对。';
 
   @override
-  String get ledgerOpenSettings => '打开设置';
-
-  @override
   String get ledgerOpenZcashThenTryAgain => '请打开 Zcash 应用，然后重试。';
 
   @override
@@ -2950,9 +3025,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerSigningCheckAmountRecipient => '出现提示时，请在 Ledger 上核对金额和收款方。';
 
   @override
-  String get ledgerSigningCheckingZcashReady => 'Vizor 正在检查 Zcash 应用是否已就绪。';
-
-  @override
   String get ledgerSigningCloseSemantics => '关闭 Ledger';
 
   @override
@@ -3005,9 +3077,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerSigningStatusReview => '在设备上查看';
 
   @override
-  String get ledgerSigningStatusWait => '请稍候';
-
-  @override
   String get ledgerSigningStatusWaitingApproval => '正在等待你的批准';
 
   @override
@@ -3020,13 +3089,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get ledgerSigningStepReview => '在 Ledger 上查看';
 
   @override
-  String get ledgerSigningTitleChecking => '正在检查你的 Ledger';
-
-  @override
   String get ledgerSigningTitleConfirmOnLedger => '请在 Ledger 上确认';
-
-  @override
-  String get ledgerSigningTitleConfirmOpening => '请确认打开 Zcash';
 
   @override
   String get ledgerSigningTitleFinishing => '正在完成交易';
@@ -3053,9 +3116,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ledgerSigningWaitInstruction => 'Ledger 正在准备签名。几秒钟内可能看起来没有响应。';
-
-  @override
-  String get ledgerStatusConnecting => '正在连接…';
 
   @override
   String get ledgerStatusFollowPrompts => '请按照 Ledger 上的提示操作';
@@ -3229,16 +3289,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationAnalyzingBalance => '正在分析您的余额...';
+  String get migrationAnalyzingBalance => '正在分析你的余额...';
 
   @override
-  String get migrationAnalyzingCaption => 'Vizor 正在为您的迁移寻找安全、隐私\n与速度之间的最佳平衡';
+  String get migrationAnalyzingCaption => 'Vizor 正在为你的迁移寻找安全、隐私\n与速度之间的最佳平衡';
 
   @override
   String get migrationAnalyzingFindingBatches => '正在寻找私密批次...';
 
   @override
-  String get migrationAnalyzingPreparingPlan => '正在准备您的迁移计划...';
+  String get migrationAnalyzingPreparingPlan => '正在准备你的迁移计划...';
 
   @override
   String get migrationAnalyzingSemanticsLabel => '正在准备私密迁移计划';
@@ -3323,9 +3383,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationBroadcastPending => '待处理';
-
-  @override
   String get migrationBroadcastSubmitted => '已提交';
 
   @override
@@ -3335,15 +3392,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationCarouselProgressLabel => '迁移说明';
 
   @override
-  String get migrationCompleteBody => '迁移已成功完成，\n您可以像往常一样使用资金。';
+  String get migrationCompleteBody => '迁移已成功完成，\n你可以像往常一样使用资金。';
 
   @override
   String migrationCompleteTitle(String amount) {
-    return '您的\n$amount ZEC\n已在 Ironwood 上！';
+    return '你的\n$amount ZEC\n已在 Ironwood 上！';
   }
-
-  @override
-  String get migrationConfirming => '确认中';
 
   @override
   String get migrationContinueMigration => '继续迁移';
@@ -3353,9 +3407,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationCtaStart => '迁移到 Ironwood 资金池';
-
-  @override
-  String get migrationCtaStopped => '迁移因网络升级而中止';
 
   @override
   String get migrationCurrentBatch => '当前批次';
@@ -3466,7 +3517,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationExpectKeepRunningBody =>
-      '您的电脑需要保持解锁且 Vizor 正在运行，这样我们才能发送下一笔迁移交易';
+      '你的电脑需要保持解锁且 Vizor 正在运行，这样我们才能发送下一笔迁移交易';
 
   @override
   String get migrationExpectLongBody => '根据迁移金额的不同，Ironwood 迁移可能需要数小时到几天不等。';
@@ -3493,23 +3544,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationFlowTitle => 'Ironwood 迁移';
 
   @override
-  String get migrationGoHome => '返回首页';
-
-  @override
   String get migrationHowDelayedBody => '为降低可追踪性，Vizor 会分多个批次、错开时间间隔缓慢发送各部分。';
 
   @override
   String get migrationHowDelayedTitle => '延迟且随机的迁移';
 
   @override
-  String get migrationHowFrozenBody => '要使用您现有的屏蔽余额，需要一次性迁移到 Ironwood。';
+  String get migrationHowFrozenBody => '要使用你现有的屏蔽余额，需要一次性迁移到 Ironwood。';
 
   @override
   String get migrationHowFrozenTitle => 'Orchard（旧版屏蔽）余额已冻结';
 
   @override
   String get migrationHowPreparationBody =>
-      '迁移前，Vizor 会将您的全部余额拆分为许多较小的票据（例如 0.1 ZEC / 1 ZEC / 5 ZEC）。';
+      '迁移前，Vizor 会将你的全部余额拆分为许多较小的票据（例如 0.1 ZEC / 1 ZEC / 5 ZEC）。';
 
   @override
   String get migrationHowPreparationTitle => '迁移前的准备';
@@ -3538,9 +3586,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationHowTitle => '迁移的工作方式';
 
   @override
-  String get migrationImmediateAmount => '金额';
-
-  @override
   String get migrationImmediateAuthoriseAnyway => '仍然授权';
 
   @override
@@ -3548,9 +3593,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationImmediateAuthorisingSemantics => '正在授权迁移';
-
-  @override
-  String get migrationImmediateCalculating => '正在计算…';
 
   @override
   String get migrationImmediateConsiderOther => '考虑其他选项';
@@ -3571,11 +3613,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationImmediateReviewTitle => '查看迁移计划';
 
   @override
-  String get migrationImmediateTradeoffEmphasis => '更容易与您的钱包关联。';
+  String get migrationImmediateTradeoffEmphasis => '更容易与你的钱包关联。';
 
   @override
   String migrationImmediateTradeoffLead(String amount) {
-    return '将在一个可见的步骤中完成，您的 $amount 和时间点会 ';
+    return '将在一个可见的步骤中完成，你的 $amount 和时间点会 ';
   }
 
   @override
@@ -3608,20 +3650,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String migrationIntroBody(String amount) {
-    return '您的 $amount ZEC 目前在 Orchard 中。\n要继续将这些资金用于屏蔽支付，您需要将其迁移到 Ironwood。资金转移前，您会先查看迁移计划。';
+    return '你的 $amount ZEC 目前在 Orchard 中。\n要继续将这些资金用于屏蔽支付，你需要将其迁移到 Ironwood。资金转移前，你会先查看迁移计划。';
   }
 
   @override
   String get migrationIntroTagline => 'Zcash 全新的屏蔽资金池。';
 
   @override
-  String get migrationKeystoneAfterScanInstruction => '扫描后，请点击“获取签名”。';
-
-  @override
   String get migrationKeystoneApplyingSignature => '正在应用 Keystone 签名。';
 
   @override
-  String get migrationKeystoneApplyingToPlan => '正在将 Keystone 签名应用到您的迁移计划。';
+  String get migrationKeystoneApplyingToPlan => '正在将 Keystone 签名应用到你的迁移计划。';
 
   @override
   String get migrationKeystoneBackToReview => '返回查看';
@@ -3631,9 +3670,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationKeystoneBeginSigning => '开始签名';
-
-  @override
-  String get migrationKeystoneCamera => '摄像头';
 
   @override
   String get migrationKeystoneCameraAccess => '请允许访问摄像头以扫描已签名的 Keystone 二维码。';
@@ -3662,12 +3698,6 @@ class AppLocalizationsZh extends AppLocalizations {
       '请更新 Keystone 固件以签署 Ironwood 迁移，然后重试。';
 
   @override
-  String get migrationKeystoneGetSignature => '获取签名';
-
-  @override
-  String get migrationKeystoneKeepQrSteady => '请保持二维码稳定并完整可见。';
-
-  @override
   String get migrationKeystoneMobileTitle => 'Keystone 迁移';
 
   @override
@@ -3685,12 +3715,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationKeystonePrepareFailed => '无法准备 Keystone 签名，请重试。';
-
-  @override
-  String get migrationKeystonePrepareWallet => '请准备好您的 Keystone 钱包';
-
-  @override
-  String get migrationKeystonePreparing => '准备中';
 
   @override
   String get migrationKeystonePreparingQr => '正在准备二维码...';
@@ -3727,9 +3751,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get migrationKeystoneQrBodyRound =>
       '使用 Keystone 扫描此请求二维码。完成后，Keystone 会显示新的已签名二维码。';
-
-  @override
-  String get migrationKeystoneReadingSignature => '正在读取签名...';
 
   @override
   String get migrationKeystoneRequestCancelled => '此签名请求已取消，请重新准备。';
@@ -3772,16 +3793,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationKeystoneScanNewQr => '请扫描 Keystone 上显示的新已签名二维码。';
 
   @override
-  String get migrationKeystoneScanQrCode => '扫描二维码';
-
-  @override
   String get migrationKeystoneScanRequest => '使用 Keystone 扫描请求';
 
   @override
   String get migrationKeystoneScanSignature => '扫描 Keystone 签名';
-
-  @override
-  String get migrationKeystoneScanSubtitle => '使用您的 Keystone 扫描';
 
   @override
   String get migrationKeystoneSignBatch => '签署 Ironwood 批次';
@@ -3791,9 +3806,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationKeystoneSignPrivateSplit => '签署私密拆分';
-
-  @override
-  String get migrationKeystoneSignatureFailed => '无法应用 Keystone 签名。';
 
   @override
   String migrationKeystoneSignsAll(String transactions) {
@@ -3855,7 +3867,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationLedgerBroadcast => '无法广播迁移交易。';
 
   @override
-  String get migrationLedgerConnect => '请连接并解锁您的 Ledger，然后打开 Zcash 应用。';
+  String get migrationLedgerConnect => '请连接并解锁你的 Ledger，然后打开 Zcash 应用。';
 
   @override
   String get migrationLedgerFailed => '无法完成 Ledger 迁移。';
@@ -3870,7 +3882,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationLedgerProofs => 'Vizor 无法完成迁移证明的准备。';
 
   @override
-  String get migrationLedgerRejected => '迁移交易已在您的 Ledger 上被拒绝。';
+  String get migrationLedgerRejected => '迁移交易已在你的 Ledger 上被拒绝。';
 
   @override
   String get migrationLedgerTitle => '使用 Ledger 迁移';
@@ -3879,9 +3891,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String migrationLeftToTransfer(String amount) {
     return '待转移：$amount';
   }
-
-  @override
-  String get migrationManage => '管理';
 
   @override
   String get migrationManageCancelling => '正在取消...';
@@ -3905,16 +3914,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationManageImmediateIntro => '立即处理剩余的迁移。';
 
   @override
-  String get migrationManageLoading => '加载中...';
-
-  @override
   String get migrationManageNoBalance => '没有剩余的 Orchard 余额可迁移。';
 
   @override
   String get migrationManageStop => '停止迁移';
 
   @override
-  String get migrationManageStopBody => '这将取消剩余已安排的迁移交易。您可以在首页重新开始迁移。';
+  String get migrationManageStopBody => '这将取消剩余已安排的迁移交易。你可以在首页重新开始迁移。';
 
   @override
   String get migrationManageStopTitle => '确定要停止吗？';
@@ -4008,22 +4014,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileAttentionStoppedTitle => '迁移因网络升级而停止';
-
-  @override
-  String get migrationMobileBackHome => '返回首页';
-
-  @override
   String get migrationMobileBackToHome => '返回首页';
 
   @override
-  String get migrationMobileBannerInProgress => '迁移进行中';
-
-  @override
   String get migrationMobileBannerLate => '迁移需要处理';
-
-  @override
-  String get migrationMobileBannerPreparing => '正在准备迁移';
 
   @override
   String get migrationMobileBannerProof => '下一个迁移批次已就绪';
@@ -4042,15 +4036,6 @@ class AppLocalizationsZh extends AppLocalizations {
     );
     return '$_temp0';
   }
-
-  @override
-  String get migrationMobileBannerStart => '迁移到 Ironwood';
-
-  @override
-  String get migrationMobileBannerStopped => '迁移已停止';
-
-  @override
-  String get migrationMobileBannerWaiting => '正在等待确认...';
 
   @override
   String migrationMobileBatchProgress(int completed, int total) {
@@ -4072,49 +4057,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileCompleteTitle => '全部完成！';
 
   @override
-  String get migrationMobileContinueError => '无法继续迁移。请重试。';
-
-  @override
   String get migrationMobileContinueThisError => '无法继续此迁移。请重试。';
 
   @override
   String get migrationMobileCredentialsRestore => '继续之前，需要先恢复你的迁移凭据。';
-
-  @override
-  String get migrationMobileErrorBroadcast => '无法广播迁移交易。请重试。';
-
-  @override
-  String get migrationMobileErrorPlanChanged => '金额或手续费已变化。请查看更新后的详情。';
-
-  @override
-  String get migrationMobileErrorStart => '无法开始迁移。请重试。';
-
-  @override
-  String get migrationMobileErrorSyncFirst => '请等待同步完成后重试。';
-
-  @override
-  String get migrationMobileErrorUnlock => '开始迁移前，请先解锁 Vizor。';
-
-  @override
-  String get migrationMobileEstCompletion => '预计完成';
-
-  @override
-  String get migrationMobileFastConsiderOther => '考虑其他选项';
-
-  @override
-  String get migrationMobileFastContinueAnyway => '仍然继续';
-
-  @override
-  String get migrationMobileFastDurationRow => '迁移完成用时';
-
-  @override
-  String get migrationMobileFastFeesRow => '手续费（预估）';
-
-  @override
-  String get migrationMobileFastNoBalance => '没有可用于立即迁移的可花费 Orchard 余额。';
-
-  @override
-  String get migrationMobileFastPlanCalculating => '正在计算…';
 
   @override
   String get migrationMobileFastPlanError => '无法计算立即迁移的手续费。请同步后重试。';
@@ -4126,21 +4072,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileFastPrivacyBodyHighlight => '更容易与你的钱包关联';
 
   @override
-  String migrationMobileFastPrivacyBodyLead(String amount) {
-    return '在一个可见步骤中完成转移 — 你的 $amount 和时间点 ';
-  }
-
-  @override
   String get migrationMobileFastPrivacyConsiderPrivate => '建议选择私密迁移选项。';
 
   @override
   String get migrationMobileFastPrivacyLedger => 'Ledger 账户不支持私密迁移。';
-
-  @override
-  String get migrationMobileFastPrivacyTitle => '隐私取舍';
-
-  @override
-  String get migrationMobileFastRetryCalculation => '重新计算';
 
   @override
   String migrationMobileFastSubmittedBody(String amount) {
@@ -4154,25 +4089,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileFastTitle => '快速迁移';
 
   @override
-  String get migrationMobileGoHome => '返回首页';
-
-  @override
-  String get migrationMobileHeroBadge => '迁移';
-
-  @override
-  String get migrationMobileHeroIronwoodPool => 'Ironwood 池';
-
-  @override
-  String get migrationMobileHeroLegacy => '（旧版）';
-
-  @override
-  String get migrationMobileHeroOrchardPool => 'Orchard 池';
-
-  @override
   String get migrationMobileHowItWorksNavTitle => '关于';
-
-  @override
-  String get migrationMobileHowItWorksTitle => '迁移的运作方式';
 
   @override
   String migrationMobileIntroBody(String amount) {
@@ -4181,9 +4098,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileIntroReleaseNote => '官方发布说明';
-
-  @override
-  String get migrationMobileIntroTagline => 'Zcash 的全新屏蔽池。';
 
   @override
   String get migrationMobileIntroTitle => 'Zcash 网络升级';
@@ -4199,9 +4113,6 @@ class AppLocalizationsZh extends AppLocalizations {
       '使用 Keystone 确认迁移准备';
 
   @override
-  String get migrationMobileKeystoneConfirmTitle => '使用 Keystone 确认迁移';
-
-  @override
   String get migrationMobileKeystoneConfirmTransferSemantics =>
       '使用 Keystone 确认迁移转账';
 
@@ -4214,21 +4125,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileKeystoneLoadingQrSemantics => '正在加载二维码';
-
-  @override
-  String get migrationMobileKeystoneLoadingQrText => '正在加载二维码 ...';
-
-  @override
-  String get migrationMobileKeystoneNextStep => '下一步';
-
-  @override
-  String get migrationMobileKeystonePromptOnDevice => 'Keystone 上点击，';
-
-  @override
-  String get migrationMobileKeystonePromptTap => '请在';
-
-  @override
-  String get migrationMobileKeystonePromptThenScan => '然后扫描此二维码';
 
   @override
   String get migrationMobileKeystoneReconnect =>
@@ -4255,32 +4151,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileKeystoneScanProgress => '扫描进度';
 
   @override
-  String get migrationMobileKeystoneScanTitle => '使用 Keystone 扫描';
-
-  @override
   String get migrationMobileKeystoneScanTransferSemantics =>
       '扫描 Keystone 上已签名的迁移转账';
-
-  @override
-  String get migrationMobileKeystoneShowTxQr => '显示交易二维码';
-
-  @override
-  String get migrationMobileKeystoneStep1 => '第 1/2 步';
-
-  @override
-  String get migrationMobileKeystoneStep2 => '第 2/2 步';
-
-  @override
-  String get migrationMobileLeftToMigrate => '待迁移金额';
 
   @override
   String get migrationMobileManageCheckError => '无法检查迁移状态。请重试。';
 
   @override
   String get migrationMobileManageChecking => '正在检查迁移状态...';
-
-  @override
-  String get migrationMobileManageConfirm => '确认';
 
   @override
   String get migrationMobileManageNoRevert => '已广播的交易不会被撤销。';
@@ -4296,9 +4174,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileManageStopTitle => '停止迁移？';
-
-  @override
-  String get migrationMobileManageStopping => '正在停止...';
 
   @override
   String get migrationMobileManageSwitchAction => '切换到快速迁移';
@@ -4317,9 +4192,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileManageUnavailable => '此迁移已无法管理。';
 
   @override
-  String get migrationMobileManageUpdateError => '无法更新迁移。请重试。';
-
-  @override
   String get migrationMobileManageWaitingBroadcast => '正在等待进行中的广播完成，然后停止剩余的迁移。';
 
   @override
@@ -4330,9 +4202,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String migrationMobileNextExpectedIn(String timing) {
     return '预计下一个迁移步骤将在\n$timing。';
   }
-
-  @override
-  String get migrationMobileNextMigration => '下一次迁移';
 
   @override
   String migrationMobileNextNotificationsOffBlock(int height, String timing) {
@@ -4404,30 +4273,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileOptionImmediateTitle => '立即';
-
-  @override
   String get migrationMobileOptionPrivateBody =>
       '将交易拆分为多个部分以尽量降低可追踪性，但需要数小时到数天。';
 
   @override
-  String get migrationMobileOptionPrivateTitle => '私密';
-
-  @override
   String get migrationMobileOptionPrivateUnavailableAndroid => 'Android 上不可用。';
-
-  @override
-  String get migrationMobileOptionPrivateUnavailableLedger => 'Ledger 账户不可用。';
 
   @override
   String get migrationMobileOptionsNavTitle => '迁移方式';
 
   @override
   String get migrationMobileOptionsOpenError => '无法打开迁移准备。请重试。';
-
-  @override
-  String get migrationMobileOptionsSubtitle =>
-      '请选择随时间推移获得更高隐私，或更快完成迁移。在任何资金移动之前，你可以先查看详细信息。';
 
   @override
   String get migrationMobileOptionsSubtitleAndroid =>
@@ -4445,11 +4301,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String migrationMobileOptionsSubtitleLedgerRest(String amount) {
     return '$amount ZEC 仍在 Orchard 中。Ledger 账户不支持私密迁移。请选择“立即”以继续。';
-  }
-
-  @override
-  String migrationMobileOptionsSubtitleRest(String amount) {
-    return '$amount ZEC 仍在 Orchard 中。请选择随时间推移获得更高隐私，或更快完成迁移。';
   }
 
   @override
@@ -4503,10 +4354,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobilePrepDuration => '准备大约需要\n10–20 分钟';
-
-  @override
-  String get migrationMobilePrepInfoOrganizing =>
-      '我们正在将你的余额整理为常见大小的若干部分，这会让你的迁移更难被关联。';
 
   @override
   String get migrationMobilePrepInfoThenBegin => '准备完成后，你的迁移即可开始。';
@@ -4570,9 +4417,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileProgressConfirmations => '正在等待确认';
-
-  @override
   String get migrationMobileProgressNextStep => '正在等待下一个迁移步骤';
 
   @override
@@ -4580,9 +4424,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileProgressScheduledReady => '计划的交易已就绪';
-
-  @override
-  String get migrationMobileProgressSyncing => '正在同步';
 
   @override
   String get migrationMobileProgressSyncingBody => '正在检查最新的确认和迁移状态。';
@@ -4608,9 +4449,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileRebuildTitle => '重建迁移？';
 
   @override
-  String get migrationMobileRecommended => '推荐';
-
-  @override
   String get migrationMobileRecover => '恢复';
 
   @override
@@ -4620,25 +4458,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileRecoveryRequired => '需要恢复迁移。';
 
   @override
-  String get migrationMobileResume => '继续';
-
-  @override
   String get migrationMobileResuming => '正在恢复...';
 
   @override
   String get migrationMobileRetryAutomatically => 'Vizor 将自动重试。';
 
   @override
-  String get migrationMobileRetrying => '正在重试...';
-
-  @override
-  String get migrationMobileReviewPlanTitle => '查看迁移计划';
-
-  @override
   String get migrationMobileSavedTxError => '无法重新打开两笔已保存的交易。';
-
-  @override
-  String get migrationMobileScheduleCalculating => '正在计算';
 
   @override
   String get migrationMobileScheduleChange => '找零';
@@ -4649,19 +4475,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileScheduleCurrentBlock => '当前区块';
-
-  @override
-  String get migrationMobileScheduleDueNow => '即将到期';
-
-  @override
   String get migrationMobileScheduleDuration => '持续时间';
 
   @override
   String get migrationMobileScheduleLoading => '正在加载迁移计划';
-
-  @override
-  String get migrationMobileScheduleManage => '管理';
 
   @override
   String get migrationMobileScheduleMigrating => '迁移中…';
@@ -4681,25 +4498,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileScheduleOverdue => '已逾期';
 
   @override
-  String get migrationMobileSchedulePending => '计划待定';
-
-  @override
   String get migrationMobileSchedulePreparationProgress => '准备进度';
 
   @override
-  String get migrationMobileSchedulePreparationTitle => '准备计划';
-
-  @override
-  String get migrationMobileSchedulePreparing => '正在准备计划';
-
-  @override
-  String get migrationMobileSchedulePreparingState => '准备中';
-
-  @override
   String get migrationMobileScheduleReadyIn => '准备就绪还需';
-
-  @override
-  String get migrationMobileScheduleReadyToSign => '准备签名';
 
   @override
   String get migrationMobileScheduleReturn => '返回';
@@ -4713,9 +4515,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileScheduleRoundsRemaining => '剩余轮次';
 
   @override
-  String get migrationMobileScheduleScheduled => '已计划';
-
-  @override
   String get migrationMobileScheduleSpendable => 'Ironwood 可花费';
 
   @override
@@ -4724,22 +4523,8 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileScheduleTitle => '迁移计划';
-
-  @override
   String get migrationMobileScheduleUnavailableBody =>
       'Vizor 无法加载最新计划。你已保存的迁移状态保持不变。';
-
-  @override
-  String get migrationMobileScheduleUnavailableTitle => '迁移计划不可用';
-
-  @override
-  String get migrationMobileScheduleWaitingMined => '等待打包';
-
-  @override
-  String migrationMobileScheduleWindow(String height) {
-    return '窗口 #$height';
-  }
 
   @override
   String get migrationMobileSpendableBalance => '当前可花费余额';
@@ -4757,16 +4542,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileStartMessageOrganizing => '正在整理迁移批次...';
 
   @override
-  String get migrationMobileStartMessagePlan => '正在准备你的迁移计划...';
-
-  @override
   String get migrationMobileStartMessagePreparing => '正在准备你的迁移...';
 
   @override
   String get migrationMobileStartReadyBody => '继续以使用 Keystone 一并签署准备交易和迁移批次。';
-
-  @override
-  String get migrationMobileStartReadyTitle => '准备签名';
 
   @override
   String migrationMobileStatusNotesCount(int count) {
@@ -4775,15 +4554,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileStatusNotesLead => '迁移 ';
-
-  @override
-  String get migrationMobileStatusTitle => 'Ironwood 迁移';
-
-  @override
-  String get migrationMobileStoppedMoved => '已迁移到 Ironwood';
-
-  @override
-  String get migrationMobileStoppedRemaining => '仍在 Orchard 中';
 
   @override
   String get migrationMobileSyncingProgress => '正在同步迁移进度。';
@@ -4847,16 +4617,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationNextActionDetailPreparing => '正在准备迁移';
 
   @override
-  String get migrationNextActionDetailReadyToSign => '可以签名';
+  String get migrationNextActionDetailReadyToSign => '准备签名';
 
   @override
   String get migrationNextActionDetailSendingNow => '正在发送';
 
   @override
   String get migrationNextActionDetailWaitingForConfirmations => '等待确认';
-
-  @override
-  String get migrationNextActionDetailWaitingForSync => '等待钱包同步';
 
   @override
   String get migrationNextActionLabelAwaitingMining => '等待打包';
@@ -4934,7 +4701,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationOptionRecommended => '推荐';
 
   @override
-  String get migrationOptionsBody => '请选择随时间推移获得更高隐私，还是更快完成迁移。在资金转移前，您可以先查看详情。';
+  String get migrationOptionsBody => '请选择随时间推移获得更高隐私，还是更快完成迁移。在资金转移前，你可以先查看详情。';
 
   @override
   String migrationOptionsBodyMoveRest(String amount) {
@@ -4949,9 +4716,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationOptionsTitleMoveRest => '如何迁移剩余部分';
-
-  @override
-  String get migrationOverallCalculatingTotal => '正在计算总数';
 
   @override
   String migrationOverallProgress(String completed, String total) {
@@ -4995,10 +4759,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationPreparationTipOrganizing =>
-      '我们正在把您的余额整理成常见大小的部分，这样迁移更难被关联。';
+      '我们正在把你的余额整理成常见大小的部分，这样迁移更难被关联。';
 
   @override
-  String get migrationPreparationTipRounds => '根据您的余额，可能需要进行多轮票据拆分。';
+  String get migrationPreparationTipRounds => '根据你的余额，可能需要进行多轮票据拆分。';
 
   @override
   String get migrationPreparingBatch => '正在准备批次...';
@@ -5007,15 +4771,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationPrivacyLockDescription => '由于 10 分钟无操作，我们已自动锁定 Vizor。';
 
   @override
-  String get migrationPrivacyLockInProgress => '迁移进行中';
-
-  @override
   String migrationProgressTipBlockTime(String seconds) {
     return '每个 Zcash 区块大约需要 $seconds 秒生成，但实际时间会随网络状况而变化。';
   }
 
   @override
-  String get migrationProgressTipClose => '您可以随时关闭 Vizor。迁移会暂停，返回后可以重新开始。';
+  String get migrationProgressTipClose => '你可以随时关闭 Vizor。迁移会暂停，返回后可以重新开始。';
 
   @override
   String get migrationProgressTipKeepRunning => '保持 Vizor 运行，迁移会在后台自动进行。';
@@ -5149,9 +4910,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationSchedulePending => '日程待定';
 
   @override
-  String get migrationSchedulePreparing => '准备中';
-
-  @override
   String get migrationScheduleReadyToMigrate => '迁移就绪时间';
 
   @override
@@ -5181,9 +4939,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String migrationScheduleSemanticsBroadcast(String height) {
     return '已广播，等待打包，预计在区块 $height 完成';
   }
-
-  @override
-  String get migrationScheduleSemanticsCompleted => '已完成';
 
   @override
   String migrationScheduleSemanticsCompletedAt(String height) {
@@ -5292,7 +5047,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationScheduleUnavailableBody =>
-      'Vizor 无法加载最新的迁移日程。您已保存的迁移状态保持不变。';
+      'Vizor 无法加载最新的迁移日程。你已保存的迁移状态保持不变。';
 
   @override
   String get migrationScheduleUnavailableTitle => '无法获取迁移日程';
@@ -5351,13 +5106,10 @@ class AppLocalizationsZh extends AppLocalizations {
       'Vizor 正在广播已准备好的 Ironwood 迁移交易。';
 
   @override
-  String get migrationStatusBroadcastingButton => '广播中';
+  String get migrationStatusCompleteBody => '你的资金已转入 Ironwood 资金池。';
 
   @override
-  String get migrationStatusCompleteBody => '您的资金已转入 Ironwood 资金池。';
-
-  @override
-  String get migrationStatusCompleteFooter => '您可以返回首页继续使用 Vizor。';
+  String get migrationStatusCompleteFooter => '你可以返回首页继续使用 Vizor。';
 
   @override
   String get migrationStatusCompleteTitle => '迁移完成';
@@ -5378,13 +5130,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationStatusDefaultTitle => '迁移状态';
 
   @override
-  String get migrationStatusLeaveFooter => '您可以离开此页面。\n但请保持 Vizor 打开并运行。';
+  String get migrationStatusLeaveFooter => '你可以离开此页面。\n但请保持 Vizor 打开并运行。';
 
   @override
   String get migrationStatusLedgerUnsupported => '此流程需要批量签名，因此不支持 Ledger 私密迁移。';
-
-  @override
-  String get migrationStatusMigratingTitle => '正在迁移...';
 
   @override
   String get migrationStatusPausedBody => '私密迁移已在下一步之前暂停。';
@@ -5405,9 +5154,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationStatusPreparingBody => '每次拆分通常需要约 30 分钟。';
 
   @override
-  String get migrationStatusPreparingTitle => '正在准备...';
-
-  @override
   String get migrationStatusReadyBody => '私密拆分已就绪。下一步将准备 Ironwood 迁移批次。';
 
   @override
@@ -5417,7 +5163,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationStatusReadyTitle => '可以开始迁移';
 
   @override
-  String get migrationStatusScheduledBody => '您的迁移交易已准备好，正在等待预定的广播时间。';
+  String get migrationStatusScheduledBody => '你的迁移交易已准备好，正在等待预定的广播时间。';
 
   @override
   String get migrationStatusScheduledFooter => 'Vizor 打开期间，迁移程序会推进已安排的广播。';
@@ -5462,7 +5208,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationUpgradeStopBody => '升级前已签名的转账在升级后无法发送。您的资金是安全的。';
+  String get migrationUpgradeStopBody => '升级前已签名的转账在升级后无法发送。你的资金是安全的。';
 
   @override
   String get migrationUpgradeStopMoveRemainingLabel => '迁移剩余余额';
@@ -5475,9 +5221,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationUpgradeStopRingMessage => '因网络升级\n而中止';
-
-  @override
-  String get migrationView => '查看';
 
   @override
   String get migrationViewSchedule => '查看日程';
@@ -5674,19 +5417,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingConnectKeystone => '连接 Keystone';
 
   @override
-  String get onboardingConnectLedger => '连接 Ledger';
-
-  @override
   String get onboardingContinueAnywayDesktop => '仍然继续';
 
   @override
-  String get onboardingContinueAnywayMobile => '仍然继续';
-
-  @override
   String get onboardingCreatingWallet => '正在创建钱包...';
-
-  @override
-  String get onboardingCustomiseAccount => '自定义账户';
 
   @override
   String get onboardingCustomiseAccountSubtitle => '设置账户名称并选择头像，为你的账户增添个性。';
@@ -6000,9 +5734,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get onboardingStepAddressTypes => '地址类型';
 
   @override
-  String get onboardingStepCustomiseWallet => '自定义钱包';
-
-  @override
   String get onboardingStepImportContacts => '导入联系人';
 
   @override
@@ -6206,9 +5937,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get payRecipientAddressLabel => '收款地址';
 
   @override
-  String get payRecipientScanQr => '扫描二维码';
-
-  @override
   String get payRefreshingQuote => '正在刷新报价';
 
   @override
@@ -6240,9 +5968,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paySaveContactError => '无法保存此联系人。请重试。';
-
-  @override
-  String get paySaving => '正在保存';
 
   @override
   String get payScanBarrierDismiss => '关闭';
@@ -6331,14 +6056,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String paymentLinkAmountCurrencySemantic(String currency) {
-    return '以 $currency 输入金额';
-  }
-
-  @override
-  String get paymentLinkAmountEnterAmount => '输入金额';
-
-  @override
   String get paymentLinkAmountEnterDollars => '输入美元金额';
 
   @override
@@ -6380,13 +6097,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkArtworkDragon => '巨龙';
 
   @override
-  String get paymentLinkArtworkGandalf => '巫师';
-
-  @override
   String get paymentLinkArtworkGift => '礼盒';
-
-  @override
-  String get paymentLinkArtworkKnight => '骑士';
 
   @override
   String get paymentLinkArtworkKnightMagic => '魔法骑士';
@@ -6622,9 +6333,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkCardUpdateFailed => '无法更新卡片。请重试。';
 
   @override
-  String get paymentLinkCardsLabel => '卡片';
-
-  @override
   String get paymentLinkCardsLoadFailed => '无法加载礼品卡。';
 
   @override
@@ -6664,16 +6372,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkCheckingGiftFull => '正在检查礼物… 100%';
 
   @override
-  String get paymentLinkCheckingLabel => '检查中…';
-
-  @override
   String get paymentLinkChooseReceivingAccount => '选择接收账户';
 
   @override
   String get paymentLinkClaimAccountPrepareFailed => '无法准备这份礼物。请重试或选择其他账户。';
-
-  @override
-  String get paymentLinkClaimActionCheckAgain => '重新检查';
 
   @override
   String get paymentLinkClaimActionCreateAccount => '创建账户并领取';
@@ -6689,9 +6391,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paymentLinkClaimCheckingHeading => '正在检查\n你的礼品卡';
-
-  @override
-  String get paymentLinkClaimCloseFailed => '无法关闭卡片。请重试。';
 
   @override
   String get paymentLinkClaimFailedMaybePending => '礼品卡领取失败。它可能仍在等待确认，或已被使用。';
@@ -6784,9 +6483,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkConfirmGiftCardTitle => '确认礼品卡';
 
   @override
-  String get paymentLinkCopyLink => '复制链接';
-
-  @override
   String get paymentLinkCopyLinkAgainHint => '你可以在“设置 → 我的礼品卡”中再次复制此链接。';
 
   @override
@@ -6807,18 +6503,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkCostCalculatingFee => '正在计算网络手续费';
 
   @override
-  String get paymentLinkCostCalculatingTotal => '正在计算总额';
-
-  @override
   String paymentLinkCostCardsMultiplier(int count) {
     return '× $count 张卡片';
   }
 
   @override
   String get paymentLinkCostMessageOnEveryCard => '每张卡片上的留言';
-
-  @override
-  String get paymentLinkCostNetworkFee => '网络手续费';
 
   @override
   String get paymentLinkCostPerCard => '每张卡片';
@@ -6847,19 +6537,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkCreateNewCard => '创建新卡片';
 
   @override
-  String get paymentLinkCreatedTabLabel => '已创建';
-
-  @override
-  String get paymentLinkCreating => '正在创建…';
-
-  @override
   String get paymentLinkCreationFailed => '创建礼品卡失败。请重试。';
-
-  @override
-  String get paymentLinkCustomiseAccountStep => '自定义账户';
-
-  @override
-  String get paymentLinkCustomiseWalletStep => '自定义钱包';
 
   @override
   String get paymentLinkDeleteMessageSemantic => '删除礼品卡留言';
@@ -6960,9 +6638,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkGiftMessageLabel => '礼物留言';
 
   @override
-  String get paymentLinkGoHome => '返回首页';
-
-  @override
   String get paymentLinkGroupConfirmingPayment => '正在确认付款';
 
   @override
@@ -6992,9 +6667,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paymentLinkGroupPaymentPending => '付款状态待确认';
-
-  @override
-  String get paymentLinkGroupReadyToShare => '已可分享';
 
   @override
   String get paymentLinkGroupSomeNotReady => '部分卡片尚未就绪';
@@ -7067,31 +6739,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkKeystoneFundingUncertain => '充值状态不确定。重试前请先查看活动记录。';
 
   @override
-  String get paymentLinkKeystoneKeepOpen => '交易发送期间请保持 Vizor 打开。';
-
-  @override
-  String get paymentLinkKeystoneQrMismatch => '此二维码与当前 Keystone 请求不匹配。';
-
-  @override
-  String get paymentLinkKeystoneReadingSignature => '正在读取签名…';
-
-  @override
   String get paymentLinkKeystoneScanCaption => '扫描 Keystone 上的二维码以完成创建';
-
-  @override
-  String get paymentLinkKeystoneScanToSign => '扫码签名';
 
   @override
   String get paymentLinkKeystoneSignTitle => '在 Keystone 上签署礼品卡';
 
   @override
-  String get paymentLinkKeystoneSignatureFailed => '无法应用 Keystone 签名。';
-
-  @override
   String get paymentLinkKeystoneSigningFailed => '无法完成礼品卡签名。';
-
-  @override
-  String get paymentLinkKeystoneSubmittingTransaction => '正在提交交易';
 
   @override
   String get paymentLinkLeaveSaveMany => '离开此页面前，请先保存这些礼品卡。';
@@ -7108,9 +6762,6 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get paymentLinkLedgerSavedForRecovery =>
       '礼品卡充值已保存以便恢复。请重试以检查其状态并完成保存。';
-
-  @override
-  String get paymentLinkLedgerSigningIncomplete => '无法完成 Ledger 签名。请检查设备后重试。';
 
   @override
   String get paymentLinkLinkCopied => '已复制礼品链接';
@@ -7195,15 +6846,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkPasteLabel => '粘贴卡片链接';
 
   @override
-  String get paymentLinkPendingSectionLabel => '处理中';
-
-  @override
-  String get paymentLinkPreparing => '准备中…';
-
-  @override
-  String get paymentLinkPreparingStatus => '准备中…';
-
-  @override
   String get paymentLinkPrivacyModeOff => '关闭隐私模式';
 
   @override
@@ -7247,9 +6889,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paymentLinkReceivedHeadingDesktop => '你收到了\n一张礼品卡！';
-
-  @override
-  String get paymentLinkReceivedTabLabel => '已接收';
 
   @override
   String get paymentLinkReceivingAccountChangedReopen => '接收账户已更改。请重新打开礼品卡以继续。';
@@ -7326,16 +6965,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paymentLinkSaving => '正在保存…';
 
   @override
-  String get paymentLinkScanAgain => '重新扫描';
-
-  @override
   String get paymentLinkScanAgainOrPaste => '请重新扫描或粘贴其他卡片链接。';
 
   @override
   String get paymentLinkScanCameraHint => '请连接摄像头扫描礼品卡二维码，或返回粘贴卡片链接。';
-
-  @override
-  String get paymentLinkScanQrCode => '扫描二维码';
 
   @override
   String get paymentLinkScanSheetSemantic => '扫描礼品卡二维码';
@@ -7451,9 +7084,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get paymentLinkUsageConfirming => '确认中';
-
-  @override
   String get paymentLinkUsageFundingNotObserved => '尚未能在追踪记录中验证充值交易。';
 
   @override
@@ -7496,9 +7126,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get paymentLinkUsageUnverified => '未验证';
-
-  @override
-  String get paymentLinkUsageUpdateFailed => '更新失败';
 
   @override
   String get paymentLinkUsageUseDetected => '检测到已使用';
@@ -7694,9 +7321,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get receiveRequestCopyFailed => '无法复制请求链接。请改为分享。';
 
   @override
-  String get receiveRequestCopyLink => '复制链接';
-
-  @override
   String get receiveRequestCopyRequestLink => '复制请求链接';
 
   @override
@@ -7827,11 +7451,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendEnterAddressToContinue => '输入地址以继续';
 
   @override
-  String sendEnterAmountInCurrency(String currency) {
-    return '以 $currency 输入金额';
-  }
-
-  @override
   String get sendEnterValidAddress => '请输入有效地址';
 
   @override
@@ -7920,17 +7539,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendInvalidAmount => '金额无效';
 
   @override
-  String get sendKeystoneConfirmTitle => '使用 Keystone 确认';
-
-  @override
   String get sendKeystonePrepareFailedGoBack => '无法准备 Keystone 签名。请返回后重试。';
 
   @override
   String get sendKeystonePrepareFailedReturnToSend =>
       '无法准备 Keystone 签名。请返回发送页面重试。';
-
-  @override
-  String get sendKeystonePreparing => '准备中';
 
   @override
   String get sendKeystoneQrMismatch => '此二维码与当前的 Keystone 签名请求不匹配。';
@@ -7948,17 +7561,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendKeystoneScanNow => '请立即扫描。证明准备好后即可导入签名。';
 
   @override
-  String get sendKeystoneScanReading => '正在读取签名...';
-
-  @override
-  String get sendKeystoneScanSubtitle => '请用 Keystone 扫描';
-
-  @override
   String get sendKeystoneScanToFinish => '请扫描 Keystone 上的二维码以完成发送';
-
-  @override
-  String get sendKeystoneScanUnexpectedTransaction =>
-      '请在 Keystone 上打开已签名交易的二维码，然后重新扫描。';
 
   @override
   String sendKeystoneTexTwoApprovals(int index) {
@@ -8001,9 +7604,6 @@ class AppLocalizationsZh extends AppLocalizations {
       '请保持 Vizor 打开并重试保存。无需再次在 Ledger 上确认。';
 
   @override
-  String get sendLedgerNeedsAttentionTitle => 'Ledger 需要处理';
-
-  @override
   String get sendLedgerRejectedOnDevice => '交易已在 Ledger 上被拒绝。';
 
   @override
@@ -8012,9 +7612,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendLedgerSignedNeedsAttentionTitle => '已签名的交易需要处理';
-
-  @override
-  String get sendLedgerSigningIncomplete => '无法完成 Ledger 签名。请检查设备后重试。';
 
   @override
   String get sendLedgerSigningUnavailableTitle => '无法使用 Ledger 签名';
@@ -8079,9 +7676,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendPaymentRequestAmountNotSpecified => '未指定金额';
 
   @override
-  String get sendPaymentRequestCheckAgain => '重新检查';
-
-  @override
   String get sendPaymentRequestCheckBeforePayBody => '其他应用可能会更改请求链接中的地址或金额。';
 
   @override
@@ -8114,9 +7708,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendPaymentRequestConfirmWithSender => '请与发送者确认详情。';
-
-  @override
-  String get sendPaymentRequestEnterAmount => '输入金额';
 
   @override
   String get sendPaymentRequestHideFullAddress => '隐藏完整收款地址';
@@ -8271,16 +7862,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sendRequestScanSubtitle => '请将请求方的原始二维码对准摄像头';
 
   @override
-  String get sendRequestScanTipContinuity =>
-      '在 Mac 上，你也可以使用连续互通相机，用 iPhone 进行扫描。';
-
-  @override
-  String get sendRequestScanTipDistance => '请将二维码移远几厘米，以便摄像头对焦。';
-
-  @override
-  String get sendRequestScanTipLight => '请确保光线充足，且二维码没有反光。';
-
-  @override
   String get sendRequestScanTipOriginal => '请在另一台设备上全屏打开请求方的原始二维码。';
 
   @override
@@ -8312,9 +7893,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sendReviewFinishingSyncButton => '正在完成钱包同步...';
-
-  @override
-  String get sendReviewPreparing => '准备中...';
 
   @override
   String sendReviewRequestedAmount(String amount) {
@@ -8687,16 +8265,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPasswordUpdateFailed => '无法更新你的密码。请重试。';
 
   @override
-  String get settingsPfpKnight => '骑士';
-
-  @override
   String get settingsPfpSamurai => '武士';
 
   @override
   String get settingsPfpViking => '维京人';
-
-  @override
-  String get settingsPfpWizard => '巫师';
 
   @override
   String get settingsPirCheckingUpdates => '正在检查更新…';
@@ -8834,9 +8406,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsSectionPersonal => '个人';
-
-  @override
-  String get settingsSectionSyncing => '同步';
 
   @override
   String get settingsSectionSystem => '系统';
@@ -8988,9 +8557,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsTorStatusConnected => '已连接';
-
-  @override
-  String get settingsTorStatusConnecting => '正在连接…';
 
   @override
   String get settingsTorStatusConnectionFailed => '连接失败';
@@ -9269,16 +8835,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarHideBalance => '隐藏余额';
 
   @override
-  String get sidebarManageAccounts => '管理';
-
-  @override
-  String get sidebarMigrating => '迁移中...';
-
-  @override
   String get sidebarMigrationNeedsInput => '需要操作';
-
-  @override
-  String get sidebarMigrationStopped => '迁移已停止';
 
   @override
   String get sidebarMyAccounts => '我的账户';
@@ -9294,9 +8851,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapActionAddRefundAddress => '添加退款地址';
-
-  @override
-  String get swapActionContinueToReview => '继续查看';
 
   @override
   String get swapActionGettingQuote => '正在获取报价';
@@ -9869,13 +9423,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapKeystoneNoTex => 'Keystone 暂不支持 TEX 发送。';
 
   @override
-  String get swapKeystoneQrMismatch => '此二维码与当前的 Keystone 请求不匹配。';
-
-  @override
   String get swapKeystoneScanCaption => '扫描 Keystone 上的二维码以完成 ZEC 充值';
-
-  @override
-  String get swapKeystoneScanToSign => '扫描以签名';
 
   @override
   String get swapKeystoneSignTitle => '在 Keystone 上签署 ZEC 充值';
@@ -9915,9 +9463,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapLedgerStatusSaving => '正在保存交易';
-
-  @override
-  String get swapLedgerStatusWait => '请稍候';
 
   @override
   String get swapLedgerTitlePending => '交易状态待确认';
@@ -10141,9 +9686,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapTimeoutRestart => '重新开始兑换';
 
   @override
-  String get swapTimeoutTitle => '时间到了';
-
-  @override
   String get swapViewOnNearIntents => '在 NEAR Intents 中查看';
 
   @override
@@ -10240,9 +9782,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateRestart => '重启';
 
   @override
-  String get votingActionResume => '继续';
-
-  @override
   String get votingActionRetryEligibility => '重新检查资格';
 
   @override
@@ -10253,9 +9792,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get votingActionUnavailable => '不可用';
-
-  @override
-  String get votingActionView => '查看';
 
   @override
   String get votingActionViewResults => '查看结果';
@@ -10273,10 +9809,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingBallotCasting => '正在投票';
 
   @override
-  String get votingBallotDelivering => '正在递送您的回复';
+  String get votingBallotDelivering => '正在递送你的回复';
 
   @override
-  String get votingBallotPreparing => '正在准备您的选票';
+  String get votingBallotPreparing => '正在准备你的选票';
 
   @override
   String get votingBallotWaitingChain => '正在等待链上确认';
@@ -10295,18 +9831,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get votingCheckAgain => '重新检查';
-
-  @override
   String votingChoiceFallback(int number) {
     return '选项 $number';
   }
 
   @override
   String get votingConfigAddCustomSource => '添加自定义来源';
-
-  @override
-  String get votingConfigBadgeDefault => '默认';
 
   @override
   String get votingConfigCloseSettings => '关闭投票配置设置';
@@ -10408,7 +9938,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingConfirmationCheckingEligibility => '正在检查此账户的投票资格。';
 
   @override
-  String get votingConfirmationConfirmedBody => '您的投票已成功发布，无法更改。';
+  String get votingConfirmationConfirmedBody => '你的投票已成功发布，无法更改。';
 
   @override
   String get votingConfirmationConfirmedTitle => '提交已确认！';
@@ -10432,9 +9962,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get votingConfirmationUpdatingRounds => '正在更新投票轮次...';
-
-  @override
-  String get votingContinueToReview => '继续确认';
 
   @override
   String get votingContinueVoting => '继续投票';
@@ -10469,11 +9996,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String votingErrorLedgerLocked(String instruction) {
-    return '请解锁您的 Ledger。$instruction';
+    return '请解锁你的 Ledger。$instruction';
   }
 
   @override
-  String get votingErrorLedgerRejected => '您已在 Ledger 上拒绝投票签名。请重试并再次签名。';
+  String get votingErrorLedgerRejected => '你已在 Ledger 上拒绝投票签名。请重试并再次签名。';
 
   @override
   String votingErrorLedgerWrongApp(String instruction) {
@@ -10556,47 +10083,27 @@ class AppLocalizationsZh extends AppLocalizations {
       '在 Ledger 上批准即授权此投票委托。继续之前，请在 Vizor 中查看下方备注；设备可能不会逐字显示此备注。';
 
   @override
-  String votingLedgerBundleOf(int number, int total) {
-    return '第 $number/$total 个票据包';
-  }
-
-  @override
-  String get votingLedgerChecking => '正在检查您的 Ledger';
-
-  @override
-  String get votingLedgerCheckingBody => 'Vizor 正在检查 Zcash 应用是否就绪。';
-
-  @override
-  String get votingLedgerConfirmOpen => '确认打开 Zcash';
-
-  @override
-  String get votingLedgerConfirmOpenBody => '请在您的 Ledger 上批准打开 Zcash 应用的请求。';
+  String get votingLedgerConfirmOpenBody => '请在你的 Ledger 上批准打开 Zcash 应用的请求。';
 
   @override
   String get votingLedgerFinishing => '正在完成投票委托';
 
   @override
-  String get votingLedgerNeedsAttention => 'Ledger 需要处理';
-
-  @override
   String get votingLedgerPanelTitle => '投票委托';
 
   @override
-  String get votingLedgerPleaseWait => '请稍候，Vizor 正在准备您的请求。';
+  String get votingLedgerPleaseWait => '请稍候，Vizor 正在准备你的请求。';
 
   @override
   String get votingLedgerPreparing => '正在准备投票委托';
 
   @override
-  String get votingLedgerReconnect => '请重新连接您的 Ledger 并重试。';
+  String get votingLedgerReconnect => '请重新连接你的 Ledger 并重试。';
 
   @override
   String votingMobileAccountLoadFailed(String error) {
     return '无法加载账户。\n$error';
   }
-
-  @override
-  String get votingMobileGoHome => '返回首页';
 
   @override
   String get votingMobileHeaderTitle => '投票';
@@ -10642,7 +10149,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingMobileSubmitTitle => '提交投票';
 
   @override
-  String get votingMobileSubmittedBody => '您的投票已提交，无法更改。';
+  String get votingMobileSubmittedBody => '你的投票已提交，无法更改。';
 
   @override
   String get votingMobileSubmittedTitle => '投票已提交';
@@ -10659,7 +10166,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get votingNavReadyToReview => '您的答案已可确认。';
+  String get votingNavReadyToReview => '你的答案已可确认。';
 
   @override
   String get votingNavTapToJump => '点按问题即可跳转。';
@@ -10691,7 +10198,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingOptionSelected => '已选择';
 
   @override
-  String get votingPendingBody => '您在本轮有一次未完成的投票。请继续以完成提交。';
+  String get votingPendingBody => '你在本轮有一次未完成的投票。请继续以完成提交。';
 
   @override
   String get votingPendingTitle => '投票进行中';
@@ -10761,9 +10268,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingPowerUnavailableTitle => '无法获取投票权';
 
   @override
-  String get votingPreparingEllipsis => '准备中...';
-
-  @override
   String get votingPreparingPower => '正在准备投票权。';
 
   @override
@@ -10771,7 +10275,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String votingPrivacyTrimNotice(String amount) {
-    return '为降低您的提交被识别的可能性，$amount 不计入本次投票。';
+    return '为降低你的提交被识别的可能性，$amount 不计入本次投票。';
   }
 
   @override
@@ -10790,9 +10294,6 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get votingProgressUnknown => '未知';
-
-  @override
   String votingProgressWaitingConfirmation(String suffix) {
     return '正在等待提交和确认$suffix';
   }
@@ -10801,18 +10302,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingReceiptPower => '投票权';
 
   @override
-  String get votingReceiptRound => '投票轮次';
-
-  @override
   String votingRemainingBundles(int count, int total) {
     return '剩余 $total 个票据包中的 $count 个';
   }
 
   @override
   String get votingResultsFallbackTitle => '投票结果';
-
-  @override
-  String get votingResultsHeading => '结果';
 
   @override
   String get votingResultsHideDescription => '收起说明';
@@ -10837,15 +10332,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingResultsShowDescription => '展开说明';
 
   @override
-  String get votingResultsTotal => '总计';
-
-  @override
   String votingResultsTotalAmount(String amount) {
     return '总计：$amount';
   }
-
-  @override
-  String get votingResultsVoted => '已投票';
 
   @override
   String votingResultsVotedFor(String choice) {
@@ -10856,7 +10345,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingResultsWinner => '获胜';
 
   @override
-  String get votingResultsYourVote => '您的投票';
+  String get votingResultsYourVote => '你的投票';
 
   @override
   String get votingReviewChooseOne => '提交前请至少选择一个选项。';
@@ -10873,19 +10362,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get votingReviewSkipped => '已跳过';
 
   @override
-  String get votingReviewTitle => '确认您的答案';
+  String get votingReviewTitle => '确认你的答案';
 
   @override
   String get votingScanHold => '请将 Keystone 二维码稳定地对准摄像头';
 
   @override
   String get votingScanNoCamera => 'Keystone 投票仅支持摄像头扫描二维码。请连接摄像头后重试。';
-
-  @override
-  String get votingScanReading => '正在读取签名...';
-
-  @override
-  String get votingScanSteady => '请保持二维码稳定且完整可见。';
 
   @override
   String get votingScanTitle => '扫描投票签名';
@@ -10907,7 +10390,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String votingSkipDialogBody(int skipped, int total) {
-    return '您有 $skipped/$total 个问题尚未回答。确认页面会将它们标记为已跳过，已跳过的问题不会被提交。';
+    return '你有 $skipped/$total 个问题尚未回答。确认页面会将它们标记为已跳过，已跳过的问题不会被提交。';
   }
 
   @override
@@ -10996,10 +10479,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get votingSyncWaitingBody => '您的钱包正在追赶本轮投票的快照。钱包同步到快照区块后，投票将自动继续。';
-
-  @override
-  String get votingSyncWaitingTitle => '正在等待钱包同步';
+  String get votingSyncWaitingBody => '你的钱包正在追赶本轮投票的快照。钱包同步到快照区块后，投票将自动继续。';
 
   @override
   String votingTerminalBundle(int number, String reason) {
@@ -11074,7 +10554,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get walletLinkDesktopEncryptedNotice => '该二维码使用一次性密钥加密，一分钟后失效。';
 
   @override
-  String get walletLinkDesktopEncryptedStrong => '只有您的手机能够解码。';
+  String get walletLinkDesktopEncryptedStrong => '只有你的手机能够解码。';
 
   @override
   String get walletLinkDesktopErrorDerivationMissing => '无法获取钱包账户的派生信息。';
@@ -11101,10 +10581,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get walletLinkDesktopErrorServerUnreachable => '无法连接到关联服务器。请重试。';
 
   @override
-  String get walletLinkDesktopExpiredBody => '为了您的安全，关联码仅在一分钟内有效。请生成新二维码并重新扫描。';
-
-  @override
-  String get walletLinkDesktopExpiredTitle => '时间到了';
+  String get walletLinkDesktopExpiredBody => '为了你的安全，关联码仅在一分钟内有效。请生成新二维码并重新扫描。';
 
   @override
   String walletLinkDesktopExpiresIn(String time) {
@@ -11127,9 +10604,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get walletLinkDesktopLinkedTitle => 'Vizor 手机端关联成功';
-
-  @override
-  String get walletLinkDesktopPreparing => '准备中';
 
   @override
   String get walletLinkDesktopReadyToScan => '1/1 已可扫描...';
@@ -11204,9 +10678,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get walletLinkReadingLink => '正在读取链接...';
-
-  @override
-  String get walletLinkScanAgain => '重新扫描';
 
   @override
   String get walletLinkScanCaption => '扫描 Vizor 桌面端二维码';

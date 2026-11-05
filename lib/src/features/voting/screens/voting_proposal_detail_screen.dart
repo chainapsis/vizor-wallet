@@ -798,7 +798,7 @@ class _ActivePollContentState extends State<VotingActivePollContent> {
       ),
       TextButton(
         onPressed: widget.onParticipationRetry,
-        child: Text(context.l10n.votingCheckAgain),
+        child: Text(context.l10n.commonCheckAgain),
       ),
     ],
   );
@@ -1008,7 +1008,7 @@ class _SkippedQuestionsDialog extends StatelessWidget {
                   growWithContent: true,
                   constrainContent: true,
                   expand: true,
-                  child: Text(context.l10n.votingContinueToReview),
+                  child: Text(context.l10n.commonContinueToReview),
                 ),
                 const SizedBox(height: AppSpacing.s),
                 AppButton(
@@ -1909,7 +1909,7 @@ class _VotedPollHeader extends StatelessWidget {
                 label: context.l10n.votingReceiptPower,
                 value: votingPowerZatoshi == null
                     ? votingPowerPreparing
-                          ? context.l10n.votingPreparingEllipsis
+                          ? context.l10n.commonPreparingDots
                           : context.l10n.votingNotAvailable
                     : formatVotingPower(votingPowerZatoshi!),
               ),

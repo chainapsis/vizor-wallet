@@ -924,7 +924,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                   if (context.mounted) {
                     showAppToast(
                       context,
-                      context.l10n.appGiftCloseCardFailed,
+                      context.l10n.commonCouldnTCloseTheCardTry,
                       iconName: AppIcons.warning,
                     );
                   }
@@ -2933,7 +2933,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
       WindowsUpdateStatus.downloading => l10n.appUpdateDownloadingTitle,
       WindowsUpdateStatus.ready => l10n.appUpdateReadyTitle,
       WindowsUpdateStatus.applying => l10n.appUpdateRestartingTitle,
-      WindowsUpdateStatus.failed => l10n.appUpdateFailedTitle,
+      WindowsUpdateStatus.failed => l10n.commonUpdateFailed,
       _ => l10n.appUpdateAvailableTitle,
     };
   }

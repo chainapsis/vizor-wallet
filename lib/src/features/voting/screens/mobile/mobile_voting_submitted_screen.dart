@@ -212,7 +212,7 @@ class _MobileVotingSubmittedScreenState
                                               expand: true,
                                               constrainContent: true,
                                               child: Text(
-                                                context.l10n.votingMobileGoHome,
+                                                context.l10n.commonGoHome,
                                               ),
                                             ),
                                           ),

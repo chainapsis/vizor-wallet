@@ -244,7 +244,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Network fee'), findsOneWidget);
       expect(find.text('0.00015 ZEC'), findsOneWidget);
-      expect(find.text(testL10n.activityReceiptUnknownFee), findsNothing);
+      expect(find.text(testL10n.commonUnknown), findsNothing);
       expect(tx.feeState, rust_sync.TransactionFeeState.unknown);
       expect(tx.fee, BigInt.zero);
       await tester.tap(find.text('0.00015 ZEC'));
@@ -309,7 +309,7 @@ void main() {
         find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
         findsNothing,
       );
-      expect(find.text(testL10n.activityReceiptUnknownFee), findsNothing);
+      expect(find.text(testL10n.commonUnknown), findsNothing);
       expect(find.text('From transparent balance'), findsOneWidget);
     },
   );
@@ -805,7 +805,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Tx fee'), findsOneWidget);
-      expect(find.text(testL10n.activityReceiptUnknownFee), findsOneWidget);
+      expect(find.text(testL10n.commonUnknown), findsOneWidget);
       expect(
         find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
         findsOneWidget,
@@ -934,7 +934,7 @@ void main() {
             privateQueriesEnabled ? findsOneWidget : findsNothing,
           );
           expect(
-            find.text(testL10n.activityReceiptUnknownFee),
+            find.text(testL10n.commonUnknown),
             privateQueriesEnabled && kind != 'received'
                 ? findsOneWidget
                 : findsNothing,
@@ -968,7 +968,7 @@ void main() {
         enabled ? findsOneWidget : findsNothing,
       );
       expect(
-        find.text(testL10n.activityReceiptUnknownFee),
+        find.text(testL10n.commonUnknown),
         enabled ? findsOneWidget : findsNothing,
       );
       expect(find.text('Tx fee'), enabled ? findsOneWidget : findsNothing);
@@ -1052,7 +1052,7 @@ void main() {
       find.byKey(const ValueKey('mobile_tx_status_details_incomplete')),
       findsNothing,
     );
-    expect(find.text(testL10n.activityReceiptUnknownFee), findsNothing);
+    expect(find.text(testL10n.commonUnknown), findsNothing);
   });
 
   testWidgets('sent TEX tx keeps a TEX recipient label', (tester) async {

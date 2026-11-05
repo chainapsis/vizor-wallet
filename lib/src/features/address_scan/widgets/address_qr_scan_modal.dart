@@ -131,14 +131,14 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   }
 
   String _cameraLabel(MobileScannerState state) {
-    if (!QrScanner.isAvailable) return context.l10n.addressScanNoCamera;
+    if (!QrScanner.isAvailable) return context.l10n.commonNoCameraFound;
     if (_loadingCameras && _cameras.isEmpty) {
-      return context.l10n.addressScanLoadingCamera;
+      return context.l10n.commonLoadingCamera;
     }
 
     final selectedCamera = _cameraById(_selectedCameraId);
     final camera = selectedCamera ?? state.camera ?? _defaultCamera;
-    final name = camera?.name ?? context.l10n.addressScanDefaultCamera;
+    final name = camera?.name ?? context.l10n.commonDefaultCamera;
     if (camera?.isDefault == true && !name.contains('(Default)')) {
       // Some platforms already put the marker in the device name.
       return context.l10n.addressScanCameraDefaultSuffix(name);
@@ -166,7 +166,7 @@ class _AddressQrScanModalState extends State<AddressQrScanModal>
   String _cameraUnavailableDescription(MobileScannerState state) {
     final message = state.error?.errorDetails?.message;
     if (message != null && message.isNotEmpty) return message;
-    return context.l10n.addressScanNoCameraOpened;
+    return context.l10n.commonNoCameraCouldBeOpenedCheck;
   }
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
@@ -589,11 +589,11 @@ class _AddressQrCameraViewport extends StatelessWidget {
   }
 
   String _cameraDeniedTitle(BuildContext context) => Platform.isWindows
-      ? context.l10n.addressScanEnableWindowsAccess
+      ? context.l10n.commonEnableWindowsCameraAccess
       : context.l10n.addressScanDeniedTitle;
 
   String _cameraDeniedDescription(BuildContext context) => Platform.isWindows
-      ? context.l10n.addressScanWindowsAccessHint
+      ? context.l10n.commonTurnOnCameraAccessAndLet
       : context.l10n.commonCameraRequestAgainHint;
 }
 

@@ -415,7 +415,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                     iconSize: 20,
                     key: const ValueKey('payment_links_mobile_created_tab'),
                     icon: AppIcons.plane,
-                    label: context.l10n.paymentLinkCreatedTabLabel,
+                    label: context.l10n.commonCreated,
                     selected: activeTab == PaymentLinkCardsTab.created,
                     onTap: onTabSelected == null
                         ? null
@@ -426,7 +426,7 @@ class PaymentLinkCardsMobileView extends StatelessWidget {
                     iconSize: 20,
                     key: const ValueKey('payment_links_mobile_received_tab'),
                     icon: AppIcons.importWallet,
-                    label: context.l10n.paymentLinkReceivedTabLabel,
+                    label: context.l10n.commonReceived,
                     selected: activeTab == PaymentLinkCardsTab.received,
                     onTap: onTabSelected == null
                         ? null
@@ -1280,8 +1280,8 @@ class PaymentLinkReadyMobileView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final copyLabel = this.copyLabel ?? context.l10n.paymentLinkCopyLink;
-    final homeLabel = this.homeLabel ?? context.l10n.paymentLinkGoHome;
+    final copyLabel = this.copyLabel ?? context.l10n.commonCopyLink;
+    final homeLabel = this.homeLabel ?? context.l10n.commonGoHome;
     final waitingStatusLabel =
         this.waitingStatusLabel ?? context.l10n.paymentLinkWaitingStatusLabel;
     final waitingHeading =
@@ -1564,7 +1564,7 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
               left: 0,
               right: 0,
               child: Text(
-                context.l10n.paymentLinkCheckingLabel,
+                context.l10n.commonCheckingEllipsis,
                 key: const ValueKey('payment_link_mobile_redeem_checking'),
                 textAlign: TextAlign.center,
                 style: AppTypography.bodyMediumStrong.copyWith(
@@ -1629,8 +1629,8 @@ class PaymentLinkRedeemMobileView extends StatelessWidget {
             leading: const AppIcon(AppIcons.qr, size: 20),
             child: Text(
               scanAgain
-                  ? context.l10n.paymentLinkScanAgain
-                  : context.l10n.paymentLinkScanQrCode,
+                  ? context.l10n.commonScanAgain
+                  : context.l10n.commonScanQrCodeSentenceCase,
             ),
           ),
         ],

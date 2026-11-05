@@ -334,12 +334,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityGiftRedemptionFailed => 'Gift card redemption failed';
 
   @override
-  String get activityGiftStatusCreated => 'Created';
-
-  @override
-  String get activityGiftStatusCreating => 'Creating…';
-
-  @override
   String get activityGiftStatusRedeemed => 'Redeemed';
 
   @override
@@ -429,9 +423,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptCardFee => 'Card fee';
 
   @override
-  String get activityReceiptCards => 'Cards';
-
-  @override
   String get activityReceiptDetails => 'Details';
 
   @override
@@ -460,9 +451,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityReceiptNetChange => 'Net change';
 
   @override
-  String get activityReceiptNetworkFee => 'Network fee';
-
-  @override
   String get activityReceiptOutput => 'Output';
 
   @override
@@ -475,9 +463,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityReceiptUnattributedFeeHelp =>
       'Total fee for this transaction. Your account\'s share of this fee is unknown.';
-
-  @override
-  String get activityReceiptUnknownFee => 'Unknown';
 
   @override
   String activityRowToday(String time) {
@@ -564,9 +549,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityTitleReceiveInProgress => 'Receive in progress...';
-
-  @override
-  String get activityTitleReceived => 'Received';
 
   @override
   String get activityTitleReceivedSuccessfully => 'Received successfully';
@@ -781,39 +763,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addressScanCloseScanner => 'Close scanner';
 
   @override
-  String get addressScanDefaultCamera => 'Default camera';
-
-  @override
   String get addressScanDeniedTitle => 'You\'ve denied Camera access';
-
-  @override
-  String get addressScanEnableWindowsAccess => 'Enable Windows camera access';
 
   @override
   String get addressScanGrantAccess => 'Grant access to your camera';
 
   @override
-  String get addressScanLoadingCamera => 'Loading camera...';
-
-  @override
-  String get addressScanLoadingEllipsis => 'Loading...';
-
-  @override
-  String get addressScanNoCamera => 'No camera found';
-
-  @override
-  String get addressScanNoCameraOpened =>
-      'No camera could be opened. Check that a camera is connected and not in use by another app.';
-
-  @override
-  String get addressScanOpenSettings => 'Open settings';
-
-  @override
   String get addressScanTitle => 'Scan the address QR code';
-
-  @override
-  String get addressScanWindowsAccessHint =>
-      'Turn on Camera access and Let desktop apps access your camera in Windows Settings.';
 
   @override
   String get addressScanZcashPrompt => 'Scan a Zcash QR code to continue';
@@ -831,9 +787,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appBackReceive => 'Receive';
 
   @override
-  String get appBackResults => 'Results';
-
-  @override
   String get appBackReview => 'Review';
 
   @override
@@ -849,13 +802,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appBackTransaction => 'Transaction';
 
   @override
-  String get appBackVotingRound => 'Voting round';
-
-  @override
   String get appExitBackHint => 'Go back again to exit';
-
-  @override
-  String get appGiftCloseCardFailed => 'Couldn’t close the card. Try again.';
 
   @override
   String appLinuxUpdateAvailable(String version) {
@@ -909,9 +856,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get appUpdateDownloadingTitle => 'Downloading update';
-
-  @override
-  String get appUpdateFailedTitle => 'Update failed';
 
   @override
   String get appUpdateLater => 'Later';
@@ -986,6 +930,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonBackToWallet => 'Back to wallet';
 
   @override
+  String get commonCalculatingEllipsis => 'Calculating…';
+
+  @override
+  String get commonCalculatingTotal => 'Calculating total';
+
+  @override
+  String get commonCamera => 'Camera';
+
+  @override
   String get commonCameraDeniedTitle => 'You\'ve denied camera access';
 
   @override
@@ -1014,6 +967,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Could not finish cancelling. Please try again.';
 
   @override
+  String get commonCancelShielding => 'Cancel shielding';
+
+  @override
   String get commonCancellationFailed =>
       'Could not finish cancellation. Try again.';
 
@@ -1024,10 +980,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonCannotBeUndone => 'This cannot be undone.';
 
   @override
+  String get commonCards => 'Cards';
+
+  @override
   String get commonChainAndAddress => 'Chain & address';
 
   @override
   String get commonChangeContactPicture => 'Change contact picture';
+
+  @override
+  String get commonCheckAgain => 'Check again';
 
   @override
   String get commonChecking => 'Checking...';
@@ -1037,6 +999,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonCheckingStatus => 'Checking status';
+
+  @override
+  String get commonCheckingYourLedger => 'Checking your Ledger';
 
   @override
   String get commonClear => 'Clear';
@@ -1060,6 +1025,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonCompleted => 'Completed';
 
   @override
+  String get commonConfirmOpeningZcash => 'Confirm opening Zcash';
+
+  @override
+  String get commonConfirmWithKeystone => 'Confirm with Keystone';
+
+  @override
+  String get commonConfirming => 'Confirming';
+
+  @override
+  String get commonConnectLedger => 'Connect Ledger';
+
+  @override
+  String get commonConnecting => 'Connecting…';
+
+  @override
   String get commonContactLabelHint => 'Add label 1-20 characters';
 
   @override
@@ -1067,6 +1047,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonContinue => 'Continue';
+
+  @override
+  String get commonContinueAnyway => 'Continue anyway';
+
+  @override
+  String get commonContinueToReview => 'Continue to review';
 
   @override
   String get commonCopied => 'Copied';
@@ -1078,7 +1064,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonCopyAddress => 'Copy address';
 
   @override
+  String get commonCopyLink => 'Copy link';
+
+  @override
   String get commonCopyShieldedAddress => 'Copy shielded address';
+
+  @override
+  String get commonCouldnTCloseTheCardTry =>
+      'Couldn’t close the card. Try again.';
+
+  @override
+  String get commonCreated => 'Created';
+
+  @override
+  String get commonCreating => 'Creating…';
+
+  @override
+  String get commonCustomiseAccount => 'Customise Account';
+
+  @override
+  String get commonCustomiseWallet => 'Customise wallet';
+
+  @override
+  String get commonDefault => 'Default';
+
+  @override
+  String get commonDefaultCamera => 'Default camera';
 
   @override
   String get commonDismissNotification => 'Dismiss notification';
@@ -1099,6 +1110,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonEdit => 'Edit';
 
   @override
+  String get commonEnableWindowsCameraAccess => 'Enable Windows camera access';
+
+  @override
+  String get commonEnterAmount => 'Enter amount';
+
+  @override
+  String commonEnterAmountIn(String currency) {
+    return 'Enter amount in $currency';
+  }
+
+  @override
   String get commonEnterAmountInUsd => 'Enter amount in USD';
 
   @override
@@ -1115,6 +1137,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonGoBack => 'Go back';
+
+  @override
+  String get commonGoHome => 'Go home';
 
   @override
   String get commonGuaranteedMinimum => 'Guaranteed minimum';
@@ -1138,6 +1163,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonKeepScreenAwake => 'Keep screen awake';
 
   @override
+  String get commonKeepVizorOpenWhileTheTransaction =>
+      'Keep Vizor open while the transaction is sent.';
+
+  @override
   String get commonKeystoneAfterScan =>
       'After you scanned, click Get signature.';
 
@@ -1150,6 +1179,24 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.';
 
   @override
+  String get commonKeystoneSignatureCouldNotBeApplied =>
+      'Keystone signature could not be applied.';
+
+  @override
+  String get commonKeystoneSigningCouldNotBePrepared =>
+      'Keystone signing could not be prepared.';
+
+  @override
+  String get commonKnight => 'Knight';
+
+  @override
+  String get commonLedgerNeedsAttention => 'Ledger needs attention';
+
+  @override
+  String get commonLedgerSigningCouldNotBeCompleted =>
+      'Ledger signing could not be completed. Check your device and try again.';
+
+  @override
   String get commonLedgerSigningFailed => 'Ledger signing failed';
 
   @override
@@ -1157,6 +1204,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonLoadingActivity => 'Loading activity';
+
+  @override
+  String get commonLoadingCamera => 'Loading camera...';
+
+  @override
+  String get commonLoadingDots => 'Loading...';
+
+  @override
+  String get commonLoadingQRCode => 'Loading QR code ...';
+
+  @override
+  String get commonMakeSureTheRoomIsWell =>
+      'Make sure the room is well-lit and the QR code isn\'t reflecting glare.';
+
+  @override
+  String get commonManage => 'Manage';
 
   @override
   String get commonMemo => 'Memo';
@@ -1168,13 +1231,43 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonMessageIsTooLong => 'Message is too long';
 
   @override
+  String get commonMigrateToIronwood => 'Migrate to Ironwood';
+
+  @override
+  String get commonMigrating => 'Migrating...';
+
+  @override
+  String get commonMigrationStopped => 'Migration stopped';
+
+  @override
+  String get commonMigrationStoppedByNetworkUpgrade =>
+      'Migration stopped by network upgrade';
+
+  @override
+  String get commonMoveTheQRCodeAFew =>
+      'Move the QR code a few inches further from the camera so it can focus.';
+
+  @override
   String get commonNetworkConversionFees => 'Network + conversion fees';
+
+  @override
+  String get commonNetworkFee => 'Network fee';
+
+  @override
+  String get commonNextStep => 'Next step';
 
   @override
   String get commonNoActiveAccount => 'No active account';
 
   @override
   String get commonNoActiveAccountSentence => 'No active account.';
+
+  @override
+  String get commonNoCameraCouldBeOpenedCheck =>
+      'No camera could be opened. Check that a camera is connected and not in use by another app.';
+
+  @override
+  String get commonNoCameraFound => 'No camera found';
 
   @override
   String get commonNotAvailableYet => 'Not available yet';
@@ -1184,6 +1277,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonOk => 'OK';
+
+  @override
+  String get commonOnAMacYouCanUse =>
+      'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
+
+  @override
+  String get commonOnYourKeystone => 'on your Keystone,';
+
+  @override
+  String get commonOpenSettings => 'Open settings';
+
+  @override
+  String get commonOpenTheSignedTransactionQROn =>
+      'Open the signed transaction QR on Keystone, then scan again.';
 
   @override
   String get commonPayInsufficientZec =>
@@ -1205,6 +1312,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonPaymentRequest => 'Payment request';
 
   @override
+  String get commonPending => 'Pending';
+
+  @override
+  String get commonPleaseWait => 'Please wait';
+
+  @override
+  String get commonPrepareYourKeystoneWallet => 'Prepare your Keystone wallet';
+
+  @override
+  String get commonPreparing => 'Preparing';
+
+  @override
+  String get commonPreparingDots => 'Preparing...';
+
+  @override
+  String get commonPreparingEllipsis => 'Preparing…';
+
+  @override
   String get commonPrivatelyFromShieldedBalance =>
       'Privately, from shielded balance';
 
@@ -1220,6 +1345,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonRate => 'Rate';
+
+  @override
+  String get commonReadingSignature => 'Reading signature...';
+
+  @override
+  String get commonReadingSignatureEllipsis => 'Reading signature…';
+
+  @override
+  String get commonReceived => 'Received';
 
   @override
   String get commonRecipientGets => 'Recipient gets';
@@ -1251,6 +1385,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonResetVizor => 'Reset Vizor';
 
   @override
+  String get commonResults => 'Results';
+
+  @override
+  String get commonResume => 'Resume';
+
+  @override
   String get commonRetry => 'Retry';
 
   @override
@@ -1278,10 +1418,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonSaveContact => 'Save contact';
 
   @override
+  String get commonSaving => 'Saving';
+
+  @override
+  String get commonScanAgain => 'Scan again';
+
+  @override
   String get commonScanOriginalQr => 'Scan original QR';
 
   @override
   String get commonScanQrCode => 'Scan QR Code';
+
+  @override
+  String get commonScanQrCodeSentenceCase => 'Scan QR code';
+
+  @override
+  String get commonScanToSign => 'Scan to sign';
+
+  @override
+  String get commonScanWithKeystone => 'Scan with Keystone';
+
+  @override
+  String get commonScanWithYourKeystone => 'Scan with your Keystone';
 
   @override
   String get commonSelectAccount => 'Select account';
@@ -1326,6 +1484,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonShowFullAddress => 'Show full address';
 
   @override
+  String get commonShowTransactionQR => 'Show transaction QR';
+
+  @override
   String get commonSigningCancelledBeforeParams =>
       'Signing was cancelled before proving parameters were downloaded.';
 
@@ -1335,6 +1496,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonSlippageTolerance => 'Slippage tolerance';
+
+  @override
+  String get commonStepOneOfTwo => 'Step 1/2';
+
+  @override
+  String get commonStepTwoOfTwo => 'Step 2/2';
+
+  @override
+  String get commonSubmittingTransaction => 'Submitting transaction';
 
   @override
   String get commonSupportVizor => 'Support Vizor';
@@ -1362,6 +1532,26 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get commonSyncing => 'Syncing';
+
+  @override
+  String get commonTap => 'Tap';
+
+  @override
+  String get commonThenScanThisQRCode => 'then scan this QR code';
+
+  @override
+  String get commonThisQRCodeCouldNotBe =>
+      'This QR code could not be decoded as a Keystone signature.';
+
+  @override
+  String get commonThisQRCodeDoesNotMatch =>
+      'This QR code does not match the current Keystone request.';
+
+  @override
+  String get commonTimeSUp => 'Time’s up';
+
+  @override
   String get commonTimestamp => 'Timestamp';
 
   @override
@@ -1376,6 +1566,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonToggleFlashlight => 'Toggle flashlight';
 
   @override
+  String get commonTotal => 'Total';
+
+  @override
   String get commonTransactionExpired => 'Transaction expired';
 
   @override
@@ -1388,7 +1581,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonTryAgain => 'Try again';
 
   @override
+  String get commonTurnOnCameraAccessAndLet =>
+      'Turn on Camera access and Let desktop apps access your camera in Windows Settings.';
+
+  @override
   String get commonTxId => 'Tx ID';
+
+  @override
+  String get commonUnknown => 'Unknown';
 
   @override
   String get commonUnlockVizor => 'Unlock Vizor';
@@ -1397,10 +1597,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonUpdate => 'Update';
 
   @override
+  String get commonUpdateFailed => 'Update failed';
+
+  @override
   String get commonUpdating => 'Updating...';
 
   @override
+  String get commonView => 'View';
+
+  @override
+  String get commonVizorIsCheckingWhetherTheZcash =>
+      'Vizor is checking whether the Zcash app is ready.';
+
+  @override
+  String get commonVotingRound => 'Voting round';
+
+  @override
+  String get commonWaitingForConfirmation => 'Waiting for confirmation...';
+
+  @override
+  String get commonWaitingForWalletSync => 'Waiting for wallet sync';
+
+  @override
   String get commonWelcomeBack => 'Welcome Back';
+
+  @override
+  String get commonWizard => 'Wizard';
 
   @override
   String get commonYouPay => 'You pay';
@@ -1437,9 +1659,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get donationThanksTitle => 'Thank you for supporting Vizor';
-
-  @override
-  String get donationTotal => 'Total';
 
   @override
   String endpointCurrent(String endpoint) {
@@ -1534,9 +1753,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'The shield transaction may have reached the network. Check activity before trying again.';
 
   @override
-  String get homeLedgerCancelShielding => 'Cancel shielding';
-
-  @override
   String get homeLedgerContextChanged =>
       'The selected account or network changed. Return to your wallet.';
 
@@ -1598,9 +1814,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get homeMigrateToIronwood => 'Migrate to Ironwood';
-
-  @override
   String get homeMigrationRequired => 'Migration required';
 
   @override
@@ -1610,13 +1823,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String homeMigrationStillMigrating(String amount) {
     return '$amount still migrating';
   }
-
-  @override
-  String get homeMigrationStoppedByUpgrade =>
-      'Migration stopped by network upgrade';
-
-  @override
-  String get homeMigrationWaitingConfirmation => 'Waiting for confirmation...';
 
   @override
   String get homeNu7FasterBody =>
@@ -1745,14 +1951,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Secret Passphrase isn\'t available for this account.';
 
   @override
-  String get homeShieldErrorSignatureNotApplied =>
-      'Keystone signature could not be applied.';
-
-  @override
-  String get homeShieldErrorSigningNotPrepared =>
-      'Keystone signing could not be prepared.';
-
-  @override
   String get homeShieldErrorSyncFirst =>
       'Sync the wallet before shielding transparent balance.';
 
@@ -1771,14 +1969,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldGetSignature => 'Get Signature';
 
   @override
-  String get homeShieldKeepOpen =>
-      'Keep Vizor open while the transaction is sent.';
-
-  @override
   String get homeShieldKeystoneQrSemantics => 'Keystone transaction QR';
-
-  @override
-  String get homeShieldNextStep => 'Next step';
 
   @override
   String get homeShieldNow => 'Shield now';
@@ -1791,14 +1982,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldQueuedTitle => 'Shielding queued';
 
   @override
-  String get homeShieldReadingSignature => 'Reading signature…';
-
-  @override
   String get homeShieldReject => 'Reject';
-
-  @override
-  String get homeShieldScanDecodeFailed =>
-      'This QR code could not be decoded as a Keystone signature.';
 
   @override
   String get homeShieldScanTitle => 'Scan your Keystone signature';
@@ -1824,9 +2008,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeShieldStatusUncertain =>
       'The shield transaction status is uncertain. Check activity before trying again.';
-
-  @override
-  String get homeShieldSubmitting => 'Submitting transaction';
 
   @override
   String get homeShieldWaitingForPrivateRecovery =>
@@ -1985,9 +2166,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'It helps us import your wallet faster.';
 
   @override
-  String get keystoneCameraDefault => 'Default';
-
-  @override
   String get keystoneCameraDeniedTitle => 'You\'ve denied the Camera access';
 
   @override
@@ -2006,9 +2184,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get keystoneCameraGiftBody =>
       'A camera is required to scan the gift card QR code.\nYou can revert this in settings anytime later.';
-
-  @override
-  String get keystoneCameraLabel => 'Camera';
 
   @override
   String keystoneCameraNameDefault(String name) {
@@ -2036,12 +2211,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneConfirmSelection => 'Confirm selection';
 
   @override
-  String get keystoneConfirmWithKeystone => 'Confirm with Keystone';
-
-  @override
-  String get keystoneDefaultCamera => 'Default camera';
-
-  @override
   String get keystoneFirmwareBody =>
       'Make sure your Keystone is on the latest Cypherpunk firmware. ';
 
@@ -2065,40 +2234,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneImReadyNow => 'I\'m ready now';
 
   @override
-  String get keystoneLoadingCamera => 'Loading camera...';
-
-  @override
-  String get keystoneLoadingQrCode => 'Loading QR code ...';
-
-  @override
-  String get keystoneNextStep => 'Next step';
-
-  @override
-  String get keystoneNoCameraFound => 'No camera found';
-
-  @override
-  String get keystoneNoCameraOpened =>
-      'No camera could be opened. Check that a camera is connected and not in use by another app.';
-
-  @override
   String get keystoneOnVizor => 'On Vizor';
 
   @override
   String get keystoneOnYourKeystone => 'On your Keystone';
-
-  @override
-  String get keystoneOpenSettings => 'Open settings';
-
-  @override
-  String get keystoneOpenSignedQr =>
-      'Open the signed transaction QR on Keystone, then scan again.';
-
-  @override
-  String get keystonePcztPrepareFailed =>
-      'Keystone signing could not be prepared.';
-
-  @override
-  String get keystonePrepareSubtitle => 'Prepare your Keystone wallet';
 
   @override
   String get keystonePrepareToConnectTitle => 'Prepare to connect';
@@ -2108,9 +2247,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keystoneReadingQr => 'Reading QR...';
-
-  @override
-  String get keystoneReadingSignature => 'Reading signature...';
 
   @override
   String get keystoneScanCameraRequired =>
@@ -2147,35 +2283,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get keystoneScanPromptOnKeystone => 'on your Keystone,';
-
-  @override
-  String get keystoneScanPromptTap => 'Tap';
-
-  @override
-  String get keystoneScanPromptThenScan => 'then scan this QR code';
-
-  @override
   String get keystoneScanReadingAccounts => 'Reading accounts...';
-
-  @override
-  String get keystoneScanWithKeystone => 'Scan with Keystone';
 
   @override
   String get keystoneSelectCamera => 'Select Camera';
 
   @override
-  String get keystoneShowTransactionQr => 'Show transaction QR';
-
-  @override
-  String get keystoneSignatureQrNotDecoded =>
-      'This QR code could not be decoded as a Keystone signature.';
-
-  @override
   String get keystoneStepHowToConnect => 'How to Connect';
-
-  @override
-  String get keystoneStepOneOfTwo => 'Step 1/2';
 
   @override
   String get keystoneStepOpenSoftwareWallet =>
@@ -2192,26 +2306,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneStepSelectVizor => 'Select Vizor (or ZODL)';
 
   @override
-  String get keystoneStepTwoOfTwo => 'Step 2/2';
-
-  @override
   String get keystoneSubmittingTransaction => 'Submitting the transaction';
-
-  @override
-  String get keystoneTipContinuityCamera =>
-      'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
 
   @override
   String get keystoneTipGiftFullScreen =>
       'Open the gift card QR code full screen on another device.';
-
-  @override
-  String get keystoneTipGiftMoveFurther =>
-      'Move the QR code a few inches further from the camera so it can focus.';
-
-  @override
-  String get keystoneTipGlare =>
-      'Make sure the room is well-lit and the QR code isn\'t reflecting glare.';
 
   @override
   String get keystoneTipMoveKeystoneFurther =>
@@ -2226,13 +2325,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keystoneTryAgainWithKeystone => 'Try again with Keystone';
-
-  @override
-  String get keystoneWindowsCameraBody =>
-      'Turn on Camera access and Let desktop apps access your camera in Windows Settings.';
-
-  @override
-  String get keystoneWindowsCameraTitle => 'Enable Windows camera access';
 
   @override
   String languageSystemOption(String language) {
@@ -2366,13 +2458,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerBtLabelAllowAccess => 'Allow access';
 
   @override
-  String get ledgerBtLabelCheckAgain => 'Check again';
-
-  @override
   String get ledgerBtLabelChecking => 'Checking access';
-
-  @override
-  String get ledgerBtLabelOpenSettings => 'Open settings';
 
   @override
   String get ledgerBtLabelReconnect => 'Reconnect';
@@ -2480,16 +2566,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerButtonConnecting => 'Connecting';
 
   @override
-  String get ledgerButtonSaving => 'Saving';
-
-  @override
   String get ledgerButtonSearching => 'Searching';
 
   @override
   String get ledgerCancelFailed => 'Could not finish cancelling. Try again.';
-
-  @override
-  String get ledgerCancelShielding => 'Cancel shielding';
 
   @override
   String get ledgerCancellingRequest => 'Cancelling request';
@@ -2554,9 +2634,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerConnectSubtitle => 'Prepare your Ledger wallet.';
-
-  @override
-  String get ledgerConnectTitle => 'Connect Ledger';
 
   @override
   String get ledgerConnectUsbCable => 'Connect with a USB cable.';
@@ -3025,9 +3102,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Open Bluetooth settings manually to remove the old pairing.';
 
   @override
-  String get ledgerOpenSettings => 'Open settings';
-
-  @override
   String get ledgerOpenZcashThenTryAgain =>
       'Open the Zcash app, then try again.';
 
@@ -3176,10 +3250,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'When prompted, check the amount and recipient on Ledger.';
 
   @override
-  String get ledgerSigningCheckingZcashReady =>
-      'Vizor is checking whether the Zcash app is ready.';
-
-  @override
   String get ledgerSigningCloseSemantics => 'Close Ledger';
 
   @override
@@ -3235,9 +3305,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerSigningStatusReview => 'Review on device';
 
   @override
-  String get ledgerSigningStatusWait => 'Please wait';
-
-  @override
   String get ledgerSigningStatusWaitingApproval => 'Waiting for your approval';
 
   @override
@@ -3250,13 +3317,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ledgerSigningStepReview => 'Review on Ledger';
 
   @override
-  String get ledgerSigningTitleChecking => 'Checking your Ledger';
-
-  @override
   String get ledgerSigningTitleConfirmOnLedger => 'Confirm on your Ledger';
-
-  @override
-  String get ledgerSigningTitleConfirmOpening => 'Confirm opening Zcash';
 
   @override
   String get ledgerSigningTitleFinishing => 'Finishing transaction';
@@ -3284,9 +3345,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ledgerSigningWaitInstruction =>
       'Ledger is preparing to sign. It may seem unresponsive for a few seconds.';
-
-  @override
-  String get ledgerStatusConnecting => 'Connecting…';
 
   @override
   String get ledgerStatusFollowPrompts => 'Follow the prompts on your Ledger';
@@ -3569,9 +3627,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationBroadcastPending => 'Pending';
-
-  @override
   String get migrationBroadcastSubmitted => 'Submitted';
 
   @override
@@ -3591,9 +3646,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationConfirming => 'Confirming';
-
-  @override
   String get migrationContinueMigration => 'Continue migration';
 
   @override
@@ -3601,9 +3653,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationCtaStart => 'Migrate to Ironwood Pool';
-
-  @override
-  String get migrationCtaStopped => 'Migration stopped by network upgrade';
 
   @override
   String get migrationCurrentBatch => 'Current Batch';
@@ -3757,9 +3806,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationFlowTitle => 'Ironwood Migration';
 
   @override
-  String get migrationGoHome => 'Go home';
-
-  @override
   String get migrationHowDelayedBody =>
       'Vizor slowly sends parts at staggered intervals across multiple batches to reduce traceability.';
 
@@ -3805,9 +3851,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationHowTitle => 'How the Migration Works';
 
   @override
-  String get migrationImmediateAmount => 'Amount';
-
-  @override
   String get migrationImmediateAuthoriseAnyway => 'Authorise anyway';
 
   @override
@@ -3815,9 +3858,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationImmediateAuthorisingSemantics => 'Authorising migration';
-
-  @override
-  String get migrationImmediateCalculating => 'Calculating…';
 
   @override
   String get migrationImmediateConsiderOther => 'Consider another option';
@@ -3888,10 +3928,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationIntroTagline => 'A new shielded pool for Zcash.';
 
   @override
-  String get migrationKeystoneAfterScanInstruction =>
-      'After you scanned, click Get signature.';
-
-  @override
   String get migrationKeystoneApplyingSignature =>
       'Applying the Keystone signature.';
 
@@ -3907,9 +3943,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationKeystoneBeginSigning => 'Begin signing';
-
-  @override
-  String get migrationKeystoneCamera => 'Camera';
 
   @override
   String get migrationKeystoneCameraAccess =>
@@ -3940,13 +3973,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Update Keystone firmware to sign Ironwood migrations, then try again.';
 
   @override
-  String get migrationKeystoneGetSignature => 'Get signature';
-
-  @override
-  String get migrationKeystoneKeepQrSteady =>
-      'Keep the QR code steady and fully visible.';
-
-  @override
   String get migrationKeystoneMobileTitle => 'Keystone migration';
 
   @override
@@ -3967,12 +3993,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationKeystonePrepareFailed =>
       'Keystone signing could not be prepared. Try again.';
-
-  @override
-  String get migrationKeystonePrepareWallet => 'Prepare your Keystone wallet';
-
-  @override
-  String get migrationKeystonePreparing => 'Preparing';
 
   @override
   String get migrationKeystonePreparingQr => 'Preparing QR codes...';
@@ -4013,9 +4033,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationKeystoneQrBodyRound =>
       'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.';
-
-  @override
-  String get migrationKeystoneReadingSignature => 'Reading signature...';
 
   @override
   String get migrationKeystoneRequestCancelled =>
@@ -4064,16 +4081,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Scan the new signed QR shown on Keystone.';
 
   @override
-  String get migrationKeystoneScanQrCode => 'Scan QR Code';
-
-  @override
   String get migrationKeystoneScanRequest => 'Scan request with Keystone';
 
   @override
   String get migrationKeystoneScanSignature => 'Scan Keystone signature';
-
-  @override
-  String get migrationKeystoneScanSubtitle => 'Scan with your Keystone';
 
   @override
   String get migrationKeystoneSignBatch => 'Sign Ironwood batch';
@@ -4083,10 +4094,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationKeystoneSignPrivateSplit => 'Sign private split';
-
-  @override
-  String get migrationKeystoneSignatureFailed =>
-      'Keystone signature could not be applied.';
 
   @override
   String migrationKeystoneSignsAll(String transactions) {
@@ -4185,9 +4192,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationManage => 'Manage';
-
-  @override
   String get migrationManageCancelling => 'Cancelling...';
 
   @override
@@ -4212,9 +4216,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationManageImmediateIntro =>
       'Process the remaining migration immediately.';
-
-  @override
-  String get migrationManageLoading => 'Loading...';
 
   @override
   String get migrationManageNoBalance =>
@@ -4326,23 +4327,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileAttentionStoppedTitle =>
-      'Migration stopped by network upgrade';
-
-  @override
-  String get migrationMobileBackHome => 'Back home';
-
-  @override
   String get migrationMobileBackToHome => 'Back to home';
 
   @override
-  String get migrationMobileBannerInProgress => 'Migration in progress';
-
-  @override
   String get migrationMobileBannerLate => 'Migration needs attention';
-
-  @override
-  String get migrationMobileBannerPreparing => 'Preparing migration';
 
   @override
   String get migrationMobileBannerProof => 'Next migration batch is ready';
@@ -4362,15 +4350,6 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
-
-  @override
-  String get migrationMobileBannerStart => 'Migrate to Ironwood';
-
-  @override
-  String get migrationMobileBannerStopped => 'Migration stopped';
-
-  @override
-  String get migrationMobileBannerWaiting => 'Waiting for confirmation...';
 
   @override
   String migrationMobileBatchProgress(int completed, int total) {
@@ -4393,58 +4372,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileCompleteTitle => 'You’re all set!';
 
   @override
-  String get migrationMobileContinueError =>
-      'Couldn\'t continue migration. Try again.';
-
-  @override
   String get migrationMobileContinueThisError =>
       'Couldn\'t continue this migration. Try again.';
 
   @override
   String get migrationMobileCredentialsRestore =>
       'Your migration credentials need to be restored before continuing.';
-
-  @override
-  String get migrationMobileErrorBroadcast =>
-      'Couldn\'t broadcast the migration transaction. Try again.';
-
-  @override
-  String get migrationMobileErrorPlanChanged =>
-      'The amount or fee changed. Review the updated details.';
-
-  @override
-  String get migrationMobileErrorStart =>
-      'Couldn\'t start migration. Try again.';
-
-  @override
-  String get migrationMobileErrorSyncFirst =>
-      'Wait for sync to finish, then try again.';
-
-  @override
-  String get migrationMobileErrorUnlock =>
-      'Unlock Vizor before starting migration.';
-
-  @override
-  String get migrationMobileEstCompletion => 'Est. completion';
-
-  @override
-  String get migrationMobileFastConsiderOther => 'Consider another option';
-
-  @override
-  String get migrationMobileFastContinueAnyway => 'Continue anyway';
-
-  @override
-  String get migrationMobileFastDurationRow => 'Migration complete in';
-
-  @override
-  String get migrationMobileFastFeesRow => 'Fees (estimate)';
-
-  @override
-  String get migrationMobileFastNoBalance =>
-      'No spendable Orchard balance is available for Immediate migration.';
-
-  @override
-  String get migrationMobileFastPlanCalculating => 'Calculating…';
 
   @override
   String get migrationMobileFastPlanError =>
@@ -4458,23 +4391,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'easier to associate with your wallet';
 
   @override
-  String migrationMobileFastPrivacyBodyLead(String amount) {
-    return 'Crosses in one visible step — your $amount and timing are ';
-  }
-
-  @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
       'Consider choosing a Private Migration option.';
 
   @override
   String get migrationMobileFastPrivacyLedger =>
       'Private migration is not available for Ledger accounts.';
-
-  @override
-  String get migrationMobileFastPrivacyTitle => 'Privacy trade-off';
-
-  @override
-  String get migrationMobileFastRetryCalculation => 'Retry calculation';
 
   @override
   String migrationMobileFastSubmittedBody(String amount) {
@@ -4488,25 +4410,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileFastTitle => 'Fast Migration';
 
   @override
-  String get migrationMobileGoHome => 'Go home';
-
-  @override
-  String get migrationMobileHeroBadge => 'Migration';
-
-  @override
-  String get migrationMobileHeroIronwoodPool => 'Ironwood Pool';
-
-  @override
-  String get migrationMobileHeroLegacy => '(Legacy)';
-
-  @override
-  String get migrationMobileHeroOrchardPool => 'Orchard Pool';
-
-  @override
   String get migrationMobileHowItWorksNavTitle => 'About';
-
-  @override
-  String get migrationMobileHowItWorksTitle => 'How Migration Works';
 
   @override
   String migrationMobileIntroBody(String amount) {
@@ -4515,9 +4419,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileIntroReleaseNote => 'Official release note';
-
-  @override
-  String get migrationMobileIntroTagline => 'A new shielded pool for Zcash.';
 
   @override
   String get migrationMobileIntroTitle => 'Zcash Network Update';
@@ -4533,10 +4434,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Confirm migration preparation with Keystone';
 
   @override
-  String get migrationMobileKeystoneConfirmTitle =>
-      'Confirm Migration with Keystone';
-
-  @override
   String get migrationMobileKeystoneConfirmTransferSemantics =>
       'Confirm migration transfer with Keystone';
 
@@ -4550,21 +4447,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileKeystoneLoadingQrSemantics => 'Loading QR code';
-
-  @override
-  String get migrationMobileKeystoneLoadingQrText => 'Loading QR code ...';
-
-  @override
-  String get migrationMobileKeystoneNextStep => 'Next step';
-
-  @override
-  String get migrationMobileKeystonePromptOnDevice => 'on your Keystone,';
-
-  @override
-  String get migrationMobileKeystonePromptTap => 'Tap';
-
-  @override
-  String get migrationMobileKeystonePromptThenScan => 'then scan this QR code';
 
   @override
   String get migrationMobileKeystoneReconnect =>
@@ -4594,23 +4476,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileKeystoneScanProgress => 'Scan progress';
 
   @override
-  String get migrationMobileKeystoneScanTitle => 'Scan with Keystone';
-
-  @override
   String get migrationMobileKeystoneScanTransferSemantics =>
       'Scan the signed migration transfer from Keystone';
-
-  @override
-  String get migrationMobileKeystoneShowTxQr => 'Show transaction QR';
-
-  @override
-  String get migrationMobileKeystoneStep1 => 'Step 1/2';
-
-  @override
-  String get migrationMobileKeystoneStep2 => 'Step 2/2';
-
-  @override
-  String get migrationMobileLeftToMigrate => 'Left to migrate';
 
   @override
   String get migrationMobileManageCheckError =>
@@ -4618,9 +4485,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileManageChecking => 'Checking migration status...';
-
-  @override
-  String get migrationMobileManageConfirm => 'Confirm';
 
   @override
   String get migrationMobileManageNoRevert =>
@@ -4640,9 +4504,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileManageStopTitle => 'Stop migration?';
 
   @override
-  String get migrationMobileManageStopping => 'Stopping...';
-
-  @override
   String get migrationMobileManageSwitchAction => 'Switch to Fast';
 
   @override
@@ -4660,10 +4521,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This migration is no longer available to manage.';
 
   @override
-  String get migrationMobileManageUpdateError =>
-      'The migration could not be updated. Please try again.';
-
-  @override
   String get migrationMobileManageWaitingBroadcast =>
       'Waiting for any active broadcast to finish before stopping the remaining migration.';
 
@@ -4675,9 +4532,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String migrationMobileNextExpectedIn(String timing) {
     return 'Next migration step expected in\n$timing.';
   }
-
-  @override
-  String get migrationMobileNextMigration => 'Next migration';
 
   @override
   String migrationMobileNextNotificationsOffBlock(int height, String timing) {
@@ -4756,22 +4610,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileOptionImmediateTitle => 'Immediate';
-
-  @override
   String get migrationMobileOptionPrivateBody =>
       'Splits transactions into multiple parts to minimize traceability but will take several hours to days.';
 
   @override
-  String get migrationMobileOptionPrivateTitle => 'Private';
-
-  @override
   String get migrationMobileOptionPrivateUnavailableAndroid =>
       'Not available on Android.';
-
-  @override
-  String get migrationMobileOptionPrivateUnavailableLedger =>
-      'Not available for Ledger accounts.';
 
   @override
   String get migrationMobileOptionsNavTitle => 'How to Migrate';
@@ -4779,10 +4623,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationMobileOptionsOpenError =>
       'Couldn\'t open migration preparation. Try again.';
-
-  @override
-  String get migrationMobileOptionsSubtitle =>
-      'Choose between more privacy over time or a faster migration. You can review the details before anything moves.';
 
   @override
   String get migrationMobileOptionsSubtitleAndroid =>
@@ -4800,11 +4640,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String migrationMobileOptionsSubtitleLedgerRest(String amount) {
     return '$amount ZEC is still in Orchard. Private migration is not available for Ledger accounts. Choose Immediate to continue.';
-  }
-
-  @override
-  String migrationMobileOptionsSubtitleRest(String amount) {
-    return '$amount ZEC is still in Orchard. Choose between more privacy over time or a faster migration.';
   }
 
   @override
@@ -4862,10 +4697,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobilePrepDuration => 'Preparation will\ntake 10–20 min';
-
-  @override
-  String get migrationMobilePrepInfoOrganizing =>
-      'We’re organizing your balance into common-sized parts. This makes your migration harder to link.';
 
   @override
   String get migrationMobilePrepInfoThenBegin =>
@@ -4936,10 +4767,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileProgressConfirmations =>
-      'Waiting for confirmations';
-
-  @override
   String get migrationMobileProgressNextStep =>
       'Waiting for next migration step';
 
@@ -4949,9 +4776,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationMobileProgressScheduledReady =>
       'Scheduled transaction ready';
-
-  @override
-  String get migrationMobileProgressSyncing => 'Syncing';
 
   @override
   String get migrationMobileProgressSyncingBody =>
@@ -4980,9 +4804,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileRebuildTitle => 'Rebuild migration?';
 
   @override
-  String get migrationMobileRecommended => 'Recommended';
-
-  @override
   String get migrationMobileRecover => 'Recover';
 
   @override
@@ -4992,9 +4813,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileRecoveryRequired => 'Migration recovery required.';
 
   @override
-  String get migrationMobileResume => 'Resume';
-
-  @override
   String get migrationMobileResuming => 'Resuming...';
 
   @override
@@ -5002,17 +4820,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Vizor will retry automatically.';
 
   @override
-  String get migrationMobileRetrying => 'Retrying...';
-
-  @override
-  String get migrationMobileReviewPlanTitle => 'Review Migration Plan';
-
-  @override
   String get migrationMobileSavedTxError =>
       'Two saved transactions couldn\'t be reopened.';
-
-  @override
-  String get migrationMobileScheduleCalculating => 'Calculating';
 
   @override
   String get migrationMobileScheduleChange => 'Change';
@@ -5023,19 +4832,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileScheduleCurrentBlock => 'Current block';
-
-  @override
-  String get migrationMobileScheduleDueNow => 'Due now';
-
-  @override
   String get migrationMobileScheduleDuration => 'Duration';
 
   @override
   String get migrationMobileScheduleLoading => 'Loading migration schedule';
-
-  @override
-  String get migrationMobileScheduleManage => 'Manage';
 
   @override
   String get migrationMobileScheduleMigrating => 'Migrating…';
@@ -5055,26 +4855,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileScheduleOverdue => 'Overdue';
 
   @override
-  String get migrationMobileSchedulePending => 'Schedule pending';
-
-  @override
   String get migrationMobileSchedulePreparationProgress =>
       'Preparation progress';
 
   @override
-  String get migrationMobileSchedulePreparationTitle => 'Preparation Schedule';
-
-  @override
-  String get migrationMobileSchedulePreparing => 'Preparing schedule';
-
-  @override
-  String get migrationMobileSchedulePreparingState => 'Preparing';
-
-  @override
   String get migrationMobileScheduleReadyIn => 'Ready in';
-
-  @override
-  String get migrationMobileScheduleReadyToSign => 'Ready to sign';
 
   @override
   String get migrationMobileScheduleReturn => 'Return';
@@ -5088,9 +4873,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationMobileScheduleRoundsRemaining => 'Rounds remaining';
 
   @override
-  String get migrationMobileScheduleScheduled => 'Scheduled';
-
-  @override
   String get migrationMobileScheduleSpendable => 'Ironwood spendable';
 
   @override
@@ -5099,23 +4881,8 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileScheduleTitle => 'Migration Schedule';
-
-  @override
   String get migrationMobileScheduleUnavailableBody =>
       'Vizor couldn\'t load the latest schedule. Your saved migration state is unchanged.';
-
-  @override
-  String get migrationMobileScheduleUnavailableTitle =>
-      'Migration schedule unavailable';
-
-  @override
-  String get migrationMobileScheduleWaitingMined => 'Waiting to be mined';
-
-  @override
-  String migrationMobileScheduleWindow(String height) {
-    return 'Window #$height';
-  }
 
   @override
   String get migrationMobileSpendableBalance => 'Currently spendable balance';
@@ -5137,10 +4904,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Organizing migration batches...';
 
   @override
-  String get migrationMobileStartMessagePlan =>
-      'Preparing your migration plan...';
-
-  @override
   String get migrationMobileStartMessagePreparing =>
       'Preparing your migration...';
 
@@ -5149,24 +4912,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Continue to sign the preparation transactions and migration batches together with Keystone.';
 
   @override
-  String get migrationMobileStartReadyTitle => 'Ready to sign';
-
-  @override
   String migrationMobileStatusNotesCount(int count) {
     return '$count notes';
   }
 
   @override
   String get migrationMobileStatusNotesLead => 'Migration ';
-
-  @override
-  String get migrationMobileStatusTitle => 'Ironwood Migration';
-
-  @override
-  String get migrationMobileStoppedMoved => 'Moved to Ironwood';
-
-  @override
-  String get migrationMobileStoppedRemaining => 'Still in Orchard';
 
   @override
   String get migrationMobileSyncingProgress =>
@@ -5244,10 +4995,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationNextActionDetailWaitingForConfirmations =>
       'Waiting for confirmations';
-
-  @override
-  String get migrationNextActionDetailWaitingForSync =>
-      'Waiting for wallet sync';
 
   @override
   String get migrationNextActionLabelAwaitingMining => 'Awaiting mining';
@@ -5350,9 +5097,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationOptionsTitleMoveRest => 'How to move the rest';
 
   @override
-  String get migrationOverallCalculatingTotal => 'Calculating total';
-
-  @override
   String migrationOverallProgress(String completed, String total) {
     return '$completed of $total complete';
   }
@@ -5408,9 +5152,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationPrivacyLockDescription =>
       'We auto-locked Vizor after 10 minutes of inactivity.';
-
-  @override
-  String get migrationPrivacyLockInProgress => 'Migration in progress';
 
   @override
   String migrationProgressTipBlockTime(String seconds) {
@@ -5560,9 +5301,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationSchedulePending => 'Schedule pending';
 
   @override
-  String get migrationSchedulePreparing => 'Preparing';
-
-  @override
   String get migrationScheduleReadyToMigrate => 'Ready to migrate';
 
   @override
@@ -5592,9 +5330,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String migrationScheduleSemanticsBroadcast(String height) {
     return 'broadcast, waiting to be mined, projected completion at block $height';
   }
-
-  @override
-  String get migrationScheduleSemanticsCompleted => 'completed';
 
   @override
   String migrationScheduleSemanticsCompletedAt(String height) {
@@ -5766,9 +5501,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Vizor is broadcasting the prepared Ironwood migration transaction.';
 
   @override
-  String get migrationStatusBroadcastingButton => 'Broadcasting';
-
-  @override
   String get migrationStatusCompleteBody =>
       'Your funds have moved into the Ironwood pool.';
 
@@ -5806,9 +5538,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Ledger private migration is not supported because this flow requires batched signing.';
 
   @override
-  String get migrationStatusMigratingTitle => 'Migrating...';
-
-  @override
   String get migrationStatusPausedBody =>
       'The private migration is paused before the next action.';
 
@@ -5828,9 +5557,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationStatusPreparingBody =>
       'This usually takes around 30 minutes per split.';
-
-  @override
-  String get migrationStatusPreparingTitle => 'Preparing...';
 
   @override
   String get migrationStatusReadyBody =>
@@ -5906,9 +5632,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get migrationUpgradeStopRingMessage =>
       'Stopped by the\nnetwork upgrade';
-
-  @override
-  String get migrationView => 'View';
 
   @override
   String get migrationViewSchedule => 'View Schedule';
@@ -6116,19 +5839,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingConnectKeystone => 'Connect Keystone';
 
   @override
-  String get onboardingConnectLedger => 'Connect Ledger';
-
-  @override
   String get onboardingContinueAnywayDesktop => 'Continue Anyway';
 
   @override
-  String get onboardingContinueAnywayMobile => 'Continue anyway';
-
-  @override
   String get onboardingCreatingWallet => 'Creating wallet...';
-
-  @override
-  String get onboardingCustomiseAccount => 'Customise Account';
 
   @override
   String get onboardingCustomiseAccountSubtitle =>
@@ -6470,9 +6184,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingStepAddressTypes => 'Address types';
 
   @override
-  String get onboardingStepCustomiseWallet => 'Customise wallet';
-
-  @override
   String get onboardingStepImportContacts => 'Import contacts';
 
   @override
@@ -6687,9 +6398,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payRecipientAddressLabel => 'Recipient address';
 
   @override
-  String get payRecipientScanQr => 'Scan QR code';
-
-  @override
   String get payRefreshingQuote => 'Refreshing quote';
 
   @override
@@ -6721,9 +6429,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paySaveContactError => 'Couldn\'t save this contact. Try again.';
-
-  @override
-  String get paySaving => 'Saving';
 
   @override
   String get payScanBarrierDismiss => 'Dismiss';
@@ -6820,14 +6525,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String paymentLinkAmountCurrencySemantic(String currency) {
-    return 'Enter amount in $currency';
-  }
-
-  @override
-  String get paymentLinkAmountEnterAmount => 'Enter amount';
-
-  @override
   String get paymentLinkAmountEnterDollars => 'Enter dollars';
 
   @override
@@ -6871,13 +6568,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkArtworkDragon => 'Dragon';
 
   @override
-  String get paymentLinkArtworkGandalf => 'Wizard';
-
-  @override
   String get paymentLinkArtworkGift => 'Gift box';
-
-  @override
-  String get paymentLinkArtworkKnight => 'Knight';
 
   @override
   String get paymentLinkArtworkKnightMagic => 'Magic knight';
@@ -7133,9 +6824,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Card could not be updated. Try again.';
 
   @override
-  String get paymentLinkCardsLabel => 'Cards';
-
-  @override
   String get paymentLinkCardsLoadFailed => 'Gift cards could not be loaded.';
 
   @override
@@ -7175,17 +6863,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkCheckingGiftFull => 'Checking the gift… 100%';
 
   @override
-  String get paymentLinkCheckingLabel => 'Checking…';
-
-  @override
   String get paymentLinkChooseReceivingAccount => 'Choose receiving account';
 
   @override
   String get paymentLinkClaimAccountPrepareFailed =>
       'Couldn’t prepare this gift. Try again or choose another account.';
-
-  @override
-  String get paymentLinkClaimActionCheckAgain => 'Check again';
 
   @override
   String get paymentLinkClaimActionCreateAccount =>
@@ -7204,10 +6886,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paymentLinkClaimCheckingHeading => 'Checking your\ngift card';
-
-  @override
-  String get paymentLinkClaimCloseFailed =>
-      'Couldn’t close the card. Try again.';
 
   @override
   String get paymentLinkClaimFailedMaybePending =>
@@ -7314,9 +6992,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkConfirmGiftCardTitle => 'Confirm Gift Card';
 
   @override
-  String get paymentLinkCopyLink => 'Copy link';
-
-  @override
   String get paymentLinkCopyLinkAgainHint =>
       'You can copy this link again from Settings → My gift cards.';
 
@@ -7338,18 +7013,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkCostCalculatingFee => 'Calculating network fee';
 
   @override
-  String get paymentLinkCostCalculatingTotal => 'Calculating total';
-
-  @override
   String paymentLinkCostCardsMultiplier(int count) {
     return '× $count cards';
   }
 
   @override
   String get paymentLinkCostMessageOnEveryCard => 'Message on every card';
-
-  @override
-  String get paymentLinkCostNetworkFee => 'Network fee';
 
   @override
   String get paymentLinkCostPerCard => 'Per card';
@@ -7378,20 +7047,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkCreateNewCard => 'Create new card';
 
   @override
-  String get paymentLinkCreatedTabLabel => 'Created';
-
-  @override
-  String get paymentLinkCreating => 'Creating…';
-
-  @override
   String get paymentLinkCreationFailed =>
       'Gift card creation failed. Try again.';
-
-  @override
-  String get paymentLinkCustomiseAccountStep => 'Customise Account';
-
-  @override
-  String get paymentLinkCustomiseWalletStep => 'Customise wallet';
 
   @override
   String get paymentLinkDeleteMessageSemantic => 'Delete gift card message';
@@ -7507,9 +7164,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkGiftMessageLabel => 'Gift message';
 
   @override
-  String get paymentLinkGoHome => 'Go home';
-
-  @override
   String get paymentLinkGroupConfirmingPayment => 'Confirming payment';
 
   @override
@@ -7541,9 +7195,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paymentLinkGroupPaymentPending => 'Payment status pending';
-
-  @override
-  String get paymentLinkGroupReadyToShare => 'Ready to share';
 
   @override
   String get paymentLinkGroupSomeNotReady => 'Some cards aren’t ready';
@@ -7625,37 +7276,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'The funding status is uncertain. Check activity before trying again.';
 
   @override
-  String get paymentLinkKeystoneKeepOpen =>
-      'Keep Vizor open while the transaction is sent.';
-
-  @override
-  String get paymentLinkKeystoneQrMismatch =>
-      'This QR code does not match the current Keystone request.';
-
-  @override
-  String get paymentLinkKeystoneReadingSignature => 'Reading signature…';
-
-  @override
   String get paymentLinkKeystoneScanCaption =>
       'Scan the QR code on your Keystone to finish creating';
-
-  @override
-  String get paymentLinkKeystoneScanToSign => 'Scan to sign';
 
   @override
   String get paymentLinkKeystoneSignTitle => 'Sign gift card on Keystone';
 
   @override
-  String get paymentLinkKeystoneSignatureFailed =>
-      'Keystone signature could not be applied.';
-
-  @override
   String get paymentLinkKeystoneSigningFailed =>
       'Gift card signing could not be completed.';
-
-  @override
-  String get paymentLinkKeystoneSubmittingTransaction =>
-      'Submitting transaction';
 
   @override
   String get paymentLinkLeaveSaveMany =>
@@ -7676,10 +7305,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get paymentLinkLedgerSavedForRecovery =>
       'Gift card funding is saved for recovery. Try again to check its status and finish saving.';
-
-  @override
-  String get paymentLinkLedgerSigningIncomplete =>
-      'Ledger signing could not be completed. Check your device and try again.';
 
   @override
   String get paymentLinkLinkCopied => 'Gift link copied';
@@ -7770,15 +7395,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkPasteLabel => 'Paste card link';
 
   @override
-  String get paymentLinkPendingSectionLabel => 'Pending';
-
-  @override
-  String get paymentLinkPreparing => 'Preparing…';
-
-  @override
-  String get paymentLinkPreparingStatus => 'Preparing…';
-
-  @override
   String get paymentLinkPrivacyModeOff => 'Turn off privacy mode';
 
   @override
@@ -7827,9 +7443,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get paymentLinkReceivedHeadingDesktop =>
       'You’ve received\na gift card!';
-
-  @override
-  String get paymentLinkReceivedTabLabel => 'Received';
 
   @override
   String get paymentLinkReceivingAccountChangedReopen =>
@@ -7918,18 +7531,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentLinkSaving => 'Saving…';
 
   @override
-  String get paymentLinkScanAgain => 'Scan again';
-
-  @override
   String get paymentLinkScanAgainOrPaste =>
       'Scan again or paste another card link.';
 
   @override
   String get paymentLinkScanCameraHint =>
       'Connect a camera to scan the gift card QR code, or go back to paste the card link.';
-
-  @override
-  String get paymentLinkScanQrCode => 'Scan QR code';
 
   @override
   String get paymentLinkScanSheetSemantic => 'Scan the gift card QR code';
@@ -8056,9 +7663,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get paymentLinkUsageConfirming => 'Confirming';
-
-  @override
   String get paymentLinkUsageFundingNotObserved =>
       'The funding transaction could not yet be verified in the tracking history.';
 
@@ -8105,9 +7709,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paymentLinkUsageUnverified => 'Unverified';
-
-  @override
-  String get paymentLinkUsageUpdateFailed => 'Update failed';
 
   @override
   String get paymentLinkUsageUseDetected => 'Use detected';
@@ -8321,9 +7922,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t copy the request link. Try sharing it instead.';
 
   @override
-  String get receiveRequestCopyLink => 'Copy link';
-
-  @override
   String get receiveRequestCopyRequestLink => 'Copy request link';
 
   @override
@@ -8464,11 +8062,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendEnterAddressToContinue => 'Enter address to continue';
 
   @override
-  String sendEnterAmountInCurrency(String currency) {
-    return 'Enter amount in $currency';
-  }
-
-  @override
   String get sendEnterValidAddress => 'Enter a valid address';
 
   @override
@@ -8572,18 +8165,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendInvalidAmount => 'Invalid amount';
 
   @override
-  String get sendKeystoneConfirmTitle => 'Confirm with Keystone';
-
-  @override
   String get sendKeystonePrepareFailedGoBack =>
       'Keystone signing could not be prepared. Go back and try again.';
 
   @override
   String get sendKeystonePrepareFailedReturnToSend =>
       'Keystone signing could not be prepared. Return to Send and try again.';
-
-  @override
-  String get sendKeystonePreparing => 'Preparing';
 
   @override
   String get sendKeystoneQrMismatch =>
@@ -8606,18 +8193,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Scan now. Signature import unlocks after proofs are ready.';
 
   @override
-  String get sendKeystoneScanReading => 'Reading signature...';
-
-  @override
-  String get sendKeystoneScanSubtitle => 'Scan with your Keystone';
-
-  @override
   String get sendKeystoneScanToFinish =>
       'Scan the QR code on your Keystone to finish sending';
-
-  @override
-  String get sendKeystoneScanUnexpectedTransaction =>
-      'Open the signed transaction QR on Keystone, then scan again.';
 
   @override
   String sendKeystoneTexTwoApprovals(int index) {
@@ -8664,9 +8241,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Keep Vizor open and retry saving. No new Ledger approval needed.';
 
   @override
-  String get sendLedgerNeedsAttentionTitle => 'Ledger needs attention';
-
-  @override
   String get sendLedgerRejectedOnDevice =>
       'The transaction was rejected on your Ledger.';
 
@@ -8677,10 +8251,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sendLedgerSignedNeedsAttentionTitle =>
       'Signed transaction needs attention';
-
-  @override
-  String get sendLedgerSigningIncomplete =>
-      'Ledger signing could not be completed. Check your device and try again.';
 
   @override
   String get sendLedgerSigningUnavailableTitle => 'Ledger signing unavailable';
@@ -8748,9 +8318,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendPaymentRequestAmountNotSpecified => 'Amount not specified';
 
   @override
-  String get sendPaymentRequestCheckAgain => 'Check again';
-
-  @override
   String get sendPaymentRequestCheckBeforePayBody =>
       'Other apps can change the address or amount in a request link.';
 
@@ -8790,9 +8357,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sendPaymentRequestConfirmWithSender =>
       'Confirm the details with the person who sent it.';
-
-  @override
-  String get sendPaymentRequestEnterAmount => 'Enter amount';
 
   @override
   String get sendPaymentRequestHideFullAddress => 'Hide full recipient address';
@@ -8970,18 +8534,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Show the requester’s original QR code to your camera';
 
   @override
-  String get sendRequestScanTipContinuity =>
-      'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
-
-  @override
-  String get sendRequestScanTipDistance =>
-      'Move the QR code a few inches further from the camera so it can focus.';
-
-  @override
-  String get sendRequestScanTipLight =>
-      'Make sure the room is well-lit and the QR code isn\'t reflecting glare.';
-
-  @override
   String get sendRequestScanTipOriginal =>
       'Open the requester’s original QR code full screen on another device.';
 
@@ -9016,9 +8568,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sendReviewFinishingSyncButton => 'Finishing wallet sync...';
-
-  @override
-  String get sendReviewPreparing => 'Preparing...';
 
   @override
   String sendReviewRequestedAmount(String amount) {
@@ -9420,16 +8969,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t update your password. Please try again.';
 
   @override
-  String get settingsPfpKnight => 'Knight';
-
-  @override
   String get settingsPfpSamurai => 'Samurai';
 
   @override
   String get settingsPfpViking => 'Viking';
-
-  @override
-  String get settingsPfpWizard => 'Wizard';
 
   @override
   String get settingsPirCheckingUpdates => 'Checking for updates…';
@@ -9579,9 +9122,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSectionPersonal => 'Personal';
-
-  @override
-  String get settingsSectionSyncing => 'Syncing';
 
   @override
   String get settingsSectionSystem => 'System';
@@ -9747,9 +9287,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsTorStatusConnected => 'Connected';
-
-  @override
-  String get settingsTorStatusConnecting => 'Connecting…';
 
   @override
   String get settingsTorStatusConnectionFailed => 'Connection failed';
@@ -10052,16 +9589,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarHideBalance => 'Hide balance';
 
   @override
-  String get sidebarManageAccounts => 'Manage';
-
-  @override
-  String get sidebarMigrating => 'Migrating...';
-
-  @override
   String get sidebarMigrationNeedsInput => 'Needs input';
-
-  @override
-  String get sidebarMigrationStopped => 'Migration stopped';
 
   @override
   String get sidebarMyAccounts => 'My accounts';
@@ -10077,9 +9605,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapActionAddRefundAddress => 'Add refund address';
-
-  @override
-  String get swapActionContinueToReview => 'Continue to review';
 
   @override
   String get swapActionGettingQuote => 'Getting quote';
@@ -10692,15 +10217,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapKeystoneNoTex => 'Keystone does not support TEX sends yet.';
 
   @override
-  String get swapKeystoneQrMismatch =>
-      'This QR code does not match the current Keystone request.';
-
-  @override
   String get swapKeystoneScanCaption =>
       'Scan the QR code on your Keystone to finish the ZEC deposit';
-
-  @override
-  String get swapKeystoneScanToSign => 'Scan to sign';
 
   @override
   String get swapKeystoneSignTitle => 'Sign ZEC deposit on Keystone';
@@ -10748,9 +10266,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapLedgerStatusSaving => 'Saving transaction';
-
-  @override
-  String get swapLedgerStatusWait => 'Please wait';
 
   @override
   String get swapLedgerTitlePending => 'Transaction status pending';
@@ -10984,9 +10499,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapTimeoutRestart => 'Restart swap';
 
   @override
-  String get swapTimeoutTitle => 'Time’s up';
-
-  @override
   String get swapViewOnNearIntents => 'View on NEAR Intents';
 
   @override
@@ -11084,9 +10596,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateRestart => 'Restart';
 
   @override
-  String get votingActionResume => 'Resume';
-
-  @override
   String get votingActionRetryEligibility => 'Retry eligibility';
 
   @override
@@ -11097,9 +10606,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get votingActionUnavailable => 'Unavailable';
-
-  @override
-  String get votingActionView => 'View';
 
   @override
   String get votingActionViewResults => 'View results';
@@ -11147,18 +10653,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get votingCheckAgain => 'Check again';
-
-  @override
   String votingChoiceFallback(int number) {
     return 'Choice $number';
   }
 
   @override
   String get votingConfigAddCustomSource => 'Add custom source';
-
-  @override
-  String get votingConfigBadgeDefault => 'Default';
 
   @override
   String get votingConfigCloseSettings => 'Close voting config settings';
@@ -11297,9 +10797,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingConfirmationUpdatingRounds => 'Updating voting rounds...';
 
   @override
-  String get votingContinueToReview => 'Continue to review';
-
-  @override
   String get votingContinueVoting => 'Continue voting';
 
   @override
@@ -11425,29 +10922,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.';
 
   @override
-  String votingLedgerBundleOf(int number, int total) {
-    return 'Bundle $number of $total';
-  }
-
-  @override
-  String get votingLedgerChecking => 'Checking your Ledger';
-
-  @override
-  String get votingLedgerCheckingBody =>
-      'Vizor is checking whether the Zcash app is ready.';
-
-  @override
-  String get votingLedgerConfirmOpen => 'Confirm opening Zcash';
-
-  @override
   String get votingLedgerConfirmOpenBody =>
       'Approve the request to open the Zcash app on your Ledger.';
 
   @override
   String get votingLedgerFinishing => 'Finishing voting delegation';
-
-  @override
-  String get votingLedgerNeedsAttention => 'Ledger needs attention';
 
   @override
   String get votingLedgerPanelTitle => 'Voting delegation';
@@ -11466,9 +10945,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String votingMobileAccountLoadFailed(String error) {
     return 'Couldn\'t load account.\n$error';
   }
-
-  @override
-  String get votingMobileGoHome => 'Go home';
 
   @override
   String get votingMobileHeaderTitle => 'Voting';
@@ -11641,9 +11117,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingPowerUnavailableTitle => 'Voting power unavailable';
 
   @override
-  String get votingPreparingEllipsis => 'Preparing...';
-
-  @override
   String get votingPreparingPower => 'Preparing voting power.';
 
   @override
@@ -11670,9 +11143,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get votingProgressUnknown => 'Unknown';
-
-  @override
   String votingProgressWaitingConfirmation(String suffix) {
     return 'Waiting for submission and confirmation$suffix';
   }
@@ -11681,18 +11151,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingReceiptPower => 'Voting power';
 
   @override
-  String get votingReceiptRound => 'Voting round';
-
-  @override
   String votingRemainingBundles(int count, int total) {
     return '$count of $total remaining bundles';
   }
 
   @override
   String get votingResultsFallbackTitle => 'Voting results';
-
-  @override
-  String get votingResultsHeading => 'Results';
 
   @override
   String get votingResultsHideDescription => 'Hide description';
@@ -11717,15 +11181,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get votingResultsShowDescription => 'Show description';
 
   @override
-  String get votingResultsTotal => 'Total';
-
-  @override
   String votingResultsTotalAmount(String amount) {
     return 'Total: $amount';
   }
-
-  @override
-  String get votingResultsVoted => 'Voted';
 
   @override
   String votingResultsVotedFor(String choice) {
@@ -11763,12 +11221,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get votingScanNoCamera =>
       'Keystone voting uses camera QR scanning only. Connect a camera and try again.';
-
-  @override
-  String get votingScanReading => 'Reading signature...';
-
-  @override
-  String get votingScanSteady => 'Keep the QR code steady and fully visible.';
 
   @override
   String get votingScanTitle => 'Scan voting signature';
@@ -11886,9 +11338,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get votingSyncWaitingBody =>
       'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.';
-
-  @override
-  String get votingSyncWaitingTitle => 'Waiting for wallet sync';
 
   @override
   String votingTerminalBundle(int number, String reason) {
@@ -12029,9 +11478,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'For your security the link is only valid for a minute. Generate a fresh code and scan it again.';
 
   @override
-  String get walletLinkDesktopExpiredTitle => 'Time’s up';
-
-  @override
   String walletLinkDesktopExpiresIn(String time) {
     return 'Expires in $time';
   }
@@ -12066,9 +11512,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get walletLinkDesktopLinkedTitle => 'Vizor Mobile linked successfully';
-
-  @override
-  String get walletLinkDesktopPreparing => 'Preparing';
 
   @override
   String get walletLinkDesktopReadyToScan => '1/1 Ready to scan...';
@@ -12162,9 +11605,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get walletLinkReadingLink => 'Reading link...';
-
-  @override
-  String get walletLinkScanAgain => 'Scan again';
 
   @override
   String get walletLinkScanCaption => 'Scan the Vizor desktop QR';

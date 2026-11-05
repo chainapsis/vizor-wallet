@@ -262,7 +262,7 @@ String? _mobileMigrationPartDetail(
       blockTimes: blockTimes,
       currentHeight: currentHeight,
     ),
-    rust_sync.MigrationPartState.migrating => l10n.sidebarMigrating,
+    rust_sync.MigrationPartState.migrating => l10n.commonMigrating,
     rust_sync.MigrationPartState.needsInput => null,
     _ => null,
   };

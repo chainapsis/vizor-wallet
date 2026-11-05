@@ -61,11 +61,11 @@ abstract final class AppBackResolver {
     '/settings/uninstall': (l) => l.settingsUninstallTitle,
     '/onboarding/keystone': (l) => l.onboardingConnectKeystone,
     '/voting': (l) => l.navVote,
-    '/voting/poll/:roundId': (l) => l.appBackVotingRound,
+    '/voting/poll/:roundId': (l) => l.commonVotingRound,
     '/voting/poll/:roundId/review': (l) => l.appBackReview,
     '/voting/poll/:roundId/status': (l) => l.appBackStatus,
     '/voting/poll/:roundId/submitted': (l) => l.appBackSubmitted,
-    '/voting/poll/:roundId/results': (l) => l.appBackResults,
+    '/voting/poll/:roundId/results': (l) => l.commonResults,
     '/voting/keystone/scan': (_) => 'Keystone', // l10n-ignore: device name
   };
 

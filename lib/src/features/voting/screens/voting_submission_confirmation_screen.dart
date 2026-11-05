@@ -583,7 +583,7 @@ class _ConfirmationScaffold extends StatelessWidget {
                         _ReceiptCard(
                           rows: [
                             _ReceiptRow(
-                              label: context.l10n.votingReceiptRound,
+                              label: context.l10n.commonVotingRound,
                               value: pollTitle,
                             ),
                             _ReceiptRow(

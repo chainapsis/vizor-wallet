@@ -228,7 +228,7 @@ class _PaymentLinkClaimAccountSheetState
           onPressed: _preparing || accounts.isEmpty ? null : _confirm,
           child: Text(
             _preparing
-                ? context.l10n.paymentLinkPreparing
+                ? context.l10n.commonPreparingEllipsis
                 : _failed
                 ? context.l10n.commonTryAgain
                 : context.l10n.paymentLinkClaimGiftButton,

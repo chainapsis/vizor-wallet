@@ -522,7 +522,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
               ]
             : [
                 PaymentLinkCardsSection(
-                  label: context.l10n.paymentLinkPendingSectionLabel,
+                  label: context.l10n.commonPending,
                   cards: [
                     PaymentLinkCardListRow(
                       thumbnail: _PaymentLinkThumbnail(

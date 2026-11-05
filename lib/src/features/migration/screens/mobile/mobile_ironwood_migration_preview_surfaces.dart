@@ -1120,7 +1120,7 @@ class _MigrationPreparationInfoCard extends StatelessWidget {
         children: [
           _MigrationIconTextRow(
             icon: AppIcons.wallet,
-            text: context.l10n.migrationMobilePrepInfoOrganizing,
+            text: context.l10n.migrationPreparationTipOrganizing,
           ),
           const SizedBox(height: AppSpacing.sm),
           _MigrationIconTextRow(
@@ -1243,7 +1243,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     final resolvedNextActionPresentation =
         nextActionPresentation ??
         MigrationNextActionPresentation(
-          label: context.l10n.migrationMobileNextMigration,
+          label: context.l10n.migrationNextActionLabelNext,
           amountZatoshi: BigInt.from(2_000_000_000_000),
           detail: 'at',
           scheduledHeight: 3_428_143,
@@ -1254,7 +1254,7 @@ class _MigrationProgressPreview extends StatelessWidget {
       _ => _MigrationBackdropGlow.positive,
     };
     final body = _MigrationPreviewPage(
-      navTitle: context.l10n.migrationMobileStatusTitle,
+      navTitle: context.l10n.migrationFlowTitle,
       onBack: onBack,
       contentGap: AppSpacing.md,
       scrollableContent: state != _MigrationProgressState.syncing,
@@ -1398,7 +1398,7 @@ class _MigrationBatchDial extends StatelessWidget {
             children: [
               Text(
                 presentation?.label ??
-                    context.l10n.migrationMobileNextMigration,
+                    context.l10n.migrationNextActionLabelNext,
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.accent,
                 ),
@@ -1594,7 +1594,7 @@ class _MigrationSyncingContent extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    context.l10n.migrationMobileNextMigration,
+                    context.l10n.migrationNextActionLabelNext,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
                     ),
@@ -1616,12 +1616,12 @@ class _MigrationSyncingContent extends StatelessWidget {
         SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
         _MigrationSummaryRows(
           first: _MigrationSkeletonValueRow(
-            label: context.l10n.migrationMobileLeftToMigrate,
+            label: context.l10n.migrationSummaryLeftToMigrate,
             valueWidth: 90,
             accented: true,
           ),
           second: _MigrationSkeletonValueRow(
-            label: context.l10n.migrationMobileEstCompletion,
+            label: context.l10n.migrationSummaryEstCompletion,
             valueWidth: 184,
           ),
         ),
@@ -1823,7 +1823,7 @@ class _MigrationProgressSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return _MigrationSummaryRows(
       first: _MigrationValueRow(
-        label: context.l10n.migrationMobileLeftToMigrate,
+        label: context.l10n.migrationSummaryLeftToMigrate,
         value:
             leftToMigrateText ??
             availableAmountText ??
@@ -1833,17 +1833,16 @@ class _MigrationProgressSummary extends StatelessWidget {
         accented: true,
       ),
       second: _MigrationValueRow(
-        label: context.l10n.migrationMobileEstCompletion,
+        label: context.l10n.migrationSummaryEstCompletion,
         value:
             statusValueOverride ??
             completionEstimateText ??
             switch (state) {
-              _MigrationProgressState.syncing =>
-                context.l10n.migrationMobileProgressSyncing,
+              _MigrationProgressState.syncing => context.l10n.commonSyncing,
               _MigrationProgressState.broadcasting =>
-                context.l10n.migrationMobileBannerInProgress,
+                context.l10n.migrationStatusDefaultButton,
               _MigrationProgressState.confirming =>
-                context.l10n.migrationMobileProgressConfirmations,
+                context.l10n.migrationNextActionDetailWaitingForConfirmations,
               _MigrationProgressState.needsInput =>
                 context.l10n.migrationMobileProgressYourConfirmation,
               _MigrationProgressState.readyToSubmit =>
@@ -1927,7 +1926,7 @@ class _MigrationProgressStatus extends StatelessWidget {
       ),
       _MigrationProgressState.confirming => (
         AppIcons.migrationTimer,
-        context.l10n.migrationMobileProgressConfirmations,
+        context.l10n.migrationNextActionDetailWaitingForConfirmations,
         context.l10n.migrationMobileNextConfirmationsArriving,
       ),
       _MigrationProgressState.needsInput => (
@@ -2390,11 +2389,11 @@ class _MigrationUpgradeStoppedView extends StatelessWidget {
     );
     final summary = _MigrationSummaryRows(
       first: _MigrationValueRow(
-        label: context.l10n.migrationMobileStoppedMoved,
+        label: context.l10n.migrationUpgradeStopMovedLabel,
         value: stop.migratedAmountText,
       ),
       second: _MigrationValueRow(
-        label: context.l10n.migrationMobileStoppedRemaining,
+        label: context.l10n.migrationUpgradeStopRemainingLabel,
         value: stop.remainingAmountText,
         accented: true,
       ),
@@ -2452,7 +2451,7 @@ class _MigrationUpgradeStoppedView extends StatelessWidget {
       ),
     );
     return _MigrationPreviewPage(
-      navTitle: context.l10n.migrationMobileStatusTitle,
+      navTitle: context.l10n.migrationFlowTitle,
       onBack: onBack,
       contentGap: AppSpacing.md,
       // Large text scrolls the page rather than shrinking the ring away.
@@ -2650,7 +2649,7 @@ class _MigrationHomeAttentionPreview extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           _MigrationValueRow(
             icon: AppIcons.history,
-            label: context.l10n.activityTitleReceived,
+            label: context.l10n.commonReceived,
             value: '+31.10 ZEC', // l10n-ignore: preview fixture
           ),
         ],
@@ -2675,7 +2674,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = _MigrationPreviewPage(
-      navTitle: context.l10n.migrationMobileKeystoneStep1,
+      navTitle: context.l10n.commonStepOneOfTwo,
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2683,7 +2682,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
             expand: true,
             height: 50,
             onPressed: () {},
-            child: Text(context.l10n.migrationMobileKeystoneNextStep),
+            child: Text(context.l10n.commonNextStep),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -2699,7 +2698,7 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            context.l10n.migrationMobileKeystoneScanTitle,
+            context.l10n.commonScanWithKeystone,
             style: appSerifDisplayStyle(color: context.colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.base),

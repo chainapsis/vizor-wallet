@@ -521,7 +521,7 @@ class _MobileSwapReviewButton extends StatelessWidget {
                   ? context.l10n.commonNotEnoughZec
                   : state.quoteLoading
                   ? context.l10n.swapActionGettingQuote
-                  : context.l10n.swapActionContinueToReview);
+                  : context.l10n.commonContinueToReview);
 
     return AppButton(
       key: const ValueKey('mobile_swap_review_button'),

@@ -67,7 +67,7 @@ class MobileSwapTimeoutContent extends StatelessWidget {
                       ),
                       const SizedBox(width: AppSpacing.xxs),
                       Text(
-                        context.l10n.swapTimeoutTitle,
+                        context.l10n.commonTimeSUp,
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.secondary,
                         ),

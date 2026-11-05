@@ -115,7 +115,7 @@ class _PaymentLinkShareSheetState extends State<PaymentLinkShareSheet> {
               child: Text(
                 _copying
                     ? context.l10n.paymentLinkCopying
-                    : context.l10n.paymentLinkCopyLink,
+                    : context.l10n.commonCopyLink,
               ),
             ),
           ],

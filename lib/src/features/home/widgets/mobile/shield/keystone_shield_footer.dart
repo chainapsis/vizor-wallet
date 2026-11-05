@@ -85,7 +85,7 @@ class KeystoneShieldFooter extends StatelessWidget {
               math.max(
                 measure(context.l10n.homeShieldShowQr, actionLabelWidth).height,
                 measure(
-                  context.l10n.homeShieldNextStep,
+                  context.l10n.commonNextStep,
                   actionLabelWidth - iconSize - AppSpacing.xxs,
                 ).height,
               ),
@@ -158,7 +158,7 @@ class KeystoneShieldFooter extends StatelessWidget {
                             Flexible(
                               child: Text(
                                 showQr
-                                    ? context.l10n.homeShieldNextStep
+                                    ? context.l10n.commonNextStep
                                     : context.l10n.homeShieldShowQr,
                                 textAlign: TextAlign.center,
                               ),

@@ -343,7 +343,7 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
                 onPressed: _canSave ? _save : null,
                 child: Text(
                   _saving
-                      ? context.l10n.paySaving
+                      ? context.l10n.commonSaving
                       : context.l10n.commonSaveContact,
                 ),
               ),

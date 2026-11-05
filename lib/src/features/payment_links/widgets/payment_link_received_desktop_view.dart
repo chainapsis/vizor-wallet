@@ -58,7 +58,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
   Widget build(BuildContext context) {
     final waitingStatusLabel =
         this.waitingStatusLabel ?? context.l10n.paymentLinkCheckingGiftEllipsis;
-    final backLabel = this.backLabel ?? context.l10n.paymentLinkCardsLabel;
+    final backLabel = this.backLabel ?? context.l10n.commonCards;
     final title = this.title ?? context.l10n.paymentLinkReceivedHeadingDesktop;
     final messageHint =
         this.messageHint ?? context.l10n.paymentLinkClickToRevealShort;

@@ -53,7 +53,7 @@ class _MobileMigrationIntro extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        context.l10n.migrationMobileIntroTagline,
+                        context.l10n.migrationIntroTagline,
                         textAlign: TextAlign.center,
                         style: AppTypography.bodyMediumStrong.copyWith(
                           color: colors.text.accent,
@@ -123,7 +123,7 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
         navTitle: context.l10n.migrationMobileHowItWorksNavTitle,
         topGap: 31,
         childGap: 32,
-        title: context.l10n.migrationMobileHowItWorksTitle,
+        title: context.l10n.migrationBackHowItWorks,
         bottom: _MobileMigrationPrimaryButton(
           key: const ValueKey('mobile_ironwood_steps_continue_button'),
           label: context.l10n.commonContinue,
@@ -256,8 +256,8 @@ class _MobileMigrationOptionsState
             : l10n.migrationMobileOptionsTitle,
         subtitle: widget.privateEnabled
             ? widget.movingRest
-                  ? l10n.migrationMobileOptionsSubtitleRest(restAmount)
-                  : l10n.migrationMobileOptionsSubtitle
+                  ? l10n.migrationOptionsBodyMoveRest(restAmount)
+                  : l10n.migrationOptionsBody
             : widget.privateUnavailableForLedger
             ? widget.movingRest
                   ? l10n.migrationMobileOptionsSubtitleLedgerRest(restAmount)
@@ -290,11 +290,11 @@ class _MobileMigrationOptionsState
           children: [
             _MobileMigrationOptionCard(
               key: const ValueKey('mobile_ironwood_private_option'),
-              title: l10n.migrationMobileOptionPrivateTitle,
+              title: l10n.migrationOptionPrivate,
               body: widget.privateEnabled
                   ? l10n.migrationMobileOptionPrivateBody
                   : widget.privateUnavailableForLedger
-                  ? l10n.migrationMobileOptionPrivateUnavailableLedger
+                  ? l10n.migrationOptionPrivateLedger
                   : l10n.migrationMobileOptionPrivateUnavailableAndroid,
               selected: privateSelected,
               icon: _MigrationChoiceIcon.private,
@@ -306,7 +306,7 @@ class _MobileMigrationOptionsState
             const SizedBox(height: AppSpacing.sm),
             _MobileMigrationOptionCard(
               key: const ValueKey('mobile_ironwood_immediate_option'),
-              title: l10n.migrationMobileOptionImmediateTitle,
+              title: l10n.migrationOptionImmediate,
               body: l10n.migrationMobileOptionImmediateBody(immediateEstimate),
               selected: immediateSelected,
               icon: _MigrationChoiceIcon.immediate,

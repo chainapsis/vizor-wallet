@@ -146,7 +146,7 @@ class _PaymentLinkAmountCardState extends State<PaymentLinkAmountCard>
         currencySymbol: widget.currency.label,
         emptyAmountLabel: _isUsd
             ? context.l10n.paymentLinkAmountEnterDollars
-            : context.l10n.paymentLinkAmountEnterAmount,
+            : context.l10n.commonEnterAmount,
         supportingText: widget.supportingText,
         supportingLoading: widget.supportingLoading,
         supportingTextBuilder: (context, text) => FadeTransition(
@@ -243,7 +243,7 @@ class _PaymentLinkAmountCardState extends State<PaymentLinkAmountCard>
               currency.label,
               widget.usdDisabledReason!,
             )
-          : context.l10n.paymentLinkAmountCurrencySemantic(currency.label),
+          : context.l10n.commonEnterAmountIn(currency.label),
       selected: selected,
       onPressed: enabled ? () => widget.onCurrencyChanged(currency) : null,
       builder: (context, hovered, focused) => SizedBox(

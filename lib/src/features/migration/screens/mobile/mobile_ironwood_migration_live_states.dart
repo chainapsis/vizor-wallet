@@ -52,7 +52,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    context.l10n.migrationMobileStatusTitle,
+                    context.l10n.migrationFlowTitle,
                     key: const ValueKey(
                       'mobile_ironwood_migration_preparing_title',
                     ),
@@ -123,7 +123,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           _MobileStatusBackHomeButton(
-            label: context.l10n.migrationMobileGoHome,
+            label: context.l10n.commonGoHome,
             onPressed: () => context.go('/home'),
           ),
         ],
@@ -199,7 +199,7 @@ class _MobileMigrationMigratingState
         status!.nextActionHeight! > etaHeight;
     final completion = status == null
         ? widget.previewPlan == null
-              ? context.l10n.migrationMobileSchedulePending
+              ? context.l10n.migrationSchedulePending
               : _migrationArrivalLabel(
                   context.l10n,
                   widget.previewPlan!,
@@ -239,7 +239,7 @@ class _MobileMigrationMigratingState
       children: [
         SizedBox(height: compact ? 20 : 46),
         Text(
-          context.l10n.migrationMobileStatusTitle,
+          context.l10n.migrationFlowTitle,
           textAlign: TextAlign.center,
           style: AppTypography.headlineLarge.copyWith(
             color: colors.text.accent,
@@ -289,7 +289,7 @@ class _MobileMigrationMigratingState
           SizedBox(height: 304, child: partsContent),
         SizedBox(height: compact ? AppSpacing.s : 52),
         _ReviewRow(
-          label: context.l10n.migrationMobileEstCompletion,
+          label: context.l10n.migrationSummaryEstCompletion,
           value: completion,
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -304,7 +304,7 @@ class _MobileMigrationMigratingState
           primary: needsCredentialRecovery
               ? context.l10n.migrationMobileRecoveryRequired
               : coordinatorError != null
-              ? context.l10n.migrationMobileContinueError
+              ? context.l10n.migrationErrorContinue
               : needsAttention
               ? context.l10n.migrationMobileKeepOpenUnlocked
               : waitingForSafeBlock
@@ -341,7 +341,7 @@ class _MobileMigrationMigratingState
         ],
         _MobileStatusBackHomeButton(
           key: const ValueKey('mobile_ironwood_status_back_home_button'),
-          label: context.l10n.migrationMobileGoHome,
+          label: context.l10n.commonGoHome,
           onPressed: () => context.go('/home'),
         ),
       ],

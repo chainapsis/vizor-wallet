@@ -68,7 +68,7 @@ extension OnboardingStepX on OnboardingStep {
     OnboardingStep.thingsToKnow => l10n.onboardingThingsToKnow,
     OnboardingStep.secretPassphrase => l10n.secretPassphraseTitle,
     OnboardingStep.setPassword => l10n.onboardingStepSetPassword,
-    OnboardingStep.customiseAccount => l10n.onboardingStepCustomiseWallet,
+    OnboardingStep.customiseAccount => l10n.commonCustomiseWallet,
   };
 
   String get iconName => switch (this) {

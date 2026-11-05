@@ -89,7 +89,7 @@ class GiftCardUsageStatusView extends ConsumerWidget {
     final failed = !usage.cleaned && !checking && state.failedFor(address);
     final l10n = context.l10n;
     final label = checking && usage.status == GiftCardUsageStatus.unknown
-        ? l10n.paymentLinkCheckingLabel
+        ? l10n.commonCheckingEllipsis
         : usage.label(l10n);
     final suffixState = usage.cleaned
         ? 'none'
@@ -115,9 +115,9 @@ class GiftCardUsageStatusView extends ConsumerWidget {
       final visibleLabel =
           hideStableLabel && usage.status != GiftCardUsageStatus.unknown
           ? checking
-                ? l10n.paymentLinkCheckingLabel
+                ? l10n.commonCheckingEllipsis
                 : failed
-                ? l10n.paymentLinkUsageUpdateFailed
+                ? l10n.commonUpdateFailed
                 : null
           : label;
       final date = dateText;

@@ -407,7 +407,7 @@ class _WalletLinkScanErrorCard extends StatelessWidget {
                   minWidth: 108,
                   leading: const AppIcon(AppIcons.renew),
                   onPressed: onScanAgain,
-                  child: Text(context.l10n.walletLinkScanAgain),
+                  child: Text(context.l10n.commonScanAgain),
                 ),
               ],
             ),

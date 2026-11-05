@@ -47,7 +47,7 @@ class KeystonePcztQrStage extends StatelessWidget {
         ),
         KeystonePcztQrStagePhase.failed => Center(
           child: Text(
-            error ?? context.l10n.keystonePcztPrepareFailed,
+            error ?? context.l10n.commonKeystoneSigningCouldNotBePrepared,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.destructive,
             ),

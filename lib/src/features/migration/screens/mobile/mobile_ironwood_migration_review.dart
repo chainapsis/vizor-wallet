@@ -18,15 +18,15 @@ String _mobilePrivateMigrationStartErrorMessage(
   }
   if (message.contains('secret storage') ||
       message.contains('unlocked session')) {
-    return l10n.migrationMobileErrorUnlock;
+    return l10n.migrationErrorUnlockBeforeStart;
   }
   if (message.contains('sync')) {
-    return l10n.migrationMobileErrorSyncFirst;
+    return l10n.migrationErrorWaitForSync;
   }
   if (message.contains('broadcast') || message.contains('sendtransaction')) {
-    return l10n.migrationMobileErrorBroadcast;
+    return l10n.migrationErrorBroadcast;
   }
-  return l10n.migrationMobileErrorStart;
+  return l10n.migrationErrorStart;
 }
 
 String _mobileImmediateMigrationStartErrorMessage(
@@ -35,7 +35,7 @@ String _mobileImmediateMigrationStartErrorMessage(
 ) {
   final message = error.toString().toLowerCase();
   if (message.contains('plan changed')) {
-    return l10n.migrationMobileErrorPlanChanged;
+    return l10n.migrationErrorPlanChanged;
   }
   return _mobilePrivateMigrationStartErrorMessage(l10n, error);
 }
@@ -268,7 +268,7 @@ class _MobileMigrationFastReviewState
     final l10n = context.l10n;
     final placeholderText = planUnavailable
         ? l10n.migrationMobileFastPlanUnavailable
-        : l10n.migrationMobileFastPlanCalculating;
+        : l10n.commonCalculatingEllipsis;
     final migratedText = plan == null
         ? placeholderText
         : _mobileImmediateMigratedAmountText(plan);
@@ -297,7 +297,7 @@ class _MobileMigrationFastReviewState
               child: Text(
                 isLedgerAccount
                     ? l10n.commonBack
-                    : l10n.migrationMobileFastConsiderOther,
+                    : l10n.migrationImmediateConsiderOther,
               ),
             ),
             const SizedBox(height: AppSpacing.s),
@@ -320,7 +320,7 @@ class _MobileMigrationFastReviewState
                 expand: true,
                 height: 50,
                 onPressed: _isBroadcasting ? null : _retryPlanCalculation,
-                child: Text(l10n.migrationMobileFastRetryCalculation),
+                child: Text(l10n.migrationImmediateRetryCalculation),
               ),
               const SizedBox(height: AppSpacing.s),
             ],
@@ -342,7 +342,7 @@ class _MobileMigrationFastReviewState
               child: Text(
                 _isBroadcasting
                     ? l10n.commonSending
-                    : l10n.migrationMobileFastContinueAnyway,
+                    : l10n.commonContinueAnyway,
               ),
             ),
           ],
@@ -365,13 +365,13 @@ class _MobileMigrationFastReviewState
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     _ReviewRow(
-                      label: l10n.migrationMobileFastFeesRow,
+                      label: l10n.migrationImmediateFees,
                       value: feeText,
                       height: 32,
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     _ReviewRow(
-                      label: l10n.migrationMobileFastDurationRow,
+                      label: l10n.migrationReviewCompleteIn,
                       value: ironwoodImmediateMigrationCompletionEstimate(
                         context.l10n,
                         blockTimes,
@@ -417,7 +417,7 @@ class _MobileMigrationFastReviewState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              l10n.migrationMobileFastPrivacyTitle,
+                              l10n.migrationImmediateTradeoffTitle,
                               style: AppTypography.bodySmall.copyWith(
                                 color: colors.text.homeCard,
                                 fontWeight: FontWeight.w600,
@@ -436,10 +436,9 @@ class _MobileMigrationFastReviewState
                                 ),
                                 children: [
                                   TextSpan(
-                                    text: l10n
-                                        .migrationMobileFastPrivacyBodyLead(
-                                          privacyAmountText,
-                                        ),
+                                    text: l10n.migrationImmediateTradeoffLead(
+                                      privacyAmountText,
+                                    ),
                                   ),
                                   TextSpan(
                                     text: l10n
@@ -480,7 +479,7 @@ class _MobileMigrationFastReviewState
             ] else if (planUnavailable) ...[
               const SizedBox(height: AppSpacing.s),
               Text(
-                l10n.migrationMobileFastNoBalance,
+                l10n.migrationImmediateNoBalance,
                 textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.destructive,

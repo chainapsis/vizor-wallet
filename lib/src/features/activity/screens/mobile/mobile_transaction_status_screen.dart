@@ -177,7 +177,7 @@ class _MobileTransactionStatusScreenState
     if (_isIncoming) {
       return switch (_phase) {
         _TxPhase.pending => context.l10n.activityTitleReceiving,
-        _TxPhase.succeeded => context.l10n.activityTitleReceived,
+        _TxPhase.succeeded => context.l10n.commonReceived,
         _TxPhase.failed => context.l10n.activityTitleReceiveFailed,
       };
     }
@@ -652,11 +652,11 @@ class _MobileTransactionStatusScreenState
                             : switch (_phaseFor(giftCard)) {
                                 _TxPhase.pending =>
                                   giftCard.kind == GiftCardActivityKind.created
-                                      ? l10n.activityGiftStatusCreating
+                                      ? l10n.commonCreating
                                       : l10n.activityGiftStatusRedeeming,
                                 _TxPhase.succeeded =>
                                   giftCard.kind == GiftCardActivityKind.created
-                                      ? l10n.activityGiftStatusCreated
+                                      ? l10n.commonCreated
                                       : l10n.activityGiftStatusRedeemed,
                                 _TxPhase.failed => l10n.commonFailed,
                               },
@@ -786,7 +786,7 @@ class _MobileTransactionStatusScreenState
         privacyModeEnabled: privacyModeEnabled,
       );
     }
-    if (_showUnknownFee(tx)) return context.l10n.activityReceiptUnknownFee;
+    if (_showUnknownFee(tx)) return context.l10n.commonUnknown;
     if (tx.fee <= BigInt.zero) return null;
     final fee = giftCard == null ? tx.fee : giftCard.detailFeeZatoshi(tx.fee);
     if (privacyModeEnabled) {
@@ -1079,7 +1079,7 @@ class _DetailCard extends StatelessWidget {
               label: isCardCreation
                   ? context.l10n.activityReceiptCardFee
                   : showsNetworkFee
-                  ? context.l10n.activityReceiptNetworkFee
+                  ? context.l10n.commonNetworkFee
                   : context.l10n.txFeeInfoTitle,
               labelStyle: AppTypography.labelLarge,
               value: _ValueWithIcon(
@@ -1096,7 +1096,7 @@ class _DetailCard extends StatelessWidget {
                       : showsNetworkFee
                       ? showMobileTxFeeInfoSheet(
                           context,
-                          title: context.l10n.activityReceiptNetworkFee,
+                          title: context.l10n.commonNetworkFee,
                           description:
                               context.l10n.activityReceiptUnattributedFeeHelp,
                         )

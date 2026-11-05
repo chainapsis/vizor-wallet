@@ -48,9 +48,7 @@ class KeystoneTransactionProgressPanel extends StatelessWidget {
           ),
           if (showCameraRow) ...[
             const SizedBox(height: AppSpacing.s),
-            _CameraStatusRow(
-              label: cameraLabel ?? context.l10n.keystoneCameraLabel,
-            ),
+            _CameraStatusRow(label: cameraLabel ?? context.l10n.commonCamera),
           ],
         ],
       ),
@@ -147,7 +145,7 @@ class _CameraStatusRow extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            context.l10n.keystoneCameraLabel,
+            context.l10n.commonCamera,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
             ),

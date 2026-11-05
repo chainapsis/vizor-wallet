@@ -119,7 +119,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
   /// The hardware funding round trip, already built by the screen. A hardware
   /// account funds its Card through the same Keystone handoff the desktop pane
   /// runs; without this overlay the mobile review CTA would sit on
-  /// context.l10n.paymentLinkCreating forever.
+  /// context.l10n.commonCreating forever.
   final Widget? keystoneOverlay;
   final VoidCallback onCancelKeystone;
   final bool navigationLocked;
@@ -400,7 +400,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
       onFeeHelp: () {},
       continueLabel: operationInProgress
           ? !hasPendingFundingMetadata
-                ? context.l10n.paymentLinkCreating
+                ? context.l10n.commonCreating
                 : context.l10n.paymentLinkSaving
           : !hasPendingFundingMetadata
           ? context.l10n.paymentLinkApproveAndCreate
@@ -462,7 +462,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
       waitingStatusLabel: linkWaitLabel(progress),
       copyLabel: readyCopyInProgress
           ? context.l10n.paymentLinkCopying
-          : context.l10n.paymentLinkCopyLink,
+          : context.l10n.commonCopyLink,
     );
   }
 
@@ -533,7 +533,7 @@ class PaymentLinksMobileBody extends StatelessWidget {
             '${context.l10n.paymentLinkClaimWaitingDescription}\n${context.l10n.paymentLinkWaitingDescription}',
         waitingIcon: AppIcons.time,
         waitingStatusLabel: claimWaitLabel(session),
-        homeLabel: context.l10n.paymentLinkGoHome,
+        homeLabel: context.l10n.commonGoHome,
       );
     }
     return PaymentLinkReceivedMobileView(

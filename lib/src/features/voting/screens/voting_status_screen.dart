@@ -1164,7 +1164,7 @@ class _WalletSyncProgressText extends StatelessWidget {
         child: Column(
           children: [
             Text(
-              context.l10n.votingSyncWaitingTitle,
+              context.l10n.commonWaitingForWalletSync,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
@@ -1256,17 +1256,17 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
       LedgerAppReadinessPhase.checkingDevice
           when stage == LedgerSigningStage.preparing =>
         (
-          context.l10n.votingLedgerChecking,
-          context.l10n.votingLedgerCheckingBody,
+          context.l10n.commonCheckingYourLedger,
+          context.l10n.commonVizorIsCheckingWhetherTheZcash,
         ),
       LedgerAppReadinessPhase.confirmOpening
           when stage == LedgerSigningStage.preparing =>
         (
-          context.l10n.votingLedgerConfirmOpen,
+          context.l10n.commonConfirmOpeningZcash,
           context.l10n.votingLedgerConfirmOpenBody,
         ),
       LedgerAppReadinessPhase.failed => (
-        context.l10n.votingLedgerNeedsAttention,
+        context.l10n.commonLedgerNeedsAttention,
         readiness.message ?? context.l10n.votingLedgerReconnect,
       ),
       _ => (
@@ -1288,7 +1288,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
           MobileLedgerMessage(statusMessage),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            context.l10n.votingLedgerBundleOf(bundleIndex + 1, safeBundleCount),
+            context.l10n.votingBundleOf(bundleIndex + 1, safeBundleCount),
             key: const ValueKey('ledger_voting_bundle_progress'),
             style: AppTypography.bodySmall,
           ),
@@ -1340,10 +1340,7 @@ class LedgerVotingSigningPanel extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.xxs),
             Text(
-              context.l10n.votingLedgerBundleOf(
-                bundleIndex + 1,
-                safeBundleCount,
-              ),
+              context.l10n.votingBundleOf(bundleIndex + 1, safeBundleCount),
               key: const ValueKey('ledger_voting_bundle_progress'),
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.secondary,

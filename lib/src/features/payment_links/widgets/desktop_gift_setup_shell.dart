@@ -36,7 +36,7 @@ class DesktopGiftSetupShell extends StatelessWidget {
           active: step == DesktopGiftSetupStep.redeem,
         ),
         OnboardingSidebarStepData(
-          label: context.l10n.paymentLinkCustomiseWalletStep,
+          label: context.l10n.commonCustomiseWallet,
           iconName: AppIcons.user,
           active: step == DesktopGiftSetupStep.customise,
         ),

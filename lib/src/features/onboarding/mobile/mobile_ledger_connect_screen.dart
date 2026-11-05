@@ -304,7 +304,7 @@ class _MobileLedgerConnectScreenState
           currentStep: current,
           steps: [
             LedgerStep(
-              context.l10n.onboardingConnectLedger,
+              context.l10n.commonConnectLedger,
               busy: current == 0 && pending,
             ),
             LedgerStep(
@@ -394,7 +394,7 @@ class _MobileLedgerConnectScreenState
           progress: MobileOnboardingProgressScope.of(
             context,
           ).at(OnboardingFlow.ledger, OnboardingStage.deviceConnect).value,
-          title: context.l10n.onboardingConnectLedger,
+          title: context.l10n.commonConnectLedger,
           subtitle: context.l10n.ledgerConnectSubtitle,
           onBack: () => context.pop(),
           bottomArea: AppButton(
@@ -404,7 +404,7 @@ class _MobileLedgerConnectScreenState
             constrainContent: true,
             onPressed: _sessionOpen ? null : _startSession,
             trailing: const AppIcon(AppIcons.chevronForward),
-            child: Text(context.l10n.onboardingConnectLedger),
+            child: Text(context.l10n.commonConnectLedger),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

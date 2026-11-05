@@ -201,7 +201,7 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         _line(
           context,
-          context.l10n.paymentLinkCostNetworkFee,
+          context.l10n.commonNetworkFee,
           money(quote?.fundingFeeZatoshi),
           loading: feeLoading,
         ),
@@ -220,9 +220,7 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         const ReviewWrapDivider(),
         Semantics(
           liveRegion: true,
-          label: feePending
-              ? context.l10n.paymentLinkCostCalculatingTotal
-              : null,
+          label: feePending ? context.l10n.commonCalculatingTotal : null,
           child: _line(
             context,
             context.l10n.paymentLinkTotalDeductedLabel,
@@ -255,9 +253,7 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         const SizedBox(height: AppSpacing.xxs),
         Semantics(
           liveRegion: true,
-          label: feePending
-              ? context.l10n.paymentLinkCostCalculatingTotal
-              : null,
+          label: feePending ? context.l10n.commonCalculatingTotal : null,
           child: feePending
               ? sized(
                   _quoteSkeleton(

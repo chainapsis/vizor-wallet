@@ -572,7 +572,7 @@ class _MobilePollCardContent extends ConsumerWidget {
               trailing: const AppIcon(AppIcons.chevronForward),
               child: Text(
                 ineligible || alreadyUsed
-                    ? context.l10n.votingActionView
+                    ? context.l10n.commonView
                     : _actionLabel(context.l10n, state),
               ),
             ),
@@ -937,7 +937,7 @@ Color _statusText(_PollCardState state) {
 
 String _actionLabel(AppLocalizations l10n, _PollCardState state) {
   return switch (state) {
-    _PollCardState.inProgress => l10n.votingActionResume,
+    _PollCardState.inProgress => l10n.commonResume,
     _PollCardState.active => l10n.navVote,
     _PollCardState.voted => l10n.votingActionReview,
     _PollCardState.tallying ||

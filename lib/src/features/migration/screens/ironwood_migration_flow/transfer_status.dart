@@ -833,7 +833,7 @@ class _MigrationLiveStatusContent extends ConsumerWidget {
                       height: 36,
                       minWidth: 96,
                       expand: false,
-                      child: Text(context.l10n.migrationGoHome),
+                      child: Text(context.l10n.commonGoHome),
                     ),
                   ),
                 ),
@@ -1053,7 +1053,7 @@ String _overallPreparationProgressDisplay(
   rust_sync.MigrationStatus status,
 ) {
   final total = _overallTransactionTotalCount(status);
-  if (total == null) return l10n.migrationOverallCalculatingTotal;
+  if (total == null) return l10n.commonCalculatingTotal;
   // During preparation, completed parts are prepared Orchard notes rather
   // than completed Orchard-to-Ironwood transfers.
   final completed = math.min(total, _preparationCompletedCount(status));

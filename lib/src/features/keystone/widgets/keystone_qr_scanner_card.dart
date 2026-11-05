@@ -344,12 +344,12 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
 
   String _cameraLabel(MobileScannerState state) {
     final l10n = context.l10n;
-    if (!QrScanner.isAvailable) return l10n.keystoneNoCameraFound;
-    if (_loadingCameras && _cameras.isEmpty) return l10n.keystoneLoadingCamera;
+    if (!QrScanner.isAvailable) return l10n.commonNoCameraFound;
+    if (_loadingCameras && _cameras.isEmpty) return l10n.commonLoadingCamera;
 
     final selectedCamera = _cameraById(_selectedCameraId);
     final camera = selectedCamera ?? state.camera ?? _defaultCamera;
-    final name = camera?.name ?? l10n.keystoneDefaultCamera;
+    final name = camera?.name ?? l10n.commonDefaultCamera;
     // Platform camera names may already carry this English marker.
     if (camera?.isDefault == true && !name.contains('(Default)')) {
       // l10n-ignore: matches platform camera names
@@ -377,15 +377,15 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   String _cameraUnavailableDescription(MobileScannerState state) {
     final message = state.error?.errorDetails?.message;
     if (message != null && message.isNotEmpty) return message;
-    return context.l10n.keystoneNoCameraOpened;
+    return context.l10n.commonNoCameraCouldBeOpenedCheck;
   }
 
   String get _cameraDeniedTitle => Platform.isWindows
-      ? context.l10n.keystoneWindowsCameraTitle
+      ? context.l10n.commonEnableWindowsCameraAccess
       : context.l10n.keystoneCameraDeniedTitle;
 
   String get _cameraDeniedDescription => Platform.isWindows
-      ? context.l10n.keystoneWindowsCameraBody
+      ? context.l10n.commonTurnOnCameraAccessAndLet
       : context.l10n.commonCameraRequestAgainHint;
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
@@ -452,7 +452,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
           size: AppButtonSize.medium,
           minWidth: 128,
           leading: const AppIcon(AppIcons.cog),
-          child: Text(context.l10n.keystoneOpenSettings),
+          child: Text(context.l10n.commonOpenSettings),
         ),
       ],
     );
@@ -880,15 +880,15 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
 List<String> _troubleScanningTips(AppLocalizations l10n) => [
   l10n.keystoneTipTapFullScreen,
   l10n.keystoneTipMoveKeystoneFurther,
-  l10n.keystoneTipGlare,
-  l10n.keystoneTipContinuityCamera,
+  l10n.commonMakeSureTheRoomIsWell,
+  l10n.commonOnAMacYouCanUse,
 ];
 
 List<String> _giftTroubleScanningTips(AppLocalizations l10n) => [
   l10n.keystoneTipGiftFullScreen,
-  l10n.keystoneTipGiftMoveFurther,
-  l10n.keystoneTipGlare,
-  l10n.keystoneTipContinuityCamera,
+  l10n.commonMoveTheQRCodeAFew,
+  l10n.commonMakeSureTheRoomIsWell,
+  l10n.commonOnAMacYouCanUse,
 ];
 
 class _TroubleScanningDisclosure extends StatelessWidget {
@@ -1162,7 +1162,7 @@ class _CameraControlRow extends StatelessWidget {
                 AppIcon(AppIcons.camera, size: 20, color: cameraIconColor),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
-                  context.l10n.keystoneCameraLabel,
+                  context.l10n.commonCamera,
                   style: AppTypography.labelLarge.copyWith(
                     color: cameraLabelColor,
                   ),
@@ -1374,7 +1374,7 @@ class _CameraOptionCard extends StatelessWidget {
 
   String _detailLabel(AppLocalizations l10n) {
     final parts = <String>[];
-    if (camera.isDefault) parts.add(l10n.keystoneCameraDefault);
+    if (camera.isDefault) parts.add(l10n.commonDefault);
     if (camera.isExternal || camera.facing == CameraFacing.external) {
       parts.add(l10n.keystoneCameraExternal);
     }
@@ -1397,7 +1397,7 @@ class _CameraOptionCard extends StatelessWidget {
       case CameraLensType.any:
         break;
     }
-    return parts.isEmpty ? l10n.keystoneCameraLabel : parts.join(' / ');
+    return parts.isEmpty ? l10n.commonCamera : parts.join(' / ');
   }
 
   @override

@@ -313,7 +313,7 @@ MigrationNextActionPresentation migrationNextActionPresentation(
       return MigrationNextActionPresentation(
         label: l10n.migrationNextActionLabelOpeningWindow,
         amountZatoshi: displayAmount,
-        detail: l10n.migrationNextActionDetailWaitingForSync,
+        detail: l10n.commonWaitingForWalletSync,
       );
     }
     if (status.proofReady == true) {
@@ -424,7 +424,7 @@ MigrationNextActionPresentation migrationNextActionPresentation(
     }
     if (confirmingCount > 0 && migratingCount == 0) {
       return MigrationNextActionPresentation(
-        label: l10n.migrationConfirming,
+        label: l10n.commonConfirming,
         amountZatoshi: amount,
         detail: l10n.migrationNotesAwaitingConfirmation(confirmingCount),
       );
@@ -466,7 +466,7 @@ MigrationNextActionPresentation migrationNextActionPresentation(
         amount += values[index];
       }
       return MigrationNextActionPresentation(
-        label: l10n.migrationConfirming,
+        label: l10n.commonConfirming,
         amountZatoshi: amount > BigInt.zero ? amount : fallbackAmount,
         detail: l10n.migrationNotesAwaitingConfirmation(
           broadcastedCount - confirmedCount,
@@ -692,7 +692,7 @@ String migrationScheduledBroadcastLabel(
   if (broadcast.status == 'broadcasted') {
     return l10n.migrationBroadcastSubmitted;
   }
-  if (broadcast.status != 'scheduled') return l10n.migrationBroadcastPending;
+  if (broadcast.status != 'scheduled') return l10n.commonPending;
 
   final scheduledAt = DateTime.fromMillisecondsSinceEpoch(
     broadcast.scheduledAtMs,
@@ -719,7 +719,7 @@ String migrationDispatchTimingLabel(
   DateTime? now,
 }) {
   if (status.phase == kIronwoodMigrationWaitingConfirmationsPhase) {
-    return l10n.migrationConfirming;
+    return l10n.commonConfirming;
   }
 
   rust_sync.MigrationScheduledBroadcast? latest;

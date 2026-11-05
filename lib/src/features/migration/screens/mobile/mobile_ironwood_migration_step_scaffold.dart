@@ -133,7 +133,7 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
                 child: Column(
                   children: [
                     Text(
-                      context.l10n.migrationMobileReviewPlanTitle,
+                      context.l10n.migrationImmediateReviewTitle,
                       textAlign: TextAlign.center,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.text.accent,

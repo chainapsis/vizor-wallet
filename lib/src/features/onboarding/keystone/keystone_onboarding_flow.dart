@@ -30,8 +30,7 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
     KeystoneOnboardingStep.walletBirthdayHeight =>
       l10n.onboardingStepWalletBirthdayHeight,
     KeystoneOnboardingStep.setPassword => l10n.onboardingStepSetPassword,
-    KeystoneOnboardingStep.customiseAccount =>
-      l10n.onboardingStepCustomiseWallet,
+    KeystoneOnboardingStep.customiseAccount => l10n.commonCustomiseWallet,
   };
 
   String get iconName => switch (this) {

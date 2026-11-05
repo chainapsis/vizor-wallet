@@ -468,7 +468,7 @@ class _MobileSwapKeystoneSignScreenState
       return context.l10n.commonSigningExpired;
     }
     if (lower.contains('pczt') || lower.contains('signature')) {
-      return context.l10n.homeShieldErrorSignatureNotApplied;
+      return context.l10n.commonKeystoneSignatureCouldNotBeApplied;
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
       return context.l10n.swapKeystoneBroadcastFailed;

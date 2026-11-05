@@ -365,7 +365,7 @@ class _InitialContent extends StatelessWidget {
             : null,
         child: Text(
           preparing
-              ? context.l10n.walletLinkDesktopPreparing
+              ? context.l10n.commonPreparing
               : context.l10n.walletLinkDesktopStartLinking,
         ),
       ),
@@ -462,7 +462,7 @@ class _ExpiredContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _ResultContentColumn(
-      title: context.l10n.walletLinkDesktopExpiredTitle,
+      title: context.l10n.commonTimeSUp,
       body: context.l10n.walletLinkDesktopExpiredBody,
       bodyMaxWidth: _walletLinkExpiredBodyWidth,
       visual: const SizedBox(

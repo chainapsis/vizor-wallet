@@ -791,7 +791,7 @@ class _LedgerShieldSigningOverlayState
                     ? LedgerInlinePresentation(
                         closeLabel: _phase == LedgerSigningModalPhase.failed
                             ? context.l10n.commonClose
-                            : context.l10n.homeLedgerCancelShielding,
+                            : context.l10n.commonCancelShielding,
                         child: modal,
                       )
                     : null,

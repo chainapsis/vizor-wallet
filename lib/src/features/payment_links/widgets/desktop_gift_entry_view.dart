@@ -103,7 +103,9 @@ class DesktopGiftEntryView extends StatelessWidget {
                                 expand: true,
                                 variant: AppButtonVariant.secondary,
                                 leading: const AppIcon(AppIcons.qr),
-                                child: Text(context.l10n.paymentLinkScanQrCode),
+                                child: Text(
+                                  context.l10n.commonScanQrCodeSentenceCase,
+                                ),
                               ),
                             ),
                           ],

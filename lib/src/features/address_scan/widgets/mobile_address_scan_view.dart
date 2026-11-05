@@ -403,7 +403,7 @@ class _MobileScanCameraErrorOverlayState
                       leading: const AppIcon(AppIcons.cog),
                       child: Text(
                         widget.openSettingsLabel ??
-                            context.l10n.addressScanOpenSettings,
+                            context.l10n.commonOpenSettings,
                       ),
                     ),
                   ],

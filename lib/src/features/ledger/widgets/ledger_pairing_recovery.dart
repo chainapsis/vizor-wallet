@@ -204,7 +204,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
                                     ? c.settings
                                     : null,
                                 child: Text(
-                                  l10n.ledgerOpenSettings,
+                                  l10n.commonOpenSettings,
                                   style: AppTypography.bodySmall.copyWith(
                                     decoration: TextDecoration.underline,
                                   ),
@@ -300,7 +300,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
                     : l10n.ledgerStatusStillSearching,
               LedgerPairingStage.verifying =>
                 c.sameSavedDevice
-                    ? l10n.ledgerStatusConnecting
+                    ? l10n.commonConnecting
                     : l10n.ledgerStatusFollowPrompts,
               LedgerPairingStage.saving => l10n.ledgerStatusSavingConnection,
               _ => l10n.ledgerStatusOpeningBluetoothSettings,
@@ -322,7 +322,7 @@ class LedgerPairingRecovery extends ConsumerWidget {
                 c.sameSavedDevice
                     ? l10n.ledgerButtonConnecting
                     : l10n.ledgerButtonCheckingAccount,
-              LedgerPairingStage.saving => l10n.ledgerButtonSaving,
+              LedgerPairingStage.saving => l10n.commonSaving,
               LedgerPairingStage.ready => l10n.ledgerContinueSigning,
               LedgerPairingStage.mismatch => l10n.ledgerChooseAnother,
               LedgerPairingStage.devices => l10n.ledgerSearchAgain,

@@ -440,7 +440,7 @@ class MobileDonationReviewContent extends StatelessWidget {
             Container(height: 1, color: context.colors.border.subtle),
             const SizedBox(height: AppSpacing.sm),
             _DonationDetailRow(
-              label: context.l10n.donationTotal,
+              label: context.l10n.commonTotal,
               value: totalText,
             ),
           ],

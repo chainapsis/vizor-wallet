@@ -54,7 +54,7 @@ class GiftCardUsage {
   String label(AppLocalizations l10n) => switch (status) {
     GiftCardUsageStatus.unknown =>
       reason == GiftCardUsageReason.awaitingConfirmation
-          ? l10n.paymentLinkUsageConfirming
+          ? l10n.commonConfirming
           : l10n.paymentLinkUsageUnverified,
     GiftCardUsageStatus.unused => l10n.paymentLinkUnusedSectionLabel,
     GiftCardUsageStatus.spendDetected => l10n.paymentLinkUsageUseDetected,

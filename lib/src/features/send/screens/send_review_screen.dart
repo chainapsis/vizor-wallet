@@ -563,7 +563,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     } else if (guidance != null) {
       failure = LedgerSigningFailurePresentation(
         requestFailure: LedgerRequestFailure.fromError(error),
-        title: context.l10n.sendLedgerNeedsAttentionTitle,
+        title: context.l10n.commonLedgerNeedsAttention,
         statusLabel: context.l10n.commonActionNeeded,
         message: guidance.message,
         showDeviceAppPrompt: guidance.showDeviceAppPrompt,
@@ -584,7 +584,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                 appInstruction: appInstruction,
               ) ??
               context.l10n.sendLedgerConnectAndUnlock(appInstruction),
-        _ => context.l10n.sendLedgerSigningIncomplete,
+        _ => context.l10n.commonLedgerSigningCouldNotBeCompleted,
       };
       failure = LedgerSigningFailurePresentation(
         requestFailure: LedgerRequestFailure.fromError(error),
@@ -1245,7 +1245,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             : isLedger
                             ? context.l10n.sendReviewConfirmWithLedger
                             : isHardware
-                            ? context.l10n.sendKeystoneConfirmTitle
+                            ? context.l10n.commonConfirmWithKeystone
                             : context.l10n.sendReviewConfirmDonation,
                         confirmIcon: isHardware
                             ? (isLedger ? AppIcons.ledger : AppIcons.qr)
@@ -1279,7 +1279,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             : isLedger
                             ? context.l10n.sendReviewConfirmWithLedger
                             : isHardware
-                            ? context.l10n.sendKeystoneConfirmTitle
+                            ? context.l10n.commonConfirmWithKeystone
                             : context.l10n.sendReviewConfirmAndSend,
                         confirmLeadingIconName: isHardware
                             ? (isLedger ? AppIcons.ledger : AppIcons.qr)
@@ -1316,19 +1316,19 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                       phase: keystonePhase,
                       urParts: _keystoneUrParts,
                       error: _keystoneError,
-                      title: context.l10n.sendKeystoneConfirmTitle,
+                      title: context.l10n.commonConfirmWithKeystone,
                       subtitle: _keystoneUrPartsByRound.length == 2
                           ? context.l10n.sendKeystoneTransactionOfTwo(
                               _keystoneRound + 1,
                             )
-                          : context.l10n.sendKeystoneScanSubtitle,
+                          : context.l10n.commonScanWithYourKeystone,
                       instruction:
                           _keystoneError ??
                           (_keystonePcztsWithProofs.isEmpty
                               ? context.l10n.sendKeystoneScanNow
                               : context.l10n.commonKeystoneAfterScan),
                       primaryLabel: _keystonePcztsWithProofs.isEmpty
-                          ? context.l10n.sendKeystonePreparing
+                          ? context.l10n.commonPreparing
                           : context.l10n.commonGetSignature,
                       onPrimary:
                           !_proposalAbandoned &&

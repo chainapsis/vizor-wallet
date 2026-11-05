@@ -1045,7 +1045,7 @@ class _DefaultBadge extends StatelessWidget {
           vertical: 2,
         ),
         child: Text(
-          context.l10n.votingConfigBadgeDefault,
+          context.l10n.commonDefault,
           style: AppTypography.labelSmall.copyWith(
             color: colors.text.secondary,
           ),

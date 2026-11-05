@@ -175,7 +175,7 @@ class _TitleBlock extends StatelessWidget {
         SizedBox(
           width: 226,
           child: Text(
-            context.l10n.keystonePrepareSubtitle,
+            context.l10n.commonPrepareYourKeystoneWallet,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),

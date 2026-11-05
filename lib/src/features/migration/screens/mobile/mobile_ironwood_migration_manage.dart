@@ -153,8 +153,8 @@ class _MobileMigrationManageDialogState
                       onPressed: !_submitting && canStop ? _confirm : null,
                       child: Text(
                         _submitting
-                            ? l10n.migrationMobileManageStopping
-                            : l10n.migrationMobileManageConfirm,
+                            ? l10n.migrationManageStopping
+                            : l10n.migrationManageConfirm,
                       ),
                     ),
                   ],
@@ -171,7 +171,7 @@ class _MobileMigrationManageDialogState
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       _updateFailed
-                          ? l10n.migrationMobileManageUpdateError
+                          ? l10n.migrationManageUpdateFailed
                           : statusMessage,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.secondary,

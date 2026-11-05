@@ -783,7 +783,7 @@ class _MobileMigrationRedesignedStatusState
                   ? context.l10n.migrationMobileRecovering
                   : context.l10n.migrationMobileRecover
             : _actionRunning
-            ? context.l10n.migrationMobileRetrying
+            ? context.l10n.migrationRetrying
             : context.l10n.commonRetry,
         onAction: accountUuid == null || recoveryInProgress || _actionRunning
             ? null
@@ -827,9 +827,9 @@ class _MobileMigrationRedesignedStatusState
         actionLabel: _actionRunning
             ? paused
                   ? context.l10n.migrationMobileResuming
-                  : context.l10n.migrationMobileRetrying
+                  : context.l10n.migrationRetrying
             : paused
-            ? context.l10n.migrationMobileResume
+            ? context.l10n.commonResume
             : context.l10n.commonRetry,
         onAction: accountUuid == null || _actionRunning
             ? null

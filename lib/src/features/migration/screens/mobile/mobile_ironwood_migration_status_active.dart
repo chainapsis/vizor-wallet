@@ -265,7 +265,7 @@ class _MobileMigrationPartStatusLabel extends StatelessWidget {
         ],
       ),
       MobileIronwoodMigrationPartStatus.active => Text(
-        part.eta ?? context.l10n.sidebarMigrating,
+        part.eta ?? context.l10n.commonMigrating,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: style,

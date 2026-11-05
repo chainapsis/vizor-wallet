@@ -126,7 +126,7 @@ class _GiftSecuritySetupState extends ConsumerState<GiftSecuritySetupScreen> {
         )
       : SetPasswordScreen.gift(
           backTarget: OnboardingBackTarget.callback(
-            label: context.l10n.paymentLinkCustomiseAccountStep,
+            label: context.l10n.commonCustomiseAccount,
             onTap: _returnToPersona,
           ),
           onContinue: _finish,

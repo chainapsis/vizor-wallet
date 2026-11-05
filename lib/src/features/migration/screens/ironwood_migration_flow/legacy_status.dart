@@ -208,7 +208,7 @@ class _MigrationTransferBatchCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  context.l10n.migrationView,
+                  context.l10n.commonView,
                   style: AppTypography.labelLarge.copyWith(
                     color: colors.text.accent,
                   ),

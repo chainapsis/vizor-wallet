@@ -394,7 +394,7 @@ _StatusPresentation _statusPresentation(
 ) {
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusPresentation(
-      title: l10n.migrationStatusPreparingTitle,
+      title: l10n.commonPreparingDots,
       body: l10n.migrationStatusPreparingBody,
       footer: l10n.migrationStatusLeaveFooter,
       buttonLabel: '',
@@ -412,13 +412,13 @@ _StatusPresentation _statusPresentation(
       buttonLabel: l10n.migrationContinueMigration,
     ),
     kIronwoodMigrationBroadcastingPhase => _StatusPresentation(
-      title: l10n.migrationStatusMigratingTitle,
+      title: l10n.commonMigrating,
       body: l10n.migrationStatusBroadcastingBody,
       footer: l10n.migrationStatusLeaveFooter,
-      buttonLabel: l10n.migrationStatusBroadcastingButton,
+      buttonLabel: l10n.migrationScheduleBroadcasting,
     ),
     kIronwoodMigrationWaitingConfirmationsPhase => _StatusPresentation(
-      title: l10n.migrationStatusMigratingTitle,
+      title: l10n.commonMigrating,
       body: l10n.migrationStatusConfirmingBody,
       footer: l10n.migrationStatusLeaveFooter,
       buttonLabel: l10n.migrationNextActionDetailWaitingForConfirmations,

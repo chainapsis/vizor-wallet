@@ -194,14 +194,14 @@ class _LedgerBluetoothSessionState extends ConsumerState<LedgerBluetoothSession>
         : restricted
         ? l10n.commonClose
         : _error != null || status == null
-        ? l10n.ledgerBtLabelCheckAgain
+        ? l10n.commonCheckAgain
         : radioOff || locationOff
-        ? l10n.ledgerBtLabelCheckAgain
+        ? l10n.commonCheckAgain
         : ready
         ? (widget.retryLabel ?? l10n.ledgerBtLabelReconnect)
         : requestable
         ? l10n.ledgerBtLabelAllowAccess
-        : l10n.ledgerBtLabelOpenSettings;
+        : l10n.commonOpenSettings;
     bool canAct() {
       if (!mounted || !widget.enabled || _busy || _invalidated) return false;
       try {

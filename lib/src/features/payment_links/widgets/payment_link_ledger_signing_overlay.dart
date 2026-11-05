@@ -229,7 +229,7 @@ class _PaymentLinkLedgerSigningOverlayState
       switch (LedgerRequestFailure.fromError(error)) {
         LedgerRequestFailure.declined =>
           context.l10n.paymentLinkLedgerFundingRejected,
-        _ => context.l10n.paymentLinkLedgerSigningIncomplete,
+        _ => context.l10n.commonLedgerSigningCouldNotBeCompleted,
       };
 
   Future<void> _present(PaymentLinkHardwareFundingResult result) async {

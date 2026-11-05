@@ -80,7 +80,7 @@ class _MobileLedgerSheetContentState extends State<MobileLedgerSheetContent> {
   }
 
   Widget _inlineContent(BuildContext context, LedgerInlinePresentation inline) {
-    final closeLabel = inline.closeLabel ?? context.l10n.ledgerCancelShielding;
+    final closeLabel = inline.closeLabel ?? context.l10n.commonCancelShielding;
     final motion = ShieldHardwarePresentation.maybeOf(context);
     final heading = Text(
       widget.title,

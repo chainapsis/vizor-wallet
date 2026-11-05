@@ -645,18 +645,6 @@ abstract class AppLocalizations {
   /// **'Gift card redemption failed'**
   String get activityGiftRedemptionFailed;
 
-  /// Status of a gift card receipt after the card was created.
-  ///
-  /// In en, this message translates to:
-  /// **'Created'**
-  String get activityGiftStatusCreated;
-
-  /// Status of a gift card receipt while the card is being created.
-  ///
-  /// In en, this message translates to:
-  /// **'Creating…'**
-  String get activityGiftStatusCreating;
-
   /// Status of a gift card receipt after the card was redeemed.
   ///
   /// In en, this message translates to:
@@ -807,12 +795,6 @@ abstract class AppLocalizations {
   /// **'Card fee'**
   String get activityReceiptCardFee;
 
-  /// Label of a row on a transaction receipt: the number of gift cards in a batch.
-  ///
-  /// In en, this message translates to:
-  /// **'Cards'**
-  String get activityReceiptCards;
-
   /// Label of a row on a transaction receipt: a notice about transaction details.
   ///
   /// In en, this message translates to:
@@ -867,12 +849,6 @@ abstract class AppLocalizations {
   /// **'Net change'**
   String get activityReceiptNetChange;
 
-  /// Label of a row on a transaction receipt: the total network fee of the transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Network fee'**
-  String get activityReceiptNetworkFee;
-
   /// Label of a row on a transaction receipt: one transparent output of the transaction, followed by its address and amount.
   ///
   /// In en, this message translates to:
@@ -896,12 +872,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Total fee for this transaction. Your account\'s share of this fee is unknown.'**
   String get activityReceiptUnattributedFeeHelp;
-
-  /// Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero.
-  ///
-  /// In en, this message translates to:
-  /// **'Unknown'**
-  String get activityReceiptUnknownFee;
 
   /// Timestamp of an activity row from today on desktop.
   ///
@@ -1046,12 +1016,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Receive in progress...'**
   String get activityTitleReceiveInProgress;
-
-  /// Title of an activity row or receipt for an incoming transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Received'**
-  String get activityTitleReceived;
 
   /// Title of the desktop receipt of an incoming transaction that completed.
   ///
@@ -1437,23 +1401,11 @@ abstract class AppLocalizations {
   /// **'Close scanner'**
   String get addressScanCloseScanner;
 
-  /// Fallback name of the camera in the desktop QR scanner footer.
-  ///
-  /// In en, this message translates to:
-  /// **'Default camera'**
-  String get addressScanDefaultCamera;
-
   /// Title in the desktop QR scanner when the camera permission was denied.
   ///
   /// In en, this message translates to:
   /// **'You\'ve denied Camera access'**
   String get addressScanDeniedTitle;
-
-  /// Title in the desktop QR scanner when Windows blocks the camera.
-  ///
-  /// In en, this message translates to:
-  /// **'Enable Windows camera access'**
-  String get addressScanEnableWindowsAccess;
 
   /// Title of the desktop QR scanner while waiting for the camera permission.
   ///
@@ -1461,47 +1413,11 @@ abstract class AppLocalizations {
   /// **'Grant access to your camera'**
   String get addressScanGrantAccess;
 
-  /// Footer label of the desktop QR scanner while cameras are being listed.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading camera...'**
-  String get addressScanLoadingCamera;
-
-  /// Label next to a spinner in the mobile QR scanner while the camera starts.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading...'**
-  String get addressScanLoadingEllipsis;
-
-  /// Footer label of the desktop QR scanner when the device has no camera.
-  ///
-  /// In en, this message translates to:
-  /// **'No camera found'**
-  String get addressScanNoCamera;
-
-  /// Description in the desktop QR scanner when the camera cannot be opened.
-  ///
-  /// In en, this message translates to:
-  /// **'No camera could be opened. Check that a camera is connected and not in use by another app.'**
-  String get addressScanNoCameraOpened;
-
-  /// Button that opens the system settings page for the camera permission.
-  ///
-  /// In en, this message translates to:
-  /// **'Open settings'**
-  String get addressScanOpenSettings;
-
   /// Title of the QR scanner that reads an address.
   ///
   /// In en, this message translates to:
   /// **'Scan the address QR code'**
   String get addressScanTitle;
-
-  /// Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names.
-  ///
-  /// In en, this message translates to:
-  /// **'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'**
-  String get addressScanWindowsAccessHint;
 
   /// Caption under the viewfinder of the mobile QR scanner.
   ///
@@ -1533,12 +1449,6 @@ abstract class AppLocalizations {
   /// **'Receive'**
   String get appBackReceive;
 
-  /// Back-link name of the voting results screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Results'**
-  String get appBackResults;
-
   /// Back-link name of a review step (send, swap, vote).
   ///
   /// In en, this message translates to:
@@ -1569,23 +1479,11 @@ abstract class AppLocalizations {
   /// **'Transaction'**
   String get appBackTransaction;
 
-  /// Back-link name of a coinholder voting round screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Voting round'**
-  String get appBackVotingRound;
-
   /// Hint shown on Android after the first Back press at the root, telling the user to press Back again to exit the app.
   ///
   /// In en, this message translates to:
   /// **'Go back again to exit'**
   String get appExitBackHint;
-
-  /// Toast shown when cancelling a gift card claim during wallet setup fails.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn’t close the card. Try again.'**
-  String get appGiftCloseCardFailed;
 
   /// Snackbar on Linux announcing a new version is available.
   ///
@@ -1676,12 +1574,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Downloading update'**
   String get appUpdateDownloadingTitle;
-
-  /// Title of the in-app update prompt when the update failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Update failed'**
-  String get appUpdateFailedTitle;
 
   /// Button on the in-app update prompt that postpones the update.
   ///
@@ -1778,7 +1670,7 @@ abstract class AppLocalizations {
   /// **'Address label'**
   String get commonAddressLabel;
 
-  /// Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap.
+  /// Label of a row on a transaction receipt: the transferred amount. Shared by: activity, app, pay, receive, send, swap. Shared by: common, migration.
   ///
   /// In en, this message translates to:
   /// **'Amount'**
@@ -1801,6 +1693,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back to wallet'**
   String get commonBackToWallet;
+
+  /// Placeholder shown for the amount, fee or button while the Immediate migration plan is being calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating…'**
+  String get commonCalculatingEllipsis;
+
+  /// Shown instead of the overall progress while the total number of migration transactions is not known yet. Shared by: migration, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating total'**
+  String get commonCalculatingTotal;
+
+  /// Label of the camera row on the Keystone scanner and the camera picker. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera'**
+  String get commonCamera;
 
   /// Title in the mobile QR scanner when the camera permission was denied. Shared by: address, keystone.
   ///
@@ -1850,6 +1760,12 @@ abstract class AppLocalizations {
   /// **'Could not finish cancelling. Please try again.'**
   String get commonCancelFailedRetry;
 
+  /// Screen-reader label of the close button on the mobile Ledger shield panel while shielding can still be cancelled. Shared by: home, ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel shielding'**
+  String get commonCancelShielding;
+
   /// Toast when leaving a flow could not cancel its pending work.
   ///
   /// In en, this message translates to:
@@ -1868,6 +1784,12 @@ abstract class AppLocalizations {
   /// **'This cannot be undone.'**
   String get commonCannotBeUndone;
 
+  /// Label of a row on a transaction receipt: the number of gift cards in a batch. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Cards'**
+  String get commonCards;
+
   /// Section label above the network selector and address field in the contact dialog. Shared by: address, pay.
   ///
   /// In en, this message translates to:
@@ -1880,13 +1802,19 @@ abstract class AppLocalizations {
   /// **'Change contact picture'**
   String get commonChangeContactPicture;
 
+  /// Button label to re-check Bluetooth access. Shared by: ledger, payment, send, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get commonCheckAgain;
+
   /// Status while Vizor checks something.
   ///
   /// In en, this message translates to:
   /// **'Checking...'**
   String get commonChecking;
 
-  /// Label of the primary button on the payment request card while the request is being checked. Shared by: send, settings.
+  /// Label of the primary button on the payment request card while the request is being checked. Shared by: send, settings. Shared by: common, payment.
   ///
   /// In en, this message translates to:
   /// **'Checking…'**
@@ -1897,6 +1825,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Checking status'**
   String get commonCheckingStatus;
+
+  /// Title while Vizor checks that the Zcash app is ready on the Ledger. Shared by: ledger, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your Ledger'**
+  String get commonCheckingYourLedger;
 
   /// Button that clears the secret passphrase words entered so far. Shared by: onboarding, send.
   ///
@@ -1940,6 +1874,36 @@ abstract class AppLocalizations {
   /// **'Completed'**
   String get commonCompleted;
 
+  /// Title asking the user to confirm on the Ledger that the Zcash app may open. Shared by: ledger, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm opening Zcash'**
+  String get commonConfirmOpeningZcash;
+
+  /// [security] Subtitle of the second step: the user confirms on the Keystone and scans its signature QR code. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm with Keystone'**
+  String get commonConfirmWithKeystone;
+
+  /// Status label while migration transfers wait for network confirmations. Shared by: migration, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming'**
+  String get commonConfirming;
+
+  /// Title of the Ledger connection dialog. Shared by: ledger, onboarding.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect Ledger'**
+  String get commonConnectLedger;
+
+  /// Status while connecting to the saved Ledger. Shared by: ledger, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting…'**
+  String get commonConnecting;
+
   /// Placeholder of the contact name field in the desktop dialog. Shared by: address, pay.
   ///
   /// In en, this message translates to:
@@ -1957,6 +1921,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Continue'**
   String get commonContinue;
+
+  /// [security] Destructive button on the Immediate migration review that broadcasts the less private migration after the privacy warning. Shared by: migration, onboarding.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue anyway'**
+  String get commonContinueAnyway;
+
+  /// Primary button label on the mobile swap screen that opens the review. Shared by: swap, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue to review'**
+  String get commonContinueToReview;
 
   /// Toast after a value is copied to the clipboard.
   ///
@@ -1976,11 +1952,59 @@ abstract class AppLocalizations {
   /// **'Copy address'**
   String get commonCopyAddress;
 
+  /// Button that copies the Gift Card link to the clipboard. Shared by: payment, receive.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link'**
+  String get commonCopyLink;
+
   /// Button label and accessibility label that copies the shielded address. Shared by: receive, sidebar.
   ///
   /// In en, this message translates to:
   /// **'Copy shielded address'**
   String get commonCopyShieldedAddress;
+
+  /// Toast shown when cancelling a gift card claim during wallet setup fails. Shared by: app, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t close the card. Try again.'**
+  String get commonCouldnTCloseTheCardTry;
+
+  /// Status of a gift card receipt after the card was created. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get commonCreated;
+
+  /// Status of a gift card receipt while the card is being created. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating…'**
+  String get commonCreating;
+
+  /// Heading of the step where the user names the account and picks a profile picture; also the back label pointing to it. Shared by: onboarding, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise Account'**
+  String get commonCustomiseAccount;
+
+  /// Onboarding step for naming the wallet and picking a picture. Shared by: onboarding, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Customise wallet'**
+  String get commonCustomiseWallet;
+
+  /// Detail tag in the camera picker for the default camera. Shared by: keystone, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get commonDefault;
+
+  /// Fallback name of the camera in the desktop QR scanner footer. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Default camera'**
+  String get commonDefaultCamera;
 
   /// Screen-reader label of the close button on a toast.
   ///
@@ -2018,6 +2042,24 @@ abstract class AppLocalizations {
   /// **'Edit'**
   String get commonEdit;
 
+  /// Title in the desktop QR scanner when Windows blocks the camera. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Windows camera access'**
+  String get commonEnableWindowsCameraAccess;
+
+  /// Placeholder of the Gift Card amount field. Shared by: payment, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount'**
+  String get commonEnterAmount;
+
+  /// Screen reader label of a currency toggle on the Gift Card amount field; {currency} is ZEC or USD. Shared by: payment, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in {currency}'**
+  String commonEnterAmountIn(String currency);
+
   /// Accessibility label of the toggle that switches the mobile Pay amount input to US dollars. Shared by: pay, receive.
   ///
   /// In en, this message translates to:
@@ -2042,7 +2084,7 @@ abstract class AppLocalizations {
   /// **'Full address'**
   String get commonFullAddress;
 
-  /// [security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device. Shared by: send, swap.
+  /// [security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device. Shared by: send, swap. Shared by: common, migration.
   ///
   /// In en, this message translates to:
   /// **'Get signature'**
@@ -2053,6 +2095,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Go back'**
   String get commonGoBack;
+
+  /// Button that leaves the migration screen and returns to the home screen. Shared by: migration, payment, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Go home'**
+  String get commonGoHome;
 
   /// Label of a status detail row with the minimum amount the swap is guaranteed to deliver.
   ///
@@ -2084,7 +2132,7 @@ abstract class AppLocalizations {
   /// **'just now'**
   String get commonJustNow;
 
-  /// Hint while scanning a QR code from a device screen. Shared by: common, pay.
+  /// Hint while scanning a QR code from a device screen. Shared by: common, pay. Shared by: common, migration, voting.
   ///
   /// In en, this message translates to:
   /// **'Keep the QR code steady and fully visible.'**
@@ -2096,7 +2144,13 @@ abstract class AppLocalizations {
   /// **'Keep screen awake'**
   String get commonKeepScreenAwake;
 
-  /// [security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap.
+  /// Instruction in the desktop Keystone shield dialog while the transaction is being sent. Shared by: home, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open while the transaction is sent.'**
+  String get commonKeepVizorOpenWhileTheTransaction;
+
+  /// [security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap. Shared by: common, migration.
   ///
   /// In en, this message translates to:
   /// **'After you scanned, click Get signature.'**
@@ -2113,6 +2167,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.'**
   String get commonKeystoneScanTransaction;
+
+  /// Error on the Keystone shield screens when the scanned signature could not be added to the transaction. Shared by: home, migration, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signature could not be applied.'**
+  String get commonKeystoneSignatureCouldNotBeApplied;
+
+  /// Error on the mobile Keystone shield screen when the signing request was not ready when the user started scanning. Shared by: home, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing could not be prepared.'**
+  String get commonKeystoneSigningCouldNotBePrepared;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Knight'**
+  String get commonKnight;
+
+  /// Title of the failure panel when the Ledger device needs the user to act (unlock, open the app, reconnect). Shared by: send, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger needs attention'**
+  String get commonLedgerNeedsAttention;
+
+  /// Message on the Ledger signing screen when signing failed for another reason. Shared by: payment, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing could not be completed. Check your device and try again.'**
+  String get commonLedgerSigningCouldNotBeCompleted;
 
   /// Title of the Ledger shield failure panel after an error. Shared by: home, send.
   ///
@@ -2132,6 +2216,36 @@ abstract class AppLocalizations {
   /// **'Loading activity'**
   String get commonLoadingActivity;
 
+  /// Footer label of the desktop QR scanner while cameras are being listed. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading camera...'**
+  String get commonLoadingCamera;
+
+  /// Label next to a spinner in the mobile QR scanner while the camera starts. Shared by: address, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading...'**
+  String get commonLoadingDots;
+
+  /// Status while the transaction QR code is prepared. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading QR code ...'**
+  String get commonLoadingQRCode;
+
+  /// Scanning tip on QR scanners. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Make sure the room is well-lit and the QR code isn\'t reflecting glare.'**
+  String get commonMakeSureTheRoomIsWell;
+
+  /// Button on the migration schedule that opens the Manage Migration dialog. Shared by: migration, sidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage'**
+  String get commonManage;
+
   /// Label of a status detail row holding the deposit memo the user must include.
   ///
   /// In en, this message translates to:
@@ -2150,11 +2264,53 @@ abstract class AppLocalizations {
   /// **'Message is too long'**
   String get commonMessageIsTooLong;
 
+  /// Desktop Home button that starts the Ironwood pool migration. Shared by: home, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate to Ironwood'**
+  String get commonMigrateToIronwood;
+
+  /// Heading of the migration status screen while the migration transaction is sent or confirming. Shared by: migration, sidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating...'**
+  String get commonMigrating;
+
+  /// Text of the Home migration banner when the migration was stopped by a network upgrade. Shared by: migration, sidebar.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped'**
+  String get commonMigrationStopped;
+
+  /// Desktop Home migration button text after a network upgrade stopped the Ironwood migration. Shared by: home, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped by network upgrade'**
+  String get commonMigrationStoppedByNetworkUpgrade;
+
+  /// Scanning tip on the gift card QR scanner. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Move the QR code a few inches further from the camera so it can focus.'**
+  String get commonMoveTheQRCodeAFew;
+
   /// Label of a status detail row with the network and conversion fees of a payment in progress.
   ///
   /// In en, this message translates to:
   /// **'Network + conversion fees'**
   String get commonNetworkConversionFees;
+
+  /// Label of a row on a transaction receipt: the total network fee of the transaction. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Network fee'**
+  String get commonNetworkFee;
+
+  /// Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature. Shared by: home, keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Next step'**
+  String get commonNextStep;
 
   /// Error shown on the Receive screen when no wallet account is selected. Shared by: receive, send.
   ///
@@ -2167,6 +2323,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No active account.'**
   String get commonNoActiveAccountSentence;
+
+  /// Description in the desktop QR scanner when the camera cannot be opened. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera could be opened. Check that a camera is connected and not in use by another app.'**
+  String get commonNoCameraCouldBeOpenedCheck;
+
+  /// Footer label of the desktop QR scanner when the device has no camera. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera found'**
+  String get commonNoCameraFound;
 
   /// Title of the sheet for a feature that is not available on this platform yet.
   ///
@@ -2185,6 +2353,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'OK'**
   String get commonOk;
+
+  /// Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
+  String get commonOnAMacYouCanUse;
+
+  /// Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'on your Keystone,'**
+  String get commonOnYourKeystone;
+
+  /// Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get commonOpenSettings;
+
+  /// Hint when the scanned QR code is not the signed transaction. Shared by: keystone, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed transaction QR on Keystone, then scan again.'**
+  String get commonOpenTheSignedTransactionQROn;
 
   /// Error on the Pay recipient step when the quote costs more ZEC than is spendable. Shared by: pay, swap.
   ///
@@ -2222,6 +2414,42 @@ abstract class AppLocalizations {
   /// **'Payment request'**
   String get commonPaymentRequest;
 
+  /// Status of a migration transfer that has not been sent yet. Shared by: migration, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get commonPending;
+
+  /// Short status chip while waiting. Shared by: ledger, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait'**
+  String get commonPleaseWait;
+
+  /// Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare your Keystone wallet'**
+  String get commonPrepareYourKeystoneWallet;
+
+  /// Disabled button label while the Keystone request is being prepared. Shared by: migration, send, wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing'**
+  String get commonPreparing;
+
+  /// Heading of the migration status screen while the balance is being split. Shared by: migration, send, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing...'**
+  String get commonPreparingDots;
+
+  /// Button label while a Gift Card claim is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get commonPreparingEllipsis;
+
   /// Line under the paid amount on a payment status screen, saying the payment is spent privately from the shielded balance.
   ///
   /// In en, this message translates to:
@@ -2251,6 +2479,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Rate'**
   String get commonRate;
+
+  /// Status while the signature QR code from the Keystone is decoded. Shared by: keystone, migration, send, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature...'**
+  String get commonReadingSignature;
+
+  /// Status text on the mobile Keystone scanner while the scanned signature QR is decoded. Shared by: home, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature…'**
+  String get commonReadingSignatureEllipsis;
+
+  /// Title of an activity row or receipt for an incoming transaction. Shared by: activity, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Received'**
+  String get commonReceived;
 
   /// Label of the amount the payment recipient will receive, on an in-progress payment status screen.
   ///
@@ -2306,6 +2552,18 @@ abstract class AppLocalizations {
   /// **'Reset Vizor'**
   String get commonResetVizor;
 
+  /// Back-link name of the voting results screen. Shared by: app, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Results'**
+  String get commonResults;
+
+  /// Button on the migration progress screen that resumes a paused migration. Shared by: migration, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get commonResume;
+
   /// Button that retries a failed step.
   ///
   /// In en, this message translates to:
@@ -2360,17 +2618,53 @@ abstract class AppLocalizations {
   /// **'Save contact'**
   String get commonSaveContact;
 
+  /// Disabled button label while saving. Shared by: ledger, pay.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving'**
+  String get commonSaving;
+
+  /// Button that reopens the QR scanner after a failed scan. Shared by: payment, wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan again'**
+  String get commonScanAgain;
+
   /// Button that opens the camera to scan the requester's original payment request QR code.
   ///
   /// In en, this message translates to:
   /// **'Scan original QR'**
   String get commonScanOriginalQr;
 
-  /// Title of a QR code scanning screen.
+  /// Title of a QR code scanning screen. Shared by: common, migration.
   ///
   /// In en, this message translates to:
   /// **'Scan QR Code'**
   String get commonScanQrCode;
+
+  /// Accessibility label of the button that opens the QR scanner on the Pay recipient step. Shared by: pay, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR code'**
+  String get commonScanQrCodeSentenceCase;
+
+  /// Subtitle of the Keystone signing screen that shows the QR code to scan. Shared by: payment, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to sign'**
+  String get commonScanToSign;
+
+  /// Subtitle of the first step: the Keystone scans the QR code shown by Vizor. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with Keystone'**
+  String get commonScanWithKeystone;
+
+  /// [security] Subtitle of the Keystone signing modal asking the user to scan the QR with Keystone. Shared by: migration, send.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with your Keystone'**
+  String get commonScanWithYourKeystone;
 
   /// Title of a screen that picks one account to import.
   ///
@@ -2456,6 +2750,12 @@ abstract class AppLocalizations {
   /// **'Show full address'**
   String get commonShowFullAddress;
 
+  /// Screen-reader label of the button that returns to the transaction QR code. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Show transaction QR'**
+  String get commonShowTransactionQR;
+
   /// Error shown when the user declined the proving-parameter download during Keystone signing. Shared by: send, swap.
   ///
   /// In en, this message translates to:
@@ -2473,6 +2773,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Slippage tolerance'**
   String get commonSlippageTolerance;
+
+  /// Step indicator in the mobile Keystone signing flow (first of two steps). Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Step 1/2'**
+  String get commonStepOneOfTwo;
+
+  /// Step indicator in the mobile Keystone signing flow (second of two steps). Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Step 2/2'**
+  String get commonStepTwoOfTwo;
+
+  /// Subtitle of the desktop Keystone shield dialog while the transaction is being sent. Shared by: home, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting transaction'**
+  String get commonSubmittingTransaction;
 
   /// Back link label on the donation review screen. Shared by: send, settings.
   ///
@@ -2516,6 +2834,42 @@ abstract class AppLocalizations {
   /// **'{symbol} refund address'**
   String commonSymbolRefundAddress(String symbol);
 
+  /// Value of the estimated completion row while the migration progress is syncing. Shared by: migration, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing'**
+  String get commonSyncing;
+
+  /// Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap'**
+  String get commonTap;
+
+  /// End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'then scan this QR code'**
+  String get commonThenScanThisQRCode;
+
+  /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature. Shared by: home, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code could not be decoded as a Keystone signature.'**
+  String get commonThisQRCodeCouldNotBe;
+
+  /// Error on the Keystone signing screen when the scanned QR code belongs to a different request. Shared by: payment, swap.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code does not match the current Keystone request.'**
+  String get commonThisQRCodeDoesNotMatch;
+
+  /// Heading on the swap timeout screen shown when the quote deposit window has expired. Shared by: swap, wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Time’s up'**
+  String get commonTimeSUp;
+
   /// Label of a row on a transaction receipt: the date and time of the transaction. Shared by: activity, send, swap.
   ///
   /// In en, this message translates to:
@@ -2539,6 +2893,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Toggle flashlight'**
   String get commonToggleFlashlight;
+
+  /// Label of the last row on the mobile donation summary showing amount plus fee. Shared by: donation, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Total'**
+  String get commonTotal;
 
   /// Title of the Ledger failure panel when the transaction proposal expired before it could be signed. Shared by: send, swap.
   ///
@@ -2564,11 +2924,23 @@ abstract class AppLocalizations {
   /// **'Try again'**
   String get commonTryAgain;
 
+  /// Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names. Shared by: address, keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'**
+  String get commonTurnOnCameraAccessAndLet;
+
   /// Label of a row on a transaction receipt: the transaction ID, tapping it opens a block explorer. Shared by: activity, send, swap.
   ///
   /// In en, this message translates to:
   /// **'Tx ID'**
   String get commonTxId;
+
+  /// Shown as the fee of a transaction whose fee the wallet has not recorded. An unknown fee is never zero. Shared by: activity, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get commonUnknown;
 
   /// [security] Button and system biometric prompt reason for unlocking the wallet.
   ///
@@ -2582,17 +2954,59 @@ abstract class AppLocalizations {
   /// **'Update'**
   String get commonUpdate;
 
+  /// Title of the in-app update prompt when the update failed. Shared by: app, payment.
+  ///
+  /// In en, this message translates to:
+  /// **'Update failed'**
+  String get commonUpdateFailed;
+
   /// The Update button label while the change is being saved.
   ///
   /// In en, this message translates to:
   /// **'Updating...'**
   String get commonUpdating;
 
+  /// Link on the legacy migration card that opens the batch schedule. Shared by: migration, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get commonView;
+
+  /// Message while Vizor checks that the Zcash app on the Ledger is ready. Shared by: ledger, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is checking whether the Zcash app is ready.'**
+  String get commonVizorIsCheckingWhetherTheZcash;
+
+  /// Back-link name of a coinholder voting round screen. Shared by: app, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round'**
+  String get commonVotingRound;
+
+  /// Desktop Home migration button text while a migration transaction waits for confirmations. Shared by: home, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for confirmation...'**
+  String get commonWaitingForConfirmation;
+
+  /// Ring sub-caption: migration cannot continue until the wallet finishes syncing. Shared by: migration, voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for wallet sync'**
+  String get commonWaitingForWalletSync;
+
   /// Title of the unlock screen.
   ///
   /// In en, this message translates to:
   /// **'Welcome Back'**
   String get commonWelcomeBack;
+
+  /// Name of a built-in Gift Card artwork, read aloud by screen readers. Shared by: payment, settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Wizard'**
+  String get commonWizard;
 
   /// Label of the amount the user pays, on a payment status screen before the payment completes.
   ///
@@ -2665,12 +3079,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Thank you for supporting Vizor'**
   String get donationThanksTitle;
-
-  /// Label of the last row on the mobile donation summary showing amount plus fee.
-  ///
-  /// In en, this message translates to:
-  /// **'Total'**
-  String get donationTotal;
 
   /// Shows the lightwalletd endpoint in use.
   ///
@@ -2828,12 +3236,6 @@ abstract class AppLocalizations {
   /// **'The shield transaction may have reached the network. Check activity before trying again.'**
   String get homeLedgerBroadcastUnknown;
 
-  /// Screen-reader label of the close button on the mobile Ledger shield panel while shielding can still be cancelled.
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel shielding'**
-  String get homeLedgerCancelShielding;
-
   /// Ledger shield dialog message when the user switched account or network while shielding was in progress.
   ///
   /// In en, this message translates to:
@@ -2924,12 +3326,6 @@ abstract class AppLocalizations {
   /// **'Something went wrong. Try again in a moment.\n\nDetails: {details}'**
   String homeLoadFailed(String details);
 
-  /// Desktop Home button that starts the Ironwood pool migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Migrate to Ironwood'**
-  String get homeMigrateToIronwood;
-
   /// Pill on the mobile Home balance card shown when the Ironwood migration needs the user to act.
   ///
   /// In en, this message translates to:
@@ -2947,18 +3343,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{amount} still migrating'**
   String homeMigrationStillMigrating(String amount);
-
-  /// Desktop Home migration button text after a network upgrade stopped the Ironwood migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration stopped by network upgrade'**
-  String get homeMigrationStoppedByUpgrade;
-
-  /// Desktop Home migration button text while a migration transaction waits for confirmations.
-  ///
-  /// In en, this message translates to:
-  /// **'Waiting for confirmation...'**
-  String get homeMigrationWaitingConfirmation;
 
   /// Body of the first NU7 announcement point; s means seconds.
   ///
@@ -3182,18 +3566,6 @@ abstract class AppLocalizations {
   /// **'Secret Passphrase isn\'t available for this account.'**
   String get homeShieldErrorSeedUnavailable;
 
-  /// Error on the Keystone shield screens when the scanned signature could not be added to the transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Keystone signature could not be applied.'**
-  String get homeShieldErrorSignatureNotApplied;
-
-  /// Error on the mobile Keystone shield screen when the signing request was not ready when the user started scanning.
-  ///
-  /// In en, this message translates to:
-  /// **'Keystone signing could not be prepared.'**
-  String get homeShieldErrorSigningNotPrepared;
-
   /// Error on the Keystone and Ledger shield dialogs when the wallet is not synced yet.
   ///
   /// In en, this message translates to:
@@ -3224,23 +3596,11 @@ abstract class AppLocalizations {
   /// **'Get Signature'**
   String get homeShieldGetSignature;
 
-  /// Instruction in the desktop Keystone shield dialog while the transaction is being sent.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep Vizor open while the transaction is sent.'**
-  String get homeShieldKeepOpen;
-
   /// Screen-reader label of the transaction QR code the Keystone device scans.
   ///
   /// In en, this message translates to:
   /// **'Keystone transaction QR'**
   String get homeShieldKeystoneQrSemantics;
-
-  /// Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature.
-  ///
-  /// In en, this message translates to:
-  /// **'Next step'**
-  String get homeShieldNextStep;
 
   /// Label of the desktop Home button that shields the transparent balance.
   ///
@@ -3260,23 +3620,11 @@ abstract class AppLocalizations {
   /// **'Shielding queued'**
   String get homeShieldQueuedTitle;
 
-  /// Status text on the mobile Keystone scanner while the scanned signature QR is decoded.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading signature…'**
-  String get homeShieldReadingSignature;
-
   /// Button in the desktop Keystone shield dialog that cancels shielding.
   ///
   /// In en, this message translates to:
   /// **'Reject'**
   String get homeShieldReject;
-
-  /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature.
-  ///
-  /// In en, this message translates to:
-  /// **'This QR code could not be decoded as a Keystone signature.'**
-  String get homeShieldScanDecodeFailed;
 
   /// Title of the mobile Keystone shield screen while the camera scans the signature QR.
   ///
@@ -3319,12 +3667,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The shield transaction status is uncertain. Check activity before trying again.'**
   String get homeShieldStatusUncertain;
-
-  /// Subtitle of the desktop Keystone shield dialog while the transaction is being sent.
-  ///
-  /// In en, this message translates to:
-  /// **'Submitting transaction'**
-  String get homeShieldSubmitting;
 
   /// Message when a Keystone shield must wait for private recovery; the signature is kept for the retry.
   ///
@@ -3566,12 +3908,6 @@ abstract class AppLocalizations {
   /// **'It helps us import your wallet faster.'**
   String get keystoneBirthdaySubtitle;
 
-  /// Detail tag in the camera picker for the default camera.
-  ///
-  /// In en, this message translates to:
-  /// **'Default'**
-  String get keystoneCameraDefault;
-
   /// Title when camera access was denied.
   ///
   /// In en, this message translates to:
@@ -3607,12 +3943,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A camera is required to scan the gift card QR code.\nYou can revert this in settings anytime later.'**
   String get keystoneCameraGiftBody;
-
-  /// Label of the camera row on the Keystone scanner and the camera picker.
-  ///
-  /// In en, this message translates to:
-  /// **'Camera'**
-  String get keystoneCameraLabel;
 
   /// Camera name followed by a marker that it is the default camera. {name} is the camera's own name.
   ///
@@ -3656,18 +3986,6 @@ abstract class AppLocalizations {
   /// **'Confirm selection'**
   String get keystoneConfirmSelection;
 
-  /// [security] Subtitle of the second step: the user confirms on the Keystone and scans its signature QR code.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm with Keystone'**
-  String get keystoneConfirmWithKeystone;
-
-  /// Fallback name for the default camera.
-  ///
-  /// In en, this message translates to:
-  /// **'Default camera'**
-  String get keystoneDefaultCamera;
-
   /// Sentence ending in a trailing space, followed by an inline link button labelled 'link' that opens the firmware download page. Keep the trailing space.
   ///
   /// In en, this message translates to:
@@ -3710,36 +4028,6 @@ abstract class AppLocalizations {
   /// **'I\'m ready now'**
   String get keystoneImReadyNow;
 
-  /// Label in the camera chip while cameras are listed.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading camera...'**
-  String get keystoneLoadingCamera;
-
-  /// Status while the transaction QR code is prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading QR code ...'**
-  String get keystoneLoadingQrCode;
-
-  /// Button that moves from the transaction QR code to the camera scan.
-  ///
-  /// In en, this message translates to:
-  /// **'Next step'**
-  String get keystoneNextStep;
-
-  /// Label in the camera chip when the device has no camera.
-  ///
-  /// In en, this message translates to:
-  /// **'No camera found'**
-  String get keystoneNoCameraFound;
-
-  /// Shown when no camera could be started.
-  ///
-  /// In en, this message translates to:
-  /// **'No camera could be opened. Check that a camera is connected and not in use by another app.'**
-  String get keystoneNoCameraOpened;
-
   /// Heading of the group of steps the user performs in the Vizor app.
   ///
   /// In en, this message translates to:
@@ -3751,30 +4039,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On your Keystone'**
   String get keystoneOnYourKeystone;
-
-  /// Button on the Keystone camera scanner that opens the system settings for the camera permission.
-  ///
-  /// In en, this message translates to:
-  /// **'Open settings'**
-  String get keystoneOpenSettings;
-
-  /// Hint when the scanned QR code is not the signed transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Open the signed transaction QR on Keystone, then scan again.'**
-  String get keystoneOpenSignedQr;
-
-  /// Error shown when the Keystone signing request could not be created.
-  ///
-  /// In en, this message translates to:
-  /// **'Keystone signing could not be prepared.'**
-  String get keystonePcztPrepareFailed;
-
-  /// Subtitle under the Keystone connect, scan and select-account headings, asking the user to get their Keystone device ready.
-  ///
-  /// In en, this message translates to:
-  /// **'Prepare your Keystone wallet'**
-  String get keystonePrepareSubtitle;
 
   /// Title of instruction step 2 on the Keystone how-to-connect screen. The step number is added by the app before this text.
   ///
@@ -3793,12 +4057,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reading QR...'**
   String get keystoneReadingQr;
-
-  /// Status while the signature QR code from the Keystone is decoded.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading signature...'**
-  String get keystoneReadingSignature;
 
   /// Message shown instead of the scanner when no camera is available on this device.
   ///
@@ -3854,35 +4112,11 @@ abstract class AppLocalizations {
   /// **'Scanning... {progress}%'**
   String keystoneScanProgress(int progress);
 
-  /// Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon.
-  ///
-  /// In en, this message translates to:
-  /// **'on your Keystone,'**
-  String get keystoneScanPromptOnKeystone;
-
-  /// Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon.
-  ///
-  /// In en, this message translates to:
-  /// **'Tap'**
-  String get keystoneScanPromptTap;
-
-  /// End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'.
-  ///
-  /// In en, this message translates to:
-  /// **'then scan this QR code'**
-  String get keystoneScanPromptThenScan;
-
   /// Status text on the Keystone QR scanner while the scanned accounts are being decoded.
   ///
   /// In en, this message translates to:
   /// **'Reading accounts...'**
   String get keystoneScanReadingAccounts;
-
-  /// Subtitle of the first step: the Keystone scans the QR code shown by Vizor.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan with Keystone'**
-  String get keystoneScanWithKeystone;
 
   /// Title of the camera picker.
   ///
@@ -3890,29 +4124,11 @@ abstract class AppLocalizations {
   /// **'Select Camera'**
   String get keystoneSelectCamera;
 
-  /// Screen-reader label of the button that returns to the transaction QR code.
-  ///
-  /// In en, this message translates to:
-  /// **'Show transaction QR'**
-  String get keystoneShowTransactionQr;
-
-  /// Error when the scanned QR code is not a Keystone signature.
-  ///
-  /// In en, this message translates to:
-  /// **'This QR code could not be decoded as a Keystone signature.'**
-  String get keystoneSignatureQrNotDecoded;
-
   /// Sidebar step label and back-link text for the first Keystone onboarding step (how to connect the device). Title Case is intentional.
   ///
   /// In en, this message translates to:
   /// **'How to Connect'**
   String get keystoneStepHowToConnect;
-
-  /// Step indicator in the mobile Keystone signing flow (first of two steps).
-  ///
-  /// In en, this message translates to:
-  /// **'Step 1/2'**
-  String get keystoneStepOneOfTwo;
 
   /// Device step: quotes the menu button (three dots) and the menu item 'Connect software wallet' shown on the Keystone device. Keep 'Connect software wallet' in English inside the translation because that is the label on the device screen.
   ///
@@ -3938,41 +4154,17 @@ abstract class AppLocalizations {
   /// **'Select Vizor (or ZODL)'**
   String get keystoneStepSelectVizor;
 
-  /// Step indicator in the mobile Keystone signing flow (second of two steps).
-  ///
-  /// In en, this message translates to:
-  /// **'Step 2/2'**
-  String get keystoneStepTwoOfTwo;
-
   /// Label next to a spinner while a signed transaction is submitted.
   ///
   /// In en, this message translates to:
   /// **'Submitting the transaction'**
   String get keystoneSubmittingTransaction;
 
-  /// Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name.
-  ///
-  /// In en, this message translates to:
-  /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
-  String get keystoneTipContinuityCamera;
-
   /// Scanning tip on the gift card QR scanner.
   ///
   /// In en, this message translates to:
   /// **'Open the gift card QR code full screen on another device.'**
   String get keystoneTipGiftFullScreen;
-
-  /// Scanning tip on the gift card QR scanner.
-  ///
-  /// In en, this message translates to:
-  /// **'Move the QR code a few inches further from the camera so it can focus.'**
-  String get keystoneTipGiftMoveFurther;
-
-  /// Scanning tip on QR scanners.
-  ///
-  /// In en, this message translates to:
-  /// **'Make sure the room is well-lit and the QR code isn\'t reflecting glare.'**
-  String get keystoneTipGlare;
 
   /// Scanning tip on the Keystone QR scanner.
   ///
@@ -3997,18 +4189,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Try again with Keystone'**
   String get keystoneTryAgainWithKeystone;
-
-  /// Instruction on Windows. 'Camera access' and 'Let desktop apps access your camera' are Windows Settings labels; use the localized Windows names.
-  ///
-  /// In en, this message translates to:
-  /// **'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'**
-  String get keystoneWindowsCameraBody;
-
-  /// Title when camera access is denied on Windows.
-  ///
-  /// In en, this message translates to:
-  /// **'Enable Windows camera access'**
-  String get keystoneWindowsCameraTitle;
 
   /// Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.
   ///
@@ -4214,23 +4394,11 @@ abstract class AppLocalizations {
   /// **'Allow access'**
   String get ledgerBtLabelAllowAccess;
 
-  /// Button label to re-check Bluetooth access.
-  ///
-  /// In en, this message translates to:
-  /// **'Check again'**
-  String get ledgerBtLabelCheckAgain;
-
   /// Button label while access is being checked.
   ///
   /// In en, this message translates to:
   /// **'Checking access'**
   String get ledgerBtLabelChecking;
-
-  /// Button label that opens the system settings.
-  ///
-  /// In en, this message translates to:
-  /// **'Open settings'**
-  String get ledgerBtLabelOpenSettings;
 
   /// Button label to reconnect to the Ledger once access is granted.
   ///
@@ -4406,12 +4574,6 @@ abstract class AppLocalizations {
   /// **'Connecting'**
   String get ledgerButtonConnecting;
 
-  /// Disabled button label while saving.
-  ///
-  /// In en, this message translates to:
-  /// **'Saving'**
-  String get ledgerButtonSaving;
-
   /// Disabled button label while searching.
   ///
   /// In en, this message translates to:
@@ -4423,12 +4585,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not finish cancelling. Try again.'**
   String get ledgerCancelFailed;
-
-  /// Close button label in the Ledger sheet shown during shielding.
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel shielding'**
-  String get ledgerCancelShielding;
 
   /// Title of the desktop dialog while a running Ledger request is being cancelled.
   ///
@@ -4543,12 +4699,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Prepare your Ledger wallet.'**
   String get ledgerConnectSubtitle;
-
-  /// Title of the Ledger connection dialog.
-  ///
-  /// In en, this message translates to:
-  /// **'Connect Ledger'**
-  String get ledgerConnectTitle;
 
   /// Step 2 of the Ledger preparation list for a USB connection (the number is added by the app).
   ///
@@ -5288,12 +5438,6 @@ abstract class AppLocalizations {
   /// **'Open Bluetooth settings manually to remove the old pairing.'**
   String get ledgerOpenBluetoothSettingsManually;
 
-  /// Button label that opens the system Bluetooth settings.
-  ///
-  /// In en, this message translates to:
-  /// **'Open settings'**
-  String get ledgerOpenSettings;
-
   /// Instruction inserted into a USB error message: the user must open the Zcash app on the Ledger and retry.
   ///
   /// In en, this message translates to:
@@ -5534,12 +5678,6 @@ abstract class AppLocalizations {
   /// **'When prompted, check the amount and recipient on Ledger.'**
   String get ledgerSigningCheckAmountRecipient;
 
-  /// Message while Vizor checks that the Zcash app on the Ledger is ready.
-  ///
-  /// In en, this message translates to:
-  /// **'Vizor is checking whether the Zcash app is ready.'**
-  String get ledgerSigningCheckingZcashReady;
-
   /// Screen-reader label of the close button on the mobile Ledger signing surface.
   ///
   /// In en, this message translates to:
@@ -5636,12 +5774,6 @@ abstract class AppLocalizations {
   /// **'Review on device'**
   String get ledgerSigningStatusReview;
 
-  /// Short status chip while waiting.
-  ///
-  /// In en, this message translates to:
-  /// **'Please wait'**
-  String get ledgerSigningStatusWait;
-
   /// [security] Mobile status chip while waiting for the user to approve on the Ledger.
   ///
   /// In en, this message translates to:
@@ -5666,23 +5798,11 @@ abstract class AppLocalizations {
   /// **'Review on Ledger'**
   String get ledgerSigningStepReview;
 
-  /// Title while Vizor checks that the Zcash app is ready on the Ledger.
-  ///
-  /// In en, this message translates to:
-  /// **'Checking your Ledger'**
-  String get ledgerSigningTitleChecking;
-
   /// [security] Mobile title asking the user to confirm the transaction on the Ledger.
   ///
   /// In en, this message translates to:
   /// **'Confirm on your Ledger'**
   String get ledgerSigningTitleConfirmOnLedger;
-
-  /// Title asking the user to confirm on the Ledger that the Zcash app may open.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm opening Zcash'**
-  String get ledgerSigningTitleConfirmOpening;
 
   /// Title while Vizor finishes a signed transaction.
   ///
@@ -5731,12 +5851,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Ledger is preparing to sign. It may seem unresponsive for a few seconds.'**
   String get ledgerSigningWaitInstruction;
-
-  /// Status while connecting to the saved Ledger.
-  ///
-  /// In en, this message translates to:
-  /// **'Connecting…'**
-  String get ledgerStatusConnecting;
 
   /// Status while the user must act on the Ledger.
   ///
@@ -6182,12 +6296,6 @@ abstract class AppLocalizations {
   /// **'in {count} min'**
   String migrationBroadcastInMinutes(int count);
 
-  /// Status of a migration transfer that has not been sent yet.
-  ///
-  /// In en, this message translates to:
-  /// **'Pending'**
-  String get migrationBroadcastPending;
-
   /// Status of a migration transfer that was sent to the network.
   ///
   /// In en, this message translates to:
@@ -6218,12 +6326,6 @@ abstract class AppLocalizations {
   /// **'Your\n{amount} ZEC\nare on Ironwood!'**
   String migrationCompleteTitle(String amount);
 
-  /// Status label while migration transfers wait for network confirmations.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirming'**
-  String get migrationConfirming;
-
   /// Button that continues the migration with its next step.
   ///
   /// In en, this message translates to:
@@ -6241,12 +6343,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Migrate to Ironwood Pool'**
   String get migrationCtaStart;
-
-  /// Label of the home call-to-action when a network upgrade stopped the migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration stopped by network upgrade'**
-  String get migrationCtaStopped;
 
   /// Label on the legacy migration card for the batch currently being processed.
   ///
@@ -6434,12 +6530,6 @@ abstract class AppLocalizations {
   /// **'Ironwood Migration'**
   String get migrationFlowTitle;
 
-  /// Button that leaves the migration screen and returns to the home screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Go home'**
-  String get migrationGoHome;
-
   /// Explains that parts are sent slowly at staggered times to make tracing harder.
   ///
   /// In en, this message translates to:
@@ -6505,12 +6595,6 @@ abstract class AppLocalizations {
   /// **'How the Migration Works'**
   String get migrationHowTitle;
 
-  /// Row label for the amount moved by the one-step migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Amount'**
-  String get migrationImmediateAmount;
-
   /// [security] Button that authorises the one-step migration despite its privacy trade-off.
   ///
   /// In en, this message translates to:
@@ -6528,12 +6612,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Authorising migration'**
   String get migrationImmediateAuthorisingSemantics;
-
-  /// Placeholder shown for the amount, fee or button while the Immediate migration plan is being calculated.
-  ///
-  /// In en, this message translates to:
-  /// **'Calculating…'**
-  String get migrationImmediateCalculating;
 
   /// Button on the one-step migration review that goes back to the list of migration options.
   ///
@@ -6637,12 +6715,6 @@ abstract class AppLocalizations {
   /// **'A new shielded pool for Zcash.'**
   String get migrationIntroTagline;
 
-  /// [security] Instruction in the Keystone signing modal after the QR was scanned.
-  ///
-  /// In en, this message translates to:
-  /// **'After you scanned, click Get signature.'**
-  String get migrationKeystoneAfterScanInstruction;
-
   /// [security] Status while the Keystone signature is being applied.
   ///
   /// In en, this message translates to:
@@ -6672,12 +6744,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Begin signing'**
   String get migrationKeystoneBeginSigning;
-
-  /// Label of the camera picker row.
-  ///
-  /// In en, this message translates to:
-  /// **'Camera'**
-  String get migrationKeystoneCamera;
 
   /// Shown when the camera is unavailable; asks for camera access to scan the signed QR.
   ///
@@ -6727,18 +6793,6 @@ abstract class AppLocalizations {
   /// **'Update Keystone firmware to sign Ironwood migrations, then try again.'**
   String get migrationKeystoneFirmwareUpdate;
 
-  /// [security] Button that starts scanning the signed QR code shown on Keystone.
-  ///
-  /// In en, this message translates to:
-  /// **'Get signature'**
-  String get migrationKeystoneGetSignature;
-
-  /// Hint shown when the QR code could not be read.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep the QR code steady and fully visible.'**
-  String get migrationKeystoneKeepQrSteady;
-
   /// Title of the mobile Keystone migration screen.
   ///
   /// In en, this message translates to:
@@ -6774,18 +6828,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keystone signing could not be prepared. Try again.'**
   String get migrationKeystonePrepareFailed;
-
-  /// [security] Instruction asking the user to get the Keystone ready before scanning.
-  ///
-  /// In en, this message translates to:
-  /// **'Prepare your Keystone wallet'**
-  String get migrationKeystonePrepareWallet;
-
-  /// Disabled button label while the Keystone request is being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing'**
-  String get migrationKeystonePreparing;
 
   /// Disabled button label while QR codes are prepared.
   ///
@@ -6847,12 +6889,6 @@ abstract class AppLocalizations {
   /// **'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.'**
   String get migrationKeystoneQrBodyRound;
 
-  /// [security] Label shown while the signed QR code from Keystone is being read.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading signature...'**
-  String get migrationKeystoneReadingSignature;
-
   /// [security] Error shown after the Keystone signing request was cancelled.
   ///
   /// In en, this message translates to:
@@ -6913,12 +6949,6 @@ abstract class AppLocalizations {
   /// **'Scan the new signed QR shown on Keystone.'**
   String get migrationKeystoneScanNewQr;
 
-  /// Heading above the camera view while scanning the Keystone QR.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan QR Code'**
-  String get migrationKeystoneScanQrCode;
-
   /// [security] Heading above the request QR asking the user to scan it with Keystone.
   ///
   /// In en, this message translates to:
@@ -6930,12 +6960,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Scan Keystone signature'**
   String get migrationKeystoneScanSignature;
-
-  /// [security] Subtitle of the Keystone signing modal asking the user to scan the QR with Keystone.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan with your Keystone'**
-  String get migrationKeystoneScanSubtitle;
 
   /// [security] Title of the Keystone signing step that signs one batch of Ironwood migration transfers.
   ///
@@ -6954,12 +6978,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sign private split'**
   String get migrationKeystoneSignPrivateSplit;
-
-  /// [security] Error shown when the Keystone signature could not be applied.
-  ///
-  /// In en, this message translates to:
-  /// **'Keystone signature could not be applied.'**
-  String get migrationKeystoneSignatureFailed;
 
   /// Label under the request QR: it signs all the listed transactions; {transactions} is a count such as "3 transactions".
   ///
@@ -7087,12 +7105,6 @@ abstract class AppLocalizations {
   /// **'Left to transfer: {amount}'**
   String migrationLeftToTransfer(String amount);
 
-  /// Button on the migration schedule that opens the Manage Migration dialog.
-  ///
-  /// In en, this message translates to:
-  /// **'Manage'**
-  String get migrationManage;
-
   /// Label of the confirm button while the migration is being cancelled.
   ///
   /// In en, this message translates to:
@@ -7134,12 +7146,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Process the remaining migration immediately.'**
   String get migrationManageImmediateIntro;
-
-  /// Label of the action button in the Manage Migration dialog while it is busy.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading...'**
-  String get migrationManageLoading;
 
   /// Error in the Manage Migration dialog when nothing is left to migrate.
   ///
@@ -7309,41 +7315,17 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{1 note is ready for your signature} other{{count} notes are ready for your signature}}'**
   String migrationMobileAttentionSignatureSheet(int count);
 
-  /// Title of the Home sheet saying a Zcash network upgrade stopped the migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration stopped by network upgrade'**
-  String get migrationMobileAttentionStoppedTitle;
-
-  /// Default label of the secondary button that returns to Home from a mobile migration status screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Back home'**
-  String get migrationMobileBackHome;
-
   /// Button on the migration progress screen that returns to Home.
   ///
   /// In en, this message translates to:
   /// **'Back to home'**
   String get migrationMobileBackToHome;
 
-  /// Text of the Home migration banner while the migration runs and no amount is known.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration in progress'**
-  String get migrationMobileBannerInProgress;
-
   /// Text of the Home migration banner when a migration transaction is late.
   ///
   /// In en, this message translates to:
   /// **'Migration needs attention'**
   String get migrationMobileBannerLate;
-
-  /// Text of the Home migration banner while the balance is being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing migration'**
-  String get migrationMobileBannerPreparing;
 
   /// Text of the Home migration banner when the next batch is ready.
   ///
@@ -7362,24 +7344,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =1{1 note is ready for signing} other{{count} notes are ready for signing}}'**
   String migrationMobileBannerSignature(int count);
-
-  /// Text of the Home banner that starts the Ironwood migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Migrate to Ironwood'**
-  String get migrationMobileBannerStart;
-
-  /// Text of the Home migration banner when the migration was stopped by a network upgrade.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration stopped'**
-  String get migrationMobileBannerStopped;
-
-  /// Text of the Home migration banner while waiting for network confirmations.
-  ///
-  /// In en, this message translates to:
-  /// **'Waiting for confirmation...'**
-  String get migrationMobileBannerWaiting;
 
   /// Label inside the progress ring showing completed batches out of the total.
   ///
@@ -7411,12 +7375,6 @@ abstract class AppLocalizations {
   /// **'You’re all set!'**
   String get migrationMobileCompleteTitle;
 
-  /// First line on the mobile migration progress screen when continuing the migration failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t continue migration. Try again.'**
-  String get migrationMobileContinueError;
-
   /// Message on the migration progress screen when continuing the migration failed.
   ///
   /// In en, this message translates to:
@@ -7428,78 +7386,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your migration credentials need to be restored before continuing.'**
   String get migrationMobileCredentialsRestore;
-
-  /// Error shown on the mobile migration screens when the network rejected or failed to receive the migration transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t broadcast the migration transaction. Try again.'**
-  String get migrationMobileErrorBroadcast;
-
-  /// Error shown on the mobile Immediate migration review when the amount or fee changed after the plan was calculated.
-  ///
-  /// In en, this message translates to:
-  /// **'The amount or fee changed. Review the updated details.'**
-  String get migrationMobileErrorPlanChanged;
-
-  /// Generic error shown on the mobile migration screens when the migration could not start.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn\'t start migration. Try again.'**
-  String get migrationMobileErrorStart;
-
-  /// Error shown on the mobile migration screens when the migration could not start because the wallet is still syncing.
-  ///
-  /// In en, this message translates to:
-  /// **'Wait for sync to finish, then try again.'**
-  String get migrationMobileErrorSyncFirst;
-
-  /// Error shown on the mobile migration screens when the wallet is locked and the migration could not start.
-  ///
-  /// In en, this message translates to:
-  /// **'Unlock Vizor before starting migration.'**
-  String get migrationMobileErrorUnlock;
-
-  /// Label of the row showing the estimated time the migration finishes.
-  ///
-  /// In en, this message translates to:
-  /// **'Est. completion'**
-  String get migrationMobileEstCompletion;
-
-  /// Secondary button on the Immediate migration review that goes back to the option choice.
-  ///
-  /// In en, this message translates to:
-  /// **'Consider another option'**
-  String get migrationMobileFastConsiderOther;
-
-  /// [security] Destructive button on the Immediate migration review that broadcasts the less private migration after the privacy warning.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue anyway'**
-  String get migrationMobileFastContinueAnyway;
-
-  /// Label of the row showing how long the Immediate migration takes on the review screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration complete in'**
-  String get migrationMobileFastDurationRow;
-
-  /// Label of the row showing the estimated network fee on the Immediate migration review.
-  ///
-  /// In en, this message translates to:
-  /// **'Fees (estimate)'**
-  String get migrationMobileFastFeesRow;
-
-  /// Error under the Immediate migration review when there is no spendable Orchard balance to migrate.
-  ///
-  /// In en, this message translates to:
-  /// **'No spendable Orchard balance is available for Immediate migration.'**
-  String get migrationMobileFastNoBalance;
-
-  /// Placeholder value of the amount and fee rows on the Immediate migration review while the plan is being calculated.
-  ///
-  /// In en, this message translates to:
-  /// **'Calculating…'**
-  String get migrationMobileFastPlanCalculating;
 
   /// Error under the Immediate migration review when the plan or fee could not be calculated.
   ///
@@ -7519,12 +7405,6 @@ abstract class AppLocalizations {
   /// **'easier to associate with your wallet'**
   String get migrationMobileFastPrivacyBodyHighlight;
 
-  /// [security] First part of the sentence in the privacy warning card; it continues with the highlighted phrase. {amount} is the amount with the ZEC unit. Keep the trailing space.
-  ///
-  /// In en, this message translates to:
-  /// **'Crosses in one visible step — your {amount} and timing are '**
-  String migrationMobileFastPrivacyBodyLead(String amount);
-
   /// Last sentence of the privacy warning card suggesting the Private migration option.
   ///
   /// In en, this message translates to:
@@ -7536,18 +7416,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Private migration is not available for Ledger accounts.'**
   String get migrationMobileFastPrivacyLedger;
-
-  /// [security] Heading of the privacy warning card on the Immediate migration review.
-  ///
-  /// In en, this message translates to:
-  /// **'Privacy trade-off'**
-  String get migrationMobileFastPrivacyTitle;
-
-  /// Ghost button on the Immediate migration review that recalculates the plan after a failure.
-  ///
-  /// In en, this message translates to:
-  /// **'Retry calculation'**
-  String get migrationMobileFastRetryCalculation;
 
   /// Body of the success screen after the Immediate migration was broadcast. {amount} is the migrated amount with the ZEC unit, such as 1.50 ZEC.
   ///
@@ -7567,47 +7435,11 @@ abstract class AppLocalizations {
   /// **'Fast Migration'**
   String get migrationMobileFastTitle;
 
-  /// Button on the mobile migration progress screens that leaves the screen and goes to Home.
-  ///
-  /// In en, this message translates to:
-  /// **'Go home'**
-  String get migrationMobileGoHome;
-
-  /// Badge text on the pool migration illustration at the top of the intro screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration'**
-  String get migrationMobileHeroBadge;
-
-  /// Label under the new pool in the migration illustration.
-  ///
-  /// In en, this message translates to:
-  /// **'Ironwood Pool'**
-  String get migrationMobileHeroIronwoodPool;
-
-  /// Small label above Orchard Pool in the migration illustration, marking the old pool.
-  ///
-  /// In en, this message translates to:
-  /// **'(Legacy)'**
-  String get migrationMobileHeroLegacy;
-
-  /// Label under the old pool in the migration illustration.
-  ///
-  /// In en, this message translates to:
-  /// **'Orchard Pool'**
-  String get migrationMobileHeroOrchardPool;
-
   /// Top bar title of the mobile screen that explains the migration steps.
   ///
   /// In en, this message translates to:
   /// **'About'**
   String get migrationMobileHowItWorksNavTitle;
-
-  /// Title-case heading of the mobile screen that explains the steps of the Ironwood migration.
-  ///
-  /// In en, this message translates to:
-  /// **'How Migration Works'**
-  String get migrationMobileHowItWorksTitle;
 
   /// Body on the first mobile migration screen explaining that the user's funds must move from the Orchard pool to the Ironwood pool. {amount} is the formatted Orchard balance without the ZEC unit.
   ///
@@ -7620,12 +7452,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Official release note'**
   String get migrationMobileIntroReleaseNote;
-
-  /// Tagline under the Ironwood wordmark on the first mobile migration screen.
-  ///
-  /// In en, this message translates to:
-  /// **'A new shielded pool for Zcash.'**
-  String get migrationMobileIntroTagline;
 
   /// Title-case top bar title of the first mobile Ironwood migration screen, which announces the network update.
   ///
@@ -7651,12 +7477,6 @@ abstract class AppLocalizations {
   /// **'Confirm migration preparation with Keystone'**
   String get migrationMobileKeystoneConfirmPrepSemantics;
 
-  /// [security] Title-case heading on the Keystone request screen while the QR code is still loading.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm Migration with Keystone'**
-  String get migrationMobileKeystoneConfirmTitle;
-
   /// [security] Screen reader label of the Keystone request screen for the migration transfer signing round.
   ///
   /// In en, this message translates to:
@@ -7680,36 +7500,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading QR code'**
   String get migrationMobileKeystoneLoadingQrSemantics;
-
-  /// Text under the placeholder while the Keystone request QR code is being built. Keep the space before the dots.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading QR code ...'**
-  String get migrationMobileKeystoneLoadingQrText;
-
-  /// Button on the Keystone request screen that moves on to scanning the signed result.
-  ///
-  /// In en, this message translates to:
-  /// **'Next step'**
-  String get migrationMobileKeystoneNextStep;
-
-  /// Second fragment of the instruction on the Keystone request screen, shown after the QR icon.
-  ///
-  /// In en, this message translates to:
-  /// **'on your Keystone,'**
-  String get migrationMobileKeystonePromptOnDevice;
-
-  /// First fragment of the instruction on the Keystone request screen: Tap [QR icon] on your Keystone, then scan this QR code. The icon is shown between this and the next fragment.
-  ///
-  /// In en, this message translates to:
-  /// **'Tap'**
-  String get migrationMobileKeystonePromptTap;
-
-  /// Last fragment of the instruction on the Keystone request screen; the help button follows it.
-  ///
-  /// In en, this message translates to:
-  /// **'then scan this QR code'**
-  String get migrationMobileKeystonePromptThenScan;
 
   /// [security] Message on the migration progress screen telling the user to reconnect or re-import the Keystone account to continue.
   ///
@@ -7753,41 +7543,11 @@ abstract class AppLocalizations {
   /// **'Scan progress'**
   String get migrationMobileKeystoneScanProgress;
 
-  /// [security] Heading on the Keystone request screen once the QR code is ready; the user scans it with the device.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan with Keystone'**
-  String get migrationMobileKeystoneScanTitle;
-
   /// [security] Screen reader label of the scanner screen for the signed migration transfer round.
   ///
   /// In en, this message translates to:
   /// **'Scan the signed migration transfer from Keystone'**
   String get migrationMobileKeystoneScanTransferSemantics;
-
-  /// Label of the scanner control that goes back to the request QR code.
-  ///
-  /// In en, this message translates to:
-  /// **'Show transaction QR'**
-  String get migrationMobileKeystoneShowTxQr;
-
-  /// Large step counter on the Keystone request screen of the migration signing: showing the request QR.
-  ///
-  /// In en, this message translates to:
-  /// **'Step 1/2'**
-  String get migrationMobileKeystoneStep1;
-
-  /// Large step counter on the Keystone scan screen of the migration signing: scanning the signed result.
-  ///
-  /// In en, this message translates to:
-  /// **'Step 2/2'**
-  String get migrationMobileKeystoneStep2;
-
-  /// Label of the row showing the amount that has not been migrated yet.
-  ///
-  /// In en, this message translates to:
-  /// **'Left to migrate'**
-  String get migrationMobileLeftToMigrate;
 
   /// Message in the mobile manage-migration dialog when the migration status could not be loaded.
   ///
@@ -7800,12 +7560,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Checking migration status...'**
   String get migrationMobileManageChecking;
-
-  /// Confirm button of the manage-migration dialog.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm'**
-  String get migrationMobileManageConfirm;
 
   /// [security] Note in the manage-migration dialog that transactions already sent to the network are not undone.
   ///
@@ -7837,12 +7591,6 @@ abstract class AppLocalizations {
   /// **'Stop migration?'**
   String get migrationMobileManageStopTitle;
 
-  /// Label of the Confirm button of the manage-migration dialog while the migration is being stopped.
-  ///
-  /// In en, this message translates to:
-  /// **'Stopping...'**
-  String get migrationMobileManageStopping;
-
   /// Button in the manage-migration dialog that starts switching to the Fast migration.
   ///
   /// In en, this message translates to:
@@ -7873,12 +7621,6 @@ abstract class AppLocalizations {
   /// **'This migration is no longer available to manage.'**
   String get migrationMobileManageUnavailable;
 
-  /// Error in the mobile manage-migration dialog when stopping or switching the migration failed.
-  ///
-  /// In en, this message translates to:
-  /// **'The migration could not be updated. Please try again.'**
-  String get migrationMobileManageUpdateError;
-
   /// Note in the manage-migration dialog while it waits for a transaction being broadcast to finish before stopping.
   ///
   /// In en, this message translates to:
@@ -7896,12 +7638,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Next migration step expected in\n{timing}.'**
   String migrationMobileNextExpectedIn(String timing);
-
-  /// Label above the amount of the next scheduled migration part inside the progress ring.
-  ///
-  /// In en, this message translates to:
-  /// **'Next migration'**
-  String get migrationMobileNextMigration;
 
   /// [security] Status text when notifications are off: the user must open the app after the given block and approve the next batch. {height} is a block height; {timing} is an estimated time such as ~in 5 minutes.
   ///
@@ -8017,35 +7753,17 @@ abstract class AppLocalizations {
   /// **'Migrates your entire balance in one batch. Fast ({estimate}) but less private.'**
   String migrationMobileOptionImmediateBody(String estimate);
 
-  /// Title of the Immediate migration option card, which migrates everything in one batch.
-  ///
-  /// In en, this message translates to:
-  /// **'Immediate'**
-  String get migrationMobileOptionImmediateTitle;
-
   /// Body of the Private migration option card.
   ///
   /// In en, this message translates to:
   /// **'Splits transactions into multiple parts to minimize traceability but will take several hours to days.'**
   String get migrationMobileOptionPrivateBody;
 
-  /// Title of the Private migration option card.
-  ///
-  /// In en, this message translates to:
-  /// **'Private'**
-  String get migrationMobileOptionPrivateTitle;
-
   /// Body of the disabled Private migration option card on Android.
   ///
   /// In en, this message translates to:
   /// **'Not available on Android.'**
   String get migrationMobileOptionPrivateUnavailableAndroid;
-
-  /// Body of the disabled Private migration option card for Ledger accounts.
-  ///
-  /// In en, this message translates to:
-  /// **'Not available for Ledger accounts.'**
-  String get migrationMobileOptionPrivateUnavailableLedger;
 
   /// Title-case top bar title of the mobile screen where the user chooses between Private and Immediate migration.
   ///
@@ -8058,12 +7776,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t open migration preparation. Try again.'**
   String get migrationMobileOptionsOpenError;
-
-  /// Subtitle of the migration options screen explaining the two choices.
-  ///
-  /// In en, this message translates to:
-  /// **'Choose between more privacy over time or a faster migration. You can review the details before anything moves.'**
-  String get migrationMobileOptionsSubtitle;
 
   /// Subtitle of the migration options screen on Android, where private migration is temporarily unavailable.
   ///
@@ -8088,12 +7800,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{amount} ZEC is still in Orchard. Private migration is not available for Ledger accounts. Choose Immediate to continue.'**
   String migrationMobileOptionsSubtitleLedgerRest(String amount);
-
-  /// Subtitle of the migration options screen when part of the balance is already migrated. {amount} is the formatted remaining Orchard balance without the ZEC unit.
-  ///
-  /// In en, this message translates to:
-  /// **'{amount} ZEC is still in Orchard. Choose between more privacy over time or a faster migration.'**
-  String migrationMobileOptionsSubtitleRest(String amount);
 
   /// Title-case heading of the migration options screen where the user picks Private or Immediate migration.
   ///
@@ -8184,12 +7890,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Preparation will\ntake 10–20 min'**
   String get migrationMobilePrepDuration;
-
-  /// First line of the info card under the preparation ring. The apostrophe is curly.
-  ///
-  /// In en, this message translates to:
-  /// **'We’re organizing your balance into common-sized parts. This makes your migration harder to link.'**
-  String get migrationMobilePrepInfoOrganizing;
 
   /// Second line of the info card under the preparation ring.
   ///
@@ -8299,12 +7999,6 @@ abstract class AppLocalizations {
   /// **'Batch #{number} is ready.'**
   String migrationMobileProgressBatchReady(int number);
 
-  /// Title and value text shown while the migration waits for network confirmations.
-  ///
-  /// In en, this message translates to:
-  /// **'Waiting for confirmations'**
-  String get migrationMobileProgressConfirmations;
-
   /// Title and value text shown while the migration waits for its next step.
   ///
   /// In en, this message translates to:
@@ -8322,12 +8016,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Scheduled transaction ready'**
   String get migrationMobileProgressScheduledReady;
-
-  /// Value of the estimated completion row while the migration progress is syncing.
-  ///
-  /// In en, this message translates to:
-  /// **'Syncing'**
-  String get migrationMobileProgressSyncing;
 
   /// Body of the status card while the migration progress is syncing.
   ///
@@ -8371,12 +8059,6 @@ abstract class AppLocalizations {
   /// **'Rebuild migration?'**
   String get migrationMobileRebuildTitle;
 
-  /// Green badge on the recommended migration option card.
-  ///
-  /// In en, this message translates to:
-  /// **'Recommended'**
-  String get migrationMobileRecommended;
-
   /// Button on the mobile migration progress screen that starts rebuilding the migration from saved transactions.
   ///
   /// In en, this message translates to:
@@ -8395,12 +8077,6 @@ abstract class AppLocalizations {
   /// **'Migration recovery required.'**
   String get migrationMobileRecoveryRequired;
 
-  /// Button on the migration progress screen that resumes a paused migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Resume'**
-  String get migrationMobileResume;
-
   /// Label of the action button on the migration progress screen while a paused migration resumes.
   ///
   /// In en, this message translates to:
@@ -8413,29 +8089,11 @@ abstract class AppLocalizations {
   /// **'Vizor will retry automatically.'**
   String get migrationMobileRetryAutomatically;
 
-  /// Label of the action button on the migration progress screen while a retry runs.
-  ///
-  /// In en, this message translates to:
-  /// **'Retrying...'**
-  String get migrationMobileRetrying;
-
-  /// Title-case heading of the mobile migration review screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Review Migration Plan'**
-  String get migrationMobileReviewPlanTitle;
-
   /// Second line on the mobile migration progress screen explaining why recovery is required.
   ///
   /// In en, this message translates to:
   /// **'Two saved transactions couldn\'t be reopened.'**
   String get migrationMobileSavedTxError;
-
-  /// Placeholder for the estimated duration or remaining rounds on the schedule screens while the chain height is not known yet.
-  ///
-  /// In en, this message translates to:
-  /// **'Calculating'**
-  String get migrationMobileScheduleCalculating;
 
   /// Label of a split output that is change returned to the wallet, in the preparation schedule.
   ///
@@ -8449,18 +8107,6 @@ abstract class AppLocalizations {
   /// **'Confirming {count}/{target}'**
   String migrationMobileScheduleConfirming(int count, int target);
 
-  /// Label of the summary row showing the current block height.
-  ///
-  /// In en, this message translates to:
-  /// **'Current block'**
-  String get migrationMobileScheduleCurrentBlock;
-
-  /// Status of a scheduled migration part whose block has just passed, within the grace period.
-  ///
-  /// In en, this message translates to:
-  /// **'Due now'**
-  String get migrationMobileScheduleDueNow;
-
   /// Footer label on the migration schedule screen for the time left until the migration completes.
   ///
   /// In en, this message translates to:
@@ -8472,12 +8118,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading migration schedule'**
   String get migrationMobileScheduleLoading;
-
-  /// Ghost button on the migration schedule that opens the manage-migration dialog.
-  ///
-  /// In en, this message translates to:
-  /// **'Manage'**
-  String get migrationMobileScheduleManage;
 
   /// Status of a migration part that is being sent, in the migration schedule list (with a single ellipsis character).
   ///
@@ -8509,47 +8149,17 @@ abstract class AppLocalizations {
   /// **'Overdue'**
   String get migrationMobileScheduleOverdue;
 
-  /// Value of the estimated completion row on the mobile migration progress screen while no schedule exists yet.
-  ///
-  /// In en, this message translates to:
-  /// **'Schedule pending'**
-  String get migrationMobileSchedulePending;
-
   /// Footer label on the preparation schedule screen for how many split transactions are done.
   ///
   /// In en, this message translates to:
   /// **'Preparation progress'**
   String get migrationMobileSchedulePreparationProgress;
 
-  /// Title-case top bar title of the mobile schedule screen that lists the balance preparation (note split) rounds.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparation Schedule'**
-  String get migrationMobileSchedulePreparationTitle;
-
-  /// Message in the empty list area of the schedule screens while the schedule is being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing schedule'**
-  String get migrationMobileSchedulePreparing;
-
-  /// Status of a migration part that is still being prepared and has no time estimate.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing'**
-  String get migrationMobileSchedulePreparingState;
-
   /// Footer label on the preparation schedule screen for the time left until preparation is ready.
   ///
   /// In en, this message translates to:
   /// **'Ready in'**
   String get migrationMobileScheduleReadyIn;
-
-  /// Status of a migration part that waits for the user to sign it on the schedule list.
-  ///
-  /// In en, this message translates to:
-  /// **'Ready to sign'**
-  String get migrationMobileScheduleReadyToSign;
 
   /// Button on the migration schedule screens that goes back to the migration status.
   ///
@@ -8569,12 +8179,6 @@ abstract class AppLocalizations {
   /// **'Rounds remaining'**
   String get migrationMobileScheduleRoundsRemaining;
 
-  /// Status of a preparation transaction that is scheduled but not yet sent.
-  ///
-  /// In en, this message translates to:
-  /// **'Scheduled'**
-  String get migrationMobileScheduleScheduled;
-
   /// Footer label on the migration schedule screen for the already migrated, spendable Ironwood amount.
   ///
   /// In en, this message translates to:
@@ -8587,35 +8191,11 @@ abstract class AppLocalizations {
   /// **'Split round {round}'**
   String migrationMobileScheduleSplitRound(int round);
 
-  /// Title-case top bar title of the mobile schedule screen that lists the migration parts.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration Schedule'**
-  String get migrationMobileScheduleTitle;
-
   /// Body of the error state of the migration schedule screen.
   ///
   /// In en, this message translates to:
   /// **'Vizor couldn\'t load the latest schedule. Your saved migration state is unchanged.'**
   String get migrationMobileScheduleUnavailableBody;
-
-  /// Heading of the error state of the migration schedule screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration schedule unavailable'**
-  String get migrationMobileScheduleUnavailableTitle;
-
-  /// Status of a preparation transaction that was broadcast and waits to be included in a block.
-  ///
-  /// In en, this message translates to:
-  /// **'Waiting to be mined'**
-  String get migrationMobileScheduleWaitingMined;
-
-  /// Status of a migration part that waits for a signing window. {height} is a block height with thousands separators.
-  ///
-  /// In en, this message translates to:
-  /// **'Window #{height}'**
-  String migrationMobileScheduleWindow(String height);
 
   /// Label of the row showing the balance that can be spent right now while a migration is running.
   ///
@@ -8647,12 +8227,6 @@ abstract class AppLocalizations {
   /// **'Organizing migration batches...'**
   String get migrationMobileStartMessageOrganizing;
 
-  /// Third rotating loading message on the mobile private migration preparation screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing your migration plan...'**
-  String get migrationMobileStartMessagePlan;
-
   /// First rotating loading message on the mobile private migration preparation screen.
   ///
   /// In en, this message translates to:
@@ -8665,12 +8239,6 @@ abstract class AppLocalizations {
   /// **'Continue to sign the preparation transactions and migration batches together with Keystone.'**
   String get migrationMobileStartReadyBody;
 
-  /// Heading shown when the Keystone signing request for the private migration is ready.
-  ///
-  /// In en, this message translates to:
-  /// **'Ready to sign'**
-  String get migrationMobileStartReadyTitle;
-
   /// Muted number of notes (migration parts) after the word Migration in the heading row of the progress screens.
   ///
   /// In en, this message translates to:
@@ -8682,24 +8250,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Migration '**
   String get migrationMobileStatusNotesLead;
-
-  /// Title-case heading at the top of the mobile migration progress screens.
-  ///
-  /// In en, this message translates to:
-  /// **'Ironwood Migration'**
-  String get migrationMobileStatusTitle;
-
-  /// Label of the row showing the amount already migrated after a network upgrade stopped the migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Moved to Ironwood'**
-  String get migrationMobileStoppedMoved;
-
-  /// Label of the row showing the amount still in Orchard after a network upgrade stopped the migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Still in Orchard'**
-  String get migrationMobileStoppedRemaining;
 
   /// Message under the loading indicator while the migration progress is syncing.
   ///
@@ -8832,12 +8382,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Waiting for confirmations'**
   String get migrationNextActionDetailWaitingForConfirmations;
-
-  /// Ring sub-caption: migration cannot continue until the wallet finishes syncing.
-  ///
-  /// In en, this message translates to:
-  /// **'Waiting for wallet sync'**
-  String get migrationNextActionDetailWaitingForSync;
 
   /// Ring caption while broadcast migration transfers wait to be mined into a block.
   ///
@@ -8977,12 +8521,6 @@ abstract class AppLocalizations {
   /// **'How to move the rest'**
   String get migrationOptionsTitleMoveRest;
 
-  /// Shown instead of the overall progress while the total number of migration transactions is not known yet.
-  ///
-  /// In en, this message translates to:
-  /// **'Calculating total'**
-  String get migrationOverallCalculatingTotal;
-
   /// Overall migration progress, for example "3 of 9 complete".
   ///
   /// In en, this message translates to:
@@ -9066,12 +8604,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'We auto-locked Vizor after 10 minutes of inactivity.'**
   String get migrationPrivacyLockDescription;
-
-  /// Label next to the spinner on the lock screen shown during a running migration, and its screen-reader label.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration in progress'**
-  String get migrationPrivacyLockInProgress;
 
   /// Carousel tip about block time; {seconds} is the average number of seconds per block.
   ///
@@ -9331,12 +8863,6 @@ abstract class AppLocalizations {
   /// **'Schedule pending'**
   String get migrationSchedulePending;
 
-  /// Value shown for the current round before the rounds are known.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing'**
-  String get migrationSchedulePreparing;
-
   /// Summary row label for the block height at which preparation is expected to finish.
   ///
   /// In en, this message translates to:
@@ -9378,12 +8904,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'broadcast, waiting to be mined, projected completion at block {height}'**
   String migrationScheduleSemanticsBroadcast(String height);
-
-  /// Lowercase screen-reader state of a completed transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'completed'**
-  String get migrationScheduleSemanticsCompleted;
 
   /// Lowercase screen-reader state of a transaction completed at a block height.
   ///
@@ -9629,12 +9149,6 @@ abstract class AppLocalizations {
   /// **'Vizor is broadcasting the prepared Ironwood migration transaction.'**
   String get migrationStatusBroadcastingBody;
 
-  /// Disabled button label while the migration transaction is being sent.
-  ///
-  /// In en, this message translates to:
-  /// **'Broadcasting'**
-  String get migrationStatusBroadcastingButton;
-
   /// Confirms the funds were moved into the Ironwood pool.
   ///
   /// In en, this message translates to:
@@ -9695,12 +9209,6 @@ abstract class AppLocalizations {
   /// **'Ledger private migration is not supported because this flow requires batched signing.'**
   String get migrationStatusLedgerUnsupported;
 
-  /// Heading of the migration status screen while the migration transaction is sent or confirming.
-  ///
-  /// In en, this message translates to:
-  /// **'Migrating...'**
-  String get migrationStatusMigratingTitle;
-
   /// Explains that the private migration is paused before its next step.
   ///
   /// In en, this message translates to:
@@ -9736,12 +9244,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This usually takes around 30 minutes per split.'**
   String get migrationStatusPreparingBody;
-
-  /// Heading of the migration status screen while the balance is being split.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing...'**
-  String get migrationStatusPreparingTitle;
 
   /// Explains that the next step prepares the Ironwood migration batch.
   ///
@@ -9868,12 +9370,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Stopped by the\nnetwork upgrade'**
   String get migrationUpgradeStopRingMessage;
-
-  /// Link on the legacy migration card that opens the batch schedule.
-  ///
-  /// In en, this message translates to:
-  /// **'View'**
-  String get migrationView;
 
   /// Button that opens the schedule of migration transfers.
   ///
@@ -10226,35 +9722,17 @@ abstract class AppLocalizations {
   /// **'Connect Keystone'**
   String get onboardingConnectKeystone;
 
-  /// Import method and screen title for connecting a Ledger device.
-  ///
-  /// In en, this message translates to:
-  /// **'Connect Ledger'**
-  String get onboardingConnectLedger;
-
   /// Confirm button of the desktop unknown-birthday dialog.
   ///
   /// In en, this message translates to:
   /// **'Continue Anyway'**
   String get onboardingContinueAnywayDesktop;
 
-  /// Confirm button of the mobile unknown-birthday sheet.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue anyway'**
-  String get onboardingContinueAnywayMobile;
-
   /// Disabled primary button label while the new wallet is being created.
   ///
   /// In en, this message translates to:
   /// **'Creating wallet...'**
   String get onboardingCreatingWallet;
-
-  /// Heading of the step where the user names the account and picks a profile picture; also the back label pointing to it.
-  ///
-  /// In en, this message translates to:
-  /// **'Customise Account'**
-  String get onboardingCustomiseAccount;
 
   /// Subtitle under the customise-account heading.
   ///
@@ -10844,12 +10322,6 @@ abstract class AppLocalizations {
   /// **'Address types'**
   String get onboardingStepAddressTypes;
 
-  /// Onboarding step for naming the wallet and picking a picture.
-  ///
-  /// In en, this message translates to:
-  /// **'Customise wallet'**
-  String get onboardingStepCustomiseWallet;
-
   /// Step and screen title for importing contacts from a linked wallet.
   ///
   /// In en, this message translates to:
@@ -11222,12 +10694,6 @@ abstract class AppLocalizations {
   /// **'Recipient address'**
   String get payRecipientAddressLabel;
 
-  /// Accessibility label of the button that opens the QR scanner on the Pay recipient step.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan QR code'**
-  String get payRecipientScanQr;
-
   /// Disabled button label on the Pay review step while a new quote is loading.
   ///
   /// In en, this message translates to:
@@ -11293,12 +10759,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t save this contact. Try again.'**
   String get paySaveContactError;
-
-  /// Button label while the Pay add-contact card is saving.
-  ///
-  /// In en, this message translates to:
-  /// **'Saving'**
-  String get paySaving;
 
   /// Accessibility label of the tappable area that dismisses the mobile Pay modal.
   ///
@@ -11459,18 +10919,6 @@ abstract class AppLocalizations {
     String reason,
   );
 
-  /// Screen reader label of a currency toggle on the Gift Card amount field; {currency} is ZEC or USD.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter amount in {currency}'**
-  String paymentLinkAmountCurrencySemantic(String currency);
-
-  /// Placeholder of the Gift Card amount field.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter amount'**
-  String get paymentLinkAmountEnterAmount;
-
   /// Placeholder of the Gift Card amount field when the amount is entered in US dollars.
   ///
   /// In en, this message translates to:
@@ -11552,20 +11000,8 @@ abstract class AppLocalizations {
   /// Name of a built-in Gift Card artwork, read aloud by screen readers.
   ///
   /// In en, this message translates to:
-  /// **'Wizard'**
-  String get paymentLinkArtworkGandalf;
-
-  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
-  ///
-  /// In en, this message translates to:
   /// **'Gift box'**
   String get paymentLinkArtworkGift;
-
-  /// Name of a built-in Gift Card artwork, read aloud by screen readers.
-  ///
-  /// In en, this message translates to:
-  /// **'Knight'**
-  String get paymentLinkArtworkKnight;
 
   /// Name of a built-in Gift Card artwork, read aloud by screen readers.
   ///
@@ -11961,12 +11397,6 @@ abstract class AppLocalizations {
   /// **'Card could not be updated. Try again.'**
   String get paymentLinkCardUpdateFailed;
 
-  /// Breadcrumb and tab label for the list of Gift Cards.
-  ///
-  /// In en, this message translates to:
-  /// **'Cards'**
-  String get paymentLinkCardsLabel;
-
   /// Error shown in place of the Gift Cards list when loading it failed.
   ///
   /// In en, this message translates to:
@@ -12021,12 +11451,6 @@ abstract class AppLocalizations {
   /// **'Checking the gift… 100%'**
   String get paymentLinkCheckingGiftFull;
 
-  /// Status label while a Gift Card is being checked.
-  ///
-  /// In en, this message translates to:
-  /// **'Checking…'**
-  String get paymentLinkCheckingLabel;
-
   /// Title and screen reader label of the sheet where the user picks which account receives a Gift Card.
   ///
   /// In en, this message translates to:
@@ -12038,12 +11462,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn’t prepare this gift. Try again or choose another account.'**
   String get paymentLinkClaimAccountPrepareFailed;
-
-  /// Button that rechecks a received Gift Card that showed no balance.
-  ///
-  /// In en, this message translates to:
-  /// **'Check again'**
-  String get paymentLinkClaimActionCheckAgain;
 
   /// Button that creates a new account to claim a received Gift Card.
   ///
@@ -12074,12 +11492,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Checking your\ngift card'**
   String get paymentLinkClaimCheckingHeading;
-
-  /// Toast shown when closing a received Gift Card before account setup failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Couldn’t close the card. Try again.'**
-  String get paymentLinkClaimCloseFailed;
 
   /// Message shown when claiming a Gift Card failed; the card may still be confirming or may already have been claimed.
   ///
@@ -12255,12 +11667,6 @@ abstract class AppLocalizations {
   /// **'Confirm Gift Card'**
   String get paymentLinkConfirmGiftCardTitle;
 
-  /// Button that copies the Gift Card link to the clipboard.
-  ///
-  /// In en, this message translates to:
-  /// **'Copy link'**
-  String get paymentLinkCopyLink;
-
   /// Hint on the Gift Card ready screen that the link can be copied again later from the settings.
   ///
   /// In en, this message translates to:
@@ -12297,12 +11703,6 @@ abstract class AppLocalizations {
   /// **'Calculating network fee'**
   String get paymentLinkCostCalculatingFee;
 
-  /// Screen reader label shown while the total cost of a batch is calculated.
-  ///
-  /// In en, this message translates to:
-  /// **'Calculating total'**
-  String get paymentLinkCostCalculatingTotal;
-
   /// Label of the cost row showing the number of cards the per-card cost is multiplied by.
   ///
   /// In en, this message translates to:
@@ -12314,12 +11714,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Message on every card'**
   String get paymentLinkCostMessageOnEveryCard;
-
-  /// Label of the cost row showing the network fee of a batch.
-  ///
-  /// In en, this message translates to:
-  /// **'Network fee'**
-  String get paymentLinkCostNetworkFee;
 
   /// Label of the cost row showing the cost of one card.
   ///
@@ -12369,35 +11763,11 @@ abstract class AppLocalizations {
   /// **'Create new card'**
   String get paymentLinkCreateNewCard;
 
-  /// Tab label on the Gift Cards page listing cards the user created.
-  ///
-  /// In en, this message translates to:
-  /// **'Created'**
-  String get paymentLinkCreatedTabLabel;
-
-  /// Button label while a Gift Card is being created.
-  ///
-  /// In en, this message translates to:
-  /// **'Creating…'**
-  String get paymentLinkCreating;
-
   /// Error shown when creating a Gift Card failed.
   ///
   /// In en, this message translates to:
   /// **'Gift card creation failed. Try again.'**
   String get paymentLinkCreationFailed;
-
-  /// Title of the setup step where the user customises the new account created from a Gift Card.
-  ///
-  /// In en, this message translates to:
-  /// **'Customise Account'**
-  String get paymentLinkCustomiseAccountStep;
-
-  /// Label of the desktop setup step where the user customises the new wallet.
-  ///
-  /// In en, this message translates to:
-  /// **'Customise wallet'**
-  String get paymentLinkCustomiseWalletStep;
 
   /// Screen reader label of the button that clears the message on a Gift Card.
   ///
@@ -12585,12 +11955,6 @@ abstract class AppLocalizations {
   /// **'Gift message'**
   String get paymentLinkGiftMessageLabel;
 
-  /// Button that returns to the home screen after a Gift Card was created or received.
-  ///
-  /// In en, this message translates to:
-  /// **'Go home'**
-  String get paymentLinkGoHome;
-
   /// Status of a group of Gift Cards while its payment is confirming.
   ///
   /// In en, this message translates to:
@@ -12644,12 +12008,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Payment status pending'**
   String get paymentLinkGroupPaymentPending;
-
-  /// Status of a group of Gift Cards whose links are ready to share.
-  ///
-  /// In en, this message translates to:
-  /// **'Ready to share'**
-  String get paymentLinkGroupReadyToShare;
 
   /// Status of a group of Gift Cards when some cards are not ready.
   ///
@@ -12783,35 +12141,11 @@ abstract class AppLocalizations {
   /// **'The funding status is uncertain. Check activity before trying again.'**
   String get paymentLinkKeystoneFundingUncertain;
 
-  /// Instruction on the Keystone signing screen while the transaction is being sent.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep Vizor open while the transaction is sent.'**
-  String get paymentLinkKeystoneKeepOpen;
-
-  /// Error on the Keystone signing screen when the scanned QR code belongs to a different request.
-  ///
-  /// In en, this message translates to:
-  /// **'This QR code does not match the current Keystone request.'**
-  String get paymentLinkKeystoneQrMismatch;
-
-  /// Status on the mobile Keystone signing screen while the signature QR code is read.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading signature…'**
-  String get paymentLinkKeystoneReadingSignature;
-
   /// Caption on the mobile Keystone signing screen asking the user to scan the signature QR code shown on the device.
   ///
   /// In en, this message translates to:
   /// **'Scan the QR code on your Keystone to finish creating'**
   String get paymentLinkKeystoneScanCaption;
-
-  /// Subtitle of the Keystone signing screen that shows the QR code to scan.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan to sign'**
-  String get paymentLinkKeystoneScanToSign;
 
   /// Title of the Keystone signing screen on desktop.
   ///
@@ -12819,23 +12153,11 @@ abstract class AppLocalizations {
   /// **'Sign gift card on Keystone'**
   String get paymentLinkKeystoneSignTitle;
 
-  /// Error on the Keystone signing screen when the signature returned by the device could not be applied.
-  ///
-  /// In en, this message translates to:
-  /// **'Keystone signature could not be applied.'**
-  String get paymentLinkKeystoneSignatureFailed;
-
   /// Error on the Keystone signing screen when signing failed for another reason.
   ///
   /// In en, this message translates to:
   /// **'Gift card signing could not be completed.'**
   String get paymentLinkKeystoneSigningFailed;
-
-  /// Subtitle of the Keystone signing screen while the funding transaction is being sent.
-  ///
-  /// In en, this message translates to:
-  /// **'Submitting transaction'**
-  String get paymentLinkKeystoneSubmittingTransaction;
 
   /// [security] Warning that the newly created Gift Card links must be saved or copied before the user leaves, otherwise the funds are lost.
   ///
@@ -12866,12 +12188,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Gift card funding is saved for recovery. Try again to check its status and finish saving.'**
   String get paymentLinkLedgerSavedForRecovery;
-
-  /// Message on the Ledger signing screen when signing failed for another reason.
-  ///
-  /// In en, this message translates to:
-  /// **'Ledger signing could not be completed. Check your device and try again.'**
-  String get paymentLinkLedgerSigningIncomplete;
 
   /// Toast shown after a Gift Card link was copied to the clipboard.
   ///
@@ -13023,24 +12339,6 @@ abstract class AppLocalizations {
   /// **'Paste card link'**
   String get paymentLinkPasteLabel;
 
-  /// Section heading above Gift Cards whose funding is still being confirmed.
-  ///
-  /// In en, this message translates to:
-  /// **'Pending'**
-  String get paymentLinkPendingSectionLabel;
-
-  /// Button label while a Gift Card claim is being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing…'**
-  String get paymentLinkPreparing;
-
-  /// Status label while a Gift Card is being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing…'**
-  String get paymentLinkPreparingStatus;
-
   /// Tooltip and screen reader label of the button that turns privacy mode off, which hides amounts.
   ///
   /// In en, this message translates to:
@@ -13130,12 +12428,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You’ve received\na gift card!'**
   String get paymentLinkReceivedHeadingDesktop;
-
-  /// Tab label on the Gift Cards page listing cards the user received.
-  ///
-  /// In en, this message translates to:
-  /// **'Received'**
-  String get paymentLinkReceivedTabLabel;
 
   /// Message shown when the receiving account changed while a Gift Card was being claimed.
   ///
@@ -13251,12 +12543,6 @@ abstract class AppLocalizations {
   /// **'Saving…'**
   String get paymentLinkSaving;
 
-  /// Button that reopens the QR scanner after a failed scan.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan again'**
-  String get paymentLinkScanAgain;
-
   /// Hint shown when a scanned Gift Card QR code could not be read.
   ///
   /// In en, this message translates to:
@@ -13268,12 +12554,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connect a camera to scan the gift card QR code, or go back to paste the card link.'**
   String get paymentLinkScanCameraHint;
-
-  /// Button that opens the camera to scan a Gift Card QR code.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan QR code'**
-  String get paymentLinkScanQrCode;
 
   /// Screen reader label of the camera preview in the Gift Card QR scanner sheet.
   ///
@@ -13479,12 +12759,6 @@ abstract class AppLocalizations {
   /// **'Card use: {label}{suffix, select, checking{ · Checking…} failed{ · Update failed} other{}}'**
   String paymentLinkUsageCardUse(String label, String suffix);
 
-  /// Usage status of a Gift Card whose funding transaction is still being confirmed.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirming'**
-  String get paymentLinkUsageConfirming;
-
   /// Explanation of the Unverified usage status: the funding transaction was not found in the scanned history.
   ///
   /// In en, this message translates to:
@@ -13537,12 +12811,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unverified'**
   String get paymentLinkUsageUnverified;
-
-  /// Short status shown on a Gift Card row when refreshing its usage failed.
-  ///
-  /// In en, this message translates to:
-  /// **'Update failed'**
-  String get paymentLinkUsageUpdateFailed;
 
   /// Usage status of a Gift Card when the app saw funds leave the card but has not confirmed the claim.
   ///
@@ -13880,12 +13148,6 @@ abstract class AppLocalizations {
   /// **'Couldn\'t copy the request link. Try sharing it instead.'**
   String get receiveRequestCopyFailed;
 
-  /// Button and accessibility label on the mobile payment request result that copies the request link.
-  ///
-  /// In en, this message translates to:
-  /// **'Copy link'**
-  String get receiveRequestCopyLink;
-
   /// Button on the desktop payment request result that copies the request link.
   ///
   /// In en, this message translates to:
@@ -14126,12 +13388,6 @@ abstract class AppLocalizations {
   /// **'Enter address to continue'**
   String get sendEnterAddressToContinue;
 
-  /// Accessibility label of the control that switches the amount input to {currency}, such as ZEC or USD.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter amount in {currency}'**
-  String sendEnterAmountInCurrency(String currency);
-
   /// [security] Error shown when the user tries to continue without a valid recipient address.
   ///
   /// In en, this message translates to:
@@ -14300,12 +13556,6 @@ abstract class AppLocalizations {
   /// **'Invalid amount'**
   String get sendInvalidAmount;
 
-  /// [security] Title of the desktop Keystone signing modal and label of the review button for a Keystone account.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm with Keystone'**
-  String get sendKeystoneConfirmTitle;
-
   /// Error on the mobile review screen when the Keystone signing request could not be prepared.
   ///
   /// In en, this message translates to:
@@ -14317,12 +13567,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keystone signing could not be prepared. Return to Send and try again.'**
   String get sendKeystonePrepareFailedReturnToSend;
-
-  /// Disabled primary button label in the desktop Keystone modal while proofs are being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing'**
-  String get sendKeystonePreparing;
 
   /// [security] Error when the scanned signature QR code does not belong to the signing request currently displayed.
   ///
@@ -14354,29 +13598,11 @@ abstract class AppLocalizations {
   /// **'Scan now. Signature import unlocks after proofs are ready.'**
   String get sendKeystoneScanNow;
 
-  /// Label shown over the scanner while the signature QR code is being decoded.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading signature...'**
-  String get sendKeystoneScanReading;
-
-  /// [security] Subtitle of the desktop Keystone signing modal asking the user to scan the QR code with the device.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan with your Keystone'**
-  String get sendKeystoneScanSubtitle;
-
   /// Caption under the camera view asking the user to scan the signature QR code shown on the Keystone to finish sending.
   ///
   /// In en, this message translates to:
   /// **'Scan the QR code on your Keystone to finish sending'**
   String get sendKeystoneScanToFinish;
-
-  /// Hint when the scanned QR code is of the wrong type; asks to open the signed transaction QR code on the Keystone device.
-  ///
-  /// In en, this message translates to:
-  /// **'Open the signed transaction QR on Keystone, then scan again.'**
-  String get sendKeystoneScanUnexpectedTransaction;
 
   /// [security] Instruction on the mobile Keystone screen for a TEX send that needs two device approvals; {index} is 1 or 2.
   ///
@@ -14444,12 +13670,6 @@ abstract class AppLocalizations {
   /// **'Keep Vizor open and retry saving. No new Ledger approval needed.'**
   String get sendLedgerKeepOpenRetrySaving;
 
-  /// Title of the failure panel when the Ledger device needs the user to act (unlock, open the app, reconnect).
-  ///
-  /// In en, this message translates to:
-  /// **'Ledger needs attention'**
-  String get sendLedgerNeedsAttentionTitle;
-
   /// [security] Failure message when the user declined the transaction on their Ledger device.
   ///
   /// In en, this message translates to:
@@ -14467,12 +13687,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Signed transaction needs attention'**
   String get sendLedgerSignedNeedsAttentionTitle;
-
-  /// Generic Ledger failure message asking the user to check the device and retry.
-  ///
-  /// In en, this message translates to:
-  /// **'Ledger signing could not be completed. Check your device and try again.'**
-  String get sendLedgerSigningIncomplete;
 
   /// Title of the failure panel when the Ledger cannot sign this kind of transaction.
   ///
@@ -14594,12 +13808,6 @@ abstract class AppLocalizations {
   /// **'Amount not specified'**
   String get sendPaymentRequestAmountNotSpecified;
 
-  /// Label of the primary button on the payment request card that reruns the check.
-  ///
-  /// In en, this message translates to:
-  /// **'Check again'**
-  String get sendPaymentRequestCheckAgain;
-
   /// [security] Warning that a payment request link can be altered by other apps, so the address or amount may not be what the requester intended.
   ///
   /// In en, this message translates to:
@@ -14665,12 +13873,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Confirm the details with the person who sent it.'**
   String get sendPaymentRequestConfirmWithSender;
-
-  /// Label of the primary button on the payment request card for a request without an amount.
-  ///
-  /// In en, this message translates to:
-  /// **'Enter amount'**
-  String get sendPaymentRequestEnterAmount;
 
   /// Accessibility label of the control that collapses the full recipient address.
   ///
@@ -14954,24 +14156,6 @@ abstract class AppLocalizations {
   /// **'Show the requester’s original QR code to your camera'**
   String get sendRequestScanSubtitle;
 
-  /// Troubleshooting tip suggesting Continuity Camera on a Mac.
-  ///
-  /// In en, this message translates to:
-  /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
-  String get sendRequestScanTipContinuity;
-
-  /// Troubleshooting tip when the QR code cannot be scanned.
-  ///
-  /// In en, this message translates to:
-  /// **'Move the QR code a few inches further from the camera so it can focus.'**
-  String get sendRequestScanTipDistance;
-
-  /// Troubleshooting tip when the QR code cannot be scanned.
-  ///
-  /// In en, this message translates to:
-  /// **'Make sure the room is well-lit and the QR code isn\'t reflecting glare.'**
-  String get sendRequestScanTipLight;
-
   /// Troubleshooting tip when the payment request QR code cannot be scanned.
   ///
   /// In en, this message translates to:
@@ -15037,12 +14221,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Finishing wallet sync...'**
   String get sendReviewFinishingSyncButton;
-
-  /// Label of the review button while the transaction is being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing...'**
-  String get sendReviewPreparing;
 
   /// Line under the amount on the payment-request review screen showing the amount the requester asked for; {amount} is a formatted amount with currency.
   ///
@@ -15692,12 +14870,6 @@ abstract class AppLocalizations {
   /// **'Couldn\'t update your password. Please try again.'**
   String get settingsPasswordUpdateFailed;
 
-  /// Name of a built-in profile picture (a knight character).
-  ///
-  /// In en, this message translates to:
-  /// **'Knight'**
-  String get settingsPfpKnight;
-
   /// Name of a built-in profile picture (a samurai character).
   ///
   /// In en, this message translates to:
@@ -15709,12 +14881,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Viking'**
   String get settingsPfpViking;
-
-  /// Name of a built-in profile picture (a wizard character).
-  ///
-  /// In en, this message translates to:
-  /// **'Wizard'**
-  String get settingsPfpWizard;
 
   /// Status while the server list is being refreshed.
   ///
@@ -15985,12 +15151,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Personal'**
   String get settingsSectionPersonal;
-
-  /// Heading of the Settings card that holds the keep-screen-awake option.
-  ///
-  /// In en, this message translates to:
-  /// **'Syncing'**
-  String get settingsSectionSyncing;
 
   /// Heading of the Settings group with endpoint, explorer, theme and language.
   ///
@@ -16267,12 +15427,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connected'**
   String get settingsTorStatusConnected;
-
-  /// Tor status label while the Tor connection is being established.
-  ///
-  /// In en, this message translates to:
-  /// **'Connecting…'**
-  String get settingsTorStatusConnecting;
 
   /// Tor status label when connecting to Tor failed (desktop).
   ///
@@ -16790,29 +15944,11 @@ abstract class AppLocalizations {
   /// **'Hide balance'**
   String get sidebarHideBalance;
 
-  /// Button in the sidebar account menu that opens account management.
-  ///
-  /// In en, this message translates to:
-  /// **'Manage'**
-  String get sidebarManageAccounts;
-
-  /// Sidebar Ironwood migration item while the migration runs.
-  ///
-  /// In en, this message translates to:
-  /// **'Migrating...'**
-  String get sidebarMigrating;
-
   /// Sidebar Ironwood migration item when the user must act.
   ///
   /// In en, this message translates to:
   /// **'Needs input'**
   String get sidebarMigrationNeedsInput;
-
-  /// Sidebar Ironwood migration item after a network upgrade stopped it.
-  ///
-  /// In en, this message translates to:
-  /// **'Migration stopped'**
-  String get sidebarMigrationStopped;
 
   /// Heading of the sidebar account menu.
   ///
@@ -16843,12 +15979,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add refund address'**
   String get swapActionAddRefundAddress;
-
-  /// Primary button label on the mobile swap screen that opens the review.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue to review'**
-  String get swapActionContinueToReview;
 
   /// Primary button label on the swap screen while a quote is loading.
   ///
@@ -17790,23 +16920,11 @@ abstract class AppLocalizations {
   /// **'Keystone does not support TEX sends yet.'**
   String get swapKeystoneNoTex;
 
-  /// [security] Error in the swap Keystone signing overlay when the scanned signature QR belongs to another request.
-  ///
-  /// In en, this message translates to:
-  /// **'This QR code does not match the current Keystone request.'**
-  String get swapKeystoneQrMismatch;
-
   /// [security] Caption under the signature scanner on the mobile swap Keystone screen.
   ///
   /// In en, this message translates to:
   /// **'Scan the QR code on your Keystone to finish the ZEC deposit'**
   String get swapKeystoneScanCaption;
-
-  /// [security] Subtitle of the swap Keystone signing overlay above the QR code.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan to sign'**
-  String get swapKeystoneScanToSign;
 
   /// [security] Title of the swap Keystone signing overlay asking the user to scan and sign the ZEC deposit.
   ///
@@ -17885,12 +17003,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Saving transaction'**
   String get swapLedgerStatusSaving;
-
-  /// [security] Status chip in the swap Ledger modal while another operation finishes the transaction.
-  ///
-  /// In en, this message translates to:
-  /// **'Please wait'**
-  String get swapLedgerStatusWait;
 
   /// [security] Title of the swap Ledger recovery modal when it is unknown whether the transaction was sent.
   ///
@@ -18294,12 +17406,6 @@ abstract class AppLocalizations {
   /// **'Restart swap'**
   String get swapTimeoutRestart;
 
-  /// Heading on the swap timeout screen shown when the quote deposit window has expired.
-  ///
-  /// In en, this message translates to:
-  /// **'Time’s up'**
-  String get swapTimeoutTitle;
-
   /// Button label on the swap progress footer that opens the swap in the NEAR Intents explorer.
   ///
   /// In en, this message translates to:
@@ -18462,12 +17568,6 @@ abstract class AppLocalizations {
   /// **'Restart'**
   String get updateRestart;
 
-  /// Button on a voting round card that continues an unfinished vote submission.
-  ///
-  /// In en, this message translates to:
-  /// **'Resume'**
-  String get votingActionResume;
-
   /// Label of the bottom button that re-checks whether the account may vote.
   ///
   /// In en, this message translates to:
@@ -18491,12 +17591,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unavailable'**
   String get votingActionUnavailable;
-
-  /// Button on a voting round card of a round this account cannot vote in; opens the round details.
-  ///
-  /// In en, this message translates to:
-  /// **'View'**
-  String get votingActionView;
 
   /// Button on a voting round card that opens the results of a closed round.
   ///
@@ -18564,12 +17658,6 @@ abstract class AppLocalizations {
   /// **'Bundle {number} of {total}'**
   String votingBundleOf(int number, int total);
 
-  /// Button that re-checks whether this account's funds were already used to vote.
-  ///
-  /// In en, this message translates to:
-  /// **'Check again'**
-  String get votingCheckAgain;
-
   /// Label of an answer option whose name is unknown; {number} is the option number.
   ///
   /// In en, this message translates to:
@@ -18581,12 +17669,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add custom source'**
   String get votingConfigAddCustomSource;
-
-  /// Badge on the default voting config source.
-  ///
-  /// In en, this message translates to:
-  /// **'Default'**
-  String get votingConfigBadgeDefault;
 
   /// Accessibility label of the close button of the voting config panel.
   ///
@@ -18822,12 +17904,6 @@ abstract class AppLocalizations {
   /// **'Updating voting rounds...'**
   String get votingConfirmationUpdatingRounds;
 
-  /// Dialog button that goes on to the review screen although some questions are unanswered.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue to review'**
-  String get votingContinueToReview;
-
   /// Button that resumes an unfinished vote submission.
   ///
   /// In en, this message translates to:
@@ -19002,30 +18078,6 @@ abstract class AppLocalizations {
   /// **'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.'**
   String get votingLedgerApprovalNotice;
 
-  /// Progress of the Ledger approval; a bundle is a group of notes signed together.
-  ///
-  /// In en, this message translates to:
-  /// **'Bundle {number} of {total}'**
-  String votingLedgerBundleOf(int number, int total);
-
-  /// Title of the Ledger panel while the device is checked.
-  ///
-  /// In en, this message translates to:
-  /// **'Checking your Ledger'**
-  String get votingLedgerChecking;
-
-  /// Body of the Ledger panel while the device is checked.
-  ///
-  /// In en, this message translates to:
-  /// **'Vizor is checking whether the Zcash app is ready.'**
-  String get votingLedgerCheckingBody;
-
-  /// Title of the Ledger panel while the user must approve opening the Zcash app on the device.
-  ///
-  /// In en, this message translates to:
-  /// **'Confirm opening Zcash'**
-  String get votingLedgerConfirmOpen;
-
   /// Body of the Ledger panel asking the user to approve opening the Zcash app on the device.
   ///
   /// In en, this message translates to:
@@ -19037,12 +18089,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Finishing voting delegation'**
   String get votingLedgerFinishing;
-
-  /// Title of the Ledger panel when the device has a problem.
-  ///
-  /// In en, this message translates to:
-  /// **'Ledger needs attention'**
-  String get votingLedgerNeedsAttention;
 
   /// Heading of the desktop Ledger signing panel.
   ///
@@ -19073,12 +18119,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t load account.\n{error}'**
   String votingMobileAccountLoadFailed(String error);
-
-  /// Button on the mobile vote-submitted screen that returns to the home screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Go home'**
-  String get votingMobileGoHome;
 
   /// Title in the sticky header of a mobile voting page.
   ///
@@ -19362,12 +18402,6 @@ abstract class AppLocalizations {
   /// **'Voting power unavailable'**
   String get votingPowerUnavailableTitle;
 
-  /// Value of the voting power row while the voting power is being calculated.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing...'**
-  String get votingPreparingEllipsis;
-
   /// Message shown while the wallet calculates how much voting power the account has.
   ///
   /// In en, this message translates to:
@@ -19404,12 +18438,6 @@ abstract class AppLocalizations {
   /// **'Reusing an in-progress proof{suffix}'**
   String votingProgressReusingProof(String suffix);
 
-  /// Accessibility value of the progress ring when the progress is not known.
-  ///
-  /// In en, this message translates to:
-  /// **'Unknown'**
-  String get votingProgressUnknown;
-
   /// Detail under the proving step while waiting for the chain; {suffix} is empty or a dash followed by a proved-bundles count.
   ///
   /// In en, this message translates to:
@@ -19422,12 +18450,6 @@ abstract class AppLocalizations {
   /// **'Voting power'**
   String get votingReceiptPower;
 
-  /// Label of the receipt row naming the voting round.
-  ///
-  /// In en, this message translates to:
-  /// **'Voting round'**
-  String get votingReceiptRound;
-
   /// Number of bundles signed by this Keystone request out of those still unsigned.
   ///
   /// In en, this message translates to:
@@ -19439,12 +18461,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Voting results'**
   String get votingResultsFallbackTitle;
-
-  /// Heading above the list of proposal results on the desktop voting results screen.
-  ///
-  /// In en, this message translates to:
-  /// **'Results'**
-  String get votingResultsHeading;
 
   /// Button that collapses a proposal's long description on the results screen.
   ///
@@ -19482,23 +18498,11 @@ abstract class AppLocalizations {
   /// **'Show description'**
   String get votingResultsShowDescription;
 
-  /// Label of the total votes row in a proposal result.
-  ///
-  /// In en, this message translates to:
-  /// **'Total'**
-  String get votingResultsTotal;
-
   /// Line on a proposal result with the total voting weight cast; {amount} is a ZEC amount.
   ///
   /// In en, this message translates to:
   /// **'Total: {amount}'**
   String votingResultsTotalAmount(String amount);
-
-  /// Badge on a proposal result showing the user voted on it.
-  ///
-  /// In en, this message translates to:
-  /// **'Voted'**
-  String get votingResultsVoted;
 
   /// Line on a proposal result naming the option the user voted for; {choice} is the option label from the vote data.
   ///
@@ -19559,18 +18563,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keystone voting uses camera QR scanning only. Connect a camera and try again.'**
   String get votingScanNoCamera;
-
-  /// Status on the desktop scan screen while the signature is decoded.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading signature...'**
-  String get votingScanReading;
-
-  /// Hint on the desktop scan screen when the QR code could not be read.
-  ///
-  /// In en, this message translates to:
-  /// **'Keep the QR code steady and fully visible.'**
-  String get votingScanSteady;
 
   /// Title of the desktop screen that scans the signed voting QR from Keystone.
   ///
@@ -19770,12 +18762,6 @@ abstract class AppLocalizations {
   /// **'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.'**
   String get votingSyncWaitingBody;
 
-  /// Title of the box shown while the wallet is still syncing up to the voting snapshot.
-  ///
-  /// In en, this message translates to:
-  /// **'Waiting for wallet sync'**
-  String get votingSyncWaitingTitle;
-
   /// Names one failed delegation bundle with its reason inside the terminal delegation error.
   ///
   /// In en, this message translates to:
@@ -19944,12 +18930,6 @@ abstract class AppLocalizations {
   /// **'For your security the link is only valid for a minute. Generate a fresh code and scan it again.'**
   String get walletLinkDesktopExpiredBody;
 
-  /// Title of the screen shown when the one-time link code expired.
-  ///
-  /// In en, this message translates to:
-  /// **'Time’s up'**
-  String get walletLinkDesktopExpiredTitle;
-
   /// Countdown under the QR code; {time} is the remaining time such as 0:45.
   ///
   /// In en, this message translates to:
@@ -19985,12 +18965,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vizor Mobile linked successfully'**
   String get walletLinkDesktopLinkedTitle;
-
-  /// Label of the start button on the desktop link screen while the link is being prepared.
-  ///
-  /// In en, this message translates to:
-  /// **'Preparing'**
-  String get walletLinkDesktopPreparing;
 
   /// Status line under the QR code saying the single code is ready to be scanned.
   ///
@@ -20129,12 +19103,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reading link...'**
   String get walletLinkReadingLink;
-
-  /// Button on the scan error card that returns to the scanner.
-  ///
-  /// In en, this message translates to:
-  /// **'Scan again'**
-  String get walletLinkScanAgain;
 
   /// Caption under the camera view and title of the camera permission card while scanning the desktop link QR code.
   ///

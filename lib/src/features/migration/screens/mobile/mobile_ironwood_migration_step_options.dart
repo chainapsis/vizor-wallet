@@ -113,7 +113,7 @@ class _MobileMigrationOptionCard extends StatelessWidget {
                                         child: Text(
                                           context
                                               .l10n
-                                              .migrationMobileRecommended,
+                                              .migrationOptionRecommended,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: AppTypography.labelLarge
