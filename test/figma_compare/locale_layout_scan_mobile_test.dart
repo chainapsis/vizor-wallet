@@ -1,4 +1,6 @@
-@Tags(['mobile', 'figma-capture'])
+// Tooling only, so not tagged `mobile`: the mobile lane must not render the
+// whole scan. Run it with the command in docs/i18n/README.md.
+@Tags(['figma-capture'])
 library;
 
 import 'package:flutter/widgets.dart';
