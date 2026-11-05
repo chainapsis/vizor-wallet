@@ -1773,9 +1773,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           await _keepCompanionsOutOfBackups(dbPath);
           if (gen != _syncGen) return;
           try {
-            final tip = await ref
-                .read(rpcEndpointFailoverProvider.notifier)
-                .getLatestBlockHeight();
+            final endpoints = ref.read(rpcEndpointFailoverProvider.notifier);
+            endpoints.applyPendingInitialComparison();
+            final tip = await endpoints.getLatestBlockHeight();
             await ref
                 .read(chainUpgradeStatusProvider.notifier)
                 .refreshAtTip(tip);
@@ -1931,6 +1931,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               );
             },
           );
+          ref
+              .read(rpcEndpointFailoverProvider.notifier)
+              .startInitialComparisonAfterSyncStart();
         })
         .catchError((e, st) {
           if (gen != _syncGen) return;

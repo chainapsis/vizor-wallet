@@ -31,7 +31,8 @@ Future<LightwalletdEndpointProbe> probeLightwalletdEndpoint({
   lightwalletdUrl: lightwalletdUrl,
 );
 
-/// Probe a bounded set of public candidates without waiting for the slowest.
+/// Probe a bounded set of public candidates. Initial selection may stop after
+/// a short comparison window; `wait_for_all` collects the full bounded batch.
 /// Each selection ID must first be reserved with [begin_lightwalletd_selection].
 /// The caller waits for route readiness before starting; route failures are
 /// returned separately from server health.
@@ -42,6 +43,7 @@ Future<List<LightwalletdCandidateProbe>> probeLightwalletdCandidates({
   required int probeTimeoutMs,
   required int totalTimeoutMs,
   required int maxConcurrency,
+  required bool waitForAll,
 }) => RustLib.instance.api.crateApiWalletProbeLightwalletdCandidates(
   lightwalletdUrls: lightwalletdUrls,
   expectedNetwork: expectedNetwork,
@@ -49,6 +51,7 @@ Future<List<LightwalletdCandidateProbe>> probeLightwalletdCandidates({
   probeTimeoutMs: probeTimeoutMs,
   totalTimeoutMs: totalTimeoutMs,
   maxConcurrency: maxConcurrency,
+  waitForAll: waitForAll,
 );
 
 /// Read one live tip from a recently chain-verified endpoint on the selected

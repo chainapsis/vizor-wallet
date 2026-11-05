@@ -1169,6 +1169,209 @@ void main() {
       );
     },
   );
+
+  test(
+    'cold selection compares the full pool only after sync starts',
+    () async {
+      final full = Completer<List<RpcEndpointCandidateSample>>();
+      final harness = _Harness()
+        ..respond = (_) async => [_sample(_eu, 1000), _sample(_kr, 1500)];
+      harness.fullRespond = (_) => full.future;
+      final selected = await harness.notifier.ensureReady();
+      expect(selected.lightwalletdUrl, _eu);
+      expect(harness.fullCalls, isEmpty);
+      harness.notifier.startInitialComparisonAfterSyncStart();
+      await _flush();
+      expect(harness.fullCalls, hasLength(1));
+      expect(harness.fullCalls.single.urls, hasLength(8));
+      expect(harness.fullCalls.single.maxConcurrency, 4);
+      expect(harness.fullCalls.single.totalTimeout, const Duration(seconds: 7));
+      // The foreground operation is independent of the complete-pool future.
+      expect((await harness.notifier.ensureReady()).lightwalletdUrl, _eu);
+      const tail = 'https://sa.zec.rocks:443';
+      full.complete([
+        _sample(_eu, 1000),
+        _sample(_kr, 1500),
+        _sample(tail, 400),
+      ]);
+      await _flush();
+      expect(harness.notifier.currentEndpoint.lightwalletdUrl, _eu);
+      expect(harness.store.values[('main', false)]?.presetId, 'sa-zec-rocks');
+      // Ordinary success must not overwrite the deferred recommendation.
+      harness.now = harness.now.add(const Duration(minutes: 2));
+      await harness.notifier.getLatestBlockHeight();
+      await _flush();
+      expect(harness.store.values[('main', false)]?.presetId, 'sa-zec-rocks');
+      harness.notifier.applyPendingInitialComparison();
+      expect(harness.notifier.currentEndpoint.lightwalletdUrl, tail);
+      harness.notifier.startInitialComparisonAfterSyncStart();
+      await _flush();
+      expect(harness.fullCalls, hasLength(1));
+    },
+  );
+
+  test('Tor complete comparison reserves all four timeout waves', () async {
+    final harness = _Harness(route: _torReady)
+      ..respond = (_) async => [_sample(_eu, 1000), _sample(_kr, 1500)];
+    await harness.notifier.ensureReady();
+    harness.notifier.startInitialComparisonAfterSyncStart();
+    await _flush();
+    expect(harness.fullCalls.single.maxConcurrency, 2);
+    expect(harness.fullCalls.single.probeTimeout, const Duration(seconds: 8));
+    expect(harness.fullCalls.single.totalTimeout, const Duration(seconds: 33));
+  });
+
+  test('a restart reuses the completed comparison recommendation', () async {
+    final harness = _Harness()
+      ..respond = (_) async => [_sample(_eu, 1000), _sample(_kr, 1500)];
+    harness.fullRespond = (_) async => [_sample(_eu, 1000), _sample(_kr, 100)];
+    await harness.notifier.ensureReady();
+    harness.notifier.startInitialComparisonAfterSyncStart();
+    await _flush();
+    expect(harness.notifier.currentEndpoint.lightwalletdUrl, _eu);
+    final restarted = _Harness(
+      store: harness.store,
+      warmRead:
+          ({required endpoint, required selectionId, required timeout}) async =>
+              _sample(endpoint.lightwalletdUrl),
+    );
+    expect((await restarted.notifier.ensureReady()).lightwalletdUrl, _kr);
+    restarted.notifier.startInitialComparisonAfterSyncStart();
+    await _flush();
+    expect(restarted.calls, isEmpty);
+    expect(restarted.fullCalls, isEmpty);
+  });
+
+  test(
+    'a stored preferred endpoint does not schedule a full comparison',
+    () async {
+      final harness = _Harness();
+      harness.store.values[('main', false)] = AutomaticRpcEndpointCache(
+        presetId: 'eu-zec-stardust',
+        observedAt: harness.now,
+      );
+      await harness.notifier.ensureReady();
+      await _flush();
+      harness.notifier.startInitialComparisonAfterSyncStart();
+      await _flush();
+      expect(harness.fullCalls, isEmpty);
+    },
+  );
+
+  for (final caseName in [
+    'small improvement',
+    'current failed',
+    'height conflict',
+    'failure',
+  ]) {
+    test('optional full comparison retains current on $caseName', () async {
+      final harness = _Harness()
+        ..respond = (_) async => [_sample(_eu, 1000), _sample(_kr, 1500)];
+      harness.fullRespond = (_) async => switch (caseName) {
+        'small improvement' => [_sample(_eu, 1000), _sample(_kr, 900)],
+        'current failed' => [_sample(_kr, 100), _sample(_us, 300)],
+        'height conflict' => [
+          _sample(_eu, 1000),
+          _sample(_kr, 100, 110),
+          _sample(_us, 300, 110),
+        ],
+        _ => throw StateError('optional timeout'),
+      };
+      await harness.notifier.ensureReady();
+      harness.notifier.startInitialComparisonAfterSyncStart();
+      await _flush();
+      harness.notifier.applyPendingInitialComparison();
+      expect(harness.notifier.currentEndpoint.lightwalletdUrl, _eu);
+      expect(
+        harness.container.read(rpcEndpointFailoverProvider).automaticReady,
+        isTrue,
+      );
+      expect(
+        harness.store.values[('main', false)]?.presetId,
+        'eu-zec-stardust',
+      );
+    });
+  }
+
+  for (final action in ['lock', 'background', 'manual', 'Tor', 'reset']) {
+    test('late complete comparison is discarded after $action', () async {
+      final full = Completer<List<RpcEndpointCandidateSample>>();
+      final harness = _Harness()
+        ..respond = (_) async => [_sample(_eu, 1000), _sample(_kr, 1500)];
+      harness.fullRespond = (_) => full.future;
+      await harness.notifier.ensureReady();
+      harness.notifier.startInitialComparisonAfterSyncStart();
+      await _flush();
+      expect(harness.fullCalls, hasLength(1));
+      switch (action) {
+        case 'lock':
+          harness.security.publish(
+            const AppSecurityState(
+              isPasswordConfigured: true,
+              isUnlocked: false,
+            ),
+          );
+        case 'background':
+          harness.notifier.cancelAutomaticSelection();
+        case 'manual':
+          harness.endpoint.publish(_custom);
+        case 'Tor':
+          harness.privacy.publish(_torReady);
+        case 'reset':
+          await harness.notifier.clearAutomaticSelectionCache();
+      }
+      await _flush();
+      final writes = harness.store.writes.length;
+      full.complete([_sample(_eu, 1000), _sample(_kr, 100)]);
+      await _flush();
+      expect(harness.cancelled, hasLength(1));
+      expect(harness.store.writes, hasLength(writes));
+      expect(
+        harness.notifier.currentEndpoint.lightwalletdUrl,
+        action == 'manual' ? _custom.lightwalletdUrl : _eu,
+      );
+    });
+  }
+
+  test('failure recovery supersedes complete comparison', () async {
+    final full = Completer<List<RpcEndpointCandidateSample>>();
+    final harness = _Harness()
+      ..respond = (call) async => [
+        if (call.urls.contains(_eu)) _sample(_eu, 1000),
+        _sample(_kr, 1500),
+        _sample(_us, 1700),
+      ];
+    harness.fullRespond = (_) => full.future;
+    final selected = await harness.notifier.ensureReady();
+    harness.notifier.startInitialComparisonAfterSyncStart();
+    await _flush();
+    expect(
+      await harness.notifier.switchToFallbackFor(
+        StateError('network: connection reset'),
+        endpoint: selected,
+        operation: 'sync',
+      ),
+      isTrue,
+    );
+    expect(harness.cancelled, hasLength(1));
+    full.complete([_sample(_eu, 1), _sample(_kr, 1000)]);
+    await _flush();
+    expect(harness.notifier.currentEndpoint.lightwalletdUrl, _kr);
+  });
+
+  test('an expired recommendation cannot replace the current server', () async {
+    final harness = _Harness()
+      ..respond = (_) async => [_sample(_eu, 1000), _sample(_kr, 1500)];
+    harness.fullRespond = (_) async => [_sample(_eu, 1000), _sample(_kr, 100)];
+    await harness.notifier.ensureReady();
+    harness.notifier.startInitialComparisonAfterSyncStart();
+    await _flush();
+    harness.now = harness.now.add(const Duration(minutes: 6));
+    harness.notifier.applyPendingInitialComparison();
+    await _flush();
+    expect(harness.notifier.currentEndpoint.lightwalletdUrl, _eu);
+    expect(harness.store.values[('main', false)]?.presetId, 'eu-zec-stardust');
+  });
 }
 
 class _Call {
@@ -1189,6 +1392,7 @@ class _Harness {
     RpcEndpointConfig? endpoint,
     NetworkPrivacyState route = const NetworkPrivacyState.off(),
     _Store? store,
+    RpcEndpointWarmTipReader? warmRead,
     AutomaticRpcEndpointSettings settings =
         const AutomaticRpcEndpointSettings(),
   }) : endpoint = _Endpoint(endpoint ?? defaultRpcEndpointConfig('main')),
@@ -1201,6 +1405,8 @@ class _Harness {
         appSecurityProvider.overrideWith(() => security),
         automaticRpcEndpointStoreProvider.overrideWithValue(this.store),
         automaticRpcEndpointSettingsProvider.overrideWithValue(settings),
+        if (warmRead != null)
+          rpcEndpointWarmTipReaderProvider.overrideWithValue(warmRead),
         rpcEndpointFailoverClockProvider.overrideWithValue(() => now),
         rpcEndpointSelectionCancelProvider.overrideWithValue(cancelled.add),
         rpcEndpointFailoverChainNameGetterProvider.overrideWithValue(
@@ -1229,6 +1435,19 @@ class _Harness {
             return samples;
           });
         }),
+        rpcEndpointFullCandidatesProbeProvider.overrideWithValue(({
+          required urls,
+          required network,
+          required selectionId,
+          required probeTimeout,
+          required totalTimeout,
+          required maxConcurrency,
+        }) {
+          expect(network, 'main');
+          final call = _Call(urls, probeTimeout, totalTimeout, maxConcurrency);
+          fullCalls.add(call);
+          return fullRespond(call);
+        }),
       ],
     );
     addTearDown(container.dispose);
@@ -1239,6 +1458,9 @@ class _Harness {
   final _Security security = _Security();
   final _Store store;
   final List<_Call> calls = [];
+  final List<_Call> fullCalls = [];
+  Future<List<RpcEndpointCandidateSample>> Function(_Call) fullRespond =
+      (_) async => [_sample(_eu), _sample(_kr, 300)];
   final List<String> cancelled = [];
   DateTime now = DateTime.utc(2026, 11, 5);
   Future<BigInt> Function() readHeight = () async => BigInt.from(100);

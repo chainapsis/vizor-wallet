@@ -20,6 +20,9 @@ const _accountUuid = 'account-1';
 class _Api extends RustLibApi {
   bool running = false;
   int historyReads = 0;
+  bool failStreamCreation = false;
+  final events = <String>[];
+  final syncUrls = <String>[];
   final syncs = <StreamController<rust_sync.ApiSyncProgressEvent>>[];
 
   @override
@@ -58,8 +61,13 @@ class _Api extends RustLibApi {
     required int mode,
   }) {
     if (running) throw StateError('an unowned concurrent sync was spawned');
+    events.add('start:$lightwalletdUrl');
+    if (failStreamCreation) throw StateError('fixture sync creation failed');
     running = true;
-    final controller = StreamController<rust_sync.ApiSyncProgressEvent>();
+    syncUrls.add(lightwalletdUrl);
+    final controller = StreamController<rust_sync.ApiSyncProgressEvent>(
+      onListen: () => events.add('listen'),
+    );
     syncs.add(controller);
     return controller.stream;
   }
@@ -124,6 +132,13 @@ class _Account extends AccountNotifier {
 }
 
 class _Tip extends RpcEndpointFailoverNotifier {
+  _Tip([this.events]);
+
+  final List<String>? events;
+  RpcEndpointConfig? pendingComparison;
+  Object? preflightError;
+  Object? comparisonAdmissionError;
+
   @override
   RpcEndpointFailoverState build() => RpcEndpointFailoverState(
     primary: defaultRpcEndpointConfig('main'),
@@ -132,7 +147,34 @@ class _Tip extends RpcEndpointFailoverNotifier {
   );
 
   @override
-  Future<BigInt> getLatestBlockHeight() async => BigInt.from(100);
+  Future<BigInt> getLatestBlockHeight() async {
+    events?.add('tip:${state.current.normalizedLightwalletdUrl}');
+    final error = preflightError;
+    if (error != null) throw error;
+    return BigInt.from(100);
+  }
+
+  @override
+  void applyPendingInitialComparison() {
+    events?.add('apply');
+    final error = comparisonAdmissionError;
+    if (error != null) throw error;
+    final selected = pendingComparison;
+    pendingComparison = null;
+    if (selected != null) state = state.copyWith(current: selected);
+  }
+
+  @override
+  void startInitialComparisonAfterSyncStart() => events?.add('compare');
+
+  @override
+  Future<bool> switchToFallbackFor(
+    Object error, {
+    RpcEndpointConfig? endpoint,
+    required String operation,
+    bool Function(Object error) shouldFallback =
+        shouldFallbackFromLightwalletdError,
+  }) async => false;
 }
 
 class _Upgrade extends ChainUpgradeStatusNotifier {
@@ -190,9 +232,144 @@ void main() {
   setUp(() {
     api.running = false;
     api.historyReads = 0;
+    api.failStreamCreation = false;
+    api.events.clear();
+    api.syncUrls.clear();
     api.syncs.clear();
   });
   late ProviderContainer container;
+
+  Future<(_Sync, _Tip)> comparisonHarness() async {
+    final sync = _Sync();
+    final endpoints = _Tip(api.events);
+    container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_Account.new),
+        rpcEndpointFailoverProvider.overrideWith(() => endpoints),
+        chainUpgradeStatusProvider.overrideWith(_Upgrade.new),
+        enhancePirProvider.overrideWith(_NoPrivateQueries.new),
+        syncProvider.overrideWith(() => sync),
+      ],
+    );
+    addTearDown(() {
+      sync.stopTipChecksForTesting();
+      container.dispose();
+    });
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    return (sync, endpoints);
+  }
+
+  test(
+    'initial comparison starts only after the sync stream is attached',
+    () async {
+      final (sync, _) = await comparisonHarness();
+      final url = defaultRpcEndpointConfig('main').normalizedLightwalletdUrl;
+
+      sync.startSync();
+      await pumpEventQueue();
+
+      expect(api.events, [
+        'apply',
+        'tip:$url',
+        'start:$url',
+        'listen',
+        'compare',
+      ]);
+      expect(api.syncs, hasLength(1));
+      expect(api.running, isTrue);
+      // A start queued behind this stream cannot trigger another comparison.
+      sync.startSync();
+      expect(api.events.where((event) => event == 'compare'), hasLength(1));
+    },
+  );
+
+  test(
+    'a pending comparison is applied before the next sync tip preflight',
+    () async {
+      final (sync, endpoints) = await comparisonHarness();
+      final original = defaultRpcEndpointConfig(
+        'main',
+      ).normalizedLightwalletdUrl;
+      const selected = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://eu.zec.stardust.rest:443',
+        presetId: 'eu-zec-stardust',
+      );
+      sync.startSync();
+      await pumpEventQueue();
+      endpoints.pendingComparison = selected;
+      expect(api.syncUrls, [original]);
+      expect(endpoints.state.current.normalizedLightwalletdUrl, original);
+      expect(api.running, isTrue);
+
+      await api.finish(0);
+      await pumpEventQueue();
+      api.events.clear();
+      sync.startSync();
+      await pumpEventQueue();
+
+      final selectedUrl = selected.normalizedLightwalletdUrl;
+      expect(api.events, [
+        'apply',
+        'tip:$selectedUrl',
+        'start:$selectedUrl',
+        'listen',
+        'compare',
+      ]);
+      expect(api.syncUrls, [original, selectedUrl]);
+    },
+  );
+
+  test('failed tip preflight does not start an initial comparison', () async {
+    final (sync, endpoints) = await comparisonHarness();
+    endpoints.preflightError = StateError('fixture preflight failure');
+
+    sync.startSync();
+    await pumpEventQueue();
+    sync.stopTipChecksForTesting();
+
+    expect(api.events, [
+      'apply',
+      'tip:${defaultRpcEndpointConfig('main').normalizedLightwalletdUrl}',
+    ]);
+    expect(api.syncs, isEmpty);
+    expect(sync.state.requireValue.isSyncing, isFalse);
+    expect(sync.state.requireValue.lastSyncFailedAt, isNotNull);
+  });
+
+  test(
+    'comparison admission failure stays inside endpoint preflight recovery',
+    () async {
+      final (sync, endpoints) = await comparisonHarness();
+      endpoints.comparisonAdmissionError = StateError('comparison is paused');
+
+      sync.startSync();
+      await pumpEventQueue();
+      sync.stopTipChecksForTesting();
+
+      expect(api.events, ['apply']);
+      expect(api.syncs, isEmpty);
+      expect(sync.state.requireValue.isSyncing, isFalse);
+      expect(sync.state.requireValue.lastSyncFailedAt, isNotNull);
+    },
+  );
+
+  test('failed stream creation does not start an initial comparison', () async {
+    final (sync, _) = await comparisonHarness();
+    api.failStreamCreation = true;
+
+    sync.startSync();
+    await pumpEventQueue();
+    sync.stopTipChecksForTesting();
+
+    expect(api.events.where((event) => event == 'compare'), isEmpty);
+    expect(api.events.where((event) => event == 'listen'), isEmpty);
+    expect(api.syncs, isEmpty);
+    expect(sync.state.requireValue.isSyncing, isFalse);
+    expect(sync.state.requireValue.lastSyncFailedAt, isNotNull);
+  });
 
   /// A foreground sync that has reported completion and is now running its
   /// post-sync follow-ups: Dart no longer counts it as syncing, but its

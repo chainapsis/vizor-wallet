@@ -7591,6 +7591,7 @@ fn wire__crate__api__wallet__probe_lightwalletd_candidates_impl(
             let api_probe_timeout_ms = <u32>::sse_decode(&mut deserializer);
             let api_total_timeout_ms = <u32>::sse_decode(&mut deserializer);
             let api_max_concurrency = <u32>::sse_decode(&mut deserializer);
+            let api_wait_for_all = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -7601,6 +7602,7 @@ fn wire__crate__api__wallet__probe_lightwalletd_candidates_impl(
                         api_probe_timeout_ms,
                         api_total_timeout_ms,
                         api_max_concurrency,
+                        api_wait_for_all,
                     )?;
                     Ok(output_ok)
                 })())

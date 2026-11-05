@@ -267,6 +267,7 @@ pub(crate) fn probe_candidates(
     probe_timeout_ms: u32,
     total_timeout_ms: u32,
     max_concurrency: u32,
+    wait_for_all: bool,
 ) -> Result<Vec<CandidateProbe>, String> {
     // Claim first, so invalid arguments also release a reservation rather than
     // leaving a pending slot forever. Production calls must reserve before
@@ -280,9 +281,10 @@ pub(crate) fn probe_candidates(
     if urls.is_empty() || urls.len() > MAX_CANDIDATES || urls.iter().any(|url| url.len() > 2048) {
         return Err("automatic endpoint selection: invalid candidates".to_string());
     }
+    let max_total_timeout_ms = if wait_for_all { 120_000 } else { 30_000 };
     if probe_timeout_ms == 0
         || total_timeout_ms == 0
-        || total_timeout_ms > 30_000
+        || total_timeout_ms > max_total_timeout_ms
         || max_concurrency == 0
     {
         return Err("automatic endpoint selection: invalid budget".to_string());
@@ -297,8 +299,11 @@ pub(crate) fn probe_candidates(
         runtime.block_on(run_probe_batch(
             urls,
             max_concurrency.min(8) as usize,
-            Duration::from_millis(u64::from(probe_timeout_ms.min(total_timeout_ms))),
+            Duration::from_millis(u64::from(
+                probe_timeout_ms.min(total_timeout_ms).min(30_000),
+            )),
             Duration::from_millis(u64::from(total_timeout_ms)),
+            wait_for_all,
             cancellation,
             || ready_route_revision().is_ok_and(|revision| revision == route_revision),
             |url| probe_candidate(url, expected_network, cancellation, route_revision),
@@ -330,6 +335,7 @@ pub(crate) fn read_tip(
                 1,
                 Duration::from_millis(u64::from(timeout_ms)),
                 Duration::from_millis(u64::from(timeout_ms)),
+                false,
                 cancellation,
                 || ready_route_revision().is_ok_and(|revision| revision == route_revision),
                 |url| {
@@ -445,6 +451,7 @@ async fn run_probe_batch<F, Fut, R>(
     concurrency: usize,
     probe_timeout: Duration,
     total_timeout: Duration,
+    wait_for_all: bool,
     cancellation: &CancellationSignal,
     route_is_current: R,
     probe: F,
@@ -481,7 +488,7 @@ where
             result = probes.next() => {
                 match result {
                     Some(Ok(Ok(result))) => {
-                        if results.is_empty() {
+                        if !wait_for_all && results.is_empty() {
                             finish_at = overall_deadline.min(tokio::time::Instant::now() + COMPARISON_WINDOW);
                         }
                         results.push(result);
@@ -548,6 +555,7 @@ mod tests {
             2,
             Duration::from_secs(10),
             Duration::from_secs(12),
+            false,
             &signal,
             || true,
             |url| {
@@ -583,6 +591,7 @@ mod tests {
             3,
             Duration::from_secs(3),
             Duration::from_secs(5),
+            false,
             &signal,
             || true,
             |_| {
@@ -595,6 +604,181 @@ mod tests {
         assert_eq!(outcome, NO_HEALTHY_CANDIDATES);
         assert_eq!(started.elapsed(), Duration::from_secs(5));
         assert_eq!(started_count.load(Ordering::SeqCst), 6);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn complete_comparison_reaches_faster_queued_candidates_without_charging_queue_time() {
+        let signal = CancellationSignal::default();
+        let started = tokio::time::Instant::now();
+        let probes = run_probe_batch(
+            vec![
+                "first".to_string(),
+                "second".to_string(),
+                "tail".to_string(),
+            ],
+            1,
+            Duration::from_secs(1),
+            Duration::from_secs(4),
+            true,
+            &signal,
+            || true,
+            |url| async move {
+                let started = tokio::time::Instant::now();
+                tokio::time::sleep(Duration::from_millis(if url == "tail" { 10 } else { 500 }))
+                    .await;
+                let mut sample = result(url);
+                sample.latency_ms = millis(started.elapsed());
+                Ok(sample)
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(probes.len(), 3);
+        assert_eq!(started.elapsed(), Duration::from_millis(1010));
+        let fastest = probes
+            .iter()
+            .min_by_key(|sample| sample.latency_ms)
+            .unwrap();
+        assert_eq!(fastest.url, "tail");
+        assert_eq!(fastest.latency_ms, 10);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn complete_comparison_gives_all_eight_tor_candidates_a_full_attempt() {
+        let signal = CancellationSignal::default();
+        let started_count = AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let error = run_probe_batch(
+            (0..8).map(|index| index.to_string()).collect(),
+            2,
+            Duration::from_secs(8),
+            Duration::from_secs(34),
+            true,
+            &signal,
+            || true,
+            |_| {
+                started_count.fetch_add(1, Ordering::SeqCst);
+                std::future::pending::<Result<CandidateProbe, String>>()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, NO_HEALTHY_CANDIDATES);
+        assert_eq!(started_count.load(Ordering::SeqCst), 8);
+        assert_eq!(started.elapsed(), Duration::from_secs(32));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn complete_comparison_still_honors_total_budget_after_a_success() {
+        let signal = CancellationSignal::default();
+        let started = tokio::time::Instant::now();
+        let probes = run_probe_batch(
+            vec!["fast".to_string(), "slow".to_string()],
+            2,
+            Duration::from_secs(8),
+            Duration::from_secs(5),
+            true,
+            &signal,
+            || true,
+            |url| async move {
+                if url == "slow" {
+                    std::future::pending::<()>().await;
+                }
+                Ok(result(url))
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(probes.len(), 1);
+        assert_eq!(probes[0].url, "fast");
+        assert_eq!(started.elapsed(), Duration::from_secs(5));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn complete_comparison_discards_results_on_cancel_or_route_change() {
+        for cancel in [false, true] {
+            let signal = CancellationSignal::default();
+            let current = AtomicBool::new(true);
+            let stopped = AtomicBool::new(false);
+            struct Active<'a>(&'a AtomicBool);
+            impl Drop for Active<'_> {
+                fn drop(&mut self) {
+                    self.0.store(true, Ordering::Release);
+                }
+            }
+            let stop = async {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                if cancel {
+                    signal.cancel();
+                } else {
+                    current.store(false, Ordering::Release);
+                }
+            };
+            let probe = run_probe_batch(
+                vec!["fast".to_string(), "slow".to_string()],
+                2,
+                Duration::from_secs(8),
+                Duration::from_secs(34),
+                true,
+                &signal,
+                || current.load(Ordering::Acquire),
+                |url| {
+                    let stopped = &stopped;
+                    async move {
+                        if url == "slow" {
+                            let _active = Active(stopped);
+                            std::future::pending::<()>().await;
+                        }
+                        Ok(result(url))
+                    }
+                },
+            );
+            let (outcome, ()) = tokio::join!(probe, stop);
+            assert_eq!(
+                outcome.unwrap_err(),
+                if cancel { CANCELLED } else { ROUTE_BLOCKED }
+            );
+            assert!(stopped.load(Ordering::Acquire));
+        }
+    }
+
+    #[tokio::test]
+    async fn only_complete_comparison_accepts_an_extended_but_bounded_total_budget() {
+        let _registry = registry_test_lock();
+        let _route = network_privacy::test_route_policy::lock_route_policy();
+        let server = super::super::sync_engine::test_lwd::CapturingLwd::start(Vec::new()).await;
+        for (id, wait_for_all, budget) in [
+            ("initial-extended-budget", false, 30_001),
+            ("complete-over-budget", true, 120_001),
+        ] {
+            begin_selection(id).unwrap();
+            let error = probe_candidates(
+                vec![server.url.clone()],
+                "main",
+                id,
+                8_000,
+                budget,
+                2,
+                wait_for_all,
+            )
+            .unwrap_err();
+            assert!(error.contains("invalid budget"));
+            assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        }
+        assert!(server.requests().is_empty());
+        let id = "complete-max-budget";
+        begin_selection(id).unwrap();
+        let url = server.url.clone();
+        let probes = tokio::task::spawn_blocking(move || {
+            probe_candidates(vec![url], "main", id, 8_000, 120_000, 2, true)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(probes.len(), 1);
+        assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
+        assert_eq!(server.count("/GetLightdInfo"), 1);
+        assert_eq!(server.count("/GetLatestBlock"), 1);
     }
 
     #[tokio::test(start_paused = true)]
@@ -611,6 +795,7 @@ mod tests {
             1,
             Duration::from_secs(3),
             Duration::from_secs(5),
+            false,
             &first.signal,
             || true,
             |_| std::future::pending::<Result<CandidateProbe, String>>(),
@@ -651,6 +836,7 @@ mod tests {
             2,
             Duration::from_secs(3),
             Duration::from_secs(5),
+            false,
             &signal,
             || current.load(Ordering::Acquire),
             |url| async move {
@@ -926,6 +1112,7 @@ mod tests {
             10,
             10,
             1,
+            false,
         )
         .unwrap_err();
         assert_eq!(error, CANCELLED);
@@ -949,7 +1136,7 @@ mod tests {
         let _registry = registry_test_lock();
         let id = "reserved-invalid-arguments";
         begin_selection(id).unwrap();
-        let error = probe_candidates(Vec::new(), "main", id, 10, 10, 1).unwrap_err();
+        let error = probe_candidates(Vec::new(), "main", id, 10, 10, 1, false).unwrap_err();
         assert!(error.contains("invalid candidates"));
         assert!(!SELECTIONS.lock().unwrap().active.contains_key(id));
 
@@ -991,6 +1178,7 @@ mod tests {
             10,
             10,
             1,
+            false,
         )
         .unwrap_err();
         assert!(error.contains("not reserved"));
@@ -1023,6 +1211,7 @@ mod tests {
                         1,
                         Duration::from_secs(5),
                         Duration::from_secs(5),
+                        false,
                         cancellation,
                         || true,
                         |_| std::future::pending::<Result<CandidateProbe, String>>(),

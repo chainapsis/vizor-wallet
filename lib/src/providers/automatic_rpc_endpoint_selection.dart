@@ -31,36 +31,45 @@ typedef RpcEndpointCandidatesProbe =
     });
 
 final rpcEndpointCandidatesProbeProvider = Provider<RpcEndpointCandidatesProbe>(
-  (_) =>
-      ({
-        required urls,
-        required network,
-        required selectionId,
-        required probeTimeout,
-        required totalTimeout,
-        required maxConcurrency,
-      }) async {
-        // Reserve synchronously before the FRB worker can queue. Cancellation
-        // then remains authoritative even if that worker starts much later.
-        rust_wallet.beginLightwalletdSelection(selectionId: selectionId);
-        final results = await rust_wallet.probeLightwalletdCandidates(
-          lightwalletdUrls: urls,
-          expectedNetwork: network,
-          selectionId: selectionId,
-          probeTimeoutMs: probeTimeout.inMilliseconds,
-          totalTimeoutMs: totalTimeout.inMilliseconds,
-          maxConcurrency: maxConcurrency,
-        );
-        return [
-          for (final result in results)
-            RpcEndpointCandidateSample(
-              url: result.url,
-              height: result.height,
-              latency: Duration(milliseconds: result.latencyMs),
-            ),
-        ];
-      },
+  (_) => _candidateProbe(waitForAll: false),
 );
+
+/// One-shot coverage of the full pool, independent of the first success.
+final rpcEndpointFullCandidatesProbeProvider =
+    Provider<RpcEndpointCandidatesProbe>(
+      (_) => _candidateProbe(waitForAll: true),
+    );
+
+RpcEndpointCandidatesProbe _candidateProbe({required bool waitForAll}) =>
+    ({
+      required urls,
+      required network,
+      required selectionId,
+      required probeTimeout,
+      required totalTimeout,
+      required maxConcurrency,
+    }) async {
+      // Reserve synchronously before the FRB worker can queue. Cancellation
+      // then remains authoritative even if that worker starts much later.
+      rust_wallet.beginLightwalletdSelection(selectionId: selectionId);
+      final results = await rust_wallet.probeLightwalletdCandidates(
+        lightwalletdUrls: urls,
+        expectedNetwork: network,
+        selectionId: selectionId,
+        probeTimeoutMs: probeTimeout.inMilliseconds,
+        totalTimeoutMs: totalTimeout.inMilliseconds,
+        maxConcurrency: maxConcurrency,
+        waitForAll: waitForAll,
+      );
+      return [
+        for (final result in results)
+          RpcEndpointCandidateSample(
+            url: result.url,
+            height: result.height,
+            latency: Duration(milliseconds: result.latencyMs),
+          ),
+      ];
+    };
 
 final rpcEndpointSelectionCancelProvider = Provider<void Function(String)>(
   (_) =>

@@ -1239,6 +1239,7 @@ abstract class RustLibApi extends BaseApi {
     required int probeTimeoutMs,
     required int totalTimeoutMs,
     required int maxConcurrency,
+    required bool waitForAll,
   });
 
   Future<LightwalletdEndpointProbe> crateApiWalletProbeLightwalletdEndpoint({
@@ -9358,6 +9359,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int probeTimeoutMs,
     required int totalTimeoutMs,
     required int maxConcurrency,
+    required bool waitForAll,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -9369,6 +9371,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_32(probeTimeoutMs, serializer);
           sse_encode_u_32(totalTimeoutMs, serializer);
           sse_encode_u_32(maxConcurrency, serializer);
+          sse_encode_bool(waitForAll, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -9388,6 +9391,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           probeTimeoutMs,
           totalTimeoutMs,
           maxConcurrency,
+          waitForAll,
         ],
         apiImpl: this,
       ),
@@ -9404,6 +9408,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "probeTimeoutMs",
           "totalTimeoutMs",
           "maxConcurrency",
+          "waitForAll",
         ],
       );
 

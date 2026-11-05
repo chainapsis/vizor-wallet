@@ -272,6 +272,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   Future<BigInt>? _automaticTipFlight;
   bool _selectionIsValidation = false;
   bool _selectionIsWarmRead = false;
+  bool _initialComparisonPending = false;
+  bool _initialComparisonAllowed = false;
+  _InitialEndpointImprovement? _initialImprovement;
   bool _needsWarmTipRead = false;
   DateTime? _lastSuccessAt;
   DateTime? _lastPeerValidatedAt;
@@ -312,6 +315,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     _needsWarmTipRead = false;
     _selectedLatency = null;
     _validationDueAt = null;
+    _initialComparisonPending = false;
+    _initialComparisonAllowed = false;
+    _initialImprovement = null;
     _checkedAt = null;
     _retryAt = null;
     _failedSelections = 0;
@@ -352,6 +358,164 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   }
 
   RpcEndpointConfig get currentEndpoint => state.current;
+
+  /// Called only after a foreground sync stream has started. Startup never
+  /// waits for this complete-pool comparison, and warm starts never schedule it.
+  void startInitialComparisonAfterSyncStart() {
+    _initialComparisonAllowed = true;
+    _startInitialComparisonIfDue();
+  }
+
+  /// A performance correction takes effect at the next sync boundary. It does
+  /// not interrupt a stream or inherit the periodic check's minimum residence.
+  void applyPendingInitialComparison() {
+    final pending = _initialImprovement;
+    if (pending == null) return;
+    _requireAutomaticEligibility();
+    _initialImprovement = null;
+    if (!_isUsableInitialImprovement(pending)) {
+      _queueAutomaticCacheWrite(_automaticEpoch, force: true);
+      return;
+    }
+    _publishAutomaticEndpoint(
+      selected: pending.endpoint,
+      sample: pending.sample,
+      primary: state.primary,
+      tor: pending.tor,
+      epoch: _automaticEpoch,
+      provisional: false,
+    );
+  }
+
+  bool _isUsableInitialImprovement(_InitialEndpointImprovement pending) {
+    final route = ref.read(networkPrivacyProvider);
+    return isAutomaticRpcEndpointConfig(state.primary) &&
+        state.automaticReady &&
+        _isCurrentContext(pending.context) &&
+        !route.isBusy &&
+        (route.status == NetworkPrivacyConnectionStatus.off ||
+            route.status == NetworkPrivacyConnectionStatus.connected) &&
+        route.torEnabled == pending.tor &&
+        isRecentEndpointObservation(
+          pending.measuredAt,
+          ref.read(rpcEndpointFailoverClockProvider)(),
+          ref.read(automaticRpcEndpointSettingsProvider).warmReuseMaxAge,
+        );
+  }
+
+  void _startInitialComparisonIfDue() {
+    if (!ref.mounted ||
+        !_initialComparisonPending ||
+        !_initialComparisonAllowed ||
+        _automaticSelection != null ||
+        !state.automaticReady ||
+        _needsWarmTipRead ||
+        !isAutomaticRpcEndpointConfig(state.primary) ||
+        _selectionPauseCount > 0 ||
+        ref.read(appSecurityProvider).requiresUnlock ||
+        !canRunAppProcessWork(
+          isInForeground: _inForeground,
+          shutdownSignal: ref.read(appShutdownSignalProvider),
+        )) {
+      return;
+    }
+    _initialComparisonPending = false;
+    final epoch = _automaticEpoch;
+    final cancelled = Completer<void>();
+    _selectionCancelled = cancelled;
+    // Recovery can supersede this optional work just like peer validation.
+    _selectionIsValidation = true;
+    _selectionExcludeUrl = null;
+    _selectionMinimumHeight = null;
+    late final Future<RpcEndpointConfig> comparison;
+    comparison = _compareInitialEndpoints(epoch, cancelled).whenComplete(() {
+      if (identical(_automaticSelection, comparison)) {
+        _automaticSelection = null;
+        _selectionIsValidation = false;
+        _selectionId = null;
+        _selectionCancelled = null;
+      }
+    });
+    _automaticSelection = comparison;
+    unawaited(
+      comparison.then<void>(
+        (_) {},
+        onError: (Object error, StackTrace _) {
+          log('Automatic endpoint initial comparison failed: $error');
+        },
+      ),
+    );
+  }
+
+  Future<RpcEndpointConfig> _compareInitialEndpoints(
+    int epoch,
+    Completer<void> cancelled,
+  ) async {
+    final context = _captureContext();
+    final tor = await _waitForRoute(cancelled);
+    if (!_isCurrentContext(context) || cancelled.isCompleted) {
+      throw _automaticSelectionStopped();
+    }
+    final settings = ref.read(automaticRpcEndpointSettingsProvider);
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    final targets = automaticRpcEndpointCandidatesFor(context.primary)
+        .where(
+          (c) =>
+              !(_cooldowns[c.normalizedLightwalletdUrl]?.isAfter(now) ?? false),
+        )
+        .toList();
+    final concurrency = tor ? 2 : 4;
+    final timeout = tor
+        ? settings.torProbeTimeout
+        : settings.directProbeTimeout;
+    final waves = (targets.length + concurrency - 1) ~/ concurrency;
+    final samples = await _probeAutomaticCandidates(
+      targets: targets,
+      primary: context.primary,
+      epoch: epoch,
+      cancelled: cancelled,
+      probe: ref.read(rpcEndpointFullCandidatesProbeProvider),
+      probeTimeout: timeout,
+      // Reserve a full timeout for every wave, plus scheduling headroom.
+      remaining: timeout * waves + const Duration(seconds: 1),
+      maxConcurrency: concurrency,
+    );
+    if (!_isCurrentContext(context) || cancelled.isCompleted) {
+      throw _automaticSelectionStopped();
+    }
+    _requireAutomaticEligibility();
+    final ranked = rankAutomaticRpcEndpointSamples(
+      samples,
+      requireCorroboration: true,
+    );
+    final current = ranked
+        .where((s) => s.url == context.current.normalizedLightwalletdUrl)
+        .firstOrNull;
+    // An optional performance comparison never replaces an unmeasured or
+    // uncorroborated current server; normal health recovery owns that case.
+    if (current == null || ranked.isEmpty) return state.current;
+    final winner = ranked.first;
+    final improvement =
+        current.latency.inMilliseconds - winner.latency.inMilliseconds;
+    if (winner.url == current.url ||
+        improvement < 150 ||
+        winner.latency.inMicroseconds > current.latency.inMicroseconds * 0.7) {
+      return state.current;
+    }
+    _initialImprovement = _InitialEndpointImprovement(
+      context: context,
+      endpoint: targets.firstWhere(
+        (c) => c.normalizedLightwalletdUrl == winner.url,
+      ),
+      sample: winner,
+      measuredAt: ref.read(rpcEndpointFailoverClockProvider)(),
+      tor: tor,
+    );
+    // Persist the recommendation for a restart, while the active stream and
+    // current endpoint keep using their original server until the next sync.
+    _queueAutomaticCacheWrite(epoch, force: true);
+    return state.current;
+  }
 
   /// A single network boundary for all automatic-mode consumers. Reading the
   /// preference or building a settings widget never starts endpoint probes.
@@ -468,6 +632,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     _selectionIsWarmRead = false;
     _selectionCancelled = null;
     _pendingTip = null;
+    _initialComparisonPending = false;
+    _initialComparisonAllowed = false;
+    _initialImprovement = null;
   }
 
   /// Stops process work without throwing away recent public server evidence.
@@ -634,6 +801,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
             _automaticSelection = null;
             _selectionId = null;
             _selectionCancelled = null;
+            _startInitialComparisonIfDue();
           }
         });
     _automaticSelection = selection;
@@ -730,6 +898,11 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       final preferred = ordered
           .where((c) => c.presetId == cached?.presetId)
           .firstOrNull;
+      final hasUsableCache =
+          preferred != null &&
+          cacheAge != null &&
+          !cacheAge.isNegative &&
+          cacheAge < settings.cacheMaxAge;
       if (preferred != null &&
           cacheAge != null &&
           !cacheAge.isNegative &&
@@ -855,6 +1028,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         epoch: epoch,
         provisional: provisional,
       );
+      if (!hadReady && !force && excludeUrl == null && !hasUsableCache) {
+        _initialComparisonPending = true;
+      }
       _pendingTip = _AutomaticTipObservation(
         endpoint: selected,
         sample: winner,
@@ -1130,6 +1306,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     final observedAt = ref.read(rpcEndpointFailoverClockProvider)();
     final changed = !_sameEndpointIdentity(selected, state.current);
     if (changed) {
+      _initialImprovement = null;
       _selectedAt = observedAt;
       _lastPeerValidatedAt = null;
       _pendingTip = null;
@@ -1178,16 +1355,24 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     }
     _lastCacheWriteAt = now;
     final store = ref.read(automaticRpcEndpointStoreProvider);
-    final endpoint = state.current;
-    final tor = _evaluatedTor!;
+    final pending = _initialImprovement;
+    final usePending = pending != null && _isUsableInitialImprovement(pending);
+    final endpoint = usePending ? pending.endpoint : state.current;
+    final tor = usePending ? pending.tor : _evaluatedTor!;
     final cache = AutomaticRpcEndpointCache(
       presetId: endpoint.presetId!,
-      observedAt: _lastSuccessAt!,
-      lastSuccessAt: _lastSuccessAt,
-      lastPeerValidatedAt: _lastPeerValidatedAt,
-      lastBenchmarkAt: _lastBenchmarkAt,
-      lastNetworkVerifiedAt: _lastNetworkVerifiedAt,
-      latencyMs: _selectedLatency?.inMilliseconds,
+      observedAt: usePending ? pending.measuredAt : _lastSuccessAt!,
+      lastSuccessAt: usePending ? pending.measuredAt : _lastSuccessAt,
+      lastPeerValidatedAt: usePending
+          ? pending.measuredAt
+          : _lastPeerValidatedAt,
+      lastBenchmarkAt: usePending ? pending.measuredAt : _lastBenchmarkAt,
+      lastNetworkVerifiedAt: usePending
+          ? pending.measuredAt
+          : _lastNetworkVerifiedAt,
+      latencyMs: usePending
+          ? pending.sample.latency.inMilliseconds
+          : _selectedLatency?.inMilliseconds,
       endpointUrl: endpoint.normalizedLightwalletdUrl,
     );
     _cacheWrites = _cacheWrites.then((_) async {
@@ -1234,6 +1419,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
           _selectionIsValidation = false;
           _selectionId = null;
           _selectionCancelled = null;
+          _startInitialComparisonIfDue();
         }
       },
     );
@@ -2019,6 +2205,22 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       state = state.copyWith(primaryFailureCount: 0, clearLastFailure: true);
     }
   }
+}
+
+class _InitialEndpointImprovement {
+  const _InitialEndpointImprovement({
+    required this.context,
+    required this.endpoint,
+    required this.sample,
+    required this.measuredAt,
+    required this.tor,
+  });
+
+  final _FailoverContext context;
+  final RpcEndpointConfig endpoint;
+  final RpcEndpointCandidateSample sample;
+  final DateTime measuredAt;
+  final bool tor;
 }
 
 final rpcEndpointFailoverProvider =

@@ -275,7 +275,8 @@ pub struct LightwalletdCandidateProbe {
     pub rpc_ms: u32,
 }
 
-/// Probe a bounded set of public candidates without waiting for the slowest.
+/// Probe a bounded set of public candidates. Initial selection may stop after
+/// a short comparison window; `wait_for_all` collects the full bounded batch.
 /// Each selection ID must first be reserved with [begin_lightwalletd_selection].
 /// The caller waits for route readiness before starting; route failures are
 /// returned separately from server health.
@@ -286,6 +287,7 @@ pub fn probe_lightwalletd_candidates(
     probe_timeout_ms: u32,
     total_timeout_ms: u32,
     max_concurrency: u32,
+    wait_for_all: bool,
 ) -> Result<Vec<LightwalletdCandidateProbe>, String> {
     catch(|| {
         crate::wallet::endpoint_selection::probe_candidates(
@@ -295,6 +297,7 @@ pub fn probe_lightwalletd_candidates(
             probe_timeout_ms,
             total_timeout_ms,
             max_concurrency,
+            wait_for_all,
         )
         .map(|probes| {
             probes
