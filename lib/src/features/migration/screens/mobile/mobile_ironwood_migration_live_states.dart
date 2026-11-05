@@ -200,8 +200,13 @@ class _MobileMigrationMigratingState
     final completion = status == null
         ? widget.previewPlan == null
               ? context.l10n.migrationMobileSchedulePending
-              : _migrationArrivalLabel(widget.previewPlan!, blockTimes)
+              : _migrationArrivalLabel(
+                  context.l10n,
+                  widget.previewPlan!,
+                  blockTimes,
+                )
         : migrationApproximateCompletionTimingLabel(
+            context.l10n,
             status,
             blockTimes: blockTimes,
             currentHeight: etaHeight,

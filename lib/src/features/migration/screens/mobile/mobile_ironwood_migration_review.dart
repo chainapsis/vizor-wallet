@@ -373,6 +373,7 @@ class _MobileMigrationFastReviewState
                     _ReviewRow(
                       label: l10n.migrationMobileFastDurationRow,
                       value: ironwoodImmediateMigrationCompletionEstimate(
+                        context.l10n,
                         blockTimes,
                       ),
                       height: 32,

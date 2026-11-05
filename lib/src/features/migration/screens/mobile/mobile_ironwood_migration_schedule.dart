@@ -252,6 +252,7 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
         : currentHeight <= 0
         ? context.l10n.migrationMobileScheduleCalculating
         : migrationHeightRemainingDurationLabel(
+            context.l10n,
             estimatedCompletionHeight,
             blockTimes: blockTimes,
             currentHeight: currentHeight,
@@ -451,6 +452,7 @@ class _MobilePreparationScheduleContent extends StatelessWidget {
     final duration = currentHeight <= 0
         ? context.l10n.migrationMobileScheduleCalculating
         : migrationHeightRemainingDurationLabel(
+            context.l10n,
             finalHeight,
             blockTimes: blockTimes,
             currentHeight: currentHeight,

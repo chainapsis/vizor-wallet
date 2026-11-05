@@ -33,6 +33,7 @@ import 'package:zcash_wallet/src/providers/network_upgrade_window_provider.dart'
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   setUpAll(() async {
@@ -1103,12 +1104,14 @@ void main() {
     'Keystone migration scan error asks for firmware update on legacy sign result',
     () {
       final legacyMessage = ironwoodMigrationKeystoneScanErrorMessage(
+        testL10n,
         Exception(
           'Unexpected UR type: got "zcash-sign-result", '
           'expected "zcash-batch-sig-result"',
         ),
       );
       final wrongQrMessage = ironwoodMigrationKeystoneScanErrorMessage(
+        testL10n,
         Exception(
           'Unexpected UR type: got "zcash-pczt", '
           'expected "zcash-batch-sig-result"',
@@ -1130,6 +1133,7 @@ void main() {
     'Keystone migration explains a signed QR from another signing round',
     () {
       final message = ironwoodMigrationKeystoneSigningErrorMessage(
+        testL10n,
         Exception(
           'Keystone batch result request id does not match the request',
         ),
@@ -1145,6 +1149,7 @@ void main() {
 
   test('Keystone migration explains the network upgrade hold', () {
     final message = ironwoodMigrationKeystoneSigningErrorMessage(
+      testL10n,
       Exception(
         "Migrations can't start this close to the network upgrade. "
         'Try again after it activates.',
@@ -1382,12 +1387,12 @@ void main() {
     expect(ironwoodMigrationKeystoneProofReady(ready), isTrue);
     expect(ironwoodMigrationKeystoneProofFailed(failed), isTrue);
     expect(
-      ironwoodMigrationKeystoneProofWaitingMessage(pending),
+      ironwoodMigrationKeystoneProofWaitingMessage(testL10n, pending),
       'Signature captured. Vizor is still preparing local proofs (1/3). '
       'Keep this screen open.',
     );
     expect(
-      ironwoodMigrationKeystoneProofFailureMessage(failed),
+      ironwoodMigrationKeystoneProofFailureMessage(testL10n, failed),
       'Proof generation failed.',
     );
   });

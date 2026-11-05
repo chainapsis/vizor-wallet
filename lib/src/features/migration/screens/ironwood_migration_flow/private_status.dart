@@ -43,7 +43,7 @@ class _IronwoodMigrationPrivateStatusContentState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final status = widget.status;
-    final presentation = _statusPresentation(status);
+    final presentation = _statusPresentation(context.l10n, status);
     final progress = _statusProgress(status);
     final accountState = ref.watch(accountProvider).value;
     AccountInfo? account;
@@ -64,9 +64,10 @@ class _IronwoodMigrationPrivateStatusContentState
         widget.accountUuid != null &&
         coordinator.advancingAccounts.contains(widget.accountUuid);
     final actionLabel = isAdvancing
-        ? action.busyLabel
+        ? action.busyLabel(context.l10n)
         : switch (action) {
-            _StatusAction.needsInput || _StatusAction.retry => action.label,
+            _StatusAction.needsInput ||
+            _StatusAction.retry => action.label(context.l10n),
             _StatusAction.backHome ||
             _StatusAction.none => presentation.buttonLabel,
           };
@@ -78,9 +79,9 @@ class _IronwoodMigrationPrivateStatusContentState
         migrationRequiresKeystoneSignature(status);
     final footerText = coordinatorError == null
         ? ledgerSigningUnsupported
-              ? 'Ledger private migration is not supported because this flow requires batched signing.'
+              ? context.l10n.migrationStatusLedgerUnsupported
               : presentation.footer
-        : _privateMigrationContinueErrorMessage(coordinatorError);
+        : _privateMigrationContinueErrorMessage(context.l10n, coordinatorError);
     final actionCallback = switch (action) {
       _StatusAction.needsInput || _StatusAction.retry =>
         canUseAction ? () => unawaited(_handleAction(action)) : null,
@@ -177,27 +178,27 @@ class _IronwoodMigrationPrivateStatusContentState
                     ],
                     _ReviewMetricRow(
                       icon: AppIcons.swapArrows,
-                      label: 'Split progress',
+                      label: context.l10n.migrationStatusSplitProgress,
                       value:
-                          '${status.denominationSplitCompletedCount}/'
+                          '${status.denominationSplitCompletedCount}/' // l10n-ignore: count format
                           '${status.denominationSplitTotalCount}',
                     ),
                     const SizedBox(height: 16),
                     _ReviewMetricRow(
                       icon: AppIcons.time,
-                      label: 'Pending broadcasts',
+                      label: context.l10n.migrationStatusPendingBroadcasts,
                       value: '${status.pendingTxCount}',
                     ),
                     const SizedBox(height: 16),
                     _ReviewMetricRow(
                       icon: AppIcons.plane,
-                      label: 'Broadcasted',
+                      label: context.l10n.migrationStatusBroadcasted,
                       value: '${status.broadcastedTxCount}',
                     ),
                     const SizedBox(height: 16),
                     _ReviewMetricRow(
                       icon: AppIcons.checkCircle,
-                      label: 'Confirmed',
+                      label: context.l10n.migrationBroadcastConfirmed,
                       value: '${status.confirmedTxCount}/${status.totalCount}',
                     ),
                     if (status.message != null) ...[
@@ -276,7 +277,7 @@ class _IronwoodMigrationPrivateStatusErrorContent extends StatelessWidget {
             child: Column(
               children: [
                 Text(
-                  'Migration status unavailable',
+                  context.l10n.migrationStatusUnavailableTitle,
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
@@ -286,9 +287,7 @@ class _IronwoodMigrationPrivateStatusErrorContent extends StatelessWidget {
                 SizedBox(
                   width: 318,
                   child: Text(
-                    "Vizor couldn't verify the current Ironwood migration "
-                    'state. No new migration will start until the status can '
-                    'be checked.',
+                    context.l10n.migrationStatusUnavailableBody,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMediumStrong.copyWith(
                       color: colors.text.accent,
@@ -310,9 +309,7 @@ class _IronwoodMigrationPrivateStatusErrorContent extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(28, 32, 28, 32),
                 child: Text(
-                  'Return home and try again after sync refreshes. If a '
-                  'migration is already in progress, Vizor will continue from '
-                  'the saved state after it can be read.',
+                  context.l10n.migrationStatusUnavailableHint,
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.secondary,
@@ -332,8 +329,8 @@ class _IronwoodMigrationPrivateStatusErrorContent extends StatelessWidget {
               expand: true,
               constrainContent: true,
               trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-              child: const Text(
-                'Back home',
+              child: Text(
+                context.l10n.migrationBackHome,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -362,16 +359,16 @@ class _StatusPresentation {
 enum _StatusAction { none, needsInput, retry, backHome }
 
 extension _StatusActionLabels on _StatusAction {
-  String get label => switch (this) {
-    _StatusAction.needsInput => 'Sign with Keystone',
-    _StatusAction.retry => 'Retry migration',
-    _StatusAction.backHome => 'Back home',
+  String label(AppLocalizations l10n) => switch (this) {
+    _StatusAction.needsInput => l10n.migrationSignWithKeystone,
+    _StatusAction.retry => l10n.migrationRetryMigration,
+    _StatusAction.backHome => l10n.migrationBackHome,
     _StatusAction.none => '',
   };
 
-  String get busyLabel => switch (this) {
-    _StatusAction.retry => 'Retrying...',
-    _ => 'Continuing...',
+  String busyLabel(AppLocalizations l10n) => switch (this) {
+    _StatusAction.retry => l10n.migrationRetrying,
+    _ => l10n.migrationContinuing,
   };
 }
 
@@ -391,81 +388,64 @@ _StatusAction _statusAction(
   };
 }
 
-_StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
+_StatusPresentation _statusPresentation(
+  AppLocalizations l10n,
+  rust_sync.MigrationStatus status,
+) {
   return switch (status.phase) {
-    kIronwoodMigrationWaitingDenomConfirmationsPhase =>
-      const _StatusPresentation(
-        title: 'Preparing...',
-        body: 'This usually takes around 30 minutes per split.',
-        footer: 'You can leave this screen.\nBut keep Vizor open & running.',
-        buttonLabel: '',
-      ),
-    kIronwoodMigrationReadyToMigratePhase => const _StatusPresentation(
-      title: 'Ready to Migrate',
-      body:
-          'The private split is ready. The next step will prepare the '
-          'Ironwood migration batch.',
-      footer:
-          'Continue migration to prepare and broadcast the Ironwood '
-          'transaction when it is due.',
-      buttonLabel: 'Continue migration',
+    kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusPresentation(
+      title: l10n.migrationStatusPreparingTitle,
+      body: l10n.migrationStatusPreparingBody,
+      footer: l10n.migrationStatusLeaveFooter,
+      buttonLabel: '',
     ),
-    kIronwoodMigrationBroadcastScheduledPhase => const _StatusPresentation(
-      title: 'Broadcast Scheduled',
-      body:
-          'Your migration transaction is prepared and waiting for its '
-          'scheduled broadcast window.',
-      footer:
-          'When Vizor is open, scheduled broadcasts will be advanced by the '
-          'migration worker.',
-      buttonLabel: 'Continue migration',
+    kIronwoodMigrationReadyToMigratePhase => _StatusPresentation(
+      title: l10n.migrationStatusReadyTitle,
+      body: l10n.migrationStatusReadyBody,
+      footer: l10n.migrationStatusReadyFooter,
+      buttonLabel: l10n.migrationContinueMigration,
     ),
-    kIronwoodMigrationBroadcastingPhase => const _StatusPresentation(
-      title: 'Migrating...',
-      body:
-          'Vizor is broadcasting the prepared Ironwood migration transaction.',
-      footer: 'You can leave this screen.\nBut keep Vizor open & running.',
-      buttonLabel: 'Broadcasting',
+    kIronwoodMigrationBroadcastScheduledPhase => _StatusPresentation(
+      title: l10n.migrationStatusScheduledTitle,
+      body: l10n.migrationStatusScheduledBody,
+      footer: l10n.migrationStatusScheduledFooter,
+      buttonLabel: l10n.migrationContinueMigration,
     ),
-    kIronwoodMigrationWaitingConfirmationsPhase => const _StatusPresentation(
-      title: 'Migrating...',
-      body:
-          'The migration transaction was broadcast. Vizor is waiting for '
-          'network confirmations.',
-      footer: 'You can leave this screen.\nBut keep Vizor open & running.',
-      buttonLabel: 'Waiting for confirmations',
+    kIronwoodMigrationBroadcastingPhase => _StatusPresentation(
+      title: l10n.migrationStatusMigratingTitle,
+      body: l10n.migrationStatusBroadcastingBody,
+      footer: l10n.migrationStatusLeaveFooter,
+      buttonLabel: l10n.migrationStatusBroadcastingButton,
     ),
-    kIronwoodMigrationCompletePhase => const _StatusPresentation(
-      title: 'Migration Complete',
-      body: 'Your funds have moved into the Ironwood pool.',
-      footer: 'You can return home and continue using Vizor.',
-      buttonLabel: 'Back home',
+    kIronwoodMigrationWaitingConfirmationsPhase => _StatusPresentation(
+      title: l10n.migrationStatusMigratingTitle,
+      body: l10n.migrationStatusConfirmingBody,
+      footer: l10n.migrationStatusLeaveFooter,
+      buttonLabel: l10n.migrationNextActionDetailWaitingForConfirmations,
     ),
-    kIronwoodMigrationPausedPhase => const _StatusPresentation(
-      title: 'Migration Paused',
-      body: 'The private migration is paused before the next action.',
-      footer:
-          'No new transaction will be prepared until migration execution is '
-          'resumed.',
-      buttonLabel: 'Paused',
+    kIronwoodMigrationCompletePhase => _StatusPresentation(
+      title: l10n.migrationStatusCompleteTitle,
+      body: l10n.migrationStatusCompleteBody,
+      footer: l10n.migrationStatusCompleteFooter,
+      buttonLabel: l10n.migrationBackHome,
     ),
-    kIronwoodMigrationFailedRecoverablePhase => const _StatusPresentation(
-      title: 'Migration Needs Attention',
-      body:
-          'Vizor hit a recoverable migration error before completing the '
-          'Ironwood transition.',
-      footer:
-          'No funds are lost. Retry migration after checking that Vizor is '
-          'synced and online.',
-      buttonLabel: 'Retry migration',
+    kIronwoodMigrationPausedPhase => _StatusPresentation(
+      title: l10n.migrationStatusPausedTitle,
+      body: l10n.migrationStatusPausedBody,
+      footer: l10n.migrationStatusPausedFooter,
+      buttonLabel: l10n.migrationStatusPausedButton,
     ),
-    _ => const _StatusPresentation(
-      title: 'Migration Status',
-      body: 'Vizor is tracking the current Ironwood migration state.',
-      footer:
-          'This state is visible for diagnostics while the migration flow is '
-          'being connected.',
-      buttonLabel: 'Migration in progress',
+    kIronwoodMigrationFailedRecoverablePhase => _StatusPresentation(
+      title: l10n.migrationStatusAttentionTitle,
+      body: l10n.migrationStatusAttentionBody,
+      footer: l10n.migrationStatusAttentionFooter,
+      buttonLabel: l10n.migrationRetryMigration,
+    ),
+    _ => _StatusPresentation(
+      title: l10n.migrationStatusDefaultTitle,
+      body: l10n.migrationStatusDefaultBody,
+      footer: l10n.migrationStatusDefaultFooter,
+      buttonLabel: l10n.migrationStatusDefaultButton,
     ),
   };
 }

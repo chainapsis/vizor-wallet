@@ -71,7 +71,7 @@ class _IronwoodMigrationImmediateReviewContentState
         ref.invalidate(ironwoodMigrationImmediatePlanProvider);
       }
       setState(() {
-        _error = _immediateMigrationStartErrorMessage(error);
+        _error = _immediateMigrationStartErrorMessage(context.l10n, error);
       });
     } finally {
       if (mounted) setState(() => _isBroadcasting = false);
@@ -125,19 +125,19 @@ class _IronwoodMigrationImmediateReviewContentState
     final planLoading = planAsync.isLoading;
     final colors = context.colors;
     final amount = plan != null
-        ? '${_formatZecAmountCompact(plan.migratedZatoshi)} ZEC'
+        ? '${_formatZecAmountCompact(plan.migratedZatoshi)} ZEC' // l10n-ignore: amount format
         : planLoading
-        ? 'Calculating…'
-        : 'Unavailable';
+        ? context.l10n.migrationImmediateCalculating
+        : context.l10n.migrationImmediateUnavailable;
     final fee = plan != null
-        ? '~${_formatZecAmountCompact(plan.feeZatoshi)} ZEC'
+        ? '~${_formatZecAmountCompact(plan.feeZatoshi)} ZEC' // l10n-ignore: amount format
         : planLoading
-        ? 'Calculating…'
-        : 'Unavailable';
+        ? context.l10n.migrationImmediateCalculating
+        : context.l10n.migrationImmediateUnavailable;
     final planMessage = planFailed
-        ? "Couldn't calculate the Immediate migration plan. Sync and try again."
+        ? context.l10n.migrationImmediatePlanFailed
         : planUnavailable
-        ? 'No spendable Orchard balance is available for Immediate migration.'
+        ? context.l10n.migrationImmediateNoBalance
         : null;
     final displayedError = _error ?? planMessage;
     final isLedgerAccount =
@@ -156,7 +156,7 @@ class _IronwoodMigrationImmediateReviewContentState
             child: Column(
               children: [
                 Text(
-                  'Review Migration Plan',
+                  context.l10n.migrationImmediateReviewTitle,
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineSmall.copyWith(
                     color: colors.text.accent,
@@ -175,16 +175,20 @@ class _IronwoodMigrationImmediateReviewContentState
                     ),
                     child: Column(
                       children: [
-                        _ImmediateReviewRow(label: 'Amount', value: amount),
+                        _ImmediateReviewRow(
+                          label: context.l10n.migrationImmediateAmount,
+                          value: amount,
+                        ),
                         const SizedBox(height: 8),
                         _ImmediateReviewRow(
-                          label: 'Fees (estimate)',
+                          label: context.l10n.migrationImmediateFees,
                           value: fee,
                         ),
                         const SizedBox(height: 8),
                         _ImmediateReviewRow(
-                          label: 'Migration complete in',
+                          label: context.l10n.migrationReviewCompleteIn,
                           value: ironwoodImmediateMigrationCompletionEstimate(
+                            context.l10n,
                             blockTimes,
                           ),
                         ),
@@ -215,7 +219,7 @@ class _IronwoodMigrationImmediateReviewContentState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Privacy trade-off',
+                                context.l10n.migrationImmediateTradeoffTitle,
                                 style: AppTypography.bodyMediumStrong.copyWith(
                                   color: colors.text.accent,
                                 ),
@@ -223,24 +227,25 @@ class _IronwoodMigrationImmediateReviewContentState
                               const SizedBox(height: 8),
                               Text.rich(
                                 TextSpan(
-                                  text:
-                                      'Crosses in one visible step — your '
-                                      '$amount and timing are ',
+                                  text: context.l10n
+                                      .migrationImmediateTradeoffLead(amount),
                                   children: [
-                                    const TextSpan(
-                                      text:
-                                          'easier to associate with your '
-                                          'wallet.',
-                                      style: TextStyle(
+                                    TextSpan(
+                                      text: context
+                                          .l10n
+                                          .migrationImmediateTradeoffEmphasis,
+                                      style: const TextStyle(
                                         color: Color(0xFFCA4ADC),
                                       ),
                                     ),
                                     TextSpan(
                                       text: isLedgerAccount
-                                          ? '\nPrivate migration is not '
-                                                'available for Ledger accounts.'
-                                          : '\nConsider choosing a Private '
-                                                'Migration option.',
+                                          ? context
+                                                .l10n
+                                                .migrationImmediateTradeoffLedger
+                                          : context
+                                                .l10n
+                                                .migrationImmediateTradeoffPrivate,
                                     ),
                                   ],
                                 ),
@@ -284,7 +289,9 @@ class _IronwoodMigrationImmediateReviewContentState
                   expand: true,
                   leading: const AppIcon(AppIcons.chevronBackward, size: 18),
                   child: Text(
-                    isLedgerAccount ? 'Back' : 'Consider another option',
+                    isLedgerAccount
+                        ? context.l10n.commonBack
+                        : context.l10n.migrationImmediateConsiderOther,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -306,22 +313,24 @@ class _IronwoodMigrationImmediateReviewContentState
                   minWidth: 230,
                   expand: true,
                   leading: _isBroadcasting
-                      ? const AppIcon(
+                      ? AppIcon(
                           AppIcons.loader,
                           size: 18,
-                          semanticLabel: 'Authorising migration',
+                          semanticLabel: context
+                              .l10n
+                              .migrationImmediateAuthorisingSemantics,
                         )
                       : const AppIcon(AppIcons.warning, size: 18),
                   child: Text(
                     _isBroadcasting
-                        ? 'Authorising…'
+                        ? context.l10n.migrationImmediateAuthorising
                         : planFailed
-                        ? 'Retry calculation'
+                        ? context.l10n.migrationImmediateRetryCalculation
                         : planLoading
-                        ? 'Calculating…'
+                        ? context.l10n.migrationImmediateCalculating
                         : planUnavailable
-                        ? 'Unavailable'
-                        : 'Authorise anyway',
+                        ? context.l10n.migrationImmediateUnavailable
+                        : context.l10n.migrationImmediateAuthoriseAnyway,
                   ),
                 ),
               ],
@@ -368,19 +377,22 @@ class _ImmediateReviewRow extends StatelessWidget {
   }
 }
 
-String _immediateMigrationStartErrorMessage(Object error) {
+String _immediateMigrationStartErrorMessage(
+  AppLocalizations l10n,
+  Object error,
+) {
   final upgradeHold = networkUpgradeHoldMessage(error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('plan changed')) {
-    return 'The amount or fee changed. Review the updated details.';
+    return l10n.migrationErrorPlanChanged;
   }
   if (message.contains('mnemonic')) {
-    return "Secret Passphrase isn't available for this account.";
+    return l10n.homeShieldErrorSeedUnavailable;
   }
-  if (message.contains('keystone')) return "Couldn't prepare Keystone signing.";
+  if (message.contains('keystone')) return l10n.migrationErrorKeystonePrepare;
   if (message.contains('sync')) {
-    return 'Wait for sync to finish, then try again.';
+    return l10n.migrationErrorWaitForSync;
   }
-  return "Couldn't start migration. Try again.";
+  return l10n.migrationErrorStart;
 }

@@ -232,6 +232,7 @@ class _MobileMigrationOptionsState
       syncProvider.select((sync) => sync.asData?.value.chainTipHeight),
     );
     final immediateEstimate = ironwoodImmediateMigrationCompletionEstimate(
+      context.l10n,
       ref.watch(blockSpacingProvider).fromTip(tipHeight ?? 0),
     );
     final backLocation = widget.movingRest

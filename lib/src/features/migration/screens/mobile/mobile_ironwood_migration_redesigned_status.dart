@@ -1113,6 +1113,7 @@ class _MobileMigrationRedesignedStatusState
     final timingReady = timingKnown && nextHeight <= currentHeight;
     final timing = timingKnown
         ? migrationHeightRemainingDurationLabel(
+            context.l10n,
             nextHeight,
             blockTimes: _blockTimes(),
             currentHeight: currentHeight,
@@ -1279,6 +1280,7 @@ class _MobileMigrationRedesignedStatusState
     required bool requiresInput,
   }) {
     return migrationNextActionPresentation(
+      context.l10n,
       status: status,
       currentHeight: _currentHeight(),
       requiresInput: requiresInput,
@@ -1297,6 +1299,7 @@ class _MobileMigrationRedesignedStatusState
 
   String _completionEstimateText(rust_sync.MigrationStatus status) {
     return migrationApproximateCompletionTimingLabel(
+      context.l10n,
       status,
       blockTimes: _blockTimes(),
       currentHeight: _currentHeight(),

@@ -7,7 +7,6 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/primitives.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../models/ironwood_migration_upgrade_stop.dart';
 import '../../models/mobile_ironwood_migration_attention_state.dart';
 
 class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
@@ -73,7 +72,7 @@ class MobileIronwoodMigrationAttentionSheetBody extends StatelessWidget {
             onPressed: onOpenMigration,
             child: Text(
               kind == MobileIronwoodMigrationAttentionKind.upgradeStopped
-                  ? kIronwoodUpgradeStopMoveRemainingLabel
+                  ? context.l10n.migrationUpgradeStopMoveRemainingLabel
                   : context.l10n.migrationMobileAttentionOpen,
             ),
           ),

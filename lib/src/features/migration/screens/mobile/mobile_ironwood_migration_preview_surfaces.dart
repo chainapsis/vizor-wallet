@@ -2384,7 +2384,7 @@ class _MigrationUpgradeStoppedView extends StatelessWidget {
     final segments = math.max(1, stop.totalParts);
     final usesLargeText = MediaQuery.textScalerOf(context).scale(1) > 1;
     final body = Text(
-      kIronwoodUpgradeStopBody,
+      context.l10n.migrationUpgradeStopBody,
       textAlign: TextAlign.center,
       style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
     );
@@ -2407,7 +2407,7 @@ class _MigrationUpgradeStoppedView extends StatelessWidget {
           AppIcon(AppIcons.warning, size: 20, color: colors.icon.warning),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            kIronwoodUpgradeStopRingMessage,
+            context.l10n.migrationUpgradeStopRingMessage,
             textAlign: TextAlign.center,
             style: AppTypography.bodyMediumStrong.copyWith(
               color: colors.text.accent,
@@ -2469,8 +2469,8 @@ class _MigrationUpgradeStoppedView extends StatelessWidget {
             growWithContent: true,
             constrainContent: true,
             onPressed: onMoveRemaining,
-            child: const Text(
-              kIronwoodUpgradeStopMoveRemainingLabel,
+            child: Text(
+              context.l10n.migrationUpgradeStopMoveRemainingLabel,
               textAlign: TextAlign.center,
             ),
           ),

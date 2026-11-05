@@ -2210,6 +2210,753 @@ class AppLocalizationsKo extends AppLocalizations {
       '계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
 
   @override
+  String get migrationAnalyzingBalance => '잔⁠액⁠을 분⁠석⁠하⁠는 중...';
+
+  @override
+  String get migrationAnalyzingCaption =>
+      'Vizor⁠가 이⁠전⁠의 안⁠전, 프⁠라⁠이⁠버⁠시, 속⁠도 사⁠이⁠에⁠서\n최⁠적⁠의 균⁠형⁠을 찾⁠고 있⁠어⁠요';
+
+  @override
+  String get migrationAnalyzingFindingBatches => '비⁠공⁠개 배⁠치⁠를 찾⁠는 중...';
+
+  @override
+  String get migrationAnalyzingPreparingPlan => '이⁠전 계⁠획⁠을 준⁠비⁠하⁠는 중...';
+
+  @override
+  String get migrationAnalyzingSemanticsLabel => '비⁠공⁠개 이⁠전 계⁠획 준⁠비 중';
+
+  @override
+  String get migrationAnnouncementBody =>
+      'Ironwood⁠는 Zcash⁠의 최⁠신 차⁠폐 풀⁠이⁠에⁠요.\n공⁠식⁠적⁠으⁠로 검⁠증⁠된 최⁠초⁠의 풀⁠로,\n최⁠첨⁠단 암⁠호 기⁠술⁠을 사⁠용⁠해⁠요.';
+
+  @override
+  String get migrationAnnouncementReleaseNote => '공⁠식 릴⁠리⁠스 노⁠트';
+
+  @override
+  String get migrationAnnouncementStart => '이⁠전 시⁠작';
+
+  @override
+  String get migrationBackAbout => '이⁠전 소⁠개';
+
+  @override
+  String get migrationBackHome => '홈⁠으⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get migrationBackHowItWorks => '이⁠전 방⁠식';
+
+  @override
+  String get migrationBackOptions => '이⁠전 옵⁠션';
+
+  @override
+  String get migrationBatchBroadcasting => '전⁠송 중...';
+
+  @override
+  String migrationBatchCardTitle(String number, String count) {
+    return '배⁠치 #$number (노⁠트 $count⁠개)';
+  }
+
+  @override
+  String get migrationBatchConfirming => '확⁠인 중...';
+
+  @override
+  String migrationBlockHeight(String height) {
+    return '블⁠록 $height';
+  }
+
+  @override
+  String migrationBlocksEstimate(String blocks) {
+    return '약 $blocks⁠블⁠록';
+  }
+
+  @override
+  String migrationBroadcastApproxInHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '약 $count⁠시⁠간 후',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationBroadcastApproxInMinutes(int count) {
+    return '약 $count⁠분 후';
+  }
+
+  @override
+  String get migrationBroadcastConfirmed => '확⁠인⁠됨';
+
+  @override
+  String get migrationBroadcastDueNow => '지⁠금 전⁠송 예⁠정';
+
+  @override
+  String migrationBroadcastInHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count⁠시⁠간 후',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationBroadcastInMinutes(int count) {
+    return '$count⁠분 후';
+  }
+
+  @override
+  String get migrationBroadcastPending => '대⁠기 중';
+
+  @override
+  String get migrationBroadcastSubmitted => '제⁠출⁠됨';
+
+  @override
+  String get migrationCarouselPreparationLabel => '이⁠전 준⁠비 안⁠내';
+
+  @override
+  String get migrationCarouselProgressLabel => '이⁠전 안⁠내';
+
+  @override
+  String get migrationCompleteBody =>
+      '이⁠전⁠이 완⁠료⁠되⁠었⁠어⁠요.\n평⁠소⁠처⁠럼 자⁠금⁠을 사⁠용⁠할 수 있⁠어⁠요.';
+
+  @override
+  String migrationCompleteTitle(String amount) {
+    return '내\n$amount ZEC⁠가\nIronwood⁠에 있⁠어⁠요!';
+  }
+
+  @override
+  String get migrationConfirming => '확⁠인 중';
+
+  @override
+  String get migrationContinueMigration => '이⁠전 계⁠속';
+
+  @override
+  String get migrationContinuing => '계⁠속⁠하⁠는 중...';
+
+  @override
+  String get migrationCtaStart => 'Ironwood 풀⁠로 이⁠전';
+
+  @override
+  String get migrationCtaStopped => '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 이⁠전⁠이 중⁠단⁠됨';
+
+  @override
+  String get migrationCurrentBatch => '현⁠재 배⁠치';
+
+  @override
+  String migrationDurationDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '약 $count⁠일',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationDurationHalfHours(String hours) {
+    return '약 $hours.5⁠시⁠간';
+  }
+
+  @override
+  String migrationDurationHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '약 $count⁠시⁠간',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationDurationMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '약 $count⁠분',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationErrorBroadcast =>
+      '이⁠전 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationErrorContinue => '이⁠전⁠을 계⁠속⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationErrorKeystonePrepare => 'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get migrationErrorLedgerExcluded =>
+      '현⁠재 흐⁠름⁠은 일⁠괄 서⁠명⁠이 필⁠요⁠해⁠서 Ledger 비⁠공⁠개 이⁠전⁠은 지⁠원⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get migrationErrorPlanChanged =>
+      '금⁠액⁠이⁠나 수⁠수⁠료⁠가 바⁠뀌⁠었⁠어⁠요. 업⁠데⁠이⁠트⁠된 내⁠용⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get migrationErrorStart => '이⁠전⁠을 시⁠작⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationErrorUnlockBeforeContinue =>
+      '이⁠전⁠을 계⁠속⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+
+  @override
+  String get migrationErrorUnlockBeforeStart =>
+      '이⁠전⁠을 시⁠작⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+
+  @override
+  String get migrationErrorWaitForSync =>
+      '동⁠기⁠화⁠가 끝⁠날 때⁠까⁠지 기⁠다⁠린 뒤 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationEstimateAfterSigning => '서⁠명 후';
+
+  @override
+  String get migrationEstimateComplete => '완⁠료';
+
+  @override
+  String migrationEstimateIn(String estimate) {
+    return '$estimate 후';
+  }
+
+  @override
+  String migrationEstimateInDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '약 $count⁠일 후',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationEstimateInHours(String hours) {
+    return '약 $hours⁠시⁠간 후';
+  }
+
+  @override
+  String migrationEstimateInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '약 $count⁠분 후',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationEstimateInOneHour => '약 1⁠시⁠간 후';
+
+  @override
+  String get migrationEstimatedArrivalTime => '도⁠착 예⁠상 시⁠간';
+
+  @override
+  String get migrationExpectKeepRunningBody =>
+      '다⁠음 이⁠전 거⁠래⁠를 보⁠내⁠려⁠면 컴⁠퓨⁠터⁠의 잠⁠금⁠이 해⁠제⁠되⁠어 있⁠고 Vizor⁠가 실⁠행 중⁠이⁠어⁠야 해⁠요';
+
+  @override
+  String get migrationExpectLongBody =>
+      '이⁠전 금⁠액⁠에 따⁠라 Ironwood 이⁠전⁠에⁠는 몇 시⁠간⁠에⁠서 이⁠틀 정⁠도⁠까⁠지 걸⁠릴 수 있⁠어⁠요.';
+
+  @override
+  String get migrationExpectLongTitle => '이⁠전⁠에⁠는 시⁠간⁠이 오⁠래 걸⁠릴 수 있⁠어⁠요';
+
+  @override
+  String get migrationExpectSpendBody =>
+      '확⁠인⁠된 Ironwood 금⁠액⁠은 나⁠머⁠지 이⁠전⁠이 진⁠행⁠되⁠는 동⁠안⁠에⁠도 사⁠용⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get migrationExpectSpendTitle => '자⁠금⁠이 도⁠착⁠하⁠는 대⁠로 쓸 수 있⁠어⁠요';
+
+  @override
+  String get migrationExpectTitle => '안⁠내 사⁠항';
+
+  @override
+  String get migrationExpectVpnBody =>
+      '신⁠뢰⁠할 수 있⁠는 VPN/네⁠트⁠워⁠크 프⁠라⁠이⁠버⁠시 계⁠층⁠을 거⁠쳐 이⁠전⁠하⁠는 것⁠을 권⁠장⁠해⁠요';
+
+  @override
+  String get migrationExpectVpnTitle => '추⁠가 프⁠라⁠이⁠버⁠시⁠를 위⁠해 VPN⁠을 사⁠용⁠하⁠세⁠요';
+
+  @override
+  String get migrationFlowTitle => 'Ironwood 이⁠전';
+
+  @override
+  String get migrationGoHome => '홈⁠으⁠로 이⁠동';
+
+  @override
+  String get migrationHowDelayedBody =>
+      '추⁠적 가⁠능⁠성⁠을 줄⁠이⁠기 위⁠해 Vizor⁠가 여⁠러 배⁠치⁠에 걸⁠쳐 간⁠격⁠을 두⁠고 천⁠천⁠히 나⁠눠 보⁠내⁠요.';
+
+  @override
+  String get migrationHowDelayedTitle => '지⁠연⁠되⁠고 무⁠작⁠위⁠로 진⁠행⁠되⁠는 이⁠전';
+
+  @override
+  String get migrationHowFrozenBody =>
+      '기⁠존 차⁠폐 잔⁠액⁠을 사⁠용⁠하⁠려⁠면 Ironwood⁠로 한 번 이⁠전⁠해⁠야 해⁠요.';
+
+  @override
+  String get migrationHowFrozenTitle => 'Orchard(레⁠거⁠시 차⁠폐) 잔⁠액⁠이 동⁠결⁠돼⁠요';
+
+  @override
+  String get migrationHowPreparationBody =>
+      '이⁠전⁠하⁠기 전⁠에 Vizor⁠가 전⁠체 잔⁠액⁠을 더 작⁠은 노⁠트(예: 0.1 ZEC / 1 ZEC / 5 ZEC)로 나⁠눠⁠요.';
+
+  @override
+  String get migrationHowPreparationTitle => '이⁠전 전 준⁠비';
+
+  @override
+  String migrationHowStepLabel(String number) {
+    return '$number⁠단⁠계';
+  }
+
+  @override
+  String migrationHowStepSemanticsCurrent(
+    String number,
+    String total,
+    String title,
+    String body,
+  ) {
+    return '이⁠전 $total⁠단⁠계 중 $number⁠단⁠계. $title. $body';
+  }
+
+  @override
+  String migrationHowStepSemanticsShow(String number, String total) {
+    return '이⁠전 $total⁠단⁠계 중 $number⁠단⁠계 보⁠기';
+  }
+
+  @override
+  String get migrationHowTitle => '이⁠전 방⁠식';
+
+  @override
+  String get migrationImmediateAmount => '금⁠액';
+
+  @override
+  String get migrationImmediateAuthoriseAnyway => '그⁠래⁠도 승⁠인';
+
+  @override
+  String get migrationImmediateAuthorising => '승⁠인⁠하⁠는 중…';
+
+  @override
+  String get migrationImmediateAuthorisingSemantics => '이⁠전 승⁠인⁠하⁠는 중';
+
+  @override
+  String get migrationImmediateCalculating => '계⁠산⁠하⁠는 중…';
+
+  @override
+  String get migrationImmediateConsiderOther => '다⁠른 옵⁠션 보⁠기';
+
+  @override
+  String get migrationImmediateFees => '수⁠수⁠료(예⁠상)';
+
+  @override
+  String get migrationImmediateNoBalance =>
+      '즉⁠시 이⁠전⁠에 사⁠용⁠할 수 있⁠는 Orchard 잔⁠액⁠이 없⁠어⁠요.';
+
+  @override
+  String get migrationImmediatePlanFailed =>
+      '즉⁠시 이⁠전 계⁠획⁠을 계⁠산⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠한 뒤 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationImmediateRetryCalculation => '계⁠산 다⁠시 시⁠도';
+
+  @override
+  String get migrationImmediateReviewTitle => '이⁠전 계⁠획 검⁠토';
+
+  @override
+  String get migrationImmediateTradeoffEmphasis =>
+      '내 지⁠갑⁠과 더 쉽⁠게 연⁠결⁠될 수 있⁠어⁠요.';
+
+  @override
+  String migrationImmediateTradeoffLead(String amount) {
+    return '눈⁠에 보⁠이⁠는 한 번⁠의 단⁠계⁠로 넘⁠어⁠가⁠므⁠로 $amount⁠과(와) 시⁠점⁠이 ';
+  }
+
+  @override
+  String get migrationImmediateTradeoffLedger =>
+      '\nLedger 계⁠정⁠에⁠서⁠는 비⁠공⁠개 이⁠전⁠을 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get migrationImmediateTradeoffPrivate =>
+      '\n비⁠공⁠개 이⁠전 옵⁠션⁠을 선⁠택⁠해 보⁠세⁠요.';
+
+  @override
+  String get migrationImmediateTradeoffTitle => '프⁠라⁠이⁠버⁠시 절⁠충';
+
+  @override
+  String get migrationImmediateUnavailable => '사⁠용⁠할 수 없⁠음';
+
+  @override
+  String migrationInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '약 $count⁠분 후',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationIntroAnnouncement => '공⁠식 발⁠표';
+
+  @override
+  String get migrationIntroBadge => 'Zcash 네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드';
+
+  @override
+  String migrationIntroBody(String amount) {
+    return '현⁠재 $amount ZEC⁠가 Orchard⁠에 있⁠어⁠요.\n이 자⁠금⁠을 계⁠속 차⁠폐 결⁠제⁠에 쓰⁠려⁠면 Ironwood⁠로 옮⁠겨⁠야 해⁠요. 자⁠금⁠이 이⁠동⁠하⁠기 전⁠에 이⁠전 계⁠획⁠을 검⁠토⁠하⁠게 돼⁠요.';
+  }
+
+  @override
+  String get migrationIntroTagline => 'Zcash⁠를 위⁠한 새⁠로⁠운 차⁠폐 풀.';
+
+  @override
+  String get migrationKeystoneAfterScanInstruction =>
+      '스⁠캔⁠한 후 \'서⁠명 가⁠져⁠오⁠기\'를 클⁠릭⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneApplyingSignature =>
+      'Keystone 서⁠명⁠을 적⁠용⁠하⁠는 중⁠이⁠에⁠요.';
+
+  @override
+  String get migrationKeystoneApplyingToPlan =>
+      'Keystone 서⁠명⁠을 이⁠전 계⁠획⁠에 적⁠용⁠하⁠는 중⁠이⁠에⁠요.';
+
+  @override
+  String get migrationKeystoneBackToReview => '검⁠토⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get migrationKeystoneBackToStatus => '상⁠태⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get migrationKeystoneBeginSigning => '서⁠명 시⁠작';
+
+  @override
+  String get migrationKeystoneCamera => '카⁠메⁠라';
+
+  @override
+  String get migrationKeystoneCameraAccess =>
+      '서⁠명⁠된 Keystone QR⁠을 스⁠캔⁠하⁠려⁠면 카⁠메⁠라 접⁠근⁠을 허⁠용⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneCameraOnly =>
+      'Keystone 이⁠전 서⁠명⁠은 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠한 뒤 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneCancelFailed =>
+      '서⁠명 요⁠청⁠을 취⁠소⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneClickToEnlarge => 'QR⁠을 클⁠릭⁠해 확⁠대';
+
+  @override
+  String get migrationKeystoneConfirmTitle => 'Keystone⁠으⁠로 이⁠전 확⁠인';
+
+  @override
+  String get migrationKeystoneEnlargeQr => 'Keystone 요⁠청 QR 확⁠대';
+
+  @override
+  String get migrationKeystoneEnlargedQr => '확⁠대⁠된 Keystone 요⁠청 QR';
+
+  @override
+  String get migrationKeystoneFirmwareUpdate =>
+      'Ironwood 이⁠전⁠에 서⁠명⁠하⁠려⁠면 Keystone 펌⁠웨⁠어⁠를 업⁠데⁠이⁠트⁠한 뒤 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneGetSignature => '서⁠명 가⁠져⁠오⁠기';
+
+  @override
+  String get migrationKeystoneKeepQrSteady =>
+      'QR 코⁠드⁠를 흔⁠들⁠리⁠지 않⁠게 전⁠부 보⁠이⁠도⁠록 유⁠지⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneMobileTitle => 'Keystone 이⁠전';
+
+  @override
+  String get migrationKeystoneNotKeystone =>
+      '이 이⁠전⁠에 서⁠명⁠하⁠려⁠면 Keystone 계⁠정⁠을 사⁠용⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneOpenSignedQr =>
+      'Keystone⁠에⁠서 서⁠명⁠된 이⁠전 QR⁠을 연 뒤 다⁠시 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystonePlanBody =>
+      '각 회⁠차⁠마⁠다 움⁠직⁠이⁠는 요⁠청 QR 하⁠나⁠와 서⁠명⁠된 응⁠답 QR 하⁠나⁠를 사⁠용⁠해⁠요.';
+
+  @override
+  String get migrationKeystonePlanTitle => 'Keystone 서⁠명 계⁠획';
+
+  @override
+  String get migrationKeystonePrepareFailed =>
+      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystonePrepareWallet => 'Keystone 지⁠갑⁠을 준⁠비⁠하⁠세⁠요';
+
+  @override
+  String get migrationKeystonePreparing => '준⁠비 중';
+
+  @override
+  String get migrationKeystonePreparingQr => 'QR 코⁠드 준⁠비 중...';
+
+  @override
+  String get migrationKeystoneProofFailed =>
+      'Vizor⁠가 로⁠컬 증⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 돌⁠아⁠가⁠서 이 요⁠청⁠을 다⁠시 준⁠비⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneProofWaiting =>
+      '서⁠명⁠을 받⁠았⁠어⁠요. Vizor⁠가 아⁠직 로⁠컬 증⁠명⁠을 준⁠비⁠하⁠는 중⁠이⁠에⁠요. 이 화⁠면⁠을 열⁠어 두⁠세⁠요.';
+
+  @override
+  String migrationKeystoneProofWaitingProgress(String ready, String total) {
+    return '서⁠명⁠을 받⁠았⁠어⁠요. Vizor⁠가 아⁠직 로⁠컬 증⁠명⁠을 준⁠비⁠하⁠는 중⁠이⁠에⁠요($ready/$total). 이 화⁠면⁠을 열⁠어 두⁠세⁠요.';
+  }
+
+  @override
+  String get migrationKeystoneProofsPreparing => '로⁠컬 증⁠명 준⁠비 중';
+
+  @override
+  String get migrationKeystoneProofsPreparingEllipsis => '로⁠컬 증⁠명 준⁠비 중...';
+
+  @override
+  String migrationKeystoneProofsProgress(String ready, String total) {
+    return '로⁠컬 증⁠명 준⁠비 중 $ready/$total';
+  }
+
+  @override
+  String get migrationKeystoneQrBodyCombined =>
+      'Keystone⁠으⁠로 이 요⁠청⁠을 스⁠캔⁠해 준⁠비 거⁠래⁠와 이⁠전 배⁠치⁠를 함⁠께 서⁠명⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneQrBodyImmediate =>
+      'Keystone 지⁠갑⁠으⁠로 QR 코⁠드⁠를 스⁠캔⁠해 이⁠전⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneQrBodyRound =>
+      'Keystone⁠으⁠로 이 요⁠청 QR⁠을 스⁠캔⁠하⁠세⁠요. 완⁠료⁠되⁠면 Keystone⁠에 서⁠명⁠된 새 QR⁠이 표⁠시⁠돼⁠요.';
+
+  @override
+  String get migrationKeystoneReadingSignature => '서⁠명⁠을 읽⁠는 중...';
+
+  @override
+  String get migrationKeystoneRequestCancelled =>
+      '이 서⁠명 요⁠청⁠이 취⁠소⁠되⁠었⁠어⁠요. 다⁠시 준⁠비⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneRequestExpired =>
+      '이 Keystone 서⁠명 요⁠청⁠이 만⁠료⁠되⁠었⁠어⁠요. 다⁠시 준⁠비⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneRequestQr => '요⁠청 QR';
+
+  @override
+  String get migrationKeystoneRequestUnusable =>
+      '이 Keystone 서⁠명 요⁠청⁠은 더 이⁠상 사⁠용⁠할 수 없⁠어⁠요. 다⁠시 준⁠비⁠하⁠세⁠요.';
+
+  @override
+  String migrationKeystoneRound(String current, String total) {
+    return '$total⁠회 중 $current⁠회⁠차';
+  }
+
+  @override
+  String migrationKeystoneRoundCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'QR 서⁠명 $count⁠회',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationKeystoneScanIssuesBody =>
+      'Keystone Cypherpunk 펌⁠웨⁠어⁠의 새 버⁠전⁠이 있⁠을 수 있⁠어⁠요. 최⁠신 버⁠전⁠인⁠지 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneScanIssuesConfirm => '네, 확⁠인⁠할⁠게⁠요';
+
+  @override
+  String get migrationKeystoneScanIssuesTitle => 'QR 코⁠드 스⁠캔⁠에 문⁠제⁠가 있⁠나⁠요?';
+
+  @override
+  String get migrationKeystoneScanNewQr =>
+      'Keystone⁠에 표⁠시⁠된 새 서⁠명 QR⁠을 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneScanQrCode => 'QR 코⁠드 스⁠캔';
+
+  @override
+  String get migrationKeystoneScanRequest => 'Keystone⁠으⁠로 요⁠청 스⁠캔';
+
+  @override
+  String get migrationKeystoneScanSignature => 'Keystone 서⁠명 스⁠캔';
+
+  @override
+  String get migrationKeystoneScanSubtitle => 'Keystone⁠으⁠로 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get migrationKeystoneSignBatch => 'Ironwood 배⁠치 서⁠명';
+
+  @override
+  String get migrationKeystoneSignMigration => '이⁠전 서⁠명';
+
+  @override
+  String get migrationKeystoneSignPrivateSplit => '비⁠공⁠개 분⁠할 서⁠명';
+
+  @override
+  String get migrationKeystoneSignatureFailed =>
+      'Keystone 서⁠명⁠을 적⁠용⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String migrationKeystoneSignsAll(String transactions) {
+    return '$transactions 서⁠명';
+  }
+
+  @override
+  String migrationKeystoneSignsSome(String count, String transactions) {
+    return '전⁠체 $transactions 중 $count⁠건 서⁠명';
+  }
+
+  @override
+  String get migrationKeystoneToolbarReview => '이⁠전 검⁠토';
+
+  @override
+  String get migrationKeystoneToolbarStatus => '이⁠전 상⁠태';
+
+  @override
+  String migrationKeystoneTransactionTotal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '총 거⁠래 $count⁠건',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationKeystoneTransactions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '거⁠래 $count⁠건',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationKeystoneTryAfterSync => '동⁠기⁠화⁠가 끝⁠난 후 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneUnavailableTitle =>
+      'Keystone 서⁠명⁠을 사⁠용⁠할 수 없⁠어⁠요';
+
+  @override
+  String get migrationKeystoneUnlockFirst =>
+      '이⁠전⁠에 서⁠명⁠하⁠기 전⁠에 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+
+  @override
+  String get migrationKeystoneWaitingForProofsLong =>
+      '서⁠명⁠을 받⁠았⁠어⁠요. 로⁠컬 증⁠명⁠이 준⁠비⁠되⁠면 Vizor⁠가 이⁠어⁠서 진⁠행⁠해⁠요.';
+
+  @override
+  String get migrationKeystoneWaitingForProofsShort =>
+      '서⁠명⁠을 받⁠았⁠어⁠요. 로⁠컬 증⁠명⁠을 기⁠다⁠리⁠는 중⁠이⁠에⁠요.';
+
+  @override
+  String get migrationKeystoneWrongRound =>
+      '이 서⁠명⁠된 QR⁠은 다⁠른 회⁠차⁠의 것⁠이⁠에⁠요. 돌⁠아⁠가⁠서 현⁠재 요⁠청⁠을 Keystone⁠으⁠로 스⁠캔⁠한 뒤 새⁠로 서⁠명⁠된 QR⁠을 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get migrationLedgerBroadcast => '이⁠전 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get migrationLedgerConnect =>
+      'Ledger⁠를 연⁠결⁠하⁠고 잠⁠금⁠을 해⁠제⁠한 뒤 Zcash 앱⁠을 여⁠세⁠요.';
+
+  @override
+  String get migrationLedgerFailed => 'Ledger 이⁠전⁠을 완⁠료⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get migrationLedgerFailedTitle => 'Ledger 이⁠전 실⁠패';
+
+  @override
+  String get migrationLedgerPlanChanged =>
+      '금⁠액⁠이⁠나 수⁠수⁠료⁠가 바⁠뀌⁠었⁠어⁠요. 돌⁠아⁠가⁠서 업⁠데⁠이⁠트⁠된 계⁠획⁠을 검⁠토⁠하⁠세⁠요.';
+
+  @override
+  String get migrationLedgerProofs => 'Vizor⁠가 이⁠전 증⁠명 준⁠비⁠를 마⁠치⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get migrationLedgerRejected => 'Ledger⁠에⁠서 이⁠전 거⁠래⁠가 거⁠부⁠되⁠었⁠어⁠요.';
+
+  @override
+  String get migrationLedgerTitle => 'Ledger⁠로 이⁠전';
+
+  @override
+  String migrationLeftToTransfer(String amount) {
+    return '남⁠은 전⁠송: $amount';
+  }
+
+  @override
+  String get migrationManage => '관⁠리';
+
+  @override
+  String get migrationManageCancelling => '취⁠소⁠하⁠는 중...';
+
+  @override
+  String get migrationManageCannotCancel => '이 이⁠전⁠은 더 이⁠상 취⁠소⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get migrationManageConfirm => '확⁠인';
+
+  @override
+  String get migrationManageImmediateBullet1 =>
+      '남⁠은 분⁠할 노⁠트⁠는 즉⁠시 이⁠전⁠으⁠로 처⁠리⁠되⁠어 추⁠적 가⁠능⁠성⁠이 약⁠간 높⁠아⁠져⁠요';
+
+  @override
+  String get migrationManageImmediateBullet2 =>
+      '이⁠미 전⁠송⁠된 거⁠래⁠는 되⁠돌⁠려⁠지⁠지 않⁠아⁠요';
+
+  @override
+  String get migrationManageImmediateBullet3 => '즉⁠시 이⁠전⁠은 되⁠돌⁠릴 방⁠법⁠이 없⁠어⁠요';
+
+  @override
+  String get migrationManageImmediateIntro => '남⁠은 이⁠전⁠을 즉⁠시 처⁠리⁠해⁠요.';
+
+  @override
+  String get migrationManageLoading => '불⁠러⁠오⁠는 중...';
+
+  @override
+  String get migrationManageNoBalance => '이⁠전⁠할 Orchard 잔⁠액⁠이 남⁠아 있⁠지 않⁠아⁠요.';
+
+  @override
+  String get migrationManageStop => '이⁠전 중⁠단';
+
+  @override
+  String get migrationManageStopBody =>
+      '예⁠약⁠된 나⁠머⁠지 이⁠전 거⁠래⁠가 취⁠소⁠돼⁠요. 홈 화⁠면⁠에⁠서 이⁠전⁠을 다⁠시 시⁠작⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get migrationManageStopTitle => '정⁠말 중⁠단⁠할⁠까⁠요?';
+
+  @override
+  String get migrationManageStopping => '중⁠단⁠하⁠는 중...';
+
+  @override
+  String get migrationManageSwitchImmediate => '즉⁠시 이⁠전⁠으⁠로 전⁠환';
+
+  @override
+  String get migrationManageTitle => '이⁠전 관⁠리';
+
+  @override
+  String get migrationManageUpdateFailed =>
+      '이⁠전⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
   String get migrationMobileActionAllTransactions => '모⁠든 거⁠래';
 
   @override
@@ -3161,6 +3908,679 @@ class AppLocalizationsKo extends AppLocalizations {
   String migrationMobileWaitSplitInto(int count) {
     return '노⁠트⁠를 이⁠전 $count⁠단⁠계⁠로 분⁠할';
   }
+
+  @override
+  String get migrationNextActionDetailAllNotesCompleted => '모⁠든 노⁠트 완⁠료';
+
+  @override
+  String get migrationNextActionDetailAt => '블⁠록';
+
+  @override
+  String get migrationNextActionDetailExpectedAt => '예⁠상 블⁠록';
+
+  @override
+  String get migrationNextActionDetailPreparing => '이⁠전 준⁠비 중';
+
+  @override
+  String get migrationNextActionDetailReadyToSign => '서⁠명 준⁠비⁠됨';
+
+  @override
+  String get migrationNextActionDetailSendingNow => '지⁠금 전⁠송 중';
+
+  @override
+  String get migrationNextActionDetailWaitingForConfirmations => '확⁠인 대⁠기 중';
+
+  @override
+  String get migrationNextActionDetailWaitingForSync => '지⁠갑 동⁠기⁠화 대⁠기 중';
+
+  @override
+  String get migrationNextActionLabelAwaitingMining => '블⁠록 포⁠함 대⁠기 중';
+
+  @override
+  String get migrationNextActionLabelComplete => '이⁠전 완⁠료';
+
+  @override
+  String get migrationNextActionLabelFinalizing => '이⁠전 마⁠무⁠리 중';
+
+  @override
+  String get migrationNextActionLabelNext => '다⁠음 이⁠전';
+
+  @override
+  String get migrationNextActionLabelNextWindow => '다⁠음 이⁠전 구⁠간';
+
+  @override
+  String get migrationNextActionLabelOpeningWindow => '이⁠전 구⁠간 여⁠는 중';
+
+  @override
+  String get migrationNextActionLabelSending => '이⁠전 전⁠송 중';
+
+  @override
+  String get migrationNextActionLabelWindowReady => '이⁠전 구⁠간 준⁠비⁠됨';
+
+  @override
+  String get migrationNotScheduled => '예⁠약 안 됨';
+
+  @override
+  String migrationNotesAwaitingConfirmation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '노⁠트 $count⁠개 확⁠인 대⁠기 중',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationNotesBroadcast(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '노⁠트 $count⁠개 전⁠송⁠됨',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationNotesRemaining(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '노⁠트 $count⁠개 남⁠음',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationOptionImmediate => '즉⁠시';
+
+  @override
+  String get migrationOptionImmediateBody =>
+      '전⁠체 잔⁠액⁠을 한 번⁠에 이⁠전⁠해⁠요. 빠⁠르⁠지⁠만 프⁠라⁠이⁠버⁠시⁠는 낮⁠아⁠요.';
+
+  @override
+  String get migrationOptionPrivate => '비⁠공⁠개';
+
+  @override
+  String get migrationOptionPrivateBody =>
+      '추⁠적 가⁠능⁠성⁠을 최⁠소⁠화⁠하⁠려⁠고 거⁠래⁠를 여⁠러 부⁠분⁠으⁠로 나⁠누⁠지⁠만 시⁠간⁠이 더 걸⁠려⁠요.';
+
+  @override
+  String get migrationOptionPrivateLedger => 'Ledger 계⁠정⁠에⁠서⁠는 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get migrationOptionRecommended => '추⁠천';
+
+  @override
+  String get migrationOptionsBody =>
+      '시⁠간⁠을 들⁠여 프⁠라⁠이⁠버⁠시⁠를 높⁠일⁠지, 더 빠⁠르⁠게 이⁠전⁠할⁠지 선⁠택⁠하⁠세⁠요. 자⁠금⁠이 이⁠동⁠하⁠기 전⁠에 세⁠부 내⁠용⁠을 검⁠토⁠할 수 있⁠어⁠요.';
+
+  @override
+  String migrationOptionsBodyMoveRest(String amount) {
+    return '$amount ZEC⁠가 아⁠직 Orchard⁠에 있⁠어⁠요. 시⁠간⁠을 들⁠여 프⁠라⁠이⁠버⁠시⁠를 높⁠일⁠지, 더 빠⁠르⁠게 이⁠전⁠할⁠지 선⁠택⁠하⁠세⁠요.';
+  }
+
+  @override
+  String get migrationOptionsSelectReview => '선⁠택 및 검⁠토';
+
+  @override
+  String get migrationOptionsTitle => '이⁠전 방⁠식 선⁠택';
+
+  @override
+  String get migrationOptionsTitleMoveRest => '나⁠머⁠지⁠를 옮⁠기⁠는 방⁠법';
+
+  @override
+  String get migrationOverallCalculatingTotal => '총⁠계 계⁠산 중';
+
+  @override
+  String migrationOverallProgress(String completed, String total) {
+    return '$total⁠개 중 $completed⁠개 완⁠료';
+  }
+
+  @override
+  String migrationPlannedBatches(String count) {
+    return '예⁠정⁠된 배⁠치 $count⁠개';
+  }
+
+  @override
+  String get migrationPoolIronwood => 'Ironwood 풀';
+
+  @override
+  String get migrationPoolLegacy => '(레⁠거⁠시)';
+
+  @override
+  String get migrationPoolOrchard => 'Orchard 풀';
+
+  @override
+  String migrationPreparationConfirmations(String confirmed, String target) {
+    return '확⁠인 $confirmed/$target';
+  }
+
+  @override
+  String migrationPreparationSplitProgress(String current, String total) {
+    return '분⁠할 $current/$total 준⁠비 중';
+  }
+
+  @override
+  String migrationPreparationSplitStep(String current, String total) {
+    return '분⁠할 $current/$total';
+  }
+
+  @override
+  String get migrationPreparationSplitTransactions => '분⁠할 거⁠래 준⁠비 중';
+
+  @override
+  String get migrationPreparationTipDelay =>
+      '준⁠비⁠가 끝⁠나⁠면 의⁠도⁠적⁠으⁠로 긴 지⁠연 후⁠에 이⁠전⁠이 자⁠동⁠으⁠로 시⁠작⁠돼⁠요.';
+
+  @override
+  String get migrationPreparationTipOrganizing =>
+      '잔⁠액⁠을 흔⁠한 크⁠기⁠로 나⁠누⁠고 있⁠어⁠요. 이⁠전⁠을 연⁠결⁠해 알⁠아⁠내⁠기 어⁠려⁠워⁠져⁠요.';
+
+  @override
+  String get migrationPreparationTipRounds =>
+      '잔⁠액⁠에 따⁠라 노⁠트 분⁠할⁠을 여⁠러 차⁠례 해⁠야 할 수 있⁠어⁠요.';
+
+  @override
+  String get migrationPreparingBatch => '배⁠치 준⁠비 중...';
+
+  @override
+  String get migrationPrivacyLockDescription =>
+      '10⁠분 동⁠안 사⁠용⁠하⁠지 않⁠아 Vizor⁠를 자⁠동⁠으⁠로 잠⁠갔⁠어⁠요.';
+
+  @override
+  String get migrationPrivacyLockInProgress => '이⁠전 진⁠행 중';
+
+  @override
+  String migrationProgressTipBlockTime(String seconds) {
+    return 'Zcash 블⁠록⁠은 하⁠나 만⁠드⁠는 데 약 $seconds⁠초⁠가 걸⁠리⁠지⁠만 네⁠트⁠워⁠크 상⁠황⁠에 따⁠라 달⁠라⁠질 수 있⁠어⁠요.';
+  }
+
+  @override
+  String get migrationProgressTipClose =>
+      '언⁠제⁠든⁠지 Vizor⁠를 닫⁠아⁠도 돼⁠요. 이⁠전⁠이 일⁠시 중⁠지⁠되⁠고, 돌⁠아⁠오⁠면 다⁠시 시⁠작⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get migrationProgressTipKeepRunning =>
+      'Vizor⁠를 계⁠속 실⁠행⁠해 두⁠면 이⁠전⁠이 백⁠그⁠라⁠운⁠드⁠에⁠서 자⁠동⁠으⁠로 진⁠행⁠돼⁠요.';
+
+  @override
+  String get migrationReadyNow => '지⁠금 가⁠능';
+
+  @override
+  String get migrationRetryMigration => '이⁠전 다⁠시 시⁠도';
+
+  @override
+  String get migrationRetrying => '다⁠시 시⁠도⁠하⁠는 중...';
+
+  @override
+  String get migrationReviewAmountToMigrate => '이⁠전⁠할 금⁠액';
+
+  @override
+  String get migrationReviewAnalyzeErrorTitle => '이 잔⁠액⁠을 분⁠석⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get migrationReviewCompleteIn => '이⁠전 완⁠료⁠까⁠지';
+
+  @override
+  String get migrationReviewKeepRunningBody =>
+      '앱⁠을 최⁠소⁠화⁠해⁠도 준⁠비⁠가 계⁠속⁠되⁠고, 이⁠후 이⁠전⁠이 자⁠동⁠으⁠로 시⁠작⁠돼⁠요.';
+
+  @override
+  String get migrationReviewKeepRunningTitle => 'Vizor⁠를 계⁠속 실⁠행⁠하⁠세⁠요';
+
+  @override
+  String get migrationReviewStart => '이⁠전 시⁠작';
+
+  @override
+  String get migrationReviewStarting => '시⁠작⁠하⁠는 중…';
+
+  @override
+  String get migrationRingAllSplitsCompleted => '모⁠든 분⁠할 완⁠료';
+
+  @override
+  String get migrationRingConfirmingSplit => '분⁠할 확⁠인 중';
+
+  @override
+  String get migrationRingNextSplit => '다⁠음 분⁠할';
+
+  @override
+  String get migrationRingPreparationComplete => '준⁠비 완⁠료';
+
+  @override
+  String get migrationRingPreparingSchedule => '일⁠정 준⁠비 중';
+
+  @override
+  String get migrationRingScheduled => '예⁠약⁠됨';
+
+  @override
+  String get migrationRingSplitInProgress => '분⁠할 진⁠행 중';
+
+  @override
+  String get migrationRingStatusCompleted => '완⁠료⁠됨';
+
+  @override
+  String get migrationRingStatusConfirming => '확⁠인 중';
+
+  @override
+  String get migrationRingStatusMigrating => '이⁠전 중';
+
+  @override
+  String get migrationRingStatusNeedsInput => '서⁠명 필⁠요';
+
+  @override
+  String get migrationRingStatusNotStarted => '시⁠작 전';
+
+  @override
+  String get migrationRingStatusPreparing => '준⁠비 중';
+
+  @override
+  String get migrationRingStatusScheduled => '예⁠약⁠됨';
+
+  @override
+  String get migrationRingWaitingForBlock => '블⁠록 대⁠기 중';
+
+  @override
+  String get migrationRingWaitingForPreviousSplit => '이⁠전 분⁠할 대⁠기 중';
+
+  @override
+  String get migrationRouteNotAvailable => '이 계⁠정⁠에⁠서⁠는 이⁠전⁠을 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get migrationRouteNotNeeded => '이 계⁠정⁠은 이⁠전⁠이 필⁠요⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get migrationRouteStatusFailed => '이⁠전 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get migrationRouteSyncFailed =>
+      '동⁠기⁠화⁠를 마⁠치⁠지 못⁠했⁠어⁠요. Vizor⁠가 동⁠기⁠화⁠된 후 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationScheduleBroadcasting => '전⁠송 중';
+
+  @override
+  String get migrationScheduleCalculating => '계⁠산 중';
+
+  @override
+  String migrationScheduleCompletedAtBlock(String height) {
+    return '블⁠록 $height⁠에⁠서 완⁠료⁠됨';
+  }
+
+  @override
+  String migrationScheduleConfirmingProgress(String count, String target) {
+    return '확⁠인 중 $count/$target';
+  }
+
+  @override
+  String get migrationScheduleCurrentRound => '현⁠재 회⁠차';
+
+  @override
+  String migrationScheduleExpected(String height) {
+    return '예⁠상 #$height';
+  }
+
+  @override
+  String get migrationScheduleOutputChange => 'Orchard⁠에 남⁠음';
+
+  @override
+  String migrationScheduleOutputContinuation(String round) {
+    return '$round⁠회⁠차⁠에⁠서 사⁠용';
+  }
+
+  @override
+  String get migrationScheduleOutputMigration => '이⁠전⁠용';
+
+  @override
+  String get migrationSchedulePending => '일⁠정 대⁠기 중';
+
+  @override
+  String get migrationSchedulePreparing => '준⁠비 중';
+
+  @override
+  String get migrationScheduleReadyToMigrate => '이⁠전 준⁠비 완⁠료 시⁠점';
+
+  @override
+  String get migrationScheduleRecalculating => '다⁠시 계⁠산 중';
+
+  @override
+  String migrationScheduleRescheduled(String height) {
+    return '재⁠예⁠약⁠됨 #$height';
+  }
+
+  @override
+  String migrationScheduleRoundProgress(String current, String total) {
+    return '$total⁠회 중 $current⁠회';
+  }
+
+  @override
+  String migrationScheduleScheduledAt(String height) {
+    return '예⁠약⁠됨 #$height';
+  }
+
+  @override
+  String migrationScheduleSemanticsAwaiting(String height) {
+    return '이⁠전 분⁠할⁠을 기⁠다⁠리⁠는 중, 예⁠상 블⁠록 $height';
+  }
+
+  @override
+  String migrationScheduleSemanticsBroadcast(String height) {
+    return '전⁠송⁠됨, 블⁠록 포⁠함 대⁠기 중, 예⁠상 완⁠료 블⁠록 $height';
+  }
+
+  @override
+  String get migrationScheduleSemanticsCompleted => '완⁠료⁠됨';
+
+  @override
+  String migrationScheduleSemanticsCompletedAt(String height) {
+    return '블⁠록 $height⁠에⁠서 완⁠료⁠됨';
+  }
+
+  @override
+  String get migrationScheduleSemanticsDue => '지⁠금 전⁠송 예⁠정';
+
+  @override
+  String get migrationScheduleSemanticsMigrating => '전⁠송⁠됨, 블⁠록 포⁠함 대⁠기 중';
+
+  @override
+  String migrationScheduleSemanticsNote(
+    String number,
+    String amount,
+    String state,
+  ) {
+    return '노⁠트 $number, $amount ZEC, $state.';
+  }
+
+  @override
+  String migrationScheduleSemanticsNoteConfirming(String count, String target) {
+    return '확⁠인 중, 확⁠인 $count/$target';
+  }
+
+  @override
+  String migrationScheduleSemanticsNoteConfirmingMined(
+    String count,
+    String target,
+    String height,
+  ) {
+    return '확⁠인 중, 확⁠인 $count/$target, 블⁠록 $height⁠에⁠서 포⁠함⁠됨';
+  }
+
+  @override
+  String migrationScheduleSemanticsOutput(String amount, String destination) {
+    return '$amount ZEC, $destination';
+  }
+
+  @override
+  String get migrationScheduleSemanticsOutputChange => 'Orchard⁠에 남⁠음';
+
+  @override
+  String migrationScheduleSemanticsOutputContinuation(String round) {
+    return '$round⁠회⁠차⁠에⁠서 사⁠용';
+  }
+
+  @override
+  String get migrationScheduleSemanticsOutputMigration => '이⁠전⁠용';
+
+  @override
+  String migrationScheduleSemanticsOutputs(String outputs) {
+    return '출⁠력: $outputs.';
+  }
+
+  @override
+  String get migrationScheduleSemanticsPending => '일⁠정 대⁠기 중';
+
+  @override
+  String get migrationScheduleSemanticsReadyToSign => '서⁠명 준⁠비⁠됨';
+
+  @override
+  String migrationScheduleSemanticsRescheduled(String from, String to) {
+    return '블⁠록 $from⁠에⁠서 블⁠록 $to⁠로 재⁠예⁠약⁠됨';
+  }
+
+  @override
+  String migrationScheduleSemanticsScheduled(String height) {
+    return '블⁠록 $height⁠에 예⁠약⁠됨';
+  }
+
+  @override
+  String migrationScheduleSemanticsSplit(
+    String number,
+    String amount,
+    String state,
+  ) {
+    return '분⁠할 $number, $amount ZEC, $state.';
+  }
+
+  @override
+  String migrationScheduleSemanticsSplitConfirming(
+    String count,
+    String target,
+    String height,
+  ) {
+    return '확⁠인 중, 확⁠인 $count/$target, 예⁠상 완⁠료 블⁠록 $height';
+  }
+
+  @override
+  String migrationScheduleSemanticsWaitingWindow(String height) {
+    return '블⁠록 $height⁠의 구⁠간⁠을 기⁠다⁠리⁠는 중';
+  }
+
+  @override
+  String migrationScheduleSplitRound(String number) {
+    return '분⁠할 $number⁠회⁠차';
+  }
+
+  @override
+  String get migrationScheduleTitle => '이⁠전 일⁠정';
+
+  @override
+  String get migrationScheduleTitlePreparation => '준⁠비 일⁠정';
+
+  @override
+  String get migrationScheduleUnavailableBody =>
+      'Vizor⁠가 최⁠신 이⁠전 일⁠정⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 저⁠장⁠된 이⁠전 상⁠태⁠는 그⁠대⁠로⁠예⁠요.';
+
+  @override
+  String get migrationScheduleUnavailableTitle => '이⁠전 일⁠정⁠을 불⁠러⁠올 수 없⁠어⁠요';
+
+  @override
+  String get migrationScheduleWaitingToBeMined => '블⁠록 포⁠함 대⁠기 중';
+
+  @override
+  String migrationScheduleWindow(String height) {
+    return '구⁠간 #$height';
+  }
+
+  @override
+  String migrationSemanticsNote(String number, String amount, String status) {
+    return '노⁠트 $number: $amount ZEC, $status.';
+  }
+
+  @override
+  String get migrationSemanticsNotesOrder =>
+      '예⁠상 처⁠리 순⁠서⁠대⁠로 나⁠열⁠한 이⁠전 노⁠트⁠예⁠요.';
+
+  @override
+  String get migrationSemanticsPreparingNotes => '이⁠전 노⁠트⁠를 준⁠비⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String migrationSignBatch(String number) {
+    return '배⁠치 #$number 서⁠명';
+  }
+
+  @override
+  String get migrationSignWithKeystone => 'Keystone⁠으⁠로 서⁠명';
+
+  @override
+  String get migrationStageFinish => '마⁠무⁠리';
+
+  @override
+  String get migrationStageMigration => '이⁠전';
+
+  @override
+  String get migrationStagePreparation => '준⁠비';
+
+  @override
+  String get migrationStatusAttentionBody =>
+      'Ironwood 전⁠환⁠을 마⁠치⁠기 전⁠에 Vizor⁠에⁠서 복⁠구 가⁠능⁠한 이⁠전 오⁠류⁠가 발⁠생⁠했⁠어⁠요.';
+
+  @override
+  String get migrationStatusAttentionFooter =>
+      '자⁠금⁠은 잃⁠지 않⁠았⁠어⁠요. Vizor⁠가 동⁠기⁠화⁠되⁠어 온⁠라⁠인⁠인⁠지 확⁠인⁠한 뒤 이⁠전⁠을 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get migrationStatusAttentionTitle => '이⁠전 확⁠인 필⁠요';
+
+  @override
+  String get migrationStatusBroadcasted => '전⁠송⁠됨';
+
+  @override
+  String get migrationStatusBroadcastingBody =>
+      'Vizor⁠가 준⁠비⁠된 Ironwood 이⁠전 거⁠래⁠를 전⁠송⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get migrationStatusBroadcastingButton => '전⁠송 중';
+
+  @override
+  String get migrationStatusCompleteBody => '자⁠금⁠이 Ironwood 풀⁠로 이⁠동⁠했⁠어⁠요.';
+
+  @override
+  String get migrationStatusCompleteFooter =>
+      '홈⁠으⁠로 돌⁠아⁠가 Vizor⁠를 계⁠속 사⁠용⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get migrationStatusCompleteTitle => '이⁠전 완⁠료';
+
+  @override
+  String get migrationStatusConfirmingBody =>
+      '이⁠전 거⁠래⁠를 전⁠송⁠했⁠어⁠요. Vizor⁠가 네⁠트⁠워⁠크 확⁠인⁠을 기⁠다⁠리⁠고 있⁠어⁠요.';
+
+  @override
+  String get migrationStatusDefaultBody =>
+      'Vizor⁠가 현⁠재 Ironwood 이⁠전 상⁠태⁠를 추⁠적⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get migrationStatusDefaultButton => '이⁠전 진⁠행 중';
+
+  @override
+  String get migrationStatusDefaultFooter =>
+      '이 상⁠태⁠는 이⁠전 흐⁠름⁠을 연⁠결⁠하⁠는 동⁠안 진⁠단⁠용⁠으⁠로 표⁠시⁠돼⁠요.';
+
+  @override
+  String get migrationStatusDefaultTitle => '이⁠전 상⁠태';
+
+  @override
+  String get migrationStatusLeaveFooter =>
+      '이 화⁠면⁠을 나⁠가⁠도 돼⁠요.\n단, Vizor⁠는 계⁠속 열⁠어 두⁠세⁠요.';
+
+  @override
+  String get migrationStatusLedgerUnsupported =>
+      '이 흐⁠름⁠은 일⁠괄 서⁠명⁠이 필⁠요⁠해⁠서 Ledger 비⁠공⁠개 이⁠전⁠은 지⁠원⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get migrationStatusMigratingTitle => '이⁠전 중...';
+
+  @override
+  String get migrationStatusPausedBody =>
+      '비⁠공⁠개 이⁠전⁠이 다⁠음 작⁠업 전⁠에 일⁠시 중⁠지⁠되⁠었⁠어⁠요.';
+
+  @override
+  String get migrationStatusPausedButton => '일⁠시 중⁠지⁠됨';
+
+  @override
+  String get migrationStatusPausedFooter =>
+      '이⁠전 실⁠행⁠을 다⁠시 시⁠작⁠할 때⁠까⁠지 새 거⁠래⁠를 준⁠비⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get migrationStatusPausedTitle => '이⁠전 일⁠시 중⁠지⁠됨';
+
+  @override
+  String get migrationStatusPendingBroadcasts => '전⁠송 대⁠기';
+
+  @override
+  String get migrationStatusPreparingBody => '분⁠할 한 번⁠에 보⁠통 약 30⁠분⁠이 걸⁠려⁠요.';
+
+  @override
+  String get migrationStatusPreparingTitle => '준⁠비 중...';
+
+  @override
+  String get migrationStatusReadyBody =>
+      '비⁠공⁠개 분⁠할⁠이 준⁠비⁠되⁠었⁠어⁠요. 다⁠음 단⁠계⁠에⁠서 Ironwood 이⁠전 배⁠치⁠를 준⁠비⁠해⁠요.';
+
+  @override
+  String get migrationStatusReadyFooter =>
+      '이⁠전⁠을 계⁠속⁠하⁠면 예⁠정⁠된 시⁠점⁠에 Ironwood 거⁠래⁠를 준⁠비⁠하⁠고 전⁠송⁠해⁠요.';
+
+  @override
+  String get migrationStatusReadyTitle => '이⁠전 준⁠비 완⁠료';
+
+  @override
+  String get migrationStatusScheduledBody =>
+      '이⁠전 거⁠래⁠가 준⁠비⁠되⁠었⁠고 예⁠약⁠된 전⁠송 시⁠간⁠을 기⁠다⁠리⁠고 있⁠어⁠요.';
+
+  @override
+  String get migrationStatusScheduledFooter =>
+      'Vizor⁠가 열⁠려 있⁠는 동⁠안 이⁠전 작⁠업⁠기⁠가 예⁠약⁠된 전⁠송⁠을 진⁠행⁠해⁠요.';
+
+  @override
+  String get migrationStatusScheduledTitle => '전⁠송 예⁠약⁠됨';
+
+  @override
+  String get migrationStatusSplitProgress => '분⁠할 진⁠행';
+
+  @override
+  String get migrationStatusUnavailableBody =>
+      'Vizor⁠가 현⁠재 Ironwood 이⁠전 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 상⁠태⁠를 확⁠인⁠할 수 있⁠을 때⁠까⁠지 새 이⁠전⁠은 시⁠작⁠되⁠지 않⁠아⁠요.';
+
+  @override
+  String get migrationStatusUnavailableHint =>
+      '홈⁠으⁠로 돌⁠아⁠가 동⁠기⁠화⁠가 새⁠로 고⁠쳐⁠진 뒤 다⁠시 시⁠도⁠하⁠세⁠요. 이⁠미 진⁠행 중⁠인 이⁠전⁠이 있⁠다⁠면 저⁠장⁠된 상⁠태⁠를 읽⁠을 수 있⁠게 된 후 Vizor⁠가 이⁠어⁠서 진⁠행⁠해⁠요.';
+
+  @override
+  String get migrationStatusUnavailableTitle => '이⁠전 상⁠태⁠를 확⁠인⁠할 수 없⁠어⁠요';
+
+  @override
+  String get migrationSummaryCurrentBlock => '현⁠재 블⁠록';
+
+  @override
+  String get migrationSummaryEstCompletion => '예⁠상 완⁠료';
+
+  @override
+  String get migrationSummaryLeftToMigrate => '남⁠은 이⁠전 금⁠액';
+
+  @override
+  String get migrationSummaryOverallProgress => '전⁠체 진⁠행⁠률';
+
+  @override
+  String migrationTransactionOrdinal(String ordinal) {
+    return '거⁠래 $ordinal';
+  }
+
+  @override
+  String migrationTransactionOrdinalOfTotal(String ordinal, String total) {
+    return '거⁠래 $ordinal/$total';
+  }
+
+  @override
+  String get migrationUpgradeStopBody =>
+      '업⁠그⁠레⁠이⁠드 전⁠에 서⁠명⁠한 전⁠송⁠은 업⁠그⁠레⁠이⁠드 후⁠에 보⁠낼 수 없⁠어⁠요. 자⁠금⁠은 안⁠전⁠해⁠요.';
+
+  @override
+  String get migrationUpgradeStopMoveRemainingLabel => '남⁠은 잔⁠액 이⁠전⁠하⁠기';
+
+  @override
+  String get migrationUpgradeStopMovedLabel => 'Ironwood⁠로 이⁠전⁠됨';
+
+  @override
+  String get migrationUpgradeStopRemainingLabel => '아⁠직 Orchard⁠에 있⁠음';
+
+  @override
+  String get migrationUpgradeStopRingMessage => '네⁠트⁠워⁠크\n업⁠그⁠레⁠이⁠드⁠로 중⁠단⁠됨';
+
+  @override
+  String get migrationView => '보⁠기';
+
+  @override
+  String get migrationViewSchedule => '일⁠정 보⁠기';
 
   @override
   String get navActivity => '활⁠동';

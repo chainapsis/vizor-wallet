@@ -4022,6 +4022,1151 @@ abstract class AppLocalizations {
   /// **'Unlock Vizor to continue.'**
   String get lockUnlockToContinuePausedBody;
 
+  /// Rotating status message while the private migration plan is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing your balance...'**
+  String get migrationAnalyzingBalance;
+
+  /// Caption under the analysis animation, split over two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is working hard to find a perfect balance\nof safety, privacy, and speed for your migration'**
+  String get migrationAnalyzingCaption;
+
+  /// Rotating status message while the private migration plan is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Finding private batches...'**
+  String get migrationAnalyzingFindingBatches;
+
+  /// Rotating status message while the private migration plan is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your migration plan...'**
+  String get migrationAnalyzingPreparingPlan;
+
+  /// Screen-reader label of the progress ring shown while the private migration plan is computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing private migration plan'**
+  String get migrationAnalyzingSemanticsLabel;
+
+  /// Body of the announcement modal about the new Ironwood pool, split over three lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood is the latest Zcash shielded pool.\nIt\'s the first formally verified pool with\ncutting edge cryptography.'**
+  String get migrationAnnouncementBody;
+
+  /// Button in the announcement modal that opens the official release note.
+  ///
+  /// In en, this message translates to:
+  /// **'Official Release Note'**
+  String get migrationAnnouncementReleaseNote;
+
+  /// Button in the announcement modal that starts the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Migration'**
+  String get migrationAnnouncementStart;
+
+  /// Back-link label that returns to the migration introduction.
+  ///
+  /// In en, this message translates to:
+  /// **'About Migration'**
+  String get migrationBackAbout;
+
+  /// Button that returns to the home screen from a migration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Back home'**
+  String get migrationBackHome;
+
+  /// Back-link label that returns to the "How the Migration Works" screen.
+  ///
+  /// In en, this message translates to:
+  /// **'How Migration Works'**
+  String get migrationBackHowItWorks;
+
+  /// Back-link label that returns to the list of migration options.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Options'**
+  String get migrationBackOptions;
+
+  /// Status of the current migration batch while it is being sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting...'**
+  String get migrationBatchBroadcasting;
+
+  /// Title of the card above the sign button: batch number and how many notes it contains.
+  ///
+  /// In en, this message translates to:
+  /// **'Batch #{number} ({count} notes)'**
+  String migrationBatchCardTitle(String number, String count);
+
+  /// Status of the current migration batch while it waits for confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming...'**
+  String get migrationBatchConfirming;
+
+  /// Estimated arrival of a migration batch, given as the block height at which it is sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Block {height}'**
+  String migrationBlockHeight(String height);
+
+  /// Approximate wait expressed as a number of blocks.
+  ///
+  /// In en, this message translates to:
+  /// **'~{blocks} blocks'**
+  String migrationBlocksEstimate(String blocks);
+
+  /// Approximate time until a scheduled migration transfer is sent, in hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~in 1 hr} other{~in {count} hrs}}'**
+  String migrationBroadcastApproxInHours(int count);
+
+  /// Approximate time until a scheduled migration transfer is sent, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'~in {count} min'**
+  String migrationBroadcastApproxInMinutes(int count);
+
+  /// Status of a scheduled migration transfer that the network confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed'**
+  String get migrationBroadcastConfirmed;
+
+  /// Status of a scheduled migration transfer whose send time has arrived.
+  ///
+  /// In en, this message translates to:
+  /// **'Due now'**
+  String get migrationBroadcastDueNow;
+
+  /// When a scheduled migration transfer will be sent, in hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{in 1 hr} other{in {count} hrs}}'**
+  String migrationBroadcastInHours(int count);
+
+  /// When a scheduled migration transfer will be sent, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'in {count} min'**
+  String migrationBroadcastInMinutes(int count);
+
+  /// Status of a migration transfer that has not been sent yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get migrationBroadcastPending;
+
+  /// Status of a migration transfer that was sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitted'**
+  String get migrationBroadcastSubmitted;
+
+  /// Screen-reader label for the carousel of tips shown during migration preparation.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration preparation information'**
+  String get migrationCarouselPreparationLabel;
+
+  /// Screen-reader label for the carousel of tips shown during migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration information'**
+  String get migrationCarouselProgressLabel;
+
+  /// Body text of the migration-complete screen, split over two lines.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration completed successfully and you can\nspend your funds as usual.'**
+  String get migrationCompleteBody;
+
+  /// Headline of the migration-complete screen, split over three lines; {amount} is the migrated ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Your\n{amount} ZEC\nare on Ironwood!'**
+  String migrationCompleteTitle(String amount);
+
+  /// Status label while migration transfers wait for network confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming'**
+  String get migrationConfirming;
+
+  /// Button that continues the migration with its next step.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue migration'**
+  String get migrationContinueMigration;
+
+  /// Label of the action button while the migration is continuing.
+  ///
+  /// In en, this message translates to:
+  /// **'Continuing...'**
+  String get migrationContinuing;
+
+  /// Label of the home call-to-action that starts the Ironwood migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate to Ironwood Pool'**
+  String get migrationCtaStart;
+
+  /// Label of the home call-to-action when a network upgrade stopped the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped by network upgrade'**
+  String get migrationCtaStopped;
+
+  /// Label on the legacy migration card for the batch currently being processed.
+  ///
+  /// In en, this message translates to:
+  /// **'Current Batch'**
+  String get migrationCurrentBatch;
+
+  /// Approximate duration in days.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~1 day} other{~{count} days}}'**
+  String migrationDurationDays(int count);
+
+  /// Approximate duration of a whole number of hours plus a half hour, for example "~2.5 hrs".
+  ///
+  /// In en, this message translates to:
+  /// **'~{hours}.5 hrs'**
+  String migrationDurationHalfHours(String hours);
+
+  /// Approximate duration in hours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~1 hr} other{~{count} hrs}}'**
+  String migrationDurationHours(int count);
+
+  /// Approximate duration in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~1 min} other{~{count} mins}}'**
+  String migrationDurationMinutes(int count);
+
+  /// Error shown when sending a migration transaction to the network failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t broadcast the migration transaction. Try again.'**
+  String get migrationErrorBroadcast;
+
+  /// Error shown when continuing the migration failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t continue migration. Try again.'**
+  String get migrationErrorContinue;
+
+  /// [security] Error shown when the transaction could not be prepared for signing on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t prepare Keystone signing.'**
+  String get migrationErrorKeystonePrepare;
+
+  /// Error shown when a Ledger account tries the private migration, which needs batched signing the Ledger flow does not support.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger private migration is excluded because the current flow requires batched signing.'**
+  String get migrationErrorLedgerExcluded;
+
+  /// Error shown when the migration amount or fee changed after the user reviewed the plan.
+  ///
+  /// In en, this message translates to:
+  /// **'The amount or fee changed. Review the updated details.'**
+  String get migrationErrorPlanChanged;
+
+  /// Error shown when starting the migration failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t start migration. Try again.'**
+  String get migrationErrorStart;
+
+  /// [security] Error shown when migration cannot continue because the wallet is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor before continuing migration.'**
+  String get migrationErrorUnlockBeforeContinue;
+
+  /// [security] Error shown when migration cannot start because the wallet is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor before starting migration.'**
+  String get migrationErrorUnlockBeforeStart;
+
+  /// Error shown when a migration action needs the wallet to finish syncing first.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for sync to finish, then try again.'**
+  String get migrationErrorWaitForSync;
+
+  /// Estimated completion shown while migration is waiting for the user to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'After signing'**
+  String get migrationEstimateAfterSigning;
+
+  /// Estimated completion shown when no preparation transactions remain.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete'**
+  String get migrationEstimateComplete;
+
+  /// Estimated completion phrased as a sentence; {estimate} is an approximate duration such as "~5 mins".
+  ///
+  /// In en, this message translates to:
+  /// **'in {estimate}'**
+  String migrationEstimateIn(String estimate);
+
+  /// Estimated time until the migration completes, in days.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{in ~1 day} other{in ~{count} days}}'**
+  String migrationEstimateInDays(int count);
+
+  /// Estimated time until the migration completes; {hours} is a number such as "2" or "2.5".
+  ///
+  /// In en, this message translates to:
+  /// **'in ~{hours} hours'**
+  String migrationEstimateInHours(String hours);
+
+  /// Estimated time until the migration completes, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{in ~1 minute} other{in ~{count} minutes}}'**
+  String migrationEstimateInMinutes(int count);
+
+  /// Estimated time until the migration completes: about one hour.
+  ///
+  /// In en, this message translates to:
+  /// **'in ~1 hour'**
+  String get migrationEstimateInOneHour;
+
+  /// Label on the legacy migration card for when the batch is expected to arrive.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated arrival time'**
+  String get migrationEstimatedArrivalTime;
+
+  /// [security] Explains that the computer must stay unlocked with Vizor running so the next migration transaction can be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Your computer needs to be unlocked with Vizor running so we can send the next migration transaction'**
+  String get migrationExpectKeepRunningBody;
+
+  /// Explains that the duration depends on the migrated amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood migrations can take anywhere from several hours up to a couple days depending on your migration amount.'**
+  String get migrationExpectLongBody;
+
+  /// Heading of a "what to expect" item about the migration duration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrations can take a long time'**
+  String get migrationExpectLongTitle;
+
+  /// Explains that confirmed Ironwood amounts are spendable while the migration continues.
+  ///
+  /// In en, this message translates to:
+  /// **'Each confirmed Ironwood amount is available to spend while the rest of the migration continues.'**
+  String get migrationExpectSpendBody;
+
+  /// Heading of a "what to expect" item about spending migrated funds early.
+  ///
+  /// In en, this message translates to:
+  /// **'You can spend as funds arrive'**
+  String get migrationExpectSpendTitle;
+
+  /// Title of the screen that lists what to expect during the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'What to expect'**
+  String get migrationExpectTitle;
+
+  /// Recommends running the migration behind a trustworthy VPN or network privacy layer.
+  ///
+  /// In en, this message translates to:
+  /// **'It’s recommended to run the migration behind a trustable VPN/network privacy layer'**
+  String get migrationExpectVpnBody;
+
+  /// Heading of a "what to expect" item recommending a VPN.
+  ///
+  /// In en, this message translates to:
+  /// **'Use VPN for an extra privacy'**
+  String get migrationExpectVpnTitle;
+
+  /// Title of the Ironwood migration screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood Migration'**
+  String get migrationFlowTitle;
+
+  /// Button that leaves the migration screen and returns to the home screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Go home'**
+  String get migrationGoHome;
+
+  /// Explains that parts are sent slowly at staggered times to make tracing harder.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor slowly sends parts at staggered intervals across multiple batches to reduce traceability.'**
+  String get migrationHowDelayedBody;
+
+  /// Heading of the third step of "How the Migration Works".
+  ///
+  /// In en, this message translates to:
+  /// **'Delayed and randomized migrations'**
+  String get migrationHowDelayedTitle;
+
+  /// Explains that a one-time migration is needed to spend the Orchard balance.
+  ///
+  /// In en, this message translates to:
+  /// **'A one-time migration to Ironwood is required to spend your existing shielded balance.'**
+  String get migrationHowFrozenBody;
+
+  /// Heading of the first step of "How the Migration Works".
+  ///
+  /// In en, this message translates to:
+  /// **'Orchard (legacy shielded) balance is frozen'**
+  String get migrationHowFrozenTitle;
+
+  /// Explains that the balance is split into smaller standard notes before migrating.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor splits your total balance into many smaller notes (e.g. 0.1 ZEC / 1 ZEC / 5 ZEC) before migrating.'**
+  String get migrationHowPreparationBody;
+
+  /// Heading of the second step of "How the Migration Works".
+  ///
+  /// In en, this message translates to:
+  /// **'Pre-migration preparations'**
+  String get migrationHowPreparationTitle;
+
+  /// Small label on a card of the "How the Migration Works" carousel.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {number}'**
+  String migrationHowStepLabel(String number);
+
+  /// Screen-reader label of the current card of the migration steps carousel.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration step {number} of {total}. {title}. {body}'**
+  String migrationHowStepSemanticsCurrent(
+    String number,
+    String total,
+    String title,
+    String body,
+  );
+
+  /// Screen-reader label of a button that shows another card of the migration steps carousel.
+  ///
+  /// In en, this message translates to:
+  /// **'Show migration step {number} of {total}'**
+  String migrationHowStepSemanticsShow(String number, String total);
+
+  /// Title of the "How the Migration Works" screen.
+  ///
+  /// In en, this message translates to:
+  /// **'How the Migration Works'**
+  String get migrationHowTitle;
+
+  /// Row label for the amount moved by the one-step migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get migrationImmediateAmount;
+
+  /// [security] Button that authorises the one-step migration despite its privacy trade-off.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorise anyway'**
+  String get migrationImmediateAuthoriseAnyway;
+
+  /// [security] Label of the confirm button while the one-step migration is being authorised.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorising…'**
+  String get migrationImmediateAuthorising;
+
+  /// [security] Screen-reader label of the spinner shown while the one-step migration is being authorised.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorising migration'**
+  String get migrationImmediateAuthorisingSemantics;
+
+  /// Placeholder shown for the amount, fee or button while the Immediate migration plan is being calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating…'**
+  String get migrationImmediateCalculating;
+
+  /// Button on the one-step migration review that goes back to the list of migration options.
+  ///
+  /// In en, this message translates to:
+  /// **'Consider another option'**
+  String get migrationImmediateConsiderOther;
+
+  /// Row label for the estimated network fee of the one-step migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Fees (estimate)'**
+  String get migrationImmediateFees;
+
+  /// Message shown when there is no spendable Orchard balance to move with the one-step migration.
+  ///
+  /// In en, this message translates to:
+  /// **'No spendable Orchard balance is available for Immediate migration.'**
+  String get migrationImmediateNoBalance;
+
+  /// Error shown when the plan for the one-step ("Immediate") migration could not be calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t calculate the Immediate migration plan. Sync and try again.'**
+  String get migrationImmediatePlanFailed;
+
+  /// Button that recalculates the one-step migration plan after a failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry calculation'**
+  String get migrationImmediateRetryCalculation;
+
+  /// Title of the review screen for the one-step ("Immediate") migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Migration Plan'**
+  String get migrationImmediateReviewTitle;
+
+  /// [security] Highlighted second part of the privacy notice, continuing the previous message.
+  ///
+  /// In en, this message translates to:
+  /// **'easier to associate with your wallet.'**
+  String get migrationImmediateTradeoffEmphasis;
+
+  /// [security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.
+  ///
+  /// In en, this message translates to:
+  /// **'Crosses in one visible step — your {amount} and timing are '**
+  String migrationImmediateTradeoffLead(String amount);
+
+  /// [security] Last line of the privacy notice for Ledger accounts; starts with a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'\nPrivate migration is not available for Ledger accounts.'**
+  String get migrationImmediateTradeoffLedger;
+
+  /// [security] Last line of the privacy notice suggesting the private migration; starts with a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'\nConsider choosing a Private Migration option.'**
+  String get migrationImmediateTradeoffPrivate;
+
+  /// [security] Heading of the notice that the one-step migration is less private.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy trade-off'**
+  String get migrationImmediateTradeoffTitle;
+
+  /// Placeholder shown for the amount, fee or button when the Immediate migration plan is not available.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get migrationImmediateUnavailable;
+
+  /// Approximate time until the next migration step, in minutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~in 1 minute} other{~in {count} minutes}}'**
+  String migrationInMinutes(int count);
+
+  /// Button on the migration introduction screen that opens the official announcement.
+  ///
+  /// In en, this message translates to:
+  /// **'Official Announcement'**
+  String get migrationIntroAnnouncement;
+
+  /// Badge on the migration introduction screen naming the network upgrade.
+  ///
+  /// In en, this message translates to:
+  /// **'Zcash Network Upgrade'**
+  String get migrationIntroBadge;
+
+  /// Body of the migration introduction screen; {amount} is the ZEC amount still in the Orchard pool. The first sentence ends with a line break.
+  ///
+  /// In en, this message translates to:
+  /// **'Your {amount} ZEC is currently in Orchard.\nTo keep using these funds for shielded payments, you will need to move them to Ironwood. You will review the migration plan before any funds move.'**
+  String migrationIntroBody(String amount);
+
+  /// Tagline on the migration introduction screen.
+  ///
+  /// In en, this message translates to:
+  /// **'A new shielded pool for Zcash.'**
+  String get migrationIntroTagline;
+
+  /// [security] Instruction in the Keystone signing modal after the QR was scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'After you scanned, click Get signature.'**
+  String get migrationKeystoneAfterScanInstruction;
+
+  /// [security] Status while the Keystone signature is being applied.
+  ///
+  /// In en, this message translates to:
+  /// **'Applying the Keystone signature.'**
+  String get migrationKeystoneApplyingSignature;
+
+  /// [security] Status while the signature is being applied to the migration plan.
+  ///
+  /// In en, this message translates to:
+  /// **'Applying the Keystone signature to your migration plan.'**
+  String get migrationKeystoneApplyingToPlan;
+
+  /// Button that leaves Keystone signing and returns to the migration review.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to review'**
+  String get migrationKeystoneBackToReview;
+
+  /// Button that leaves Keystone signing and returns to the migration status.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to status'**
+  String get migrationKeystoneBackToStatus;
+
+  /// [security] Button that starts the Keystone signing rounds.
+  ///
+  /// In en, this message translates to:
+  /// **'Begin signing'**
+  String get migrationKeystoneBeginSigning;
+
+  /// Label of the camera picker row.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera'**
+  String get migrationKeystoneCamera;
+
+  /// Shown when the camera is unavailable; asks for camera access to scan the signed QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow camera access to scan the signed Keystone QR.'**
+  String get migrationKeystoneCameraAccess;
+
+  /// Shown when no camera is available; Keystone migration signing needs a camera to scan QR codes.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone migration signing uses camera QR scanning only. Connect a camera and try again.'**
+  String get migrationKeystoneCameraOnly;
+
+  /// [security] Error shown when cancelling the Keystone signing request failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not cancel the signing request. Try again.'**
+  String get migrationKeystoneCancelFailed;
+
+  /// Hint under the request QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Click QR to enlarge'**
+  String get migrationKeystoneClickToEnlarge;
+
+  /// [security] Title of the Keystone signing step that confirms the one-step migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Migration with Keystone'**
+  String get migrationKeystoneConfirmTitle;
+
+  /// Screen-reader label of the button that enlarges the request QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Enlarge Keystone request QR'**
+  String get migrationKeystoneEnlargeQr;
+
+  /// Screen-reader label of the enlarged Keystone request QR dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Enlarged Keystone request QR'**
+  String get migrationKeystoneEnlargedQr;
+
+  /// [security] Error shown when the Keystone firmware is too old to sign Ironwood migrations.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Keystone firmware to sign Ironwood migrations, then try again.'**
+  String get migrationKeystoneFirmwareUpdate;
+
+  /// [security] Button that starts scanning the signed QR code shown on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Get signature'**
+  String get migrationKeystoneGetSignature;
+
+  /// Hint shown when the QR code could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the QR code steady and fully visible.'**
+  String get migrationKeystoneKeepQrSteady;
+
+  /// Title of the mobile Keystone migration screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone migration'**
+  String get migrationKeystoneMobileTitle;
+
+  /// [security] Error shown when the active account is not a Keystone account.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a Keystone account to sign this migration.'**
+  String get migrationKeystoneNotKeystone;
+
+  /// [security] Error shown when the scanned QR is not the signed migration QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed migration QR on Keystone, then scan again.'**
+  String get migrationKeystoneOpenSignedQr;
+
+  /// [security] Explains that each signing round shows one animated request QR and reads one signed response QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Each round uses one animated request QR and one signed response QR.'**
+  String get migrationKeystonePlanBody;
+
+  /// [security] Heading of the screen that previews how many QR rounds Keystone signing needs.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing plan'**
+  String get migrationKeystonePlanTitle;
+
+  /// [security] Error shown when the Keystone signing request could not be prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing could not be prepared. Try again.'**
+  String get migrationKeystonePrepareFailed;
+
+  /// [security] Instruction asking the user to get the Keystone ready before scanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare your Keystone wallet'**
+  String get migrationKeystonePrepareWallet;
+
+  /// Disabled button label while the Keystone request is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing'**
+  String get migrationKeystonePreparing;
+
+  /// Disabled button label while QR codes are prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing QR codes...'**
+  String get migrationKeystonePreparingQr;
+
+  /// [security] Error shown when local proof preparation failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not prepare local proofs. Go back and prepare this request again.'**
+  String get migrationKeystoneProofFailed;
+
+  /// [security] Message after the signature was captured while proofs are being prepared; asks the user to keep the screen open.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature captured. Vizor is still preparing local proofs. Keep this screen open.'**
+  String get migrationKeystoneProofWaiting;
+
+  /// [security] Message after the signature was captured while proofs are being prepared; asks the user to keep the screen open.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature captured. Vizor is still preparing local proofs ({ready}/{total}). Keep this screen open.'**
+  String migrationKeystoneProofWaitingProgress(String ready, String total);
+
+  /// Status while the wallet prepares zero-knowledge proofs on this device.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing local proofs'**
+  String get migrationKeystoneProofsPreparing;
+
+  /// Label shown while the signed QR is decoded and local proofs are being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing local proofs...'**
+  String get migrationKeystoneProofsPreparingEllipsis;
+
+  /// Progress while the wallet prepares proofs on this device; {ready} of {total} are done.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing local proofs {ready}/{total}'**
+  String migrationKeystoneProofsProgress(String ready, String total);
+
+  /// [security] Instruction under the request QR: Keystone signs the preparation transactions and migration batches together.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan this request with Keystone to sign the preparation transactions and migration batches together.'**
+  String get migrationKeystoneQrBodyCombined;
+
+  /// [security] Instruction under the request QR: scan it with Keystone to confirm the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code with your Keystone wallet to confirm migration.'**
+  String get migrationKeystoneQrBodyImmediate;
+
+  /// [security] Instruction under the request QR: after signing, Keystone shows a new signed QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.'**
+  String get migrationKeystoneQrBodyRound;
+
+  /// [security] Label shown while the signed QR code from Keystone is being read.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature...'**
+  String get migrationKeystoneReadingSignature;
+
+  /// [security] Error shown after the Keystone signing request was cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'This signing request was cancelled. Prepare it again.'**
+  String get migrationKeystoneRequestCancelled;
+
+  /// [security] Error shown when the Keystone signing request expired.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone signing request expired. Prepare it again.'**
+  String get migrationKeystoneRequestExpired;
+
+  /// Toolbar label while the request QR code for Keystone is shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Request QR'**
+  String get migrationKeystoneRequestQr;
+
+  /// [security] Error: the Keystone signing request is no longer valid and must be prepared again.
+  ///
+  /// In en, this message translates to:
+  /// **'This Keystone signing request can no longer be used. Prepare it again.'**
+  String get migrationKeystoneRequestUnusable;
+
+  /// Label showing which signing round (QR) is on screen, for example "Round 1 of 3".
+  ///
+  /// In en, this message translates to:
+  /// **'Round {current} of {total}'**
+  String migrationKeystoneRound(String current, String total);
+
+  /// Summary of how many QR signing rounds Keystone needs.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 QR signing round} other{{count} QR signing rounds}}'**
+  String migrationKeystoneRoundCount(int count);
+
+  /// [security] Help dialog text suggesting the user update the Keystone Cypherpunk firmware.
+  ///
+  /// In en, this message translates to:
+  /// **'There may be a newer version of Keystone Cypherpunk firmware available. Check if you have the latest version.'**
+  String get migrationKeystoneScanIssuesBody;
+
+  /// Button that closes the Keystone scan help dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Ok, I will check'**
+  String get migrationKeystoneScanIssuesConfirm;
+
+  /// [security] Heading of the help dialog shown when scanning the signed Keystone QR code keeps failing.
+  ///
+  /// In en, this message translates to:
+  /// **'Having issues with scanning the QR code?'**
+  String get migrationKeystoneScanIssuesTitle;
+
+  /// [security] Instruction to scan the new signed QR code displayed by Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the new signed QR shown on Keystone.'**
+  String get migrationKeystoneScanNewQr;
+
+  /// Heading above the camera view while scanning the Keystone QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR Code'**
+  String get migrationKeystoneScanQrCode;
+
+  /// [security] Heading above the request QR asking the user to scan it with Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan request with Keystone'**
+  String get migrationKeystoneScanRequest;
+
+  /// [security] Heading and button for scanning the signed QR shown on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan Keystone signature'**
+  String get migrationKeystoneScanSignature;
+
+  /// [security] Subtitle of the Keystone signing modal asking the user to scan the QR with Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with your Keystone'**
+  String get migrationKeystoneScanSubtitle;
+
+  /// [security] Title of the Keystone signing step that signs one batch of Ironwood migration transfers.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign Ironwood batch'**
+  String get migrationKeystoneSignBatch;
+
+  /// [security] Title of the Keystone signing step that signs the whole migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign migration'**
+  String get migrationKeystoneSignMigration;
+
+  /// [security] Title of the Keystone signing step that signs the note-splitting transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign private split'**
+  String get migrationKeystoneSignPrivateSplit;
+
+  /// [security] Error shown when the Keystone signature could not be applied.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signature could not be applied.'**
+  String get migrationKeystoneSignatureFailed;
+
+  /// Label under the request QR: it signs all the listed transactions; {transactions} is a count such as "3 transactions".
+  ///
+  /// In en, this message translates to:
+  /// **'Signs {transactions}'**
+  String migrationKeystoneSignsAll(String transactions);
+
+  /// Label under the request QR: it signs {count} of the total transactions; {transactions} is the total such as "7 transactions".
+  ///
+  /// In en, this message translates to:
+  /// **'Signs {count} of {transactions}'**
+  String migrationKeystoneSignsSome(String count, String transactions);
+
+  /// Back-link label that returns to the migration review screen from Keystone signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Review migration'**
+  String get migrationKeystoneToolbarReview;
+
+  /// Back-link label that returns to the migration status screen from Keystone signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration status'**
+  String get migrationKeystoneToolbarStatus;
+
+  /// Summary of how many transactions Keystone signs in total.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 transaction total} other{{count} transactions total}}'**
+  String migrationKeystoneTransactionTotal(int count);
+
+  /// Number of transactions, used inside the signing summary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 transaction} other{{count} transactions}}'**
+  String migrationKeystoneTransactions(int count);
+
+  /// Message shown when Keystone signing is unavailable until sync finishes.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again after sync finishes.'**
+  String get migrationKeystoneTryAfterSync;
+
+  /// Heading shown when Keystone signing cannot be started.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing unavailable'**
+  String get migrationKeystoneUnavailableTitle;
+
+  /// [security] Error shown when the wallet is locked while signing the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor before signing migration.'**
+  String get migrationKeystoneUnlockFirst;
+
+  /// [security] Status after the signature was captured; Vizor continues once local proofs are ready.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature captured. Vizor will continue when local proofs are ready.'**
+  String get migrationKeystoneWaitingForProofsLong;
+
+  /// [security] Status after the Keystone signature was captured while proofs are still being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature captured. Waiting for local proofs.'**
+  String get migrationKeystoneWaitingForProofsShort;
+
+  /// [security] Error shown when the scanned signed QR belongs to a different signing round.
+  ///
+  /// In en, this message translates to:
+  /// **'This signed QR is from another round. Go back, scan the current request with Keystone, then scan its new signed QR.'**
+  String get migrationKeystoneWrongRound;
+
+  /// Error shown when the signed migration transaction could not be sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'The migration transaction could not be broadcast.'**
+  String get migrationLedgerBroadcast;
+
+  /// [security] Error shown when the Ledger is not reachable; asks the user to connect, unlock and open the Zcash app.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect and unlock your Ledger, then open the Zcash app.'**
+  String get migrationLedgerConnect;
+
+  /// Error shown when the migration with a Ledger failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger migration could not be completed.'**
+  String get migrationLedgerFailed;
+
+  /// Title of the Ledger signing dialog after the migration failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger migration failed'**
+  String get migrationLedgerFailedTitle;
+
+  /// Error shown when the migration amount or fee changed while the Ledger was signing.
+  ///
+  /// In en, this message translates to:
+  /// **'The amount or fee changed. Return and review the updated plan.'**
+  String get migrationLedgerPlanChanged;
+
+  /// Error shown when the local proofs for the Ledger migration could not be prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not finish preparing migration proofs.'**
+  String get migrationLedgerProofs;
+
+  /// [security] Error shown when the user rejected the migration transaction on the Ledger device.
+  ///
+  /// In en, this message translates to:
+  /// **'The migration transaction was rejected on your Ledger.'**
+  String get migrationLedgerRejected;
+
+  /// Title of the mobile screen where the migration is signed with a Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate with Ledger'**
+  String get migrationLedgerTitle;
+
+  /// Line on the legacy migration screen; {amount} is a ZEC amount, possibly starting with "~".
+  ///
+  /// In en, this message translates to:
+  /// **'Left to transfer: {amount}'**
+  String migrationLeftToTransfer(String amount);
+
+  /// Button on the migration schedule that opens the Manage Migration dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage'**
+  String get migrationManage;
+
+  /// Label of the confirm button while the migration is being cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling...'**
+  String get migrationManageCancelling;
+
+  /// Error in the Manage Migration dialog when the migration is past the point where it can be stopped.
+  ///
+  /// In en, this message translates to:
+  /// **'This migration can no longer be cancelled.'**
+  String get migrationManageCannotCancel;
+
+  /// Confirm button of the Manage Migration dialogs.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get migrationManageConfirm;
+
+  /// [security] Warning bullet: switching to Immediate slightly reduces privacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Remaining split notes will be processed as an immediate migration, slightly increasing traceability'**
+  String get migrationManageImmediateBullet1;
+
+  /// [security] Warning bullet: transactions that were already sent stay as they are.
+  ///
+  /// In en, this message translates to:
+  /// **'Transactions already broadcast will not be reverted'**
+  String get migrationManageImmediateBullet2;
+
+  /// [security] Warning bullet: an Immediate migration is irreversible.
+  ///
+  /// In en, this message translates to:
+  /// **'There’s no way to revert an immediate migration'**
+  String get migrationManageImmediateBullet3;
+
+  /// [security] Intro line of the dialog that switches the remaining migration to Immediate.
+  ///
+  /// In en, this message translates to:
+  /// **'Process the remaining migration immediately.'**
+  String get migrationManageImmediateIntro;
+
+  /// Label of the action button in the Manage Migration dialog while it is busy.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading...'**
+  String get migrationManageLoading;
+
+  /// Error in the Manage Migration dialog when nothing is left to migrate.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no remaining Orchard balance to migrate.'**
+  String get migrationManageNoBalance;
+
+  /// Option for cancelling the remaining scheduled migration transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop Migration'**
+  String get migrationManageStop;
+
+  /// [security] Explains that stopping cancels the remaining scheduled transactions and that migration can be restarted from the home screen.
+  ///
+  /// In en, this message translates to:
+  /// **'This cancels the remaining scheduled migration transactions. You can re-start the migration from the home page.'**
+  String get migrationManageStopBody;
+
+  /// [security] Title of the dialog that confirms stopping the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to stop?'**
+  String get migrationManageStopTitle;
+
+  /// Label of the confirm button while the switch to Immediate migration is being processed.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping...'**
+  String get migrationManageStopping;
+
+  /// Option and title for finishing the remaining private migration as an Immediate (one-step) migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to Immediate'**
+  String get migrationManageSwitchImmediate;
+
+  /// Title of the dialog for switching to Immediate migration or stopping the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Migration'**
+  String get migrationManageTitle;
+
+  /// Error in the Manage Migration dialog when changing the migration failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The migration could not be updated. Please try again.'**
+  String get migrationManageUpdateFailed;
+
   /// Label of the signing summary row when every migration transaction is signed in one Keystone step.
   ///
   /// In en, this message translates to:
@@ -5623,6 +6768,1096 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Split Notes into {count} Migration Parts'**
   String migrationMobileWaitSplitInto(int count);
+
+  /// Ring sub-caption: every note has been migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'All notes completed'**
+  String get migrationNextActionDetailAllNotesCompleted;
+
+  /// Ring sub-caption shown just before a block height, as in "at 3,428,143".
+  ///
+  /// In en, this message translates to:
+  /// **'at'**
+  String get migrationNextActionDetailAt;
+
+  /// Ring sub-caption shown just before the block height at which the next window is expected.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected at'**
+  String get migrationNextActionDetailExpectedAt;
+
+  /// Ring sub-caption while the migration transfer is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing migration'**
+  String get migrationNextActionDetailPreparing;
+
+  /// Ring sub-caption: the next migration transfer is waiting for the user to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to sign'**
+  String get migrationNextActionDetailReadyToSign;
+
+  /// Ring sub-caption: the migration transfer is being sent right now.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending now'**
+  String get migrationNextActionDetailSendingNow;
+
+  /// Ring sub-caption: all transfers are sent and waiting for network confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for confirmations'**
+  String get migrationNextActionDetailWaitingForConfirmations;
+
+  /// Ring sub-caption: migration cannot continue until the wallet finishes syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for wallet sync'**
+  String get migrationNextActionDetailWaitingForSync;
+
+  /// Ring caption while broadcast migration transfers wait to be mined into a block.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting mining'**
+  String get migrationNextActionLabelAwaitingMining;
+
+  /// Ring caption when every migration transfer has completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration complete'**
+  String get migrationNextActionLabelComplete;
+
+  /// Ring caption while the last migration transfers finish confirming.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing migration'**
+  String get migrationNextActionLabelFinalizing;
+
+  /// Ironwood migration ring caption naming the next transfer to be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Next migration'**
+  String get migrationNextActionLabelNext;
+
+  /// Ring caption naming the upcoming migration time window.
+  ///
+  /// In en, this message translates to:
+  /// **'Next migration window'**
+  String get migrationNextActionLabelNextWindow;
+
+  /// Ring caption while the wallet waits for the migration time window to open.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening migration window'**
+  String get migrationNextActionLabelOpeningWindow;
+
+  /// Ring caption while a due migration transfer is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending migration'**
+  String get migrationNextActionLabelSending;
+
+  /// Ring caption when the migration time window is open.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration window ready'**
+  String get migrationNextActionLabelWindowReady;
+
+  /// Shown in place of a completion duration when no migration transfers are scheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not scheduled'**
+  String get migrationNotScheduled;
+
+  /// Count of migration notes waiting for network confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note awaiting confirmation} other{{count} notes awaiting confirmation}}'**
+  String migrationNotesAwaitingConfirmation(int count);
+
+  /// Count of migration notes that were broadcast and are waiting to be mined.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note broadcast} other{{count} notes broadcast}}'**
+  String migrationNotesBroadcast(int count);
+
+  /// Count of migration notes that still need to finish.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 note remaining} other{{count} notes remaining}}'**
+  String migrationNotesRemaining(int count);
+
+  /// Name of the immediate (one-step, faster) migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Immediate'**
+  String get migrationOptionImmediate;
+
+  /// Describes the immediate migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrates your entire balance in one batch. Fast but less private.'**
+  String get migrationOptionImmediateBody;
+
+  /// Name of the private (slower, split) migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Private'**
+  String get migrationOptionPrivate;
+
+  /// Describes the private migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Splits transactions into multiple parts to minimize traceability, but will take longer.'**
+  String get migrationOptionPrivateBody;
+
+  /// Shown instead of the private option description for Ledger accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available for Ledger accounts.'**
+  String get migrationOptionPrivateLedger;
+
+  /// Badge on the recommended migration option.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get migrationOptionRecommended;
+
+  /// Body of the migration options screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose between more privacy over time or a faster migration. You can review the details before anything moves.'**
+  String get migrationOptionsBody;
+
+  /// Body of the options screen when part of the balance is already migrated; {amount} is the remaining ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC is still in Orchard. Choose between more privacy over time or a faster migration.'**
+  String migrationOptionsBodyMoveRest(String amount);
+
+  /// Button on the migration options screen that opens the review of the selected option.
+  ///
+  /// In en, this message translates to:
+  /// **'Select & review'**
+  String get migrationOptionsSelectReview;
+
+  /// Title of the migration options screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how to migrate'**
+  String get migrationOptionsTitle;
+
+  /// Title of the options screen when part of the balance was already migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'How to move the rest'**
+  String get migrationOptionsTitleMoveRest;
+
+  /// Shown instead of the overall progress while the total number of migration transactions is not known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating total'**
+  String get migrationOverallCalculatingTotal;
+
+  /// Overall migration progress, for example "3 of 9 complete".
+  ///
+  /// In en, this message translates to:
+  /// **'{completed} of {total} complete'**
+  String migrationOverallProgress(String completed, String total);
+
+  /// Heading of the legacy migration card; {count} is the number of planned batches.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} Planned batches'**
+  String migrationPlannedBatches(String count);
+
+  /// Name of the Ironwood pool in the migration illustration.
+  ///
+  /// In en, this message translates to:
+  /// **'Ironwood Pool'**
+  String get migrationPoolIronwood;
+
+  /// Small caption above the Orchard pool name in the migration illustration.
+  ///
+  /// In en, this message translates to:
+  /// **'(Legacy)'**
+  String get migrationPoolLegacy;
+
+  /// Name of the Orchard pool in the migration illustration.
+  ///
+  /// In en, this message translates to:
+  /// **'Orchard Pool'**
+  String get migrationPoolOrchard;
+
+  /// Progress label for confirmations received by the split transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'{confirmed} of {target} confirmations'**
+  String migrationPreparationConfirmations(String confirmed, String target);
+
+  /// Progress label naming which split transaction is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing split {current} of {total}'**
+  String migrationPreparationSplitProgress(String current, String total);
+
+  /// Progress label naming which split transaction is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Split {current} of {total}'**
+  String migrationPreparationSplitStep(String current, String total);
+
+  /// Progress label while the balance is split into standard-sized notes before migrating.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing split transactions'**
+  String get migrationPreparationSplitTransactions;
+
+  /// Carousel tip on the Ironwood migration preparation screen about the deliberate wait before transfers start.
+  ///
+  /// In en, this message translates to:
+  /// **'Once preparation finishes, your migration will begin automatically after a long intentional delay.'**
+  String get migrationPreparationTipDelay;
+
+  /// Carousel tip explaining that the balance is split into common-sized notes so the migration is harder to link.
+  ///
+  /// In en, this message translates to:
+  /// **'We’re organizing your balance into common-sized parts. This makes your migration harder to link.'**
+  String get migrationPreparationTipOrganizing;
+
+  /// Carousel tip saying the note splitting can take several rounds.
+  ///
+  /// In en, this message translates to:
+  /// **'We may have to do multiple rounds of note splitting depending on your balance.'**
+  String get migrationPreparationTipRounds;
+
+  /// [security] Button label while a migration batch is being prepared for signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing batch...'**
+  String get migrationPreparingBatch;
+
+  /// [security] Text on the lock screen shown during a running migration, explaining that the wallet auto-locked after inactivity.
+  ///
+  /// In en, this message translates to:
+  /// **'We auto-locked Vizor after 10 minutes of inactivity.'**
+  String get migrationPrivacyLockDescription;
+
+  /// Label next to the spinner on the lock screen shown during a running migration, and its screen-reader label.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration in progress'**
+  String get migrationPrivacyLockInProgress;
+
+  /// Carousel tip about block time; {seconds} is the average number of seconds per block.
+  ///
+  /// In en, this message translates to:
+  /// **'Each Zcash block takes about {seconds} seconds to create, but timing can vary with network conditions.'**
+  String migrationProgressTipBlockTime(String seconds);
+
+  /// [security] Carousel tip on the migration progress screen: closing the app pauses the migration and it can be resumed later.
+  ///
+  /// In en, this message translates to:
+  /// **'You can close Vizor anytime. Migration will pause, and you can restart it when you return.'**
+  String get migrationProgressTipClose;
+
+  /// [security] Carousel tip: leaving Vizor open lets the migration continue automatically in the background.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor running and the migration will automatically run in the background.'**
+  String get migrationProgressTipKeepRunning;
+
+  /// Lowercase status: the migration step can start now.
+  ///
+  /// In en, this message translates to:
+  /// **'ready now'**
+  String get migrationReadyNow;
+
+  /// Button that retries a migration that hit a recoverable error.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry migration'**
+  String get migrationRetryMigration;
+
+  /// Label of the retry button while the retry is running.
+  ///
+  /// In en, this message translates to:
+  /// **'Retrying...'**
+  String get migrationRetrying;
+
+  /// Label above the ZEC amount that the private migration will move.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount to migrate'**
+  String get migrationReviewAmountToMigrate;
+
+  /// Title of the error shown when the private migration plan could not be computed for the balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t analyze this balance'**
+  String get migrationReviewAnalyzeErrorTitle;
+
+  /// Label of the estimated time until the private migration is complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration complete in'**
+  String get migrationReviewCompleteIn;
+
+  /// [security] Notice body: preparation keeps going while the app is minimized, then the migration starts on its own.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation continues while the app is minimized, then migration starts automatically.'**
+  String get migrationReviewKeepRunningBody;
+
+  /// [security] Heading of a notice asking the user to keep Vizor open while the migration runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor running'**
+  String get migrationReviewKeepRunningTitle;
+
+  /// Button that starts the private migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Start migration'**
+  String get migrationReviewStart;
+
+  /// Label of the start button while the migration is being started.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting…'**
+  String get migrationReviewStarting;
+
+  /// Ring detail when all note-splitting transactions have completed.
+  ///
+  /// In en, this message translates to:
+  /// **'All splits completed'**
+  String get migrationRingAllSplitsCompleted;
+
+  /// Ring caption while a split transaction collects confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming split'**
+  String get migrationRingConfirmingSplit;
+
+  /// Ring caption naming the next note-splitting transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Next split'**
+  String get migrationRingNextSplit;
+
+  /// Ring caption when every note-splitting transaction has completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation complete'**
+  String get migrationRingPreparationComplete;
+
+  /// Ring sub-caption while the split schedule is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing schedule'**
+  String get migrationRingPreparingSchedule;
+
+  /// Ring detail for a split transaction that is scheduled for a future block.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled'**
+  String get migrationRingScheduled;
+
+  /// Ring caption while a split transaction has been sent and is not yet mined.
+  ///
+  /// In en, this message translates to:
+  /// **'Split in progress'**
+  String get migrationRingSplitInProgress;
+
+  /// Lowercase screen-reader state of a migration note that is done.
+  ///
+  /// In en, this message translates to:
+  /// **'completed'**
+  String get migrationRingStatusCompleted;
+
+  /// Lowercase screen-reader state of a migration note waiting for confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'confirming'**
+  String get migrationRingStatusConfirming;
+
+  /// Lowercase screen-reader state of a migration note being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'migrating'**
+  String get migrationRingStatusMigrating;
+
+  /// Lowercase screen-reader state of a migration note that needs the user to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'needs input'**
+  String get migrationRingStatusNeedsInput;
+
+  /// Lowercase screen-reader state of a migration note that has not started.
+  ///
+  /// In en, this message translates to:
+  /// **'not started'**
+  String get migrationRingStatusNotStarted;
+
+  /// Lowercase screen-reader state of a migration note being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'preparing'**
+  String get migrationRingStatusPreparing;
+
+  /// Lowercase screen-reader state of a migration note that is scheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'scheduled'**
+  String get migrationRingStatusScheduled;
+
+  /// Ring detail: the split transaction is waiting to be included in a block.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for block'**
+  String get migrationRingWaitingForBlock;
+
+  /// Ring detail: this split cannot start until the previous split is confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for previous split'**
+  String get migrationRingWaitingForPreviousSplit;
+
+  /// Toast shown when the user opens the migration but the account cannot migrate.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration is not available for this account.'**
+  String get migrationRouteNotAvailable;
+
+  /// Toast shown when the account has nothing to migrate.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration is not needed for this account.'**
+  String get migrationRouteNotNeeded;
+
+  /// Toast shown when the migration state could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t verify migration status.'**
+  String get migrationRouteStatusFailed;
+
+  /// Toast shown when the migration cannot start because the wallet sync failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync could not finish. Try again once Vizor is synced.'**
+  String get migrationRouteSyncFailed;
+
+  /// Status of a split transaction that is being sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting'**
+  String get migrationScheduleBroadcasting;
+
+  /// Value shown while the preparation completion block is being computed.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating'**
+  String get migrationScheduleCalculating;
+
+  /// Status of a migration transfer that was mined; {height} is the block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed at block {height}'**
+  String migrationScheduleCompletedAtBlock(String height);
+
+  /// Status of a migration transfer collecting confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirming {count}/{target}'**
+  String migrationScheduleConfirmingProgress(String count, String target);
+
+  /// Summary row label for the note-splitting round currently running.
+  ///
+  /// In en, this message translates to:
+  /// **'Current round'**
+  String get migrationScheduleCurrentRound;
+
+  /// Expected block height of a split transaction that waits for the previous split.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected #{height}'**
+  String migrationScheduleExpected(String height);
+
+  /// Destination of a split output: it stays in the Orchard pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Stays in Orchard'**
+  String get migrationScheduleOutputChange;
+
+  /// Destination of a split output: it is split again in the given round.
+  ///
+  /// In en, this message translates to:
+  /// **'Used in round {round}'**
+  String migrationScheduleOutputContinuation(String round);
+
+  /// Destination of a split output: it will be migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'For migration'**
+  String get migrationScheduleOutputMigration;
+
+  /// Placeholder shown where a migration time or duration is not yet scheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Schedule pending'**
+  String get migrationSchedulePending;
+
+  /// Value shown for the current round before the rounds are known.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing'**
+  String get migrationSchedulePreparing;
+
+  /// Summary row label for the block height at which preparation is expected to finish.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to migrate'**
+  String get migrationScheduleReadyToMigrate;
+
+  /// Status of a split transaction whose expected time is being recalculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Recalculating'**
+  String get migrationScheduleRecalculating;
+
+  /// Status of a migration transfer that moved to a later block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Rescheduled #{height}'**
+  String migrationScheduleRescheduled(String height);
+
+  /// Current split round out of all rounds, for example "2 of 3".
+  ///
+  /// In en, this message translates to:
+  /// **'{current} of {total}'**
+  String migrationScheduleRoundProgress(String current, String total);
+
+  /// Status of a migration transfer scheduled for a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled #{height}'**
+  String migrationScheduleScheduledAt(String height);
+
+  /// Lowercase screen-reader state of a split transaction waiting for the previous split.
+  ///
+  /// In en, this message translates to:
+  /// **'waiting for previous split, expected at block {height}'**
+  String migrationScheduleSemanticsAwaiting(String height);
+
+  /// Lowercase screen-reader state of a split transaction that was sent and awaits mining.
+  ///
+  /// In en, this message translates to:
+  /// **'broadcast, waiting to be mined, projected completion at block {height}'**
+  String migrationScheduleSemanticsBroadcast(String height);
+
+  /// Lowercase screen-reader state of a completed transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'completed'**
+  String get migrationScheduleSemanticsCompleted;
+
+  /// Lowercase screen-reader state of a transaction completed at a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'completed at block {height}'**
+  String migrationScheduleSemanticsCompletedAt(String height);
+
+  /// Lowercase screen-reader state of a note that is due.
+  ///
+  /// In en, this message translates to:
+  /// **'due now'**
+  String get migrationScheduleSemanticsDue;
+
+  /// Lowercase screen-reader state of a note that was sent and awaits mining.
+  ///
+  /// In en, this message translates to:
+  /// **'broadcast, waiting to be mined'**
+  String get migrationScheduleSemanticsMigrating;
+
+  /// Screen-reader description of one migration note row.
+  ///
+  /// In en, this message translates to:
+  /// **'Note {number}, {amount} ZEC, {state}.'**
+  String migrationScheduleSemanticsNote(
+    String number,
+    String amount,
+    String state,
+  );
+
+  /// Lowercase screen-reader state of a note collecting confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'confirming, {count} of {target} confirmations'**
+  String migrationScheduleSemanticsNoteConfirming(String count, String target);
+
+  /// Lowercase screen-reader state of a mined note collecting confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'confirming, {count} of {target} confirmations, mined at block {height}'**
+  String migrationScheduleSemanticsNoteConfirmingMined(
+    String count,
+    String target,
+    String height,
+  );
+
+  /// Screen-reader description of one split output: its ZEC amount and where it goes.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} ZEC, {destination}'**
+  String migrationScheduleSemanticsOutput(String amount, String destination);
+
+  /// Lowercase screen-reader destination of a split output: it stays in Orchard.
+  ///
+  /// In en, this message translates to:
+  /// **'stays in Orchard'**
+  String get migrationScheduleSemanticsOutputChange;
+
+  /// Lowercase screen-reader destination of a split output that is split again.
+  ///
+  /// In en, this message translates to:
+  /// **'used in round {round}'**
+  String migrationScheduleSemanticsOutputContinuation(String round);
+
+  /// Lowercase screen-reader destination of a split output: it will be migrated.
+  ///
+  /// In en, this message translates to:
+  /// **'for migration'**
+  String get migrationScheduleSemanticsOutputMigration;
+
+  /// Screen-reader description of the outputs of a split transaction; {outputs} is a semicolon-separated list.
+  ///
+  /// In en, this message translates to:
+  /// **'Outputs: {outputs}.'**
+  String migrationScheduleSemanticsOutputs(String outputs);
+
+  /// Lowercase screen-reader state of a note whose schedule is not set yet.
+  ///
+  /// In en, this message translates to:
+  /// **'schedule pending'**
+  String get migrationScheduleSemanticsPending;
+
+  /// Lowercase screen-reader state of a note waiting for the user to sign.
+  ///
+  /// In en, this message translates to:
+  /// **'ready to sign'**
+  String get migrationScheduleSemanticsReadyToSign;
+
+  /// Lowercase screen-reader state of a note that moved to a later block.
+  ///
+  /// In en, this message translates to:
+  /// **'rescheduled from block {from} to block {to}'**
+  String migrationScheduleSemanticsRescheduled(String from, String to);
+
+  /// Lowercase screen-reader state of a transaction scheduled for a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'scheduled at block {height}'**
+  String migrationScheduleSemanticsScheduled(String height);
+
+  /// Screen-reader description of one split transaction row.
+  ///
+  /// In en, this message translates to:
+  /// **'Split {number}, {amount} ZEC, {state}.'**
+  String migrationScheduleSemanticsSplit(
+    String number,
+    String amount,
+    String state,
+  );
+
+  /// Lowercase screen-reader state of a split transaction collecting confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'confirming, {count} of {target} confirmations, projected completion at block {height}'**
+  String migrationScheduleSemanticsSplitConfirming(
+    String count,
+    String target,
+    String height,
+  );
+
+  /// Lowercase screen-reader state of a note waiting for its migration window.
+  ///
+  /// In en, this message translates to:
+  /// **'waiting for window at block {height}'**
+  String migrationScheduleSemanticsWaitingWindow(String height);
+
+  /// Heading above the split transactions of one round.
+  ///
+  /// In en, this message translates to:
+  /// **'Split round {number}'**
+  String migrationScheduleSplitRound(String number);
+
+  /// Title of the migration schedule screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Schedule'**
+  String get migrationScheduleTitle;
+
+  /// Title of the screen listing the note-splitting transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation Schedule'**
+  String get migrationScheduleTitlePreparation;
+
+  /// [security] Explains that the schedule could not be loaded and the saved migration state is unchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t load the latest migration schedule. Your saved migration state is unchanged.'**
+  String get migrationScheduleUnavailableBody;
+
+  /// Heading shown when the migration schedule cannot be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration schedule unavailable'**
+  String get migrationScheduleUnavailableTitle;
+
+  /// Status of a migration transfer that was sent and awaits mining.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting to be mined'**
+  String get migrationScheduleWaitingToBeMined;
+
+  /// Status of a migration transfer waiting for its time window at a block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Window #{height}'**
+  String migrationScheduleWindow(String height);
+
+  /// Screen-reader description of one note in the migration ring; {status} is a short state such as "completed".
+  ///
+  /// In en, this message translates to:
+  /// **'Note {number}: {amount} ZEC, {status}.'**
+  String migrationSemanticsNote(String number, String amount, String status);
+
+  /// Screen-reader description of the migration ring: notes are listed in processing order.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration notes in expected processing order.'**
+  String get migrationSemanticsNotesOrder;
+
+  /// Screen-reader description of the migration ring while notes are being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing migration notes.'**
+  String get migrationSemanticsPreparingNotes;
+
+  /// [security] Button that starts signing one batch of migration transfers; {number} is the batch number.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign Batch #{number}'**
+  String migrationSignBatch(String number);
+
+  /// [security] Button that starts signing the next migration batch on the Keystone hardware wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign with Keystone'**
+  String get migrationSignWithKeystone;
+
+  /// Step label in the migration progress header: the final stage.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish'**
+  String get migrationStageFinish;
+
+  /// Step label in the migration progress header: the migration stage.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration'**
+  String get migrationStageMigration;
+
+  /// Step label in the migration progress header: the preparation stage.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation'**
+  String get migrationStagePreparation;
+
+  /// Explains that a recoverable error interrupted the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor hit a recoverable migration error before completing the Ironwood transition.'**
+  String get migrationStatusAttentionBody;
+
+  /// [security] Reassures that no funds are lost and tells the user to retry once Vizor is synced and online.
+  ///
+  /// In en, this message translates to:
+  /// **'No funds are lost. Retry migration after checking that Vizor is synced and online.'**
+  String get migrationStatusAttentionFooter;
+
+  /// Heading of the migration status screen after a recoverable error.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Needs Attention'**
+  String get migrationStatusAttentionTitle;
+
+  /// Row label showing how many migration transactions were sent to the network.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasted'**
+  String get migrationStatusBroadcasted;
+
+  /// Explains that Vizor is sending the prepared migration transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is broadcasting the prepared Ironwood migration transaction.'**
+  String get migrationStatusBroadcastingBody;
+
+  /// Disabled button label while the migration transaction is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting'**
+  String get migrationStatusBroadcastingButton;
+
+  /// Confirms the funds were moved into the Ironwood pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Your funds have moved into the Ironwood pool.'**
+  String get migrationStatusCompleteBody;
+
+  /// Footer note after migration completes.
+  ///
+  /// In en, this message translates to:
+  /// **'You can return home and continue using Vizor.'**
+  String get migrationStatusCompleteFooter;
+
+  /// Heading of the migration status screen when migration is finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Complete'**
+  String get migrationStatusCompleteTitle;
+
+  /// Explains that the migration transaction was sent and is waiting for confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'The migration transaction was broadcast. Vizor is waiting for network confirmations.'**
+  String get migrationStatusConfirmingBody;
+
+  /// Explains that Vizor is tracking the migration state.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is tracking the current Ironwood migration state.'**
+  String get migrationStatusDefaultBody;
+
+  /// Disabled button label in an unrecognized migration state.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration in progress'**
+  String get migrationStatusDefaultButton;
+
+  /// Footer note: this fallback state is shown only for diagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'This state is visible for diagnostics while the migration flow is being connected.'**
+  String get migrationStatusDefaultFooter;
+
+  /// Heading of the migration status screen in an unrecognized state.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Status'**
+  String get migrationStatusDefaultTitle;
+
+  /// [security] Footer note: the user may leave the screen but must keep the app open so the migration continues.
+  ///
+  /// In en, this message translates to:
+  /// **'You can leave this screen.\nBut keep Vizor open & running.'**
+  String get migrationStatusLeaveFooter;
+
+  /// Footer note on the migration status screen for Ledger accounts, whose device flow cannot do batched signing.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger private migration is not supported because this flow requires batched signing.'**
+  String get migrationStatusLedgerUnsupported;
+
+  /// Heading of the migration status screen while the migration transaction is sent or confirming.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating...'**
+  String get migrationStatusMigratingTitle;
+
+  /// Explains that the private migration is paused before its next step.
+  ///
+  /// In en, this message translates to:
+  /// **'The private migration is paused before the next action.'**
+  String get migrationStatusPausedBody;
+
+  /// Disabled button label while the migration is paused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get migrationStatusPausedButton;
+
+  /// Footer note: nothing new happens until the migration is resumed.
+  ///
+  /// In en, this message translates to:
+  /// **'No new transaction will be prepared until migration execution is resumed.'**
+  String get migrationStatusPausedFooter;
+
+  /// Heading of the migration status screen when the migration is paused.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Paused'**
+  String get migrationStatusPausedTitle;
+
+  /// Row label showing how many migration transactions still have to be sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending broadcasts'**
+  String get migrationStatusPendingBroadcasts;
+
+  /// Explains how long each note-splitting step usually takes.
+  ///
+  /// In en, this message translates to:
+  /// **'This usually takes around 30 minutes per split.'**
+  String get migrationStatusPreparingBody;
+
+  /// Heading of the migration status screen while the balance is being split.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing...'**
+  String get migrationStatusPreparingTitle;
+
+  /// Explains that the next step prepares the Ironwood migration batch.
+  ///
+  /// In en, this message translates to:
+  /// **'The private split is ready. The next step will prepare the Ironwood migration batch.'**
+  String get migrationStatusReadyBody;
+
+  /// Footer note telling the user to continue so the Ironwood transaction is prepared and sent when due.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue migration to prepare and broadcast the Ironwood transaction when it is due.'**
+  String get migrationStatusReadyFooter;
+
+  /// Heading of the migration status screen when the split is done and migration can start.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to Migrate'**
+  String get migrationStatusReadyTitle;
+
+  /// Explains that the migration transaction is ready and waits for its send time.
+  ///
+  /// In en, this message translates to:
+  /// **'Your migration transaction is prepared and waiting for its scheduled broadcast window.'**
+  String get migrationStatusScheduledBody;
+
+  /// [security] Footer note: scheduled sends only progress while Vizor is open.
+  ///
+  /// In en, this message translates to:
+  /// **'When Vizor is open, scheduled broadcasts will be advanced by the migration worker.'**
+  String get migrationStatusScheduledFooter;
+
+  /// Heading of the migration status screen when the transaction waits for its send time.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcast Scheduled'**
+  String get migrationStatusScheduledTitle;
+
+  /// Row label showing how many note-splitting transactions are done.
+  ///
+  /// In en, this message translates to:
+  /// **'Split progress'**
+  String get migrationStatusSplitProgress;
+
+  /// Explains that the migration state could not be verified and no new migration will start meanwhile.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor couldn\'t verify the current Ironwood migration state. No new migration will start until the status can be checked.'**
+  String get migrationStatusUnavailableBody;
+
+  /// Advice on the migration-status-unavailable screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Return home and try again after sync refreshes. If a migration is already in progress, Vizor will continue from the saved state after it can be read.'**
+  String get migrationStatusUnavailableHint;
+
+  /// Heading of the screen shown when the migration state cannot be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration status unavailable'**
+  String get migrationStatusUnavailableTitle;
+
+  /// Label of the summary row showing the current block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Current block'**
+  String get migrationSummaryCurrentBlock;
+
+  /// Label of the summary row showing the estimated completion time of the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Est. completion'**
+  String get migrationSummaryEstCompletion;
+
+  /// Label of the summary row showing the ZEC amount that is not migrated yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Left to migrate'**
+  String get migrationSummaryLeftToMigrate;
+
+  /// Label of the summary row showing how many migration transactions are complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Overall progress'**
+  String get migrationSummaryOverallProgress;
+
+  /// Ring caption naming which transaction of the migration is shown, when the total is not known yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {ordinal}'**
+  String migrationTransactionOrdinal(String ordinal);
+
+  /// Ring caption naming which transaction of the migration is shown, for example "Transaction 2 of 7".
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction {ordinal} of {total}'**
+  String migrationTransactionOrdinalOfTotal(String ordinal, String total);
+
+  /// Explains that migration transfers signed before the network upgrade can no longer be sent, and that no funds were lost.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfers signed before the upgrade can’t be sent after it. Your funds are safe.'**
+  String get migrationUpgradeStopBody;
+
+  /// Button that starts a new migration of the balance left after the network upgrade stopped the previous one.
+  ///
+  /// In en, this message translates to:
+  /// **'Move remaining balance'**
+  String get migrationUpgradeStopMoveRemainingLabel;
+
+  /// Label for the amount already migrated when a network upgrade stopped the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Moved to Ironwood'**
+  String get migrationUpgradeStopMovedLabel;
+
+  /// Label for the amount that remains in the Orchard pool after a network upgrade stopped the migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Still in Orchard'**
+  String get migrationUpgradeStopRemainingLabel;
+
+  /// Ironwood migration ring message, split over two lines, shown when the network upgrade stopped a migration partway.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped by the\nnetwork upgrade'**
+  String get migrationUpgradeStopRingMessage;
+
+  /// Link on the legacy migration card that opens the batch schedule.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get migrationView;
+
+  /// Button that opens the schedule of migration transfers.
+  ///
+  /// In en, this message translates to:
+  /// **'View Schedule'**
+  String get migrationViewSchedule;
 
   /// Sidebar and tab bar destination: transaction history. Shared by: activity, nav.
   ///

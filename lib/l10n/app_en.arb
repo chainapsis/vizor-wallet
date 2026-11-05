@@ -2959,6 +2959,948 @@
   "@lockUnlockToContinuePausedBody": {
     "description": "[security] Body on the sync lock screen after an interrupted sync asking the user to unlock the wallet."
   },
+  "migrationAnalyzingBalance": "Analyzing your balance...",
+  "@migrationAnalyzingBalance": {
+    "description": "Rotating status message while the private migration plan is being computed."
+  },
+  "migrationAnalyzingCaption": "Vizor is working hard to find a perfect balance\nof safety, privacy, and speed for your migration",
+  "@migrationAnalyzingCaption": {
+    "description": "Caption under the analysis animation, split over two lines."
+  },
+  "migrationAnalyzingFindingBatches": "Finding private batches...",
+  "@migrationAnalyzingFindingBatches": {
+    "description": "Rotating status message while the private migration plan is being computed."
+  },
+  "migrationAnalyzingPreparingPlan": "Preparing your migration plan...",
+  "@migrationAnalyzingPreparingPlan": {
+    "description": "Rotating status message while the private migration plan is being computed."
+  },
+  "migrationAnalyzingSemanticsLabel": "Preparing private migration plan",
+  "@migrationAnalyzingSemanticsLabel": {
+    "description": "Screen-reader label of the progress ring shown while the private migration plan is computed."
+  },
+  "migrationAnnouncementBody": "Ironwood is the latest Zcash shielded pool.\nIt's the first formally verified pool with\ncutting edge cryptography.",
+  "@migrationAnnouncementBody": {
+    "description": "Body of the announcement modal about the new Ironwood pool, split over three lines."
+  },
+  "migrationAnnouncementReleaseNote": "Official Release Note",
+  "@migrationAnnouncementReleaseNote": {
+    "description": "Button in the announcement modal that opens the official release note."
+  },
+  "migrationAnnouncementStart": "Start Migration",
+  "@migrationAnnouncementStart": {
+    "description": "Button in the announcement modal that starts the migration."
+  },
+  "migrationBackAbout": "About Migration",
+  "@migrationBackAbout": {
+    "description": "Back-link label that returns to the migration introduction."
+  },
+  "migrationBackHome": "Back home",
+  "@migrationBackHome": {
+    "description": "Button that returns to the home screen from a migration screen."
+  },
+  "migrationBackHowItWorks": "How Migration Works",
+  "@migrationBackHowItWorks": {
+    "description": "Back-link label that returns to the \"How the Migration Works\" screen."
+  },
+  "migrationBackOptions": "Migration Options",
+  "@migrationBackOptions": {
+    "description": "Back-link label that returns to the list of migration options."
+  },
+  "migrationBatchBroadcasting": "Broadcasting...",
+  "@migrationBatchBroadcasting": {
+    "description": "Status of the current migration batch while it is being sent to the network."
+  },
+  "migrationBatchCardTitle": "Batch #{number} ({count} notes)",
+  "@migrationBatchCardTitle": {
+    "description": "Title of the card above the sign button: batch number and how many notes it contains.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationBatchConfirming": "Confirming...",
+  "@migrationBatchConfirming": {
+    "description": "Status of the current migration batch while it waits for confirmations."
+  },
+  "migrationBlockHeight": "Block {height}",
+  "@migrationBlockHeight": {
+    "description": "Estimated arrival of a migration batch, given as the block height at which it is sent.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationBlocksEstimate": "~{blocks} blocks",
+  "@migrationBlocksEstimate": {
+    "description": "Approximate wait expressed as a number of blocks.",
+    "placeholders": {
+      "blocks": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationBroadcastApproxInHours": "{count, plural, =1{~in 1 hr} other{~in {count} hrs}}",
+  "@migrationBroadcastApproxInHours": {
+    "description": "Approximate time until a scheduled migration transfer is sent, in hours.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationBroadcastApproxInMinutes": "~in {count} min",
+  "@migrationBroadcastApproxInMinutes": {
+    "description": "Approximate time until a scheduled migration transfer is sent, in minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationBroadcastConfirmed": "Confirmed",
+  "@migrationBroadcastConfirmed": {
+    "description": "Status of a scheduled migration transfer that the network confirmed."
+  },
+  "migrationBroadcastDueNow": "Due now",
+  "@migrationBroadcastDueNow": {
+    "description": "Status of a scheduled migration transfer whose send time has arrived."
+  },
+  "migrationBroadcastInHours": "{count, plural, =1{in 1 hr} other{in {count} hrs}}",
+  "@migrationBroadcastInHours": {
+    "description": "When a scheduled migration transfer will be sent, in hours.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationBroadcastInMinutes": "in {count} min",
+  "@migrationBroadcastInMinutes": {
+    "description": "When a scheduled migration transfer will be sent, in minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationBroadcastPending": "Pending",
+  "@migrationBroadcastPending": {
+    "description": "Status of a migration transfer that has not been sent yet."
+  },
+  "migrationBroadcastSubmitted": "Submitted",
+  "@migrationBroadcastSubmitted": {
+    "description": "Status of a migration transfer that was sent to the network."
+  },
+  "migrationCarouselPreparationLabel": "Migration preparation information",
+  "@migrationCarouselPreparationLabel": {
+    "description": "Screen-reader label for the carousel of tips shown during migration preparation."
+  },
+  "migrationCarouselProgressLabel": "Migration information",
+  "@migrationCarouselProgressLabel": {
+    "description": "Screen-reader label for the carousel of tips shown during migration."
+  },
+  "migrationCompleteBody": "Migration completed successfully and you can\nspend your funds as usual.",
+  "@migrationCompleteBody": {
+    "description": "Body text of the migration-complete screen, split over two lines."
+  },
+  "migrationCompleteTitle": "Your\n{amount} ZEC\nare on Ironwood!",
+  "@migrationCompleteTitle": {
+    "description": "Headline of the migration-complete screen, split over three lines; {amount} is the migrated ZEC amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationConfirming": "Confirming",
+  "@migrationConfirming": {
+    "description": "Status label while migration transfers wait for network confirmations."
+  },
+  "migrationContinueMigration": "Continue migration",
+  "@migrationContinueMigration": {
+    "description": "Button that continues the migration with its next step."
+  },
+  "migrationContinuing": "Continuing...",
+  "@migrationContinuing": {
+    "description": "Label of the action button while the migration is continuing."
+  },
+  "migrationCtaStart": "Migrate to Ironwood Pool",
+  "@migrationCtaStart": {
+    "description": "Label of the home call-to-action that starts the Ironwood migration."
+  },
+  "migrationCtaStopped": "Migration stopped by network upgrade",
+  "@migrationCtaStopped": {
+    "description": "Label of the home call-to-action when a network upgrade stopped the migration."
+  },
+  "migrationCurrentBatch": "Current Batch",
+  "@migrationCurrentBatch": {
+    "description": "Label on the legacy migration card for the batch currently being processed."
+  },
+  "migrationDurationDays": "{count, plural, =1{~1 day} other{~{count} days}}",
+  "@migrationDurationDays": {
+    "description": "Approximate duration in days.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationDurationHalfHours": "~{hours}.5 hrs",
+  "@migrationDurationHalfHours": {
+    "description": "Approximate duration of a whole number of hours plus a half hour, for example \"~2.5 hrs\".",
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationDurationHours": "{count, plural, =1{~1 hr} other{~{count} hrs}}",
+  "@migrationDurationHours": {
+    "description": "Approximate duration in hours.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationDurationMinutes": "{count, plural, =1{~1 min} other{~{count} mins}}",
+  "@migrationDurationMinutes": {
+    "description": "Approximate duration in minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationErrorBroadcast": "Couldn't broadcast the migration transaction. Try again.",
+  "@migrationErrorBroadcast": {
+    "description": "Error shown when sending a migration transaction to the network failed."
+  },
+  "migrationErrorContinue": "Couldn't continue migration. Try again.",
+  "@migrationErrorContinue": {
+    "description": "Error shown when continuing the migration failed for an unknown reason."
+  },
+  "migrationErrorKeystonePrepare": "Couldn't prepare Keystone signing.",
+  "@migrationErrorKeystonePrepare": {
+    "description": "[security] Error shown when the transaction could not be prepared for signing on Keystone."
+  },
+  "migrationErrorLedgerExcluded": "Ledger private migration is excluded because the current flow requires batched signing.",
+  "@migrationErrorLedgerExcluded": {
+    "description": "Error shown when a Ledger account tries the private migration, which needs batched signing the Ledger flow does not support."
+  },
+  "migrationErrorPlanChanged": "The amount or fee changed. Review the updated details.",
+  "@migrationErrorPlanChanged": {
+    "description": "Error shown when the migration amount or fee changed after the user reviewed the plan."
+  },
+  "migrationErrorStart": "Couldn't start migration. Try again.",
+  "@migrationErrorStart": {
+    "description": "Error shown when starting the migration failed for an unknown reason."
+  },
+  "migrationErrorUnlockBeforeContinue": "Unlock Vizor before continuing migration.",
+  "@migrationErrorUnlockBeforeContinue": {
+    "description": "[security] Error shown when migration cannot continue because the wallet is locked."
+  },
+  "migrationErrorUnlockBeforeStart": "Unlock Vizor before starting migration.",
+  "@migrationErrorUnlockBeforeStart": {
+    "description": "[security] Error shown when migration cannot start because the wallet is locked."
+  },
+  "migrationErrorWaitForSync": "Wait for sync to finish, then try again.",
+  "@migrationErrorWaitForSync": {
+    "description": "Error shown when a migration action needs the wallet to finish syncing first."
+  },
+  "migrationEstimateAfterSigning": "After signing",
+  "@migrationEstimateAfterSigning": {
+    "description": "Estimated completion shown while migration is waiting for the user to sign."
+  },
+  "migrationEstimateComplete": "Complete",
+  "@migrationEstimateComplete": {
+    "description": "Estimated completion shown when no preparation transactions remain."
+  },
+  "migrationEstimateIn": "in {estimate}",
+  "@migrationEstimateIn": {
+    "description": "Estimated completion phrased as a sentence; {estimate} is an approximate duration such as \"~5 mins\".",
+    "placeholders": {
+      "estimate": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationEstimateInDays": "{count, plural, =1{in ~1 day} other{in ~{count} days}}",
+  "@migrationEstimateInDays": {
+    "description": "Estimated time until the migration completes, in days.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationEstimateInHours": "in ~{hours} hours",
+  "@migrationEstimateInHours": {
+    "description": "Estimated time until the migration completes; {hours} is a number such as \"2\" or \"2.5\".",
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationEstimateInMinutes": "{count, plural, =1{in ~1 minute} other{in ~{count} minutes}}",
+  "@migrationEstimateInMinutes": {
+    "description": "Estimated time until the migration completes, in minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationEstimateInOneHour": "in ~1 hour",
+  "@migrationEstimateInOneHour": {
+    "description": "Estimated time until the migration completes: about one hour."
+  },
+  "migrationEstimatedArrivalTime": "Estimated arrival time",
+  "@migrationEstimatedArrivalTime": {
+    "description": "Label on the legacy migration card for when the batch is expected to arrive."
+  },
+  "migrationExpectKeepRunningBody": "Your computer needs to be unlocked with Vizor running so we can send the next migration transaction",
+  "@migrationExpectKeepRunningBody": {
+    "description": "[security] Explains that the computer must stay unlocked with Vizor running so the next migration transaction can be sent."
+  },
+  "migrationExpectLongBody": "Ironwood migrations can take anywhere from several hours up to a couple days depending on your migration amount.",
+  "@migrationExpectLongBody": {
+    "description": "Explains that the duration depends on the migrated amount."
+  },
+  "migrationExpectLongTitle": "Migrations can take a long time",
+  "@migrationExpectLongTitle": {
+    "description": "Heading of a \"what to expect\" item about the migration duration."
+  },
+  "migrationExpectSpendBody": "Each confirmed Ironwood amount is available to spend while the rest of the migration continues.",
+  "@migrationExpectSpendBody": {
+    "description": "Explains that confirmed Ironwood amounts are spendable while the migration continues."
+  },
+  "migrationExpectSpendTitle": "You can spend as funds arrive",
+  "@migrationExpectSpendTitle": {
+    "description": "Heading of a \"what to expect\" item about spending migrated funds early."
+  },
+  "migrationExpectTitle": "What to expect",
+  "@migrationExpectTitle": {
+    "description": "Title of the screen that lists what to expect during the migration."
+  },
+  "migrationExpectVpnBody": "It’s recommended to run the migration behind a trustable VPN/network privacy layer",
+  "@migrationExpectVpnBody": {
+    "description": "Recommends running the migration behind a trustworthy VPN or network privacy layer."
+  },
+  "migrationExpectVpnTitle": "Use VPN for an extra privacy",
+  "@migrationExpectVpnTitle": {
+    "description": "Heading of a \"what to expect\" item recommending a VPN."
+  },
+  "migrationFlowTitle": "Ironwood Migration",
+  "@migrationFlowTitle": {
+    "description": "Title of the Ironwood migration screens."
+  },
+  "migrationGoHome": "Go home",
+  "@migrationGoHome": {
+    "description": "Button that leaves the migration screen and returns to the home screen."
+  },
+  "migrationHowDelayedBody": "Vizor slowly sends parts at staggered intervals across multiple batches to reduce traceability.",
+  "@migrationHowDelayedBody": {
+    "description": "Explains that parts are sent slowly at staggered times to make tracing harder."
+  },
+  "migrationHowDelayedTitle": "Delayed and randomized migrations",
+  "@migrationHowDelayedTitle": {
+    "description": "Heading of the third step of \"How the Migration Works\"."
+  },
+  "migrationHowFrozenBody": "A one-time migration to Ironwood is required to spend your existing shielded balance.",
+  "@migrationHowFrozenBody": {
+    "description": "Explains that a one-time migration is needed to spend the Orchard balance."
+  },
+  "migrationHowFrozenTitle": "Orchard (legacy shielded) balance is frozen",
+  "@migrationHowFrozenTitle": {
+    "description": "Heading of the first step of \"How the Migration Works\"."
+  },
+  "migrationHowPreparationBody": "Vizor splits your total balance into many smaller notes (e.g. 0.1 ZEC / 1 ZEC / 5 ZEC) before migrating.",
+  "@migrationHowPreparationBody": {
+    "description": "Explains that the balance is split into smaller standard notes before migrating."
+  },
+  "migrationHowPreparationTitle": "Pre-migration preparations",
+  "@migrationHowPreparationTitle": {
+    "description": "Heading of the second step of \"How the Migration Works\"."
+  },
+  "migrationHowStepLabel": "Step {number}",
+  "@migrationHowStepLabel": {
+    "description": "Small label on a card of the \"How the Migration Works\" carousel.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationHowStepSemanticsCurrent": "Migration step {number} of {total}. {title}. {body}",
+  "@migrationHowStepSemanticsCurrent": {
+    "description": "Screen-reader label of the current card of the migration steps carousel.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "title": {
+        "type": "String"
+      },
+      "body": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationHowStepSemanticsShow": "Show migration step {number} of {total}",
+  "@migrationHowStepSemanticsShow": {
+    "description": "Screen-reader label of a button that shows another card of the migration steps carousel.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationHowTitle": "How the Migration Works",
+  "@migrationHowTitle": {
+    "description": "Title of the \"How the Migration Works\" screen."
+  },
+  "migrationImmediateAmount": "Amount",
+  "@migrationImmediateAmount": {
+    "description": "Row label for the amount moved by the one-step migration."
+  },
+  "migrationImmediateAuthoriseAnyway": "Authorise anyway",
+  "@migrationImmediateAuthoriseAnyway": {
+    "description": "[security] Button that authorises the one-step migration despite its privacy trade-off."
+  },
+  "migrationImmediateAuthorising": "Authorising…",
+  "@migrationImmediateAuthorising": {
+    "description": "[security] Label of the confirm button while the one-step migration is being authorised."
+  },
+  "migrationImmediateAuthorisingSemantics": "Authorising migration",
+  "@migrationImmediateAuthorisingSemantics": {
+    "description": "[security] Screen-reader label of the spinner shown while the one-step migration is being authorised."
+  },
+  "migrationImmediateCalculating": "Calculating…",
+  "@migrationImmediateCalculating": {
+    "description": "Placeholder shown for the amount, fee or button while the Immediate migration plan is being calculated."
+  },
+  "migrationImmediateConsiderOther": "Consider another option",
+  "@migrationImmediateConsiderOther": {
+    "description": "Button on the one-step migration review that goes back to the list of migration options."
+  },
+  "migrationImmediateFees": "Fees (estimate)",
+  "@migrationImmediateFees": {
+    "description": "Row label for the estimated network fee of the one-step migration."
+  },
+  "migrationImmediateNoBalance": "No spendable Orchard balance is available for Immediate migration.",
+  "@migrationImmediateNoBalance": {
+    "description": "Message shown when there is no spendable Orchard balance to move with the one-step migration."
+  },
+  "migrationImmediatePlanFailed": "Couldn't calculate the Immediate migration plan. Sync and try again.",
+  "@migrationImmediatePlanFailed": {
+    "description": "Error shown when the plan for the one-step (\"Immediate\") migration could not be calculated."
+  },
+  "migrationImmediateRetryCalculation": "Retry calculation",
+  "@migrationImmediateRetryCalculation": {
+    "description": "Button that recalculates the one-step migration plan after a failure."
+  },
+  "migrationImmediateReviewTitle": "Review Migration Plan",
+  "@migrationImmediateReviewTitle": {
+    "description": "Title of the review screen for the one-step (\"Immediate\") migration."
+  },
+  "migrationImmediateTradeoffEmphasis": "easier to associate with your wallet.",
+  "@migrationImmediateTradeoffEmphasis": {
+    "description": "[security] Highlighted second part of the privacy notice, continuing the previous message."
+  },
+  "migrationImmediateTradeoffLead": "Crosses in one visible step — your {amount} and timing are ",
+  "@migrationImmediateTradeoffLead": {
+    "description": "[security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationImmediateTradeoffLedger": "\nPrivate migration is not available for Ledger accounts.",
+  "@migrationImmediateTradeoffLedger": {
+    "description": "[security] Last line of the privacy notice for Ledger accounts; starts with a line break."
+  },
+  "migrationImmediateTradeoffPrivate": "\nConsider choosing a Private Migration option.",
+  "@migrationImmediateTradeoffPrivate": {
+    "description": "[security] Last line of the privacy notice suggesting the private migration; starts with a line break."
+  },
+  "migrationImmediateTradeoffTitle": "Privacy trade-off",
+  "@migrationImmediateTradeoffTitle": {
+    "description": "[security] Heading of the notice that the one-step migration is less private."
+  },
+  "migrationImmediateUnavailable": "Unavailable",
+  "@migrationImmediateUnavailable": {
+    "description": "Placeholder shown for the amount, fee or button when the Immediate migration plan is not available."
+  },
+  "migrationInMinutes": "{count, plural, =1{~in 1 minute} other{~in {count} minutes}}",
+  "@migrationInMinutes": {
+    "description": "Approximate time until the next migration step, in minutes.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationIntroAnnouncement": "Official Announcement",
+  "@migrationIntroAnnouncement": {
+    "description": "Button on the migration introduction screen that opens the official announcement."
+  },
+  "migrationIntroBadge": "Zcash Network Upgrade",
+  "@migrationIntroBadge": {
+    "description": "Badge on the migration introduction screen naming the network upgrade."
+  },
+  "migrationIntroBody": "Your {amount} ZEC is currently in Orchard.\nTo keep using these funds for shielded payments, you will need to move them to Ironwood. You will review the migration plan before any funds move.",
+  "@migrationIntroBody": {
+    "description": "Body of the migration introduction screen; {amount} is the ZEC amount still in the Orchard pool. The first sentence ends with a line break.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationIntroTagline": "A new shielded pool for Zcash.",
+  "@migrationIntroTagline": {
+    "description": "Tagline on the migration introduction screen."
+  },
+  "migrationKeystoneAfterScanInstruction": "After you scanned, click Get signature.",
+  "@migrationKeystoneAfterScanInstruction": {
+    "description": "[security] Instruction in the Keystone signing modal after the QR was scanned."
+  },
+  "migrationKeystoneApplyingSignature": "Applying the Keystone signature.",
+  "@migrationKeystoneApplyingSignature": {
+    "description": "[security] Status while the Keystone signature is being applied."
+  },
+  "migrationKeystoneApplyingToPlan": "Applying the Keystone signature to your migration plan.",
+  "@migrationKeystoneApplyingToPlan": {
+    "description": "[security] Status while the signature is being applied to the migration plan."
+  },
+  "migrationKeystoneBackToReview": "Back to review",
+  "@migrationKeystoneBackToReview": {
+    "description": "Button that leaves Keystone signing and returns to the migration review."
+  },
+  "migrationKeystoneBackToStatus": "Back to status",
+  "@migrationKeystoneBackToStatus": {
+    "description": "Button that leaves Keystone signing and returns to the migration status."
+  },
+  "migrationKeystoneBeginSigning": "Begin signing",
+  "@migrationKeystoneBeginSigning": {
+    "description": "[security] Button that starts the Keystone signing rounds."
+  },
+  "migrationKeystoneCamera": "Camera",
+  "@migrationKeystoneCamera": {
+    "description": "Label of the camera picker row."
+  },
+  "migrationKeystoneCameraAccess": "Allow camera access to scan the signed Keystone QR.",
+  "@migrationKeystoneCameraAccess": {
+    "description": "Shown when the camera is unavailable; asks for camera access to scan the signed QR."
+  },
+  "migrationKeystoneCameraOnly": "Keystone migration signing uses camera QR scanning only. Connect a camera and try again.",
+  "@migrationKeystoneCameraOnly": {
+    "description": "Shown when no camera is available; Keystone migration signing needs a camera to scan QR codes."
+  },
+  "migrationKeystoneCancelFailed": "Could not cancel the signing request. Try again.",
+  "@migrationKeystoneCancelFailed": {
+    "description": "[security] Error shown when cancelling the Keystone signing request failed."
+  },
+  "migrationKeystoneClickToEnlarge": "Click QR to enlarge",
+  "@migrationKeystoneClickToEnlarge": {
+    "description": "Hint under the request QR."
+  },
+  "migrationKeystoneConfirmTitle": "Confirm Migration with Keystone",
+  "@migrationKeystoneConfirmTitle": {
+    "description": "[security] Title of the Keystone signing step that confirms the one-step migration."
+  },
+  "migrationKeystoneEnlargeQr": "Enlarge Keystone request QR",
+  "@migrationKeystoneEnlargeQr": {
+    "description": "Screen-reader label of the button that enlarges the request QR."
+  },
+  "migrationKeystoneEnlargedQr": "Enlarged Keystone request QR",
+  "@migrationKeystoneEnlargedQr": {
+    "description": "Screen-reader label of the enlarged Keystone request QR dialog."
+  },
+  "migrationKeystoneFirmwareUpdate": "Update Keystone firmware to sign Ironwood migrations, then try again.",
+  "@migrationKeystoneFirmwareUpdate": {
+    "description": "[security] Error shown when the Keystone firmware is too old to sign Ironwood migrations."
+  },
+  "migrationKeystoneGetSignature": "Get signature",
+  "@migrationKeystoneGetSignature": {
+    "description": "[security] Button that starts scanning the signed QR code shown on Keystone."
+  },
+  "migrationKeystoneKeepQrSteady": "Keep the QR code steady and fully visible.",
+  "@migrationKeystoneKeepQrSteady": {
+    "description": "Hint shown when the QR code could not be read."
+  },
+  "migrationKeystoneMobileTitle": "Keystone migration",
+  "@migrationKeystoneMobileTitle": {
+    "description": "Title of the mobile Keystone migration screen."
+  },
+  "migrationKeystoneNotKeystone": "Use a Keystone account to sign this migration.",
+  "@migrationKeystoneNotKeystone": {
+    "description": "[security] Error shown when the active account is not a Keystone account."
+  },
+  "migrationKeystoneOpenSignedQr": "Open the signed migration QR on Keystone, then scan again.",
+  "@migrationKeystoneOpenSignedQr": {
+    "description": "[security] Error shown when the scanned QR is not the signed migration QR."
+  },
+  "migrationKeystonePlanBody": "Each round uses one animated request QR and one signed response QR.",
+  "@migrationKeystonePlanBody": {
+    "description": "[security] Explains that each signing round shows one animated request QR and reads one signed response QR."
+  },
+  "migrationKeystonePlanTitle": "Keystone signing plan",
+  "@migrationKeystonePlanTitle": {
+    "description": "[security] Heading of the screen that previews how many QR rounds Keystone signing needs."
+  },
+  "migrationKeystonePrepareFailed": "Keystone signing could not be prepared. Try again.",
+  "@migrationKeystonePrepareFailed": {
+    "description": "[security] Error shown when the Keystone signing request could not be prepared."
+  },
+  "migrationKeystonePrepareWallet": "Prepare your Keystone wallet",
+  "@migrationKeystonePrepareWallet": {
+    "description": "[security] Instruction asking the user to get the Keystone ready before scanning."
+  },
+  "migrationKeystonePreparing": "Preparing",
+  "@migrationKeystonePreparing": {
+    "description": "Disabled button label while the Keystone request is being prepared."
+  },
+  "migrationKeystonePreparingQr": "Preparing QR codes...",
+  "@migrationKeystonePreparingQr": {
+    "description": "Disabled button label while QR codes are prepared."
+  },
+  "migrationKeystoneProofFailed": "Vizor could not prepare local proofs. Go back and prepare this request again.",
+  "@migrationKeystoneProofFailed": {
+    "description": "[security] Error shown when local proof preparation failed."
+  },
+  "migrationKeystoneProofWaiting": "Signature captured. Vizor is still preparing local proofs. Keep this screen open.",
+  "@migrationKeystoneProofWaiting": {
+    "description": "[security] Message after the signature was captured while proofs are being prepared; asks the user to keep the screen open."
+  },
+  "migrationKeystoneProofWaitingProgress": "Signature captured. Vizor is still preparing local proofs ({ready}/{total}). Keep this screen open.",
+  "@migrationKeystoneProofWaitingProgress": {
+    "description": "[security] Message after the signature was captured while proofs are being prepared; asks the user to keep the screen open.",
+    "placeholders": {
+      "ready": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationKeystoneProofsPreparing": "Preparing local proofs",
+  "@migrationKeystoneProofsPreparing": {
+    "description": "Status while the wallet prepares zero-knowledge proofs on this device."
+  },
+  "migrationKeystoneProofsPreparingEllipsis": "Preparing local proofs...",
+  "@migrationKeystoneProofsPreparingEllipsis": {
+    "description": "Label shown while the signed QR is decoded and local proofs are being prepared."
+  },
+  "migrationKeystoneProofsProgress": "Preparing local proofs {ready}/{total}",
+  "@migrationKeystoneProofsProgress": {
+    "description": "Progress while the wallet prepares proofs on this device; {ready} of {total} are done.",
+    "placeholders": {
+      "ready": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationKeystoneQrBodyCombined": "Scan this request with Keystone to sign the preparation transactions and migration batches together.",
+  "@migrationKeystoneQrBodyCombined": {
+    "description": "[security] Instruction under the request QR: Keystone signs the preparation transactions and migration batches together."
+  },
+  "migrationKeystoneQrBodyImmediate": "Scan the QR code with your Keystone wallet to confirm migration.",
+  "@migrationKeystoneQrBodyImmediate": {
+    "description": "[security] Instruction under the request QR: scan it with Keystone to confirm the migration."
+  },
+  "migrationKeystoneQrBodyRound": "Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.",
+  "@migrationKeystoneQrBodyRound": {
+    "description": "[security] Instruction under the request QR: after signing, Keystone shows a new signed QR code."
+  },
+  "migrationKeystoneReadingSignature": "Reading signature...",
+  "@migrationKeystoneReadingSignature": {
+    "description": "[security] Label shown while the signed QR code from Keystone is being read."
+  },
+  "migrationKeystoneRequestCancelled": "This signing request was cancelled. Prepare it again.",
+  "@migrationKeystoneRequestCancelled": {
+    "description": "[security] Error shown after the Keystone signing request was cancelled."
+  },
+  "migrationKeystoneRequestExpired": "This Keystone signing request expired. Prepare it again.",
+  "@migrationKeystoneRequestExpired": {
+    "description": "[security] Error shown when the Keystone signing request expired."
+  },
+  "migrationKeystoneRequestQr": "Request QR",
+  "@migrationKeystoneRequestQr": {
+    "description": "Toolbar label while the request QR code for Keystone is shown."
+  },
+  "migrationKeystoneRequestUnusable": "This Keystone signing request can no longer be used. Prepare it again.",
+  "@migrationKeystoneRequestUnusable": {
+    "description": "[security] Error: the Keystone signing request is no longer valid and must be prepared again."
+  },
+  "migrationKeystoneRound": "Round {current} of {total}",
+  "@migrationKeystoneRound": {
+    "description": "Label showing which signing round (QR) is on screen, for example \"Round 1 of 3\".",
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationKeystoneRoundCount": "{count, plural, =1{1 QR signing round} other{{count} QR signing rounds}}",
+  "@migrationKeystoneRoundCount": {
+    "description": "Summary of how many QR signing rounds Keystone needs.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationKeystoneScanIssuesBody": "There may be a newer version of Keystone Cypherpunk firmware available. Check if you have the latest version.",
+  "@migrationKeystoneScanIssuesBody": {
+    "description": "[security] Help dialog text suggesting the user update the Keystone Cypherpunk firmware."
+  },
+  "migrationKeystoneScanIssuesConfirm": "Ok, I will check",
+  "@migrationKeystoneScanIssuesConfirm": {
+    "description": "Button that closes the Keystone scan help dialog."
+  },
+  "migrationKeystoneScanIssuesTitle": "Having issues with scanning the QR code?",
+  "@migrationKeystoneScanIssuesTitle": {
+    "description": "[security] Heading of the help dialog shown when scanning the signed Keystone QR code keeps failing."
+  },
+  "migrationKeystoneScanNewQr": "Scan the new signed QR shown on Keystone.",
+  "@migrationKeystoneScanNewQr": {
+    "description": "[security] Instruction to scan the new signed QR code displayed by Keystone."
+  },
+  "migrationKeystoneScanQrCode": "Scan QR Code",
+  "@migrationKeystoneScanQrCode": {
+    "description": "Heading above the camera view while scanning the Keystone QR."
+  },
+  "migrationKeystoneScanRequest": "Scan request with Keystone",
+  "@migrationKeystoneScanRequest": {
+    "description": "[security] Heading above the request QR asking the user to scan it with Keystone."
+  },
+  "migrationKeystoneScanSignature": "Scan Keystone signature",
+  "@migrationKeystoneScanSignature": {
+    "description": "[security] Heading and button for scanning the signed QR shown on Keystone."
+  },
+  "migrationKeystoneScanSubtitle": "Scan with your Keystone",
+  "@migrationKeystoneScanSubtitle": {
+    "description": "[security] Subtitle of the Keystone signing modal asking the user to scan the QR with Keystone."
+  },
+  "migrationKeystoneSignBatch": "Sign Ironwood batch",
+  "@migrationKeystoneSignBatch": {
+    "description": "[security] Title of the Keystone signing step that signs one batch of Ironwood migration transfers."
+  },
+  "migrationKeystoneSignMigration": "Sign migration",
+  "@migrationKeystoneSignMigration": {
+    "description": "[security] Title of the Keystone signing step that signs the whole migration."
+  },
+  "migrationKeystoneSignPrivateSplit": "Sign private split",
+  "@migrationKeystoneSignPrivateSplit": {
+    "description": "[security] Title of the Keystone signing step that signs the note-splitting transactions."
+  },
+  "migrationKeystoneSignatureFailed": "Keystone signature could not be applied.",
+  "@migrationKeystoneSignatureFailed": {
+    "description": "[security] Error shown when the Keystone signature could not be applied."
+  },
+  "migrationKeystoneSignsAll": "Signs {transactions}",
+  "@migrationKeystoneSignsAll": {
+    "description": "Label under the request QR: it signs all the listed transactions; {transactions} is a count such as \"3 transactions\".",
+    "placeholders": {
+      "transactions": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationKeystoneSignsSome": "Signs {count} of {transactions}",
+  "@migrationKeystoneSignsSome": {
+    "description": "Label under the request QR: it signs {count} of the total transactions; {transactions} is the total such as \"7 transactions\".",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "transactions": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationKeystoneToolbarReview": "Review migration",
+  "@migrationKeystoneToolbarReview": {
+    "description": "Back-link label that returns to the migration review screen from Keystone signing."
+  },
+  "migrationKeystoneToolbarStatus": "Migration status",
+  "@migrationKeystoneToolbarStatus": {
+    "description": "Back-link label that returns to the migration status screen from Keystone signing."
+  },
+  "migrationKeystoneTransactionTotal": "{count, plural, =1{1 transaction total} other{{count} transactions total}}",
+  "@migrationKeystoneTransactionTotal": {
+    "description": "Summary of how many transactions Keystone signs in total.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationKeystoneTransactions": "{count, plural, =1{1 transaction} other{{count} transactions}}",
+  "@migrationKeystoneTransactions": {
+    "description": "Number of transactions, used inside the signing summary.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationKeystoneTryAfterSync": "Try again after sync finishes.",
+  "@migrationKeystoneTryAfterSync": {
+    "description": "Message shown when Keystone signing is unavailable until sync finishes."
+  },
+  "migrationKeystoneUnavailableTitle": "Keystone signing unavailable",
+  "@migrationKeystoneUnavailableTitle": {
+    "description": "Heading shown when Keystone signing cannot be started."
+  },
+  "migrationKeystoneUnlockFirst": "Unlock Vizor before signing migration.",
+  "@migrationKeystoneUnlockFirst": {
+    "description": "[security] Error shown when the wallet is locked while signing the migration."
+  },
+  "migrationKeystoneWaitingForProofsLong": "Signature captured. Vizor will continue when local proofs are ready.",
+  "@migrationKeystoneWaitingForProofsLong": {
+    "description": "[security] Status after the signature was captured; Vizor continues once local proofs are ready."
+  },
+  "migrationKeystoneWaitingForProofsShort": "Signature captured. Waiting for local proofs.",
+  "@migrationKeystoneWaitingForProofsShort": {
+    "description": "[security] Status after the Keystone signature was captured while proofs are still being prepared."
+  },
+  "migrationKeystoneWrongRound": "This signed QR is from another round. Go back, scan the current request with Keystone, then scan its new signed QR.",
+  "@migrationKeystoneWrongRound": {
+    "description": "[security] Error shown when the scanned signed QR belongs to a different signing round."
+  },
+  "migrationLedgerBroadcast": "The migration transaction could not be broadcast.",
+  "@migrationLedgerBroadcast": {
+    "description": "Error shown when the signed migration transaction could not be sent to the network."
+  },
+  "migrationLedgerConnect": "Connect and unlock your Ledger, then open the Zcash app.",
+  "@migrationLedgerConnect": {
+    "description": "[security] Error shown when the Ledger is not reachable; asks the user to connect, unlock and open the Zcash app."
+  },
+  "migrationLedgerFailed": "Ledger migration could not be completed.",
+  "@migrationLedgerFailed": {
+    "description": "Error shown when the migration with a Ledger failed for an unknown reason."
+  },
+  "migrationLedgerFailedTitle": "Ledger migration failed",
+  "@migrationLedgerFailedTitle": {
+    "description": "Title of the Ledger signing dialog after the migration failed."
+  },
+  "migrationLedgerPlanChanged": "The amount or fee changed. Return and review the updated plan.",
+  "@migrationLedgerPlanChanged": {
+    "description": "Error shown when the migration amount or fee changed while the Ledger was signing."
+  },
+  "migrationLedgerProofs": "Vizor could not finish preparing migration proofs.",
+  "@migrationLedgerProofs": {
+    "description": "Error shown when the local proofs for the Ledger migration could not be prepared."
+  },
+  "migrationLedgerRejected": "The migration transaction was rejected on your Ledger.",
+  "@migrationLedgerRejected": {
+    "description": "[security] Error shown when the user rejected the migration transaction on the Ledger device."
+  },
+  "migrationLedgerTitle": "Migrate with Ledger",
+  "@migrationLedgerTitle": {
+    "description": "Title of the mobile screen where the migration is signed with a Ledger."
+  },
+  "migrationLeftToTransfer": "Left to transfer: {amount}",
+  "@migrationLeftToTransfer": {
+    "description": "Line on the legacy migration screen; {amount} is a ZEC amount, possibly starting with \"~\".",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationManage": "Manage",
+  "@migrationManage": {
+    "description": "Button on the migration schedule that opens the Manage Migration dialog."
+  },
+  "migrationManageCancelling": "Cancelling...",
+  "@migrationManageCancelling": {
+    "description": "Label of the confirm button while the migration is being cancelled."
+  },
+  "migrationManageCannotCancel": "This migration can no longer be cancelled.",
+  "@migrationManageCannotCancel": {
+    "description": "Error in the Manage Migration dialog when the migration is past the point where it can be stopped."
+  },
+  "migrationManageConfirm": "Confirm",
+  "@migrationManageConfirm": {
+    "description": "Confirm button of the Manage Migration dialogs."
+  },
+  "migrationManageImmediateBullet1": "Remaining split notes will be processed as an immediate migration, slightly increasing traceability",
+  "@migrationManageImmediateBullet1": {
+    "description": "[security] Warning bullet: switching to Immediate slightly reduces privacy."
+  },
+  "migrationManageImmediateBullet2": "Transactions already broadcast will not be reverted",
+  "@migrationManageImmediateBullet2": {
+    "description": "[security] Warning bullet: transactions that were already sent stay as they are."
+  },
+  "migrationManageImmediateBullet3": "There’s no way to revert an immediate migration",
+  "@migrationManageImmediateBullet3": {
+    "description": "[security] Warning bullet: an Immediate migration is irreversible."
+  },
+  "migrationManageImmediateIntro": "Process the remaining migration immediately.",
+  "@migrationManageImmediateIntro": {
+    "description": "[security] Intro line of the dialog that switches the remaining migration to Immediate."
+  },
+  "migrationManageLoading": "Loading...",
+  "@migrationManageLoading": {
+    "description": "Label of the action button in the Manage Migration dialog while it is busy."
+  },
+  "migrationManageNoBalance": "There is no remaining Orchard balance to migrate.",
+  "@migrationManageNoBalance": {
+    "description": "Error in the Manage Migration dialog when nothing is left to migrate."
+  },
+  "migrationManageStop": "Stop Migration",
+  "@migrationManageStop": {
+    "description": "Option for cancelling the remaining scheduled migration transactions."
+  },
+  "migrationManageStopBody": "This cancels the remaining scheduled migration transactions. You can re-start the migration from the home page.",
+  "@migrationManageStopBody": {
+    "description": "[security] Explains that stopping cancels the remaining scheduled transactions and that migration can be restarted from the home screen."
+  },
+  "migrationManageStopTitle": "Are you sure you want to stop?",
+  "@migrationManageStopTitle": {
+    "description": "[security] Title of the dialog that confirms stopping the migration."
+  },
+  "migrationManageStopping": "Stopping...",
+  "@migrationManageStopping": {
+    "description": "Label of the confirm button while the switch to Immediate migration is being processed."
+  },
+  "migrationManageSwitchImmediate": "Switch to Immediate",
+  "@migrationManageSwitchImmediate": {
+    "description": "Option and title for finishing the remaining private migration as an Immediate (one-step) migration."
+  },
+  "migrationManageTitle": "Manage Migration",
+  "@migrationManageTitle": {
+    "description": "Title of the dialog for switching to Immediate migration or stopping the migration."
+  },
+  "migrationManageUpdateFailed": "The migration could not be updated. Please try again.",
+  "@migrationManageUpdateFailed": {
+    "description": "Error in the Manage Migration dialog when changing the migration failed."
+  },
   "migrationMobileActionAllTransactions": "All transactions",
   "@migrationMobileActionAllTransactions": {
     "description": "Label of the signing summary row when every migration transaction is signed in one Keystone step."
@@ -4207,6 +5149,967 @@
         "type": "int"
       }
     }
+  },
+  "migrationNextActionDetailAllNotesCompleted": "All notes completed",
+  "@migrationNextActionDetailAllNotesCompleted": {
+    "description": "Ring sub-caption: every note has been migrated."
+  },
+  "migrationNextActionDetailAt": "at",
+  "@migrationNextActionDetailAt": {
+    "description": "Ring sub-caption shown just before a block height, as in \"at 3,428,143\"."
+  },
+  "migrationNextActionDetailExpectedAt": "Expected at",
+  "@migrationNextActionDetailExpectedAt": {
+    "description": "Ring sub-caption shown just before the block height at which the next window is expected."
+  },
+  "migrationNextActionDetailPreparing": "Preparing migration",
+  "@migrationNextActionDetailPreparing": {
+    "description": "Ring sub-caption while the migration transfer is being prepared."
+  },
+  "migrationNextActionDetailReadyToSign": "Ready to sign",
+  "@migrationNextActionDetailReadyToSign": {
+    "description": "Ring sub-caption: the next migration transfer is waiting for the user to sign."
+  },
+  "migrationNextActionDetailSendingNow": "Sending now",
+  "@migrationNextActionDetailSendingNow": {
+    "description": "Ring sub-caption: the migration transfer is being sent right now."
+  },
+  "migrationNextActionDetailWaitingForConfirmations": "Waiting for confirmations",
+  "@migrationNextActionDetailWaitingForConfirmations": {
+    "description": "Ring sub-caption: all transfers are sent and waiting for network confirmations."
+  },
+  "migrationNextActionDetailWaitingForSync": "Waiting for wallet sync",
+  "@migrationNextActionDetailWaitingForSync": {
+    "description": "Ring sub-caption: migration cannot continue until the wallet finishes syncing."
+  },
+  "migrationNextActionLabelAwaitingMining": "Awaiting mining",
+  "@migrationNextActionLabelAwaitingMining": {
+    "description": "Ring caption while broadcast migration transfers wait to be mined into a block."
+  },
+  "migrationNextActionLabelComplete": "Migration complete",
+  "@migrationNextActionLabelComplete": {
+    "description": "Ring caption when every migration transfer has completed."
+  },
+  "migrationNextActionLabelFinalizing": "Finalizing migration",
+  "@migrationNextActionLabelFinalizing": {
+    "description": "Ring caption while the last migration transfers finish confirming."
+  },
+  "migrationNextActionLabelNext": "Next migration",
+  "@migrationNextActionLabelNext": {
+    "description": "Ironwood migration ring caption naming the next transfer to be sent."
+  },
+  "migrationNextActionLabelNextWindow": "Next migration window",
+  "@migrationNextActionLabelNextWindow": {
+    "description": "Ring caption naming the upcoming migration time window."
+  },
+  "migrationNextActionLabelOpeningWindow": "Opening migration window",
+  "@migrationNextActionLabelOpeningWindow": {
+    "description": "Ring caption while the wallet waits for the migration time window to open."
+  },
+  "migrationNextActionLabelSending": "Sending migration",
+  "@migrationNextActionLabelSending": {
+    "description": "Ring caption while a due migration transfer is being sent."
+  },
+  "migrationNextActionLabelWindowReady": "Migration window ready",
+  "@migrationNextActionLabelWindowReady": {
+    "description": "Ring caption when the migration time window is open."
+  },
+  "migrationNotScheduled": "Not scheduled",
+  "@migrationNotScheduled": {
+    "description": "Shown in place of a completion duration when no migration transfers are scheduled."
+  },
+  "migrationNotesAwaitingConfirmation": "{count, plural, =1{1 note awaiting confirmation} other{{count} notes awaiting confirmation}}",
+  "@migrationNotesAwaitingConfirmation": {
+    "description": "Count of migration notes waiting for network confirmations.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationNotesBroadcast": "{count, plural, =1{1 note broadcast} other{{count} notes broadcast}}",
+  "@migrationNotesBroadcast": {
+    "description": "Count of migration notes that were broadcast and are waiting to be mined.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationNotesRemaining": "{count, plural, =1{1 note remaining} other{{count} notes remaining}}",
+  "@migrationNotesRemaining": {
+    "description": "Count of migration notes that still need to finish.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "migrationOptionImmediate": "Immediate",
+  "@migrationOptionImmediate": {
+    "description": "Name of the immediate (one-step, faster) migration option."
+  },
+  "migrationOptionImmediateBody": "Migrates your entire balance in one batch. Fast but less private.",
+  "@migrationOptionImmediateBody": {
+    "description": "Describes the immediate migration option."
+  },
+  "migrationOptionPrivate": "Private",
+  "@migrationOptionPrivate": {
+    "description": "Name of the private (slower, split) migration option."
+  },
+  "migrationOptionPrivateBody": "Splits transactions into multiple parts to minimize traceability, but will take longer.",
+  "@migrationOptionPrivateBody": {
+    "description": "Describes the private migration option."
+  },
+  "migrationOptionPrivateLedger": "Not available for Ledger accounts.",
+  "@migrationOptionPrivateLedger": {
+    "description": "Shown instead of the private option description for Ledger accounts."
+  },
+  "migrationOptionRecommended": "Recommended",
+  "@migrationOptionRecommended": {
+    "description": "Badge on the recommended migration option."
+  },
+  "migrationOptionsBody": "Choose between more privacy over time or a faster migration. You can review the details before anything moves.",
+  "@migrationOptionsBody": {
+    "description": "Body of the migration options screen."
+  },
+  "migrationOptionsBodyMoveRest": "{amount} ZEC is still in Orchard. Choose between more privacy over time or a faster migration.",
+  "@migrationOptionsBodyMoveRest": {
+    "description": "Body of the options screen when part of the balance is already migrated; {amount} is the remaining ZEC amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationOptionsSelectReview": "Select & review",
+  "@migrationOptionsSelectReview": {
+    "description": "Button on the migration options screen that opens the review of the selected option."
+  },
+  "migrationOptionsTitle": "Choose how to migrate",
+  "@migrationOptionsTitle": {
+    "description": "Title of the migration options screen."
+  },
+  "migrationOptionsTitleMoveRest": "How to move the rest",
+  "@migrationOptionsTitleMoveRest": {
+    "description": "Title of the options screen when part of the balance was already migrated."
+  },
+  "migrationOverallCalculatingTotal": "Calculating total",
+  "@migrationOverallCalculatingTotal": {
+    "description": "Shown instead of the overall progress while the total number of migration transactions is not known yet."
+  },
+  "migrationOverallProgress": "{completed} of {total} complete",
+  "@migrationOverallProgress": {
+    "description": "Overall migration progress, for example \"3 of 9 complete\".",
+    "placeholders": {
+      "completed": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationPlannedBatches": "{count} Planned batches",
+  "@migrationPlannedBatches": {
+    "description": "Heading of the legacy migration card; {count} is the number of planned batches.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationPoolIronwood": "Ironwood Pool",
+  "@migrationPoolIronwood": {
+    "description": "Name of the Ironwood pool in the migration illustration."
+  },
+  "migrationPoolLegacy": "(Legacy)",
+  "@migrationPoolLegacy": {
+    "description": "Small caption above the Orchard pool name in the migration illustration."
+  },
+  "migrationPoolOrchard": "Orchard Pool",
+  "@migrationPoolOrchard": {
+    "description": "Name of the Orchard pool in the migration illustration."
+  },
+  "migrationPreparationConfirmations": "{confirmed} of {target} confirmations",
+  "@migrationPreparationConfirmations": {
+    "description": "Progress label for confirmations received by the split transactions.",
+    "placeholders": {
+      "confirmed": {
+        "type": "String"
+      },
+      "target": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationPreparationSplitProgress": "Preparing split {current} of {total}",
+  "@migrationPreparationSplitProgress": {
+    "description": "Progress label naming which split transaction is being prepared.",
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationPreparationSplitStep": "Split {current} of {total}",
+  "@migrationPreparationSplitStep": {
+    "description": "Progress label naming which split transaction is in progress.",
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationPreparationSplitTransactions": "Preparing split transactions",
+  "@migrationPreparationSplitTransactions": {
+    "description": "Progress label while the balance is split into standard-sized notes before migrating."
+  },
+  "migrationPreparationTipDelay": "Once preparation finishes, your migration will begin automatically after a long intentional delay.",
+  "@migrationPreparationTipDelay": {
+    "description": "Carousel tip on the Ironwood migration preparation screen about the deliberate wait before transfers start."
+  },
+  "migrationPreparationTipOrganizing": "We’re organizing your balance into common-sized parts. This makes your migration harder to link.",
+  "@migrationPreparationTipOrganizing": {
+    "description": "Carousel tip explaining that the balance is split into common-sized notes so the migration is harder to link."
+  },
+  "migrationPreparationTipRounds": "We may have to do multiple rounds of note splitting depending on your balance.",
+  "@migrationPreparationTipRounds": {
+    "description": "Carousel tip saying the note splitting can take several rounds."
+  },
+  "migrationPreparingBatch": "Preparing batch...",
+  "@migrationPreparingBatch": {
+    "description": "[security] Button label while a migration batch is being prepared for signing."
+  },
+  "migrationPrivacyLockDescription": "We auto-locked Vizor after 10 minutes of inactivity.",
+  "@migrationPrivacyLockDescription": {
+    "description": "[security] Text on the lock screen shown during a running migration, explaining that the wallet auto-locked after inactivity."
+  },
+  "migrationPrivacyLockInProgress": "Migration in progress",
+  "@migrationPrivacyLockInProgress": {
+    "description": "Label next to the spinner on the lock screen shown during a running migration, and its screen-reader label."
+  },
+  "migrationProgressTipBlockTime": "Each Zcash block takes about {seconds} seconds to create, but timing can vary with network conditions.",
+  "@migrationProgressTipBlockTime": {
+    "description": "Carousel tip about block time; {seconds} is the average number of seconds per block.",
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationProgressTipClose": "You can close Vizor anytime. Migration will pause, and you can restart it when you return.",
+  "@migrationProgressTipClose": {
+    "description": "[security] Carousel tip on the migration progress screen: closing the app pauses the migration and it can be resumed later."
+  },
+  "migrationProgressTipKeepRunning": "Keep Vizor running and the migration will automatically run in the background.",
+  "@migrationProgressTipKeepRunning": {
+    "description": "[security] Carousel tip: leaving Vizor open lets the migration continue automatically in the background."
+  },
+  "migrationReadyNow": "ready now",
+  "@migrationReadyNow": {
+    "description": "Lowercase status: the migration step can start now."
+  },
+  "migrationRetryMigration": "Retry migration",
+  "@migrationRetryMigration": {
+    "description": "Button that retries a migration that hit a recoverable error."
+  },
+  "migrationRetrying": "Retrying...",
+  "@migrationRetrying": {
+    "description": "Label of the retry button while the retry is running."
+  },
+  "migrationReviewAmountToMigrate": "Amount to migrate",
+  "@migrationReviewAmountToMigrate": {
+    "description": "Label above the ZEC amount that the private migration will move."
+  },
+  "migrationReviewAnalyzeErrorTitle": "Couldn't analyze this balance",
+  "@migrationReviewAnalyzeErrorTitle": {
+    "description": "Title of the error shown when the private migration plan could not be computed for the balance."
+  },
+  "migrationReviewCompleteIn": "Migration complete in",
+  "@migrationReviewCompleteIn": {
+    "description": "Label of the estimated time until the private migration is complete."
+  },
+  "migrationReviewKeepRunningBody": "Preparation continues while the app is minimized, then migration starts automatically.",
+  "@migrationReviewKeepRunningBody": {
+    "description": "[security] Notice body: preparation keeps going while the app is minimized, then the migration starts on its own."
+  },
+  "migrationReviewKeepRunningTitle": "Keep Vizor running",
+  "@migrationReviewKeepRunningTitle": {
+    "description": "[security] Heading of a notice asking the user to keep Vizor open while the migration runs."
+  },
+  "migrationReviewStart": "Start migration",
+  "@migrationReviewStart": {
+    "description": "Button that starts the private migration."
+  },
+  "migrationReviewStarting": "Starting…",
+  "@migrationReviewStarting": {
+    "description": "Label of the start button while the migration is being started."
+  },
+  "migrationRingAllSplitsCompleted": "All splits completed",
+  "@migrationRingAllSplitsCompleted": {
+    "description": "Ring detail when all note-splitting transactions have completed."
+  },
+  "migrationRingConfirmingSplit": "Confirming split",
+  "@migrationRingConfirmingSplit": {
+    "description": "Ring caption while a split transaction collects confirmations."
+  },
+  "migrationRingNextSplit": "Next split",
+  "@migrationRingNextSplit": {
+    "description": "Ring caption naming the next note-splitting transaction."
+  },
+  "migrationRingPreparationComplete": "Preparation complete",
+  "@migrationRingPreparationComplete": {
+    "description": "Ring caption when every note-splitting transaction has completed."
+  },
+  "migrationRingPreparingSchedule": "Preparing schedule",
+  "@migrationRingPreparingSchedule": {
+    "description": "Ring sub-caption while the split schedule is being computed."
+  },
+  "migrationRingScheduled": "Scheduled",
+  "@migrationRingScheduled": {
+    "description": "Ring detail for a split transaction that is scheduled for a future block."
+  },
+  "migrationRingSplitInProgress": "Split in progress",
+  "@migrationRingSplitInProgress": {
+    "description": "Ring caption while a split transaction has been sent and is not yet mined."
+  },
+  "migrationRingStatusCompleted": "completed",
+  "@migrationRingStatusCompleted": {
+    "description": "Lowercase screen-reader state of a migration note that is done."
+  },
+  "migrationRingStatusConfirming": "confirming",
+  "@migrationRingStatusConfirming": {
+    "description": "Lowercase screen-reader state of a migration note waiting for confirmations."
+  },
+  "migrationRingStatusMigrating": "migrating",
+  "@migrationRingStatusMigrating": {
+    "description": "Lowercase screen-reader state of a migration note being sent."
+  },
+  "migrationRingStatusNeedsInput": "needs input",
+  "@migrationRingStatusNeedsInput": {
+    "description": "Lowercase screen-reader state of a migration note that needs the user to sign."
+  },
+  "migrationRingStatusNotStarted": "not started",
+  "@migrationRingStatusNotStarted": {
+    "description": "Lowercase screen-reader state of a migration note that has not started."
+  },
+  "migrationRingStatusPreparing": "preparing",
+  "@migrationRingStatusPreparing": {
+    "description": "Lowercase screen-reader state of a migration note being prepared."
+  },
+  "migrationRingStatusScheduled": "scheduled",
+  "@migrationRingStatusScheduled": {
+    "description": "Lowercase screen-reader state of a migration note that is scheduled."
+  },
+  "migrationRingWaitingForBlock": "Waiting for block",
+  "@migrationRingWaitingForBlock": {
+    "description": "Ring detail: the split transaction is waiting to be included in a block."
+  },
+  "migrationRingWaitingForPreviousSplit": "Waiting for previous split",
+  "@migrationRingWaitingForPreviousSplit": {
+    "description": "Ring detail: this split cannot start until the previous split is confirmed."
+  },
+  "migrationRouteNotAvailable": "Migration is not available for this account.",
+  "@migrationRouteNotAvailable": {
+    "description": "Toast shown when the user opens the migration but the account cannot migrate."
+  },
+  "migrationRouteNotNeeded": "Migration is not needed for this account.",
+  "@migrationRouteNotNeeded": {
+    "description": "Toast shown when the account has nothing to migrate."
+  },
+  "migrationRouteStatusFailed": "Couldn't verify migration status.",
+  "@migrationRouteStatusFailed": {
+    "description": "Toast shown when the migration state could not be read."
+  },
+  "migrationRouteSyncFailed": "Sync could not finish. Try again once Vizor is synced.",
+  "@migrationRouteSyncFailed": {
+    "description": "Toast shown when the migration cannot start because the wallet sync failed."
+  },
+  "migrationScheduleBroadcasting": "Broadcasting",
+  "@migrationScheduleBroadcasting": {
+    "description": "Status of a split transaction that is being sent to the network."
+  },
+  "migrationScheduleCalculating": "Calculating",
+  "@migrationScheduleCalculating": {
+    "description": "Value shown while the preparation completion block is being computed."
+  },
+  "migrationScheduleCompletedAtBlock": "Completed at block {height}",
+  "@migrationScheduleCompletedAtBlock": {
+    "description": "Status of a migration transfer that was mined; {height} is the block height.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleConfirmingProgress": "Confirming {count}/{target}",
+  "@migrationScheduleConfirmingProgress": {
+    "description": "Status of a migration transfer collecting confirmations.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "target": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleCurrentRound": "Current round",
+  "@migrationScheduleCurrentRound": {
+    "description": "Summary row label for the note-splitting round currently running."
+  },
+  "migrationScheduleExpected": "Expected #{height}",
+  "@migrationScheduleExpected": {
+    "description": "Expected block height of a split transaction that waits for the previous split.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleOutputChange": "Stays in Orchard",
+  "@migrationScheduleOutputChange": {
+    "description": "Destination of a split output: it stays in the Orchard pool."
+  },
+  "migrationScheduleOutputContinuation": "Used in round {round}",
+  "@migrationScheduleOutputContinuation": {
+    "description": "Destination of a split output: it is split again in the given round.",
+    "placeholders": {
+      "round": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleOutputMigration": "For migration",
+  "@migrationScheduleOutputMigration": {
+    "description": "Destination of a split output: it will be migrated."
+  },
+  "migrationSchedulePending": "Schedule pending",
+  "@migrationSchedulePending": {
+    "description": "Placeholder shown where a migration time or duration is not yet scheduled."
+  },
+  "migrationSchedulePreparing": "Preparing",
+  "@migrationSchedulePreparing": {
+    "description": "Value shown for the current round before the rounds are known."
+  },
+  "migrationScheduleReadyToMigrate": "Ready to migrate",
+  "@migrationScheduleReadyToMigrate": {
+    "description": "Summary row label for the block height at which preparation is expected to finish."
+  },
+  "migrationScheduleRecalculating": "Recalculating",
+  "@migrationScheduleRecalculating": {
+    "description": "Status of a split transaction whose expected time is being recalculated."
+  },
+  "migrationScheduleRescheduled": "Rescheduled #{height}",
+  "@migrationScheduleRescheduled": {
+    "description": "Status of a migration transfer that moved to a later block height.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleRoundProgress": "{current} of {total}",
+  "@migrationScheduleRoundProgress": {
+    "description": "Current split round out of all rounds, for example \"2 of 3\".",
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleScheduledAt": "Scheduled #{height}",
+  "@migrationScheduleScheduledAt": {
+    "description": "Status of a migration transfer scheduled for a block height.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsAwaiting": "waiting for previous split, expected at block {height}",
+  "@migrationScheduleSemanticsAwaiting": {
+    "description": "Lowercase screen-reader state of a split transaction waiting for the previous split.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsBroadcast": "broadcast, waiting to be mined, projected completion at block {height}",
+  "@migrationScheduleSemanticsBroadcast": {
+    "description": "Lowercase screen-reader state of a split transaction that was sent and awaits mining.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsCompleted": "completed",
+  "@migrationScheduleSemanticsCompleted": {
+    "description": "Lowercase screen-reader state of a completed transaction."
+  },
+  "migrationScheduleSemanticsCompletedAt": "completed at block {height}",
+  "@migrationScheduleSemanticsCompletedAt": {
+    "description": "Lowercase screen-reader state of a transaction completed at a block height.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsDue": "due now",
+  "@migrationScheduleSemanticsDue": {
+    "description": "Lowercase screen-reader state of a note that is due."
+  },
+  "migrationScheduleSemanticsMigrating": "broadcast, waiting to be mined",
+  "@migrationScheduleSemanticsMigrating": {
+    "description": "Lowercase screen-reader state of a note that was sent and awaits mining."
+  },
+  "migrationScheduleSemanticsNote": "Note {number}, {amount} ZEC, {state}.",
+  "@migrationScheduleSemanticsNote": {
+    "description": "Screen-reader description of one migration note row.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      },
+      "amount": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsNoteConfirming": "confirming, {count} of {target} confirmations",
+  "@migrationScheduleSemanticsNoteConfirming": {
+    "description": "Lowercase screen-reader state of a note collecting confirmations.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "target": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsNoteConfirmingMined": "confirming, {count} of {target} confirmations, mined at block {height}",
+  "@migrationScheduleSemanticsNoteConfirmingMined": {
+    "description": "Lowercase screen-reader state of a mined note collecting confirmations.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "target": {
+        "type": "String"
+      },
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsOutput": "{amount} ZEC, {destination}",
+  "@migrationScheduleSemanticsOutput": {
+    "description": "Screen-reader description of one split output: its ZEC amount and where it goes.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "destination": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsOutputChange": "stays in Orchard",
+  "@migrationScheduleSemanticsOutputChange": {
+    "description": "Lowercase screen-reader destination of a split output: it stays in Orchard."
+  },
+  "migrationScheduleSemanticsOutputContinuation": "used in round {round}",
+  "@migrationScheduleSemanticsOutputContinuation": {
+    "description": "Lowercase screen-reader destination of a split output that is split again.",
+    "placeholders": {
+      "round": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsOutputMigration": "for migration",
+  "@migrationScheduleSemanticsOutputMigration": {
+    "description": "Lowercase screen-reader destination of a split output: it will be migrated."
+  },
+  "migrationScheduleSemanticsOutputs": "Outputs: {outputs}.",
+  "@migrationScheduleSemanticsOutputs": {
+    "description": "Screen-reader description of the outputs of a split transaction; {outputs} is a semicolon-separated list.",
+    "placeholders": {
+      "outputs": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsPending": "schedule pending",
+  "@migrationScheduleSemanticsPending": {
+    "description": "Lowercase screen-reader state of a note whose schedule is not set yet."
+  },
+  "migrationScheduleSemanticsReadyToSign": "ready to sign",
+  "@migrationScheduleSemanticsReadyToSign": {
+    "description": "Lowercase screen-reader state of a note waiting for the user to sign."
+  },
+  "migrationScheduleSemanticsRescheduled": "rescheduled from block {from} to block {to}",
+  "@migrationScheduleSemanticsRescheduled": {
+    "description": "Lowercase screen-reader state of a note that moved to a later block.",
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsScheduled": "scheduled at block {height}",
+  "@migrationScheduleSemanticsScheduled": {
+    "description": "Lowercase screen-reader state of a transaction scheduled for a block height.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsSplit": "Split {number}, {amount} ZEC, {state}.",
+  "@migrationScheduleSemanticsSplit": {
+    "description": "Screen-reader description of one split transaction row.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      },
+      "amount": {
+        "type": "String"
+      },
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsSplitConfirming": "confirming, {count} of {target} confirmations, projected completion at block {height}",
+  "@migrationScheduleSemanticsSplitConfirming": {
+    "description": "Lowercase screen-reader state of a split transaction collecting confirmations.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "target": {
+        "type": "String"
+      },
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSemanticsWaitingWindow": "waiting for window at block {height}",
+  "@migrationScheduleSemanticsWaitingWindow": {
+    "description": "Lowercase screen-reader state of a note waiting for its migration window.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleSplitRound": "Split round {number}",
+  "@migrationScheduleSplitRound": {
+    "description": "Heading above the split transactions of one round.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationScheduleTitle": "Migration Schedule",
+  "@migrationScheduleTitle": {
+    "description": "Title of the migration schedule screen."
+  },
+  "migrationScheduleTitlePreparation": "Preparation Schedule",
+  "@migrationScheduleTitlePreparation": {
+    "description": "Title of the screen listing the note-splitting transactions."
+  },
+  "migrationScheduleUnavailableBody": "Vizor couldn't load the latest migration schedule. Your saved migration state is unchanged.",
+  "@migrationScheduleUnavailableBody": {
+    "description": "[security] Explains that the schedule could not be loaded and the saved migration state is unchanged."
+  },
+  "migrationScheduleUnavailableTitle": "Migration schedule unavailable",
+  "@migrationScheduleUnavailableTitle": {
+    "description": "Heading shown when the migration schedule cannot be loaded."
+  },
+  "migrationScheduleWaitingToBeMined": "Waiting to be mined",
+  "@migrationScheduleWaitingToBeMined": {
+    "description": "Status of a migration transfer that was sent and awaits mining."
+  },
+  "migrationScheduleWindow": "Window #{height}",
+  "@migrationScheduleWindow": {
+    "description": "Status of a migration transfer waiting for its time window at a block height.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationSemanticsNote": "Note {number}: {amount} ZEC, {status}.",
+  "@migrationSemanticsNote": {
+    "description": "Screen-reader description of one note in the migration ring; {status} is a short state such as \"completed\".",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      },
+      "amount": {
+        "type": "String"
+      },
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationSemanticsNotesOrder": "Migration notes in expected processing order.",
+  "@migrationSemanticsNotesOrder": {
+    "description": "Screen-reader description of the migration ring: notes are listed in processing order."
+  },
+  "migrationSemanticsPreparingNotes": "Preparing migration notes.",
+  "@migrationSemanticsPreparingNotes": {
+    "description": "Screen-reader description of the migration ring while notes are being prepared."
+  },
+  "migrationSignBatch": "Sign Batch #{number}",
+  "@migrationSignBatch": {
+    "description": "[security] Button that starts signing one batch of migration transfers; {number} is the batch number.",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationSignWithKeystone": "Sign with Keystone",
+  "@migrationSignWithKeystone": {
+    "description": "[security] Button that starts signing the next migration batch on the Keystone hardware wallet."
+  },
+  "migrationStageFinish": "Finish",
+  "@migrationStageFinish": {
+    "description": "Step label in the migration progress header: the final stage."
+  },
+  "migrationStageMigration": "Migration",
+  "@migrationStageMigration": {
+    "description": "Step label in the migration progress header: the migration stage."
+  },
+  "migrationStagePreparation": "Preparation",
+  "@migrationStagePreparation": {
+    "description": "Step label in the migration progress header: the preparation stage."
+  },
+  "migrationStatusAttentionBody": "Vizor hit a recoverable migration error before completing the Ironwood transition.",
+  "@migrationStatusAttentionBody": {
+    "description": "Explains that a recoverable error interrupted the migration."
+  },
+  "migrationStatusAttentionFooter": "No funds are lost. Retry migration after checking that Vizor is synced and online.",
+  "@migrationStatusAttentionFooter": {
+    "description": "[security] Reassures that no funds are lost and tells the user to retry once Vizor is synced and online."
+  },
+  "migrationStatusAttentionTitle": "Migration Needs Attention",
+  "@migrationStatusAttentionTitle": {
+    "description": "Heading of the migration status screen after a recoverable error."
+  },
+  "migrationStatusBroadcasted": "Broadcasted",
+  "@migrationStatusBroadcasted": {
+    "description": "Row label showing how many migration transactions were sent to the network."
+  },
+  "migrationStatusBroadcastingBody": "Vizor is broadcasting the prepared Ironwood migration transaction.",
+  "@migrationStatusBroadcastingBody": {
+    "description": "Explains that Vizor is sending the prepared migration transaction."
+  },
+  "migrationStatusBroadcastingButton": "Broadcasting",
+  "@migrationStatusBroadcastingButton": {
+    "description": "Disabled button label while the migration transaction is being sent."
+  },
+  "migrationStatusCompleteBody": "Your funds have moved into the Ironwood pool.",
+  "@migrationStatusCompleteBody": {
+    "description": "Confirms the funds were moved into the Ironwood pool."
+  },
+  "migrationStatusCompleteFooter": "You can return home and continue using Vizor.",
+  "@migrationStatusCompleteFooter": {
+    "description": "Footer note after migration completes."
+  },
+  "migrationStatusCompleteTitle": "Migration Complete",
+  "@migrationStatusCompleteTitle": {
+    "description": "Heading of the migration status screen when migration is finished."
+  },
+  "migrationStatusConfirmingBody": "The migration transaction was broadcast. Vizor is waiting for network confirmations.",
+  "@migrationStatusConfirmingBody": {
+    "description": "Explains that the migration transaction was sent and is waiting for confirmations."
+  },
+  "migrationStatusDefaultBody": "Vizor is tracking the current Ironwood migration state.",
+  "@migrationStatusDefaultBody": {
+    "description": "Explains that Vizor is tracking the migration state."
+  },
+  "migrationStatusDefaultButton": "Migration in progress",
+  "@migrationStatusDefaultButton": {
+    "description": "Disabled button label in an unrecognized migration state."
+  },
+  "migrationStatusDefaultFooter": "This state is visible for diagnostics while the migration flow is being connected.",
+  "@migrationStatusDefaultFooter": {
+    "description": "Footer note: this fallback state is shown only for diagnostics."
+  },
+  "migrationStatusDefaultTitle": "Migration Status",
+  "@migrationStatusDefaultTitle": {
+    "description": "Heading of the migration status screen in an unrecognized state."
+  },
+  "migrationStatusLeaveFooter": "You can leave this screen.\nBut keep Vizor open & running.",
+  "@migrationStatusLeaveFooter": {
+    "description": "[security] Footer note: the user may leave the screen but must keep the app open so the migration continues."
+  },
+  "migrationStatusLedgerUnsupported": "Ledger private migration is not supported because this flow requires batched signing.",
+  "@migrationStatusLedgerUnsupported": {
+    "description": "Footer note on the migration status screen for Ledger accounts, whose device flow cannot do batched signing."
+  },
+  "migrationStatusMigratingTitle": "Migrating...",
+  "@migrationStatusMigratingTitle": {
+    "description": "Heading of the migration status screen while the migration transaction is sent or confirming."
+  },
+  "migrationStatusPausedBody": "The private migration is paused before the next action.",
+  "@migrationStatusPausedBody": {
+    "description": "Explains that the private migration is paused before its next step."
+  },
+  "migrationStatusPausedButton": "Paused",
+  "@migrationStatusPausedButton": {
+    "description": "Disabled button label while the migration is paused."
+  },
+  "migrationStatusPausedFooter": "No new transaction will be prepared until migration execution is resumed.",
+  "@migrationStatusPausedFooter": {
+    "description": "Footer note: nothing new happens until the migration is resumed."
+  },
+  "migrationStatusPausedTitle": "Migration Paused",
+  "@migrationStatusPausedTitle": {
+    "description": "Heading of the migration status screen when the migration is paused."
+  },
+  "migrationStatusPendingBroadcasts": "Pending broadcasts",
+  "@migrationStatusPendingBroadcasts": {
+    "description": "Row label showing how many migration transactions still have to be sent."
+  },
+  "migrationStatusPreparingBody": "This usually takes around 30 minutes per split.",
+  "@migrationStatusPreparingBody": {
+    "description": "Explains how long each note-splitting step usually takes."
+  },
+  "migrationStatusPreparingTitle": "Preparing...",
+  "@migrationStatusPreparingTitle": {
+    "description": "Heading of the migration status screen while the balance is being split."
+  },
+  "migrationStatusReadyBody": "The private split is ready. The next step will prepare the Ironwood migration batch.",
+  "@migrationStatusReadyBody": {
+    "description": "Explains that the next step prepares the Ironwood migration batch."
+  },
+  "migrationStatusReadyFooter": "Continue migration to prepare and broadcast the Ironwood transaction when it is due.",
+  "@migrationStatusReadyFooter": {
+    "description": "Footer note telling the user to continue so the Ironwood transaction is prepared and sent when due."
+  },
+  "migrationStatusReadyTitle": "Ready to Migrate",
+  "@migrationStatusReadyTitle": {
+    "description": "Heading of the migration status screen when the split is done and migration can start."
+  },
+  "migrationStatusScheduledBody": "Your migration transaction is prepared and waiting for its scheduled broadcast window.",
+  "@migrationStatusScheduledBody": {
+    "description": "Explains that the migration transaction is ready and waits for its send time."
+  },
+  "migrationStatusScheduledFooter": "When Vizor is open, scheduled broadcasts will be advanced by the migration worker.",
+  "@migrationStatusScheduledFooter": {
+    "description": "[security] Footer note: scheduled sends only progress while Vizor is open."
+  },
+  "migrationStatusScheduledTitle": "Broadcast Scheduled",
+  "@migrationStatusScheduledTitle": {
+    "description": "Heading of the migration status screen when the transaction waits for its send time."
+  },
+  "migrationStatusSplitProgress": "Split progress",
+  "@migrationStatusSplitProgress": {
+    "description": "Row label showing how many note-splitting transactions are done."
+  },
+  "migrationStatusUnavailableBody": "Vizor couldn't verify the current Ironwood migration state. No new migration will start until the status can be checked.",
+  "@migrationStatusUnavailableBody": {
+    "description": "Explains that the migration state could not be verified and no new migration will start meanwhile."
+  },
+  "migrationStatusUnavailableHint": "Return home and try again after sync refreshes. If a migration is already in progress, Vizor will continue from the saved state after it can be read.",
+  "@migrationStatusUnavailableHint": {
+    "description": "Advice on the migration-status-unavailable screen."
+  },
+  "migrationStatusUnavailableTitle": "Migration status unavailable",
+  "@migrationStatusUnavailableTitle": {
+    "description": "Heading of the screen shown when the migration state cannot be read."
+  },
+  "migrationSummaryCurrentBlock": "Current block",
+  "@migrationSummaryCurrentBlock": {
+    "description": "Label of the summary row showing the current block height."
+  },
+  "migrationSummaryEstCompletion": "Est. completion",
+  "@migrationSummaryEstCompletion": {
+    "description": "Label of the summary row showing the estimated completion time of the migration."
+  },
+  "migrationSummaryLeftToMigrate": "Left to migrate",
+  "@migrationSummaryLeftToMigrate": {
+    "description": "Label of the summary row showing the ZEC amount that is not migrated yet."
+  },
+  "migrationSummaryOverallProgress": "Overall progress",
+  "@migrationSummaryOverallProgress": {
+    "description": "Label of the summary row showing how many migration transactions are complete."
+  },
+  "migrationTransactionOrdinal": "Transaction {ordinal}",
+  "@migrationTransactionOrdinal": {
+    "description": "Ring caption naming which transaction of the migration is shown, when the total is not known yet.",
+    "placeholders": {
+      "ordinal": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationTransactionOrdinalOfTotal": "Transaction {ordinal} of {total}",
+  "@migrationTransactionOrdinalOfTotal": {
+    "description": "Ring caption naming which transaction of the migration is shown, for example \"Transaction 2 of 7\".",
+    "placeholders": {
+      "ordinal": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "migrationUpgradeStopBody": "Transfers signed before the upgrade can’t be sent after it. Your funds are safe.",
+  "@migrationUpgradeStopBody": {
+    "description": "Explains that migration transfers signed before the network upgrade can no longer be sent, and that no funds were lost."
+  },
+  "migrationUpgradeStopMoveRemainingLabel": "Move remaining balance",
+  "@migrationUpgradeStopMoveRemainingLabel": {
+    "description": "Button that starts a new migration of the balance left after the network upgrade stopped the previous one."
+  },
+  "migrationUpgradeStopMovedLabel": "Moved to Ironwood",
+  "@migrationUpgradeStopMovedLabel": {
+    "description": "Label for the amount already migrated when a network upgrade stopped the migration."
+  },
+  "migrationUpgradeStopRemainingLabel": "Still in Orchard",
+  "@migrationUpgradeStopRemainingLabel": {
+    "description": "Label for the amount that remains in the Orchard pool after a network upgrade stopped the migration."
+  },
+  "migrationUpgradeStopRingMessage": "Stopped by the\nnetwork upgrade",
+  "@migrationUpgradeStopRingMessage": {
+    "description": "Ironwood migration ring message, split over two lines, shown when the network upgrade stopped a migration partway."
+  },
+  "migrationView": "View",
+  "@migrationView": {
+    "description": "Link on the legacy migration card that opens the batch schedule."
+  },
+  "migrationViewSchedule": "View Schedule",
+  "@migrationViewSchedule": {
+    "description": "Button that opens the schedule of migration transfers."
   },
   "navActivity": "Activity",
   "@navActivity": {

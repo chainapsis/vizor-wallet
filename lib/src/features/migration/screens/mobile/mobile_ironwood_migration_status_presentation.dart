@@ -105,6 +105,7 @@ List<MobileIronwoodMigrationPartPresentation> _mobileMigrationPartPresentations(
               currentHeight == null || currentHeight <= 0
                   ? l10n.migrationMobilePartQueued
                   : migrationHeightRemainingDurationLabel(
+                      l10n,
                       broadcasts[index].scheduledHeight,
                       blockTimes: blockTimes,
                       currentHeight: currentHeight,
@@ -163,6 +164,7 @@ List<MobileIronwoodMigrationPartPresentation> _mobileMigrationPartPresentations(
             '${_compactZec(transfers[index].valueZatoshi)} ZEC', // l10n-ignore: amount format
         valueZatoshi: transfers[index].valueZatoshi,
         eta: migrationBlockOffsetDurationLabel(
+          l10n,
           transfers[index].blockOffset,
           blockTimes: blockTimes,
         ),
@@ -230,6 +232,7 @@ String? _mobileMigrationPartDetail(
     final scheduledHeight = part.scheduledHeight;
     if (scheduledHeight != null && currentHeight != null && currentHeight > 0) {
       return migrationHeightRemainingDurationLabel(
+        l10n,
         scheduledHeight,
         blockTimes: blockTimes,
         currentHeight: currentHeight,
@@ -246,6 +249,7 @@ String? _mobileMigrationPartDetail(
     return plannedTransfer == null
         ? l10n.migrationMobilePartQueued
         : migrationBlockOffsetDurationLabel(
+            l10n,
             plannedTransfer.blockOffset,
             blockTimes: blockTimes,
           );
@@ -276,6 +280,7 @@ String _mobileScheduledPartLabel(
     return l10n.migrationMobilePartQueued;
   }
   return migrationHeightRemainingDurationLabel(
+    l10n,
     scheduledHeight,
     blockTimes: blockTimes,
     currentHeight: currentHeight,
@@ -293,6 +298,7 @@ String _mobileWaitingLabel(
       nextHeight == null || currentHeight == null || currentHeight <= 0
       ? null
       : migrationHeightRemainingDurationLabel(
+          l10n,
           nextHeight,
           blockTimes: blockTimes,
           currentHeight: currentHeight,
@@ -315,6 +321,7 @@ String _mobilePlannedPartDurationLabel(
   for (final transfer in plan.scheduledTransfers) {
     if (transfer.partIndex == partIndex) {
       return migrationBlockOffsetDurationLabel(
+        l10n,
         transfer.blockOffset,
         blockTimes: blockTimes,
       );

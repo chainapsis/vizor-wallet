@@ -2249,6 +2249,780 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockUnlockToContinuePausedBody => 'Unlock Vizor to continue.';
 
   @override
+  String get migrationAnalyzingBalance => 'Analyzing your balance...';
+
+  @override
+  String get migrationAnalyzingCaption =>
+      'Vizor is working hard to find a perfect balance\nof safety, privacy, and speed for your migration';
+
+  @override
+  String get migrationAnalyzingFindingBatches => 'Finding private batches...';
+
+  @override
+  String get migrationAnalyzingPreparingPlan =>
+      'Preparing your migration plan...';
+
+  @override
+  String get migrationAnalyzingSemanticsLabel =>
+      'Preparing private migration plan';
+
+  @override
+  String get migrationAnnouncementBody =>
+      'Ironwood is the latest Zcash shielded pool.\nIt\'s the first formally verified pool with\ncutting edge cryptography.';
+
+  @override
+  String get migrationAnnouncementReleaseNote => 'Official Release Note';
+
+  @override
+  String get migrationAnnouncementStart => 'Start Migration';
+
+  @override
+  String get migrationBackAbout => 'About Migration';
+
+  @override
+  String get migrationBackHome => 'Back home';
+
+  @override
+  String get migrationBackHowItWorks => 'How Migration Works';
+
+  @override
+  String get migrationBackOptions => 'Migration Options';
+
+  @override
+  String get migrationBatchBroadcasting => 'Broadcasting...';
+
+  @override
+  String migrationBatchCardTitle(String number, String count) {
+    return 'Batch #$number ($count notes)';
+  }
+
+  @override
+  String get migrationBatchConfirming => 'Confirming...';
+
+  @override
+  String migrationBlockHeight(String height) {
+    return 'Block $height';
+  }
+
+  @override
+  String migrationBlocksEstimate(String blocks) {
+    return '~$blocks blocks';
+  }
+
+  @override
+  String migrationBroadcastApproxInHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '~in $count hrs',
+      one: '~in 1 hr',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationBroadcastApproxInMinutes(int count) {
+    return '~in $count min';
+  }
+
+  @override
+  String get migrationBroadcastConfirmed => 'Confirmed';
+
+  @override
+  String get migrationBroadcastDueNow => 'Due now';
+
+  @override
+  String migrationBroadcastInHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'in $count hrs',
+      one: 'in 1 hr',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationBroadcastInMinutes(int count) {
+    return 'in $count min';
+  }
+
+  @override
+  String get migrationBroadcastPending => 'Pending';
+
+  @override
+  String get migrationBroadcastSubmitted => 'Submitted';
+
+  @override
+  String get migrationCarouselPreparationLabel =>
+      'Migration preparation information';
+
+  @override
+  String get migrationCarouselProgressLabel => 'Migration information';
+
+  @override
+  String get migrationCompleteBody =>
+      'Migration completed successfully and you can\nspend your funds as usual.';
+
+  @override
+  String migrationCompleteTitle(String amount) {
+    return 'Your\n$amount ZEC\nare on Ironwood!';
+  }
+
+  @override
+  String get migrationConfirming => 'Confirming';
+
+  @override
+  String get migrationContinueMigration => 'Continue migration';
+
+  @override
+  String get migrationContinuing => 'Continuing...';
+
+  @override
+  String get migrationCtaStart => 'Migrate to Ironwood Pool';
+
+  @override
+  String get migrationCtaStopped => 'Migration stopped by network upgrade';
+
+  @override
+  String get migrationCurrentBatch => 'Current Batch';
+
+  @override
+  String migrationDurationDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '~$count days',
+      one: '~1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationDurationHalfHours(String hours) {
+    return '~$hours.5 hrs';
+  }
+
+  @override
+  String migrationDurationHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '~$count hrs',
+      one: '~1 hr',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationDurationMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '~$count mins',
+      one: '~1 min',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationErrorBroadcast =>
+      'Couldn\'t broadcast the migration transaction. Try again.';
+
+  @override
+  String get migrationErrorContinue =>
+      'Couldn\'t continue migration. Try again.';
+
+  @override
+  String get migrationErrorKeystonePrepare =>
+      'Couldn\'t prepare Keystone signing.';
+
+  @override
+  String get migrationErrorLedgerExcluded =>
+      'Ledger private migration is excluded because the current flow requires batched signing.';
+
+  @override
+  String get migrationErrorPlanChanged =>
+      'The amount or fee changed. Review the updated details.';
+
+  @override
+  String get migrationErrorStart => 'Couldn\'t start migration. Try again.';
+
+  @override
+  String get migrationErrorUnlockBeforeContinue =>
+      'Unlock Vizor before continuing migration.';
+
+  @override
+  String get migrationErrorUnlockBeforeStart =>
+      'Unlock Vizor before starting migration.';
+
+  @override
+  String get migrationErrorWaitForSync =>
+      'Wait for sync to finish, then try again.';
+
+  @override
+  String get migrationEstimateAfterSigning => 'After signing';
+
+  @override
+  String get migrationEstimateComplete => 'Complete';
+
+  @override
+  String migrationEstimateIn(String estimate) {
+    return 'in $estimate';
+  }
+
+  @override
+  String migrationEstimateInDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'in ~$count days',
+      one: 'in ~1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationEstimateInHours(String hours) {
+    return 'in ~$hours hours';
+  }
+
+  @override
+  String migrationEstimateInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'in ~$count minutes',
+      one: 'in ~1 minute',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationEstimateInOneHour => 'in ~1 hour';
+
+  @override
+  String get migrationEstimatedArrivalTime => 'Estimated arrival time';
+
+  @override
+  String get migrationExpectKeepRunningBody =>
+      'Your computer needs to be unlocked with Vizor running so we can send the next migration transaction';
+
+  @override
+  String get migrationExpectLongBody =>
+      'Ironwood migrations can take anywhere from several hours up to a couple days depending on your migration amount.';
+
+  @override
+  String get migrationExpectLongTitle => 'Migrations can take a long time';
+
+  @override
+  String get migrationExpectSpendBody =>
+      'Each confirmed Ironwood amount is available to spend while the rest of the migration continues.';
+
+  @override
+  String get migrationExpectSpendTitle => 'You can spend as funds arrive';
+
+  @override
+  String get migrationExpectTitle => 'What to expect';
+
+  @override
+  String get migrationExpectVpnBody =>
+      'It’s recommended to run the migration behind a trustable VPN/network privacy layer';
+
+  @override
+  String get migrationExpectVpnTitle => 'Use VPN for an extra privacy';
+
+  @override
+  String get migrationFlowTitle => 'Ironwood Migration';
+
+  @override
+  String get migrationGoHome => 'Go home';
+
+  @override
+  String get migrationHowDelayedBody =>
+      'Vizor slowly sends parts at staggered intervals across multiple batches to reduce traceability.';
+
+  @override
+  String get migrationHowDelayedTitle => 'Delayed and randomized migrations';
+
+  @override
+  String get migrationHowFrozenBody =>
+      'A one-time migration to Ironwood is required to spend your existing shielded balance.';
+
+  @override
+  String get migrationHowFrozenTitle =>
+      'Orchard (legacy shielded) balance is frozen';
+
+  @override
+  String get migrationHowPreparationBody =>
+      'Vizor splits your total balance into many smaller notes (e.g. 0.1 ZEC / 1 ZEC / 5 ZEC) before migrating.';
+
+  @override
+  String get migrationHowPreparationTitle => 'Pre-migration preparations';
+
+  @override
+  String migrationHowStepLabel(String number) {
+    return 'Step $number';
+  }
+
+  @override
+  String migrationHowStepSemanticsCurrent(
+    String number,
+    String total,
+    String title,
+    String body,
+  ) {
+    return 'Migration step $number of $total. $title. $body';
+  }
+
+  @override
+  String migrationHowStepSemanticsShow(String number, String total) {
+    return 'Show migration step $number of $total';
+  }
+
+  @override
+  String get migrationHowTitle => 'How the Migration Works';
+
+  @override
+  String get migrationImmediateAmount => 'Amount';
+
+  @override
+  String get migrationImmediateAuthoriseAnyway => 'Authorise anyway';
+
+  @override
+  String get migrationImmediateAuthorising => 'Authorising…';
+
+  @override
+  String get migrationImmediateAuthorisingSemantics => 'Authorising migration';
+
+  @override
+  String get migrationImmediateCalculating => 'Calculating…';
+
+  @override
+  String get migrationImmediateConsiderOther => 'Consider another option';
+
+  @override
+  String get migrationImmediateFees => 'Fees (estimate)';
+
+  @override
+  String get migrationImmediateNoBalance =>
+      'No spendable Orchard balance is available for Immediate migration.';
+
+  @override
+  String get migrationImmediatePlanFailed =>
+      'Couldn\'t calculate the Immediate migration plan. Sync and try again.';
+
+  @override
+  String get migrationImmediateRetryCalculation => 'Retry calculation';
+
+  @override
+  String get migrationImmediateReviewTitle => 'Review Migration Plan';
+
+  @override
+  String get migrationImmediateTradeoffEmphasis =>
+      'easier to associate with your wallet.';
+
+  @override
+  String migrationImmediateTradeoffLead(String amount) {
+    return 'Crosses in one visible step — your $amount and timing are ';
+  }
+
+  @override
+  String get migrationImmediateTradeoffLedger =>
+      '\nPrivate migration is not available for Ledger accounts.';
+
+  @override
+  String get migrationImmediateTradeoffPrivate =>
+      '\nConsider choosing a Private Migration option.';
+
+  @override
+  String get migrationImmediateTradeoffTitle => 'Privacy trade-off';
+
+  @override
+  String get migrationImmediateUnavailable => 'Unavailable';
+
+  @override
+  String migrationInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '~in $count minutes',
+      one: '~in 1 minute',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationIntroAnnouncement => 'Official Announcement';
+
+  @override
+  String get migrationIntroBadge => 'Zcash Network Upgrade';
+
+  @override
+  String migrationIntroBody(String amount) {
+    return 'Your $amount ZEC is currently in Orchard.\nTo keep using these funds for shielded payments, you will need to move them to Ironwood. You will review the migration plan before any funds move.';
+  }
+
+  @override
+  String get migrationIntroTagline => 'A new shielded pool for Zcash.';
+
+  @override
+  String get migrationKeystoneAfterScanInstruction =>
+      'After you scanned, click Get signature.';
+
+  @override
+  String get migrationKeystoneApplyingSignature =>
+      'Applying the Keystone signature.';
+
+  @override
+  String get migrationKeystoneApplyingToPlan =>
+      'Applying the Keystone signature to your migration plan.';
+
+  @override
+  String get migrationKeystoneBackToReview => 'Back to review';
+
+  @override
+  String get migrationKeystoneBackToStatus => 'Back to status';
+
+  @override
+  String get migrationKeystoneBeginSigning => 'Begin signing';
+
+  @override
+  String get migrationKeystoneCamera => 'Camera';
+
+  @override
+  String get migrationKeystoneCameraAccess =>
+      'Allow camera access to scan the signed Keystone QR.';
+
+  @override
+  String get migrationKeystoneCameraOnly =>
+      'Keystone migration signing uses camera QR scanning only. Connect a camera and try again.';
+
+  @override
+  String get migrationKeystoneCancelFailed =>
+      'Could not cancel the signing request. Try again.';
+
+  @override
+  String get migrationKeystoneClickToEnlarge => 'Click QR to enlarge';
+
+  @override
+  String get migrationKeystoneConfirmTitle => 'Confirm Migration with Keystone';
+
+  @override
+  String get migrationKeystoneEnlargeQr => 'Enlarge Keystone request QR';
+
+  @override
+  String get migrationKeystoneEnlargedQr => 'Enlarged Keystone request QR';
+
+  @override
+  String get migrationKeystoneFirmwareUpdate =>
+      'Update Keystone firmware to sign Ironwood migrations, then try again.';
+
+  @override
+  String get migrationKeystoneGetSignature => 'Get signature';
+
+  @override
+  String get migrationKeystoneKeepQrSteady =>
+      'Keep the QR code steady and fully visible.';
+
+  @override
+  String get migrationKeystoneMobileTitle => 'Keystone migration';
+
+  @override
+  String get migrationKeystoneNotKeystone =>
+      'Use a Keystone account to sign this migration.';
+
+  @override
+  String get migrationKeystoneOpenSignedQr =>
+      'Open the signed migration QR on Keystone, then scan again.';
+
+  @override
+  String get migrationKeystonePlanBody =>
+      'Each round uses one animated request QR and one signed response QR.';
+
+  @override
+  String get migrationKeystonePlanTitle => 'Keystone signing plan';
+
+  @override
+  String get migrationKeystonePrepareFailed =>
+      'Keystone signing could not be prepared. Try again.';
+
+  @override
+  String get migrationKeystonePrepareWallet => 'Prepare your Keystone wallet';
+
+  @override
+  String get migrationKeystonePreparing => 'Preparing';
+
+  @override
+  String get migrationKeystonePreparingQr => 'Preparing QR codes...';
+
+  @override
+  String get migrationKeystoneProofFailed =>
+      'Vizor could not prepare local proofs. Go back and prepare this request again.';
+
+  @override
+  String get migrationKeystoneProofWaiting =>
+      'Signature captured. Vizor is still preparing local proofs. Keep this screen open.';
+
+  @override
+  String migrationKeystoneProofWaitingProgress(String ready, String total) {
+    return 'Signature captured. Vizor is still preparing local proofs ($ready/$total). Keep this screen open.';
+  }
+
+  @override
+  String get migrationKeystoneProofsPreparing => 'Preparing local proofs';
+
+  @override
+  String get migrationKeystoneProofsPreparingEllipsis =>
+      'Preparing local proofs...';
+
+  @override
+  String migrationKeystoneProofsProgress(String ready, String total) {
+    return 'Preparing local proofs $ready/$total';
+  }
+
+  @override
+  String get migrationKeystoneQrBodyCombined =>
+      'Scan this request with Keystone to sign the preparation transactions and migration batches together.';
+
+  @override
+  String get migrationKeystoneQrBodyImmediate =>
+      'Scan the QR code with your Keystone wallet to confirm migration.';
+
+  @override
+  String get migrationKeystoneQrBodyRound =>
+      'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.';
+
+  @override
+  String get migrationKeystoneReadingSignature => 'Reading signature...';
+
+  @override
+  String get migrationKeystoneRequestCancelled =>
+      'This signing request was cancelled. Prepare it again.';
+
+  @override
+  String get migrationKeystoneRequestExpired =>
+      'This Keystone signing request expired. Prepare it again.';
+
+  @override
+  String get migrationKeystoneRequestQr => 'Request QR';
+
+  @override
+  String get migrationKeystoneRequestUnusable =>
+      'This Keystone signing request can no longer be used. Prepare it again.';
+
+  @override
+  String migrationKeystoneRound(String current, String total) {
+    return 'Round $current of $total';
+  }
+
+  @override
+  String migrationKeystoneRoundCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count QR signing rounds',
+      one: '1 QR signing round',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationKeystoneScanIssuesBody =>
+      'There may be a newer version of Keystone Cypherpunk firmware available. Check if you have the latest version.';
+
+  @override
+  String get migrationKeystoneScanIssuesConfirm => 'Ok, I will check';
+
+  @override
+  String get migrationKeystoneScanIssuesTitle =>
+      'Having issues with scanning the QR code?';
+
+  @override
+  String get migrationKeystoneScanNewQr =>
+      'Scan the new signed QR shown on Keystone.';
+
+  @override
+  String get migrationKeystoneScanQrCode => 'Scan QR Code';
+
+  @override
+  String get migrationKeystoneScanRequest => 'Scan request with Keystone';
+
+  @override
+  String get migrationKeystoneScanSignature => 'Scan Keystone signature';
+
+  @override
+  String get migrationKeystoneScanSubtitle => 'Scan with your Keystone';
+
+  @override
+  String get migrationKeystoneSignBatch => 'Sign Ironwood batch';
+
+  @override
+  String get migrationKeystoneSignMigration => 'Sign migration';
+
+  @override
+  String get migrationKeystoneSignPrivateSplit => 'Sign private split';
+
+  @override
+  String get migrationKeystoneSignatureFailed =>
+      'Keystone signature could not be applied.';
+
+  @override
+  String migrationKeystoneSignsAll(String transactions) {
+    return 'Signs $transactions';
+  }
+
+  @override
+  String migrationKeystoneSignsSome(String count, String transactions) {
+    return 'Signs $count of $transactions';
+  }
+
+  @override
+  String get migrationKeystoneToolbarReview => 'Review migration';
+
+  @override
+  String get migrationKeystoneToolbarStatus => 'Migration status';
+
+  @override
+  String migrationKeystoneTransactionTotal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count transactions total',
+      one: '1 transaction total',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationKeystoneTransactions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count transactions',
+      one: '1 transaction',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationKeystoneTryAfterSync => 'Try again after sync finishes.';
+
+  @override
+  String get migrationKeystoneUnavailableTitle =>
+      'Keystone signing unavailable';
+
+  @override
+  String get migrationKeystoneUnlockFirst =>
+      'Unlock Vizor before signing migration.';
+
+  @override
+  String get migrationKeystoneWaitingForProofsLong =>
+      'Signature captured. Vizor will continue when local proofs are ready.';
+
+  @override
+  String get migrationKeystoneWaitingForProofsShort =>
+      'Signature captured. Waiting for local proofs.';
+
+  @override
+  String get migrationKeystoneWrongRound =>
+      'This signed QR is from another round. Go back, scan the current request with Keystone, then scan its new signed QR.';
+
+  @override
+  String get migrationLedgerBroadcast =>
+      'The migration transaction could not be broadcast.';
+
+  @override
+  String get migrationLedgerConnect =>
+      'Connect and unlock your Ledger, then open the Zcash app.';
+
+  @override
+  String get migrationLedgerFailed =>
+      'Ledger migration could not be completed.';
+
+  @override
+  String get migrationLedgerFailedTitle => 'Ledger migration failed';
+
+  @override
+  String get migrationLedgerPlanChanged =>
+      'The amount or fee changed. Return and review the updated plan.';
+
+  @override
+  String get migrationLedgerProofs =>
+      'Vizor could not finish preparing migration proofs.';
+
+  @override
+  String get migrationLedgerRejected =>
+      'The migration transaction was rejected on your Ledger.';
+
+  @override
+  String get migrationLedgerTitle => 'Migrate with Ledger';
+
+  @override
+  String migrationLeftToTransfer(String amount) {
+    return 'Left to transfer: $amount';
+  }
+
+  @override
+  String get migrationManage => 'Manage';
+
+  @override
+  String get migrationManageCancelling => 'Cancelling...';
+
+  @override
+  String get migrationManageCannotCancel =>
+      'This migration can no longer be cancelled.';
+
+  @override
+  String get migrationManageConfirm => 'Confirm';
+
+  @override
+  String get migrationManageImmediateBullet1 =>
+      'Remaining split notes will be processed as an immediate migration, slightly increasing traceability';
+
+  @override
+  String get migrationManageImmediateBullet2 =>
+      'Transactions already broadcast will not be reverted';
+
+  @override
+  String get migrationManageImmediateBullet3 =>
+      'There’s no way to revert an immediate migration';
+
+  @override
+  String get migrationManageImmediateIntro =>
+      'Process the remaining migration immediately.';
+
+  @override
+  String get migrationManageLoading => 'Loading...';
+
+  @override
+  String get migrationManageNoBalance =>
+      'There is no remaining Orchard balance to migrate.';
+
+  @override
+  String get migrationManageStop => 'Stop Migration';
+
+  @override
+  String get migrationManageStopBody =>
+      'This cancels the remaining scheduled migration transactions. You can re-start the migration from the home page.';
+
+  @override
+  String get migrationManageStopTitle => 'Are you sure you want to stop?';
+
+  @override
+  String get migrationManageStopping => 'Stopping...';
+
+  @override
+  String get migrationManageSwitchImmediate => 'Switch to Immediate';
+
+  @override
+  String get migrationManageTitle => 'Manage Migration';
+
+  @override
+  String get migrationManageUpdateFailed =>
+      'The migration could not be updated. Please try again.';
+
+  @override
   String get migrationMobileActionAllTransactions => 'All transactions';
 
   @override
@@ -3226,6 +4000,697 @@ class AppLocalizationsEn extends AppLocalizations {
   String migrationMobileWaitSplitInto(int count) {
     return 'Split Notes into $count Migration Parts';
   }
+
+  @override
+  String get migrationNextActionDetailAllNotesCompleted =>
+      'All notes completed';
+
+  @override
+  String get migrationNextActionDetailAt => 'at';
+
+  @override
+  String get migrationNextActionDetailExpectedAt => 'Expected at';
+
+  @override
+  String get migrationNextActionDetailPreparing => 'Preparing migration';
+
+  @override
+  String get migrationNextActionDetailReadyToSign => 'Ready to sign';
+
+  @override
+  String get migrationNextActionDetailSendingNow => 'Sending now';
+
+  @override
+  String get migrationNextActionDetailWaitingForConfirmations =>
+      'Waiting for confirmations';
+
+  @override
+  String get migrationNextActionDetailWaitingForSync =>
+      'Waiting for wallet sync';
+
+  @override
+  String get migrationNextActionLabelAwaitingMining => 'Awaiting mining';
+
+  @override
+  String get migrationNextActionLabelComplete => 'Migration complete';
+
+  @override
+  String get migrationNextActionLabelFinalizing => 'Finalizing migration';
+
+  @override
+  String get migrationNextActionLabelNext => 'Next migration';
+
+  @override
+  String get migrationNextActionLabelNextWindow => 'Next migration window';
+
+  @override
+  String get migrationNextActionLabelOpeningWindow =>
+      'Opening migration window';
+
+  @override
+  String get migrationNextActionLabelSending => 'Sending migration';
+
+  @override
+  String get migrationNextActionLabelWindowReady => 'Migration window ready';
+
+  @override
+  String get migrationNotScheduled => 'Not scheduled';
+
+  @override
+  String migrationNotesAwaitingConfirmation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count notes awaiting confirmation',
+      one: '1 note awaiting confirmation',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationNotesBroadcast(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count notes broadcast',
+      one: '1 note broadcast',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationNotesRemaining(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count notes remaining',
+      one: '1 note remaining',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationOptionImmediate => 'Immediate';
+
+  @override
+  String get migrationOptionImmediateBody =>
+      'Migrates your entire balance in one batch. Fast but less private.';
+
+  @override
+  String get migrationOptionPrivate => 'Private';
+
+  @override
+  String get migrationOptionPrivateBody =>
+      'Splits transactions into multiple parts to minimize traceability, but will take longer.';
+
+  @override
+  String get migrationOptionPrivateLedger =>
+      'Not available for Ledger accounts.';
+
+  @override
+  String get migrationOptionRecommended => 'Recommended';
+
+  @override
+  String get migrationOptionsBody =>
+      'Choose between more privacy over time or a faster migration. You can review the details before anything moves.';
+
+  @override
+  String migrationOptionsBodyMoveRest(String amount) {
+    return '$amount ZEC is still in Orchard. Choose between more privacy over time or a faster migration.';
+  }
+
+  @override
+  String get migrationOptionsSelectReview => 'Select & review';
+
+  @override
+  String get migrationOptionsTitle => 'Choose how to migrate';
+
+  @override
+  String get migrationOptionsTitleMoveRest => 'How to move the rest';
+
+  @override
+  String get migrationOverallCalculatingTotal => 'Calculating total';
+
+  @override
+  String migrationOverallProgress(String completed, String total) {
+    return '$completed of $total complete';
+  }
+
+  @override
+  String migrationPlannedBatches(String count) {
+    return '$count Planned batches';
+  }
+
+  @override
+  String get migrationPoolIronwood => 'Ironwood Pool';
+
+  @override
+  String get migrationPoolLegacy => '(Legacy)';
+
+  @override
+  String get migrationPoolOrchard => 'Orchard Pool';
+
+  @override
+  String migrationPreparationConfirmations(String confirmed, String target) {
+    return '$confirmed of $target confirmations';
+  }
+
+  @override
+  String migrationPreparationSplitProgress(String current, String total) {
+    return 'Preparing split $current of $total';
+  }
+
+  @override
+  String migrationPreparationSplitStep(String current, String total) {
+    return 'Split $current of $total';
+  }
+
+  @override
+  String get migrationPreparationSplitTransactions =>
+      'Preparing split transactions';
+
+  @override
+  String get migrationPreparationTipDelay =>
+      'Once preparation finishes, your migration will begin automatically after a long intentional delay.';
+
+  @override
+  String get migrationPreparationTipOrganizing =>
+      'We’re organizing your balance into common-sized parts. This makes your migration harder to link.';
+
+  @override
+  String get migrationPreparationTipRounds =>
+      'We may have to do multiple rounds of note splitting depending on your balance.';
+
+  @override
+  String get migrationPreparingBatch => 'Preparing batch...';
+
+  @override
+  String get migrationPrivacyLockDescription =>
+      'We auto-locked Vizor after 10 minutes of inactivity.';
+
+  @override
+  String get migrationPrivacyLockInProgress => 'Migration in progress';
+
+  @override
+  String migrationProgressTipBlockTime(String seconds) {
+    return 'Each Zcash block takes about $seconds seconds to create, but timing can vary with network conditions.';
+  }
+
+  @override
+  String get migrationProgressTipClose =>
+      'You can close Vizor anytime. Migration will pause, and you can restart it when you return.';
+
+  @override
+  String get migrationProgressTipKeepRunning =>
+      'Keep Vizor running and the migration will automatically run in the background.';
+
+  @override
+  String get migrationReadyNow => 'ready now';
+
+  @override
+  String get migrationRetryMigration => 'Retry migration';
+
+  @override
+  String get migrationRetrying => 'Retrying...';
+
+  @override
+  String get migrationReviewAmountToMigrate => 'Amount to migrate';
+
+  @override
+  String get migrationReviewAnalyzeErrorTitle =>
+      'Couldn\'t analyze this balance';
+
+  @override
+  String get migrationReviewCompleteIn => 'Migration complete in';
+
+  @override
+  String get migrationReviewKeepRunningBody =>
+      'Preparation continues while the app is minimized, then migration starts automatically.';
+
+  @override
+  String get migrationReviewKeepRunningTitle => 'Keep Vizor running';
+
+  @override
+  String get migrationReviewStart => 'Start migration';
+
+  @override
+  String get migrationReviewStarting => 'Starting…';
+
+  @override
+  String get migrationRingAllSplitsCompleted => 'All splits completed';
+
+  @override
+  String get migrationRingConfirmingSplit => 'Confirming split';
+
+  @override
+  String get migrationRingNextSplit => 'Next split';
+
+  @override
+  String get migrationRingPreparationComplete => 'Preparation complete';
+
+  @override
+  String get migrationRingPreparingSchedule => 'Preparing schedule';
+
+  @override
+  String get migrationRingScheduled => 'Scheduled';
+
+  @override
+  String get migrationRingSplitInProgress => 'Split in progress';
+
+  @override
+  String get migrationRingStatusCompleted => 'completed';
+
+  @override
+  String get migrationRingStatusConfirming => 'confirming';
+
+  @override
+  String get migrationRingStatusMigrating => 'migrating';
+
+  @override
+  String get migrationRingStatusNeedsInput => 'needs input';
+
+  @override
+  String get migrationRingStatusNotStarted => 'not started';
+
+  @override
+  String get migrationRingStatusPreparing => 'preparing';
+
+  @override
+  String get migrationRingStatusScheduled => 'scheduled';
+
+  @override
+  String get migrationRingWaitingForBlock => 'Waiting for block';
+
+  @override
+  String get migrationRingWaitingForPreviousSplit =>
+      'Waiting for previous split';
+
+  @override
+  String get migrationRouteNotAvailable =>
+      'Migration is not available for this account.';
+
+  @override
+  String get migrationRouteNotNeeded =>
+      'Migration is not needed for this account.';
+
+  @override
+  String get migrationRouteStatusFailed => 'Couldn\'t verify migration status.';
+
+  @override
+  String get migrationRouteSyncFailed =>
+      'Sync could not finish. Try again once Vizor is synced.';
+
+  @override
+  String get migrationScheduleBroadcasting => 'Broadcasting';
+
+  @override
+  String get migrationScheduleCalculating => 'Calculating';
+
+  @override
+  String migrationScheduleCompletedAtBlock(String height) {
+    return 'Completed at block $height';
+  }
+
+  @override
+  String migrationScheduleConfirmingProgress(String count, String target) {
+    return 'Confirming $count/$target';
+  }
+
+  @override
+  String get migrationScheduleCurrentRound => 'Current round';
+
+  @override
+  String migrationScheduleExpected(String height) {
+    return 'Expected #$height';
+  }
+
+  @override
+  String get migrationScheduleOutputChange => 'Stays in Orchard';
+
+  @override
+  String migrationScheduleOutputContinuation(String round) {
+    return 'Used in round $round';
+  }
+
+  @override
+  String get migrationScheduleOutputMigration => 'For migration';
+
+  @override
+  String get migrationSchedulePending => 'Schedule pending';
+
+  @override
+  String get migrationSchedulePreparing => 'Preparing';
+
+  @override
+  String get migrationScheduleReadyToMigrate => 'Ready to migrate';
+
+  @override
+  String get migrationScheduleRecalculating => 'Recalculating';
+
+  @override
+  String migrationScheduleRescheduled(String height) {
+    return 'Rescheduled #$height';
+  }
+
+  @override
+  String migrationScheduleRoundProgress(String current, String total) {
+    return '$current of $total';
+  }
+
+  @override
+  String migrationScheduleScheduledAt(String height) {
+    return 'Scheduled #$height';
+  }
+
+  @override
+  String migrationScheduleSemanticsAwaiting(String height) {
+    return 'waiting for previous split, expected at block $height';
+  }
+
+  @override
+  String migrationScheduleSemanticsBroadcast(String height) {
+    return 'broadcast, waiting to be mined, projected completion at block $height';
+  }
+
+  @override
+  String get migrationScheduleSemanticsCompleted => 'completed';
+
+  @override
+  String migrationScheduleSemanticsCompletedAt(String height) {
+    return 'completed at block $height';
+  }
+
+  @override
+  String get migrationScheduleSemanticsDue => 'due now';
+
+  @override
+  String get migrationScheduleSemanticsMigrating =>
+      'broadcast, waiting to be mined';
+
+  @override
+  String migrationScheduleSemanticsNote(
+    String number,
+    String amount,
+    String state,
+  ) {
+    return 'Note $number, $amount ZEC, $state.';
+  }
+
+  @override
+  String migrationScheduleSemanticsNoteConfirming(String count, String target) {
+    return 'confirming, $count of $target confirmations';
+  }
+
+  @override
+  String migrationScheduleSemanticsNoteConfirmingMined(
+    String count,
+    String target,
+    String height,
+  ) {
+    return 'confirming, $count of $target confirmations, mined at block $height';
+  }
+
+  @override
+  String migrationScheduleSemanticsOutput(String amount, String destination) {
+    return '$amount ZEC, $destination';
+  }
+
+  @override
+  String get migrationScheduleSemanticsOutputChange => 'stays in Orchard';
+
+  @override
+  String migrationScheduleSemanticsOutputContinuation(String round) {
+    return 'used in round $round';
+  }
+
+  @override
+  String get migrationScheduleSemanticsOutputMigration => 'for migration';
+
+  @override
+  String migrationScheduleSemanticsOutputs(String outputs) {
+    return 'Outputs: $outputs.';
+  }
+
+  @override
+  String get migrationScheduleSemanticsPending => 'schedule pending';
+
+  @override
+  String get migrationScheduleSemanticsReadyToSign => 'ready to sign';
+
+  @override
+  String migrationScheduleSemanticsRescheduled(String from, String to) {
+    return 'rescheduled from block $from to block $to';
+  }
+
+  @override
+  String migrationScheduleSemanticsScheduled(String height) {
+    return 'scheduled at block $height';
+  }
+
+  @override
+  String migrationScheduleSemanticsSplit(
+    String number,
+    String amount,
+    String state,
+  ) {
+    return 'Split $number, $amount ZEC, $state.';
+  }
+
+  @override
+  String migrationScheduleSemanticsSplitConfirming(
+    String count,
+    String target,
+    String height,
+  ) {
+    return 'confirming, $count of $target confirmations, projected completion at block $height';
+  }
+
+  @override
+  String migrationScheduleSemanticsWaitingWindow(String height) {
+    return 'waiting for window at block $height';
+  }
+
+  @override
+  String migrationScheduleSplitRound(String number) {
+    return 'Split round $number';
+  }
+
+  @override
+  String get migrationScheduleTitle => 'Migration Schedule';
+
+  @override
+  String get migrationScheduleTitlePreparation => 'Preparation Schedule';
+
+  @override
+  String get migrationScheduleUnavailableBody =>
+      'Vizor couldn\'t load the latest migration schedule. Your saved migration state is unchanged.';
+
+  @override
+  String get migrationScheduleUnavailableTitle =>
+      'Migration schedule unavailable';
+
+  @override
+  String get migrationScheduleWaitingToBeMined => 'Waiting to be mined';
+
+  @override
+  String migrationScheduleWindow(String height) {
+    return 'Window #$height';
+  }
+
+  @override
+  String migrationSemanticsNote(String number, String amount, String status) {
+    return 'Note $number: $amount ZEC, $status.';
+  }
+
+  @override
+  String get migrationSemanticsNotesOrder =>
+      'Migration notes in expected processing order.';
+
+  @override
+  String get migrationSemanticsPreparingNotes => 'Preparing migration notes.';
+
+  @override
+  String migrationSignBatch(String number) {
+    return 'Sign Batch #$number';
+  }
+
+  @override
+  String get migrationSignWithKeystone => 'Sign with Keystone';
+
+  @override
+  String get migrationStageFinish => 'Finish';
+
+  @override
+  String get migrationStageMigration => 'Migration';
+
+  @override
+  String get migrationStagePreparation => 'Preparation';
+
+  @override
+  String get migrationStatusAttentionBody =>
+      'Vizor hit a recoverable migration error before completing the Ironwood transition.';
+
+  @override
+  String get migrationStatusAttentionFooter =>
+      'No funds are lost. Retry migration after checking that Vizor is synced and online.';
+
+  @override
+  String get migrationStatusAttentionTitle => 'Migration Needs Attention';
+
+  @override
+  String get migrationStatusBroadcasted => 'Broadcasted';
+
+  @override
+  String get migrationStatusBroadcastingBody =>
+      'Vizor is broadcasting the prepared Ironwood migration transaction.';
+
+  @override
+  String get migrationStatusBroadcastingButton => 'Broadcasting';
+
+  @override
+  String get migrationStatusCompleteBody =>
+      'Your funds have moved into the Ironwood pool.';
+
+  @override
+  String get migrationStatusCompleteFooter =>
+      'You can return home and continue using Vizor.';
+
+  @override
+  String get migrationStatusCompleteTitle => 'Migration Complete';
+
+  @override
+  String get migrationStatusConfirmingBody =>
+      'The migration transaction was broadcast. Vizor is waiting for network confirmations.';
+
+  @override
+  String get migrationStatusDefaultBody =>
+      'Vizor is tracking the current Ironwood migration state.';
+
+  @override
+  String get migrationStatusDefaultButton => 'Migration in progress';
+
+  @override
+  String get migrationStatusDefaultFooter =>
+      'This state is visible for diagnostics while the migration flow is being connected.';
+
+  @override
+  String get migrationStatusDefaultTitle => 'Migration Status';
+
+  @override
+  String get migrationStatusLeaveFooter =>
+      'You can leave this screen.\nBut keep Vizor open & running.';
+
+  @override
+  String get migrationStatusLedgerUnsupported =>
+      'Ledger private migration is not supported because this flow requires batched signing.';
+
+  @override
+  String get migrationStatusMigratingTitle => 'Migrating...';
+
+  @override
+  String get migrationStatusPausedBody =>
+      'The private migration is paused before the next action.';
+
+  @override
+  String get migrationStatusPausedButton => 'Paused';
+
+  @override
+  String get migrationStatusPausedFooter =>
+      'No new transaction will be prepared until migration execution is resumed.';
+
+  @override
+  String get migrationStatusPausedTitle => 'Migration Paused';
+
+  @override
+  String get migrationStatusPendingBroadcasts => 'Pending broadcasts';
+
+  @override
+  String get migrationStatusPreparingBody =>
+      'This usually takes around 30 minutes per split.';
+
+  @override
+  String get migrationStatusPreparingTitle => 'Preparing...';
+
+  @override
+  String get migrationStatusReadyBody =>
+      'The private split is ready. The next step will prepare the Ironwood migration batch.';
+
+  @override
+  String get migrationStatusReadyFooter =>
+      'Continue migration to prepare and broadcast the Ironwood transaction when it is due.';
+
+  @override
+  String get migrationStatusReadyTitle => 'Ready to Migrate';
+
+  @override
+  String get migrationStatusScheduledBody =>
+      'Your migration transaction is prepared and waiting for its scheduled broadcast window.';
+
+  @override
+  String get migrationStatusScheduledFooter =>
+      'When Vizor is open, scheduled broadcasts will be advanced by the migration worker.';
+
+  @override
+  String get migrationStatusScheduledTitle => 'Broadcast Scheduled';
+
+  @override
+  String get migrationStatusSplitProgress => 'Split progress';
+
+  @override
+  String get migrationStatusUnavailableBody =>
+      'Vizor couldn\'t verify the current Ironwood migration state. No new migration will start until the status can be checked.';
+
+  @override
+  String get migrationStatusUnavailableHint =>
+      'Return home and try again after sync refreshes. If a migration is already in progress, Vizor will continue from the saved state after it can be read.';
+
+  @override
+  String get migrationStatusUnavailableTitle => 'Migration status unavailable';
+
+  @override
+  String get migrationSummaryCurrentBlock => 'Current block';
+
+  @override
+  String get migrationSummaryEstCompletion => 'Est. completion';
+
+  @override
+  String get migrationSummaryLeftToMigrate => 'Left to migrate';
+
+  @override
+  String get migrationSummaryOverallProgress => 'Overall progress';
+
+  @override
+  String migrationTransactionOrdinal(String ordinal) {
+    return 'Transaction $ordinal';
+  }
+
+  @override
+  String migrationTransactionOrdinalOfTotal(String ordinal, String total) {
+    return 'Transaction $ordinal of $total';
+  }
+
+  @override
+  String get migrationUpgradeStopBody =>
+      'Transfers signed before the upgrade can’t be sent after it. Your funds are safe.';
+
+  @override
+  String get migrationUpgradeStopMoveRemainingLabel => 'Move remaining balance';
+
+  @override
+  String get migrationUpgradeStopMovedLabel => 'Moved to Ironwood';
+
+  @override
+  String get migrationUpgradeStopRemainingLabel => 'Still in Orchard';
+
+  @override
+  String get migrationUpgradeStopRingMessage =>
+      'Stopped by the\nnetwork upgrade';
+
+  @override
+  String get migrationView => 'View';
+
+  @override
+  String get migrationViewSchedule => 'View Schedule';
 
   @override
   String get navActivity => 'Activity';

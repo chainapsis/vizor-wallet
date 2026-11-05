@@ -2114,6 +2114,709 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lockUnlockToContinuePausedBody => '解锁 Vizor 以继续。';
 
   @override
+  String get migrationAnalyzingBalance => '正在分析您的余额...';
+
+  @override
+  String get migrationAnalyzingCaption => 'Vizor 正在为您的迁移寻找安全、隐私\n与速度之间的最佳平衡';
+
+  @override
+  String get migrationAnalyzingFindingBatches => '正在寻找私密批次...';
+
+  @override
+  String get migrationAnalyzingPreparingPlan => '正在准备您的迁移计划...';
+
+  @override
+  String get migrationAnalyzingSemanticsLabel => '正在准备私密迁移计划';
+
+  @override
+  String get migrationAnnouncementBody =>
+      'Ironwood 是 Zcash 最新的屏蔽资金池。\n它是首个经过形式化验证的资金池，\n采用前沿密码学技术。';
+
+  @override
+  String get migrationAnnouncementReleaseNote => '官方发布说明';
+
+  @override
+  String get migrationAnnouncementStart => '开始迁移';
+
+  @override
+  String get migrationBackAbout => '关于迁移';
+
+  @override
+  String get migrationBackHome => '返回首页';
+
+  @override
+  String get migrationBackHowItWorks => '迁移的工作方式';
+
+  @override
+  String get migrationBackOptions => '迁移选项';
+
+  @override
+  String get migrationBatchBroadcasting => '正在广播...';
+
+  @override
+  String migrationBatchCardTitle(String number, String count) {
+    return '批次 #$number（$count 个票据）';
+  }
+
+  @override
+  String get migrationBatchConfirming => '确认中...';
+
+  @override
+  String migrationBlockHeight(String height) {
+    return '区块 $height';
+  }
+
+  @override
+  String migrationBlocksEstimate(String blocks) {
+    return '约 $blocks 个区块';
+  }
+
+  @override
+  String migrationBroadcastApproxInHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '约 $count 小时后',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationBroadcastApproxInMinutes(int count) {
+    return '约 $count 分钟后';
+  }
+
+  @override
+  String get migrationBroadcastConfirmed => '已确认';
+
+  @override
+  String get migrationBroadcastDueNow => '即将发送';
+
+  @override
+  String migrationBroadcastInHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 小时后',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationBroadcastInMinutes(int count) {
+    return '$count 分钟后';
+  }
+
+  @override
+  String get migrationBroadcastPending => '待处理';
+
+  @override
+  String get migrationBroadcastSubmitted => '已提交';
+
+  @override
+  String get migrationCarouselPreparationLabel => '迁移准备说明';
+
+  @override
+  String get migrationCarouselProgressLabel => '迁移说明';
+
+  @override
+  String get migrationCompleteBody => '迁移已成功完成，\n您可以像往常一样使用资金。';
+
+  @override
+  String migrationCompleteTitle(String amount) {
+    return '您的\n$amount ZEC\n已在 Ironwood 上！';
+  }
+
+  @override
+  String get migrationConfirming => '确认中';
+
+  @override
+  String get migrationContinueMigration => '继续迁移';
+
+  @override
+  String get migrationContinuing => '正在继续...';
+
+  @override
+  String get migrationCtaStart => '迁移到 Ironwood 资金池';
+
+  @override
+  String get migrationCtaStopped => '迁移因网络升级而中止';
+
+  @override
+  String get migrationCurrentBatch => '当前批次';
+
+  @override
+  String migrationDurationDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '约 $count 天',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationDurationHalfHours(String hours) {
+    return '约 $hours.5 小时';
+  }
+
+  @override
+  String migrationDurationHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '约 $count 小时',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationDurationMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '约 $count 分钟',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationErrorBroadcast => '无法广播迁移交易，请重试。';
+
+  @override
+  String get migrationErrorContinue => '无法继续迁移，请重试。';
+
+  @override
+  String get migrationErrorKeystonePrepare => '无法准备 Keystone 签名。';
+
+  @override
+  String get migrationErrorLedgerExcluded => '当前流程需要批量签名，因此不支持 Ledger 私密迁移。';
+
+  @override
+  String get migrationErrorPlanChanged => '金额或手续费已变更，请查看更新后的详情。';
+
+  @override
+  String get migrationErrorStart => '无法开始迁移，请重试。';
+
+  @override
+  String get migrationErrorUnlockBeforeContinue => '继续迁移前请先解锁 Vizor。';
+
+  @override
+  String get migrationErrorUnlockBeforeStart => '开始迁移前请先解锁 Vizor。';
+
+  @override
+  String get migrationErrorWaitForSync => '请等待同步完成后重试。';
+
+  @override
+  String get migrationEstimateAfterSigning => '签名后';
+
+  @override
+  String get migrationEstimateComplete => '已完成';
+
+  @override
+  String migrationEstimateIn(String estimate) {
+    return '$estimate后';
+  }
+
+  @override
+  String migrationEstimateInDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '约 $count 天后',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationEstimateInHours(String hours) {
+    return '约 $hours 小时后';
+  }
+
+  @override
+  String migrationEstimateInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '约 $count 分钟后',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationEstimateInOneHour => '约 1 小时后';
+
+  @override
+  String get migrationEstimatedArrivalTime => '预计到达时间';
+
+  @override
+  String get migrationExpectKeepRunningBody =>
+      '您的电脑需要保持解锁且 Vizor 正在运行，这样我们才能发送下一笔迁移交易';
+
+  @override
+  String get migrationExpectLongBody => '根据迁移金额的不同，Ironwood 迁移可能需要数小时到几天不等。';
+
+  @override
+  String get migrationExpectLongTitle => '迁移可能需要很长时间';
+
+  @override
+  String get migrationExpectSpendBody => '每笔已确认的 Ironwood 金额在其余迁移继续进行时即可花费。';
+
+  @override
+  String get migrationExpectSpendTitle => '资金到账后即可花费';
+
+  @override
+  String get migrationExpectTitle => '须知';
+
+  @override
+  String get migrationExpectVpnBody => '建议在可信的 VPN/网络隐私层之后运行迁移';
+
+  @override
+  String get migrationExpectVpnTitle => '使用 VPN 获得额外隐私';
+
+  @override
+  String get migrationFlowTitle => 'Ironwood 迁移';
+
+  @override
+  String get migrationGoHome => '返回首页';
+
+  @override
+  String get migrationHowDelayedBody => '为降低可追踪性，Vizor 会分多个批次、错开时间间隔缓慢发送各部分。';
+
+  @override
+  String get migrationHowDelayedTitle => '延迟且随机的迁移';
+
+  @override
+  String get migrationHowFrozenBody => '要使用您现有的屏蔽余额，需要一次性迁移到 Ironwood。';
+
+  @override
+  String get migrationHowFrozenTitle => 'Orchard（旧版屏蔽）余额已冻结';
+
+  @override
+  String get migrationHowPreparationBody =>
+      '迁移前，Vizor 会将您的全部余额拆分为许多较小的票据（例如 0.1 ZEC / 1 ZEC / 5 ZEC）。';
+
+  @override
+  String get migrationHowPreparationTitle => '迁移前的准备';
+
+  @override
+  String migrationHowStepLabel(String number) {
+    return '第 $number 步';
+  }
+
+  @override
+  String migrationHowStepSemanticsCurrent(
+    String number,
+    String total,
+    String title,
+    String body,
+  ) {
+    return '迁移共 $total 步，第 $number 步。$title。$body';
+  }
+
+  @override
+  String migrationHowStepSemanticsShow(String number, String total) {
+    return '显示迁移共 $total 步中的第 $number 步';
+  }
+
+  @override
+  String get migrationHowTitle => '迁移的工作方式';
+
+  @override
+  String get migrationImmediateAmount => '金额';
+
+  @override
+  String get migrationImmediateAuthoriseAnyway => '仍然授权';
+
+  @override
+  String get migrationImmediateAuthorising => '正在授权…';
+
+  @override
+  String get migrationImmediateAuthorisingSemantics => '正在授权迁移';
+
+  @override
+  String get migrationImmediateCalculating => '正在计算…';
+
+  @override
+  String get migrationImmediateConsiderOther => '考虑其他选项';
+
+  @override
+  String get migrationImmediateFees => '手续费（预估）';
+
+  @override
+  String get migrationImmediateNoBalance => '没有可用于即时迁移的可花费 Orchard 余额。';
+
+  @override
+  String get migrationImmediatePlanFailed => '无法计算即时迁移计划，请同步后重试。';
+
+  @override
+  String get migrationImmediateRetryCalculation => '重试计算';
+
+  @override
+  String get migrationImmediateReviewTitle => '查看迁移计划';
+
+  @override
+  String get migrationImmediateTradeoffEmphasis => '更容易与您的钱包关联。';
+
+  @override
+  String migrationImmediateTradeoffLead(String amount) {
+    return '将在一个可见的步骤中完成，您的 $amount 和时间点会 ';
+  }
+
+  @override
+  String get migrationImmediateTradeoffLedger => '\nLedger 账户无法使用私密迁移。';
+
+  @override
+  String get migrationImmediateTradeoffPrivate => '\n建议选择私密迁移选项。';
+
+  @override
+  String get migrationImmediateTradeoffTitle => '隐私权衡';
+
+  @override
+  String get migrationImmediateUnavailable => '不可用';
+
+  @override
+  String migrationInMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '约 $count 分钟后',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationIntroAnnouncement => '官方公告';
+
+  @override
+  String get migrationIntroBadge => 'Zcash 网络升级';
+
+  @override
+  String migrationIntroBody(String amount) {
+    return '您的 $amount ZEC 目前在 Orchard 中。\n要继续将这些资金用于屏蔽支付，您需要将其迁移到 Ironwood。资金转移前，您会先查看迁移计划。';
+  }
+
+  @override
+  String get migrationIntroTagline => 'Zcash 全新的屏蔽资金池。';
+
+  @override
+  String get migrationKeystoneAfterScanInstruction => '扫描后，请点击“获取签名”。';
+
+  @override
+  String get migrationKeystoneApplyingSignature => '正在应用 Keystone 签名。';
+
+  @override
+  String get migrationKeystoneApplyingToPlan => '正在将 Keystone 签名应用到您的迁移计划。';
+
+  @override
+  String get migrationKeystoneBackToReview => '返回查看';
+
+  @override
+  String get migrationKeystoneBackToStatus => '返回状态';
+
+  @override
+  String get migrationKeystoneBeginSigning => '开始签名';
+
+  @override
+  String get migrationKeystoneCamera => '摄像头';
+
+  @override
+  String get migrationKeystoneCameraAccess => '请允许访问摄像头以扫描已签名的 Keystone 二维码。';
+
+  @override
+  String get migrationKeystoneCameraOnly =>
+      'Keystone 迁移签名仅支持摄像头扫描二维码。请连接摄像头后重试。';
+
+  @override
+  String get migrationKeystoneCancelFailed => '无法取消签名请求，请重试。';
+
+  @override
+  String get migrationKeystoneClickToEnlarge => '点击二维码可放大';
+
+  @override
+  String get migrationKeystoneConfirmTitle => '使用 Keystone 确认迁移';
+
+  @override
+  String get migrationKeystoneEnlargeQr => '放大 Keystone 请求二维码';
+
+  @override
+  String get migrationKeystoneEnlargedQr => '放大的 Keystone 请求二维码';
+
+  @override
+  String get migrationKeystoneFirmwareUpdate =>
+      '请更新 Keystone 固件以签署 Ironwood 迁移，然后重试。';
+
+  @override
+  String get migrationKeystoneGetSignature => '获取签名';
+
+  @override
+  String get migrationKeystoneKeepQrSteady => '请保持二维码稳定并完整可见。';
+
+  @override
+  String get migrationKeystoneMobileTitle => 'Keystone 迁移';
+
+  @override
+  String get migrationKeystoneNotKeystone => '请使用 Keystone 账户签署此迁移。';
+
+  @override
+  String get migrationKeystoneOpenSignedQr =>
+      '请在 Keystone 上打开已签名的迁移二维码，然后重新扫描。';
+
+  @override
+  String get migrationKeystonePlanBody => '每一轮使用一个动态请求二维码和一个已签名的响应二维码。';
+
+  @override
+  String get migrationKeystonePlanTitle => 'Keystone 签名计划';
+
+  @override
+  String get migrationKeystonePrepareFailed => '无法准备 Keystone 签名，请重试。';
+
+  @override
+  String get migrationKeystonePrepareWallet => '请准备好您的 Keystone 钱包';
+
+  @override
+  String get migrationKeystonePreparing => '准备中';
+
+  @override
+  String get migrationKeystonePreparingQr => '正在准备二维码...';
+
+  @override
+  String get migrationKeystoneProofFailed => 'Vizor 无法准备本地证明。请返回并重新准备此请求。';
+
+  @override
+  String get migrationKeystoneProofWaiting => '已获取签名。Vizor 仍在准备本地证明，请保持此页面打开。';
+
+  @override
+  String migrationKeystoneProofWaitingProgress(String ready, String total) {
+    return '已获取签名。Vizor 仍在准备本地证明（$ready/$total），请保持此页面打开。';
+  }
+
+  @override
+  String get migrationKeystoneProofsPreparing => '正在准备本地证明';
+
+  @override
+  String get migrationKeystoneProofsPreparingEllipsis => '正在准备本地证明...';
+
+  @override
+  String migrationKeystoneProofsProgress(String ready, String total) {
+    return '正在准备本地证明 $ready/$total';
+  }
+
+  @override
+  String get migrationKeystoneQrBodyCombined =>
+      '使用 Keystone 扫描此请求，一并签署准备交易和迁移批次。';
+
+  @override
+  String get migrationKeystoneQrBodyImmediate => '使用 Keystone 钱包扫描二维码以确认迁移。';
+
+  @override
+  String get migrationKeystoneQrBodyRound =>
+      '使用 Keystone 扫描此请求二维码。完成后，Keystone 会显示新的已签名二维码。';
+
+  @override
+  String get migrationKeystoneReadingSignature => '正在读取签名...';
+
+  @override
+  String get migrationKeystoneRequestCancelled => '此签名请求已取消，请重新准备。';
+
+  @override
+  String get migrationKeystoneRequestExpired => '此 Keystone 签名请求已过期，请重新准备。';
+
+  @override
+  String get migrationKeystoneRequestQr => '请求二维码';
+
+  @override
+  String get migrationKeystoneRequestUnusable => '此 Keystone 签名请求已无法使用，请重新准备。';
+
+  @override
+  String migrationKeystoneRound(String current, String total) {
+    return '第 $current/$total 轮';
+  }
+
+  @override
+  String migrationKeystoneRoundCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 轮二维码签名',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationKeystoneScanIssuesBody =>
+      'Keystone Cypherpunk 固件可能有新版本。请检查是否已是最新版本。';
+
+  @override
+  String get migrationKeystoneScanIssuesConfirm => '好的，我去检查';
+
+  @override
+  String get migrationKeystoneScanIssuesTitle => '扫描二维码遇到问题？';
+
+  @override
+  String get migrationKeystoneScanNewQr => '请扫描 Keystone 上显示的新已签名二维码。';
+
+  @override
+  String get migrationKeystoneScanQrCode => '扫描二维码';
+
+  @override
+  String get migrationKeystoneScanRequest => '使用 Keystone 扫描请求';
+
+  @override
+  String get migrationKeystoneScanSignature => '扫描 Keystone 签名';
+
+  @override
+  String get migrationKeystoneScanSubtitle => '使用您的 Keystone 扫描';
+
+  @override
+  String get migrationKeystoneSignBatch => '签署 Ironwood 批次';
+
+  @override
+  String get migrationKeystoneSignMigration => '签署迁移';
+
+  @override
+  String get migrationKeystoneSignPrivateSplit => '签署私密拆分';
+
+  @override
+  String get migrationKeystoneSignatureFailed => '无法应用 Keystone 签名。';
+
+  @override
+  String migrationKeystoneSignsAll(String transactions) {
+    return '签署 $transactions';
+  }
+
+  @override
+  String migrationKeystoneSignsSome(String count, String transactions) {
+    return '签署 $transactions中的 $count 笔';
+  }
+
+  @override
+  String get migrationKeystoneToolbarReview => '查看迁移';
+
+  @override
+  String get migrationKeystoneToolbarStatus => '迁移状态';
+
+  @override
+  String migrationKeystoneTransactionTotal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '共 $count 笔交易',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationKeystoneTransactions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 笔交易',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationKeystoneTryAfterSync => '请在同步完成后重试。';
+
+  @override
+  String get migrationKeystoneUnavailableTitle => '无法使用 Keystone 签名';
+
+  @override
+  String get migrationKeystoneUnlockFirst => '签署迁移前请先解锁 Vizor。';
+
+  @override
+  String get migrationKeystoneWaitingForProofsLong =>
+      '已获取签名。本地证明准备好后，Vizor 会继续。';
+
+  @override
+  String get migrationKeystoneWaitingForProofsShort => '已获取签名，正在等待本地证明。';
+
+  @override
+  String get migrationKeystoneWrongRound =>
+      '此已签名二维码来自另一轮。请返回，用 Keystone 扫描当前请求，然后扫描其新的已签名二维码。';
+
+  @override
+  String get migrationLedgerBroadcast => '无法广播迁移交易。';
+
+  @override
+  String get migrationLedgerConnect => '请连接并解锁您的 Ledger，然后打开 Zcash 应用。';
+
+  @override
+  String get migrationLedgerFailed => '无法完成 Ledger 迁移。';
+
+  @override
+  String get migrationLedgerFailedTitle => 'Ledger 迁移失败';
+
+  @override
+  String get migrationLedgerPlanChanged => '金额或手续费已变更。请返回并查看更新后的计划。';
+
+  @override
+  String get migrationLedgerProofs => 'Vizor 无法完成迁移证明的准备。';
+
+  @override
+  String get migrationLedgerRejected => '迁移交易已在您的 Ledger 上被拒绝。';
+
+  @override
+  String get migrationLedgerTitle => '使用 Ledger 迁移';
+
+  @override
+  String migrationLeftToTransfer(String amount) {
+    return '待转移：$amount';
+  }
+
+  @override
+  String get migrationManage => '管理';
+
+  @override
+  String get migrationManageCancelling => '正在取消...';
+
+  @override
+  String get migrationManageCannotCancel => '此迁移已无法取消。';
+
+  @override
+  String get migrationManageConfirm => '确认';
+
+  @override
+  String get migrationManageImmediateBullet1 => '剩余的拆分票据将作为即时迁移处理，可追踪性会略有提高';
+
+  @override
+  String get migrationManageImmediateBullet2 => '已广播的交易不会被撤销';
+
+  @override
+  String get migrationManageImmediateBullet3 => '即时迁移无法撤销';
+
+  @override
+  String get migrationManageImmediateIntro => '立即处理剩余的迁移。';
+
+  @override
+  String get migrationManageLoading => '加载中...';
+
+  @override
+  String get migrationManageNoBalance => '没有剩余的 Orchard 余额可迁移。';
+
+  @override
+  String get migrationManageStop => '停止迁移';
+
+  @override
+  String get migrationManageStopBody => '这将取消剩余已安排的迁移交易。您可以在首页重新开始迁移。';
+
+  @override
+  String get migrationManageStopTitle => '确定要停止吗？';
+
+  @override
+  String get migrationManageStopping => '正在停止...';
+
+  @override
+  String get migrationManageSwitchImmediate => '切换为即时迁移';
+
+  @override
+  String get migrationManageTitle => '管理迁移';
+
+  @override
+  String get migrationManageUpdateFailed => '无法更新迁移，请重试。';
+
+  @override
   String get migrationMobileActionAllTransactions => '所有交易';
 
   @override
@@ -3015,6 +3718,654 @@ class AppLocalizationsZh extends AppLocalizations {
   String migrationMobileWaitSplitInto(int count) {
     return '将票据拆分为 $count 个迁移部分';
   }
+
+  @override
+  String get migrationNextActionDetailAllNotesCompleted => '所有票据已完成';
+
+  @override
+  String get migrationNextActionDetailAt => '区块高度';
+
+  @override
+  String get migrationNextActionDetailExpectedAt => '预计区块高度';
+
+  @override
+  String get migrationNextActionDetailPreparing => '正在准备迁移';
+
+  @override
+  String get migrationNextActionDetailReadyToSign => '可以签名';
+
+  @override
+  String get migrationNextActionDetailSendingNow => '正在发送';
+
+  @override
+  String get migrationNextActionDetailWaitingForConfirmations => '等待确认';
+
+  @override
+  String get migrationNextActionDetailWaitingForSync => '等待钱包同步';
+
+  @override
+  String get migrationNextActionLabelAwaitingMining => '等待打包';
+
+  @override
+  String get migrationNextActionLabelComplete => '迁移完成';
+
+  @override
+  String get migrationNextActionLabelFinalizing => '正在完成迁移';
+
+  @override
+  String get migrationNextActionLabelNext => '下一次迁移';
+
+  @override
+  String get migrationNextActionLabelNextWindow => '下一个迁移窗口';
+
+  @override
+  String get migrationNextActionLabelOpeningWindow => '正在开启迁移窗口';
+
+  @override
+  String get migrationNextActionLabelSending => '正在发送迁移';
+
+  @override
+  String get migrationNextActionLabelWindowReady => '迁移窗口已就绪';
+
+  @override
+  String get migrationNotScheduled => '未安排';
+
+  @override
+  String migrationNotesAwaitingConfirmation(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个票据等待确认',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationNotesBroadcast(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已广播 $count 个票据',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String migrationNotesRemaining(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '剩余 $count 个票据',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get migrationOptionImmediate => '即时';
+
+  @override
+  String get migrationOptionImmediateBody => '一次性迁移全部余额。速度快，但隐私性较低。';
+
+  @override
+  String get migrationOptionPrivate => '私密';
+
+  @override
+  String get migrationOptionPrivateBody => '将交易拆分为多个部分以尽量降低可追踪性，但耗时更长。';
+
+  @override
+  String get migrationOptionPrivateLedger => 'Ledger 账户不可用。';
+
+  @override
+  String get migrationOptionRecommended => '推荐';
+
+  @override
+  String get migrationOptionsBody => '请选择随时间推移获得更高隐私，还是更快完成迁移。在资金转移前，您可以先查看详情。';
+
+  @override
+  String migrationOptionsBodyMoveRest(String amount) {
+    return '$amount ZEC 仍在 Orchard 中。请选择随时间推移获得更高隐私，还是更快完成迁移。';
+  }
+
+  @override
+  String get migrationOptionsSelectReview => '选择并查看';
+
+  @override
+  String get migrationOptionsTitle => '选择迁移方式';
+
+  @override
+  String get migrationOptionsTitleMoveRest => '如何迁移剩余部分';
+
+  @override
+  String get migrationOverallCalculatingTotal => '正在计算总数';
+
+  @override
+  String migrationOverallProgress(String completed, String total) {
+    return '已完成 $completed/$total';
+  }
+
+  @override
+  String migrationPlannedBatches(String count) {
+    return '计划批次 $count 个';
+  }
+
+  @override
+  String get migrationPoolIronwood => 'Ironwood 资金池';
+
+  @override
+  String get migrationPoolLegacy => '（旧版）';
+
+  @override
+  String get migrationPoolOrchard => 'Orchard 资金池';
+
+  @override
+  String migrationPreparationConfirmations(String confirmed, String target) {
+    return '已确认 $confirmed/$target';
+  }
+
+  @override
+  String migrationPreparationSplitProgress(String current, String total) {
+    return '正在准备第 $current/$total 笔拆分';
+  }
+
+  @override
+  String migrationPreparationSplitStep(String current, String total) {
+    return '拆分 $current/$total';
+  }
+
+  @override
+  String get migrationPreparationSplitTransactions => '正在准备拆分交易';
+
+  @override
+  String get migrationPreparationTipDelay => '准备完成后，迁移会在一段刻意设置的较长延迟后自动开始。';
+
+  @override
+  String get migrationPreparationTipOrganizing =>
+      '我们正在把您的余额整理成常见大小的部分，这样迁移更难被关联。';
+
+  @override
+  String get migrationPreparationTipRounds => '根据您的余额，可能需要进行多轮票据拆分。';
+
+  @override
+  String get migrationPreparingBatch => '正在准备批次...';
+
+  @override
+  String get migrationPrivacyLockDescription => '由于 10 分钟无操作，我们已自动锁定 Vizor。';
+
+  @override
+  String get migrationPrivacyLockInProgress => '迁移进行中';
+
+  @override
+  String migrationProgressTipBlockTime(String seconds) {
+    return '每个 Zcash 区块大约需要 $seconds 秒生成，但实际时间会随网络状况而变化。';
+  }
+
+  @override
+  String get migrationProgressTipClose => '您可以随时关闭 Vizor。迁移会暂停，返回后可以重新开始。';
+
+  @override
+  String get migrationProgressTipKeepRunning => '保持 Vizor 运行，迁移会在后台自动进行。';
+
+  @override
+  String get migrationReadyNow => '现在可以开始';
+
+  @override
+  String get migrationRetryMigration => '重试迁移';
+
+  @override
+  String get migrationRetrying => '正在重试...';
+
+  @override
+  String get migrationReviewAmountToMigrate => '待迁移金额';
+
+  @override
+  String get migrationReviewAnalyzeErrorTitle => '无法分析此余额';
+
+  @override
+  String get migrationReviewCompleteIn => '迁移完成时间';
+
+  @override
+  String get migrationReviewKeepRunningBody => '应用最小化时准备仍会继续，之后迁移会自动开始。';
+
+  @override
+  String get migrationReviewKeepRunningTitle => '请保持 Vizor 运行';
+
+  @override
+  String get migrationReviewStart => '开始迁移';
+
+  @override
+  String get migrationReviewStarting => '正在开始…';
+
+  @override
+  String get migrationRingAllSplitsCompleted => '所有拆分已完成';
+
+  @override
+  String get migrationRingConfirmingSplit => '正在确认拆分';
+
+  @override
+  String get migrationRingNextSplit => '下一次拆分';
+
+  @override
+  String get migrationRingPreparationComplete => '准备完成';
+
+  @override
+  String get migrationRingPreparingSchedule => '正在准备日程';
+
+  @override
+  String get migrationRingScheduled => '已安排';
+
+  @override
+  String get migrationRingSplitInProgress => '拆分进行中';
+
+  @override
+  String get migrationRingStatusCompleted => '已完成';
+
+  @override
+  String get migrationRingStatusConfirming => '确认中';
+
+  @override
+  String get migrationRingStatusMigrating => '迁移中';
+
+  @override
+  String get migrationRingStatusNeedsInput => '需要签名';
+
+  @override
+  String get migrationRingStatusNotStarted => '未开始';
+
+  @override
+  String get migrationRingStatusPreparing => '准备中';
+
+  @override
+  String get migrationRingStatusScheduled => '已安排';
+
+  @override
+  String get migrationRingWaitingForBlock => '等待区块';
+
+  @override
+  String get migrationRingWaitingForPreviousSplit => '等待上一次拆分';
+
+  @override
+  String get migrationRouteNotAvailable => '此账户无法使用迁移。';
+
+  @override
+  String get migrationRouteNotNeeded => '此账户无需迁移。';
+
+  @override
+  String get migrationRouteStatusFailed => '无法确认迁移状态。';
+
+  @override
+  String get migrationRouteSyncFailed => '同步未能完成。请在 Vizor 同步后重试。';
+
+  @override
+  String get migrationScheduleBroadcasting => '广播中';
+
+  @override
+  String get migrationScheduleCalculating => '计算中';
+
+  @override
+  String migrationScheduleCompletedAtBlock(String height) {
+    return '已在区块 $height 完成';
+  }
+
+  @override
+  String migrationScheduleConfirmingProgress(String count, String target) {
+    return '确认中 $count/$target';
+  }
+
+  @override
+  String get migrationScheduleCurrentRound => '当前轮次';
+
+  @override
+  String migrationScheduleExpected(String height) {
+    return '预计 #$height';
+  }
+
+  @override
+  String get migrationScheduleOutputChange => '留在 Orchard 中';
+
+  @override
+  String migrationScheduleOutputContinuation(String round) {
+    return '用于第 $round 轮';
+  }
+
+  @override
+  String get migrationScheduleOutputMigration => '用于迁移';
+
+  @override
+  String get migrationSchedulePending => '日程待定';
+
+  @override
+  String get migrationSchedulePreparing => '准备中';
+
+  @override
+  String get migrationScheduleReadyToMigrate => '迁移就绪时间';
+
+  @override
+  String get migrationScheduleRecalculating => '重新计算中';
+
+  @override
+  String migrationScheduleRescheduled(String height) {
+    return '已重新安排 #$height';
+  }
+
+  @override
+  String migrationScheduleRoundProgress(String current, String total) {
+    return '第 $current/$total 轮';
+  }
+
+  @override
+  String migrationScheduleScheduledAt(String height) {
+    return '已安排 #$height';
+  }
+
+  @override
+  String migrationScheduleSemanticsAwaiting(String height) {
+    return '等待上一次拆分，预计区块 $height';
+  }
+
+  @override
+  String migrationScheduleSemanticsBroadcast(String height) {
+    return '已广播，等待打包，预计在区块 $height 完成';
+  }
+
+  @override
+  String get migrationScheduleSemanticsCompleted => '已完成';
+
+  @override
+  String migrationScheduleSemanticsCompletedAt(String height) {
+    return '已在区块 $height 完成';
+  }
+
+  @override
+  String get migrationScheduleSemanticsDue => '即将发送';
+
+  @override
+  String get migrationScheduleSemanticsMigrating => '已广播，等待打包';
+
+  @override
+  String migrationScheduleSemanticsNote(
+    String number,
+    String amount,
+    String state,
+  ) {
+    return '票据 $number，$amount ZEC，$state。';
+  }
+
+  @override
+  String migrationScheduleSemanticsNoteConfirming(String count, String target) {
+    return '确认中，已确认 $count/$target';
+  }
+
+  @override
+  String migrationScheduleSemanticsNoteConfirmingMined(
+    String count,
+    String target,
+    String height,
+  ) {
+    return '确认中，已确认 $count/$target，已在区块 $height 打包';
+  }
+
+  @override
+  String migrationScheduleSemanticsOutput(String amount, String destination) {
+    return '$amount ZEC，$destination';
+  }
+
+  @override
+  String get migrationScheduleSemanticsOutputChange => '留在 Orchard 中';
+
+  @override
+  String migrationScheduleSemanticsOutputContinuation(String round) {
+    return '用于第 $round 轮';
+  }
+
+  @override
+  String get migrationScheduleSemanticsOutputMigration => '用于迁移';
+
+  @override
+  String migrationScheduleSemanticsOutputs(String outputs) {
+    return '输出：$outputs。';
+  }
+
+  @override
+  String get migrationScheduleSemanticsPending => '日程待定';
+
+  @override
+  String get migrationScheduleSemanticsReadyToSign => '可以签名';
+
+  @override
+  String migrationScheduleSemanticsRescheduled(String from, String to) {
+    return '已从区块 $from 重新安排到区块 $to';
+  }
+
+  @override
+  String migrationScheduleSemanticsScheduled(String height) {
+    return '已安排在区块 $height';
+  }
+
+  @override
+  String migrationScheduleSemanticsSplit(
+    String number,
+    String amount,
+    String state,
+  ) {
+    return '拆分 $number，$amount ZEC，$state。';
+  }
+
+  @override
+  String migrationScheduleSemanticsSplitConfirming(
+    String count,
+    String target,
+    String height,
+  ) {
+    return '确认中，已确认 $count/$target，预计在区块 $height 完成';
+  }
+
+  @override
+  String migrationScheduleSemanticsWaitingWindow(String height) {
+    return '等待区块 $height 的窗口';
+  }
+
+  @override
+  String migrationScheduleSplitRound(String number) {
+    return '拆分第 $number 轮';
+  }
+
+  @override
+  String get migrationScheduleTitle => '迁移日程';
+
+  @override
+  String get migrationScheduleTitlePreparation => '准备日程';
+
+  @override
+  String get migrationScheduleUnavailableBody =>
+      'Vizor 无法加载最新的迁移日程。您已保存的迁移状态保持不变。';
+
+  @override
+  String get migrationScheduleUnavailableTitle => '无法获取迁移日程';
+
+  @override
+  String get migrationScheduleWaitingToBeMined => '等待打包';
+
+  @override
+  String migrationScheduleWindow(String height) {
+    return '窗口 #$height';
+  }
+
+  @override
+  String migrationSemanticsNote(String number, String amount, String status) {
+    return '票据 $number：$amount ZEC，$status。';
+  }
+
+  @override
+  String get migrationSemanticsNotesOrder => '迁移票据按预计处理顺序排列。';
+
+  @override
+  String get migrationSemanticsPreparingNotes => '正在准备迁移票据。';
+
+  @override
+  String migrationSignBatch(String number) {
+    return '签署批次 #$number';
+  }
+
+  @override
+  String get migrationSignWithKeystone => '使用 Keystone 签名';
+
+  @override
+  String get migrationStageFinish => '完成';
+
+  @override
+  String get migrationStageMigration => '迁移';
+
+  @override
+  String get migrationStagePreparation => '准备';
+
+  @override
+  String get migrationStatusAttentionBody =>
+      '在完成 Ironwood 过渡之前，Vizor 遇到了可恢复的迁移错误。';
+
+  @override
+  String get migrationStatusAttentionFooter => '资金不会丢失。请确认 Vizor 已同步且在线后重试迁移。';
+
+  @override
+  String get migrationStatusAttentionTitle => '迁移需要处理';
+
+  @override
+  String get migrationStatusBroadcasted => '已广播';
+
+  @override
+  String get migrationStatusBroadcastingBody =>
+      'Vizor 正在广播已准备好的 Ironwood 迁移交易。';
+
+  @override
+  String get migrationStatusBroadcastingButton => '广播中';
+
+  @override
+  String get migrationStatusCompleteBody => '您的资金已转入 Ironwood 资金池。';
+
+  @override
+  String get migrationStatusCompleteFooter => '您可以返回首页继续使用 Vizor。';
+
+  @override
+  String get migrationStatusCompleteTitle => '迁移完成';
+
+  @override
+  String get migrationStatusConfirmingBody => '迁移交易已广播。Vizor 正在等待网络确认。';
+
+  @override
+  String get migrationStatusDefaultBody => 'Vizor 正在跟踪当前的 Ironwood 迁移状态。';
+
+  @override
+  String get migrationStatusDefaultButton => '迁移进行中';
+
+  @override
+  String get migrationStatusDefaultFooter => '此状态仅在迁移流程接入期间用于诊断显示。';
+
+  @override
+  String get migrationStatusDefaultTitle => '迁移状态';
+
+  @override
+  String get migrationStatusLeaveFooter => '您可以离开此页面。\n但请保持 Vizor 打开并运行。';
+
+  @override
+  String get migrationStatusLedgerUnsupported => '此流程需要批量签名，因此不支持 Ledger 私密迁移。';
+
+  @override
+  String get migrationStatusMigratingTitle => '正在迁移...';
+
+  @override
+  String get migrationStatusPausedBody => '私密迁移已在下一步之前暂停。';
+
+  @override
+  String get migrationStatusPausedButton => '已暂停';
+
+  @override
+  String get migrationStatusPausedFooter => '在恢复迁移之前，不会准备新的交易。';
+
+  @override
+  String get migrationStatusPausedTitle => '迁移已暂停';
+
+  @override
+  String get migrationStatusPendingBroadcasts => '待广播';
+
+  @override
+  String get migrationStatusPreparingBody => '每次拆分通常需要约 30 分钟。';
+
+  @override
+  String get migrationStatusPreparingTitle => '正在准备...';
+
+  @override
+  String get migrationStatusReadyBody => '私密拆分已就绪。下一步将准备 Ironwood 迁移批次。';
+
+  @override
+  String get migrationStatusReadyFooter => '继续迁移，以便在到期时准备并广播 Ironwood 交易。';
+
+  @override
+  String get migrationStatusReadyTitle => '可以开始迁移';
+
+  @override
+  String get migrationStatusScheduledBody => '您的迁移交易已准备好，正在等待预定的广播时间。';
+
+  @override
+  String get migrationStatusScheduledFooter => 'Vizor 打开期间，迁移程序会推进已安排的广播。';
+
+  @override
+  String get migrationStatusScheduledTitle => '广播已安排';
+
+  @override
+  String get migrationStatusSplitProgress => '拆分进度';
+
+  @override
+  String get migrationStatusUnavailableBody =>
+      'Vizor 无法确认当前的 Ironwood 迁移状态。在能够检查状态之前，不会开始新的迁移。';
+
+  @override
+  String get migrationStatusUnavailableHint =>
+      '请返回首页，待同步刷新后重试。如果已有迁移正在进行，Vizor 会在能够读取已保存的状态后继续。';
+
+  @override
+  String get migrationStatusUnavailableTitle => '无法获取迁移状态';
+
+  @override
+  String get migrationSummaryCurrentBlock => '当前区块';
+
+  @override
+  String get migrationSummaryEstCompletion => '预计完成';
+
+  @override
+  String get migrationSummaryLeftToMigrate => '待迁移金额';
+
+  @override
+  String get migrationSummaryOverallProgress => '总体进度';
+
+  @override
+  String migrationTransactionOrdinal(String ordinal) {
+    return '交易 $ordinal';
+  }
+
+  @override
+  String migrationTransactionOrdinalOfTotal(String ordinal, String total) {
+    return '交易 $ordinal/$total';
+  }
+
+  @override
+  String get migrationUpgradeStopBody => '升级前已签名的转账在升级后无法发送。您的资金是安全的。';
+
+  @override
+  String get migrationUpgradeStopMoveRemainingLabel => '迁移剩余余额';
+
+  @override
+  String get migrationUpgradeStopMovedLabel => '已迁移到 Ironwood';
+
+  @override
+  String get migrationUpgradeStopRemainingLabel => '仍在 Orchard 中';
+
+  @override
+  String get migrationUpgradeStopRingMessage => '因网络升级\n而中止';
+
+  @override
+  String get migrationView => '查看';
+
+  @override
+  String get migrationViewSchedule => '查看日程';
 
   @override
   String get navActivity => '活动';
