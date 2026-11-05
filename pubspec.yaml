@@ -90,6 +90,9 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # Parses app code for tool/l10n/strings.dart. Resolved by the other dev tools.
+  analyzer: any
+
   # Widgetbook for showcasing the design system in isolation.
   # Entry point: `fvm flutter run -t lib/widgetbook.dart`.
   widgetbook: ^3.14.3

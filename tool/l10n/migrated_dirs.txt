@@ -1,0 +1,3 @@
+# Directories whose user-facing strings live in lib/l10n ARB files.
+# test/l10n/l10n_gates_test.dart fails when one of them gains a literal.
+# Add a directory here in the change that finishes moving its strings.
