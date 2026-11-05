@@ -55,7 +55,11 @@ proposals or entering their native network operation. Concurrent first readers
 share one read. Native tip caching also lets subsequent transaction preparation
 reuse the tip under the existing fifteen-second native cache policy.
 
-The warm read has a 750ms direct / 2s Tor wall budget, including bridge queue time.
+The warm read adapts to the recent successful latency on the selected route.
+Its deadline is three times that latency plus 500ms direct / one second Tor,
+clamped to 1.5–4 seconds direct / 5–8 seconds Tor. Without a positive latency it
+uses the route's lower bound. This wall budget includes bridge queue time and
+never consumes more than two thirds of the total recovery budget.
 If it fails or is too slow, the failed host is excluded and regular selection
 uses the remainder of the same six-/fifteen-second total budget. Only this public
 read is retried; transaction submission, durable operation leases and ambiguous

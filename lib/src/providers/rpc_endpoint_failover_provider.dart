@@ -928,9 +928,10 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
     requireCurrent();
     final settings = ref.read(automaticRpcEndpointSettingsProvider);
-    final timeout = tor
-        ? settings.torWarmTipTimeout
-        : settings.directWarmTipTimeout;
+    final timeout = settings.warmTipTimeout(
+      tor: tor,
+      recentLatency: _selectedLatency,
+    );
     final watch = Stopwatch()..start();
     final read = ref.read(rpcEndpointWarmTipReaderProvider);
     _cancelProbe = ref.read(rpcEndpointSelectionCancelProvider);

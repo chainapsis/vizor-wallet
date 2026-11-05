@@ -39,6 +39,78 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
+  test('warm timeout follows route latency within recovery bounds', () {
+    const settings = AutomaticRpcEndpointSettings();
+    for (final (tor, latency, expectedMs) in <(bool, Duration?, int)>[
+      (false, null, 1500),
+      (true, null, 5000),
+      (false, Duration.zero, 1500),
+      (true, const Duration(milliseconds: -1), 5000),
+      (false, const Duration(milliseconds: 600), 2300),
+      (true, const Duration(seconds: 2), 7000),
+      (false, const Duration(seconds: 2), 4000),
+      (true, const Duration(seconds: 3), 8000),
+      (false, const Duration(microseconds: 0x7fffffffffffffff), 4000),
+      (true, const Duration(microseconds: 0x7fffffffffffffff), 8000),
+    ]) {
+      expect(
+        settings.warmTipTimeout(tor: tor, recentLatency: latency),
+        Duration(milliseconds: expectedMs),
+      );
+    }
+    const smallerBudget = AutomaticRpcEndpointSettings(
+      directBudget: Duration(seconds: 3),
+      torBudget: Duration(seconds: 6),
+    );
+    for (final (tor, expectedSeconds) in [(false, 2), (true, 4)]) {
+      expect(
+        smallerBudget.warmTipTimeout(
+          tor: tor,
+          recentLatency: const Duration(seconds: 10),
+        ),
+        Duration(seconds: expectedSeconds),
+      );
+    }
+  });
+
+  for (final tor in [false, true]) {
+    test(
+      '${tor ? 'Tor' : 'direct'} healthy warm read uses cached and resumed latency',
+      () async {
+        final url = tor ? _kr : _eu;
+        final harness =
+            _WarmHarness(route: tor ? _tor : const NetworkPrivacyState.off())
+              ..seedTrusted(
+                tor ? 'kr-zec-stardust' : 'eu-zec-stardust',
+                tor: tor,
+                latencyMs: tor ? 2000 : 600,
+              );
+        harness.warmRead = (_) => Future.delayed(
+          Duration(milliseconds: tor ? 2200 : 850),
+          () => _sample(url, 111, tor ? 3000 : 900),
+        );
+        await harness.notifier.ensureReady();
+        expect(
+          harness.warmReads.single.timeout,
+          Duration(milliseconds: tor ? 7000 : 2300),
+        );
+        expect(await harness.notifier.getLatestBlockHeight(), BigInt.from(111));
+
+        harness.warmRead = (_) async => _sample(url, 112);
+        harness.notifier.cancelAutomaticSelection();
+        await harness.notifier.ensureReady();
+        expect(
+          harness.warmReads.last.timeout,
+          Duration(milliseconds: tor ? 8000 : 3200),
+        );
+        expect(await harness.notifier.getLatestBlockHeight(), BigInt.from(112));
+        expect(harness.warmReads, hasLength(2));
+        expect(harness.probes, isEmpty);
+        expect(harness.ordinaryReads, isEmpty);
+      },
+    );
+  }
+
   test(
     'secure cache serialization round-trips URL and evaluation clocks without persisting a height',
     () async {
@@ -180,7 +252,7 @@ void main() {
         );
         expect(
           harness.warmReads.single.timeout,
-          const Duration(milliseconds: 750),
+          const Duration(milliseconds: 1500),
         );
         expect(harness.ordinaryReads, isEmpty);
         expect(harness.probes, isEmpty);
@@ -189,7 +261,7 @@ void main() {
   }
 
   test(
-    'Tor warm cache uses its own chosen host and two-second actual tip budget',
+    'Tor warm cache uses its own chosen host and five-second minimum tip budget',
     () async {
       final harness = _WarmHarness(route: _tor)
         ..seedTrusted('eu-zec-stardust')
@@ -198,7 +270,7 @@ void main() {
       expect(await harness.notifier.getLatestBlockHeight(), BigInt.from(111));
       await _flush();
       expect(harness.warmReads.single.endpoint.lightwalletdUrl, _kr);
-      expect(harness.warmReads.single.timeout, const Duration(seconds: 2));
+      expect(harness.warmReads.single.timeout, const Duration(seconds: 5));
       expect(harness.probes, isEmpty);
       expect(harness.store.reads, [('main', true)]);
     },
@@ -735,6 +807,7 @@ class _WarmHarness {
     Duration successAge = const Duration(minutes: 1),
     Duration peerAge = const Duration(minutes: 2),
     Duration benchmarkAge = const Duration(minutes: 3),
+    int latencyMs = 20,
   }) => AutomaticRpcEndpointCache(
     presetId: presetId,
     endpointUrl: findRpcEndpointPresetById('main', presetId)!.url,
@@ -742,7 +815,7 @@ class _WarmHarness {
     lastSuccessAt: now.subtract(successAge),
     lastPeerValidatedAt: now.subtract(peerAge),
     lastBenchmarkAt: now.subtract(benchmarkAge),
-    latencyMs: 20,
+    latencyMs: latencyMs,
   );
   void seedTrusted(
     String presetId, {
@@ -750,11 +823,13 @@ class _WarmHarness {
     Duration successAge = const Duration(minutes: 1),
     Duration peerAge = const Duration(minutes: 2),
     Duration benchmarkAge = const Duration(minutes: 3),
+    int latencyMs = 20,
   }) => store.values[('main', tor)] = trusted(
     presetId,
     successAge: successAge,
     peerAge: peerAge,
     benchmarkAge: benchmarkAge,
+    latencyMs: latencyMs,
   );
 }
 

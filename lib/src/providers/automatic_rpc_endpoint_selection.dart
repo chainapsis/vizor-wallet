@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -100,8 +101,10 @@ class AutomaticRpcEndpointSettings {
     this.cacheMaxAge = const Duration(hours: 12),
     this.warmReuseMaxAge = const Duration(minutes: 5),
     this.tipReuseMaxAge = const Duration(seconds: 5),
-    this.directWarmTipTimeout = const Duration(milliseconds: 750),
-    this.torWarmTipTimeout = const Duration(seconds: 2),
+    this.directWarmTipTimeout = const Duration(milliseconds: 1500),
+    this.torWarmTipTimeout = const Duration(seconds: 5),
+    this.directWarmTipMaxTimeout = const Duration(seconds: 4),
+    this.torWarmTipMaxTimeout = const Duration(seconds: 8),
     this.cacheWriteInterval = const Duration(minutes: 1),
     this.recheckInterval = const Duration(minutes: 15),
     this.provisionalRecheckInterval = const Duration(minutes: 1),
@@ -120,6 +123,8 @@ class AutomaticRpcEndpointSettings {
   final Duration tipReuseMaxAge;
   final Duration directWarmTipTimeout;
   final Duration torWarmTipTimeout;
+  final Duration directWarmTipMaxTimeout;
+  final Duration torWarmTipMaxTimeout;
   final Duration cacheWriteInterval;
   final Duration recheckInterval;
   final Duration provisionalRecheckInterval;
@@ -127,6 +132,41 @@ class AutomaticRpcEndpointSettings {
   final Duration slowResponse;
   final Duration slowTorResponse;
   final Duration failureCooldown;
+
+  /// Allows for recent route latency, including a new connection after resume.
+  /// At least one third of the recovery budget remains for candidate selection.
+  Duration warmTipTimeout({required bool tor, Duration? recentLatency}) {
+    final total = tor ? torBudget : directBudget;
+    final floor = tor ? torWarmTipTimeout : directWarmTipTimeout;
+    final ceiling = tor ? torWarmTipMaxTimeout : directWarmTipMaxTimeout;
+    final capMicros = math.max(
+      0,
+      math.min(
+        math.min(
+          ceiling.inMicroseconds,
+          const Duration(seconds: 30).inMicroseconds,
+        ),
+        (total.inMicroseconds ~/ 3) * 2,
+      ),
+    );
+    final floorMicros = math.max(0, math.min(floor.inMicroseconds, capMicros));
+    if (recentLatency == null || recentLatency <= Duration.zero) {
+      return Duration(microseconds: floorMicros);
+    }
+    // Clamp before multiplication so a large latency cannot overflow or
+    // expand the native request beyond its supported deadline.
+    if (recentLatency.inMicroseconds >= capMicros) {
+      return Duration(microseconds: capMicros);
+    }
+    final slack = tor
+        ? const Duration(seconds: 1)
+        : const Duration(milliseconds: 500);
+    final adaptiveMicros =
+        recentLatency.inMicroseconds * 3 + slack.inMicroseconds;
+    return Duration(
+      microseconds: math.min(capMicros, math.max(floorMicros, adaptiveMicros)),
+    );
+  }
 }
 
 final automaticRpcEndpointSettingsProvider =
