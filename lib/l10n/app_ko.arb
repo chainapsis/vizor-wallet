@@ -804,7 +804,7 @@
   "ledgerErrorCannotReadWithInstruction": "Vizor⁠에⁠서 이 Ledger 계⁠정⁠을 읽⁠지 못⁠했⁠어⁠요. {instruction} 그⁠런 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.",
   "ledgerErrorConnectAndUnlock": "Ledger⁠를 연⁠결⁠하⁠고 잠⁠금⁠을 해⁠제⁠해 주⁠세⁠요. {instruction}",
   "ledgerErrorUnlock": "Ledger⁠의 잠⁠금⁠을 해⁠제⁠해 주⁠세⁠요. {instruction}",
-  "ledgerErrorViewingKeyDeclined": "[security] Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.",
+  "ledgerErrorViewingKeyDeclined": "Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.",
   "ledgerErrorViewingKeyRejected": "Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요.",
   "ledgerFailureMsgAppUpdateRequired": "Ledger Wallet⁠에⁠서 Ledger⁠와 Zcash 앱⁠을 {version} 이⁠상⁠으⁠로 업⁠데⁠이⁠트⁠해 주⁠세⁠요.",
   "ledgerFailureMsgBusy": "Ledger⁠가 사⁠용 중⁠이⁠에⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.",

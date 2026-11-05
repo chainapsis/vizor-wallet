@@ -2834,7 +2834,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerErrorViewingKeyDeclined =>
-      '[security] Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+      'Ledger⁠에⁠서 뷰⁠잉 키 요⁠청⁠을 거⁠부⁠했⁠어⁠요. 준⁠비⁠되⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerErrorViewingKeyRejected =>

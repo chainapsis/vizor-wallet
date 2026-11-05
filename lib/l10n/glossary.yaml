@@ -190,6 +190,14 @@ terms:
     en: gift card
     ko: {term: 기프트 카드, status: candidate}
     zh: {term: 礼品卡, status: candidate}
+  - id: redeem
+    en: redeem
+    ko: {term: 받기, status: candidate, note: "Gift Card redeem and claim are the same action."}
+    zh: {term: 领取, status: candidate, note: "兑换 is swap; keep them apart in the activity feed."}
+  - id: deposit
+    en: deposit
+    ko: {term: 입금, status: candidate}
+    zh: {term: 存入, status: candidate, note: "Swap deposits. Gift Card funding keeps 充值."}
   - id: payment_request
     en: payment request
     ko: {term: 결제 요청, status: candidate}

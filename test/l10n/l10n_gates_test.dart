@@ -106,6 +106,16 @@ void main() {
         });
       }
 
+      test('copies no description tag into a message', () {
+        for (final key in _messageKeys(arb)) {
+          expect(
+            arb[key]! as String,
+            isNot(contains('[security]')),
+            reason: '$key: `[security]` belongs in the @key description',
+          );
+        }
+      });
+
       test('keeps placeholders, URLs and numbers of the source', () {
         for (final key in _messageKeys(arb)) {
           final source = template[key]! as String;

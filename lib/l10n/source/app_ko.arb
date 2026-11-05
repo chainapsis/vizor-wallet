@@ -804,7 +804,7 @@
   "ledgerErrorCannotReadWithInstruction": "Vizor에서 이 Ledger 계정을 읽지 못했어요. {instruction} 그런 다음 다시 시도해 주세요.",
   "ledgerErrorConnectAndUnlock": "Ledger를 연결하고 잠금을 해제해 주세요. {instruction}",
   "ledgerErrorUnlock": "Ledger의 잠금을 해제해 주세요. {instruction}",
-  "ledgerErrorViewingKeyDeclined": "[security] Ledger에서 뷰잉 키 요청을 거부했어요. 준비되면 다시 시도해 주세요.",
+  "ledgerErrorViewingKeyDeclined": "Ledger에서 뷰잉 키 요청을 거부했어요. 준비되면 다시 시도해 주세요.",
   "ledgerErrorViewingKeyRejected": "Ledger에서 뷰잉 키 요청을 거부했어요.",
   "ledgerFailureMsgAppUpdateRequired": "Ledger Wallet에서 Ledger와 Zcash 앱을 {version} 이상으로 업데이트해 주세요.",
   "ledgerFailureMsgBusy": "Ledger가 사용 중이에요. 잠시 후 다시 시도해 주세요.",
