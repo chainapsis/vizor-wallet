@@ -59,7 +59,7 @@ String ironwoodMigrationCompletionSeenStorageKey({
   required String accountUuid,
   required String completionId,
 }) {
-  return 'zcash_ironwood_migration_completion_seen_'
+  return 'zcash_ironwood_migration_completion_seen_' // l10n-ignore: storage key
       '${network}_${accountUuid}_$completionId';
 }
 

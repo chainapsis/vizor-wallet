@@ -989,7 +989,7 @@ String _migrationDateTime(
   final format = l10n.localeName == 'en'
       ? DateFormat(
           abbreviateMonth
-              ? 'MMM d, HH:mm'
+              ? 'MMM d, HH:mm' // l10n-ignore: date pattern
               : 'MMMM d, HH:mm', // l10n-ignore: date pattern
           'en',
         )

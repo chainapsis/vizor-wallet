@@ -12,6 +12,7 @@ lib/src/features/activity
 lib/src/features/address_book
 lib/src/features/address_scan
 lib/src/features/home
+lib/src/features/migration
 lib/src/features/onboarding
 lib/src/features/pay
 lib/src/features/receive
