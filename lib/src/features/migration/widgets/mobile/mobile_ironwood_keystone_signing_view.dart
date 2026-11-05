@@ -10,6 +10,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/l10n/locale_typography.dart';
+import '../../../keystone/widgets/keystone_prompt_lines.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanViewfinderCorners;
 
@@ -386,39 +387,18 @@ class _KeystoneScanPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = AppTypography.bodyMedium.copyWith(color: color);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // The help affordance trails the last word of the sentence rather
-        // than the whole two-line block, so it reads as part of the prompt.
-        Text.rich(
-          TextSpan(
-            children: [
-              ...inlineSlotSpans(
-                context.l10n.commonKeystoneScanPrompt(kInlineSlot),
-                const {
-                  kInlineSlot: WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: _KeystoneScanPromptIcon(),
-                  ),
-                },
-              ),
-              if (onShowHelp != null) ...[
-                const WidgetSpan(child: SizedBox(width: 6)),
-                WidgetSpan(
-                  alignment: PlaceholderAlignment.middle,
-                  child: _KeystoneScanHelpButton(
-                    color: color,
-                    onShowHelp: onShowHelp!,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          textAlign: TextAlign.center,
-          style: style,
-        ),
-      ],
+    // The help affordance trails the last word of the sentence rather than
+    // the whole two-line block, so it reads as part of the prompt.
+    return KeystonePromptLines(
+      text: context.l10n.commonKeystoneScanPrompt(kInlineSlot),
+      icon: const _KeystoneScanPromptIcon(),
+      style: style,
+      inlineGap: 6,
+      lineGap: 2,
+      trailingGap: 6,
+      trailing: onShowHelp == null
+          ? null
+          : _KeystoneScanHelpButton(color: color, onShowHelp: onShowHelp!),
     );
   }
 }

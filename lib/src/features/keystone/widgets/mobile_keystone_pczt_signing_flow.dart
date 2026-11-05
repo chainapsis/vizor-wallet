@@ -24,6 +24,7 @@ import '../../../services/qr_scanner.dart';
 import '../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanCameraErrorOverlay, MobileScanViewfinderCorners;
 import 'keystone_pczt_qr_stage.dart';
+import 'keystone_prompt_lines.dart';
 
 class MobileKeystonePcztSigningAborted implements Exception {
   const MobileKeystonePcztSigningAborted();
@@ -1319,6 +1320,9 @@ class _KeystoneSigningPromptText extends StatelessWidget {
   }
 }
 
+const _mobileKeystonePromptLineGap = 2.0;
+const _mobileKeystonePromptInlineGap = 6.0;
+
 class _KeystoneScanPrompt extends StatelessWidget {
   const _KeystoneScanPrompt({required this.color});
 
@@ -1327,20 +1331,12 @@ class _KeystoneScanPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textStyle = AppTypography.bodyMediumStrong.copyWith(color: color);
-    return Text.rich(
-      TextSpan(
-        children: inlineSlotSpans(
-          context.l10n.commonKeystoneScanPrompt(kInlineSlot),
-          const {
-            kInlineSlot: WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: _KeystoneScanPromptIcon(),
-            ),
-          },
-        ),
-      ),
-      textAlign: TextAlign.center,
+    return KeystonePromptLines(
+      text: context.l10n.commonKeystoneScanPrompt(kInlineSlot),
+      icon: const _KeystoneScanPromptIcon(),
       style: textStyle,
+      inlineGap: _mobileKeystonePromptInlineGap,
+      lineGap: _mobileKeystonePromptLineGap,
     );
   }
 }

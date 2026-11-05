@@ -228,20 +228,7 @@ class _IronwoodMigrationImmediateReviewContentState
                               Text.rich(
                                 TextSpan(
                                   children: [
-                                    ...emphasisSpans(
-                                      context.l10n.migrationImmediateTradeoffBody(
-                                        amount,
-                                        context
-                                            .l10n
-                                            .migrationImmediateTradeoffHighlight,
-                                      ),
-                                      [
-                                        context
-                                            .l10n
-                                            .migrationImmediateTradeoffHighlight,
-                                      ],
-                                      const TextStyle(color: Color(0xFFCA4ADC)),
-                                    ),
+                                    ..._tradeoffSpans(context, amount),
                                     TextSpan(
                                       text: isLedgerAccount
                                           ? context
@@ -399,4 +386,20 @@ String _immediateMigrationStartErrorMessage(
     return l10n.migrationErrorWaitForSync;
   }
   return l10n.migrationErrorStart;
+}
+
+/// The desktop design tints the sentence's closing period with the highlight.
+List<InlineSpan> _tradeoffSpans(BuildContext context, String amount) {
+  final highlight = context.l10n.migrationImmediateTradeoffHighlight;
+  final body = context.l10n.migrationImmediateTradeoffBody(amount, highlight);
+  final end = body.indexOf(highlight) + highlight.length;
+  final emphasized =
+      end > highlight.length - 1 &&
+          end < body.length &&
+          '.。'.contains(body[end])
+      ? '$highlight${body[end]}'
+      : highlight;
+  return emphasisSpans(body, [
+    emphasized,
+  ], const TextStyle(color: Color(0xFFCA4ADC)));
 }

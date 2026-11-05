@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import 'package:zcash_wallet/src/core/l10n/locale_typography.dart';
 
 /// Where `scripts/fetch-capture-fonts.sh` stores the CJK capture fonts.
 String captureFontDirectory() {
@@ -10,10 +11,12 @@ String captureFontDirectory() {
   return '${Platform.environment['HOME']}/.cache/vizor/capture-fonts';
 }
 
-// Family names match the fallbacks in `fontFamilyFallbackFor`.
-const _captureFonts = <AppLanguage, (String, String)>{
-  AppLanguage.ko: ('Noto Sans KR', 'NotoSansKR-VF.ttf'),
-  AppLanguage.zh: ('Noto Sans SC', 'NotoSansSC-VF.ttf'),
+// Registered under every name in the language's `fontFamilyFallbackFor`
+// list: a family the test engine does not know resolves to its box-glyph test
+// font, which would draw some Han characters as boxes.
+const _captureFonts = <AppLanguage, (List<String>, String)>{
+  AppLanguage.ko: (kKoreanFontFallback, 'NotoSansKR-VF.ttf'),
+  AppLanguage.zh: (kSimplifiedChineseFontFallback, 'NotoSansSC-VF.ttf'),
 };
 
 /// Loads the CJK fonts a [language] capture needs. Flutter tests cannot read
@@ -24,10 +27,10 @@ Future<void> loadCaptureLocaleFonts(AppLanguage language) async {
   if (!_captureFonts.containsKey(language)) return;
 
   final directory = captureFontDirectory();
-  for (final MapEntry(key: fontLanguage, value: (family, fileName))
+  for (final MapEntry(key: fontLanguage, value: (families, fileName))
       in _captureFonts.entries) {
     // Registered fonts outlive a test; scans render hundreds of scenarios.
-    if (_loadedFamilies.contains(family)) continue;
+    if (_loadedFamilies.contains(fileName)) continue;
     final file = File('$directory/$fileName');
     if (!file.existsSync()) {
       if (fontLanguage != language) continue;
@@ -36,11 +39,11 @@ Future<void> loadCaptureLocaleFonts(AppLanguage language) async {
         '${language.tag} screens.',
       );
     }
-    final bytes = file.readAsBytesSync();
-    final loader = FontLoader(family)
-      ..addFont(Future.value(ByteData.sublistView(bytes)));
-    await loader.load();
-    _loadedFamilies.add(family);
+    final bytes = ByteData.sublistView(file.readAsBytesSync());
+    for (final family in families) {
+      await (FontLoader(family)..addFont(Future.value(bytes))).load();
+    }
+    _loadedFamilies.add(fileName);
   }
 }
 
