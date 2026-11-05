@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../l10n/l10n.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
@@ -68,7 +69,7 @@ class _AppProfilePicturePickerModalState
     extends State<AppProfilePicturePickerModal> {
   late String _selectedId = _currentResolvedId;
   bool _isSubmitting = false;
-  String? _submitError;
+  bool _submitFailed = false;
 
   bool get _canUpdate =>
       !_isSubmitting &&
@@ -83,14 +84,14 @@ class _AppProfilePicturePickerModalState
     if (!_canUpdate) return;
     setState(() {
       _isSubmitting = true;
-      _submitError = null;
+      _submitFailed = false;
     });
     try {
       await widget.onUpdate(_selectedId);
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't update profile picture.";
+        _submitFailed = true;
       });
     } finally {
       if (mounted) {
@@ -105,7 +106,7 @@ class _AppProfilePicturePickerModalState
     if (_isSubmitting) return;
     setState(() {
       _selectedId = id;
-      _submitError = null;
+      _submitFailed = false;
     });
   }
 
@@ -144,10 +145,10 @@ class _AppProfilePicturePickerModalState
               ),
             ),
           ),
-          if (_submitError != null) ...[
+          if (_submitFailed) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
-              _submitError!,
+              context.l10n.profilePictureUpdateFailed,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMedium.copyWith(
                 color: context.colors.text.destructive,
@@ -160,7 +161,9 @@ class _AppProfilePicturePickerModalState
             cancelKey: widget.cancelKey,
             actionKey: widget.actionKey,
             onCancel: _isSubmitting ? null : widget.onCancel,
-            actionLabel: _isSubmitting ? 'Updating...' : 'Update',
+            actionLabel: _isSubmitting
+                ? context.l10n.commonUpdating
+                : context.l10n.commonUpdate,
             onAction: _canUpdate ? _submit : null,
           ),
         ],

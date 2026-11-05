@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart'
     show TextButton, IconButton, ButtonStyle, MaterialTapTargetSize;
 
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 
@@ -68,7 +69,7 @@ class AppToast extends StatelessWidget {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             icon: Semantics(
-              label: 'Dismiss notification',
+              label: context.l10n.commonDismissNotification,
               excludeSemantics: true,
               child: AppIcon(
                 AppIcons.cross,

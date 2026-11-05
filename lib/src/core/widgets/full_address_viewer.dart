@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/app_theme.dart';
 import 'app_button.dart';
 import 'app_copy_feedback.dart';
@@ -15,7 +16,7 @@ void copyFullAddress(BuildContext context, String address) {
   copyTextWithToast(
     context,
     text: fullAddressCopyText(address),
-    toastMessage: 'Address copied',
+    toastMessage: context.l10n.commonAddressCopied,
   );
 }
 
@@ -47,14 +48,14 @@ class FullAddressCopyButton extends StatelessWidget {
     required this.address,
     this.expand = false,
     this.size = AppButtonSize.mediumLarge,
-    this.label = 'Copy address',
+    this.label,
     super.key,
   });
 
   final String address;
   final bool expand;
   final AppButtonSize size;
-  final String label;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +68,10 @@ class FullAddressCopyButton extends StatelessWidget {
       constrainContent: expand,
       minWidth: kFullAddressCopyActionMinWidth,
       leading: const AppIcon(AppIcons.copy),
-      child: FittedBox(fit: BoxFit.scaleDown, child: Text(label, maxLines: 1)),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(label ?? context.l10n.commonCopyAddress, maxLines: 1),
+      ),
     );
   }
 }

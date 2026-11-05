@@ -100,11 +100,112 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// Screen-reader label of a carousel card. {name} is the carousel name, e.g. Information.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} {page} of {count}. {message}'**
+  String carouselPageSemantics(
+    String name,
+    int page,
+    int count,
+    String message,
+  );
+
+  /// Screen-reader label of a carousel page dot. {name} is the lowercase carousel name.
+  ///
+  /// In en, this message translates to:
+  /// **'Show {name} {page} of {count}'**
+  String carouselShowPage(String name, int page, int count);
+
+  /// Toast after an address is copied to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Address copied'**
+  String get commonAddressCopied;
+
+  /// Screen-reader label of a back button.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get commonBack;
+
+  /// Screen-reader label of a back link that names where it goes.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to {destination}'**
+  String commonBackTo(String destination);
+
   /// Button that closes a modal or sheet without applying a change.
   ///
   /// In en, this message translates to:
   /// **'Cancel'**
   String get commonCancel;
+
+  /// Toast when leaving a flow could not cancel its pending work.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not finish cancellation. Try again.'**
+  String get commonCancellationFailed;
+
+  /// Screen-reader label of the clear button in a text field.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear text'**
+  String get commonClearText;
+
+  /// Button or screen-reader label that closes a sheet or modal.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get commonClose;
+
+  /// Toast after a value is copied to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get commonCopied;
+
+  /// Button that copies an address to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy address'**
+  String get commonCopyAddress;
+
+  /// Screen-reader label of the close button on a toast.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss notification'**
+  String get commonDismissNotification;
+
+  /// Body of the sheet for a feature that is not available on this platform yet.
+  ///
+  /// In en, this message translates to:
+  /// **'This feature is still in progress.'**
+  String get commonFeatureInProgress;
+
+  /// Default screen-reader name of a carousel of information cards.
+  ///
+  /// In en, this message translates to:
+  /// **'Information'**
+  String get commonInformation;
+
+  /// Title of the sheet for a feature that is not available on this platform yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available yet'**
+  String get commonNotAvailableYet;
+
+  /// Button that acknowledges a message and closes it.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get commonOk;
+
+  /// Screen-reader label of the lock icon covering secret content while the app is in the background.
+  ///
+  /// In en, this message translates to:
+  /// **'Sensitive content hidden'**
+  String get commonSensitiveContentHidden;
 
   /// Button that applies a setting chosen in a picker modal or sheet (theme, language).
   ///
@@ -124,6 +225,72 @@ abstract class AppLocalizations {
   /// **'System ({language})'**
   String languageSystemOption(String language);
 
+  /// Sidebar and tab bar destination: transaction history.
+  ///
+  /// In en, this message translates to:
+  /// **'Activity'**
+  String get navActivity;
+
+  /// Sidebar and tab bar destination: wallet home.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get navHome;
+
+  /// Sidebar destination: pay with ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay'**
+  String get navPay;
+
+  /// Sidebar and tab bar destination: settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get navSettings;
+
+  /// Sidebar action that locks the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get navSignOut;
+
+  /// Sidebar and tab bar destination: swap assets.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap'**
+  String get navSwap;
+
+  /// Sidebar destination: coinholder voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote'**
+  String get navVote;
+
+  /// Badge naming a shielded pool or address. See the glossary entry for shielded.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded'**
+  String get poolShielded;
+
+  /// Badge naming a transparent pool or address.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent'**
+  String get poolTransparent;
+
+  /// Error in the profile picture picker when saving failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update profile picture.'**
+  String get profilePictureUpdateFailed;
+
+  /// Label of the memo row while a receipt is loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get receiptMessageLabel;
+
   /// Settings > System row label and picker title for choosing the app language. Also the screen-reader label of the Welcome language button.
   ///
   /// In en, this message translates to:
@@ -135,6 +302,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t update language.'**
   String get settingsLanguageUpdateFailed;
+
+  /// Sidebar account name shown before an account has loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get sidebarAccountNameFallback;
+
+  /// Toast when copying the account address from the sidebar failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Address couldn\'t be copied'**
+  String get sidebarAddressCopyFailed;
+
+  /// Screen-reader label of the sidebar copy-address button.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy shielded address'**
+  String get sidebarCopyShieldedAddress;
+
+  /// Screen-reader label of the sidebar button that hides amounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide balance'**
+  String get sidebarHideBalance;
+
+  /// Sidebar Home item label while an imported account scans.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing...'**
+  String get sidebarImporting;
+
+  /// Button in the sidebar account menu that opens account management.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage'**
+  String get sidebarManageAccounts;
+
+  /// Sidebar Ironwood migration item while the migration runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrating...'**
+  String get sidebarMigrating;
+
+  /// Sidebar Ironwood migration item when the user must act.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs input'**
+  String get sidebarMigrationNeedsInput;
+
+  /// Sidebar Ironwood migration item after a network upgrade stopped it.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped'**
+  String get sidebarMigrationStopped;
+
+  /// Heading of the sidebar account menu.
+  ///
+  /// In en, this message translates to:
+  /// **'My accounts'**
+  String get sidebarMyAccounts;
+
+  /// Toast after the account's shielded address is copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded address copied'**
+  String get sidebarShieldedAddressCopied;
+
+  /// Screen-reader label of the sidebar button that shows hidden amounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Show balance'**
+  String get sidebarShowBalance;
+
+  /// Sync status when the wallet is up to date.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced'**
+  String get syncSynced;
+
+  /// Screen-reader sync status with the scanned block height.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced at block {height}'**
+  String syncSyncedAtBlock(String height);
+
+  /// Body of the transaction fee info sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'The network fee is set by the Zcash protocol (ZIP 317) based on the transaction size. Vizor adds no extra fee.'**
+  String get txFeeInfoDescription;
+
+  /// Title of the transaction fee info sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx fee'**
+  String get txFeeInfoTitle;
 }
 
 class _AppLocalizationsDelegate

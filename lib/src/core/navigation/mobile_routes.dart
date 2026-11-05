@@ -63,6 +63,7 @@ import '../../features/settings/screens/mobile/mobile_viewing_key_screen.dart';
 import '../../features/swap/screens/mobile/mobile_swap_screen.dart';
 import '../../features/voting/screens/mobile/mobile_voting_screens.dart';
 import '../config/swap_feature_config.dart';
+import '../l10n/l10n.dart';
 import '../layout/mobile/app_mobile_shell.dart';
 import '../layout/mobile/mobile_adaptive_frame.dart';
 import '../layout/mobile/app_mobile_tab_bar.dart';
@@ -776,12 +777,12 @@ String? _redirectUnsupportedPrivateMigration(
 class _MobileTab {
   const _MobileTab({
     required this.path,
-    required this.item,
+    required this.iconName,
     required this.screen,
   });
 
   final String path;
-  final AppMobileTabItem item;
+  final String iconName;
   final Widget screen;
 }
 
@@ -791,7 +792,7 @@ final List<_MobileTab> _allMobileTabs = [
   for (var i = 0; i < mobileDestinations.length; i++)
     _MobileTab(
       path: mobileDestinations[i].path,
-      item: mobileDestinations[i].item,
+      iconName: mobileDestinations[i].iconName,
       screen: switch (mobileDestinations[i].path) {
         '/home' => const MobileHomeScreen(),
         '/swap' => const MobileSwapScreen(),
@@ -873,7 +874,13 @@ class _MobileTabShellState extends ConsumerState<_MobileTabShell> {
                 MobileNavigationMode.systemSideTabs
             ? Axis.vertical
             : Axis.horizontal,
-        items: [for (final tab in visibleTabs) tab.item],
+        items: [
+          for (final tab in visibleTabs)
+            AppMobileTabItem(
+              iconName: tab.iconName,
+              label: mobileDestinationLabel(context.l10n, tab.path),
+            ),
+        ],
         currentIndex: tabBarCurrentIndex,
         onSelect: (index) {
           _selectPath(visibleTabs[index].path);

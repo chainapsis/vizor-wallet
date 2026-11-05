@@ -1,8 +1,110 @@
 {
   "@@locale": "en",
+  "carouselPageSemantics": "{name} {page} of {count}. {message}",
+  "@carouselPageSemantics": {
+    "description": "Screen-reader label of a carousel card. {name} is the carousel name, e.g. Information.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Information"
+      },
+      "page": {
+        "type": "int",
+        "example": "1"
+      },
+      "count": {
+        "type": "int",
+        "example": "3"
+      },
+      "message": {
+        "type": "String",
+        "example": "Back up your secret passphrase."
+      }
+    }
+  },
+  "carouselShowPage": "Show {name} {page} of {count}",
+  "@carouselShowPage": {
+    "description": "Screen-reader label of a carousel page dot. {name} is the lowercase carousel name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "information"
+      },
+      "page": {
+        "type": "int",
+        "example": "1"
+      },
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "commonAddressCopied": "Address copied",
+  "@commonAddressCopied": {
+    "description": "Toast after an address is copied to the clipboard."
+  },
+  "commonBack": "Back",
+  "@commonBack": {
+    "description": "Screen-reader label of a back button."
+  },
+  "commonBackTo": "Back to {destination}",
+  "@commonBackTo": {
+    "description": "Screen-reader label of a back link that names where it goes.",
+    "placeholders": {
+      "destination": {
+        "type": "String",
+        "example": "Settings"
+      }
+    }
+  },
   "commonCancel": "Cancel",
   "@commonCancel": {
     "description": "Button that closes a modal or sheet without applying a change."
+  },
+  "commonCancellationFailed": "Could not finish cancellation. Try again.",
+  "@commonCancellationFailed": {
+    "description": "Toast when leaving a flow could not cancel its pending work."
+  },
+  "commonClearText": "Clear text",
+  "@commonClearText": {
+    "description": "Screen-reader label of the clear button in a text field."
+  },
+  "commonClose": "Close",
+  "@commonClose": {
+    "description": "Button or screen-reader label that closes a sheet or modal."
+  },
+  "commonCopied": "Copied",
+  "@commonCopied": {
+    "description": "Toast after a value is copied to the clipboard."
+  },
+  "commonCopyAddress": "Copy address",
+  "@commonCopyAddress": {
+    "description": "Button that copies an address to the clipboard."
+  },
+  "commonDismissNotification": "Dismiss notification",
+  "@commonDismissNotification": {
+    "description": "Screen-reader label of the close button on a toast."
+  },
+  "commonFeatureInProgress": "This feature is still in progress.",
+  "@commonFeatureInProgress": {
+    "description": "Body of the sheet for a feature that is not available on this platform yet."
+  },
+  "commonInformation": "Information",
+  "@commonInformation": {
+    "description": "Default screen-reader name of a carousel of information cards."
+  },
+  "commonNotAvailableYet": "Not available yet",
+  "@commonNotAvailableYet": {
+    "description": "Title of the sheet for a feature that is not available on this platform yet."
+  },
+  "commonOk": "OK",
+  "@commonOk": {
+    "description": "Button that acknowledges a message and closes it."
+  },
+  "commonSensitiveContentHidden": "Sensitive content hidden",
+  "@commonSensitiveContentHidden": {
+    "description": "Screen-reader label of the lock icon covering secret content while the app is in the background."
   },
   "commonUpdate": "Update",
   "@commonUpdate": {
@@ -23,6 +125,50 @@
       }
     }
   },
+  "navActivity": "Activity",
+  "@navActivity": {
+    "description": "Sidebar and tab bar destination: transaction history."
+  },
+  "navHome": "Home",
+  "@navHome": {
+    "description": "Sidebar and tab bar destination: wallet home."
+  },
+  "navPay": "Pay",
+  "@navPay": {
+    "description": "Sidebar destination: pay with ZEC."
+  },
+  "navSettings": "Settings",
+  "@navSettings": {
+    "description": "Sidebar and tab bar destination: settings."
+  },
+  "navSignOut": "Sign out",
+  "@navSignOut": {
+    "description": "Sidebar action that locks the wallet."
+  },
+  "navSwap": "Swap",
+  "@navSwap": {
+    "description": "Sidebar and tab bar destination: swap assets."
+  },
+  "navVote": "Vote",
+  "@navVote": {
+    "description": "Sidebar destination: coinholder voting."
+  },
+  "poolShielded": "Shielded",
+  "@poolShielded": {
+    "description": "Badge naming a shielded pool or address. See the glossary entry for shielded."
+  },
+  "poolTransparent": "Transparent",
+  "@poolTransparent": {
+    "description": "Badge naming a transparent pool or address."
+  },
+  "profilePictureUpdateFailed": "Couldn't update profile picture.",
+  "@profilePictureUpdateFailed": {
+    "description": "Error in the profile picture picker when saving failed."
+  },
+  "receiptMessageLabel": "Message",
+  "@receiptMessageLabel": {
+    "description": "Label of the memo row while a receipt is loading."
+  },
   "settingsLanguageLabel": "Language",
   "@settingsLanguageLabel": {
     "description": "Settings > System row label and picker title for choosing the app language. Also the screen-reader label of the Welcome language button."
@@ -30,5 +176,75 @@
   "settingsLanguageUpdateFailed": "Couldn't update language.",
   "@settingsLanguageUpdateFailed": {
     "description": "Error under the language options when saving the choice failed. The modal stays open."
+  },
+  "sidebarAccountNameFallback": "Username",
+  "@sidebarAccountNameFallback": {
+    "description": "Sidebar account name shown before an account has loaded."
+  },
+  "sidebarAddressCopyFailed": "Address couldn't be copied",
+  "@sidebarAddressCopyFailed": {
+    "description": "Toast when copying the account address from the sidebar failed."
+  },
+  "sidebarCopyShieldedAddress": "Copy shielded address",
+  "@sidebarCopyShieldedAddress": {
+    "description": "Screen-reader label of the sidebar copy-address button."
+  },
+  "sidebarHideBalance": "Hide balance",
+  "@sidebarHideBalance": {
+    "description": "Screen-reader label of the sidebar button that hides amounts."
+  },
+  "sidebarImporting": "Importing...",
+  "@sidebarImporting": {
+    "description": "Sidebar Home item label while an imported account scans."
+  },
+  "sidebarManageAccounts": "Manage",
+  "@sidebarManageAccounts": {
+    "description": "Button in the sidebar account menu that opens account management."
+  },
+  "sidebarMigrating": "Migrating...",
+  "@sidebarMigrating": {
+    "description": "Sidebar Ironwood migration item while the migration runs."
+  },
+  "sidebarMigrationNeedsInput": "Needs input",
+  "@sidebarMigrationNeedsInput": {
+    "description": "Sidebar Ironwood migration item when the user must act."
+  },
+  "sidebarMigrationStopped": "Migration stopped",
+  "@sidebarMigrationStopped": {
+    "description": "Sidebar Ironwood migration item after a network upgrade stopped it."
+  },
+  "sidebarMyAccounts": "My accounts",
+  "@sidebarMyAccounts": {
+    "description": "Heading of the sidebar account menu."
+  },
+  "sidebarShieldedAddressCopied": "Shielded address copied",
+  "@sidebarShieldedAddressCopied": {
+    "description": "Toast after the account's shielded address is copied."
+  },
+  "sidebarShowBalance": "Show balance",
+  "@sidebarShowBalance": {
+    "description": "Screen-reader label of the sidebar button that shows hidden amounts."
+  },
+  "syncSynced": "Synced",
+  "@syncSynced": {
+    "description": "Sync status when the wallet is up to date."
+  },
+  "syncSyncedAtBlock": "Synced at block {height}",
+  "@syncSyncedAtBlock": {
+    "description": "Screen-reader sync status with the scanned block height.",
+    "placeholders": {
+      "height": {
+        "type": "String",
+        "example": "3,120,450"
+      }
+    }
+  },
+  "txFeeInfoDescription": "The network fee is set by the Zcash protocol (ZIP 317) based on the transaction size. Vizor adds no extra fee.",
+  "@txFeeInfoDescription": {
+    "description": "Body of the transaction fee info sheet."
+  },
+  "txFeeInfoTitle": "Tx fee",
+  "@txFeeInfoTitle": {
+    "description": "Title of the transaction fee info sheet."
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../main.dart' show log;
 import '../../../../core/account_name_policy.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -547,7 +548,7 @@ class MobileSheetCancel extends StatelessWidget {
           height: AppButtonSizing.largeHeight,
           child: Center(
             child: Text(
-              'Cancel',
+              context.l10n.commonCancel,
               style:
                   textStyle ??
                   AppTypography.labelLarge.copyWith(

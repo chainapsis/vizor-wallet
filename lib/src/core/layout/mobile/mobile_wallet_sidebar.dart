@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show Material, MaterialType;
 import 'package:flutter/widgets.dart';
 import '../../formatting/sync_status_label.dart';
+import '../../l10n/l10n.dart';
 import '../../navigation/mobile_destinations.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
@@ -117,7 +118,7 @@ class MobileWalletSidebar extends StatelessWidget {
                   child: Row(
                     children: [
                       AppIcon(
-                        destination.item.iconName,
+                        destination.iconName,
                         size: 24,
                         color: _selected(destination.path)
                             ? colors.navPanel.activeIcon
@@ -126,7 +127,10 @@ class MobileWalletSidebar extends StatelessWidget {
                       const SizedBox(width: AppSpacing.s),
                       Expanded(
                         child: Text(
-                          destination.item.label,
+                          mobileDestinationLabel(
+                            context.l10n,
+                            destination.path,
+                          ),
                           style: AppTypography.bodyMediumStrong.copyWith(
                             color: fullyDisabled
                                 ? (_selected(destination.path)
