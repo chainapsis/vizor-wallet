@@ -1,5 +1,75 @@
 {
   "@@locale": "en",
+  "aboutBuiltByBody": "We built Keplr, the wallet used by millions across Cosmos, Ethereum, and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.",
+  "@aboutBuiltByBody": {
+    "description": "Body of the first paragraph of the About screen."
+  },
+  "aboutBuiltByHeading": "Built by the Keplr team",
+  "@aboutBuiltByHeading": {
+    "description": "Heading of the first paragraph of the About screen."
+  },
+  "aboutLegalPlaceholderBody": "Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount.",
+  "@aboutLegalPlaceholderBody": {
+    "description": "Body of the placeholder paragraphs on the Terms and Privacy Policy screens."
+  },
+  "aboutLegalPlaceholderHeading": "From the team that brought you Keplr Wallet.",
+  "@aboutLegalPlaceholderHeading": {
+    "description": "Heading of the placeholder paragraphs on the Terms and Privacy Policy screens."
+  },
+  "aboutLinkSemantics": "{label} link",
+  "@aboutLinkSemantics": {
+    "description": "Accessibility label of a link button on mobile About; {label} is the visible button label.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "aboutOpenGithub": "Open Vizor GitHub",
+  "@aboutOpenGithub": {
+    "description": "Accessibility label of the button that opens the Vizor GitHub page."
+  },
+  "aboutOpenSourceBody": "Vizor is Apache licensed. Your keys stay on your device.\nWe don't see your balances or your transactions.",
+  "@aboutOpenSourceBody": {
+    "description": "Body of the third paragraph of the About screen; the line break is intentional."
+  },
+  "aboutOpenSourceHeading": "Open source, self-custodied",
+  "@aboutOpenSourceHeading": {
+    "description": "Heading of the third paragraph of the About screen."
+  },
+  "aboutOpenWebsite": "Open Vizor website",
+  "@aboutOpenWebsite": {
+    "description": "Accessibility label of the button that opens the Vizor website."
+  },
+  "aboutShieldedBody": "Vizor is built around shielded transactions, where the sender, recipient, and amount stay private. Transparent Zcash works too, but private is the default.",
+  "@aboutShieldedBody": {
+    "description": "Body of the second paragraph of the About screen."
+  },
+  "aboutShieldedHeading": "Designed for shielded Zcash",
+  "@aboutShieldedHeading": {
+    "description": "Heading of the second paragraph of the About screen."
+  },
+  "aboutTermsTitle": "Terms of Usage",
+  "@aboutTermsTitle": {
+    "description": "Title of the Terms of Usage legal screen on desktop."
+  },
+  "aboutTitle": "About Vizor Wallet",
+  "@aboutTitle": {
+    "description": "Title of the About screen, also its top-bar title on mobile."
+  },
+  "aboutVersionLabel": "Version: {version} Public Beta",
+  "@aboutVersionLabel": {
+    "description": "Version line under the title of the About and legal screens; {version} is the app release number such as 1.2.3.",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "aboutWebsite": "Website",
+  "@aboutWebsite": {
+    "description": "Label of the link button that opens the Vizor website."
+  },
   "accountNameLabel": "Account name",
   "@accountNameLabel": {
     "description": "Label of the account name field or row."
@@ -1833,6 +1903,42 @@
   "commonZcashAddress": "Zcash address",
   "@commonZcashAddress": {
     "description": "Title of the sheet that shows a full address of unrecognized type. Shared by: activity, send, swap."
+  },
+  "donationDonatingTo": "Donating to",
+  "@donationDonatingTo": {
+    "description": "Label of the review row that names the donation recipient."
+  },
+  "donationEnterAmount": "Enter your amount",
+  "@donationEnterAmount": {
+    "description": "Placeholder prompt next to the unit selector on the donation amount screen."
+  },
+  "donationPriceUnavailable": "Price unavailable",
+  "@donationPriceUnavailable": {
+    "description": "Shown under the donation amount field on mobile when the live ZEC price is unavailable, so the USD conversion cannot be shown."
+  },
+  "donationReviewAmountTitle": "Review Amount",
+  "@donationReviewAmountTitle": {
+    "description": "Title of the desktop donation review step."
+  },
+  "donationSendingFrom": "Sending from",
+  "@donationSendingFrom": {
+    "description": "Label of the review row on the mobile donation summary that names the balance used for the donation."
+  },
+  "donationSendingFromYour": "Sending from your",
+  "@donationSendingFromYour": {
+    "description": "Lead-in of a line on the desktop donation screen, followed by a shield icon and the words 'Shielded balance'."
+  },
+  "donationSwitchCurrency": "Switch between ZEC and USD",
+  "@donationSwitchCurrency": {
+    "description": "Accessibility label of the button that toggles the donation amount between ZEC and USD."
+  },
+  "donationThanksTitle": "Thank you for supporting Vizor",
+  "@donationThanksTitle": {
+    "description": "Headline of the desktop screen shown after a donation succeeded."
+  },
+  "donationTotal": "Total",
+  "@donationTotal": {
+    "description": "Label of the last row on the mobile donation summary showing amount plus fee."
   },
   "endpointCurrent": "Current: {endpoint}",
   "@endpointCurrent": {
@@ -10832,6 +10938,1197 @@
   "@updateRestart": {
     "description": "Button that restarts Vizor to apply a downloaded update."
   },
+  "votingActionResume": "Resume",
+  "@votingActionResume": {
+    "description": "Button on a voting round card that continues an unfinished vote submission."
+  },
+  "votingActionRetryEligibility": "Retry eligibility",
+  "@votingActionRetryEligibility": {
+    "description": "Label of the bottom button that re-checks whether the account may vote."
+  },
+  "votingActionReview": "Review",
+  "@votingActionReview": {
+    "description": "Button on a voting round card that shows the answers already submitted."
+  },
+  "votingActionReviewAnswers": "Review answers",
+  "@votingActionReviewAnswers": {
+    "description": "Button that opens the screen to review answers before submitting the vote."
+  },
+  "votingActionUnavailable": "Unavailable",
+  "@votingActionUnavailable": {
+    "description": "Label of the bottom button of a voting round when voting is not available for this account."
+  },
+  "votingActionView": "View",
+  "@votingActionView": {
+    "description": "Button on a voting round card of a round this account cannot vote in; opens the round details."
+  },
+  "votingActionViewResults": "View results",
+  "@votingActionViewResults": {
+    "description": "Button on a voting round card that opens the results of a closed round."
+  },
+  "votingActive": "Voting active",
+  "@votingActive": {
+    "description": "Meta line of a voting round that is open when its end date is unknown."
+  },
+  "votingAlreadyUsedNotice": "These funds were already used for this round. Voting cannot be restarted on this device.",
+  "@votingAlreadyUsedNotice": {
+    "description": "Notice on the voting round page when this account's funds were already used to vote in this round."
+  },
+  "votingAutoAdvanceSemantics": "Moving to the next unanswered question",
+  "@votingAutoAdvanceSemantics": {
+    "description": "Accessibility label of the small spinner shown while the vote screen moves on to the next unanswered question."
+  },
+  "votingBallotCasting": "Casting votes",
+  "@votingBallotCasting": {
+    "description": "Detail under the casting step while votes are being proved and cast."
+  },
+  "votingBallotDelivering": "Delivering your responses",
+  "@votingBallotDelivering": {
+    "description": "Detail under the casting step while vote shares are delivered to the voting servers."
+  },
+  "votingBallotPreparing": "Preparing your ballot",
+  "@votingBallotPreparing": {
+    "description": "Detail under the casting step while the ballot is being prepared."
+  },
+  "votingBallotWaitingChain": "Waiting for chain confirmation",
+  "@votingBallotWaitingChain": {
+    "description": "Detail under the casting step while waiting for the votes to confirm on chain."
+  },
+  "votingBetaSemantics": "Beta",
+  "@votingBetaSemantics": {
+    "description": "Accessibility label of the Beta badge image next to the Vote title."
+  },
+  "votingBundleCount": "{count, plural, =1{1 voting bundle} other{{count} voting bundles}}",
+  "@votingBundleCount": {
+    "description": "Number of voting bundles one Keystone request signs.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "votingBundleOf": "Bundle {number} of {total}",
+  "@votingBundleOf": {
+    "description": "Pager label for one bundle on the mobile Keystone signing screen; a bundle is a group of notes signed together.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingCheckAgain": "Check again",
+  "@votingCheckAgain": {
+    "description": "Button that re-checks whether this account's funds were already used to vote."
+  },
+  "votingChoiceFallback": "Choice {number}",
+  "@votingChoiceFallback": {
+    "description": "Label of an answer option whose name is unknown; {number} is the option number.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "votingConfigAddCustomSource": "Add custom source",
+  "@votingConfigAddCustomSource": {
+    "description": "Button or title for adding a custom voting config source URL."
+  },
+  "votingConfigBadgeDefault": "Default",
+  "@votingConfigBadgeDefault": {
+    "description": "Badge on the default voting config source."
+  },
+  "votingConfigCloseSettings": "Close voting config settings",
+  "@votingConfigCloseSettings": {
+    "description": "Accessibility label of the close button of the voting config panel."
+  },
+  "votingConfigCopyUrl": "Copy source URL",
+  "@votingConfigCopyUrl": {
+    "description": "Accessibility label of the button that copies a voting config source URL."
+  },
+  "votingConfigCustomSource": "Custom source",
+  "@votingConfigCustomSource": {
+    "description": "Name of the active voting config source when it is a URL the user added but did not save."
+  },
+  "votingConfigDeleteNamed": "Delete {name}",
+  "@votingConfigDeleteNamed": {
+    "description": "Accessibility label of the delete button of a saved voting config source; {name} is the source's title.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "votingConfigDeleteSaved": "Delete saved source",
+  "@votingConfigDeleteSaved": {
+    "description": "Accessibility label of the button that deletes a saved voting config source."
+  },
+  "votingConfigDuplicate": "This source URL is already added.",
+  "@votingConfigDuplicate": {
+    "description": "Validation error when the custom voting config source URL already exists."
+  },
+  "votingConfigEditCustomSource": "Edit custom source",
+  "@votingConfigEditCustomSource": {
+    "description": "Title of the form for editing a custom voting config source."
+  },
+  "votingConfigEditNamed": "Edit {name}",
+  "@votingConfigEditNamed": {
+    "description": "Accessibility label of the edit button of a saved voting config source; {name} is the source's title.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "votingConfigEditSaved": "Edit saved source",
+  "@votingConfigEditSaved": {
+    "description": "Accessibility label of the button that edits a saved voting config source."
+  },
+  "votingConfigEnterTitleAndUrl": "Enter a title and source URL.",
+  "@votingConfigEnterTitleAndUrl": {
+    "description": "Validation error on mobile when the title or URL of a custom voting config source is empty."
+  },
+  "votingConfigFieldStaticUrl": "Static config URL",
+  "@votingConfigFieldStaticUrl": {
+    "description": "Label of the URL field of a custom voting config source on desktop."
+  },
+  "votingConfigFieldTitle": "Title",
+  "@votingConfigFieldTitle": {
+    "description": "Label of the title field of a custom voting config source."
+  },
+  "votingConfigLoadFailed": "Couldn't load voting config from that source.",
+  "@votingConfigLoadFailed": {
+    "description": "Error shown when the custom voting config source could not be fetched."
+  },
+  "votingConfigMobileFieldUrl": "Source URL",
+  "@votingConfigMobileFieldUrl": {
+    "description": "Label of the URL field of a custom voting config source on mobile."
+  },
+  "votingConfigMobileIntro": "Choose where Vizor gets authenticated voting rounds.",
+  "@votingConfigMobileIntro": {
+    "description": "Intro text in the mobile voting config sheet."
+  },
+  "votingConfigMobileSave": "Save source",
+  "@votingConfigMobileSave": {
+    "description": "Button on the mobile voting config sheet that saves the custom source."
+  },
+  "votingConfigMobileTestRoundsHint": "Include authenticated rounds marked [TEST].",
+  "@votingConfigMobileTestRoundsHint": {
+    "description": "Explanation under the Show test rounds switch on mobile; [TEST] is a literal title marker."
+  },
+  "votingConfigMobileTitle": "Vote config",
+  "@votingConfigMobileTitle": {
+    "description": "Title of the mobile bottom sheet for choosing the voting config source."
+  },
+  "votingConfigMobileUpdateFailed": "Couldn't update voting config. Check the source and try again.",
+  "@votingConfigMobileUpdateFailed": {
+    "description": "Error on mobile when saving the voting config source failed."
+  },
+  "votingConfigSaving": "Saving...",
+  "@votingConfigSaving": {
+    "description": "Label of the save button while the voting config source choice is being saved."
+  },
+  "votingConfigSettings": "Voting config settings",
+  "@votingConfigSettings": {
+    "description": "Accessibility label of the settings button on the voting list that opens the voting configuration."
+  },
+  "votingConfigShowTestRounds": "Show test rounds",
+  "@votingConfigShowTestRounds": {
+    "description": "Title and accessibility label of the switch that shows test voting rounds."
+  },
+  "votingConfigShowTestRoundsHint": "Display authenticated rounds whose titles begin with [TEST].",
+  "@votingConfigShowTestRoundsHint": {
+    "description": "Explanation under the Show test rounds switch on desktop; [TEST] is a literal title prefix."
+  },
+  "votingConfigSources": "Sources",
+  "@votingConfigSources": {
+    "description": "Heading above the list of voting config sources on mobile."
+  },
+  "votingConfigTestVisibilityFailed": "Couldn't update the test round visibility setting.",
+  "@votingConfigTestVisibilityFailed": {
+    "description": "Error shown when changing the Show test rounds setting failed."
+  },
+  "votingConfigTitleTooLong": "Title must be {max} characters or less.",
+  "@votingConfigTitleTooLong": {
+    "description": "Validation error under the title field when adding a custom voting config source.",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "votingConfigTooltip": "Voting config",
+  "@votingConfigTooltip": {
+    "description": "Tooltip of the settings icon on the voting list that opens the voting configuration."
+  },
+  "votingConfigUpdateFailed": "Couldn't update voting config.",
+  "@votingConfigUpdateFailed": {
+    "description": "Error shown when saving the voting config source failed without a specific reason."
+  },
+  "votingConfigUrlCopied": "Source URL copied.",
+  "@votingConfigUrlCopied": {
+    "description": "Toast shown after copying a voting config source URL."
+  },
+  "votingConfigValidating": "Validating...",
+  "@votingConfigValidating": {
+    "description": "Label of the save button while the custom source is being validated."
+  },
+  "votingConfirmationCheckingEligibility": "Checking voting eligibility for this account.",
+  "@votingConfirmationCheckingEligibility": {
+    "description": "Message on the voting confirmation screen while eligibility is checked."
+  },
+  "votingConfirmationConfirmedBody": "Your vote was successfully published and cannot be changed.",
+  "@votingConfirmationConfirmedBody": {
+    "description": "[security] Body of the voting confirmation screen after the vote was published; votes are final."
+  },
+  "votingConfirmationConfirmedTitle": "Submission confirmed!",
+  "@votingConfirmationConfirmedTitle": {
+    "description": "Title of the voting confirmation screen after the vote was published."
+  },
+  "votingConfirmationEligibilityUnconfirmed": "Voting eligibility has not been confirmed for this account.",
+  "@votingConfirmationEligibilityUnconfirmed": {
+    "description": "Message on the voting confirmation screen when eligibility could not be confirmed."
+  },
+  "votingConfirmationIncompleteTitle": "Submission not complete",
+  "@votingConfirmationIncompleteTitle": {
+    "description": "Title of the voting confirmation screen when the vote was not fully submitted."
+  },
+  "votingConfirmationLoadFailed": "Couldn't load submission details: {error}",
+  "@votingConfirmationLoadFailed": {
+    "description": "Message on the voting confirmation screen when details could not be loaded; {error} is the reason.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "votingConfirmationNotCompleted": "This account has not completed submission for this voting round.",
+  "@votingConfirmationNotCompleted": {
+    "description": "Message on the voting confirmation screen when this account did not finish submitting its vote."
+  },
+  "votingConfirmationUpdateFailed": "Couldn't update voting rounds. Try again.",
+  "@votingConfirmationUpdateFailed": {
+    "description": "Error on the voting confirmation screen when refreshing the voting rounds list failed after Done was pressed."
+  },
+  "votingConfirmationUpdatingRounds": "Updating voting rounds...",
+  "@votingConfirmationUpdatingRounds": {
+    "description": "Shown on the voting confirmation screen while the voting rounds list refreshes after Done was pressed."
+  },
+  "votingContinueToReview": "Continue to review",
+  "@votingContinueToReview": {
+    "description": "Dialog button that goes on to the review screen although some questions are unanswered."
+  },
+  "votingContinueVoting": "Continue voting",
+  "@votingContinueVoting": {
+    "description": "Button that resumes an unfinished vote submission."
+  },
+  "votingDaysLeft": "{days, plural, =0{Ends today} =1{1 day left} other{{days} days left}}",
+  "@votingDaysLeft": {
+    "description": "Time left in a voting round; zero means it ends today.",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "votingDetailLoadFailedTitle": "Couldn't load voting round",
+  "@votingDetailLoadFailedTitle": {
+    "description": "Title of the error shown on the voting round page when the round could not be loaded."
+  },
+  "votingDetailUnavailableBody": "The selected voting round could not be loaded.",
+  "@votingDetailUnavailableBody": {
+    "description": "Body shown on the voting round page when the selected round does not exist."
+  },
+  "votingDetailUnavailableTitle": "Voting round unavailable",
+  "@votingDetailUnavailableTitle": {
+    "description": "Title shown on the voting round page when the selected round does not exist."
+  },
+  "votingEnds": "Ends {date}",
+  "@votingEnds": {
+    "description": "Meta line of an open voting round; {date} is the end date such as Jan 5, 2026.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "votingErrorLedgerCancelled": "Ledger voting approval was cancelled.",
+  "@votingErrorLedgerCancelled": {
+    "description": "Error shown when the user cancelled approving a vote on their Ledger."
+  },
+  "votingErrorLedgerLocked": "Unlock your Ledger. {instruction}",
+  "@votingErrorLedgerLocked": {
+    "description": "Error shown when the Ledger is locked during voting; {instruction} is a sentence telling the user to open the Zcash app on the device.",
+    "placeholders": {
+      "instruction": {
+        "type": "String"
+      }
+    }
+  },
+  "votingErrorLedgerRejected": "The vote signature was rejected on your Ledger. Retry to sign again.",
+  "@votingErrorLedgerRejected": {
+    "description": "Error shown when the user rejected the vote signature on their Ledger."
+  },
+  "votingErrorLedgerWrongApp": "{instruction} Then retry.",
+  "@votingErrorLedgerWrongApp": {
+    "description": "Error shown when the wrong app is open on the Ledger during voting; {instruction} is a sentence telling the user to open the Zcash app.",
+    "placeholders": {
+      "instruction": {
+        "type": "String"
+      }
+    }
+  },
+  "votingErrorMinimumWeight": "Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}. Switch to an eligible account to vote.",
+  "@votingErrorMinimumWeight": {
+    "description": "Error shown when the account's eligible shielded balance is below the round's minimum; {amount} is a ZEC amount and {snapshot} names the snapshot block.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "snapshot": {
+        "type": "String"
+      }
+    }
+  },
+  "votingErrorNoSpendableNotes": "This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}. Switch to an eligible account to vote.",
+  "@votingErrorNoSpendableNotes": {
+    "description": "Error shown when the account had no shielded funds at the snapshot; {snapshot} is a phrase naming the snapshot block.",
+    "placeholders": {
+      "snapshot": {
+        "type": "String"
+      }
+    }
+  },
+  "votingErrorSessionFailed": "Voting session action failed.",
+  "@votingErrorSessionFailed": {
+    "description": "Generic error shown when a voting action failed without a more specific message."
+  },
+  "votingForumDiscussion": "Forum discussion",
+  "@votingForumDiscussion": {
+    "description": "Label of the link button that opens the forum discussion of a voting round or proposal."
+  },
+  "votingGuardAccountLoadFailed": "Couldn't load account",
+  "@votingGuardAccountLoadFailed": {
+    "description": "Title of the error shown on the voting pages when the wallet account could not be loaded."
+  },
+  "votingIneligibleTitle": "Not eligible for this voting round",
+  "@votingIneligibleTitle": {
+    "description": "Title of the dialog explaining that the account cannot vote in this round."
+  },
+  "votingKeepSigning": "Keep signing",
+  "@votingKeepSigning": {
+    "description": "Dialog button that goes back to signing the remaining bundles on Keystone."
+  },
+  "votingKeepVoting": "Keep voting",
+  "@votingKeepVoting": {
+    "description": "Dialog button that returns to the unanswered questions."
+  },
+  "votingKeystoneMemoLabel": "Bundle {number} of {total} memo",
+  "@votingKeystoneMemoLabel": {
+    "description": "Label above the memo of one bundle on the Keystone signing panel.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingKeystoneNextBatch": "The next signing batch is ready",
+  "@votingKeystoneNextBatch": {
+    "description": "Message on the Keystone signing panel when a new request QR for the next group of bundles is shown."
+  },
+  "votingKeystoneNextMemo": "Next bundle memo",
+  "@votingKeystoneNextMemo": {
+    "description": "Tooltip of the button that shows the memo of the next bundle."
+  },
+  "votingKeystoneOneApproval": "One Keystone approval",
+  "@votingKeystoneOneApproval": {
+    "description": "Caption under the Keystone request QR when a single approval signs all bundles."
+  },
+  "votingKeystonePreviousMemo": "Previous bundle memo",
+  "@votingKeystonePreviousMemo": {
+    "description": "Tooltip of the button that shows the memo of the previous bundle."
+  },
+  "votingKeystoneQrPartial": "This QR signs {count} of {total} remaining bundles",
+  "@votingKeystoneQrPartial": {
+    "description": "Caption under the Keystone request QR when it covers only part of the remaining bundles.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingKeystoneScanInstruction": "Scan QR on this screen with Keystone. Then, scan the signed voting QR displayed on Keystone with this device's camera",
+  "@votingKeystoneScanInstruction": {
+    "description": "Instruction on the Keystone signing panel describing the two-way QR exchange."
+  },
+  "votingKeystoneScanSignature": "Scan signature",
+  "@votingKeystoneScanSignature": {
+    "description": "Button on the Keystone signing panel that opens the camera to scan the signed QR."
+  },
+  "votingKeystoneSignLabel": "{count, plural, =0{Preparing voting signatures} =1{Sign 1 voting bundle} other{Sign {count} voting bundles}}",
+  "@votingKeystoneSignLabel": {
+    "description": "Heading of the Keystone signing panel; zero means the request is still being prepared.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "votingKeystoneUnexpectedUr": "Open the signed voting QR on Keystone, then scan again.",
+  "@votingKeystoneUnexpectedUr": {
+    "description": "Error shown when the scanned QR is not the signed voting result."
+  },
+  "votingLedgerApprovalNotice": "Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.",
+  "@votingLedgerApprovalNotice": {
+    "description": "[security] Notice on the Ledger panel: approving on the device authorizes the delegation, and the memo must be checked in Vizor because the device may not show it verbatim."
+  },
+  "votingLedgerBundleOf": "Bundle {number} of {total}",
+  "@votingLedgerBundleOf": {
+    "description": "Progress of the Ledger approval; a bundle is a group of notes signed together.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingLedgerChecking": "Checking your Ledger",
+  "@votingLedgerChecking": {
+    "description": "Title of the Ledger panel while the device is checked."
+  },
+  "votingLedgerCheckingBody": "Vizor is checking whether the Zcash app is ready.",
+  "@votingLedgerCheckingBody": {
+    "description": "Body of the Ledger panel while the device is checked."
+  },
+  "votingLedgerConfirmOpen": "Confirm opening Zcash",
+  "@votingLedgerConfirmOpen": {
+    "description": "Title of the Ledger panel while the user must approve opening the Zcash app on the device."
+  },
+  "votingLedgerConfirmOpenBody": "Approve the request to open the Zcash app on your Ledger.",
+  "@votingLedgerConfirmOpenBody": {
+    "description": "Body of the Ledger panel asking the user to approve opening the Zcash app on the device."
+  },
+  "votingLedgerFinishing": "Finishing voting delegation",
+  "@votingLedgerFinishing": {
+    "description": "Title of the Ledger panel while the delegation is finished."
+  },
+  "votingLedgerNeedsAttention": "Ledger needs attention",
+  "@votingLedgerNeedsAttention": {
+    "description": "Title of the Ledger panel when the device has a problem."
+  },
+  "votingLedgerPanelTitle": "Voting delegation",
+  "@votingLedgerPanelTitle": {
+    "description": "Heading of the desktop Ledger signing panel."
+  },
+  "votingLedgerPleaseWait": "Please wait while Vizor prepares your request.",
+  "@votingLedgerPleaseWait": {
+    "description": "Body of the Ledger panel while the request is prepared."
+  },
+  "votingLedgerPreparing": "Preparing voting delegation",
+  "@votingLedgerPreparing": {
+    "description": "Title of the Ledger panel while the delegation request is prepared."
+  },
+  "votingLedgerReconnect": "Reconnect your Ledger and try again.",
+  "@votingLedgerReconnect": {
+    "description": "Fallback body of the Ledger panel when the device has a problem and no detail is known."
+  },
+  "votingMobileAccountLoadFailed": "Couldn't load account.\n{error}",
+  "@votingMobileAccountLoadFailed": {
+    "description": "Error on the mobile voting pages when the wallet account could not be loaded; {error} is the reason on a new line.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "votingMobileGoHome": "Go home",
+  "@votingMobileGoHome": {
+    "description": "Button on the mobile vote-submitted screen that returns to the home screen."
+  },
+  "votingMobileHeaderTitle": "Voting",
+  "@votingMobileHeaderTitle": {
+    "description": "Title in the sticky header of a mobile voting page."
+  },
+  "votingMobileKeystoneChecking": "Checking voting signature...",
+  "@votingMobileKeystoneChecking": {
+    "description": "Status on the mobile Keystone screen while the signature is verified."
+  },
+  "votingMobileKeystoneDescription": "Scan the voting request with Keystone, approve it, then scan the signed result with this device.",
+  "@votingMobileKeystoneDescription": {
+    "description": "Instruction on the mobile Keystone signing screen."
+  },
+  "votingMobileKeystoneFailedTitle": "Voting signature failed",
+  "@votingMobileKeystoneFailedTitle": {
+    "description": "Title of the mobile Keystone signing screen when the signature could not be used."
+  },
+  "votingMobileKeystoneNextBundle": "Next voting bundle",
+  "@votingMobileKeystoneNextBundle": {
+    "description": "Accessibility label of the button that shows the next bundle's memo."
+  },
+  "votingMobileKeystonePreviousBundle": "Previous voting bundle",
+  "@votingMobileKeystonePreviousBundle": {
+    "description": "Accessibility label of the button that shows the previous bundle's memo."
+  },
+  "votingMobileKeystoneReading": "Reading voting signature...",
+  "@votingMobileKeystoneReading": {
+    "description": "Status on the mobile Keystone screen while the scanned signature is read."
+  },
+  "votingMobileKeystoneScanCaption": "Scan the signed voting QR shown on Keystone",
+  "@votingMobileKeystoneScanCaption": {
+    "description": "Caption under the camera view on the mobile Keystone screen."
+  },
+  "votingMobileKeystoneSkipUnsigned": "Skip unsigned bundles",
+  "@votingMobileKeystoneSkipUnsigned": {
+    "description": "Button on the mobile Keystone screen that submits with only the bundles signed so far."
+  },
+  "votingMobileKeystoneTitle": "Sign vote with Keystone",
+  "@votingMobileKeystoneTitle": {
+    "description": "Title of the mobile screen that shows the QR for signing the vote on Keystone."
+  },
+  "votingMobileLeaveWarning": "Don’t leave this window.",
+  "@votingMobileLeaveWarning": {
+    "description": "[security] Notice on the mobile submission screen telling the user to stay on it."
+  },
+  "votingMobileProgressSemantics": "Active voting submission step progress",
+  "@votingMobileProgressSemantics": {
+    "description": "Accessibility label of the progress ring of the active submission step."
+  },
+  "votingMobileProofNotice": "Generating zero-knowledge proofs can take about 60 seconds, closing now may lose in-flight proof work.",
+  "@votingMobileProofNotice": {
+    "description": "[security] Notice on the mobile submission screen that proofs take about a minute and closing may lose their progress."
+  },
+  "votingMobileSubmitTitle": "Submit vote",
+  "@votingMobileSubmitTitle": {
+    "description": "Top-bar title of the mobile screen shown while the vote is submitted."
+  },
+  "votingMobileSubmittedBody": "Your vote has been submitted and can’t be changed.",
+  "@votingMobileSubmittedBody": {
+    "description": "Body of the mobile screen shown after the vote was submitted."
+  },
+  "votingMobileSubmittedTitle": "Vote submitted",
+  "@votingMobileSubmittedTitle": {
+    "description": "Top-bar title of the mobile screen shown after the vote was submitted."
+  },
+  "votingMobileSubmittingTitle": "Submitting votes...",
+  "@votingMobileSubmittingTitle": {
+    "description": "Title of the mobile screen while votes are being submitted."
+  },
+  "votingNavAllAnswered": "All questions answered",
+  "@votingNavAllAnswered": {
+    "description": "Progress label when every question has an answer."
+  },
+  "votingNavAnsweredProgress": "{answered} / {total} answered",
+  "@votingNavAnsweredProgress": {
+    "description": "Progress label on the sticky action bar showing how many questions are answered.",
+    "placeholders": {
+      "answered": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingNavReadyToReview": "Your answers are ready to review.",
+  "@votingNavReadyToReview": {
+    "description": "Hint in the questions sheet when every question is answered."
+  },
+  "votingNavTapToJump": "Tap a question to jump to it.",
+  "@votingNavTapToJump": {
+    "description": "Hint in the unanswered questions sheet."
+  },
+  "votingNavUnansweredCount": "Unanswered · {count}",
+  "@votingNavUnansweredCount": {
+    "description": "Progress label with the number of unanswered questions.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "votingNavUnansweredMenu": "Unanswered questions",
+  "@votingNavUnansweredMenu": {
+    "description": "Accessibility label of the menu listing the unanswered questions."
+  },
+  "votingNoProposalsBody": "This voting round does not contain any proposals.",
+  "@votingNoProposalsBody": {
+    "description": "Body shown when a voting round has no proposals."
+  },
+  "votingNoProposalsTitle": "No proposals",
+  "@votingNoProposalsTitle": {
+    "description": "Title shown when a voting round has no proposals."
+  },
+  "votingNotAvailable": "Not available",
+  "@votingNotAvailable": {
+    "description": "Shown in place of the voting power value when it is unknown."
+  },
+  "votingNotEligible": "Not eligible",
+  "@votingNotEligible": {
+    "description": "Label shown when the account may not vote in the round; used on a button and as a badge."
+  },
+  "votingOptionChoose": "Choose",
+  "@votingOptionChoose": {
+    "description": "Trailing label of an answer option that can be picked."
+  },
+  "votingOptionSelected": "Selected",
+  "@votingOptionSelected": {
+    "description": "Trailing label of the answer option the user picked."
+  },
+  "votingPendingBody": "You have an unfinished vote for this round. Resume to complete the submission.",
+  "@votingPendingBody": {
+    "description": "Body shown on a voting round whose vote was started but not completed."
+  },
+  "votingPendingTitle": "Vote in progress",
+  "@votingPendingTitle": {
+    "description": "Title shown on a voting round whose vote was started but not completed."
+  },
+  "votingPirAhead": "Configured PIR endpoints are ahead of this voting round snapshot. Expected snapshot block {expected}; endpoints report {reported}.",
+  "@votingPirAhead": {
+    "description": "Error shown when the PIR servers are already past the voting round's snapshot block.",
+    "placeholders": {
+      "expected": {
+        "type": "String"
+      },
+      "reported": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPirBehind": "Voting PIR data is not ready for this voting round yet. Expected snapshot block {expected}; PIR endpoints report {reported}. Retry once the PIR service catches up.",
+  "@votingPirBehind": {
+    "description": "Error shown when the PIR servers have not reached the voting round's snapshot block yet; PIR is a private information retrieval service.",
+    "placeholders": {
+      "expected": {
+        "type": "String"
+      },
+      "reported": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPirNoMatch": "No PIR endpoint matched this voting round snapshot. Expected snapshot block {expected}.",
+  "@votingPirNoMatch": {
+    "description": "Error shown when no PIR server matches the voting round's snapshot block.",
+    "placeholders": {
+      "expected": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPirNoMatchDiagnostics": "No PIR endpoint matched this voting round snapshot. Expected snapshot block {expected}. Diagnostics: {diagnostics}.",
+  "@votingPirNoMatchDiagnostics": {
+    "description": "Technical error detail shown when no PIR server matches the snapshot; {diagnostics} is a machine-written list per endpoint.",
+    "placeholders": {
+      "expected": {
+        "type": "String"
+      },
+      "diagnostics": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPirUnreachable": "Couldn't reach any configured PIR endpoint. Check your network connection and retry.",
+  "@votingPirUnreachable": {
+    "description": "Error shown when none of the configured PIR servers could be reached."
+  },
+  "votingPollAlreadyUsed": "Already used for this round",
+  "@votingPollAlreadyUsed": {
+    "description": "Label on a voting round card when this account's funds were already used to vote in this round."
+  },
+  "votingPollClosed": "Closed {date}",
+  "@votingPollClosed": {
+    "description": "Closing date on a finished voting round card; {date} is a short date such as Jan 5.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPollCloses": "Closes {date}",
+  "@votingPollCloses": {
+    "description": "Closing date on an open voting round card; {date} is a short date such as Jan 5.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPollNotEligible": "Not eligible for this round",
+  "@votingPollNotEligible": {
+    "description": "Label on a voting round card when the account has no voting power in this round."
+  },
+  "votingPollStarts": "Starts {date}",
+  "@votingPollStarts": {
+    "description": "Start date on an upcoming voting round card; {date} is a short date such as Jan 5.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPollsEmptyBody": "There are no token holder voting rounds to display yet.",
+  "@votingPollsEmptyBody": {
+    "description": "Body of the empty state on the voting list."
+  },
+  "votingPollsEmptyTitle": "No voting rounds available",
+  "@votingPollsEmptyTitle": {
+    "description": "Title of the empty state on the voting list."
+  },
+  "votingPollsLoadFailedTitle": "Couldn't load voting rounds",
+  "@votingPollsLoadFailedTitle": {
+    "description": "Title of the error shown on the voting list when the voting rounds could not be loaded."
+  },
+  "votingPowerMeta": "Voting power {amount}",
+  "@votingPowerMeta": {
+    "description": "Meta line of a voting round showing the account's voting power; {amount} is a ZEC amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "votingPowerUnavailableSentence": "Voting power unavailable.",
+  "@votingPowerUnavailableSentence": {
+    "description": "Message shown when the account's voting power could not be determined."
+  },
+  "votingPowerUnavailableTitle": "Voting power unavailable",
+  "@votingPowerUnavailableTitle": {
+    "description": "Short note in the voting round summary when the account's voting power could not be determined."
+  },
+  "votingPreparingEllipsis": "Preparing...",
+  "@votingPreparingEllipsis": {
+    "description": "Value of the voting power row while the voting power is being calculated."
+  },
+  "votingPreparingPower": "Preparing voting power.",
+  "@votingPreparingPower": {
+    "description": "Message shown while the wallet calculates how much voting power the account has."
+  },
+  "votingPreparingPowerMeta": "Preparing voting power",
+  "@votingPreparingPowerMeta": {
+    "description": "Meta line of a voting round while the voting power is being calculated."
+  },
+  "votingPrivacyTrimNotice": "{amount} is left out of this vote to keep your submission less identifiable.",
+  "@votingPrivacyTrimNotice": {
+    "description": "[security] Note on the voting round page: a small part of the user's voting power is withheld so the submission cannot be linked to the user; {amount} is a ZEC amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "votingProgressBundlesProved": "{proved} of {total} bundles proved",
+  "@votingProgressBundlesProved": {
+    "description": "Progress count under the proving step of voting submission; a bundle is a group of notes proved together.",
+    "placeholders": {
+      "proved": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingProgressFinalizingDelegation": "Finalizing delegation{suffix}",
+  "@votingProgressFinalizingDelegation": {
+    "description": "Detail under the proving step once all bundles are proved; {suffix} is empty or a dash followed by a count.",
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "votingProgressReusingProof": "Reusing an in-progress proof{suffix}",
+  "@votingProgressReusingProof": {
+    "description": "Detail under the proving step while a proof started earlier is reused; {suffix} is empty or a dash followed by a count.",
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "votingProgressUnknown": "Unknown",
+  "@votingProgressUnknown": {
+    "description": "Accessibility value of the progress ring when the progress is not known."
+  },
+  "votingProgressWaitingConfirmation": "Waiting for submission and confirmation{suffix}",
+  "@votingProgressWaitingConfirmation": {
+    "description": "Detail under the proving step while waiting for the chain; {suffix} is empty or a dash followed by a proved-bundles count.",
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "votingReceiptPower": "Voting power",
+  "@votingReceiptPower": {
+    "description": "Label of the receipt row showing the account's voting power in ZEC."
+  },
+  "votingReceiptRound": "Voting round",
+  "@votingReceiptRound": {
+    "description": "Label of the receipt row naming the voting round."
+  },
+  "votingRemainingBundles": "{count} of {total} remaining bundles",
+  "@votingRemainingBundles": {
+    "description": "Number of bundles signed by this Keystone request out of those still unsigned.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingResultsFallbackTitle": "Voting results",
+  "@votingResultsFallbackTitle": {
+    "description": "Title of the voting results screen when the round has no title."
+  },
+  "votingResultsHeading": "Results",
+  "@votingResultsHeading": {
+    "description": "Heading above the list of proposal results on the desktop voting results screen."
+  },
+  "votingResultsHideDescription": "Hide description",
+  "@votingResultsHideDescription": {
+    "description": "Button that collapses a proposal's long description on the results screen."
+  },
+  "votingResultsLoadFailed": "Couldn't load results: {error}",
+  "@votingResultsLoadFailed": {
+    "description": "Error on the voting results screen when the tally could not be loaded; {error} is the reason.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "votingResultsNoProposals": "No proposals in this round.",
+  "@votingResultsNoProposals": {
+    "description": "Message on the voting results screen when the round has no proposals."
+  },
+  "votingResultsPending": "Results pending...",
+  "@votingResultsPending": {
+    "description": "Message on the voting results screen while the tally is not ready yet."
+  },
+  "votingResultsRoundLoadFailed": "Couldn't load voting round details: {error}",
+  "@votingResultsRoundLoadFailed": {
+    "description": "Error on the voting results screen when the round details could not be loaded; {error} is the reason.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "votingResultsShowDescription": "Show description",
+  "@votingResultsShowDescription": {
+    "description": "Button that expands a proposal's long description on the results screen."
+  },
+  "votingResultsTotal": "Total",
+  "@votingResultsTotal": {
+    "description": "Label of the total votes row in a proposal result."
+  },
+  "votingResultsTotalAmount": "Total: {amount}",
+  "@votingResultsTotalAmount": {
+    "description": "Line on a proposal result with the total voting weight cast; {amount} is a ZEC amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "votingResultsVoted": "Voted",
+  "@votingResultsVoted": {
+    "description": "Badge on a proposal result showing the user voted on it."
+  },
+  "votingResultsVotedFor": "Voted: {choice}",
+  "@votingResultsVotedFor": {
+    "description": "Line on a proposal result naming the option the user voted for; {choice} is the option label from the vote data.",
+    "placeholders": {
+      "choice": {
+        "type": "String"
+      }
+    }
+  },
+  "votingResultsWinner": "Winner",
+  "@votingResultsWinner": {
+    "description": "Label marking the winning option in a proposal result."
+  },
+  "votingResultsYourVote": "Your vote",
+  "@votingResultsYourVote": {
+    "description": "Label marking the option the user voted for in a proposal result."
+  },
+  "votingReviewChooseOne": "Choose at least one option before submitting.",
+  "@votingReviewChooseOne": {
+    "description": "Message on the review screen when no question has an answer yet."
+  },
+  "votingReviewConfirmSubmit": "Confirm & submit",
+  "@votingReviewConfirmSubmit": {
+    "description": "Button on the review screen that submits the vote."
+  },
+  "votingReviewLoadFailed": "Couldn't load review: {error}",
+  "@votingReviewLoadFailed": {
+    "description": "Error shown on the vote review screen when it failed to load; {error} is the reason.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "votingReviewSkipped": "Skipped",
+  "@votingReviewSkipped": {
+    "description": "Status on the review screen of a question the user did not answer."
+  },
+  "votingReviewTitle": "Review your answers",
+  "@votingReviewTitle": {
+    "description": "Title of the screen where the user checks their answers before submitting the vote."
+  },
+  "votingScanHold": "Hold the Keystone QR code steady in front of your camera",
+  "@votingScanHold": {
+    "description": "Instruction on the desktop screen that scans the signed voting QR."
+  },
+  "votingScanNoCamera": "Keystone voting uses camera QR scanning only. Connect a camera and try again.",
+  "@votingScanNoCamera": {
+    "description": "Message on the desktop scan screen when no camera is available."
+  },
+  "votingScanReading": "Reading signature...",
+  "@votingScanReading": {
+    "description": "Status on the desktop scan screen while the signature is decoded."
+  },
+  "votingScanSteady": "Keep the QR code steady and fully visible.",
+  "@votingScanSteady": {
+    "description": "Hint on the desktop scan screen when the QR code could not be read."
+  },
+  "votingScanTitle": "Scan voting signature",
+  "@votingScanTitle": {
+    "description": "Title of the desktop screen that scans the signed voting QR from Keystone."
+  },
+  "votingSignedOnlyBody": "Vizor can submit now using only signatures already scanned from Keystone.",
+  "@votingSignedOnlyBody": {
+    "description": "Body of the dialog offering to submit with only the signed bundles."
+  },
+  "votingSignedOnlyTitle": "Use signed bundles only?",
+  "@votingSignedOnlyTitle": {
+    "description": "Title of the dialog offering to submit the vote with only the bundles already signed on Keystone; a bundle is a group of notes signed together."
+  },
+  "votingSignedOnlyWarning": "Unsigned bundles are skipped, which lowers voting power for this voting round.",
+  "@votingSignedOnlyWarning": {
+    "description": "[security] Warning in the dialog that unsigned bundles are dropped and voting power is reduced."
+  },
+  "votingSkip": "Skip",
+  "@votingSkip": {
+    "description": "Button on the Keystone signing panel that skips the bundles still unsigned."
+  },
+  "votingSkipBundles": "Skip bundles",
+  "@votingSkipBundles": {
+    "description": "Dialog button that submits the vote without the unsigned bundles."
+  },
+  "votingSkipDialogBody": "You have not answered {skipped} of {total} questions. The review screen will mark them as skipped, and skipped questions will not be submitted.",
+  "@votingSkipDialogBody": {
+    "description": "Body of the dialog asking whether to continue while some questions are unanswered.",
+    "placeholders": {
+      "skipped": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "votingSkipDialogTitle": "Skip unanswered questions?",
+  "@votingSkipDialogTitle": {
+    "description": "Title of the dialog asking whether to continue while some questions are unanswered."
+  },
+  "votingSnapshotBlock": "snapshot block {height}",
+  "@votingSnapshotBlock": {
+    "description": "Phrase naming the voting round's snapshot block; {height} is the formatted block number. Used inside eligibility error sentences.",
+    "placeholders": {
+      "height": {
+        "type": "String"
+      }
+    }
+  },
+  "votingSnapshotUnknown": "the voting round snapshot block",
+  "@votingSnapshotUnknown": {
+    "description": "Phrase naming the voting round's snapshot block when its height is unknown; used inside eligibility error sentences."
+  },
+  "votingSoftwareRequiredBody": "Token holder voting requires a software account. Switch to a software account to vote in this round.",
+  "@votingSoftwareRequiredBody": {
+    "description": "Body shown when the voting round needs a software account but a hardware account is active."
+  },
+  "votingSoftwareRequiredTitle": "Software account required",
+  "@votingSoftwareRequiredTitle": {
+    "description": "Title shown when the voting round needs a software account but a hardware account is active."
+  },
+  "votingStatusActive": "Active",
+  "@votingStatusActive": {
+    "description": "Status badge of a voting round that is open for voting."
+  },
+  "votingStatusBodyKeepOpen": "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
+  "@votingStatusBodyKeepOpen": {
+    "description": "[security] Body of the voting status screen warning not to close the window while proofs are generated."
+  },
+  "votingStatusBodyLedger": "Keep Vizor open. Follow the instructions below for each voting bundle.",
+  "@votingStatusBodyLedger": {
+    "description": "Body of the voting status screen while Ledger approvals are pending."
+  },
+  "votingStatusClosed": "Closed",
+  "@votingStatusClosed": {
+    "description": "Status badge of a voting round that has closed."
+  },
+  "votingStatusFailed": "Voting failed.",
+  "@votingStatusFailed": {
+    "description": "Fallback error on the voting status screen when no specific error text exists."
+  },
+  "votingStatusGenericError": "Voting could not continue for this account. Retry, or switch to an eligible account if this account cannot vote in this voting round.",
+  "@votingStatusGenericError": {
+    "description": "Generic error on the voting status screen when voting failed without a specific reason."
+  },
+  "votingStatusTallying": "Tallying",
+  "@votingStatusTallying": {
+    "description": "Status badge of a voting round that closed and whose results are being counted."
+  },
+  "votingStatusTitleLedger": "Voting with Ledger",
+  "@votingStatusTitleLedger": {
+    "description": "Title of the desktop voting status screen while a Ledger approval is pending."
+  },
+  "votingStatusTitleSubmitting": "Submitting votes",
+  "@votingStatusTitleSubmitting": {
+    "description": "Title of the desktop voting status screen while votes are submitted."
+  },
+  "votingStatusVoted": "Voted",
+  "@votingStatusVoted": {
+    "description": "Status badge of a voting round in which this account already voted."
+  },
+  "votingStepCasting": "Casting votes and submitting shares",
+  "@votingStepCasting": {
+    "description": "Step label of the voting progress list while votes are cast and vote shares are submitted."
+  },
+  "votingStepFinalizing": "Finalizing submission",
+  "@votingStepFinalizing": {
+    "description": "Step label of the voting progress list for the last step."
+  },
+  "votingStepProving": "Proving voting authority",
+  "@votingStepProving": {
+    "description": "Step label of the voting progress list while the zero-knowledge proof of voting authority is generated."
+  },
+  "votingStepSigningKeystone": "Signing with Keystone",
+  "@votingStepSigningKeystone": {
+    "description": "Step label of the voting progress list while signing on a Keystone."
+  },
+  "votingStepSigningLedger": "Signing with Ledger",
+  "@votingStepSigningLedger": {
+    "description": "Step label of the voting progress list while signing on a Ledger."
+  },
+  "votingSwitchAccount": "Switch account",
+  "@votingSwitchAccount": {
+    "description": "Dialog button that opens the account switcher so the user can pick an eligible account."
+  },
+  "votingSwitchEligibleGuidance": "Switch to an eligible account to vote.",
+  "@votingSwitchEligibleGuidance": {
+    "description": "Closing sentence of the eligibility error messages; the screen shows it separately and it must end those messages with identical wording."
+  },
+  "votingSyncBlocksRemaining": "{count} blocks remaining",
+  "@votingSyncBlocksRemaining": {
+    "description": "Line in the wallet sync box showing how many blocks are left to sync.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "votingSyncChainTip": "chain tip {height}",
+  "@votingSyncChainTip": {
+    "description": "Part of the wallet sync detail line on the voting status screen; {height} is the latest block number.",
+    "placeholders": {
+      "height": {
+        "type": "int"
+      }
+    }
+  },
+  "votingSyncSynced": "Synced to block {height}",
+  "@votingSyncSynced": {
+    "description": "Part of the wallet sync detail line on the voting status screen; {height} is a block number.",
+    "placeholders": {
+      "height": {
+        "type": "int"
+      }
+    }
+  },
+  "votingSyncWaitingBody": "Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.",
+  "@votingSyncWaitingBody": {
+    "description": "Body of the box shown while the wallet is still syncing up to the voting snapshot."
+  },
+  "votingSyncWaitingTitle": "Waiting for wallet sync",
+  "@votingSyncWaitingTitle": {
+    "description": "Title of the box shown while the wallet is still syncing up to the voting snapshot."
+  },
+  "votingTerminalBundle": "bundle {number} ({reason})",
+  "@votingTerminalBundle": {
+    "description": "Names one failed delegation bundle with its reason inside the terminal delegation error.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "votingTerminalMultiple": "Delegation for {bundles} cannot continue. Do not retry it; the transaction may already be on the chain.",
+  "@votingTerminalMultiple": {
+    "description": "[security] Error when several delegation bundles can no longer continue; warns against retrying because the transactions may already be on chain.",
+    "placeholders": {
+      "bundles": {
+        "type": "String"
+      }
+    }
+  },
+  "votingTerminalReasonDefault": "it ended without confirming",
+  "@votingTerminalReasonDefault": {
+    "description": "Reason used inside the terminal delegation error when the bundle gave no failure detail."
+  },
+  "votingTerminalSingle": "Delegation {bundle} cannot continue. Do not retry it; the transaction may already be on the chain.",
+  "@votingTerminalSingle": {
+    "description": "[security] Error when one delegation bundle can no longer continue; warns against retrying because the transaction may already be on chain.",
+    "placeholders": {
+      "bundle": {
+        "type": "String"
+      }
+    }
+  },
+  "votingTokenHolderTitle": "Token holder voting",
+  "@votingTokenHolderTitle": {
+    "description": "Fallback name of a voting round shown when the round has no title."
+  },
+  "votingViewLess": "View less",
+  "@votingViewLess": {
+    "description": "Button that collapses a long description."
+  },
+  "votingViewMore": "View more",
+  "@votingViewMore": {
+    "description": "Button that expands a long description."
+  },
+  "votingVoteLocked": "Vote locked",
+  "@votingVoteLocked": {
+    "description": "Note that a submitted vote can no longer be changed."
+  },
+  "votingVotedOn": "Voted {date}",
+  "@votingVotedOn": {
+    "description": "Line under the title of a voting round the user already voted in; {date} is the voting date such as Jan 5, 2026.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "walletLinkAccountsFound": "{count, plural, =1{1 account} other{{count} accounts}} found",
   "@walletLinkAccountsFound": {
     "description": "Section title above the list of importable accounts.",
@@ -10897,6 +12194,127 @@
   "walletLinkDeselectAll": "Deselect all",
   "@walletLinkDeselectAll": {
     "description": "Action in a list section header that clears the selection."
+  },
+  "walletLinkDesktopConfirmSubtitle": "To link Vizor Mobile.",
+  "@walletLinkDesktopConfirmSubtitle": {
+    "description": "[security] Subtitle of the desktop password prompt that explains why the password is needed before linking Vizor Mobile."
+  },
+  "walletLinkDesktopEncryptedNotice": "The code is encrypted with a one-time key and expires after a minute.",
+  "@walletLinkDesktopEncryptedNotice": {
+    "description": "First sentence of the privacy note on the placeholder shown before the QR code appears; followed by a bold sentence."
+  },
+  "walletLinkDesktopEncryptedStrong": "Only your phone can decode it.",
+  "@walletLinkDesktopEncryptedStrong": {
+    "description": "Bold second sentence of the privacy note on the QR placeholder."
+  },
+  "walletLinkDesktopErrorDerivationMissing": "Wallet account derivation metadata is not available.",
+  "@walletLinkDesktopErrorDerivationMissing": {
+    "description": "Error on the desktop link screen when an account lacks the data needed to derive its keys."
+  },
+  "walletLinkDesktopErrorExpiredBeforeShown": "The mobile link expired before it could be shown.",
+  "@walletLinkDesktopErrorExpiredBeforeShown": {
+    "description": "Error on the desktop link screen when the code expired before it could be displayed."
+  },
+  "walletLinkDesktopErrorFallback": "Could not prepare the mobile link.",
+  "@walletLinkDesktopErrorFallback": {
+    "description": "Fallback message on the desktop link error screen when no specific reason is known."
+  },
+  "walletLinkDesktopErrorHardwareMetadataMissing": "Hardware wallet metadata is not available.",
+  "@walletLinkDesktopErrorHardwareMetadataMissing": {
+    "description": "Error on the desktop link screen when a hardware wallet account lacks its stored metadata."
+  },
+  "walletLinkDesktopErrorLocked": "Unlock this wallet before linking mobile.",
+  "@walletLinkDesktopErrorLocked": {
+    "description": "[security] Error on the desktop link screen when the wallet secrets are not available because the wallet is locked."
+  },
+  "walletLinkDesktopErrorNoAccounts": "No wallet accounts are available to link.",
+  "@walletLinkDesktopErrorNoAccounts": {
+    "description": "Error on the desktop link screen when the wallet has no accounts to link."
+  },
+  "walletLinkDesktopErrorPrepareFailed": "Could not prepare the mobile link. Try again.",
+  "@walletLinkDesktopErrorPrepareFailed": {
+    "description": "Generic error on the desktop link screen when preparing the link failed."
+  },
+  "walletLinkDesktopErrorServerUnreachable": "Could not reach the linking server. Try again.",
+  "@walletLinkDesktopErrorServerUnreachable": {
+    "description": "Error on the desktop link screen when the linking server cannot be reached."
+  },
+  "walletLinkDesktopExpiredBody": "For your security the link is only valid for a minute. Generate a fresh code and scan it again.",
+  "@walletLinkDesktopExpiredBody": {
+    "description": "Body of the expired-link screen on desktop."
+  },
+  "walletLinkDesktopExpiredTitle": "Time’s up",
+  "@walletLinkDesktopExpiredTitle": {
+    "description": "Title of the screen shown when the one-time link code expired."
+  },
+  "walletLinkDesktopExpiresIn": "Expires in {time}",
+  "@walletLinkDesktopExpiresIn": {
+    "description": "Countdown under the QR code; {time} is the remaining time such as 0:45.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "walletLinkDesktopGenerateNewCode": "Generate new code",
+  "@walletLinkDesktopGenerateNewCode": {
+    "description": "Button on the expired-link screen that creates a new one-time code."
+  },
+  "walletLinkDesktopInitialBody": "Connect this wallet to your Vizor mobile app by scanning a one-time QR code.",
+  "@walletLinkDesktopInitialBody": {
+    "description": "Body text on the desktop link screen before a code is generated."
+  },
+  "walletLinkDesktopLinkedBody": "Vizor Mobile was linked to this wallet.",
+  "@walletLinkDesktopLinkedBody": {
+    "description": "Body of the success screen when the number of imported items is unknown."
+  },
+  "walletLinkDesktopLinkedCounts": "{accountCount, plural, =1{1 account} other{{accountCount} accounts}} and {contactCount, plural, =1{1 contact} other{{contactCount} contacts}} were imported on mobile.",
+  "@walletLinkDesktopLinkedCounts": {
+    "description": "Body of the success screen reporting how many accounts and contacts the phone imported.",
+    "placeholders": {
+      "accountCount": {
+        "type": "int"
+      },
+      "contactCount": {
+        "type": "int"
+      }
+    }
+  },
+  "walletLinkDesktopLinkedTitle": "Vizor Mobile linked successfully",
+  "@walletLinkDesktopLinkedTitle": {
+    "description": "Title of the success screen after the phone finished linking."
+  },
+  "walletLinkDesktopPreparing": "Preparing",
+  "@walletLinkDesktopPreparing": {
+    "description": "Label of the start button on the desktop link screen while the link is being prepared."
+  },
+  "walletLinkDesktopReadyToScan": "1/1 Ready to scan...",
+  "@walletLinkDesktopReadyToScan": {
+    "description": "Status line under the QR code saying the single code is ready to be scanned."
+  },
+  "walletLinkDesktopRegenerate": "Regenerate",
+  "@walletLinkDesktopRegenerate": {
+    "description": "Button under the QR code that creates a fresh one-time code."
+  },
+  "walletLinkDesktopScanBody": "Open Vizor on your phone → Add a wallet → Link Vizor Desktop",
+  "@walletLinkDesktopScanBody": {
+    "description": "Instruction under the QR title; the arrows separate menu steps in the mobile app and 'Link Vizor Desktop' is a menu name."
+  },
+  "walletLinkDesktopScanTitle": "Scan with Vizor mobile",
+  "@walletLinkDesktopScanTitle": {
+    "description": "Title above the one-time QR code on the desktop link screen."
+  },
+  "walletLinkDesktopStartLinking": "Start linking",
+  "@walletLinkDesktopStartLinking": {
+    "description": "Button on the desktop link screen that generates the one-time QR code."
+  },
+  "walletLinkDesktopTitle": "Link Vizor Mobile",
+  "@walletLinkDesktopTitle": {
+    "description": "Title of the desktop screen that starts linking the desktop wallet to the Vizor mobile app."
+  },
+  "walletLinkDesktopUnavailableTitle": "Link unavailable",
+  "@walletLinkDesktopUnavailableTitle": {
+    "description": "Title of the desktop link error screen."
   },
   "walletLinkErrorExpiredBody": "The code on your computer timed out. On desktop, choose Generate new code and scan it again.",
   "@walletLinkErrorExpiredBody": {

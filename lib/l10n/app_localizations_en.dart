@@ -9,6 +9,60 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get aboutBuiltByBody =>
+      'We built Keplr, the wallet used by millions across Cosmos, Ethereum, and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.';
+
+  @override
+  String get aboutBuiltByHeading => 'Built by the Keplr team';
+
+  @override
+  String get aboutLegalPlaceholderBody =>
+      'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount.';
+
+  @override
+  String get aboutLegalPlaceholderHeading =>
+      'From the team that brought you Keplr Wallet.';
+
+  @override
+  String aboutLinkSemantics(String label) {
+    return '$label link';
+  }
+
+  @override
+  String get aboutOpenGithub => 'Open Vizor GitHub';
+
+  @override
+  String get aboutOpenSourceBody =>
+      'Vizor is Apache licensed. Your keys stay on your device.\nWe don\'t see your balances or your transactions.';
+
+  @override
+  String get aboutOpenSourceHeading => 'Open source, self-custodied';
+
+  @override
+  String get aboutOpenWebsite => 'Open Vizor website';
+
+  @override
+  String get aboutShieldedBody =>
+      'Vizor is built around shielded transactions, where the sender, recipient, and amount stay private. Transparent Zcash works too, but private is the default.';
+
+  @override
+  String get aboutShieldedHeading => 'Designed for shielded Zcash';
+
+  @override
+  String get aboutTermsTitle => 'Terms of Usage';
+
+  @override
+  String get aboutTitle => 'About Vizor Wallet';
+
+  @override
+  String aboutVersionLabel(String version) {
+    return 'Version: $version Public Beta';
+  }
+
+  @override
+  String get aboutWebsite => 'Website';
+
+  @override
   String get accountNameLabel => 'Account name';
 
   @override
@@ -1355,6 +1409,33 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonZcashAddress => 'Zcash address';
+
+  @override
+  String get donationDonatingTo => 'Donating to';
+
+  @override
+  String get donationEnterAmount => 'Enter your amount';
+
+  @override
+  String get donationPriceUnavailable => 'Price unavailable';
+
+  @override
+  String get donationReviewAmountTitle => 'Review Amount';
+
+  @override
+  String get donationSendingFrom => 'Sending from';
+
+  @override
+  String get donationSendingFromYour => 'Sending from your';
+
+  @override
+  String get donationSwitchCurrency => 'Switch between ZEC and USD';
+
+  @override
+  String get donationThanksTitle => 'Thank you for supporting Vizor';
+
+  @override
+  String get donationTotal => 'Total';
 
   @override
   String endpointCurrent(String endpoint) {
@@ -8350,6 +8431,848 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateRestart => 'Restart';
 
   @override
+  String get votingActionResume => 'Resume';
+
+  @override
+  String get votingActionRetryEligibility => 'Retry eligibility';
+
+  @override
+  String get votingActionReview => 'Review';
+
+  @override
+  String get votingActionReviewAnswers => 'Review answers';
+
+  @override
+  String get votingActionUnavailable => 'Unavailable';
+
+  @override
+  String get votingActionView => 'View';
+
+  @override
+  String get votingActionViewResults => 'View results';
+
+  @override
+  String get votingActive => 'Voting active';
+
+  @override
+  String get votingAlreadyUsedNotice =>
+      'These funds were already used for this round. Voting cannot be restarted on this device.';
+
+  @override
+  String get votingAutoAdvanceSemantics =>
+      'Moving to the next unanswered question';
+
+  @override
+  String get votingBallotCasting => 'Casting votes';
+
+  @override
+  String get votingBallotDelivering => 'Delivering your responses';
+
+  @override
+  String get votingBallotPreparing => 'Preparing your ballot';
+
+  @override
+  String get votingBallotWaitingChain => 'Waiting for chain confirmation';
+
+  @override
+  String get votingBetaSemantics => 'Beta';
+
+  @override
+  String votingBundleCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count voting bundles',
+      one: '1 voting bundle',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String votingBundleOf(int number, int total) {
+    return 'Bundle $number of $total';
+  }
+
+  @override
+  String get votingCheckAgain => 'Check again';
+
+  @override
+  String votingChoiceFallback(int number) {
+    return 'Choice $number';
+  }
+
+  @override
+  String get votingConfigAddCustomSource => 'Add custom source';
+
+  @override
+  String get votingConfigBadgeDefault => 'Default';
+
+  @override
+  String get votingConfigCloseSettings => 'Close voting config settings';
+
+  @override
+  String get votingConfigCopyUrl => 'Copy source URL';
+
+  @override
+  String get votingConfigCustomSource => 'Custom source';
+
+  @override
+  String votingConfigDeleteNamed(String name) {
+    return 'Delete $name';
+  }
+
+  @override
+  String get votingConfigDeleteSaved => 'Delete saved source';
+
+  @override
+  String get votingConfigDuplicate => 'This source URL is already added.';
+
+  @override
+  String get votingConfigEditCustomSource => 'Edit custom source';
+
+  @override
+  String votingConfigEditNamed(String name) {
+    return 'Edit $name';
+  }
+
+  @override
+  String get votingConfigEditSaved => 'Edit saved source';
+
+  @override
+  String get votingConfigEnterTitleAndUrl => 'Enter a title and source URL.';
+
+  @override
+  String get votingConfigFieldStaticUrl => 'Static config URL';
+
+  @override
+  String get votingConfigFieldTitle => 'Title';
+
+  @override
+  String get votingConfigLoadFailed =>
+      'Couldn\'t load voting config from that source.';
+
+  @override
+  String get votingConfigMobileFieldUrl => 'Source URL';
+
+  @override
+  String get votingConfigMobileIntro =>
+      'Choose where Vizor gets authenticated voting rounds.';
+
+  @override
+  String get votingConfigMobileSave => 'Save source';
+
+  @override
+  String get votingConfigMobileTestRoundsHint =>
+      'Include authenticated rounds marked [TEST].';
+
+  @override
+  String get votingConfigMobileTitle => 'Vote config';
+
+  @override
+  String get votingConfigMobileUpdateFailed =>
+      'Couldn\'t update voting config. Check the source and try again.';
+
+  @override
+  String get votingConfigSaving => 'Saving...';
+
+  @override
+  String get votingConfigSettings => 'Voting config settings';
+
+  @override
+  String get votingConfigShowTestRounds => 'Show test rounds';
+
+  @override
+  String get votingConfigShowTestRoundsHint =>
+      'Display authenticated rounds whose titles begin with [TEST].';
+
+  @override
+  String get votingConfigSources => 'Sources';
+
+  @override
+  String get votingConfigTestVisibilityFailed =>
+      'Couldn\'t update the test round visibility setting.';
+
+  @override
+  String votingConfigTitleTooLong(int max) {
+    return 'Title must be $max characters or less.';
+  }
+
+  @override
+  String get votingConfigTooltip => 'Voting config';
+
+  @override
+  String get votingConfigUpdateFailed => 'Couldn\'t update voting config.';
+
+  @override
+  String get votingConfigUrlCopied => 'Source URL copied.';
+
+  @override
+  String get votingConfigValidating => 'Validating...';
+
+  @override
+  String get votingConfirmationCheckingEligibility =>
+      'Checking voting eligibility for this account.';
+
+  @override
+  String get votingConfirmationConfirmedBody =>
+      'Your vote was successfully published and cannot be changed.';
+
+  @override
+  String get votingConfirmationConfirmedTitle => 'Submission confirmed!';
+
+  @override
+  String get votingConfirmationEligibilityUnconfirmed =>
+      'Voting eligibility has not been confirmed for this account.';
+
+  @override
+  String get votingConfirmationIncompleteTitle => 'Submission not complete';
+
+  @override
+  String votingConfirmationLoadFailed(String error) {
+    return 'Couldn\'t load submission details: $error';
+  }
+
+  @override
+  String get votingConfirmationNotCompleted =>
+      'This account has not completed submission for this voting round.';
+
+  @override
+  String get votingConfirmationUpdateFailed =>
+      'Couldn\'t update voting rounds. Try again.';
+
+  @override
+  String get votingConfirmationUpdatingRounds => 'Updating voting rounds...';
+
+  @override
+  String get votingContinueToReview => 'Continue to review';
+
+  @override
+  String get votingContinueVoting => 'Continue voting';
+
+  @override
+  String votingDaysLeft(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days days left',
+      one: '1 day left',
+      zero: 'Ends today',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get votingDetailLoadFailedTitle => 'Couldn\'t load voting round';
+
+  @override
+  String get votingDetailUnavailableBody =>
+      'The selected voting round could not be loaded.';
+
+  @override
+  String get votingDetailUnavailableTitle => 'Voting round unavailable';
+
+  @override
+  String votingEnds(String date) {
+    return 'Ends $date';
+  }
+
+  @override
+  String get votingErrorLedgerCancelled =>
+      'Ledger voting approval was cancelled.';
+
+  @override
+  String votingErrorLedgerLocked(String instruction) {
+    return 'Unlock your Ledger. $instruction';
+  }
+
+  @override
+  String get votingErrorLedgerRejected =>
+      'The vote signature was rejected on your Ledger. Retry to sign again.';
+
+  @override
+  String votingErrorLedgerWrongApp(String instruction) {
+    return '$instruction Then retry.';
+  }
+
+  @override
+  String votingErrorMinimumWeight(String amount, String snapshot) {
+    return 'Voting requires at least one eligible shielded note bundle with $amount at $snapshot. Switch to an eligible account to vote.';
+  }
+
+  @override
+  String votingErrorNoSpendableNotes(String snapshot) {
+    return 'This account is not eligible for this voting round. It had no eligible shielded funds at $snapshot. Switch to an eligible account to vote.';
+  }
+
+  @override
+  String get votingErrorSessionFailed => 'Voting session action failed.';
+
+  @override
+  String get votingForumDiscussion => 'Forum discussion';
+
+  @override
+  String get votingGuardAccountLoadFailed => 'Couldn\'t load account';
+
+  @override
+  String get votingIneligibleTitle => 'Not eligible for this voting round';
+
+  @override
+  String get votingKeepSigning => 'Keep signing';
+
+  @override
+  String get votingKeepVoting => 'Keep voting';
+
+  @override
+  String votingKeystoneMemoLabel(int number, int total) {
+    return 'Bundle $number of $total memo';
+  }
+
+  @override
+  String get votingKeystoneNextBatch => 'The next signing batch is ready';
+
+  @override
+  String get votingKeystoneNextMemo => 'Next bundle memo';
+
+  @override
+  String get votingKeystoneOneApproval => 'One Keystone approval';
+
+  @override
+  String get votingKeystonePreviousMemo => 'Previous bundle memo';
+
+  @override
+  String votingKeystoneQrPartial(int count, int total) {
+    return 'This QR signs $count of $total remaining bundles';
+  }
+
+  @override
+  String get votingKeystoneScanInstruction =>
+      'Scan QR on this screen with Keystone. Then, scan the signed voting QR displayed on Keystone with this device\'s camera';
+
+  @override
+  String get votingKeystoneScanSignature => 'Scan signature';
+
+  @override
+  String votingKeystoneSignLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Sign $count voting bundles',
+      one: 'Sign 1 voting bundle',
+      zero: 'Preparing voting signatures',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get votingKeystoneUnexpectedUr =>
+      'Open the signed voting QR on Keystone, then scan again.';
+
+  @override
+  String get votingLedgerApprovalNotice =>
+      'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.';
+
+  @override
+  String votingLedgerBundleOf(int number, int total) {
+    return 'Bundle $number of $total';
+  }
+
+  @override
+  String get votingLedgerChecking => 'Checking your Ledger';
+
+  @override
+  String get votingLedgerCheckingBody =>
+      'Vizor is checking whether the Zcash app is ready.';
+
+  @override
+  String get votingLedgerConfirmOpen => 'Confirm opening Zcash';
+
+  @override
+  String get votingLedgerConfirmOpenBody =>
+      'Approve the request to open the Zcash app on your Ledger.';
+
+  @override
+  String get votingLedgerFinishing => 'Finishing voting delegation';
+
+  @override
+  String get votingLedgerNeedsAttention => 'Ledger needs attention';
+
+  @override
+  String get votingLedgerPanelTitle => 'Voting delegation';
+
+  @override
+  String get votingLedgerPleaseWait =>
+      'Please wait while Vizor prepares your request.';
+
+  @override
+  String get votingLedgerPreparing => 'Preparing voting delegation';
+
+  @override
+  String get votingLedgerReconnect => 'Reconnect your Ledger and try again.';
+
+  @override
+  String votingMobileAccountLoadFailed(String error) {
+    return 'Couldn\'t load account.\n$error';
+  }
+
+  @override
+  String get votingMobileGoHome => 'Go home';
+
+  @override
+  String get votingMobileHeaderTitle => 'Voting';
+
+  @override
+  String get votingMobileKeystoneChecking => 'Checking voting signature...';
+
+  @override
+  String get votingMobileKeystoneDescription =>
+      'Scan the voting request with Keystone, approve it, then scan the signed result with this device.';
+
+  @override
+  String get votingMobileKeystoneFailedTitle => 'Voting signature failed';
+
+  @override
+  String get votingMobileKeystoneNextBundle => 'Next voting bundle';
+
+  @override
+  String get votingMobileKeystonePreviousBundle => 'Previous voting bundle';
+
+  @override
+  String get votingMobileKeystoneReading => 'Reading voting signature...';
+
+  @override
+  String get votingMobileKeystoneScanCaption =>
+      'Scan the signed voting QR shown on Keystone';
+
+  @override
+  String get votingMobileKeystoneSkipUnsigned => 'Skip unsigned bundles';
+
+  @override
+  String get votingMobileKeystoneTitle => 'Sign vote with Keystone';
+
+  @override
+  String get votingMobileLeaveWarning => 'Don’t leave this window.';
+
+  @override
+  String get votingMobileProgressSemantics =>
+      'Active voting submission step progress';
+
+  @override
+  String get votingMobileProofNotice =>
+      'Generating zero-knowledge proofs can take about 60 seconds, closing now may lose in-flight proof work.';
+
+  @override
+  String get votingMobileSubmitTitle => 'Submit vote';
+
+  @override
+  String get votingMobileSubmittedBody =>
+      'Your vote has been submitted and can’t be changed.';
+
+  @override
+  String get votingMobileSubmittedTitle => 'Vote submitted';
+
+  @override
+  String get votingMobileSubmittingTitle => 'Submitting votes...';
+
+  @override
+  String get votingNavAllAnswered => 'All questions answered';
+
+  @override
+  String votingNavAnsweredProgress(int answered, int total) {
+    return '$answered / $total answered';
+  }
+
+  @override
+  String get votingNavReadyToReview => 'Your answers are ready to review.';
+
+  @override
+  String get votingNavTapToJump => 'Tap a question to jump to it.';
+
+  @override
+  String votingNavUnansweredCount(int count) {
+    return 'Unanswered · $count';
+  }
+
+  @override
+  String get votingNavUnansweredMenu => 'Unanswered questions';
+
+  @override
+  String get votingNoProposalsBody =>
+      'This voting round does not contain any proposals.';
+
+  @override
+  String get votingNoProposalsTitle => 'No proposals';
+
+  @override
+  String get votingNotAvailable => 'Not available';
+
+  @override
+  String get votingNotEligible => 'Not eligible';
+
+  @override
+  String get votingOptionChoose => 'Choose';
+
+  @override
+  String get votingOptionSelected => 'Selected';
+
+  @override
+  String get votingPendingBody =>
+      'You have an unfinished vote for this round. Resume to complete the submission.';
+
+  @override
+  String get votingPendingTitle => 'Vote in progress';
+
+  @override
+  String votingPirAhead(String expected, String reported) {
+    return 'Configured PIR endpoints are ahead of this voting round snapshot. Expected snapshot block $expected; endpoints report $reported.';
+  }
+
+  @override
+  String votingPirBehind(String expected, String reported) {
+    return 'Voting PIR data is not ready for this voting round yet. Expected snapshot block $expected; PIR endpoints report $reported. Retry once the PIR service catches up.';
+  }
+
+  @override
+  String votingPirNoMatch(String expected) {
+    return 'No PIR endpoint matched this voting round snapshot. Expected snapshot block $expected.';
+  }
+
+  @override
+  String votingPirNoMatchDiagnostics(String expected, String diagnostics) {
+    return 'No PIR endpoint matched this voting round snapshot. Expected snapshot block $expected. Diagnostics: $diagnostics.';
+  }
+
+  @override
+  String get votingPirUnreachable =>
+      'Couldn\'t reach any configured PIR endpoint. Check your network connection and retry.';
+
+  @override
+  String get votingPollAlreadyUsed => 'Already used for this round';
+
+  @override
+  String votingPollClosed(String date) {
+    return 'Closed $date';
+  }
+
+  @override
+  String votingPollCloses(String date) {
+    return 'Closes $date';
+  }
+
+  @override
+  String get votingPollNotEligible => 'Not eligible for this round';
+
+  @override
+  String votingPollStarts(String date) {
+    return 'Starts $date';
+  }
+
+  @override
+  String get votingPollsEmptyBody =>
+      'There are no token holder voting rounds to display yet.';
+
+  @override
+  String get votingPollsEmptyTitle => 'No voting rounds available';
+
+  @override
+  String get votingPollsLoadFailedTitle => 'Couldn\'t load voting rounds';
+
+  @override
+  String votingPowerMeta(String amount) {
+    return 'Voting power $amount';
+  }
+
+  @override
+  String get votingPowerUnavailableSentence => 'Voting power unavailable.';
+
+  @override
+  String get votingPowerUnavailableTitle => 'Voting power unavailable';
+
+  @override
+  String get votingPreparingEllipsis => 'Preparing...';
+
+  @override
+  String get votingPreparingPower => 'Preparing voting power.';
+
+  @override
+  String get votingPreparingPowerMeta => 'Preparing voting power';
+
+  @override
+  String votingPrivacyTrimNotice(String amount) {
+    return '$amount is left out of this vote to keep your submission less identifiable.';
+  }
+
+  @override
+  String votingProgressBundlesProved(int proved, int total) {
+    return '$proved of $total bundles proved';
+  }
+
+  @override
+  String votingProgressFinalizingDelegation(String suffix) {
+    return 'Finalizing delegation$suffix';
+  }
+
+  @override
+  String votingProgressReusingProof(String suffix) {
+    return 'Reusing an in-progress proof$suffix';
+  }
+
+  @override
+  String get votingProgressUnknown => 'Unknown';
+
+  @override
+  String votingProgressWaitingConfirmation(String suffix) {
+    return 'Waiting for submission and confirmation$suffix';
+  }
+
+  @override
+  String get votingReceiptPower => 'Voting power';
+
+  @override
+  String get votingReceiptRound => 'Voting round';
+
+  @override
+  String votingRemainingBundles(int count, int total) {
+    return '$count of $total remaining bundles';
+  }
+
+  @override
+  String get votingResultsFallbackTitle => 'Voting results';
+
+  @override
+  String get votingResultsHeading => 'Results';
+
+  @override
+  String get votingResultsHideDescription => 'Hide description';
+
+  @override
+  String votingResultsLoadFailed(String error) {
+    return 'Couldn\'t load results: $error';
+  }
+
+  @override
+  String get votingResultsNoProposals => 'No proposals in this round.';
+
+  @override
+  String get votingResultsPending => 'Results pending...';
+
+  @override
+  String votingResultsRoundLoadFailed(String error) {
+    return 'Couldn\'t load voting round details: $error';
+  }
+
+  @override
+  String get votingResultsShowDescription => 'Show description';
+
+  @override
+  String get votingResultsTotal => 'Total';
+
+  @override
+  String votingResultsTotalAmount(String amount) {
+    return 'Total: $amount';
+  }
+
+  @override
+  String get votingResultsVoted => 'Voted';
+
+  @override
+  String votingResultsVotedFor(String choice) {
+    return 'Voted: $choice';
+  }
+
+  @override
+  String get votingResultsWinner => 'Winner';
+
+  @override
+  String get votingResultsYourVote => 'Your vote';
+
+  @override
+  String get votingReviewChooseOne =>
+      'Choose at least one option before submitting.';
+
+  @override
+  String get votingReviewConfirmSubmit => 'Confirm & submit';
+
+  @override
+  String votingReviewLoadFailed(String error) {
+    return 'Couldn\'t load review: $error';
+  }
+
+  @override
+  String get votingReviewSkipped => 'Skipped';
+
+  @override
+  String get votingReviewTitle => 'Review your answers';
+
+  @override
+  String get votingScanHold =>
+      'Hold the Keystone QR code steady in front of your camera';
+
+  @override
+  String get votingScanNoCamera =>
+      'Keystone voting uses camera QR scanning only. Connect a camera and try again.';
+
+  @override
+  String get votingScanReading => 'Reading signature...';
+
+  @override
+  String get votingScanSteady => 'Keep the QR code steady and fully visible.';
+
+  @override
+  String get votingScanTitle => 'Scan voting signature';
+
+  @override
+  String get votingSignedOnlyBody =>
+      'Vizor can submit now using only signatures already scanned from Keystone.';
+
+  @override
+  String get votingSignedOnlyTitle => 'Use signed bundles only?';
+
+  @override
+  String get votingSignedOnlyWarning =>
+      'Unsigned bundles are skipped, which lowers voting power for this voting round.';
+
+  @override
+  String get votingSkip => 'Skip';
+
+  @override
+  String get votingSkipBundles => 'Skip bundles';
+
+  @override
+  String votingSkipDialogBody(int skipped, int total) {
+    return 'You have not answered $skipped of $total questions. The review screen will mark them as skipped, and skipped questions will not be submitted.';
+  }
+
+  @override
+  String get votingSkipDialogTitle => 'Skip unanswered questions?';
+
+  @override
+  String votingSnapshotBlock(String height) {
+    return 'snapshot block $height';
+  }
+
+  @override
+  String get votingSnapshotUnknown => 'the voting round snapshot block';
+
+  @override
+  String get votingSoftwareRequiredBody =>
+      'Token holder voting requires a software account. Switch to a software account to vote in this round.';
+
+  @override
+  String get votingSoftwareRequiredTitle => 'Software account required';
+
+  @override
+  String get votingStatusActive => 'Active';
+
+  @override
+  String get votingStatusBodyKeepOpen =>
+      'Don\'t close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.';
+
+  @override
+  String get votingStatusBodyLedger =>
+      'Keep Vizor open. Follow the instructions below for each voting bundle.';
+
+  @override
+  String get votingStatusClosed => 'Closed';
+
+  @override
+  String get votingStatusFailed => 'Voting failed.';
+
+  @override
+  String get votingStatusGenericError =>
+      'Voting could not continue for this account. Retry, or switch to an eligible account if this account cannot vote in this voting round.';
+
+  @override
+  String get votingStatusTallying => 'Tallying';
+
+  @override
+  String get votingStatusTitleLedger => 'Voting with Ledger';
+
+  @override
+  String get votingStatusTitleSubmitting => 'Submitting votes';
+
+  @override
+  String get votingStatusVoted => 'Voted';
+
+  @override
+  String get votingStepCasting => 'Casting votes and submitting shares';
+
+  @override
+  String get votingStepFinalizing => 'Finalizing submission';
+
+  @override
+  String get votingStepProving => 'Proving voting authority';
+
+  @override
+  String get votingStepSigningKeystone => 'Signing with Keystone';
+
+  @override
+  String get votingStepSigningLedger => 'Signing with Ledger';
+
+  @override
+  String get votingSwitchAccount => 'Switch account';
+
+  @override
+  String get votingSwitchEligibleGuidance =>
+      'Switch to an eligible account to vote.';
+
+  @override
+  String votingSyncBlocksRemaining(int count) {
+    return '$count blocks remaining';
+  }
+
+  @override
+  String votingSyncChainTip(int height) {
+    return 'chain tip $height';
+  }
+
+  @override
+  String votingSyncSynced(int height) {
+    return 'Synced to block $height';
+  }
+
+  @override
+  String get votingSyncWaitingBody =>
+      'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.';
+
+  @override
+  String get votingSyncWaitingTitle => 'Waiting for wallet sync';
+
+  @override
+  String votingTerminalBundle(int number, String reason) {
+    return 'bundle $number ($reason)';
+  }
+
+  @override
+  String votingTerminalMultiple(String bundles) {
+    return 'Delegation for $bundles cannot continue. Do not retry it; the transaction may already be on the chain.';
+  }
+
+  @override
+  String get votingTerminalReasonDefault => 'it ended without confirming';
+
+  @override
+  String votingTerminalSingle(String bundle) {
+    return 'Delegation $bundle cannot continue. Do not retry it; the transaction may already be on the chain.';
+  }
+
+  @override
+  String get votingTokenHolderTitle => 'Token holder voting';
+
+  @override
+  String get votingViewLess => 'View less';
+
+  @override
+  String get votingViewMore => 'View more';
+
+  @override
+  String get votingVoteLocked => 'Vote locked';
+
+  @override
+  String votingVotedOn(String date) {
+    return 'Voted $date';
+  }
+
+  @override
   String walletLinkAccountsFound(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -8404,6 +9327,117 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get walletLinkDeselectAll => 'Deselect all';
+
+  @override
+  String get walletLinkDesktopConfirmSubtitle => 'To link Vizor Mobile.';
+
+  @override
+  String get walletLinkDesktopEncryptedNotice =>
+      'The code is encrypted with a one-time key and expires after a minute.';
+
+  @override
+  String get walletLinkDesktopEncryptedStrong =>
+      'Only your phone can decode it.';
+
+  @override
+  String get walletLinkDesktopErrorDerivationMissing =>
+      'Wallet account derivation metadata is not available.';
+
+  @override
+  String get walletLinkDesktopErrorExpiredBeforeShown =>
+      'The mobile link expired before it could be shown.';
+
+  @override
+  String get walletLinkDesktopErrorFallback =>
+      'Could not prepare the mobile link.';
+
+  @override
+  String get walletLinkDesktopErrorHardwareMetadataMissing =>
+      'Hardware wallet metadata is not available.';
+
+  @override
+  String get walletLinkDesktopErrorLocked =>
+      'Unlock this wallet before linking mobile.';
+
+  @override
+  String get walletLinkDesktopErrorNoAccounts =>
+      'No wallet accounts are available to link.';
+
+  @override
+  String get walletLinkDesktopErrorPrepareFailed =>
+      'Could not prepare the mobile link. Try again.';
+
+  @override
+  String get walletLinkDesktopErrorServerUnreachable =>
+      'Could not reach the linking server. Try again.';
+
+  @override
+  String get walletLinkDesktopExpiredBody =>
+      'For your security the link is only valid for a minute. Generate a fresh code and scan it again.';
+
+  @override
+  String get walletLinkDesktopExpiredTitle => 'Time’s up';
+
+  @override
+  String walletLinkDesktopExpiresIn(String time) {
+    return 'Expires in $time';
+  }
+
+  @override
+  String get walletLinkDesktopGenerateNewCode => 'Generate new code';
+
+  @override
+  String get walletLinkDesktopInitialBody =>
+      'Connect this wallet to your Vizor mobile app by scanning a one-time QR code.';
+
+  @override
+  String get walletLinkDesktopLinkedBody =>
+      'Vizor Mobile was linked to this wallet.';
+
+  @override
+  String walletLinkDesktopLinkedCounts(int accountCount, int contactCount) {
+    String _temp0 = intl.Intl.pluralLogic(
+      accountCount,
+      locale: localeName,
+      other: '$accountCount accounts',
+      one: '1 account',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      contactCount,
+      locale: localeName,
+      other: '$contactCount contacts',
+      one: '1 contact',
+    );
+    return '$_temp0 and $_temp1 were imported on mobile.';
+  }
+
+  @override
+  String get walletLinkDesktopLinkedTitle => 'Vizor Mobile linked successfully';
+
+  @override
+  String get walletLinkDesktopPreparing => 'Preparing';
+
+  @override
+  String get walletLinkDesktopReadyToScan => '1/1 Ready to scan...';
+
+  @override
+  String get walletLinkDesktopRegenerate => 'Regenerate';
+
+  @override
+  String get walletLinkDesktopScanBody =>
+      'Open Vizor on your phone → Add a wallet → Link Vizor Desktop';
+
+  @override
+  String get walletLinkDesktopScanTitle => 'Scan with Vizor mobile';
+
+  @override
+  String get walletLinkDesktopStartLinking => 'Start linking';
+
+  @override
+  String get walletLinkDesktopTitle => 'Link Vizor Mobile';
+
+  @override
+  String get walletLinkDesktopUnavailableTitle => 'Link unavailable';
 
   @override
   String get walletLinkErrorExpiredBody =>

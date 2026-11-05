@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/voting/voting_error_messages.dart';
 
+import '../../support/test_l10n.dart';
+
 void main() {
   const app = 'Open the Zcash app on your Ledger.';
 
@@ -17,13 +19,18 @@ void main() {
     };
     for (final MapEntry(key: error, value: message) in expected.entries) {
       expect(
-        ledgerVotingErrorMessage(StateError(error), appInstruction: app),
+        ledgerVotingErrorMessage(
+          testL10n,
+          StateError(error),
+          appInstruction: app,
+        ),
         message,
         reason: error,
       );
     }
     expect(
       ledgerVotingErrorMessage(
+        testL10n,
         'ledger_capacity: Ledger supports at most 32 shielded actions; found 33',
         appInstruction: app,
       ),
@@ -34,22 +41,28 @@ void main() {
   test('voting text never shows a Ledger code prefix', () {
     expect(
       friendlyVotingErrorText(
+        testL10n,
         'Bad state: ledger_linux_usb_access: No Ledger device found.',
       ),
       'No Ledger device found.',
     );
     expect(
       friendlyVotingErrorMessage(
+        testL10n,
         StateError('ledger_status_6f01: Ledger Zcash app returned status'),
       ),
       'Ledger Zcash app returned status',
     );
     expect(
-      friendlyVotingErrorText('ledger_transport: No Ledger device found.'),
+      friendlyVotingErrorText(
+        testL10n,
+        'ledger_transport: No Ledger device found.',
+      ),
       'No Ledger device found.',
     );
     expect(
       friendlyVotingErrorText(
+        testL10n,
         'ledger_signature_mismatch: Validate Ledger transparent signature 0',
       ),
       'Validate Ledger transparent signature 0',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/theme/app_theme.dart';
 
@@ -32,13 +33,13 @@ class VotingScrollHeader extends StatelessWidget {
       child: child,
     );
     Widget backButton() => Semantics(
-      label: 'Back',
+      label: context.l10n.commonBack,
       button: true,
       onTap: onBack,
       excludeSemantics: true,
       child: IconButton(
         onPressed: onBack,
-        tooltip: 'Back',
+        tooltip: context.l10n.commonBack,
         icon: AppIcon(
           AppIcons.chevronBackward,
           size: 24,
@@ -89,7 +90,7 @@ class VotingScrollHeader extends StatelessWidget {
                             backButton(),
                             Expanded(
                               child: Text(
-                                'Voting',
+                                context.l10n.votingMobileHeaderTitle,
                                 style: AppTypography.bodyLarge.copyWith(
                                   color: context.colors.text.accent,
                                 ),
@@ -112,7 +113,7 @@ class VotingScrollHeader extends StatelessWidget {
                         backButton(),
                         Expanded(
                           child: Text(
-                            'Voting',
+                            context.l10n.votingMobileHeaderTitle,
                             style: AppTypography.bodyLarge.copyWith(
                               color: context.colors.text.accent,
                             ),

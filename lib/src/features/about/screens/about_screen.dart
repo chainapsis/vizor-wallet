@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app_bootstrap.dart';
 import '../../../core/config/app_version_config.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_pane_scroll_scaffold.dart';
@@ -18,47 +19,18 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../onboarding/shared/onboarding_welcome_art.dart';
+import '../about_content.dart';
 
 const _utilityContentWidth = 420.0;
-const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
-const _vizorWebsiteUrl = 'https://vizor.cash';
 
-const _aboutParagraphs = [
-  _UtilityParagraphData(
-    heading: 'Built by the Keplr team',
-    body:
-        'We built Keplr, the wallet used by millions across Cosmos, Ethereum, '
-        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.',
-  ),
-  _UtilityParagraphData(
-    heading: 'Designed for shielded Zcash',
-    body:
-        'Vizor is built around shielded transactions, where the sender, '
-        'recipient, and amount stay private. Transparent Zcash works too, but '
-        'private is the default.',
-  ),
-  _UtilityParagraphData(
-    heading: 'Open source, self-custodied',
-    body:
-        'Vizor is Apache licensed. Your keys stay on your device.\n'
-        "We don't see your balances or your transactions.",
-  ),
+List<_UtilityParagraphData> _aboutParagraphs(AppLocalizations l10n) => [
+  for (final p in aboutParagraphs(l10n))
+    _UtilityParagraphData(heading: p.heading, body: p.body),
 ];
 
-const _legalPlaceholderParagraph = _UtilityParagraphData(
-  heading: 'From the team that brought you Keplr Wallet.',
-  body:
-      'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the '
-      'sender, recipient, and amount.',
-);
-
-const _legalParagraphs = [
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
-  _legalPlaceholderParagraph,
+List<_UtilityParagraphData> _legalParagraphs(AppLocalizations l10n) => [
+  for (final p in legalParagraphs(l10n))
+    _UtilityParagraphData(heading: p.heading, body: p.body),
 ];
 
 class AboutScreen extends StatelessWidget {
@@ -91,8 +63,8 @@ class TermsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _LegalScreen(
-      title: 'Terms of Usage',
-      paragraphs: _legalParagraphs,
+      title: context.l10n.aboutTermsTitle,
+      paragraphs: _legalParagraphs(context.l10n),
       forceFullPane: forceFullPane,
     );
   }
@@ -108,8 +80,8 @@ class PrivacyPolicyScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _LegalScreen(
-      title: 'Privacy Policy',
-      paragraphs: _legalParagraphs,
+      title: context.l10n.appPrivacyPolicyTitle,
+      paragraphs: _legalParagraphs(context.l10n),
       forceFullPane: forceFullPane,
     );
   }
@@ -120,21 +92,25 @@ class _AboutContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    final l10n = context.l10n;
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Opacity(opacity: 0.5, child: VizorWordmark(width: 74, height: 27.925)),
-        SizedBox(height: AppSpacing.base),
+        const Opacity(
+          opacity: 0.5,
+          child: VizorWordmark(width: 74, height: 27.925),
+        ),
+        const SizedBox(height: AppSpacing.base),
         _UtilityPageTitle(
-          title: 'About Vizor Wallet',
-          subtitle: kVizorAboutVersionLabel,
+          title: l10n.aboutTitle,
+          subtitle: l10n.aboutVersionLabel(kVizorReleaseVersion),
         ),
-        SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.base),
         _UtilitySurface(
-          child: _UtilityParagraphList(paragraphs: _aboutParagraphs),
+          child: _UtilityParagraphList(paragraphs: _aboutParagraphs(l10n)),
         ),
-        SizedBox(height: AppSpacing.base),
-        _AboutLinkRow(),
+        const SizedBox(height: AppSpacing.base),
+        const _AboutLinkRow(),
       ],
     );
   }
@@ -263,7 +239,9 @@ class _UtilityBackButton extends ConsumerWidget {
       );
     }
     final hasWallet = _hasWallet(ref);
-    final label = hasWallet ? 'Home' : 'Welcome';
+    final label = hasWallet
+        ? context.l10n.navHome
+        : context.l10n.onboardingWelcome;
     final path = hasWallet ? '/home' : '/welcome';
     return AppBackLink(label: label, onTap: () => context.go(path));
   }
@@ -280,7 +258,10 @@ class _LegalContent extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _UtilityPageTitle(title: title, subtitle: kVizorAboutVersionLabel),
+        _UtilityPageTitle(
+          title: title,
+          subtitle: context.l10n.aboutVersionLabel(kVizorReleaseVersion),
+        ),
         const SizedBox(height: AppSpacing.base),
         _UtilitySurface(child: _UtilityParagraphList(paragraphs: paragraphs)),
       ],
@@ -414,7 +395,7 @@ class _AboutLinkRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return SizedBox(
       width: double.infinity,
       child: Wrap(
         alignment: WrapAlignment.center,
@@ -422,16 +403,16 @@ class _AboutLinkRow extends StatelessWidget {
         runSpacing: AppSpacing.xs,
         children: [
           _AboutLinkButton(
-            label: 'Github',
+            label: 'Github', // l10n-ignore: product name
             icon: AppIcons.github,
-            semanticsLabel: 'Open Vizor GitHub',
-            url: _vizorGithubUrl,
+            semanticsLabel: context.l10n.aboutOpenGithub,
+            url: kVizorGithubUrl,
           ),
           _AboutLinkButton(
-            label: 'Website',
+            label: context.l10n.aboutWebsite,
             icon: AppIcons.globe,
-            semanticsLabel: 'Open Vizor website',
-            url: _vizorWebsiteUrl,
+            semanticsLabel: context.l10n.aboutOpenWebsite,
+            url: kVizorWebsiteUrl,
           ),
         ],
       ),

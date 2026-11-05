@@ -2,6 +2,7 @@ import 'package:flutter/material.dart'
     show InputBorder, InputDecoration, TextField;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -65,7 +66,7 @@ class MobileDonationComposeView extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                'Enter your amount',
+                                context.l10n.donationEnterAmount,
                                 style: AppTypography.labelLarge.copyWith(
                                   color: colors.text.secondary,
                                 ),
@@ -82,14 +83,14 @@ class MobileDonationComposeView extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'ZEC',
+                                  'ZEC', // l10n-ignore: currency code/amount format
                                   style: AppTypography.labelLarge.copyWith(
                                     color: colors.text.accent,
                                   ),
                                 ),
                                 const SizedBox(height: AppSpacing.xxs),
                                 Text(
-                                  'Zcash',
+                                  'Zcash', // l10n-ignore: protocol name
                                   style: AppTypography.labelLarge.copyWith(
                                     color: colors.text.secondary,
                                   ),
@@ -114,7 +115,7 @@ class MobileDonationComposeView extends StatelessWidget {
                             const SizedBox(height: AppSpacing.s),
                             Semantics(
                               button: onToggleMode != null,
-                              label: 'Switch between ZEC and USD',
+                              label: context.l10n.donationSwitchCurrency,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: onToggleMode,
@@ -183,7 +184,7 @@ class MobileDonationComposeView extends StatelessWidget {
                       color: colors.icon.accent,
                     ),
                     Text(
-                      'Shielded balance',
+                      context.l10n.commonShieldedBalance,
                       style: AppTypography.labelMedium.copyWith(
                         color: colors.text.secondary,
                       ),
@@ -223,7 +224,7 @@ class MobileDonationComposeView extends StatelessWidget {
             expand: true,
             constrainContent: true,
             onPressed: onContinue,
-            child: const Text('Continue'),
+            child: Text(context.l10n.commonContinue),
           ),
         ),
       ],
@@ -252,7 +253,7 @@ class _MobileDonationAmountEditor extends StatelessWidget {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final unit = isUsd ? 'USD' : 'ZEC';
+        final unit = isUsd ? 'USD' : 'ZEC'; // l10n-ignore: currency code
         final unitStyle = style.copyWith(
           fontSize: 38,
           height: 40 / 38,
@@ -350,7 +351,9 @@ class _MobileDonationPreset extends StatelessWidget {
               : null,
         ),
         child: Text(
-          isUsd ? '\$$value' : '$value ZEC',
+          isUsd
+              ? '\$$value'
+              : '$value ZEC', // l10n-ignore: currency code/amount format
           style: AppTypography.labelMedium.copyWith(
             color: context.colors.text.accent,
           ),
@@ -390,7 +393,7 @@ class MobileDonationReviewContent extends StatelessWidget {
         child: Column(
           children: [
             ReviewInfoRow(
-              label: 'Amount',
+              label: context.l10n.commonAmount,
               value: amountText,
               leading: const SwapAssetIcon(
                 asset: SwapAsset.zec,
@@ -402,12 +405,12 @@ class MobileDonationReviewContent extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             ReviewInfoRow(
-              label: 'Donating to',
-              value: 'Vizor Wallet',
+              label: context.l10n.donationDonatingTo,
+              value: 'Vizor Wallet', // l10n-ignore: product name
               leading: const DonationVizorBadge(size: 40),
               valueFit: BoxFit.scaleDown,
               bottomLeftText: 'u15kdl…8tg3y',
-              trailingActionLabel: 'Full address',
+              trailingActionLabel: context.l10n.commonFullAddress,
               onTrailingAction: onFullAddress,
             ),
           ],
@@ -423,12 +426,12 @@ class MobileDonationReviewContent extends StatelessWidget {
         child: Column(
           children: [
             _DonationDetailRow(
-              label: 'Sending from',
-              value: 'Shielded balance',
+              label: context.l10n.donationSendingFrom,
+              value: context.l10n.commonShieldedBalance,
             ),
             const SizedBox(height: AppSpacing.sm),
             _DonationDetailRow(
-              label: 'Tx fee',
+              label: context.l10n.txFeeInfoTitle,
               value: feeText,
               trailingIconName: AppIcons.help,
               onTap: onFeeInfo,
@@ -436,7 +439,10 @@ class MobileDonationReviewContent extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             Container(height: 1, color: context.colors.border.subtle),
             const SizedBox(height: AppSpacing.sm),
-            _DonationDetailRow(label: 'Total', value: totalText),
+            _DonationDetailRow(
+              label: context.l10n.donationTotal,
+              value: totalText,
+            ),
           ],
         ),
       ),

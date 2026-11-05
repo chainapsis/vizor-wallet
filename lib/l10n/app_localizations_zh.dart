@@ -9,6 +9,59 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get aboutBuiltByBody =>
+      '我们打造了 Keplr，这款钱包被 Cosmos、Ethereum 和 Bitcoin 生态中的数百万用户使用。Vizor 是我们对 Zcash 钱包应有体验的诠释。';
+
+  @override
+  String get aboutBuiltByHeading => '由 Keplr 团队打造';
+
+  @override
+  String get aboutLegalPlaceholderBody =>
+      '与 Bitcoin 或 Ethereum 不同，屏蔽 Zcash 交易会隐藏发送方、接收方和金额。';
+
+  @override
+  String get aboutLegalPlaceholderHeading => '来自打造 Keplr 钱包的团队。';
+
+  @override
+  String aboutLinkSemantics(String label) {
+    return '$label链接';
+  }
+
+  @override
+  String get aboutOpenGithub => '打开 Vizor GitHub';
+
+  @override
+  String get aboutOpenSourceBody =>
+      'Vizor 采用 Apache 许可证。您的密钥只保存在您的设备上。\n我们看不到您的余额或交易。';
+
+  @override
+  String get aboutOpenSourceHeading => '开源，自主托管';
+
+  @override
+  String get aboutOpenWebsite => '打开 Vizor 网站';
+
+  @override
+  String get aboutShieldedBody =>
+      'Vizor 围绕屏蔽交易构建，发送方、接收方和金额均保持私密。也支持透明 Zcash，但默认是私密的。';
+
+  @override
+  String get aboutShieldedHeading => '为屏蔽 Zcash 而设计';
+
+  @override
+  String get aboutTermsTitle => '使用条款';
+
+  @override
+  String get aboutTitle => '关于 Vizor 钱包';
+
+  @override
+  String aboutVersionLabel(String version) {
+    return '版本：$version 公测版';
+  }
+
+  @override
+  String get aboutWebsite => '网站';
+
+  @override
   String get accountNameLabel => '账户名称';
 
   @override
@@ -1303,6 +1356,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonZcashAddress => 'Zcash 地址';
+
+  @override
+  String get donationDonatingTo => '捐赠对象';
+
+  @override
+  String get donationEnterAmount => '输入金额';
+
+  @override
+  String get donationPriceUnavailable => '价格不可用';
+
+  @override
+  String get donationReviewAmountTitle => '确认金额';
+
+  @override
+  String get donationSendingFrom => '发送自';
+
+  @override
+  String get donationSendingFromYour => '发送自您的';
+
+  @override
+  String get donationSwitchCurrency => '在 ZEC 和 USD 之间切换';
+
+  @override
+  String get donationThanksTitle => '感谢您支持 Vizor';
+
+  @override
+  String get donationTotal => '合计';
 
   @override
   String endpointCurrent(String endpoint) {
@@ -7763,6 +7843,803 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateRestart => '重启';
 
   @override
+  String get votingActionResume => '继续';
+
+  @override
+  String get votingActionRetryEligibility => '重新检查资格';
+
+  @override
+  String get votingActionReview => '查看';
+
+  @override
+  String get votingActionReviewAnswers => '确认答案';
+
+  @override
+  String get votingActionUnavailable => '不可用';
+
+  @override
+  String get votingActionView => '查看';
+
+  @override
+  String get votingActionViewResults => '查看结果';
+
+  @override
+  String get votingActive => '投票进行中';
+
+  @override
+  String get votingAlreadyUsedNotice => '这些资金已在本轮中使用。无法在此设备上重新开始投票。';
+
+  @override
+  String get votingAutoAdvanceSemantics => '正在前往下一个未回答的问题';
+
+  @override
+  String get votingBallotCasting => '正在投票';
+
+  @override
+  String get votingBallotDelivering => '正在递送您的回复';
+
+  @override
+  String get votingBallotPreparing => '正在准备您的选票';
+
+  @override
+  String get votingBallotWaitingChain => '正在等待链上确认';
+
+  @override
+  String get votingBetaSemantics => '测试版';
+
+  @override
+  String votingBundleCount(int count) {
+    return '$count 个投票票据包';
+  }
+
+  @override
+  String votingBundleOf(int number, int total) {
+    return '第 $number/$total 个票据包';
+  }
+
+  @override
+  String get votingCheckAgain => '重新检查';
+
+  @override
+  String votingChoiceFallback(int number) {
+    return '选项 $number';
+  }
+
+  @override
+  String get votingConfigAddCustomSource => '添加自定义来源';
+
+  @override
+  String get votingConfigBadgeDefault => '默认';
+
+  @override
+  String get votingConfigCloseSettings => '关闭投票配置设置';
+
+  @override
+  String get votingConfigCopyUrl => '复制来源网址';
+
+  @override
+  String get votingConfigCustomSource => '自定义来源';
+
+  @override
+  String votingConfigDeleteNamed(String name) {
+    return '删除 $name';
+  }
+
+  @override
+  String get votingConfigDeleteSaved => '删除已保存的来源';
+
+  @override
+  String get votingConfigDuplicate => '此来源网址已添加。';
+
+  @override
+  String get votingConfigEditCustomSource => '编辑自定义来源';
+
+  @override
+  String votingConfigEditNamed(String name) {
+    return '编辑 $name';
+  }
+
+  @override
+  String get votingConfigEditSaved => '编辑已保存的来源';
+
+  @override
+  String get votingConfigEnterTitleAndUrl => '请输入标题和来源网址。';
+
+  @override
+  String get votingConfigFieldStaticUrl => '静态配置网址';
+
+  @override
+  String get votingConfigFieldTitle => '标题';
+
+  @override
+  String get votingConfigLoadFailed => '无法从该来源加载投票配置。';
+
+  @override
+  String get votingConfigMobileFieldUrl => '来源网址';
+
+  @override
+  String get votingConfigMobileIntro => '选择 Vizor 从何处获取已认证的投票轮次。';
+
+  @override
+  String get votingConfigMobileSave => '保存来源';
+
+  @override
+  String get votingConfigMobileTestRoundsHint => '包含标有 [TEST] 的已认证轮次。';
+
+  @override
+  String get votingConfigMobileTitle => '投票配置';
+
+  @override
+  String get votingConfigMobileUpdateFailed => '无法更新投票配置。请检查来源后重试。';
+
+  @override
+  String get votingConfigSaving => '正在保存...';
+
+  @override
+  String get votingConfigSettings => '投票配置设置';
+
+  @override
+  String get votingConfigShowTestRounds => '显示测试轮次';
+
+  @override
+  String get votingConfigShowTestRoundsHint => '显示标题以 [TEST] 开头的已认证轮次。';
+
+  @override
+  String get votingConfigSources => '来源';
+
+  @override
+  String get votingConfigTestVisibilityFailed => '无法更新测试轮次显示设置。';
+
+  @override
+  String votingConfigTitleTooLong(int max) {
+    return '标题不能超过 $max 个字符。';
+  }
+
+  @override
+  String get votingConfigTooltip => '投票配置';
+
+  @override
+  String get votingConfigUpdateFailed => '无法更新投票配置。';
+
+  @override
+  String get votingConfigUrlCopied => '已复制来源网址。';
+
+  @override
+  String get votingConfigValidating => '正在验证...';
+
+  @override
+  String get votingConfirmationCheckingEligibility => '正在检查此账户的投票资格。';
+
+  @override
+  String get votingConfirmationConfirmedBody => '您的投票已成功发布，无法更改。';
+
+  @override
+  String get votingConfirmationConfirmedTitle => '提交已确认！';
+
+  @override
+  String get votingConfirmationEligibilityUnconfirmed => '尚未确认此账户的投票资格。';
+
+  @override
+  String get votingConfirmationIncompleteTitle => '提交未完成';
+
+  @override
+  String votingConfirmationLoadFailed(String error) {
+    return '无法加载提交详情：$error';
+  }
+
+  @override
+  String get votingConfirmationNotCompleted => '此账户尚未完成本轮投票的提交。';
+
+  @override
+  String get votingConfirmationUpdateFailed => '无法更新投票轮次。请重试。';
+
+  @override
+  String get votingConfirmationUpdatingRounds => '正在更新投票轮次...';
+
+  @override
+  String get votingContinueToReview => '继续确认';
+
+  @override
+  String get votingContinueVoting => '继续投票';
+
+  @override
+  String votingDaysLeft(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '剩余 $days 天',
+      zero: '今天结束',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get votingDetailLoadFailedTitle => '无法加载投票轮次';
+
+  @override
+  String get votingDetailUnavailableBody => '无法加载所选的投票轮次。';
+
+  @override
+  String get votingDetailUnavailableTitle => '投票轮次不可用';
+
+  @override
+  String votingEnds(String date) {
+    return '$date结束';
+  }
+
+  @override
+  String get votingErrorLedgerCancelled => '已取消在 Ledger 上批准投票。';
+
+  @override
+  String votingErrorLedgerLocked(String instruction) {
+    return '请解锁您的 Ledger。$instruction';
+  }
+
+  @override
+  String get votingErrorLedgerRejected => '您已在 Ledger 上拒绝投票签名。请重试并再次签名。';
+
+  @override
+  String votingErrorLedgerWrongApp(String instruction) {
+    return '$instruction然后重试。';
+  }
+
+  @override
+  String votingErrorMinimumWeight(String amount, String snapshot) {
+    return '投票至少需要在$snapshot时拥有一个包含 $amount 的符合条件的屏蔽票据包。请切换到符合条件的账户后再投票。';
+  }
+
+  @override
+  String votingErrorNoSpendableNotes(String snapshot) {
+    return '此账户没有资格参与本轮投票。在$snapshot时没有符合条件的屏蔽资金。请切换到符合条件的账户后再投票。';
+  }
+
+  @override
+  String get votingErrorSessionFailed => '投票操作失败。';
+
+  @override
+  String get votingForumDiscussion => '论坛讨论';
+
+  @override
+  String get votingGuardAccountLoadFailed => '无法加载账户';
+
+  @override
+  String get votingIneligibleTitle => '没有资格参与本轮投票';
+
+  @override
+  String get votingKeepSigning => '继续签名';
+
+  @override
+  String get votingKeepVoting => '继续投票';
+
+  @override
+  String votingKeystoneMemoLabel(int number, int total) {
+    return '第 $number/$total 个票据包的备注';
+  }
+
+  @override
+  String get votingKeystoneNextBatch => '下一批签名已就绪';
+
+  @override
+  String get votingKeystoneNextMemo => '下一个票据包的备注';
+
+  @override
+  String get votingKeystoneOneApproval => '只需 Keystone 批准一次';
+
+  @override
+  String get votingKeystonePreviousMemo => '上一个票据包的备注';
+
+  @override
+  String votingKeystoneQrPartial(int count, int total) {
+    return '此二维码可签名剩余 $total 个票据包中的 $count 个';
+  }
+
+  @override
+  String get votingKeystoneScanInstruction =>
+      '用 Keystone 扫描此屏幕上的二维码，然后用本设备的摄像头扫描 Keystone 上显示的已签名投票二维码';
+
+  @override
+  String get votingKeystoneScanSignature => '扫描签名';
+
+  @override
+  String votingKeystoneSignLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '签名 $count 个投票票据包',
+      zero: '正在准备投票签名',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get votingKeystoneUnexpectedUr => '请在 Keystone 上打开已签名的投票二维码，然后重新扫描。';
+
+  @override
+  String get votingLedgerApprovalNotice =>
+      '在 Ledger 上批准即授权此投票委托。继续之前，请在 Vizor 中查看下方备注；设备可能不会逐字显示此备注。';
+
+  @override
+  String votingLedgerBundleOf(int number, int total) {
+    return '第 $number/$total 个票据包';
+  }
+
+  @override
+  String get votingLedgerChecking => '正在检查您的 Ledger';
+
+  @override
+  String get votingLedgerCheckingBody => 'Vizor 正在检查 Zcash 应用是否就绪。';
+
+  @override
+  String get votingLedgerConfirmOpen => '确认打开 Zcash';
+
+  @override
+  String get votingLedgerConfirmOpenBody => '请在您的 Ledger 上批准打开 Zcash 应用的请求。';
+
+  @override
+  String get votingLedgerFinishing => '正在完成投票委托';
+
+  @override
+  String get votingLedgerNeedsAttention => 'Ledger 需要处理';
+
+  @override
+  String get votingLedgerPanelTitle => '投票委托';
+
+  @override
+  String get votingLedgerPleaseWait => '请稍候，Vizor 正在准备您的请求。';
+
+  @override
+  String get votingLedgerPreparing => '正在准备投票委托';
+
+  @override
+  String get votingLedgerReconnect => '请重新连接您的 Ledger 并重试。';
+
+  @override
+  String votingMobileAccountLoadFailed(String error) {
+    return '无法加载账户。\n$error';
+  }
+
+  @override
+  String get votingMobileGoHome => '返回首页';
+
+  @override
+  String get votingMobileHeaderTitle => '投票';
+
+  @override
+  String get votingMobileKeystoneChecking => '正在检查投票签名...';
+
+  @override
+  String get votingMobileKeystoneDescription =>
+      '用 Keystone 扫描投票请求并批准，然后用本设备扫描已签名的结果。';
+
+  @override
+  String get votingMobileKeystoneFailedTitle => '投票签名失败';
+
+  @override
+  String get votingMobileKeystoneNextBundle => '下一个投票票据包';
+
+  @override
+  String get votingMobileKeystonePreviousBundle => '上一个投票票据包';
+
+  @override
+  String get votingMobileKeystoneReading => '正在读取投票签名...';
+
+  @override
+  String get votingMobileKeystoneScanCaption => '请扫描 Keystone 上显示的已签名投票二维码';
+
+  @override
+  String get votingMobileKeystoneSkipUnsigned => '跳过未签名的票据包';
+
+  @override
+  String get votingMobileKeystoneTitle => '使用 Keystone 签署投票';
+
+  @override
+  String get votingMobileLeaveWarning => '请勿离开此窗口。';
+
+  @override
+  String get votingMobileProgressSemantics => '当前投票提交步骤的进度';
+
+  @override
+  String get votingMobileProofNotice => '生成零知识证明可能需要约 60 秒，现在关闭可能会丢失正在进行的证明工作。';
+
+  @override
+  String get votingMobileSubmitTitle => '提交投票';
+
+  @override
+  String get votingMobileSubmittedBody => '您的投票已提交，无法更改。';
+
+  @override
+  String get votingMobileSubmittedTitle => '投票已提交';
+
+  @override
+  String get votingMobileSubmittingTitle => '正在提交投票...';
+
+  @override
+  String get votingNavAllAnswered => '所有问题均已回答';
+
+  @override
+  String votingNavAnsweredProgress(int answered, int total) {
+    return '已回答 $answered/$total';
+  }
+
+  @override
+  String get votingNavReadyToReview => '您的答案已可确认。';
+
+  @override
+  String get votingNavTapToJump => '点按问题即可跳转。';
+
+  @override
+  String votingNavUnansweredCount(int count) {
+    return '未回答 · $count';
+  }
+
+  @override
+  String get votingNavUnansweredMenu => '未回答的问题';
+
+  @override
+  String get votingNoProposalsBody => '此投票轮次不包含任何提案。';
+
+  @override
+  String get votingNoProposalsTitle => '没有提案';
+
+  @override
+  String get votingNotAvailable => '不可用';
+
+  @override
+  String get votingNotEligible => '没有资格';
+
+  @override
+  String get votingOptionChoose => '选择';
+
+  @override
+  String get votingOptionSelected => '已选择';
+
+  @override
+  String get votingPendingBody => '您在本轮有一次未完成的投票。请继续以完成提交。';
+
+  @override
+  String get votingPendingTitle => '投票进行中';
+
+  @override
+  String votingPirAhead(String expected, String reported) {
+    return '已配置的 PIR 端点领先于本轮投票的快照。预期快照区块为 $expected，端点报告为 $reported。';
+  }
+
+  @override
+  String votingPirBehind(String expected, String reported) {
+    return '本轮投票的 PIR 数据尚未就绪。预期快照区块为 $expected，PIR 端点报告为 $reported。请在 PIR 服务追上后重试。';
+  }
+
+  @override
+  String votingPirNoMatch(String expected) {
+    return '没有与本轮投票快照匹配的 PIR 端点。预期快照区块为 $expected。';
+  }
+
+  @override
+  String votingPirNoMatchDiagnostics(String expected, String diagnostics) {
+    return '没有与本轮投票快照匹配的 PIR 端点。预期快照区块为 $expected。诊断信息：$diagnostics。';
+  }
+
+  @override
+  String get votingPirUnreachable => '无法连接到任何已配置的 PIR 端点。请检查网络连接后重试。';
+
+  @override
+  String get votingPollAlreadyUsed => '本轮已使用';
+
+  @override
+  String votingPollClosed(String date) {
+    return '$date已截止';
+  }
+
+  @override
+  String votingPollCloses(String date) {
+    return '$date截止';
+  }
+
+  @override
+  String get votingPollNotEligible => '没有资格参与本轮';
+
+  @override
+  String votingPollStarts(String date) {
+    return '$date开始';
+  }
+
+  @override
+  String get votingPollsEmptyBody => '目前还没有可显示的代币持有者投票轮次。';
+
+  @override
+  String get votingPollsEmptyTitle => '暂无投票轮次';
+
+  @override
+  String get votingPollsLoadFailedTitle => '无法加载投票轮次';
+
+  @override
+  String votingPowerMeta(String amount) {
+    return '投票权 $amount';
+  }
+
+  @override
+  String get votingPowerUnavailableSentence => '无法获取投票权。';
+
+  @override
+  String get votingPowerUnavailableTitle => '无法获取投票权';
+
+  @override
+  String get votingPreparingEllipsis => '准备中...';
+
+  @override
+  String get votingPreparingPower => '正在准备投票权。';
+
+  @override
+  String get votingPreparingPowerMeta => '正在准备投票权';
+
+  @override
+  String votingPrivacyTrimNotice(String amount) {
+    return '为降低您的提交被识别的可能性，$amount 不计入本次投票。';
+  }
+
+  @override
+  String votingProgressBundlesProved(int proved, int total) {
+    return '已证明 $proved/$total 个票据包';
+  }
+
+  @override
+  String votingProgressFinalizingDelegation(String suffix) {
+    return '正在完成委托$suffix';
+  }
+
+  @override
+  String votingProgressReusingProof(String suffix) {
+    return '正在复用进行中的证明$suffix';
+  }
+
+  @override
+  String get votingProgressUnknown => '未知';
+
+  @override
+  String votingProgressWaitingConfirmation(String suffix) {
+    return '正在等待提交和确认$suffix';
+  }
+
+  @override
+  String get votingReceiptPower => '投票权';
+
+  @override
+  String get votingReceiptRound => '投票轮次';
+
+  @override
+  String votingRemainingBundles(int count, int total) {
+    return '剩余 $total 个票据包中的 $count 个';
+  }
+
+  @override
+  String get votingResultsFallbackTitle => '投票结果';
+
+  @override
+  String get votingResultsHeading => '结果';
+
+  @override
+  String get votingResultsHideDescription => '收起说明';
+
+  @override
+  String votingResultsLoadFailed(String error) {
+    return '无法加载结果：$error';
+  }
+
+  @override
+  String get votingResultsNoProposals => '本轮没有提案。';
+
+  @override
+  String get votingResultsPending => '结果待公布...';
+
+  @override
+  String votingResultsRoundLoadFailed(String error) {
+    return '无法加载投票轮次详情：$error';
+  }
+
+  @override
+  String get votingResultsShowDescription => '展开说明';
+
+  @override
+  String get votingResultsTotal => '总计';
+
+  @override
+  String votingResultsTotalAmount(String amount) {
+    return '总计：$amount';
+  }
+
+  @override
+  String get votingResultsVoted => '已投票';
+
+  @override
+  String votingResultsVotedFor(String choice) {
+    return '已投：$choice';
+  }
+
+  @override
+  String get votingResultsWinner => '获胜';
+
+  @override
+  String get votingResultsYourVote => '您的投票';
+
+  @override
+  String get votingReviewChooseOne => '提交前请至少选择一个选项。';
+
+  @override
+  String get votingReviewConfirmSubmit => '确认并提交';
+
+  @override
+  String votingReviewLoadFailed(String error) {
+    return '无法加载确认页面：$error';
+  }
+
+  @override
+  String get votingReviewSkipped => '已跳过';
+
+  @override
+  String get votingReviewTitle => '确认您的答案';
+
+  @override
+  String get votingScanHold => '请将 Keystone 二维码稳定地对准摄像头';
+
+  @override
+  String get votingScanNoCamera => 'Keystone 投票仅支持摄像头扫描二维码。请连接摄像头后重试。';
+
+  @override
+  String get votingScanReading => '正在读取签名...';
+
+  @override
+  String get votingScanSteady => '请保持二维码稳定且完整可见。';
+
+  @override
+  String get votingScanTitle => '扫描投票签名';
+
+  @override
+  String get votingSignedOnlyBody => 'Vizor 现在可以仅使用已从 Keystone 扫描的签名进行提交。';
+
+  @override
+  String get votingSignedOnlyTitle => '仅使用已签名的票据包？';
+
+  @override
+  String get votingSignedOnlyWarning => '未签名的票据包将被跳过，这会降低本轮投票的投票权。';
+
+  @override
+  String get votingSkip => '跳过';
+
+  @override
+  String get votingSkipBundles => '跳过票据包';
+
+  @override
+  String votingSkipDialogBody(int skipped, int total) {
+    return '您有 $skipped/$total 个问题尚未回答。确认页面会将它们标记为已跳过，已跳过的问题不会被提交。';
+  }
+
+  @override
+  String get votingSkipDialogTitle => '跳过未回答的问题？';
+
+  @override
+  String votingSnapshotBlock(String height) {
+    return '快照区块 $height';
+  }
+
+  @override
+  String get votingSnapshotUnknown => '投票轮次快照区块';
+
+  @override
+  String get votingSoftwareRequiredBody => '代币持有者投票需要软件账户。要参与本轮投票，请切换到软件账户。';
+
+  @override
+  String get votingSoftwareRequiredTitle => '需要软件账户';
+
+  @override
+  String get votingStatusActive => '进行中';
+
+  @override
+  String get votingStatusBodyKeepOpen =>
+      '请勿关闭窗口。生成零知识证明可能需要一些时间；现在关闭可能会丢失正在进行的证明工作。';
+
+  @override
+  String get votingStatusBodyLedger => '请保持 Vizor 打开，并按下方说明处理每个投票票据包。';
+
+  @override
+  String get votingStatusClosed => '已截止';
+
+  @override
+  String get votingStatusFailed => '投票失败。';
+
+  @override
+  String get votingStatusGenericError =>
+      '此账户无法继续投票。请重试；如果此账户没有资格参与本轮投票，请切换到符合条件的账户。';
+
+  @override
+  String get votingStatusTallying => '计票中';
+
+  @override
+  String get votingStatusTitleLedger => '使用 Ledger 投票';
+
+  @override
+  String get votingStatusTitleSubmitting => '正在提交投票';
+
+  @override
+  String get votingStatusVoted => '已投票';
+
+  @override
+  String get votingStepCasting => '正在投票并提交份额';
+
+  @override
+  String get votingStepFinalizing => '正在完成提交';
+
+  @override
+  String get votingStepProving => '正在证明投票权限';
+
+  @override
+  String get votingStepSigningKeystone => '正在使用 Keystone 签名';
+
+  @override
+  String get votingStepSigningLedger => '正在使用 Ledger 签名';
+
+  @override
+  String get votingSwitchAccount => '切换账户';
+
+  @override
+  String get votingSwitchEligibleGuidance => '请切换到符合条件的账户后再投票。';
+
+  @override
+  String votingSyncBlocksRemaining(int count) {
+    return '剩余 $count 个区块';
+  }
+
+  @override
+  String votingSyncChainTip(int height) {
+    return '链顶区块 $height';
+  }
+
+  @override
+  String votingSyncSynced(int height) {
+    return '已同步至区块 $height';
+  }
+
+  @override
+  String get votingSyncWaitingBody => '您的钱包正在追赶本轮投票的快照。钱包同步到快照区块后，投票将自动继续。';
+
+  @override
+  String get votingSyncWaitingTitle => '正在等待钱包同步';
+
+  @override
+  String votingTerminalBundle(int number, String reason) {
+    return '第 $number 个票据包（$reason）';
+  }
+
+  @override
+  String votingTerminalMultiple(String bundles) {
+    return '$bundles 的委托无法继续。请勿重试，该交易可能已在链上。';
+  }
+
+  @override
+  String get votingTerminalReasonDefault => '未经确认即已结束';
+
+  @override
+  String votingTerminalSingle(String bundle) {
+    return '委托 $bundle 无法继续。请勿重试，该交易可能已在链上。';
+  }
+
+  @override
+  String get votingTokenHolderTitle => '代币持有者投票';
+
+  @override
+  String get votingViewLess => '收起';
+
+  @override
+  String get votingViewMore => '展开';
+
+  @override
+  String get votingVoteLocked => '投票已锁定';
+
+  @override
+  String votingVotedOn(String date) {
+    return '$date已投票';
+  }
+
+  @override
   String walletLinkAccountsFound(int count) {
     return '找到 $count 个账户';
   }
@@ -7792,6 +8669,91 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get walletLinkDeselectAll => '取消全选';
+
+  @override
+  String get walletLinkDesktopConfirmSubtitle => '以关联 Vizor 手机端。';
+
+  @override
+  String get walletLinkDesktopEncryptedNotice => '该二维码使用一次性密钥加密，一分钟后失效。';
+
+  @override
+  String get walletLinkDesktopEncryptedStrong => '只有您的手机能够解码。';
+
+  @override
+  String get walletLinkDesktopErrorDerivationMissing => '无法获取钱包账户的派生信息。';
+
+  @override
+  String get walletLinkDesktopErrorExpiredBeforeShown => '手机端关联码在显示前已过期。';
+
+  @override
+  String get walletLinkDesktopErrorFallback => '无法准备手机端关联。';
+
+  @override
+  String get walletLinkDesktopErrorHardwareMetadataMissing => '无法获取硬件钱包信息。';
+
+  @override
+  String get walletLinkDesktopErrorLocked => '关联手机端前，请先解锁此钱包。';
+
+  @override
+  String get walletLinkDesktopErrorNoAccounts => '没有可关联的钱包账户。';
+
+  @override
+  String get walletLinkDesktopErrorPrepareFailed => '无法准备手机端关联。请重试。';
+
+  @override
+  String get walletLinkDesktopErrorServerUnreachable => '无法连接到关联服务器。请重试。';
+
+  @override
+  String get walletLinkDesktopExpiredBody => '为了您的安全，关联码仅在一分钟内有效。请生成新二维码并重新扫描。';
+
+  @override
+  String get walletLinkDesktopExpiredTitle => '时间到了';
+
+  @override
+  String walletLinkDesktopExpiresIn(String time) {
+    return '$time后过期';
+  }
+
+  @override
+  String get walletLinkDesktopGenerateNewCode => '生成新二维码';
+
+  @override
+  String get walletLinkDesktopInitialBody => '扫描一次性二维码，将此钱包连接到 Vizor 手机应用。';
+
+  @override
+  String get walletLinkDesktopLinkedBody => 'Vizor 手机端已与此钱包关联。';
+
+  @override
+  String walletLinkDesktopLinkedCounts(int accountCount, int contactCount) {
+    return '已在手机端导入 $accountCount 个账户和 $contactCount 个联系人。';
+  }
+
+  @override
+  String get walletLinkDesktopLinkedTitle => 'Vizor 手机端关联成功';
+
+  @override
+  String get walletLinkDesktopPreparing => '准备中';
+
+  @override
+  String get walletLinkDesktopReadyToScan => '1/1 已可扫描...';
+
+  @override
+  String get walletLinkDesktopRegenerate => '重新生成';
+
+  @override
+  String get walletLinkDesktopScanBody => '在手机上打开 Vizor → 添加钱包 → 关联 Vizor 桌面版';
+
+  @override
+  String get walletLinkDesktopScanTitle => '用 Vizor 手机端扫描';
+
+  @override
+  String get walletLinkDesktopStartLinking => '开始关联';
+
+  @override
+  String get walletLinkDesktopTitle => '关联 Vizor 手机端';
+
+  @override
+  String get walletLinkDesktopUnavailableTitle => '无法关联';
 
   @override
   String get walletLinkErrorExpiredBody => '电脑上的二维码已超时。请在桌面端选择“生成新二维码”，然后重新扫描。';

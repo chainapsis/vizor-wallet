@@ -186,7 +186,12 @@ class VotingRoundDetails {
     final json = status.rawJson;
     return VotingRoundDetails(
       roundId: status.roundId,
-      title: _optionalStringFromJson(json, const ['title']) ?? '',
+      title:
+          _optionalStringFromJson(
+            json,
+            const ['title'], // l10n-ignore: JSON key
+          ) ??
+          '',
       status: status.status,
       snapshotHeight: _intFromJson(json, const ['snapshot_height']),
       eaPk: _fixedBytesFromJson(json, const ['ea_pk'], 32),

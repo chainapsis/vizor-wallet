@@ -116,9 +116,12 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
                       skipLoadingOnReload: false,
                       loading: () => const VotingPaneLoading(),
                       error: (error, _) => _VotingMessage(
-                        title: "Couldn't load voting rounds",
-                        message: friendlyVotingErrorMessage(error),
-                        actionLabel: 'Try again',
+                        title: context.l10n.votingPollsLoadFailedTitle,
+                        message: friendlyVotingErrorMessage(
+                          context.l10n,
+                          error,
+                        ),
+                        actionLabel: context.l10n.commonTryAgain,
                         onAction: () => _reloadRoundsWithFreshConfig(),
                       ),
                       data: _buildRoundList,
@@ -140,9 +143,9 @@ class _VotingPollsViewState extends ConsumerState<VotingPollsView> {
 
   Widget _buildRoundList(List<VotingRoundView> items) {
     if (items.isEmpty) {
-      return const _VotingMessage(
-        title: 'No voting rounds available',
-        message: 'There are no token holder voting rounds to display yet.',
+      return _VotingMessage(
+        title: context.l10n.votingPollsEmptyTitle,
+        message: context.l10n.votingPollsEmptyBody,
       );
     }
     final sortedItems = sortVotingRoundsForPollList(items);
@@ -336,7 +339,7 @@ class _VotingHeader extends StatelessWidget {
                   alignment: Alignment.topCenter,
                   children: [
                     Text(
-                      'Vote',
+                      context.l10n.navVote,
                       key: const ValueKey('voting_header_title'),
                       style: AppTypography.headlineLarge.copyWith(
                         color: context.colors.text.accent,
@@ -361,8 +364,8 @@ class _VotingHeader extends StatelessWidget {
                     const Spacer(),
                     AppIconHoverButton(
                       icon: AppIcons.cog,
-                      tooltip: 'Voting config',
-                      semanticLabel: 'Voting config settings',
+                      tooltip: context.l10n.votingConfigTooltip,
+                      semanticLabel: context.l10n.votingConfigSettings,
                       onTap: onSettings,
                       size: 24,
                       iconSize: 16,
@@ -385,14 +388,14 @@ class _VotingBetaLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      key: ValueKey('voting_header_beta_label'),
+    return SizedBox(
+      key: const ValueKey('voting_header_beta_label'),
       width: _votingBetaLabelWidth,
       height: _votingBetaLabelHeight,
       child: Image(
         image: AssetImage(_votingBetaLabelAsset),
         fit: BoxFit.contain,
-        semanticLabel: 'Beta',
+        semanticLabel: context.l10n.votingBetaSemantics,
       ),
     );
   }
@@ -487,10 +490,10 @@ class _MobilePollCardContent extends ConsumerWidget {
     final forumUri = votingRoundForumUriFromJson(round.rawJson);
     final state = _pollCardState(round);
     final dateLabel = _roundDateLabel(
+      context.l10n,
       round.rawJson,
       state,
-      context.l10n.localeName,
-    );
+    )?.mobileText;
     final eligibility = state == _PollCardState.active
         ? ref.watch(votingPollEligibilityProvider(round.roundId))
         : null;
@@ -509,8 +512,8 @@ class _MobilePollCardContent extends ConsumerWidget {
         if (ineligible || alreadyUsed) ...[
           Text(
             alreadyUsed
-                ? 'Already used for this round'
-                : 'Not eligible for this round',
+                ? context.l10n.votingPollAlreadyUsed
+                : context.l10n.votingPollNotEligible,
             key: ValueKey('voting_poll_ineligible_${round.roundId}'),
             style: AppTypography.labelLarge.copyWith(
               color: colors.text.destructive,
@@ -568,7 +571,9 @@ class _MobilePollCardContent extends ConsumerWidget {
               size: AppButtonSize.mediumLarge,
               trailing: const AppIcon(AppIcons.chevronForward),
               child: Text(
-                ineligible || alreadyUsed ? 'View' : _actionLabel(state),
+                ineligible || alreadyUsed
+                    ? context.l10n.votingActionView
+                    : _actionLabel(context.l10n, state),
               ),
             ),
           ],
@@ -587,16 +592,14 @@ class _MobilePollStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final voted = state == _PollCardState.voted;
-    final displayedDate = dateLabel?.startsWith('Closed ') == true
-        ? dateLabel!.substring('Closed '.length)
-        : dateLabel;
+    final displayedDate = dateLabel;
     final statusColor = voted
         ? context.colors.text.positiveStrong
         : state == _PollCardState.closed
         ? context.colors.text.primary
         : context.colors.text.accent;
     final status = Text(
-      _statusLabel(state),
+      _statusLabel(context.l10n, state),
       style: AppTypography.labelLarge.copyWith(
         color: statusColor,
         letterSpacing: -0.04,
@@ -670,11 +673,7 @@ class _PollCardContent extends StatelessWidget {
     final description = _roundDescription(round.rawJson);
     final forumUri = votingRoundForumUriFromJson(round.rawJson);
     final state = _pollCardState(round);
-    final dateLabel = _roundDateLabel(
-      round.rawJson,
-      state,
-      context.l10n.localeName,
-    );
+    final dateLabel = _roundDateLabel(context.l10n, round.rawJson, state)?.text;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -735,7 +734,7 @@ class _PollCardContent extends StatelessWidget {
             onPressed: onAction,
             variant: _actionButtonVariant(state),
             size: AppButtonSize.medium,
-            child: Text(_actionLabel(state)),
+            child: Text(_actionLabel(context.l10n, state)),
           ),
         ),
       ],
@@ -750,7 +749,7 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = _statusLabel(state);
+    final label = _statusLabel(context.l10n, state);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
@@ -852,33 +851,50 @@ String _mobileRoundDescription(String description) {
       .join('\n');
 }
 
-String? _roundDateLabel(
+/// The date line of a round card. [mobileText] drops the "Closed" word for
+/// finished rounds because the mobile status label already says it.
+class _PollDateLabel {
+  const _PollDateLabel(this.text, {String? mobileText})
+    : mobileText = mobileText ?? text;
+
+  final String text;
+  final String mobileText;
+}
+
+_PollDateLabel? _roundDateLabel(
+  AppLocalizations l10n,
   Map<String, dynamic> json,
   _PollCardState state,
-  String localeName,
 ) {
   final start = votingRoundStartDate(json);
   final end = votingRoundEndDate(json);
   if (end != null) {
-    final label = switch (state) {
+    final date = formatMonthDay(end, l10n.localeName);
+    return switch (state) {
       _PollCardState.inProgress ||
       _PollCardState.active ||
-      _PollCardState.voted => 'Closes',
-      _PollCardState.tallying || _PollCardState.closed => 'Closed',
+      _PollCardState.voted => _PollDateLabel(l10n.votingPollCloses(date)),
+      _PollCardState.tallying || _PollCardState.closed => _PollDateLabel(
+        l10n.votingPollClosed(date),
+        mobileText: date,
+      ),
     };
-    return '$label ${formatMonthDay(end, localeName)}';
   }
-  if (start != null) return 'Starts ${formatMonthDay(start, localeName)}';
+  if (start != null) {
+    return _PollDateLabel(
+      l10n.votingPollStarts(formatMonthDay(start, l10n.localeName)),
+    );
+  }
   return null;
 }
 
-String _statusLabel(_PollCardState state) {
+String _statusLabel(AppLocalizations l10n, _PollCardState state) {
   return switch (state) {
-    _PollCardState.inProgress => 'In progress',
-    _PollCardState.active => 'Active',
-    _PollCardState.voted => 'Voted',
-    _PollCardState.tallying => 'Tallying',
-    _PollCardState.closed => 'Closed',
+    _PollCardState.inProgress => l10n.commonInProgress,
+    _PollCardState.active => l10n.votingStatusActive,
+    _PollCardState.voted => l10n.votingStatusVoted,
+    _PollCardState.tallying => l10n.votingStatusTallying,
+    _PollCardState.closed => l10n.votingStatusClosed,
   };
 }
 
@@ -919,12 +935,13 @@ Color _statusText(_PollCardState state) {
   };
 }
 
-String _actionLabel(_PollCardState state) {
+String _actionLabel(AppLocalizations l10n, _PollCardState state) {
   return switch (state) {
-    _PollCardState.inProgress => 'Resume',
-    _PollCardState.active => 'Vote',
-    _PollCardState.voted => 'Review',
-    _PollCardState.tallying || _PollCardState.closed => 'View results',
+    _PollCardState.inProgress => l10n.votingActionResume,
+    _PollCardState.active => l10n.navVote,
+    _PollCardState.voted => l10n.votingActionReview,
+    _PollCardState.tallying ||
+    _PollCardState.closed => l10n.votingActionViewResults,
   };
 }
 

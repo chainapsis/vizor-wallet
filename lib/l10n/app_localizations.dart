@@ -100,6 +100,96 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// Body of the first paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'We built Keplr, the wallet used by millions across Cosmos, Ethereum, and Bitcoin. Vizor is our take on what a Zcash wallet should feel like.'**
+  String get aboutBuiltByBody;
+
+  /// Heading of the first paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Built by the Keplr team'**
+  String get aboutBuiltByHeading;
+
+  /// Body of the placeholder paragraphs on the Terms and Privacy Policy screens.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount.'**
+  String get aboutLegalPlaceholderBody;
+
+  /// Heading of the placeholder paragraphs on the Terms and Privacy Policy screens.
+  ///
+  /// In en, this message translates to:
+  /// **'From the team that brought you Keplr Wallet.'**
+  String get aboutLegalPlaceholderHeading;
+
+  /// Accessibility label of a link button on mobile About; {label} is the visible button label.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} link'**
+  String aboutLinkSemantics(String label);
+
+  /// Accessibility label of the button that opens the Vizor GitHub page.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor GitHub'**
+  String get aboutOpenGithub;
+
+  /// Body of the third paragraph of the About screen; the line break is intentional.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is Apache licensed. Your keys stay on your device.\nWe don\'t see your balances or your transactions.'**
+  String get aboutOpenSourceBody;
+
+  /// Heading of the third paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open source, self-custodied'**
+  String get aboutOpenSourceHeading;
+
+  /// Accessibility label of the button that opens the Vizor website.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor website'**
+  String get aboutOpenWebsite;
+
+  /// Body of the second paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is built around shielded transactions, where the sender, recipient, and amount stay private. Transparent Zcash works too, but private is the default.'**
+  String get aboutShieldedBody;
+
+  /// Heading of the second paragraph of the About screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Designed for shielded Zcash'**
+  String get aboutShieldedHeading;
+
+  /// Title of the Terms of Usage legal screen on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of Usage'**
+  String get aboutTermsTitle;
+
+  /// Title of the About screen, also its top-bar title on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'About Vizor Wallet'**
+  String get aboutTitle;
+
+  /// Version line under the title of the About and legal screens; {version} is the app release number such as 1.2.3.
+  ///
+  /// In en, this message translates to:
+  /// **'Version: {version} Public Beta'**
+  String aboutVersionLabel(String version);
+
+  /// Label of the link button that opens the Vizor website.
+  ///
+  /// In en, this message translates to:
+  /// **'Website'**
+  String get aboutWebsite;
+
   /// Label of the account name field or row.
   ///
   /// In en, this message translates to:
@@ -2521,6 +2611,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Zcash address'**
   String get commonZcashAddress;
+
+  /// Label of the review row that names the donation recipient.
+  ///
+  /// In en, this message translates to:
+  /// **'Donating to'**
+  String get donationDonatingTo;
+
+  /// Placeholder prompt next to the unit selector on the donation amount screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your amount'**
+  String get donationEnterAmount;
+
+  /// Shown under the donation amount field on mobile when the live ZEC price is unavailable, so the USD conversion cannot be shown.
+  ///
+  /// In en, this message translates to:
+  /// **'Price unavailable'**
+  String get donationPriceUnavailable;
+
+  /// Title of the desktop donation review step.
+  ///
+  /// In en, this message translates to:
+  /// **'Review Amount'**
+  String get donationReviewAmountTitle;
+
+  /// Label of the review row on the mobile donation summary that names the balance used for the donation.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending from'**
+  String get donationSendingFrom;
+
+  /// Lead-in of a line on the desktop donation screen, followed by a shield icon and the words 'Shielded balance'.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending from your'**
+  String get donationSendingFromYour;
+
+  /// Accessibility label of the button that toggles the donation amount between ZEC and USD.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch between ZEC and USD'**
+  String get donationSwitchCurrency;
+
+  /// Headline of the desktop screen shown after a donation succeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you for supporting Vizor'**
+  String get donationThanksTitle;
+
+  /// Label of the last row on the mobile donation summary showing amount plus fee.
+  ///
+  /// In en, this message translates to:
+  /// **'Total'**
+  String get donationTotal;
 
   /// Shows the lightwalletd endpoint in use.
   ///
@@ -14004,6 +14148,1374 @@ abstract class AppLocalizations {
   /// **'Restart'**
   String get updateRestart;
 
+  /// Button on a voting round card that continues an unfinished vote submission.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get votingActionResume;
+
+  /// Label of the bottom button that re-checks whether the account may vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry eligibility'**
+  String get votingActionRetryEligibility;
+
+  /// Button on a voting round card that shows the answers already submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get votingActionReview;
+
+  /// Button that opens the screen to review answers before submitting the vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Review answers'**
+  String get votingActionReviewAnswers;
+
+  /// Label of the bottom button of a voting round when voting is not available for this account.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get votingActionUnavailable;
+
+  /// Button on a voting round card of a round this account cannot vote in; opens the round details.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get votingActionView;
+
+  /// Button on a voting round card that opens the results of a closed round.
+  ///
+  /// In en, this message translates to:
+  /// **'View results'**
+  String get votingActionViewResults;
+
+  /// Meta line of a voting round that is open when its end date is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting active'**
+  String get votingActive;
+
+  /// Notice on the voting round page when this account's funds were already used to vote in this round.
+  ///
+  /// In en, this message translates to:
+  /// **'These funds were already used for this round. Voting cannot be restarted on this device.'**
+  String get votingAlreadyUsedNotice;
+
+  /// Accessibility label of the small spinner shown while the vote screen moves on to the next unanswered question.
+  ///
+  /// In en, this message translates to:
+  /// **'Moving to the next unanswered question'**
+  String get votingAutoAdvanceSemantics;
+
+  /// Detail under the casting step while votes are being proved and cast.
+  ///
+  /// In en, this message translates to:
+  /// **'Casting votes'**
+  String get votingBallotCasting;
+
+  /// Detail under the casting step while vote shares are delivered to the voting servers.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivering your responses'**
+  String get votingBallotDelivering;
+
+  /// Detail under the casting step while the ballot is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing your ballot'**
+  String get votingBallotPreparing;
+
+  /// Detail under the casting step while waiting for the votes to confirm on chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for chain confirmation'**
+  String get votingBallotWaitingChain;
+
+  /// Accessibility label of the Beta badge image next to the Vote title.
+  ///
+  /// In en, this message translates to:
+  /// **'Beta'**
+  String get votingBetaSemantics;
+
+  /// Number of voting bundles one Keystone request signs.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 voting bundle} other{{count} voting bundles}}'**
+  String votingBundleCount(int count);
+
+  /// Pager label for one bundle on the mobile Keystone signing screen; a bundle is a group of notes signed together.
+  ///
+  /// In en, this message translates to:
+  /// **'Bundle {number} of {total}'**
+  String votingBundleOf(int number, int total);
+
+  /// Button that re-checks whether this account's funds were already used to vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get votingCheckAgain;
+
+  /// Label of an answer option whose name is unknown; {number} is the option number.
+  ///
+  /// In en, this message translates to:
+  /// **'Choice {number}'**
+  String votingChoiceFallback(int number);
+
+  /// Button or title for adding a custom voting config source URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Add custom source'**
+  String get votingConfigAddCustomSource;
+
+  /// Badge on the default voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get votingConfigBadgeDefault;
+
+  /// Accessibility label of the close button of the voting config panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Close voting config settings'**
+  String get votingConfigCloseSettings;
+
+  /// Accessibility label of the button that copies a voting config source URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy source URL'**
+  String get votingConfigCopyUrl;
+
+  /// Name of the active voting config source when it is a URL the user added but did not save.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom source'**
+  String get votingConfigCustomSource;
+
+  /// Accessibility label of the delete button of a saved voting config source; {name} is the source's title.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {name}'**
+  String votingConfigDeleteNamed(String name);
+
+  /// Accessibility label of the button that deletes a saved voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete saved source'**
+  String get votingConfigDeleteSaved;
+
+  /// Validation error when the custom voting config source URL already exists.
+  ///
+  /// In en, this message translates to:
+  /// **'This source URL is already added.'**
+  String get votingConfigDuplicate;
+
+  /// Title of the form for editing a custom voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit custom source'**
+  String get votingConfigEditCustomSource;
+
+  /// Accessibility label of the edit button of a saved voting config source; {name} is the source's title.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit {name}'**
+  String votingConfigEditNamed(String name);
+
+  /// Accessibility label of the button that edits a saved voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit saved source'**
+  String get votingConfigEditSaved;
+
+  /// Validation error on mobile when the title or URL of a custom voting config source is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a title and source URL.'**
+  String get votingConfigEnterTitleAndUrl;
+
+  /// Label of the URL field of a custom voting config source on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Static config URL'**
+  String get votingConfigFieldStaticUrl;
+
+  /// Label of the title field of a custom voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get votingConfigFieldTitle;
+
+  /// Error shown when the custom voting config source could not be fetched.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting config from that source.'**
+  String get votingConfigLoadFailed;
+
+  /// Label of the URL field of a custom voting config source on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Source URL'**
+  String get votingConfigMobileFieldUrl;
+
+  /// Intro text in the mobile voting config sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where Vizor gets authenticated voting rounds.'**
+  String get votingConfigMobileIntro;
+
+  /// Button on the mobile voting config sheet that saves the custom source.
+  ///
+  /// In en, this message translates to:
+  /// **'Save source'**
+  String get votingConfigMobileSave;
+
+  /// Explanation under the Show test rounds switch on mobile; [TEST] is a literal title marker.
+  ///
+  /// In en, this message translates to:
+  /// **'Include authenticated rounds marked [TEST].'**
+  String get votingConfigMobileTestRoundsHint;
+
+  /// Title of the mobile bottom sheet for choosing the voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote config'**
+  String get votingConfigMobileTitle;
+
+  /// Error on mobile when saving the voting config source failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update voting config. Check the source and try again.'**
+  String get votingConfigMobileUpdateFailed;
+
+  /// Label of the save button while the voting config source choice is being saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving...'**
+  String get votingConfigSaving;
+
+  /// Accessibility label of the settings button on the voting list that opens the voting configuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting config settings'**
+  String get votingConfigSettings;
+
+  /// Title and accessibility label of the switch that shows test voting rounds.
+  ///
+  /// In en, this message translates to:
+  /// **'Show test rounds'**
+  String get votingConfigShowTestRounds;
+
+  /// Explanation under the Show test rounds switch on desktop; [TEST] is a literal title prefix.
+  ///
+  /// In en, this message translates to:
+  /// **'Display authenticated rounds whose titles begin with [TEST].'**
+  String get votingConfigShowTestRoundsHint;
+
+  /// Heading above the list of voting config sources on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Sources'**
+  String get votingConfigSources;
+
+  /// Error shown when changing the Show test rounds setting failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the test round visibility setting.'**
+  String get votingConfigTestVisibilityFailed;
+
+  /// Validation error under the title field when adding a custom voting config source.
+  ///
+  /// In en, this message translates to:
+  /// **'Title must be {max} characters or less.'**
+  String votingConfigTitleTooLong(int max);
+
+  /// Tooltip of the settings icon on the voting list that opens the voting configuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting config'**
+  String get votingConfigTooltip;
+
+  /// Error shown when saving the voting config source failed without a specific reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update voting config.'**
+  String get votingConfigUpdateFailed;
+
+  /// Toast shown after copying a voting config source URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Source URL copied.'**
+  String get votingConfigUrlCopied;
+
+  /// Label of the save button while the custom source is being validated.
+  ///
+  /// In en, this message translates to:
+  /// **'Validating...'**
+  String get votingConfigValidating;
+
+  /// Message on the voting confirmation screen while eligibility is checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking voting eligibility for this account.'**
+  String get votingConfirmationCheckingEligibility;
+
+  /// [security] Body of the voting confirmation screen after the vote was published; votes are final.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote was successfully published and cannot be changed.'**
+  String get votingConfirmationConfirmedBody;
+
+  /// Title of the voting confirmation screen after the vote was published.
+  ///
+  /// In en, this message translates to:
+  /// **'Submission confirmed!'**
+  String get votingConfirmationConfirmedTitle;
+
+  /// Message on the voting confirmation screen when eligibility could not be confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting eligibility has not been confirmed for this account.'**
+  String get votingConfirmationEligibilityUnconfirmed;
+
+  /// Title of the voting confirmation screen when the vote was not fully submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submission not complete'**
+  String get votingConfirmationIncompleteTitle;
+
+  /// Message on the voting confirmation screen when details could not be loaded; {error} is the reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load submission details: {error}'**
+  String votingConfirmationLoadFailed(String error);
+
+  /// Message on the voting confirmation screen when this account did not finish submitting its vote.
+  ///
+  /// In en, this message translates to:
+  /// **'This account has not completed submission for this voting round.'**
+  String get votingConfirmationNotCompleted;
+
+  /// Error on the voting confirmation screen when refreshing the voting rounds list failed after Done was pressed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update voting rounds. Try again.'**
+  String get votingConfirmationUpdateFailed;
+
+  /// Shown on the voting confirmation screen while the voting rounds list refreshes after Done was pressed.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating voting rounds...'**
+  String get votingConfirmationUpdatingRounds;
+
+  /// Dialog button that goes on to the review screen although some questions are unanswered.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue to review'**
+  String get votingContinueToReview;
+
+  /// Button that resumes an unfinished vote submission.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue voting'**
+  String get votingContinueVoting;
+
+  /// Time left in a voting round; zero means it ends today.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =0{Ends today} =1{1 day left} other{{days} days left}}'**
+  String votingDaysLeft(int days);
+
+  /// Title of the error shown on the voting round page when the round could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting round'**
+  String get votingDetailLoadFailedTitle;
+
+  /// Body shown on the voting round page when the selected round does not exist.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected voting round could not be loaded.'**
+  String get votingDetailUnavailableBody;
+
+  /// Title shown on the voting round page when the selected round does not exist.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round unavailable'**
+  String get votingDetailUnavailableTitle;
+
+  /// Meta line of an open voting round; {date} is the end date such as Jan 5, 2026.
+  ///
+  /// In en, this message translates to:
+  /// **'Ends {date}'**
+  String votingEnds(String date);
+
+  /// Error shown when the user cancelled approving a vote on their Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger voting approval was cancelled.'**
+  String get votingErrorLedgerCancelled;
+
+  /// Error shown when the Ledger is locked during voting; {instruction} is a sentence telling the user to open the Zcash app on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your Ledger. {instruction}'**
+  String votingErrorLedgerLocked(String instruction);
+
+  /// Error shown when the user rejected the vote signature on their Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'The vote signature was rejected on your Ledger. Retry to sign again.'**
+  String get votingErrorLedgerRejected;
+
+  /// Error shown when the wrong app is open on the Ledger during voting; {instruction} is a sentence telling the user to open the Zcash app.
+  ///
+  /// In en, this message translates to:
+  /// **'{instruction} Then retry.'**
+  String votingErrorLedgerWrongApp(String instruction);
+
+  /// Error shown when the account's eligible shielded balance is below the round's minimum; {amount} is a ZEC amount and {snapshot} names the snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting requires at least one eligible shielded note bundle with {amount} at {snapshot}. Switch to an eligible account to vote.'**
+  String votingErrorMinimumWeight(String amount, String snapshot);
+
+  /// Error shown when the account had no shielded funds at the snapshot; {snapshot} is a phrase naming the snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'This account is not eligible for this voting round. It had no eligible shielded funds at {snapshot}. Switch to an eligible account to vote.'**
+  String votingErrorNoSpendableNotes(String snapshot);
+
+  /// Generic error shown when a voting action failed without a more specific message.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting session action failed.'**
+  String get votingErrorSessionFailed;
+
+  /// Label of the link button that opens the forum discussion of a voting round or proposal.
+  ///
+  /// In en, this message translates to:
+  /// **'Forum discussion'**
+  String get votingForumDiscussion;
+
+  /// Title of the error shown on the voting pages when the wallet account could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load account'**
+  String get votingGuardAccountLoadFailed;
+
+  /// Title of the dialog explaining that the account cannot vote in this round.
+  ///
+  /// In en, this message translates to:
+  /// **'Not eligible for this voting round'**
+  String get votingIneligibleTitle;
+
+  /// Dialog button that goes back to signing the remaining bundles on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep signing'**
+  String get votingKeepSigning;
+
+  /// Dialog button that returns to the unanswered questions.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep voting'**
+  String get votingKeepVoting;
+
+  /// Label above the memo of one bundle on the Keystone signing panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Bundle {number} of {total} memo'**
+  String votingKeystoneMemoLabel(int number, int total);
+
+  /// Message on the Keystone signing panel when a new request QR for the next group of bundles is shown.
+  ///
+  /// In en, this message translates to:
+  /// **'The next signing batch is ready'**
+  String get votingKeystoneNextBatch;
+
+  /// Tooltip of the button that shows the memo of the next bundle.
+  ///
+  /// In en, this message translates to:
+  /// **'Next bundle memo'**
+  String get votingKeystoneNextMemo;
+
+  /// Caption under the Keystone request QR when a single approval signs all bundles.
+  ///
+  /// In en, this message translates to:
+  /// **'One Keystone approval'**
+  String get votingKeystoneOneApproval;
+
+  /// Tooltip of the button that shows the memo of the previous bundle.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous bundle memo'**
+  String get votingKeystonePreviousMemo;
+
+  /// Caption under the Keystone request QR when it covers only part of the remaining bundles.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR signs {count} of {total} remaining bundles'**
+  String votingKeystoneQrPartial(int count, int total);
+
+  /// Instruction on the Keystone signing panel describing the two-way QR exchange.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR on this screen with Keystone. Then, scan the signed voting QR displayed on Keystone with this device\'s camera'**
+  String get votingKeystoneScanInstruction;
+
+  /// Button on the Keystone signing panel that opens the camera to scan the signed QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan signature'**
+  String get votingKeystoneScanSignature;
+
+  /// Heading of the Keystone signing panel; zero means the request is still being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Preparing voting signatures} =1{Sign 1 voting bundle} other{Sign {count} voting bundles}}'**
+  String votingKeystoneSignLabel(int count);
+
+  /// Error shown when the scanned QR is not the signed voting result.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed voting QR on Keystone, then scan again.'**
+  String get votingKeystoneUnexpectedUr;
+
+  /// [security] Notice on the Ledger panel: approving on the device authorizes the delegation, and the memo must be checked in Vizor because the device may not show it verbatim.
+  ///
+  /// In en, this message translates to:
+  /// **'Approving on Ledger authorizes this voting delegation. Review the memo below in Vizor before continuing; the device may not display this memo verbatim.'**
+  String get votingLedgerApprovalNotice;
+
+  /// Progress of the Ledger approval; a bundle is a group of notes signed together.
+  ///
+  /// In en, this message translates to:
+  /// **'Bundle {number} of {total}'**
+  String votingLedgerBundleOf(int number, int total);
+
+  /// Title of the Ledger panel while the device is checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your Ledger'**
+  String get votingLedgerChecking;
+
+  /// Body of the Ledger panel while the device is checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is checking whether the Zcash app is ready.'**
+  String get votingLedgerCheckingBody;
+
+  /// Title of the Ledger panel while the user must approve opening the Zcash app on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm opening Zcash'**
+  String get votingLedgerConfirmOpen;
+
+  /// Body of the Ledger panel asking the user to approve opening the Zcash app on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve the request to open the Zcash app on your Ledger.'**
+  String get votingLedgerConfirmOpenBody;
+
+  /// Title of the Ledger panel while the delegation is finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing voting delegation'**
+  String get votingLedgerFinishing;
+
+  /// Title of the Ledger panel when the device has a problem.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger needs attention'**
+  String get votingLedgerNeedsAttention;
+
+  /// Heading of the desktop Ledger signing panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting delegation'**
+  String get votingLedgerPanelTitle;
+
+  /// Body of the Ledger panel while the request is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait while Vizor prepares your request.'**
+  String get votingLedgerPleaseWait;
+
+  /// Title of the Ledger panel while the delegation request is prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing voting delegation'**
+  String get votingLedgerPreparing;
+
+  /// Fallback body of the Ledger panel when the device has a problem and no detail is known.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect your Ledger and try again.'**
+  String get votingLedgerReconnect;
+
+  /// Error on the mobile voting pages when the wallet account could not be loaded; {error} is the reason on a new line.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load account.\n{error}'**
+  String votingMobileAccountLoadFailed(String error);
+
+  /// Button on the mobile vote-submitted screen that returns to the home screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Go home'**
+  String get votingMobileGoHome;
+
+  /// Title in the sticky header of a mobile voting page.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting'**
+  String get votingMobileHeaderTitle;
+
+  /// Status on the mobile Keystone screen while the signature is verified.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking voting signature...'**
+  String get votingMobileKeystoneChecking;
+
+  /// Instruction on the mobile Keystone signing screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the voting request with Keystone, approve it, then scan the signed result with this device.'**
+  String get votingMobileKeystoneDescription;
+
+  /// Title of the mobile Keystone signing screen when the signature could not be used.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting signature failed'**
+  String get votingMobileKeystoneFailedTitle;
+
+  /// Accessibility label of the button that shows the next bundle's memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Next voting bundle'**
+  String get votingMobileKeystoneNextBundle;
+
+  /// Accessibility label of the button that shows the previous bundle's memo.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous voting bundle'**
+  String get votingMobileKeystonePreviousBundle;
+
+  /// Status on the mobile Keystone screen while the scanned signature is read.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading voting signature...'**
+  String get votingMobileKeystoneReading;
+
+  /// Caption under the camera view on the mobile Keystone screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the signed voting QR shown on Keystone'**
+  String get votingMobileKeystoneScanCaption;
+
+  /// Button on the mobile Keystone screen that submits with only the bundles signed so far.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip unsigned bundles'**
+  String get votingMobileKeystoneSkipUnsigned;
+
+  /// Title of the mobile screen that shows the QR for signing the vote on Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign vote with Keystone'**
+  String get votingMobileKeystoneTitle;
+
+  /// [security] Notice on the mobile submission screen telling the user to stay on it.
+  ///
+  /// In en, this message translates to:
+  /// **'Don’t leave this window.'**
+  String get votingMobileLeaveWarning;
+
+  /// Accessibility label of the progress ring of the active submission step.
+  ///
+  /// In en, this message translates to:
+  /// **'Active voting submission step progress'**
+  String get votingMobileProgressSemantics;
+
+  /// [security] Notice on the mobile submission screen that proofs take about a minute and closing may lose their progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating zero-knowledge proofs can take about 60 seconds, closing now may lose in-flight proof work.'**
+  String get votingMobileProofNotice;
+
+  /// Top-bar title of the mobile screen shown while the vote is submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit vote'**
+  String get votingMobileSubmitTitle;
+
+  /// Body of the mobile screen shown after the vote was submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote has been submitted and can’t be changed.'**
+  String get votingMobileSubmittedBody;
+
+  /// Top-bar title of the mobile screen shown after the vote was submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote submitted'**
+  String get votingMobileSubmittedTitle;
+
+  /// Title of the mobile screen while votes are being submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting votes...'**
+  String get votingMobileSubmittingTitle;
+
+  /// Progress label when every question has an answer.
+  ///
+  /// In en, this message translates to:
+  /// **'All questions answered'**
+  String get votingNavAllAnswered;
+
+  /// Progress label on the sticky action bar showing how many questions are answered.
+  ///
+  /// In en, this message translates to:
+  /// **'{answered} / {total} answered'**
+  String votingNavAnsweredProgress(int answered, int total);
+
+  /// Hint in the questions sheet when every question is answered.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answers are ready to review.'**
+  String get votingNavReadyToReview;
+
+  /// Hint in the unanswered questions sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap a question to jump to it.'**
+  String get votingNavTapToJump;
+
+  /// Progress label with the number of unanswered questions.
+  ///
+  /// In en, this message translates to:
+  /// **'Unanswered · {count}'**
+  String votingNavUnansweredCount(int count);
+
+  /// Accessibility label of the menu listing the unanswered questions.
+  ///
+  /// In en, this message translates to:
+  /// **'Unanswered questions'**
+  String get votingNavUnansweredMenu;
+
+  /// Body shown when a voting round has no proposals.
+  ///
+  /// In en, this message translates to:
+  /// **'This voting round does not contain any proposals.'**
+  String get votingNoProposalsBody;
+
+  /// Title shown when a voting round has no proposals.
+  ///
+  /// In en, this message translates to:
+  /// **'No proposals'**
+  String get votingNoProposalsTitle;
+
+  /// Shown in place of the voting power value when it is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available'**
+  String get votingNotAvailable;
+
+  /// Label shown when the account may not vote in the round; used on a button and as a badge.
+  ///
+  /// In en, this message translates to:
+  /// **'Not eligible'**
+  String get votingNotEligible;
+
+  /// Trailing label of an answer option that can be picked.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose'**
+  String get votingOptionChoose;
+
+  /// Trailing label of the answer option the user picked.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected'**
+  String get votingOptionSelected;
+
+  /// Body shown on a voting round whose vote was started but not completed.
+  ///
+  /// In en, this message translates to:
+  /// **'You have an unfinished vote for this round. Resume to complete the submission.'**
+  String get votingPendingBody;
+
+  /// Title shown on a voting round whose vote was started but not completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote in progress'**
+  String get votingPendingTitle;
+
+  /// Error shown when the PIR servers are already past the voting round's snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured PIR endpoints are ahead of this voting round snapshot. Expected snapshot block {expected}; endpoints report {reported}.'**
+  String votingPirAhead(String expected, String reported);
+
+  /// Error shown when the PIR servers have not reached the voting round's snapshot block yet; PIR is a private information retrieval service.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting PIR data is not ready for this voting round yet. Expected snapshot block {expected}; PIR endpoints report {reported}. Retry once the PIR service catches up.'**
+  String votingPirBehind(String expected, String reported);
+
+  /// Error shown when no PIR server matches the voting round's snapshot block.
+  ///
+  /// In en, this message translates to:
+  /// **'No PIR endpoint matched this voting round snapshot. Expected snapshot block {expected}.'**
+  String votingPirNoMatch(String expected);
+
+  /// Technical error detail shown when no PIR server matches the snapshot; {diagnostics} is a machine-written list per endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'No PIR endpoint matched this voting round snapshot. Expected snapshot block {expected}. Diagnostics: {diagnostics}.'**
+  String votingPirNoMatchDiagnostics(String expected, String diagnostics);
+
+  /// Error shown when none of the configured PIR servers could be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reach any configured PIR endpoint. Check your network connection and retry.'**
+  String get votingPirUnreachable;
+
+  /// Label on a voting round card when this account's funds were already used to vote in this round.
+  ///
+  /// In en, this message translates to:
+  /// **'Already used for this round'**
+  String get votingPollAlreadyUsed;
+
+  /// Closing date on a finished voting round card; {date} is a short date such as Jan 5.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed {date}'**
+  String votingPollClosed(String date);
+
+  /// Closing date on an open voting round card; {date} is a short date such as Jan 5.
+  ///
+  /// In en, this message translates to:
+  /// **'Closes {date}'**
+  String votingPollCloses(String date);
+
+  /// Label on a voting round card when the account has no voting power in this round.
+  ///
+  /// In en, this message translates to:
+  /// **'Not eligible for this round'**
+  String get votingPollNotEligible;
+
+  /// Start date on an upcoming voting round card; {date} is a short date such as Jan 5.
+  ///
+  /// In en, this message translates to:
+  /// **'Starts {date}'**
+  String votingPollStarts(String date);
+
+  /// Body of the empty state on the voting list.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no token holder voting rounds to display yet.'**
+  String get votingPollsEmptyBody;
+
+  /// Title of the empty state on the voting list.
+  ///
+  /// In en, this message translates to:
+  /// **'No voting rounds available'**
+  String get votingPollsEmptyTitle;
+
+  /// Title of the error shown on the voting list when the voting rounds could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting rounds'**
+  String get votingPollsLoadFailedTitle;
+
+  /// Meta line of a voting round showing the account's voting power; {amount} is a ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting power {amount}'**
+  String votingPowerMeta(String amount);
+
+  /// Message shown when the account's voting power could not be determined.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting power unavailable.'**
+  String get votingPowerUnavailableSentence;
+
+  /// Short note in the voting round summary when the account's voting power could not be determined.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting power unavailable'**
+  String get votingPowerUnavailableTitle;
+
+  /// Value of the voting power row while the voting power is being calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing...'**
+  String get votingPreparingEllipsis;
+
+  /// Message shown while the wallet calculates how much voting power the account has.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing voting power.'**
+  String get votingPreparingPower;
+
+  /// Meta line of a voting round while the voting power is being calculated.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing voting power'**
+  String get votingPreparingPowerMeta;
+
+  /// [security] Note on the voting round page: a small part of the user's voting power is withheld so the submission cannot be linked to the user; {amount} is a ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} is left out of this vote to keep your submission less identifiable.'**
+  String votingPrivacyTrimNotice(String amount);
+
+  /// Progress count under the proving step of voting submission; a bundle is a group of notes proved together.
+  ///
+  /// In en, this message translates to:
+  /// **'{proved} of {total} bundles proved'**
+  String votingProgressBundlesProved(int proved, int total);
+
+  /// Detail under the proving step once all bundles are proved; {suffix} is empty or a dash followed by a count.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing delegation{suffix}'**
+  String votingProgressFinalizingDelegation(String suffix);
+
+  /// Detail under the proving step while a proof started earlier is reused; {suffix} is empty or a dash followed by a count.
+  ///
+  /// In en, this message translates to:
+  /// **'Reusing an in-progress proof{suffix}'**
+  String votingProgressReusingProof(String suffix);
+
+  /// Accessibility value of the progress ring when the progress is not known.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get votingProgressUnknown;
+
+  /// Detail under the proving step while waiting for the chain; {suffix} is empty or a dash followed by a proved-bundles count.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for submission and confirmation{suffix}'**
+  String votingProgressWaitingConfirmation(String suffix);
+
+  /// Label of the receipt row showing the account's voting power in ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting power'**
+  String get votingReceiptPower;
+
+  /// Label of the receipt row naming the voting round.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round'**
+  String get votingReceiptRound;
+
+  /// Number of bundles signed by this Keystone request out of those still unsigned.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of {total} remaining bundles'**
+  String votingRemainingBundles(int count, int total);
+
+  /// Title of the voting results screen when the round has no title.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting results'**
+  String get votingResultsFallbackTitle;
+
+  /// Heading above the list of proposal results on the desktop voting results screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Results'**
+  String get votingResultsHeading;
+
+  /// Button that collapses a proposal's long description on the results screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide description'**
+  String get votingResultsHideDescription;
+
+  /// Error on the voting results screen when the tally could not be loaded; {error} is the reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load results: {error}'**
+  String votingResultsLoadFailed(String error);
+
+  /// Message on the voting results screen when the round has no proposals.
+  ///
+  /// In en, this message translates to:
+  /// **'No proposals in this round.'**
+  String get votingResultsNoProposals;
+
+  /// Message on the voting results screen while the tally is not ready yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Results pending...'**
+  String get votingResultsPending;
+
+  /// Error on the voting results screen when the round details could not be loaded; {error} is the reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load voting round details: {error}'**
+  String votingResultsRoundLoadFailed(String error);
+
+  /// Button that expands a proposal's long description on the results screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Show description'**
+  String get votingResultsShowDescription;
+
+  /// Label of the total votes row in a proposal result.
+  ///
+  /// In en, this message translates to:
+  /// **'Total'**
+  String get votingResultsTotal;
+
+  /// Line on a proposal result with the total voting weight cast; {amount} is a ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Total: {amount}'**
+  String votingResultsTotalAmount(String amount);
+
+  /// Badge on a proposal result showing the user voted on it.
+  ///
+  /// In en, this message translates to:
+  /// **'Voted'**
+  String get votingResultsVoted;
+
+  /// Line on a proposal result naming the option the user voted for; {choice} is the option label from the vote data.
+  ///
+  /// In en, this message translates to:
+  /// **'Voted: {choice}'**
+  String votingResultsVotedFor(String choice);
+
+  /// Label marking the winning option in a proposal result.
+  ///
+  /// In en, this message translates to:
+  /// **'Winner'**
+  String get votingResultsWinner;
+
+  /// Label marking the option the user voted for in a proposal result.
+  ///
+  /// In en, this message translates to:
+  /// **'Your vote'**
+  String get votingResultsYourVote;
+
+  /// Message on the review screen when no question has an answer yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose at least one option before submitting.'**
+  String get votingReviewChooseOne;
+
+  /// Button on the review screen that submits the vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & submit'**
+  String get votingReviewConfirmSubmit;
+
+  /// Error shown on the vote review screen when it failed to load; {error} is the reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load review: {error}'**
+  String votingReviewLoadFailed(String error);
+
+  /// Status on the review screen of a question the user did not answer.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped'**
+  String get votingReviewSkipped;
+
+  /// Title of the screen where the user checks their answers before submitting the vote.
+  ///
+  /// In en, this message translates to:
+  /// **'Review your answers'**
+  String get votingReviewTitle;
+
+  /// Instruction on the desktop screen that scans the signed voting QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold the Keystone QR code steady in front of your camera'**
+  String get votingScanHold;
+
+  /// Message on the desktop scan screen when no camera is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone voting uses camera QR scanning only. Connect a camera and try again.'**
+  String get votingScanNoCamera;
+
+  /// Status on the desktop scan screen while the signature is decoded.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature...'**
+  String get votingScanReading;
+
+  /// Hint on the desktop scan screen when the QR code could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the QR code steady and fully visible.'**
+  String get votingScanSteady;
+
+  /// Title of the desktop screen that scans the signed voting QR from Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan voting signature'**
+  String get votingScanTitle;
+
+  /// Body of the dialog offering to submit with only the signed bundles.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor can submit now using only signatures already scanned from Keystone.'**
+  String get votingSignedOnlyBody;
+
+  /// Title of the dialog offering to submit the vote with only the bundles already signed on Keystone; a bundle is a group of notes signed together.
+  ///
+  /// In en, this message translates to:
+  /// **'Use signed bundles only?'**
+  String get votingSignedOnlyTitle;
+
+  /// [security] Warning in the dialog that unsigned bundles are dropped and voting power is reduced.
+  ///
+  /// In en, this message translates to:
+  /// **'Unsigned bundles are skipped, which lowers voting power for this voting round.'**
+  String get votingSignedOnlyWarning;
+
+  /// Button on the Keystone signing panel that skips the bundles still unsigned.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get votingSkip;
+
+  /// Dialog button that submits the vote without the unsigned bundles.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip bundles'**
+  String get votingSkipBundles;
+
+  /// Body of the dialog asking whether to continue while some questions are unanswered.
+  ///
+  /// In en, this message translates to:
+  /// **'You have not answered {skipped} of {total} questions. The review screen will mark them as skipped, and skipped questions will not be submitted.'**
+  String votingSkipDialogBody(int skipped, int total);
+
+  /// Title of the dialog asking whether to continue while some questions are unanswered.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip unanswered questions?'**
+  String get votingSkipDialogTitle;
+
+  /// Phrase naming the voting round's snapshot block; {height} is the formatted block number. Used inside eligibility error sentences.
+  ///
+  /// In en, this message translates to:
+  /// **'snapshot block {height}'**
+  String votingSnapshotBlock(String height);
+
+  /// Phrase naming the voting round's snapshot block when its height is unknown; used inside eligibility error sentences.
+  ///
+  /// In en, this message translates to:
+  /// **'the voting round snapshot block'**
+  String get votingSnapshotUnknown;
+
+  /// Body shown when the voting round needs a software account but a hardware account is active.
+  ///
+  /// In en, this message translates to:
+  /// **'Token holder voting requires a software account. Switch to a software account to vote in this round.'**
+  String get votingSoftwareRequiredBody;
+
+  /// Title shown when the voting round needs a software account but a hardware account is active.
+  ///
+  /// In en, this message translates to:
+  /// **'Software account required'**
+  String get votingSoftwareRequiredTitle;
+
+  /// Status badge of a voting round that is open for voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get votingStatusActive;
+
+  /// [security] Body of the voting status screen warning not to close the window while proofs are generated.
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.'**
+  String get votingStatusBodyKeepOpen;
+
+  /// Body of the voting status screen while Ledger approvals are pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open. Follow the instructions below for each voting bundle.'**
+  String get votingStatusBodyLedger;
+
+  /// Status badge of a voting round that has closed.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get votingStatusClosed;
+
+  /// Fallback error on the voting status screen when no specific error text exists.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting failed.'**
+  String get votingStatusFailed;
+
+  /// Generic error on the voting status screen when voting failed without a specific reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting could not continue for this account. Retry, or switch to an eligible account if this account cannot vote in this voting round.'**
+  String get votingStatusGenericError;
+
+  /// Status badge of a voting round that closed and whose results are being counted.
+  ///
+  /// In en, this message translates to:
+  /// **'Tallying'**
+  String get votingStatusTallying;
+
+  /// Title of the desktop voting status screen while a Ledger approval is pending.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting with Ledger'**
+  String get votingStatusTitleLedger;
+
+  /// Title of the desktop voting status screen while votes are submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting votes'**
+  String get votingStatusTitleSubmitting;
+
+  /// Status badge of a voting round in which this account already voted.
+  ///
+  /// In en, this message translates to:
+  /// **'Voted'**
+  String get votingStatusVoted;
+
+  /// Step label of the voting progress list while votes are cast and vote shares are submitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Casting votes and submitting shares'**
+  String get votingStepCasting;
+
+  /// Step label of the voting progress list for the last step.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing submission'**
+  String get votingStepFinalizing;
+
+  /// Step label of the voting progress list while the zero-knowledge proof of voting authority is generated.
+  ///
+  /// In en, this message translates to:
+  /// **'Proving voting authority'**
+  String get votingStepProving;
+
+  /// Step label of the voting progress list while signing on a Keystone.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing with Keystone'**
+  String get votingStepSigningKeystone;
+
+  /// Step label of the voting progress list while signing on a Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing with Ledger'**
+  String get votingStepSigningLedger;
+
+  /// Dialog button that opens the account switcher so the user can pick an eligible account.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch account'**
+  String get votingSwitchAccount;
+
+  /// Closing sentence of the eligibility error messages; the screen shows it separately and it must end those messages with identical wording.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to an eligible account to vote.'**
+  String get votingSwitchEligibleGuidance;
+
+  /// Line in the wallet sync box showing how many blocks are left to sync.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} blocks remaining'**
+  String votingSyncBlocksRemaining(int count);
+
+  /// Part of the wallet sync detail line on the voting status screen; {height} is the latest block number.
+  ///
+  /// In en, this message translates to:
+  /// **'chain tip {height}'**
+  String votingSyncChainTip(int height);
+
+  /// Part of the wallet sync detail line on the voting status screen; {height} is a block number.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced to block {height}'**
+  String votingSyncSynced(int height);
+
+  /// Body of the box shown while the wallet is still syncing up to the voting snapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Your wallet is catching up to this voting round snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.'**
+  String get votingSyncWaitingBody;
+
+  /// Title of the box shown while the wallet is still syncing up to the voting snapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for wallet sync'**
+  String get votingSyncWaitingTitle;
+
+  /// Names one failed delegation bundle with its reason inside the terminal delegation error.
+  ///
+  /// In en, this message translates to:
+  /// **'bundle {number} ({reason})'**
+  String votingTerminalBundle(int number, String reason);
+
+  /// [security] Error when several delegation bundles can no longer continue; warns against retrying because the transactions may already be on chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegation for {bundles} cannot continue. Do not retry it; the transaction may already be on the chain.'**
+  String votingTerminalMultiple(String bundles);
+
+  /// Reason used inside the terminal delegation error when the bundle gave no failure detail.
+  ///
+  /// In en, this message translates to:
+  /// **'it ended without confirming'**
+  String get votingTerminalReasonDefault;
+
+  /// [security] Error when one delegation bundle can no longer continue; warns against retrying because the transaction may already be on chain.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegation {bundle} cannot continue. Do not retry it; the transaction may already be on the chain.'**
+  String votingTerminalSingle(String bundle);
+
+  /// Fallback name of a voting round shown when the round has no title.
+  ///
+  /// In en, this message translates to:
+  /// **'Token holder voting'**
+  String get votingTokenHolderTitle;
+
+  /// Button that collapses a long description.
+  ///
+  /// In en, this message translates to:
+  /// **'View less'**
+  String get votingViewLess;
+
+  /// Button that expands a long description.
+  ///
+  /// In en, this message translates to:
+  /// **'View more'**
+  String get votingViewMore;
+
+  /// Note that a submitted vote can no longer be changed.
+  ///
+  /// In en, this message translates to:
+  /// **'Vote locked'**
+  String get votingVoteLocked;
+
+  /// Line under the title of a voting round the user already voted in; {date} is the voting date such as Jan 5, 2026.
+  ///
+  /// In en, this message translates to:
+  /// **'Voted {date}'**
+  String votingVotedOn(String date);
+
   /// Section title above the list of importable accounts.
   ///
   /// In en, this message translates to:
@@ -14045,6 +15557,168 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Deselect all'**
   String get walletLinkDeselectAll;
+
+  /// [security] Subtitle of the desktop password prompt that explains why the password is needed before linking Vizor Mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'To link Vizor Mobile.'**
+  String get walletLinkDesktopConfirmSubtitle;
+
+  /// First sentence of the privacy note on the placeholder shown before the QR code appears; followed by a bold sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'The code is encrypted with a one-time key and expires after a minute.'**
+  String get walletLinkDesktopEncryptedNotice;
+
+  /// Bold second sentence of the privacy note on the QR placeholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Only your phone can decode it.'**
+  String get walletLinkDesktopEncryptedStrong;
+
+  /// Error on the desktop link screen when an account lacks the data needed to derive its keys.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet account derivation metadata is not available.'**
+  String get walletLinkDesktopErrorDerivationMissing;
+
+  /// Error on the desktop link screen when the code expired before it could be displayed.
+  ///
+  /// In en, this message translates to:
+  /// **'The mobile link expired before it could be shown.'**
+  String get walletLinkDesktopErrorExpiredBeforeShown;
+
+  /// Fallback message on the desktop link error screen when no specific reason is known.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare the mobile link.'**
+  String get walletLinkDesktopErrorFallback;
+
+  /// Error on the desktop link screen when a hardware wallet account lacks its stored metadata.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardware wallet metadata is not available.'**
+  String get walletLinkDesktopErrorHardwareMetadataMissing;
+
+  /// [security] Error on the desktop link screen when the wallet secrets are not available because the wallet is locked.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock this wallet before linking mobile.'**
+  String get walletLinkDesktopErrorLocked;
+
+  /// Error on the desktop link screen when the wallet has no accounts to link.
+  ///
+  /// In en, this message translates to:
+  /// **'No wallet accounts are available to link.'**
+  String get walletLinkDesktopErrorNoAccounts;
+
+  /// Generic error on the desktop link screen when preparing the link failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare the mobile link. Try again.'**
+  String get walletLinkDesktopErrorPrepareFailed;
+
+  /// Error on the desktop link screen when the linking server cannot be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach the linking server. Try again.'**
+  String get walletLinkDesktopErrorServerUnreachable;
+
+  /// Body of the expired-link screen on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'For your security the link is only valid for a minute. Generate a fresh code and scan it again.'**
+  String get walletLinkDesktopExpiredBody;
+
+  /// Title of the screen shown when the one-time link code expired.
+  ///
+  /// In en, this message translates to:
+  /// **'Time’s up'**
+  String get walletLinkDesktopExpiredTitle;
+
+  /// Countdown under the QR code; {time} is the remaining time such as 0:45.
+  ///
+  /// In en, this message translates to:
+  /// **'Expires in {time}'**
+  String walletLinkDesktopExpiresIn(String time);
+
+  /// Button on the expired-link screen that creates a new one-time code.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate new code'**
+  String get walletLinkDesktopGenerateNewCode;
+
+  /// Body text on the desktop link screen before a code is generated.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect this wallet to your Vizor mobile app by scanning a one-time QR code.'**
+  String get walletLinkDesktopInitialBody;
+
+  /// Body of the success screen when the number of imported items is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor Mobile was linked to this wallet.'**
+  String get walletLinkDesktopLinkedBody;
+
+  /// Body of the success screen reporting how many accounts and contacts the phone imported.
+  ///
+  /// In en, this message translates to:
+  /// **'{accountCount, plural, =1{1 account} other{{accountCount} accounts}} and {contactCount, plural, =1{1 contact} other{{contactCount} contacts}} were imported on mobile.'**
+  String walletLinkDesktopLinkedCounts(int accountCount, int contactCount);
+
+  /// Title of the success screen after the phone finished linking.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor Mobile linked successfully'**
+  String get walletLinkDesktopLinkedTitle;
+
+  /// Label of the start button on the desktop link screen while the link is being prepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing'**
+  String get walletLinkDesktopPreparing;
+
+  /// Status line under the QR code saying the single code is ready to be scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'1/1 Ready to scan...'**
+  String get walletLinkDesktopReadyToScan;
+
+  /// Button under the QR code that creates a fresh one-time code.
+  ///
+  /// In en, this message translates to:
+  /// **'Regenerate'**
+  String get walletLinkDesktopRegenerate;
+
+  /// Instruction under the QR title; the arrows separate menu steps in the mobile app and 'Link Vizor Desktop' is a menu name.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Vizor on your phone → Add a wallet → Link Vizor Desktop'**
+  String get walletLinkDesktopScanBody;
+
+  /// Title above the one-time QR code on the desktop link screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan with Vizor mobile'**
+  String get walletLinkDesktopScanTitle;
+
+  /// Button on the desktop link screen that generates the one-time QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Start linking'**
+  String get walletLinkDesktopStartLinking;
+
+  /// Title of the desktop screen that starts linking the desktop wallet to the Vizor mobile app.
+  ///
+  /// In en, this message translates to:
+  /// **'Link Vizor Mobile'**
+  String get walletLinkDesktopTitle;
+
+  /// Title of the desktop link error screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Link unavailable'**
+  String get walletLinkDesktopUnavailableTitle;
 
   /// Body of the expired link error; 'Generate new code' is the name of a button in the desktop app.
   ///

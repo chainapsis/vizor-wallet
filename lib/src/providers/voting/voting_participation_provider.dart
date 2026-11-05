@@ -21,9 +21,6 @@ import 'voting_round_visibility_provider.dart';
 import 'voting_share_tracking_registry_provider.dart';
 import 'voting_state.dart';
 
-const votingAlreadyUsedMessage =
-    'These funds were already used for this round. Voting cannot be restarted on this device.';
-
 /// Integration tests can supply their signed, local regtest config identity.
 /// This changes routing support only, never a participation result.
 final votingParticipationSourceSupportedProvider =

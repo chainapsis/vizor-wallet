@@ -9,6 +9,59 @@ class AppLocalizationsKo extends AppLocalizations {
   AppLocalizationsKo([String locale = 'ko']) : super(locale);
 
   @override
+  String get aboutBuiltByBody =>
+      '저⁠희⁠는 Cosmos, Ethereum, Bitcoin⁠에⁠서 수⁠백⁠만 명⁠이 쓰⁠는 지⁠갑 Keplr⁠을 만⁠들⁠었⁠어⁠요. Vizor⁠는 Zcash 지⁠갑⁠이 어⁠떠⁠해⁠야 하⁠는⁠지⁠에 대⁠한 저⁠희⁠의 답⁠이⁠에⁠요.';
+
+  @override
+  String get aboutBuiltByHeading => 'Keplr 팀⁠이 만⁠들⁠었⁠어⁠요';
+
+  @override
+  String get aboutLegalPlaceholderBody =>
+      'Bitcoin⁠이⁠나 Ethereum⁠과 달⁠리 차⁠폐 Zcash 거⁠래⁠는 보⁠낸 사⁠람, 받⁠는 사⁠람, 금⁠액⁠을 숨⁠겨⁠요.';
+
+  @override
+  String get aboutLegalPlaceholderHeading => 'Keplr 지⁠갑⁠을 만⁠든 팀⁠이 만⁠들⁠었⁠어⁠요.';
+
+  @override
+  String aboutLinkSemantics(String label) {
+    return '$label 링⁠크';
+  }
+
+  @override
+  String get aboutOpenGithub => 'Vizor GitHub 열⁠기';
+
+  @override
+  String get aboutOpenSourceBody =>
+      'Vizor⁠는 Apache 라⁠이⁠선⁠스⁠로 공⁠개⁠돼 있⁠어⁠요. 키⁠는 내 기⁠기⁠에⁠만 있⁠어⁠요.\n잔⁠액⁠이⁠나 거⁠래 내⁠역⁠은 저⁠희⁠가 볼 수 없⁠어⁠요.';
+
+  @override
+  String get aboutOpenSourceHeading => '오⁠픈 소⁠스, 자⁠기 보⁠관';
+
+  @override
+  String get aboutOpenWebsite => 'Vizor 웹⁠사⁠이⁠트 열⁠기';
+
+  @override
+  String get aboutShieldedBody =>
+      'Vizor⁠는 보⁠낸 사⁠람, 받⁠는 사⁠람, 금⁠액⁠이 비⁠공⁠개⁠로 유⁠지⁠되⁠는 차⁠폐 거⁠래⁠를 중⁠심⁠으⁠로 만⁠들⁠어⁠졌⁠어⁠요. 투⁠명 Zcash⁠도 쓸 수 있⁠지⁠만 기⁠본⁠은 비⁠공⁠개⁠예⁠요.';
+
+  @override
+  String get aboutShieldedHeading => '차⁠폐 Zcash⁠를 위⁠해 설⁠계⁠했⁠어⁠요';
+
+  @override
+  String get aboutTermsTitle => '이⁠용 약⁠관';
+
+  @override
+  String get aboutTitle => 'Vizor 지⁠갑 정⁠보';
+
+  @override
+  String aboutVersionLabel(String version) {
+    return '버⁠전: $version 퍼⁠블⁠릭 베⁠타';
+  }
+
+  @override
+  String get aboutWebsite => '웹⁠사⁠이⁠트';
+
+  @override
   String get accountNameLabel => '계⁠정 이⁠름';
 
   @override
@@ -1334,6 +1387,33 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonZcashAddress => 'Zcash 주⁠소';
+
+  @override
+  String get donationDonatingTo => '기⁠부 대⁠상';
+
+  @override
+  String get donationEnterAmount => '금⁠액⁠을 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get donationPriceUnavailable => '가⁠격⁠을 불⁠러⁠올 수 없⁠어⁠요';
+
+  @override
+  String get donationReviewAmountTitle => '금⁠액 확⁠인';
+
+  @override
+  String get donationSendingFrom => '보⁠내⁠는 곳';
+
+  @override
+  String get donationSendingFromYour => '보⁠내⁠는 곳:';
+
+  @override
+  String get donationSwitchCurrency => 'ZEC⁠와 USD 전⁠환';
+
+  @override
+  String get donationThanksTitle => 'Vizor⁠를 후⁠원⁠해 주⁠셔⁠서 감⁠사⁠해⁠요';
+
+  @override
+  String get donationTotal => '합⁠계';
 
   @override
   String endpointCurrent(String endpoint) {
@@ -8177,6 +8257,831 @@ class AppLocalizationsKo extends AppLocalizations {
   String get updateRestart => '다⁠시 시⁠작';
 
   @override
+  String get votingActionResume => '이⁠어⁠하⁠기';
+
+  @override
+  String get votingActionRetryEligibility => '자⁠격 다⁠시 확⁠인';
+
+  @override
+  String get votingActionReview => '확⁠인';
+
+  @override
+  String get votingActionReviewAnswers => '답⁠변 확⁠인';
+
+  @override
+  String get votingActionUnavailable => '사⁠용⁠할 수 없⁠음';
+
+  @override
+  String get votingActionView => '보⁠기';
+
+  @override
+  String get votingActionViewResults => '결⁠과 보⁠기';
+
+  @override
+  String get votingActive => '투⁠표 진⁠행 중';
+
+  @override
+  String get votingAlreadyUsedNotice =>
+      '이 자⁠금⁠은 이⁠미 이⁠번 라⁠운⁠드⁠에⁠서 사⁠용⁠됐⁠어⁠요. 이 기⁠기⁠에⁠서⁠는 투⁠표⁠를 다⁠시 시⁠작⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get votingAutoAdvanceSemantics => '다⁠음 미⁠응⁠답 질⁠문⁠으⁠로 이⁠동⁠하⁠는 중';
+
+  @override
+  String get votingBallotCasting => '투⁠표⁠하⁠는 중';
+
+  @override
+  String get votingBallotDelivering => '응⁠답⁠을 전⁠달⁠하⁠는 중';
+
+  @override
+  String get votingBallotPreparing => '투⁠표⁠용⁠지⁠를 준⁠비⁠하⁠는 중';
+
+  @override
+  String get votingBallotWaitingChain => '체⁠인 확⁠인 대⁠기 중';
+
+  @override
+  String get votingBetaSemantics => '베⁠타';
+
+  @override
+  String votingBundleCount(int count) {
+    return '투⁠표 묶⁠음 $count⁠개';
+  }
+
+  @override
+  String votingBundleOf(int number, int total) {
+    return '$total⁠개 중 $number⁠번⁠째 묶⁠음';
+  }
+
+  @override
+  String get votingCheckAgain => '다⁠시 확⁠인';
+
+  @override
+  String votingChoiceFallback(int number) {
+    return '선⁠택 $number';
+  }
+
+  @override
+  String get votingConfigAddCustomSource => '사⁠용⁠자 지⁠정 소⁠스 추⁠가';
+
+  @override
+  String get votingConfigBadgeDefault => '기⁠본';
+
+  @override
+  String get votingConfigCloseSettings => '투⁠표 설⁠정 닫⁠기';
+
+  @override
+  String get votingConfigCopyUrl => '소⁠스 URL 복⁠사';
+
+  @override
+  String get votingConfigCustomSource => '사⁠용⁠자 지⁠정 소⁠스';
+
+  @override
+  String votingConfigDeleteNamed(String name) {
+    return '$name 삭⁠제';
+  }
+
+  @override
+  String get votingConfigDeleteSaved => '저⁠장⁠된 소⁠스 삭⁠제';
+
+  @override
+  String get votingConfigDuplicate => '이⁠미 추⁠가⁠된 소⁠스 URL⁠이⁠에⁠요.';
+
+  @override
+  String get votingConfigEditCustomSource => '사⁠용⁠자 지⁠정 소⁠스 편⁠집';
+
+  @override
+  String votingConfigEditNamed(String name) {
+    return '$name 편⁠집';
+  }
+
+  @override
+  String get votingConfigEditSaved => '저⁠장⁠된 소⁠스 편⁠집';
+
+  @override
+  String get votingConfigEnterTitleAndUrl => '제⁠목⁠과 소⁠스 URL⁠을 입⁠력⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingConfigFieldStaticUrl => '정⁠적 설⁠정 URL';
+
+  @override
+  String get votingConfigFieldTitle => '제⁠목';
+
+  @override
+  String get votingConfigLoadFailed => '해⁠당 소⁠스⁠에⁠서 투⁠표 설⁠정⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get votingConfigMobileFieldUrl => '소⁠스 URL';
+
+  @override
+  String get votingConfigMobileIntro =>
+      'Vizor⁠가 인⁠증⁠된 투⁠표 라⁠운⁠드⁠를 가⁠져⁠올 곳⁠을 선⁠택⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingConfigMobileSave => '소⁠스 저⁠장';
+
+  @override
+  String get votingConfigMobileTestRoundsHint =>
+      '[TEST]로 표⁠시⁠된 인⁠증⁠된 라⁠운⁠드⁠를 포⁠함⁠해⁠요.';
+
+  @override
+  String get votingConfigMobileTitle => '투⁠표 설⁠정';
+
+  @override
+  String get votingConfigMobileUpdateFailed =>
+      '투⁠표 설⁠정⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 소⁠스⁠를 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingConfigSaving => '저⁠장 중...';
+
+  @override
+  String get votingConfigSettings => '투⁠표 설⁠정 열⁠기';
+
+  @override
+  String get votingConfigShowTestRounds => '테⁠스⁠트 라⁠운⁠드 표⁠시';
+
+  @override
+  String get votingConfigShowTestRoundsHint =>
+      '제⁠목⁠이 [TEST]로 시⁠작⁠하⁠는 인⁠증⁠된 라⁠운⁠드⁠를 표⁠시⁠해⁠요.';
+
+  @override
+  String get votingConfigSources => '소⁠스';
+
+  @override
+  String get votingConfigTestVisibilityFailed =>
+      '테⁠스⁠트 라⁠운⁠드 표⁠시 설⁠정⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String votingConfigTitleTooLong(int max) {
+    return '제⁠목⁠은 $max⁠자 이⁠하⁠여⁠야 해⁠요.';
+  }
+
+  @override
+  String get votingConfigTooltip => '투⁠표 설⁠정';
+
+  @override
+  String get votingConfigUpdateFailed => '투⁠표 설⁠정⁠을 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get votingConfigUrlCopied => '소⁠스 URL⁠을 복⁠사⁠했⁠어⁠요.';
+
+  @override
+  String get votingConfigValidating => '확⁠인 중...';
+
+  @override
+  String get votingConfirmationCheckingEligibility =>
+      '이 계⁠정⁠의 투⁠표 자⁠격⁠을 확⁠인⁠하⁠는 중⁠이⁠에⁠요.';
+
+  @override
+  String get votingConfirmationConfirmedBody =>
+      '투⁠표⁠가 성⁠공⁠적⁠으⁠로 게⁠시⁠됐⁠고 변⁠경⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get votingConfirmationConfirmedTitle => '제⁠출⁠이 확⁠인⁠됐⁠어⁠요!';
+
+  @override
+  String get votingConfirmationEligibilityUnconfirmed =>
+      '이 계⁠정⁠의 투⁠표 자⁠격⁠이 확⁠인⁠되⁠지 않⁠았⁠어⁠요.';
+
+  @override
+  String get votingConfirmationIncompleteTitle => '제⁠출⁠이 완⁠료⁠되⁠지 않⁠았⁠어⁠요';
+
+  @override
+  String votingConfirmationLoadFailed(String error) {
+    return '제⁠출 내⁠역⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요: $error';
+  }
+
+  @override
+  String get votingConfirmationNotCompleted =>
+      '이 계⁠정⁠은 이⁠번 투⁠표 라⁠운⁠드⁠의 제⁠출⁠을 완⁠료⁠하⁠지 않⁠았⁠어⁠요.';
+
+  @override
+  String get votingConfirmationUpdateFailed =>
+      '투⁠표 라⁠운⁠드⁠를 업⁠데⁠이⁠트⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingConfirmationUpdatingRounds => '투⁠표 라⁠운⁠드⁠를 업⁠데⁠이⁠트⁠하⁠는 중...';
+
+  @override
+  String get votingContinueToReview => '확⁠인 화⁠면⁠으⁠로 계⁠속';
+
+  @override
+  String get votingContinueVoting => '투⁠표 이⁠어⁠하⁠기';
+
+  @override
+  String votingDaysLeft(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days⁠일 남⁠음',
+      zero: '오⁠늘 종⁠료',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get votingDetailLoadFailedTitle => '투⁠표 라⁠운⁠드⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get votingDetailUnavailableBody =>
+      '선⁠택⁠한 투⁠표 라⁠운⁠드⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get votingDetailUnavailableTitle => '투⁠표 라⁠운⁠드⁠를 사⁠용⁠할 수 없⁠어⁠요';
+
+  @override
+  String votingEnds(String date) {
+    return '$date 종⁠료';
+  }
+
+  @override
+  String get votingErrorLedgerCancelled => 'Ledger⁠에⁠서 투⁠표 승⁠인⁠을 취⁠소⁠했⁠어⁠요.';
+
+  @override
+  String votingErrorLedgerLocked(String instruction) {
+    return 'Ledger⁠의 잠⁠금⁠을 해⁠제⁠해 주⁠세⁠요. $instruction';
+  }
+
+  @override
+  String get votingErrorLedgerRejected =>
+      'Ledger⁠에⁠서 투⁠표 서⁠명⁠을 거⁠부⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 서⁠명⁠해 주⁠세⁠요.';
+
+  @override
+  String votingErrorLedgerWrongApp(String instruction) {
+    return '$instruction 그⁠런 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+  }
+
+  @override
+  String votingErrorMinimumWeight(String amount, String snapshot) {
+    return '투⁠표⁠하⁠려⁠면 $snapshot⁠에 $amount 이⁠상⁠의 자⁠격 있⁠는 차⁠폐 노⁠트 묶⁠음⁠이 하⁠나 이⁠상 필⁠요⁠해⁠요. 자⁠격⁠이 있⁠는 계⁠정⁠으⁠로 전⁠환⁠해 투⁠표⁠해 주⁠세⁠요.';
+  }
+
+  @override
+  String votingErrorNoSpendableNotes(String snapshot) {
+    return '이 계⁠정⁠은 이⁠번 투⁠표 라⁠운⁠드⁠에 참⁠여⁠할 수 없⁠어⁠요. $snapshot⁠에 투⁠표 자⁠격⁠이 있⁠는 차⁠폐 자⁠금⁠이 없⁠었⁠어⁠요. 자⁠격⁠이 있⁠는 계⁠정⁠으⁠로 전⁠환⁠해 투⁠표⁠해 주⁠세⁠요.';
+  }
+
+  @override
+  String get votingErrorSessionFailed => '투⁠표 작⁠업⁠에 실⁠패⁠했⁠어⁠요.';
+
+  @override
+  String get votingForumDiscussion => '포⁠럼 토⁠론';
+
+  @override
+  String get votingGuardAccountLoadFailed => '계⁠정⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get votingIneligibleTitle => '이⁠번 투⁠표 라⁠운⁠드⁠에 참⁠여⁠할 수 없⁠어⁠요';
+
+  @override
+  String get votingKeepSigning => '계⁠속 서⁠명';
+
+  @override
+  String get votingKeepVoting => '계⁠속 투⁠표';
+
+  @override
+  String votingKeystoneMemoLabel(int number, int total) {
+    return '$total⁠개 중 $number⁠번⁠째 묶⁠음 메⁠모';
+  }
+
+  @override
+  String get votingKeystoneNextBatch => '다⁠음 서⁠명 묶⁠음⁠이 준⁠비⁠됐⁠어⁠요';
+
+  @override
+  String get votingKeystoneNextMemo => '다⁠음 묶⁠음 메⁠모';
+
+  @override
+  String get votingKeystoneOneApproval => 'Keystone 승⁠인 한 번';
+
+  @override
+  String get votingKeystonePreviousMemo => '이⁠전 묶⁠음 메⁠모';
+
+  @override
+  String votingKeystoneQrPartial(int count, int total) {
+    return '이 QR⁠로 남⁠은 $total⁠개 묶⁠음 중 $count⁠개⁠에 서⁠명⁠해⁠요';
+  }
+
+  @override
+  String get votingKeystoneScanInstruction =>
+      'Keystone⁠으⁠로 이 화⁠면⁠의 QR⁠을 스⁠캔⁠하⁠세⁠요. 그⁠런 다⁠음 Keystone⁠에 표⁠시⁠된 서⁠명⁠된 투⁠표 QR⁠을 이 기⁠기⁠의 카⁠메⁠라⁠로 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get votingKeystoneScanSignature => '서⁠명 스⁠캔';
+
+  @override
+  String votingKeystoneSignLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '투⁠표 묶⁠음 $count⁠개 서⁠명',
+      zero: '투⁠표 서⁠명 준⁠비 중',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get votingKeystoneUnexpectedUr =>
+      'Keystone⁠에⁠서 서⁠명⁠된 투⁠표 QR⁠을 열⁠고 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingLedgerApprovalNotice =>
+      'Ledger⁠에⁠서 승⁠인⁠하⁠면 이 투⁠표 위⁠임⁠이 승⁠인⁠돼⁠요. 계⁠속⁠하⁠기 전⁠에 Vizor⁠에⁠서 아⁠래 메⁠모⁠를 확⁠인⁠해 주⁠세⁠요. 기⁠기⁠에⁠는 이 메⁠모⁠가 그⁠대⁠로 표⁠시⁠되⁠지 않⁠을 수 있⁠어⁠요.';
+
+  @override
+  String votingLedgerBundleOf(int number, int total) {
+    return '$total⁠개 중 $number⁠번⁠째 묶⁠음';
+  }
+
+  @override
+  String get votingLedgerChecking => 'Ledger 확⁠인 중';
+
+  @override
+  String get votingLedgerCheckingBody =>
+      'Vizor⁠가 Zcash 앱⁠이 준⁠비⁠됐⁠는⁠지 확⁠인⁠하⁠는 중⁠이⁠에⁠요.';
+
+  @override
+  String get votingLedgerConfirmOpen => 'Zcash 열⁠기 확⁠인';
+
+  @override
+  String get votingLedgerConfirmOpenBody =>
+      'Ledger⁠에⁠서 Zcash 앱⁠을 열⁠라⁠는 요⁠청⁠을 승⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingLedgerFinishing => '투⁠표 위⁠임 마⁠무⁠리 중';
+
+  @override
+  String get votingLedgerNeedsAttention => 'Ledger 확⁠인⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get votingLedgerPanelTitle => '투⁠표 위⁠임';
+
+  @override
+  String get votingLedgerPleaseWait =>
+      'Vizor⁠가 요⁠청⁠을 준⁠비⁠하⁠는 동⁠안 잠⁠시 기⁠다⁠려 주⁠세⁠요.';
+
+  @override
+  String get votingLedgerPreparing => '투⁠표 위⁠임 준⁠비 중';
+
+  @override
+  String get votingLedgerReconnect => 'Ledger⁠를 다⁠시 연⁠결⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String votingMobileAccountLoadFailed(String error) {
+    return '계⁠정⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요.\n$error';
+  }
+
+  @override
+  String get votingMobileGoHome => '홈⁠으⁠로';
+
+  @override
+  String get votingMobileHeaderTitle => '투⁠표';
+
+  @override
+  String get votingMobileKeystoneChecking => '투⁠표 서⁠명⁠을 확⁠인⁠하⁠는 중...';
+
+  @override
+  String get votingMobileKeystoneDescription =>
+      'Keystone⁠으⁠로 투⁠표 요⁠청⁠을 스⁠캔⁠해 승⁠인⁠한 다⁠음, 서⁠명⁠된 결⁠과⁠를 이 기⁠기⁠로 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingMobileKeystoneFailedTitle => '투⁠표 서⁠명⁠에 실⁠패⁠했⁠어⁠요';
+
+  @override
+  String get votingMobileKeystoneNextBundle => '다⁠음 투⁠표 묶⁠음';
+
+  @override
+  String get votingMobileKeystonePreviousBundle => '이⁠전 투⁠표 묶⁠음';
+
+  @override
+  String get votingMobileKeystoneReading => '투⁠표 서⁠명⁠을 읽⁠는 중...';
+
+  @override
+  String get votingMobileKeystoneScanCaption =>
+      'Keystone⁠에 표⁠시⁠된 서⁠명⁠된 투⁠표 QR⁠을 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get votingMobileKeystoneSkipUnsigned => '서⁠명⁠하⁠지 않⁠은 묶⁠음 건⁠너⁠뛰⁠기';
+
+  @override
+  String get votingMobileKeystoneTitle => 'Keystone⁠으⁠로 투⁠표 서⁠명';
+
+  @override
+  String get votingMobileLeaveWarning => '이 화⁠면⁠을 벗⁠어⁠나⁠지 마⁠세⁠요.';
+
+  @override
+  String get votingMobileProgressSemantics => '현⁠재 투⁠표 제⁠출 단⁠계 진⁠행⁠률';
+
+  @override
+  String get votingMobileProofNotice =>
+      '영⁠지⁠식 증⁠명⁠을 생⁠성⁠하⁠는 데 약 60⁠초⁠가 걸⁠릴 수 있⁠으⁠며, 지⁠금 닫⁠으⁠면 진⁠행 중⁠인 증⁠명 작⁠업⁠이 사⁠라⁠질 수 있⁠어⁠요.';
+
+  @override
+  String get votingMobileSubmitTitle => '투⁠표 제⁠출';
+
+  @override
+  String get votingMobileSubmittedBody => '투⁠표⁠를 제⁠출⁠했⁠고 변⁠경⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get votingMobileSubmittedTitle => '투⁠표 제⁠출 완⁠료';
+
+  @override
+  String get votingMobileSubmittingTitle => '투⁠표⁠를 제⁠출⁠하⁠는 중...';
+
+  @override
+  String get votingNavAllAnswered => '모⁠든 질⁠문⁠에 답⁠했⁠어⁠요';
+
+  @override
+  String votingNavAnsweredProgress(int answered, int total) {
+    return '$total⁠개 중 $answered⁠개 답⁠변';
+  }
+
+  @override
+  String get votingNavReadyToReview => '답⁠변⁠을 확⁠인⁠할 준⁠비⁠가 됐⁠어⁠요.';
+
+  @override
+  String get votingNavTapToJump => '질⁠문⁠을 탭⁠하⁠면 해⁠당 질⁠문⁠으⁠로 이⁠동⁠해⁠요.';
+
+  @override
+  String votingNavUnansweredCount(int count) {
+    return '미⁠응⁠답 · $count';
+  }
+
+  @override
+  String get votingNavUnansweredMenu => '미⁠응⁠답 질⁠문';
+
+  @override
+  String get votingNoProposalsBody => '이 투⁠표 라⁠운⁠드⁠에⁠는 안⁠건⁠이 없⁠어⁠요.';
+
+  @override
+  String get votingNoProposalsTitle => '안⁠건⁠이 없⁠어⁠요';
+
+  @override
+  String get votingNotAvailable => '사⁠용⁠할 수 없⁠음';
+
+  @override
+  String get votingNotEligible => '참⁠여⁠할 수 없⁠음';
+
+  @override
+  String get votingOptionChoose => '선⁠택';
+
+  @override
+  String get votingOptionSelected => '선⁠택⁠됨';
+
+  @override
+  String get votingPendingBody =>
+      '이⁠번 라⁠운⁠드⁠에⁠서 끝⁠내⁠지 못⁠한 투⁠표⁠가 있⁠어⁠요. 이⁠어⁠서 제⁠출⁠을 완⁠료⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingPendingTitle => '투⁠표 진⁠행 중';
+
+  @override
+  String votingPirAhead(String expected, String reported) {
+    return '설⁠정⁠된 PIR 엔⁠드⁠포⁠인⁠트⁠가 이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠보⁠다 앞⁠서 있⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록⁠은 $expected⁠이⁠고 엔⁠드⁠포⁠인⁠트⁠는 $reported(으)로 보⁠고⁠해⁠요.';
+  }
+
+  @override
+  String votingPirBehind(String expected, String reported) {
+    return '이 투⁠표 라⁠운⁠드⁠의 PIR 데⁠이⁠터⁠가 아⁠직 준⁠비⁠되⁠지 않⁠았⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록⁠은 $expected⁠이⁠고 PIR 엔⁠드⁠포⁠인⁠트⁠는 $reported(으)로 보⁠고⁠해⁠요. PIR 서⁠비⁠스⁠가 따⁠라⁠잡⁠으⁠면 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+  }
+
+  @override
+  String votingPirNoMatch(String expected) {
+    return '이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠과 일⁠치⁠하⁠는 PIR 엔⁠드⁠포⁠인⁠트⁠가 없⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록⁠은 $expected⁠이⁠에⁠요.';
+  }
+
+  @override
+  String votingPirNoMatchDiagnostics(String expected, String diagnostics) {
+    return '이 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠과 일⁠치⁠하⁠는 PIR 엔⁠드⁠포⁠인⁠트⁠가 없⁠어⁠요. 예⁠상 스⁠냅⁠샷 블⁠록⁠은 $expected⁠이⁠에⁠요. 진⁠단 정⁠보: $diagnostics.';
+  }
+
+  @override
+  String get votingPirUnreachable =>
+      '설⁠정⁠된 PIR 엔⁠드⁠포⁠인⁠트⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 네⁠트⁠워⁠크 연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingPollAlreadyUsed => '이⁠번 라⁠운⁠드⁠에⁠서 이⁠미 사⁠용⁠했⁠어⁠요';
+
+  @override
+  String votingPollClosed(String date) {
+    return '$date 마⁠감⁠됨';
+  }
+
+  @override
+  String votingPollCloses(String date) {
+    return '$date 마⁠감';
+  }
+
+  @override
+  String get votingPollNotEligible => '이⁠번 라⁠운⁠드⁠에 참⁠여⁠할 수 없⁠어⁠요';
+
+  @override
+  String votingPollStarts(String date) {
+    return '$date 시⁠작';
+  }
+
+  @override
+  String get votingPollsEmptyBody => '아⁠직 표⁠시⁠할 토⁠큰 보⁠유⁠자 투⁠표 라⁠운⁠드⁠가 없⁠어⁠요.';
+
+  @override
+  String get votingPollsEmptyTitle => '진⁠행 중⁠인 투⁠표 라⁠운⁠드⁠가 없⁠어⁠요';
+
+  @override
+  String get votingPollsLoadFailedTitle => '투⁠표 라⁠운⁠드⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String votingPowerMeta(String amount) {
+    return '투⁠표⁠권 $amount';
+  }
+
+  @override
+  String get votingPowerUnavailableSentence => '투⁠표⁠권⁠을 확⁠인⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get votingPowerUnavailableTitle => '투⁠표⁠권⁠을 확⁠인⁠할 수 없⁠어⁠요';
+
+  @override
+  String get votingPreparingEllipsis => '준⁠비 중...';
+
+  @override
+  String get votingPreparingPower => '투⁠표⁠권⁠을 준⁠비⁠하⁠는 중⁠이⁠에⁠요.';
+
+  @override
+  String get votingPreparingPowerMeta => '투⁠표⁠권 준⁠비 중';
+
+  @override
+  String votingPrivacyTrimNotice(String amount) {
+    return '제⁠출⁠한 투⁠표⁠를 덜 식⁠별⁠되⁠게 하⁠려⁠고 $amount⁠은(는) 이⁠번 투⁠표⁠에⁠서 제⁠외⁠돼⁠요.';
+  }
+
+  @override
+  String votingProgressBundlesProved(int proved, int total) {
+    return '$total⁠개 중 $proved⁠개 묶⁠음 증⁠명 완⁠료';
+  }
+
+  @override
+  String votingProgressFinalizingDelegation(String suffix) {
+    return '위⁠임 마⁠무⁠리 중⁠$suffix';
+  }
+
+  @override
+  String votingProgressReusingProof(String suffix) {
+    return '진⁠행 중⁠인 증⁠명⁠을 재⁠사⁠용⁠하⁠는 중⁠$suffix';
+  }
+
+  @override
+  String get votingProgressUnknown => '알 수 없⁠음';
+
+  @override
+  String votingProgressWaitingConfirmation(String suffix) {
+    return '제⁠출 및 확⁠인 대⁠기 중⁠$suffix';
+  }
+
+  @override
+  String get votingReceiptPower => '투⁠표⁠권';
+
+  @override
+  String get votingReceiptRound => '투⁠표 라⁠운⁠드';
+
+  @override
+  String votingRemainingBundles(int count, int total) {
+    return '남⁠은 $total⁠개 묶⁠음 중 $count⁠개';
+  }
+
+  @override
+  String get votingResultsFallbackTitle => '투⁠표 결⁠과';
+
+  @override
+  String get votingResultsHeading => '결⁠과';
+
+  @override
+  String get votingResultsHideDescription => '설⁠명 숨⁠기⁠기';
+
+  @override
+  String votingResultsLoadFailed(String error) {
+    return '결⁠과⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요: $error';
+  }
+
+  @override
+  String get votingResultsNoProposals => '이⁠번 라⁠운⁠드⁠에⁠는 안⁠건⁠이 없⁠어⁠요.';
+
+  @override
+  String get votingResultsPending => '결⁠과 집⁠계 대⁠기 중...';
+
+  @override
+  String votingResultsRoundLoadFailed(String error) {
+    return '투⁠표 라⁠운⁠드 정⁠보⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요: $error';
+  }
+
+  @override
+  String get votingResultsShowDescription => '설⁠명 보⁠기';
+
+  @override
+  String get votingResultsTotal => '합⁠계';
+
+  @override
+  String votingResultsTotalAmount(String amount) {
+    return '합⁠계: $amount';
+  }
+
+  @override
+  String get votingResultsVoted => '투⁠표⁠함';
+
+  @override
+  String votingResultsVotedFor(String choice) {
+    return '투⁠표: $choice';
+  }
+
+  @override
+  String get votingResultsWinner => '우⁠승';
+
+  @override
+  String get votingResultsYourVote => '내 투⁠표';
+
+  @override
+  String get votingReviewChooseOne => '제⁠출⁠하⁠기 전⁠에 하⁠나 이⁠상 선⁠택⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingReviewConfirmSubmit => '확⁠인 및 제⁠출';
+
+  @override
+  String votingReviewLoadFailed(String error) {
+    return '검⁠토 화⁠면⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요: $error';
+  }
+
+  @override
+  String get votingReviewSkipped => '건⁠너⁠뜀';
+
+  @override
+  String get votingReviewTitle => '답⁠변 확⁠인';
+
+  @override
+  String get votingScanHold => 'Keystone QR 코⁠드⁠를 카⁠메⁠라 앞⁠에 고⁠정⁠해 주⁠세⁠요';
+
+  @override
+  String get votingScanNoCamera =>
+      'Keystone 투⁠표⁠는 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingScanReading => '서⁠명⁠을 읽⁠는 중...';
+
+  @override
+  String get votingScanSteady => 'QR 코⁠드⁠가 흔⁠들⁠리⁠지 않⁠고 전⁠부 보⁠이⁠게 해 주⁠세⁠요.';
+
+  @override
+  String get votingScanTitle => '투⁠표 서⁠명 스⁠캔';
+
+  @override
+  String get votingSignedOnlyBody =>
+      'Vizor⁠는 Keystone⁠에⁠서 이⁠미 스⁠캔⁠한 서⁠명⁠만⁠으⁠로 지⁠금 제⁠출⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get votingSignedOnlyTitle => '서⁠명⁠한 묶⁠음⁠만 사⁠용⁠할⁠까⁠요?';
+
+  @override
+  String get votingSignedOnlyWarning =>
+      '서⁠명⁠하⁠지 않⁠은 묶⁠음⁠은 건⁠너⁠뛰⁠며, 이⁠번 투⁠표 라⁠운⁠드⁠의 투⁠표⁠권⁠이 줄⁠어⁠들⁠어⁠요.';
+
+  @override
+  String get votingSkip => '건⁠너⁠뛰⁠기';
+
+  @override
+  String get votingSkipBundles => '묶⁠음 건⁠너⁠뛰⁠기';
+
+  @override
+  String votingSkipDialogBody(int skipped, int total) {
+    return '$total⁠개 질⁠문 중 $skipped⁠개⁠에 답⁠하⁠지 않⁠았⁠어⁠요. 확⁠인 화⁠면⁠에⁠서 건⁠너⁠뜀⁠으⁠로 표⁠시⁠되⁠며, 건⁠너⁠뛴 질⁠문⁠은 제⁠출⁠되⁠지 않⁠아⁠요.';
+  }
+
+  @override
+  String get votingSkipDialogTitle => '답⁠하⁠지 않⁠은 질⁠문⁠을 건⁠너⁠뛸⁠까⁠요?';
+
+  @override
+  String votingSnapshotBlock(String height) {
+    return '스⁠냅⁠샷 블⁠록 $height';
+  }
+
+  @override
+  String get votingSnapshotUnknown => '투⁠표 라⁠운⁠드 스⁠냅⁠샷 블⁠록';
+
+  @override
+  String get votingSoftwareRequiredBody =>
+      '토⁠큰 보⁠유⁠자 투⁠표⁠에⁠는 소⁠프⁠트⁠웨⁠어 계⁠정⁠이 필⁠요⁠해⁠요. 이⁠번 라⁠운⁠드⁠에⁠서 투⁠표⁠하⁠려⁠면 소⁠프⁠트⁠웨⁠어 계⁠정⁠으⁠로 전⁠환⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingSoftwareRequiredTitle => '소⁠프⁠트⁠웨⁠어 계⁠정⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get votingStatusActive => '진⁠행 중';
+
+  @override
+  String get votingStatusBodyKeepOpen =>
+      '창⁠을 닫⁠지 마⁠세⁠요. 영⁠지⁠식 증⁠명⁠을 생⁠성⁠하⁠는 데 시⁠간⁠이 걸⁠릴 수 있⁠으⁠며, 지⁠금 닫⁠으⁠면 진⁠행 중⁠인 증⁠명 작⁠업⁠이 사⁠라⁠질 수 있⁠어⁠요.';
+
+  @override
+  String get votingStatusBodyLedger =>
+      'Vizor⁠를 열⁠어 둔 채⁠로 아⁠래 안⁠내⁠에 따⁠라 각 투⁠표 묶⁠음⁠을 처⁠리⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingStatusClosed => '마⁠감⁠됨';
+
+  @override
+  String get votingStatusFailed => '투⁠표⁠에 실⁠패⁠했⁠어⁠요.';
+
+  @override
+  String get votingStatusGenericError =>
+      '이 계⁠정⁠으⁠로 투⁠표⁠를 계⁠속⁠할 수 없⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나, 이 계⁠정⁠이 이⁠번 투⁠표 라⁠운⁠드⁠에 참⁠여⁠할 수 없⁠다⁠면 자⁠격⁠이 있⁠는 계⁠정⁠으⁠로 전⁠환⁠해 주⁠세⁠요.';
+
+  @override
+  String get votingStatusTallying => '집⁠계 중';
+
+  @override
+  String get votingStatusTitleLedger => 'Ledger⁠로 투⁠표';
+
+  @override
+  String get votingStatusTitleSubmitting => '투⁠표 제⁠출 중';
+
+  @override
+  String get votingStatusVoted => '투⁠표 완⁠료';
+
+  @override
+  String get votingStepCasting => '투⁠표 및 지⁠분 제⁠출 중';
+
+  @override
+  String get votingStepFinalizing => '제⁠출 마⁠무⁠리 중';
+
+  @override
+  String get votingStepProving => '투⁠표 권⁠한 증⁠명 중';
+
+  @override
+  String get votingStepSigningKeystone => 'Keystone⁠으⁠로 서⁠명 중';
+
+  @override
+  String get votingStepSigningLedger => 'Ledger⁠로 서⁠명 중';
+
+  @override
+  String get votingSwitchAccount => '계⁠정 전⁠환';
+
+  @override
+  String get votingSwitchEligibleGuidance =>
+      '자⁠격⁠이 있⁠는 계⁠정⁠으⁠로 전⁠환⁠해 투⁠표⁠해 주⁠세⁠요.';
+
+  @override
+  String votingSyncBlocksRemaining(int count) {
+    return '$count⁠개 블⁠록 남⁠음';
+  }
+
+  @override
+  String votingSyncChainTip(int height) {
+    return '체⁠인 최⁠신 블⁠록 $height';
+  }
+
+  @override
+  String votingSyncSynced(int height) {
+    return '블⁠록 $height⁠까⁠지 동⁠기⁠화⁠됨';
+  }
+
+  @override
+  String get votingSyncWaitingBody =>
+      '지⁠갑⁠이 이⁠번 투⁠표 라⁠운⁠드 스⁠냅⁠샷⁠을 따⁠라⁠잡⁠는 중⁠이⁠에⁠요. 지⁠갑⁠이 스⁠냅⁠샷 블⁠록⁠까⁠지 동⁠기⁠화⁠되⁠면 투⁠표⁠가 자⁠동⁠으⁠로 이⁠어⁠져⁠요.';
+
+  @override
+  String get votingSyncWaitingTitle => '지⁠갑 동⁠기⁠화 대⁠기 중';
+
+  @override
+  String votingTerminalBundle(int number, String reason) {
+    return '$number⁠번 묶⁠음($reason)';
+  }
+
+  @override
+  String votingTerminalMultiple(String bundles) {
+    return '$bundles⁠의 위⁠임⁠은 계⁠속⁠할 수 없⁠어⁠요. 거⁠래⁠가 이⁠미 체⁠인⁠에 있⁠을 수 있⁠으⁠니 다⁠시 시⁠도⁠하⁠지 마⁠세⁠요.';
+  }
+
+  @override
+  String get votingTerminalReasonDefault => '확⁠인 없⁠이 종⁠료⁠됐⁠어⁠요';
+
+  @override
+  String votingTerminalSingle(String bundle) {
+    return '위⁠임 $bundle⁠은(는) 계⁠속⁠할 수 없⁠어⁠요. 거⁠래⁠가 이⁠미 체⁠인⁠에 있⁠을 수 있⁠으⁠니 다⁠시 시⁠도⁠하⁠지 마⁠세⁠요.';
+  }
+
+  @override
+  String get votingTokenHolderTitle => '토⁠큰 보⁠유⁠자 투⁠표';
+
+  @override
+  String get votingViewLess => '간⁠단⁠히 보⁠기';
+
+  @override
+  String get votingViewMore => '더 보⁠기';
+
+  @override
+  String get votingVoteLocked => '투⁠표 확⁠정⁠됨';
+
+  @override
+  String votingVotedOn(String date) {
+    return '$date 투⁠표';
+  }
+
+  @override
   String walletLinkAccountsFound(int count) {
     return '계⁠정 $count⁠개⁠를 찾⁠았⁠어⁠요';
   }
@@ -8207,6 +9112,102 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get walletLinkDeselectAll => '모⁠두 선⁠택 해⁠제';
+
+  @override
+  String get walletLinkDesktopConfirmSubtitle =>
+      'Vizor 모⁠바⁠일⁠을 연⁠결⁠하⁠려⁠면 필⁠요⁠해⁠요.';
+
+  @override
+  String get walletLinkDesktopEncryptedNotice =>
+      '코⁠드⁠는 일⁠회⁠용 키⁠로 암⁠호⁠화⁠되⁠며 일 분 뒤⁠에 만⁠료⁠돼⁠요.';
+
+  @override
+  String get walletLinkDesktopEncryptedStrong => '휴⁠대⁠폰⁠에⁠서⁠만 해⁠독⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get walletLinkDesktopErrorDerivationMissing =>
+      '지⁠갑 계⁠정⁠의 파⁠생 정⁠보⁠를 찾⁠을 수 없⁠어⁠요.';
+
+  @override
+  String get walletLinkDesktopErrorExpiredBeforeShown =>
+      '모⁠바⁠일 연⁠결 코⁠드⁠가 표⁠시⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요.';
+
+  @override
+  String get walletLinkDesktopErrorFallback => '모⁠바⁠일 연⁠결⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get walletLinkDesktopErrorHardwareMetadataMissing =>
+      '하⁠드⁠웨⁠어 지⁠갑 정⁠보⁠를 찾⁠을 수 없⁠어⁠요.';
+
+  @override
+  String get walletLinkDesktopErrorLocked =>
+      '모⁠바⁠일⁠을 연⁠결⁠하⁠기 전⁠에 이 지⁠갑⁠의 잠⁠금⁠을 해⁠제⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletLinkDesktopErrorNoAccounts => '연⁠결⁠할 지⁠갑 계⁠정⁠이 없⁠어⁠요.';
+
+  @override
+  String get walletLinkDesktopErrorPrepareFailed =>
+      '모⁠바⁠일 연⁠결⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletLinkDesktopErrorServerUnreachable =>
+      '연⁠결 서⁠버⁠에 접⁠속⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletLinkDesktopExpiredBody =>
+      '보⁠안⁠을 위⁠해 연⁠결 코⁠드⁠는 일 분 동⁠안⁠만 유⁠효⁠해⁠요. 새 코⁠드⁠를 생⁠성⁠하⁠고 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletLinkDesktopExpiredTitle => '시⁠간⁠이 다 됐⁠어⁠요';
+
+  @override
+  String walletLinkDesktopExpiresIn(String time) {
+    return '$time 후 만⁠료';
+  }
+
+  @override
+  String get walletLinkDesktopGenerateNewCode => '새 코⁠드 생⁠성';
+
+  @override
+  String get walletLinkDesktopInitialBody =>
+      '일⁠회⁠용 QR 코⁠드⁠를 스⁠캔⁠해 이 지⁠갑⁠을 Vizor 모⁠바⁠일 앱⁠에 연⁠결⁠하⁠세⁠요.';
+
+  @override
+  String get walletLinkDesktopLinkedBody => 'Vizor 모⁠바⁠일⁠이 이 지⁠갑⁠에 연⁠결⁠됐⁠어⁠요.';
+
+  @override
+  String walletLinkDesktopLinkedCounts(int accountCount, int contactCount) {
+    return '모⁠바⁠일⁠에⁠서 계⁠정 $accountCount⁠개⁠와 연⁠락⁠처 $contactCount⁠개⁠를 가⁠져⁠왔⁠어⁠요.';
+  }
+
+  @override
+  String get walletLinkDesktopLinkedTitle => 'Vizor 모⁠바⁠일⁠을 연⁠결⁠했⁠어⁠요';
+
+  @override
+  String get walletLinkDesktopPreparing => '준⁠비 중';
+
+  @override
+  String get walletLinkDesktopReadyToScan => '1/1 스⁠캔 준⁠비 완⁠료...';
+
+  @override
+  String get walletLinkDesktopRegenerate => '다⁠시 생⁠성';
+
+  @override
+  String get walletLinkDesktopScanBody =>
+      '휴⁠대⁠폰⁠에⁠서 Vizor 열⁠기 → 지⁠갑 추⁠가 → Vizor 데⁠스⁠크⁠톱 연⁠결';
+
+  @override
+  String get walletLinkDesktopScanTitle => 'Vizor 모⁠바⁠일⁠로 스⁠캔';
+
+  @override
+  String get walletLinkDesktopStartLinking => '연⁠결 시⁠작';
+
+  @override
+  String get walletLinkDesktopTitle => 'Vizor 모⁠바⁠일 연⁠결';
+
+  @override
+  String get walletLinkDesktopUnavailableTitle => '연⁠결⁠할 수 없⁠어⁠요';
 
   @override
   String get walletLinkErrorExpiredBody =>

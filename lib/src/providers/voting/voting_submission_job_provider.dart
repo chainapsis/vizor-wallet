@@ -230,7 +230,10 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
     try {
       resolvedAccountUuid = accountUuid ?? await _activeAccountUuid();
     } catch (error) {
-      state = state.setStartError(roundId, friendlyVotingErrorMessage(error));
+      state = state.setStartError(
+        roundId,
+        friendlyVotingErrorMessage(votingProviderL10n, error),
+      );
       return null;
     }
     if (resolvedAccountUuid == null) {
@@ -912,6 +915,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           key: key,
           generation: generation,
           message: ledgerVotingErrorMessage(
+            votingProviderL10n,
             error,
             appInstruction: ledgerZcashAppOpenErrorInstruction(
               ref.read(rpcEndpointProvider).networkName,
@@ -1590,11 +1594,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     ];
   }
 
-  String _messageFromError(Object error) => friendlyVotingErrorMessage(error);
+  String _messageFromError(Object error) =>
+      friendlyVotingErrorMessage(votingProviderL10n, error);
 
   String? _statusErrorMessage(VotingSessionState state) {
     final error = state.error;
-    if (error != null) return friendlyVotingErrorText(error.message);
+    if (error != null) {
+      return friendlyVotingErrorText(votingProviderL10n, error.message);
+    }
     if (state.phase != VotingSessionPhase.error) return null;
     return _genericVotingStatusErrorMessage;
   }
