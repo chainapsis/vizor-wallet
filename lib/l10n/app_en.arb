@@ -1606,10 +1606,6 @@
   "@lockSyncPausedTitle": {
     "description": "Title on the sync lock screen and passcode screen header when sync was interrupted."
   },
-  "lockSyncedSemantics": "Vizor is synced",
-  "@lockSyncedSemantics": {
-    "description": "Screen-reader label of the sync lock screen when sync has finished."
-  },
   "lockSyncingMessage": "Vizor is syncing",
   "@lockSyncingMessage": {
     "description": "Screen-reader label and caption on the sync lock screen while sync is running."
@@ -3670,6 +3666,86 @@
   "@sidebarShowBalance": {
     "description": "Screen-reader label of the sidebar button that shows hidden amounts."
   },
+  "syncCheckingPercentSemantics": "Checking {percent} percent",
+  "@syncCheckingPercentSemantics": {
+    "description": "Screen-reader sync status while Vizor re-checks the wallet.",
+    "placeholders": {
+      "percent": {
+        "type": "String",
+        "example": "25"
+      }
+    }
+  },
+  "syncCheckingProgress": "{percent}% checking",
+  "@syncCheckingProgress": {
+    "description": "Sync status while Vizor re-checks the wallet. {percent} is a whole number 0-99.",
+    "placeholders": {
+      "percent": {
+        "type": "String",
+        "example": "25"
+      }
+    }
+  },
+  "syncConnectingToTor": "Connecting to Tor…",
+  "@syncConnectingToTor": {
+    "description": "Sync status while Vizor waits for its Tor connection."
+  },
+  "syncConnectingToTorSemantics": "Connecting to Tor",
+  "@syncConnectingToTorSemantics": {
+    "description": "Screen-reader sync status while Vizor waits for its Tor connection."
+  },
+  "syncErrorChainRecovery": "Chain recovery",
+  "@syncErrorChainRecovery": {
+    "description": "Sync failure reason: recovering from a chain reorganization failed."
+  },
+  "syncErrorData": "Data error",
+  "@syncErrorData": {
+    "description": "Sync failure reason: received data could not be read."
+  },
+  "syncErrorEndpoint": "Endpoint error",
+  "@syncErrorEndpoint": {
+    "description": "Sync failure reason: the lightwalletd endpoint returned an error."
+  },
+  "syncErrorNetwork": "Network error",
+  "@syncErrorNetwork": {
+    "description": "Sync failure reason: the server could not be reached."
+  },
+  "syncErrorPrivateLookup": "Private lookup",
+  "@syncErrorPrivateLookup": {
+    "description": "Sync failure reason: a private (PIR) status lookup failed."
+  },
+  "syncErrorUnknown": "Unknown error",
+  "@syncErrorUnknown": {
+    "description": "Sync failure reason when the cause is unknown."
+  },
+  "syncErrorWalletData": "Wallet data error",
+  "@syncErrorWalletData": {
+    "description": "Sync failure reason: the wallet database failed."
+  },
+  "syncErrorWalletDataBusy": "Wallet data busy",
+  "@syncErrorWalletDataBusy": {
+    "description": "Sync failure reason: the wallet database was busy."
+  },
+  "syncFailed": "Syncing failed. {reason}...",
+  "@syncFailed": {
+    "description": "Sync status after a sync failed. {reason} is a short failure reason such as Network error.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Network error"
+      }
+    }
+  },
+  "syncFailedSemantics": "Syncing failed. {reason}",
+  "@syncFailedSemantics": {
+    "description": "Screen-reader sync status after a sync failed.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Network error"
+      }
+    }
+  },
   "syncSynced": "Synced",
   "@syncSynced": {
     "description": "Sync status when the wallet is up to date."
@@ -3683,6 +3759,38 @@
         "example": "3,120,450"
       }
     }
+  },
+  "syncSyncingPercentSemantics": "Syncing {percent} percent",
+  "@syncSyncingPercentSemantics": {
+    "description": "Screen-reader sync status while the wallet syncs.",
+    "placeholders": {
+      "percent": {
+        "type": "String",
+        "example": "25"
+      }
+    }
+  },
+  "syncSyncingProgress": "{percent}% Syncing...",
+  "@syncSyncingProgress": {
+    "description": "Sync status while the wallet syncs. {percent} is a whole number 0-99.",
+    "placeholders": {
+      "percent": {
+        "type": "String",
+        "example": "25"
+      }
+    }
+  },
+  "syncTorFailed": "Tor couldn't connect...",
+  "@syncTorFailed": {
+    "description": "Sync status after the Tor connection failed; sync is paused until the user acts."
+  },
+  "syncTorFailedSemantics": "Tor couldn't connect",
+  "@syncTorFailedSemantics": {
+    "description": "Screen-reader sync status, and sync failure reason, when the Tor connection failed."
+  },
+  "syncVizorSynced": "Vizor is synced",
+  "@syncVizorSynced": {
+    "description": "Sync status, and screen-reader label, when the wallet is up to date."
   },
   "txFeeHelpTooltip": "Fee paid to the Zcash network to process this transaction.",
   "@txFeeHelpTooltip": {

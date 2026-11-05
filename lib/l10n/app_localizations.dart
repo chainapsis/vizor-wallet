@@ -2223,12 +2223,6 @@ abstract class AppLocalizations {
   /// **'Sync paused'**
   String get lockSyncPausedTitle;
 
-  /// Screen-reader label of the sync lock screen when sync has finished.
-  ///
-  /// In en, this message translates to:
-  /// **'Vizor is synced'**
-  String get lockSyncedSemantics;
-
   /// Screen-reader label and caption on the sync lock screen while sync is running.
   ///
   /// In en, this message translates to:
@@ -5106,6 +5100,90 @@ abstract class AppLocalizations {
   /// **'Show balance'**
   String get sidebarShowBalance;
 
+  /// Screen-reader sync status while Vizor re-checks the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking {percent} percent'**
+  String syncCheckingPercentSemantics(String percent);
+
+  /// Sync status while Vizor re-checks the wallet. {percent} is a whole number 0-99.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% checking'**
+  String syncCheckingProgress(String percent);
+
+  /// Sync status while Vizor waits for its Tor connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to Tor…'**
+  String get syncConnectingToTor;
+
+  /// Screen-reader sync status while Vizor waits for its Tor connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to Tor'**
+  String get syncConnectingToTorSemantics;
+
+  /// Sync failure reason: recovering from a chain reorganization failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain recovery'**
+  String get syncErrorChainRecovery;
+
+  /// Sync failure reason: received data could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Data error'**
+  String get syncErrorData;
+
+  /// Sync failure reason: the lightwalletd endpoint returned an error.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint error'**
+  String get syncErrorEndpoint;
+
+  /// Sync failure reason: the server could not be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Network error'**
+  String get syncErrorNetwork;
+
+  /// Sync failure reason: a private (PIR) status lookup failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Private lookup'**
+  String get syncErrorPrivateLookup;
+
+  /// Sync failure reason when the cause is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown error'**
+  String get syncErrorUnknown;
+
+  /// Sync failure reason: the wallet database failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet data error'**
+  String get syncErrorWalletData;
+
+  /// Sync failure reason: the wallet database was busy.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet data busy'**
+  String get syncErrorWalletDataBusy;
+
+  /// Sync status after a sync failed. {reason} is a short failure reason such as Network error.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing failed. {reason}...'**
+  String syncFailed(String reason);
+
+  /// Screen-reader sync status after a sync failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing failed. {reason}'**
+  String syncFailedSemantics(String reason);
+
   /// Sync status when the wallet is up to date.
   ///
   /// In en, this message translates to:
@@ -5117,6 +5195,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Synced at block {height}'**
   String syncSyncedAtBlock(String height);
+
+  /// Screen-reader sync status while the wallet syncs.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing {percent} percent'**
+  String syncSyncingPercentSemantics(String percent);
+
+  /// Sync status while the wallet syncs. {percent} is a whole number 0-99.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% Syncing...'**
+  String syncSyncingProgress(String percent);
+
+  /// Sync status after the Tor connection failed; sync is paused until the user acts.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor couldn\'t connect...'**
+  String get syncTorFailed;
+
+  /// Screen-reader sync status, and sync failure reason, when the Tor connection failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor couldn\'t connect'**
+  String get syncTorFailedSemantics;
+
+  /// Sync status, and screen-reader label, when the wallet is up to date.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is synced'**
+  String get syncVizorSynced;
 
   /// Tooltip on the fee row of transaction review and receipt screens.
   ///

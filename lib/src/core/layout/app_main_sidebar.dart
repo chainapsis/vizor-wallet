@@ -1595,6 +1595,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
 
   bool get _isSyncing =>
       SyncStatusLabel.from(
+        context.l10n,
         widget.sync,
         networkPrivacy: widget.networkPrivacy,
       ).kind ==
@@ -1644,6 +1645,7 @@ class _SidebarSyncStatusState extends ConsumerState<_SidebarSyncStatus>
   Widget build(BuildContext context) {
     final colors = context.colors;
     final status = SyncStatusLabel.from(
+      context.l10n,
       widget.sync,
       displayWholePercentage: ref.watch(syncDisplayWholePercentageProvider),
       networkPrivacy: widget.networkPrivacy,

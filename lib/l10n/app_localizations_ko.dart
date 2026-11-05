@@ -1216,9 +1216,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get lockSyncPausedTitle => '동⁠기⁠화 일⁠시 중⁠지⁠됨';
 
   @override
-  String get lockSyncedSemantics => 'Vizor 동⁠기⁠화⁠됨';
-
-  @override
   String get lockSyncingMessage => 'Vizor 동⁠기⁠화 중';
 
   @override
@@ -2845,12 +2842,81 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sidebarShowBalance => '잔⁠액 보⁠기';
 
   @override
+  String syncCheckingPercentSemantics(String percent) {
+    return '$percent⁠퍼⁠센⁠트 확⁠인 중';
+  }
+
+  @override
+  String syncCheckingProgress(String percent) {
+    return '$percent% 확⁠인 중';
+  }
+
+  @override
+  String get syncConnectingToTor => 'Tor⁠에 연⁠결⁠하⁠는 중…';
+
+  @override
+  String get syncConnectingToTorSemantics => 'Tor⁠에 연⁠결⁠하⁠는 중';
+
+  @override
+  String get syncErrorChainRecovery => '체⁠인 복⁠구';
+
+  @override
+  String get syncErrorData => '데⁠이⁠터 오⁠류';
+
+  @override
+  String get syncErrorEndpoint => '엔⁠드⁠포⁠인⁠트 오⁠류';
+
+  @override
+  String get syncErrorNetwork => '네⁠트⁠워⁠크 오⁠류';
+
+  @override
+  String get syncErrorPrivateLookup => '비⁠공⁠개 조⁠회';
+
+  @override
+  String get syncErrorUnknown => '알 수 없⁠는 오⁠류';
+
+  @override
+  String get syncErrorWalletData => '지⁠갑 데⁠이⁠터 오⁠류';
+
+  @override
+  String get syncErrorWalletDataBusy => '지⁠갑 데⁠이⁠터 사⁠용 중';
+
+  @override
+  String syncFailed(String reason) {
+    return '동⁠기⁠화 실⁠패. $reason...';
+  }
+
+  @override
+  String syncFailedSemantics(String reason) {
+    return '동⁠기⁠화 실⁠패. $reason';
+  }
+
+  @override
   String get syncSynced => '동⁠기⁠화 완⁠료';
 
   @override
   String syncSyncedAtBlock(String height) {
     return '$height 블⁠록⁠까⁠지 동⁠기⁠화 완⁠료';
   }
+
+  @override
+  String syncSyncingPercentSemantics(String percent) {
+    return '$percent⁠퍼⁠센⁠트 동⁠기⁠화 중';
+  }
+
+  @override
+  String syncSyncingProgress(String percent) {
+    return '$percent% 동⁠기⁠화 중...';
+  }
+
+  @override
+  String get syncTorFailed => 'Tor⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요...';
+
+  @override
+  String get syncTorFailedSemantics => 'Tor⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get syncVizorSynced => 'Vizor 동⁠기⁠화⁠됨';
 
   @override
   String get txFeeHelpTooltip =>

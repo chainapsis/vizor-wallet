@@ -21,6 +21,7 @@ import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import '../support/test_l10n.dart';
 
 void main() {
   test(
@@ -1495,7 +1496,7 @@ void main() {
 
     final current = container.read(syncProvider).requireValue;
     expect(
-      SyncStatusLabel.from(current).label,
+      SyncStatusLabel.from(testL10n, current).label,
       'Syncing failed. Unknown error...',
     );
     expect(current.failure, same(failure));

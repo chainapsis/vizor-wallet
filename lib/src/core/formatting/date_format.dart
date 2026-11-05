@@ -18,7 +18,7 @@ String formatMonthDayYear(DateTime date, String localeName) =>
 String formatDayMonthTime(DateTime date, String localeName) {
   final local = date.toLocal();
   final format = localeName == 'en'
-      ? DateFormat('d MMM, HH:mm', 'en')
+      ? DateFormat('d MMM, HH:mm', 'en') // l10n-ignore: date pattern
       : DateFormat.MMMd(localeName).add_Hm();
   return format.format(local);
 }

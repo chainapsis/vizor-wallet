@@ -3,6 +3,7 @@ import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   test(
@@ -17,21 +18,26 @@ void main() {
           displayTargetPercentage: 0.5,
         ),
       );
-      expect(SyncStatusLabel.from(sync).label, '25% checking');
+      expect(SyncStatusLabel.from(testL10n, sync).label, '25% checking');
       expect(
-        SyncStatusLabel.from(sync, displayWholePercentage: 40).label,
+        SyncStatusLabel.from(testL10n, sync, displayWholePercentage: 40).label,
         '40% checking',
       );
-      expect(SyncStatusLabel.from(sync).semanticsLabel, 'Checking 25 percent');
+      expect(
+        SyncStatusLabel.from(testL10n, sync).semanticsLabel,
+        'Checking 25 percent',
+      );
       expect(
         SyncStatusLabel.from(
+          testL10n,
           sync,
           networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connecting),
         ).label,
-        kSyncStatusConnectingToTorLabel,
+        testL10n.syncConnectingToTor,
       );
       expect(
         SyncStatusLabel.from(
+          testL10n,
           sync.copyWith(failure: _networkFailure('connection refused')),
         ).kind,
         SyncStatusKind.failed,
@@ -53,9 +59,10 @@ void main() {
           displayTargetPercentage: 0.25,
         ),
       );
-      expect(SyncStatusLabel.from(sync).label, '25% checking');
+      expect(SyncStatusLabel.from(testL10n, sync).label, '25% checking');
       expect(
         SyncStatusLabel.from(
+          testL10n,
           sync.copyWith(isSyncComplete: true, clearChecking: true),
         ).kind,
         SyncStatusKind.synced,
@@ -64,6 +71,7 @@ void main() {
   );
   test('synced state when complete and idle', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(percentage: 1.0, isSyncing: false),
     );
     expect(status.kind, SyncStatusKind.synced);
@@ -72,6 +80,7 @@ void main() {
 
   test('syncing state carries whole-percent progress capped below 100', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(isSyncing: true, percentage: 0.5),
       displayWholePercentage: 99,
     );
@@ -81,6 +90,7 @@ void main() {
 
   test('failed state names the failure reason', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(
         failure: const SyncFailure(
           kind: SyncFailureKind.network,
@@ -95,6 +105,7 @@ void main() {
 
   test('private status coverage failure names private lookup', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(
         failure: classifySyncFailure('private status coverage incomplete'),
       ),
@@ -106,35 +117,39 @@ void main() {
 
   test('a bootstrapping Tor route reads as connecting, not as synced', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(percentage: 1.0, isSyncing: false),
       networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connecting),
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, kSyncStatusConnectingToTorLabel);
-    expect(status.semanticsLabel, kSyncStatusConnectingToTorSemanticsLabel);
+    expect(status.label, testL10n.syncConnectingToTor);
+    expect(status.semanticsLabel, testL10n.syncConnectingToTorSemantics);
   });
 
   test('a bootstrapping Tor route outranks a stale failure', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(failure: _networkFailure('Tor connection failed')),
       networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connecting),
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, kSyncStatusConnectingToTorLabel);
+    expect(status.label, testL10n.syncConnectingToTor);
   });
 
   test('preflight over a connected Tor route still reads as connecting', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(isSyncing: true, percentage: 0.01, phase: kSyncPhasePreflight),
       displayWholePercentage: 1,
       networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
     );
     expect(status.kind, SyncStatusKind.syncing);
-    expect(status.label, kSyncStatusConnectingToTorLabel);
+    expect(status.label, testL10n.syncConnectingToTor);
   });
 
   test('progress over Tor shows the percentage once scanning has begun', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(isSyncing: true, percentage: 0.4, phase: 'scan'),
       displayWholePercentage: 40,
       networkPrivacy: _tor(NetworkPrivacyConnectionStatus.connected),
@@ -144,6 +159,7 @@ void main() {
 
   test('direct-route preflight keeps the percentage label', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(isSyncing: true, percentage: 0.01, phase: kSyncPhasePreflight),
       displayWholePercentage: 1,
       networkPrivacy: const NetworkPrivacyState.off(),
@@ -153,6 +169,7 @@ void main() {
 
   test('a failed enable with Tor still off leaves the sync state alone', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(percentage: 1.0, isSyncing: false),
       networkPrivacy: const NetworkPrivacyState(
         torEnabled: false,
@@ -165,6 +182,7 @@ void main() {
 
   test('an enable that never reached the runtime is not a Tor failure', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(isSyncing: true, percentage: 0.4, phase: 'scan'),
       displayWholePercentage: 40,
       networkPrivacy: const NetworkPrivacyState(
@@ -179,6 +197,7 @@ void main() {
 
   test('turning Tor off does not read as connecting to it', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(percentage: 1.0, isSyncing: false),
       networkPrivacy: const NetworkPrivacyState(
         torEnabled: true,
@@ -192,6 +211,7 @@ void main() {
 
   test('a disable that failed to quiesce is not a Tor connection failure', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(isSyncing: true, percentage: 0.4, phase: 'scan'),
       displayWholePercentage: 40,
       networkPrivacy: const NetworkPrivacyState(
@@ -206,6 +226,7 @@ void main() {
 
   test('an enable in flight reads as connecting to Tor', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(percentage: 1.0, isSyncing: false),
       networkPrivacy: const NetworkPrivacyState(
         torEnabled: true,
@@ -213,17 +234,18 @@ void main() {
         targetTorEnabled: true,
       ),
     );
-    expect(status.label, kSyncStatusConnectingToTorLabel);
+    expect(status.label, testL10n.syncConnectingToTor);
   });
 
   test('a failed Tor route is a paused state that outranks sync state', () {
     final status = SyncStatusLabel.from(
+      testL10n,
       SyncState(percentage: 1.0, isSyncing: false),
       networkPrivacy: _tor(NetworkPrivacyConnectionStatus.failed),
     );
     expect(status.kind, SyncStatusKind.failed);
-    expect(status.label, kSyncStatusTorFailedLabel);
-    expect(status.semanticsLabel, kSyncStatusTorFailedSemanticsLabel);
+    expect(status.label, testL10n.syncTorFailed);
+    expect(status.semanticsLabel, testL10n.syncTorFailedSemantics);
   });
 }
 

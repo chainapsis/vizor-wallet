@@ -1150,9 +1150,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lockSyncPausedTitle => '同步已暂停';
 
   @override
-  String get lockSyncedSemantics => 'Vizor 已同步';
-
-  @override
   String get lockSyncingMessage => 'Vizor 正在同步';
 
   @override
@@ -2693,12 +2690,81 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidebarShowBalance => '显示余额';
 
   @override
+  String syncCheckingPercentSemantics(String percent) {
+    return '检查中，$percent%';
+  }
+
+  @override
+  String syncCheckingProgress(String percent) {
+    return '$percent% 检查中';
+  }
+
+  @override
+  String get syncConnectingToTor => '正在连接 Tor…';
+
+  @override
+  String get syncConnectingToTorSemantics => '正在连接 Tor';
+
+  @override
+  String get syncErrorChainRecovery => '链恢复';
+
+  @override
+  String get syncErrorData => '数据错误';
+
+  @override
+  String get syncErrorEndpoint => '节点错误';
+
+  @override
+  String get syncErrorNetwork => '网络错误';
+
+  @override
+  String get syncErrorPrivateLookup => '私密查询';
+
+  @override
+  String get syncErrorUnknown => '未知错误';
+
+  @override
+  String get syncErrorWalletData => '钱包数据错误';
+
+  @override
+  String get syncErrorWalletDataBusy => '钱包数据繁忙';
+
+  @override
+  String syncFailed(String reason) {
+    return '同步失败。$reason...';
+  }
+
+  @override
+  String syncFailedSemantics(String reason) {
+    return '同步失败。$reason';
+  }
+
+  @override
   String get syncSynced => '已同步';
 
   @override
   String syncSyncedAtBlock(String height) {
     return '已同步至区块 $height';
   }
+
+  @override
+  String syncSyncingPercentSemantics(String percent) {
+    return '同步中，$percent%';
+  }
+
+  @override
+  String syncSyncingProgress(String percent) {
+    return '$percent% 同步中...';
+  }
+
+  @override
+  String get syncTorFailed => 'Tor 无法连接...';
+
+  @override
+  String get syncTorFailedSemantics => 'Tor 无法连接';
+
+  @override
+  String get syncVizorSynced => 'Vizor 已同步';
 
   @override
   String get txFeeHelpTooltip => '支付给 Zcash 网络以处理此交易的费用。';

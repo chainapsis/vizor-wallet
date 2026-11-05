@@ -283,6 +283,7 @@ class _MobileAdaptiveFrameState extends ConsumerState<MobileAdaptiveFrame>
                           badgeRingColor: context.colors.background.raised,
                         ),
                         status: SyncStatusLabel.from(
+                          context.l10n,
                           ref.watch(syncProvider).value ?? SyncState(),
                           displayWholePercentage: ref.watch(
                             syncDisplayWholePercentageProvider,

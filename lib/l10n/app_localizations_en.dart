@@ -1250,9 +1250,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockSyncPausedTitle => 'Sync paused';
 
   @override
-  String get lockSyncedSemantics => 'Vizor is synced';
-
-  @override
   String get lockSyncingMessage => 'Vizor is syncing';
 
   @override
@@ -2906,12 +2903,81 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidebarShowBalance => 'Show balance';
 
   @override
+  String syncCheckingPercentSemantics(String percent) {
+    return 'Checking $percent percent';
+  }
+
+  @override
+  String syncCheckingProgress(String percent) {
+    return '$percent% checking';
+  }
+
+  @override
+  String get syncConnectingToTor => 'Connecting to Tor…';
+
+  @override
+  String get syncConnectingToTorSemantics => 'Connecting to Tor';
+
+  @override
+  String get syncErrorChainRecovery => 'Chain recovery';
+
+  @override
+  String get syncErrorData => 'Data error';
+
+  @override
+  String get syncErrorEndpoint => 'Endpoint error';
+
+  @override
+  String get syncErrorNetwork => 'Network error';
+
+  @override
+  String get syncErrorPrivateLookup => 'Private lookup';
+
+  @override
+  String get syncErrorUnknown => 'Unknown error';
+
+  @override
+  String get syncErrorWalletData => 'Wallet data error';
+
+  @override
+  String get syncErrorWalletDataBusy => 'Wallet data busy';
+
+  @override
+  String syncFailed(String reason) {
+    return 'Syncing failed. $reason...';
+  }
+
+  @override
+  String syncFailedSemantics(String reason) {
+    return 'Syncing failed. $reason';
+  }
+
+  @override
   String get syncSynced => 'Synced';
 
   @override
   String syncSyncedAtBlock(String height) {
     return 'Synced at block $height';
   }
+
+  @override
+  String syncSyncingPercentSemantics(String percent) {
+    return 'Syncing $percent percent';
+  }
+
+  @override
+  String syncSyncingProgress(String percent) {
+    return '$percent% Syncing...';
+  }
+
+  @override
+  String get syncTorFailed => 'Tor couldn\'t connect...';
+
+  @override
+  String get syncTorFailedSemantics => 'Tor couldn\'t connect';
+
+  @override
+  String get syncVizorSynced => 'Vizor is synced';
 
   @override
   String get txFeeHelpTooltip =>
