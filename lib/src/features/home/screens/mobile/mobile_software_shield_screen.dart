@@ -57,7 +57,7 @@ class _MobileSoftwareShieldScreenState
         logContext: 'MobileShield',
       );
       if (!mounted) return;
-      final warning = shieldBalanceBroadcastStatusMessage(result);
+      final warning = shieldBalanceBroadcastStatusMessage(context.l10n, result);
       setState(() {
         _phase = warning == null
             ? MobileShieldPhase.succeeded
@@ -69,7 +69,7 @@ class _MobileSoftwareShieldScreenState
       if (!mounted) return;
       setState(() {
         _phase = MobileShieldPhase.failed;
-        _message = friendlyShieldBalanceError(error);
+        _message = friendlyShieldBalanceError(context.l10n, error);
       });
     }
   }

@@ -902,6 +902,14 @@
   "@homeShieldErrorBroadcast": {
     "description": "Error on the Keystone and Ledger shield dialogs when sending the transaction to the network failed."
   },
+  "homeShieldErrorBroadcastFailed": "Couldn't broadcast your shielding transaction. Try again.",
+  "@homeShieldErrorBroadcastFailed": {
+    "description": "Shield error when sending the shield transaction to the network failed."
+  },
+  "homeShieldErrorCouldNotShield": "Couldn't shield your balance. Try again.",
+  "@homeShieldErrorCouldNotShield": {
+    "description": "Shield error when the cause is not known."
+  },
   "homeShieldErrorGeneric": "Shield balance failed. Please try again.",
   "@homeShieldErrorGeneric": {
     "description": "Generic error on the desktop Keystone shield dialog."
@@ -913,6 +921,10 @@
   "homeShieldErrorProvingParams": "Required proving parameters could not be prepared.",
   "@homeShieldErrorProvingParams": {
     "description": "Error on the Keystone shield screens when the Sapling proving parameters failed to download or load."
+  },
+  "homeShieldErrorSeedUnavailable": "Secret Passphrase isn't available for this account.",
+  "@homeShieldErrorSeedUnavailable": {
+    "description": "[security] Shield error when the account's seed phrase cannot be read."
   },
   "homeShieldErrorSignatureNotApplied": "Keystone signature could not be applied.",
   "@homeShieldErrorSignatureNotApplied": {
@@ -929,6 +941,10 @@
   "homeShieldErrorTooSmall": "Transparent balance is too small to shield after fees.",
   "@homeShieldErrorTooSmall": {
     "description": "Error on the Keystone and Ledger shield dialogs when the transparent balance would not cover the network fee."
+  },
+  "homeShieldErrorWaitForSync": "Wait for sync to finish, then shield.",
+  "@homeShieldErrorWaitForSync": {
+    "description": "Shield error while the wallet is still syncing."
   },
   "homeShieldFailedTitle": "Shielding could not be completed",
   "@homeShieldFailedTitle": {
@@ -957,6 +973,10 @@
   "homeShieldNow": "Shield now",
   "@homeShieldNow": {
     "description": "Label of the desktop Home button that shields the transparent balance."
+  },
+  "homeShieldQueuedForRetry": "Shielding queued for retry. Check Activity.",
+  "@homeShieldQueuedForRetry": {
+    "description": "Message after a shield transaction was saved but not yet broadcast; Vizor retries it."
   },
   "homeShieldQueuedTitle": "Shielding queued",
   "@homeShieldQueuedTitle": {
@@ -1020,6 +1040,10 @@
   "@homeShieldToggleFlashlight": {
     "description": "Screen-reader label of the flashlight button on the mobile Keystone scanner."
   },
+  "homeShieldWaitingForPrivateRecovery": "Private recovery is catching up with the latest block. Try again in a moment; your Keystone signature is kept.",
+  "@homeShieldWaitingForPrivateRecovery": {
+    "description": "Message when a Keystone shield must wait for private recovery; the signature is kept for the retry."
+  },
   "homeShieldedBalance": "Shielded balance",
   "@homeShieldedBalance": {
     "description": "Label on the Home balance card for the shielded balance. See the glossary entry for shielded."
@@ -1041,6 +1065,54 @@
         "example": "0.5 ZEC"
       }
     }
+  },
+  "homeTransparentLastKnown": "{amount} (last known)",
+  "@homeTransparentLastKnown": {
+    "description": "Transparent balance row showing the last amount Vizor knew. {amount} is a formatted ZEC amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "1.25 ZEC"
+      }
+    }
+  },
+  "homeTransparentLastKnownStopped": "{amount} (last known, recovery stopped)",
+  "@homeTransparentLastKnownStopped": {
+    "description": "Transparent balance row when private recovery stopped; shows the last known amount.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "1.25 ZEC"
+      }
+    }
+  },
+  "homeTransparentRecoveryStopped": "Recovery stopped",
+  "@homeTransparentRecoveryStopped": {
+    "description": "Transparent balance row when private recovery stopped and no amount is known."
+  },
+  "homeTransparentStopLegacyDiscrepancy": "Earlier public records don't match private recovery. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.",
+  "@homeTransparentStopLegacyDiscrepancy": {
+    "description": "[security] Why private transparent recovery stopped: earlier public records disagree."
+  },
+  "homeTransparentStopOptOutUnfinished": "Turning off Private queries didn't finish. Turn it off again in Settings to look up transparent funds publicly.",
+  "@homeTransparentStopOptOutUnfinished": {
+    "description": "[security] Why private transparent recovery stopped: turning off Private queries did not complete."
+  },
+  "homeTransparentStopQuarantined": "Private recovery found conflicting records for this account. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.",
+  "@homeTransparentStopQuarantined": {
+    "description": "[security] Why private transparent recovery stopped: conflicting records. Turning off Private queries reveals lookups publicly."
+  },
+  "homeTransparentStopStalled": "Private recovery can't make progress for this account. Vizor will try again later.",
+  "@homeTransparentStopStalled": {
+    "description": "Why private transparent recovery stopped: no progress."
+  },
+  "homeTransparentStopWithdrawn": "The private recovery service withdrew data for this account. Vizor will try again later.",
+  "@homeTransparentStopWithdrawn": {
+    "description": "Why private transparent recovery stopped: the service withdrew data."
+  },
+  "homeTransparentUnavailable": "Unavailable",
+  "@homeTransparentUnavailable": {
+    "description": "Transparent balance row when the amount is unknown."
   },
   "homeVotingSemantics": "Open coinholder voting",
   "@homeVotingSemantics": {

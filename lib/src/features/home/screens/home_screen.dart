@@ -165,11 +165,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         accountUuid: accountUuid,
         logContext: 'HomeScreen',
       );
+      if (!mounted) return;
       final broadcastStatusMessage = shieldBalanceBroadcastStatusMessage(
+        context.l10n,
         result,
       );
       if (broadcastStatusMessage != null) {
-        if (!mounted) return;
         setState(() {
           _shieldBalanceError = broadcastStatusMessage;
           _shieldBalanceErrorDetail = null;
@@ -178,7 +179,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _shieldBalanceError = friendlyShieldBalanceError(e);
+        _shieldBalanceError = friendlyShieldBalanceError(context.l10n, e);
         _shieldBalanceErrorDetail = shieldBalanceErrorDetails(e);
       });
     } finally {
@@ -412,8 +413,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 migratingBalanceText: formatZecAmount(migratingBalance),
                 waitingForMigrationConfirmation:
                     waitingForMigrationConfirmation,
-                transparentBalanceText: transparentBalance.text(_formatZec),
-                transparentBalanceHint: transparentBalance.hint,
+                transparentBalanceText: transparentBalance.text(
+                  context.l10n,
+                  _formatZec,
+                ),
+                transparentBalanceHint: transparentBalance.hint(context.l10n),
                 hasTransparentBalance: transparentBalance.visible,
                 canShieldBalance: canShieldTransparentBalance,
                 isShieldingBalance: _isShieldingBalance,

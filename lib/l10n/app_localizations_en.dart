@@ -694,6 +694,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Shield transaction could not be broadcast.';
 
   @override
+  String get homeShieldErrorBroadcastFailed =>
+      'Couldn\'t broadcast your shielding transaction. Try again.';
+
+  @override
+  String get homeShieldErrorCouldNotShield =>
+      'Couldn\'t shield your balance. Try again.';
+
+  @override
   String get homeShieldErrorGeneric =>
       'Shield balance failed. Please try again.';
 
@@ -704,6 +712,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeShieldErrorProvingParams =>
       'Required proving parameters could not be prepared.';
+
+  @override
+  String get homeShieldErrorSeedUnavailable =>
+      'Secret Passphrase isn\'t available for this account.';
 
   @override
   String get homeShieldErrorSignatureNotApplied =>
@@ -720,6 +732,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeShieldErrorTooSmall =>
       'Transparent balance is too small to shield after fees.';
+
+  @override
+  String get homeShieldErrorWaitForSync =>
+      'Wait for sync to finish, then shield.';
 
   @override
   String get homeShieldFailedTitle => 'Shielding could not be completed';
@@ -742,6 +758,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeShieldNow => 'Shield now';
+
+  @override
+  String get homeShieldQueuedForRetry =>
+      'Shielding queued for retry. Check Activity.';
 
   @override
   String get homeShieldQueuedTitle => 'Shielding queued';
@@ -791,6 +811,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeShieldToggleFlashlight => 'Toggle flashlight';
 
   @override
+  String get homeShieldWaitingForPrivateRecovery =>
+      'Private recovery is catching up with the latest block. Try again in a moment; your Keystone signature is kept.';
+
+  @override
   String get homeShieldedBalance => 'Shielded balance';
 
   @override
@@ -803,6 +827,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String homeTransparentBalance(String balance) {
     return 'Transparent: $balance';
   }
+
+  @override
+  String homeTransparentLastKnown(String amount) {
+    return '$amount (last known)';
+  }
+
+  @override
+  String homeTransparentLastKnownStopped(String amount) {
+    return '$amount (last known, recovery stopped)';
+  }
+
+  @override
+  String get homeTransparentRecoveryStopped => 'Recovery stopped';
+
+  @override
+  String get homeTransparentStopLegacyDiscrepancy =>
+      'Earlier public records don\'t match private recovery. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.';
+
+  @override
+  String get homeTransparentStopOptOutUnfinished =>
+      'Turning off Private queries didn\'t finish. Turn it off again in Settings to look up transparent funds publicly.';
+
+  @override
+  String get homeTransparentStopQuarantined =>
+      'Private recovery found conflicting records for this account. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.';
+
+  @override
+  String get homeTransparentStopStalled =>
+      'Private recovery can\'t make progress for this account. Vizor will try again later.';
+
+  @override
+  String get homeTransparentStopWithdrawn =>
+      'The private recovery service withdrew data for this account. Vizor will try again later.';
+
+  @override
+  String get homeTransparentUnavailable => 'Unavailable';
 
   @override
   String get homeVotingSemantics => 'Open coinholder voting';

@@ -1275,6 +1275,18 @@ abstract class AppLocalizations {
   /// **'Shield transaction could not be broadcast.'**
   String get homeShieldErrorBroadcast;
 
+  /// Shield error when sending the shield transaction to the network failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t broadcast your shielding transaction. Try again.'**
+  String get homeShieldErrorBroadcastFailed;
+
+  /// Shield error when the cause is not known.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t shield your balance. Try again.'**
+  String get homeShieldErrorCouldNotShield;
+
   /// Generic error on the desktop Keystone shield dialog.
   ///
   /// In en, this message translates to:
@@ -1292,6 +1304,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Required proving parameters could not be prepared.'**
   String get homeShieldErrorProvingParams;
+
+  /// [security] Shield error when the account's seed phrase cannot be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret Passphrase isn\'t available for this account.'**
+  String get homeShieldErrorSeedUnavailable;
 
   /// Error on the Keystone shield screens when the scanned signature could not be added to the transaction.
   ///
@@ -1316,6 +1334,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Transparent balance is too small to shield after fees.'**
   String get homeShieldErrorTooSmall;
+
+  /// Shield error while the wallet is still syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for sync to finish, then shield.'**
+  String get homeShieldErrorWaitForSync;
 
   /// Title of the mobile software-account shield screen when shielding failed.
   ///
@@ -1358,6 +1382,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Shield now'**
   String get homeShieldNow;
+
+  /// Message after a shield transaction was saved but not yet broadcast; Vizor retries it.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding queued for retry. Check Activity.'**
+  String get homeShieldQueuedForRetry;
 
   /// Title of the mobile software-account shield screen when the shielding transaction is queued for retry.
   ///
@@ -1443,6 +1473,12 @@ abstract class AppLocalizations {
   /// **'Toggle flashlight'**
   String get homeShieldToggleFlashlight;
 
+  /// Message when a Keystone shield must wait for private recovery; the signature is kept for the retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Private recovery is catching up with the latest block. Try again in a moment; your Keystone signature is kept.'**
+  String get homeShieldWaitingForPrivateRecovery;
+
   /// Label on the Home balance card for the shielded balance. See the glossary entry for shielded.
   ///
   /// In en, this message translates to:
@@ -1466,6 +1502,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Transparent: {balance}'**
   String homeTransparentBalance(String balance);
+
+  /// Transparent balance row showing the last amount Vizor knew. {amount} is a formatted ZEC amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} (last known)'**
+  String homeTransparentLastKnown(String amount);
+
+  /// Transparent balance row when private recovery stopped; shows the last known amount.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} (last known, recovery stopped)'**
+  String homeTransparentLastKnownStopped(String amount);
+
+  /// Transparent balance row when private recovery stopped and no amount is known.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovery stopped'**
+  String get homeTransparentRecoveryStopped;
+
+  /// [security] Why private transparent recovery stopped: earlier public records disagree.
+  ///
+  /// In en, this message translates to:
+  /// **'Earlier public records don\'t match private recovery. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.'**
+  String get homeTransparentStopLegacyDiscrepancy;
+
+  /// [security] Why private transparent recovery stopped: turning off Private queries did not complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Turning off Private queries didn\'t finish. Turn it off again in Settings to look up transparent funds publicly.'**
+  String get homeTransparentStopOptOutUnfinished;
+
+  /// [security] Why private transparent recovery stopped: conflicting records. Turning off Private queries reveals lookups publicly.
+  ///
+  /// In en, this message translates to:
+  /// **'Private recovery found conflicting records for this account. Turning off Private queries discards privately recovered records and looks up transparent funds publicly.'**
+  String get homeTransparentStopQuarantined;
+
+  /// Why private transparent recovery stopped: no progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Private recovery can\'t make progress for this account. Vizor will try again later.'**
+  String get homeTransparentStopStalled;
+
+  /// Why private transparent recovery stopped: the service withdrew data.
+  ///
+  /// In en, this message translates to:
+  /// **'The private recovery service withdrew data for this account. Vizor will try again later.'**
+  String get homeTransparentStopWithdrawn;
+
+  /// Transparent balance row when the amount is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get homeTransparentUnavailable;
 
   /// Screen-reader label of the Home coinholder voting card.
   ///

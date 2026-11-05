@@ -670,6 +670,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeShieldErrorBroadcast => '차⁠폐 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요.';
 
   @override
+  String get homeShieldErrorBroadcastFailed =>
+      '차⁠폐 거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get homeShieldErrorCouldNotShield =>
+      '잔⁠액⁠을 차⁠폐⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String get homeShieldErrorGeneric =>
       '잔⁠액⁠을 차⁠폐⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
@@ -679,6 +687,10 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get homeShieldErrorProvingParams =>
       '필⁠요⁠한 증⁠명 매⁠개⁠변⁠수⁠를 준⁠비⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get homeShieldErrorSeedUnavailable =>
+      '이 계⁠정⁠의 복⁠구 문⁠구⁠를 사⁠용⁠할 수 없⁠어⁠요.';
 
   @override
   String get homeShieldErrorSignatureNotApplied =>
@@ -695,6 +707,9 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get homeShieldErrorTooSmall =>
       '수⁠수⁠료⁠를 내⁠고 나⁠면 차⁠폐⁠하⁠기⁠에⁠는 투⁠명 잔⁠액⁠이 너⁠무 적⁠어⁠요.';
+
+  @override
+  String get homeShieldErrorWaitForSync => '동⁠기⁠화⁠가 끝⁠난 뒤 차⁠폐⁠해 주⁠세⁠요.';
 
   @override
   String get homeShieldFailedTitle => '차⁠폐⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요';
@@ -716,6 +731,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeShieldNow => '지⁠금 차⁠폐⁠하⁠기';
+
+  @override
+  String get homeShieldQueuedForRetry =>
+      '차⁠폐⁠를 다⁠시 시⁠도⁠하⁠도⁠록 대⁠기⁠열⁠에 넣⁠었⁠어⁠요. 활⁠동⁠에⁠서 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get homeShieldQueuedTitle => '차⁠폐⁠를 대⁠기⁠열⁠에 추⁠가⁠했⁠어⁠요';
@@ -765,6 +784,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeShieldToggleFlashlight => '손⁠전⁠등 켜⁠기/끄⁠기';
 
   @override
+  String get homeShieldWaitingForPrivateRecovery =>
+      '비⁠공⁠개 복⁠구⁠가 최⁠신 블⁠록⁠을 따⁠라⁠잡⁠는 중⁠이⁠에⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요. Keystone 서⁠명⁠은 그⁠대⁠로 보⁠관⁠돼⁠요.';
+
+  @override
   String get homeShieldedBalance => '차⁠폐 잔⁠액';
 
   @override
@@ -777,6 +800,42 @@ class AppLocalizationsKo extends AppLocalizations {
   String homeTransparentBalance(String balance) {
     return '투⁠명: $balance';
   }
+
+  @override
+  String homeTransparentLastKnown(String amount) {
+    return '$amount (마⁠지⁠막 확⁠인)';
+  }
+
+  @override
+  String homeTransparentLastKnownStopped(String amount) {
+    return '$amount (마⁠지⁠막 확⁠인, 복⁠구 중⁠단⁠됨)';
+  }
+
+  @override
+  String get homeTransparentRecoveryStopped => '복⁠구 중⁠단⁠됨';
+
+  @override
+  String get homeTransparentStopLegacyDiscrepancy =>
+      '이⁠전⁠의 공⁠개 기⁠록⁠이 비⁠공⁠개 복⁠구 결⁠과⁠와 맞⁠지 않⁠아⁠요. 비⁠공⁠개 조⁠회⁠를 끄⁠면 비⁠공⁠개⁠로 복⁠구⁠한 기⁠록⁠을 버⁠리⁠고 투⁠명 자⁠금⁠을 공⁠개⁠적⁠으⁠로 조⁠회⁠해⁠요.';
+
+  @override
+  String get homeTransparentStopOptOutUnfinished =>
+      '비⁠공⁠개 조⁠회 끄⁠기⁠가 완⁠료⁠되⁠지 않⁠았⁠어⁠요. 설⁠정⁠에⁠서 다⁠시 끄⁠면 투⁠명 자⁠금⁠을 공⁠개⁠적⁠으⁠로 조⁠회⁠해⁠요.';
+
+  @override
+  String get homeTransparentStopQuarantined =>
+      '비⁠공⁠개 복⁠구⁠에⁠서 이 계⁠정⁠의 기⁠록⁠이 서⁠로 맞⁠지 않⁠는 것⁠을 발⁠견⁠했⁠어⁠요. 비⁠공⁠개 조⁠회⁠를 끄⁠면 비⁠공⁠개⁠로 복⁠구⁠한 기⁠록⁠을 버⁠리⁠고 투⁠명 자⁠금⁠을 공⁠개⁠적⁠으⁠로 조⁠회⁠해⁠요.';
+
+  @override
+  String get homeTransparentStopStalled =>
+      '이 계⁠정⁠의 비⁠공⁠개 복⁠구⁠가 진⁠행⁠되⁠지 않⁠고 있⁠어⁠요. Vizor⁠가 나⁠중⁠에 다⁠시 시⁠도⁠해⁠요.';
+
+  @override
+  String get homeTransparentStopWithdrawn =>
+      '비⁠공⁠개 복⁠구 서⁠비⁠스⁠가 이 계⁠정⁠의 데⁠이⁠터⁠를 철⁠회⁠했⁠어⁠요. Vizor⁠가 나⁠중⁠에 다⁠시 시⁠도⁠해⁠요.';
+
+  @override
+  String get homeTransparentUnavailable => '확⁠인⁠할 수 없⁠음';
 
   @override
   String get homeVotingSemantics => '코⁠인 보⁠유⁠자 투⁠표 열⁠기';

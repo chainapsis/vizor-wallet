@@ -1237,10 +1237,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
               fiatBalanceText: shieldedFiatBalanceText,
               priceChange24hPct: priceChange24hPct,
               transparentBalanceText: transparentBalance.text(
+                context.l10n,
                 (amount) =>
                     ZecAmount.fromZatoshi(amount).compactBalance.amountText,
               ),
-              transparentBalanceHint: transparentBalance.hint,
+              transparentBalanceHint: transparentBalance.hint(context.l10n),
               hasTransparentBalance: transparentBalance.visible,
               canShieldBalance: sync.canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,

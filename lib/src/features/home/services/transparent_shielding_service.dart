@@ -19,18 +19,18 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../core/zcash/network_upgrade_hold.dart';
+import '../../../core/l10n/l10n.dart';
 
-const shieldBalancePendingBroadcastMessage =
-    'Shielding queued for retry. Check Activity.';
+/// Whether the shield transaction was stored for a later broadcast retry.
+bool shieldBalanceQueuedForRetry(rust_sync.ShieldTransparentResult result) =>
+    result.status != 'broadcasted';
 
 String? shieldBalanceBroadcastStatusMessage(
+  AppLocalizations l10n,
   rust_sync.ShieldTransparentResult result,
-) {
-  if (result.status == 'broadcasted') return null;
-  return shieldBalancePendingBroadcastMessage;
-}
+) => shieldBalanceQueuedForRetry(result) ? l10n.homeShieldQueuedForRetry : null;
 
-String friendlyShieldBalanceError(Object error) {
+String friendlyShieldBalanceError(AppLocalizations l10n, Object error) {
   switch (walletErrorCode(error)) {
     case rust_sync.ApiWalletErrorCode.optOutUnfinished:
       return privateQueriesOptOutUnfinishedMessage;
@@ -50,21 +50,21 @@ String friendlyShieldBalanceError(Object error) {
   }
   final lower = message.toLowerCase();
   if (lower.contains('mnemonic')) {
-    return "Secret Passphrase isn't available for this account.";
+    return l10n.homeShieldErrorSeedUnavailable;
   }
   if (lower.contains('sync')) {
-    return 'Wait for sync to finish, then shield.';
+    return l10n.homeShieldErrorWaitForSync;
   }
   if (lower.contains('insufficient') ||
       lower.contains('threshold') ||
       lower.contains('too small') ||
       lower.contains('no transparent funds')) {
-    return 'Transparent balance is too small to shield after fees.';
+    return l10n.homeShieldErrorTooSmall;
   }
   if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-    return "Couldn't broadcast your shielding transaction. Try again.";
+    return l10n.homeShieldErrorBroadcastFailed;
   }
-  return "Couldn't shield your balance. Try again.";
+  return l10n.homeShieldErrorCouldNotShield;
 }
 
 String? shieldBalanceErrorDetails(Object error) {
@@ -165,9 +165,8 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
       txids: result.txids.split(','),
     );
 
-    final broadcastStatusMessage = shieldBalanceBroadcastStatusMessage(result);
     final broadcastDetailMessage = result.message?.trim();
-    if (broadcastStatusMessage != null &&
+    if (shieldBalanceQueuedForRetry(result) &&
         broadcastDetailMessage != null &&
         broadcastDetailMessage.isNotEmpty) {
       final switched = await ref
@@ -175,7 +174,8 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
           .switchToFallbackFor(
             broadcastDetailMessage,
             endpoint: attemptedEndpoint,
-            operation: 'shield transparent balance broadcast',
+            operation:
+                'shield transparent balance broadcast', // l10n-ignore: log label
           );
       if (switched) {
         unawaited(ref.read(syncProvider.notifier).restartSync());
@@ -200,7 +200,7 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
         .switchToFallbackFor(
           e,
           endpoint: attemptedEndpoint,
-          operation: 'shield transparent balance',
+          operation: 'shield transparent balance', // l10n-ignore: log label
         );
     if (switched) {
       unawaited(ref.read(syncProvider.notifier).restartSync());
@@ -237,20 +237,18 @@ void observeShieldingBroadcast({
 }
 
 String shieldPcztBroadcastStatusMessage(
+  AppLocalizations l10n,
   rust_sync.ExtractAndBroadcastPcztResult result,
 ) {
   final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
   if (upgradeHold != null) return upgradeHold;
   if (result.status == 'broadcast_unknown') {
-    return result.message ??
-        'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
+    return result.message ?? l10n.homeShieldBroadcastUnknown;
   }
   if (result.status == 'broadcasted_storage_failed') {
-    return result.message ??
-        'The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
+    return result.message ?? l10n.homeShieldBroadcastNotStored;
   }
-  return result.message ??
-      'The shield transaction status is uncertain. Check activity before trying again.';
+  return result.message ?? l10n.homeShieldStatusUncertain;
 }
 
 /// Whether a hardware broadcast failed only because private recovery has not
@@ -258,12 +256,6 @@ String shieldPcztBroadcastStatusMessage(
 /// again once it has. Only Rust can say so, with its retry code.
 bool isHardwareBroadcastRetryable(Object error) =>
     walletErrorCode(error) == rust_sync.ApiWalletErrorCode.retryAfterRecovery;
-
-/// Shown when a Keystone shield waits for private recovery, with the signature
-/// kept for another try.
-const kShieldWaitingForPrivateRecoveryMessage =
-    'Private recovery is catching up with the latest block. Try again in a '
-    'moment; your Keystone signature is kept.';
 
 String? postBroadcastShieldErrorMessage(Object error) {
   final raw = error.toString();

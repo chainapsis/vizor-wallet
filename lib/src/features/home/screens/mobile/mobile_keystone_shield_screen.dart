@@ -234,7 +234,7 @@ class _MobileKeystoneShieldScreenState
     if (lower.contains('extract')) {
       return context.l10n.homeShieldErrorNotFinalized;
     }
-    return friendlyShieldBalanceError(error);
+    return friendlyShieldBalanceError(context.l10n, error);
   }
 
   void _startScanning() {
@@ -418,7 +418,10 @@ class _MobileKeystoneShieldScreenState
       if (result.status != 'broadcasted') {
         setState(() {
           _stage = _ShieldSignStage.broadcastWarning;
-          _statusMessage = shieldPcztBroadcastStatusMessage(result);
+          _statusMessage = shieldPcztBroadcastStatusMessage(
+            context.l10n,
+            result,
+          );
         });
         return;
       }
@@ -439,7 +442,7 @@ class _MobileKeystoneShieldScreenState
       if (isHardwareBroadcastRetryable(e)) {
         setState(() {
           _stage = _ShieldSignStage.failed;
-          _error = kShieldWaitingForPrivateRecoveryMessage;
+          _error = context.l10n.homeShieldWaitingForPrivateRecovery;
           _retrySignatures = signatures;
         });
         return;

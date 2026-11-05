@@ -640,6 +640,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldErrorBroadcast => '无法广播屏蔽交易。';
 
   @override
+  String get homeShieldErrorBroadcastFailed => '无法广播你的屏蔽交易。请重试。';
+
+  @override
+  String get homeShieldErrorCouldNotShield => '无法屏蔽你的余额。请重试。';
+
+  @override
   String get homeShieldErrorGeneric => '屏蔽余额失败，请重试。';
 
   @override
@@ -647,6 +653,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeShieldErrorProvingParams => '无法准备所需的证明参数。';
+
+  @override
+  String get homeShieldErrorSeedUnavailable => '此账户的助记词不可用。';
 
   @override
   String get homeShieldErrorSignatureNotApplied => '无法应用 Keystone 签名。';
@@ -659,6 +668,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeShieldErrorTooSmall => '扣除手续费后，透明余额太少，无法屏蔽。';
+
+  @override
+  String get homeShieldErrorWaitForSync => '请等待同步完成后再屏蔽。';
 
   @override
   String get homeShieldFailedTitle => '无法完成屏蔽';
@@ -680,6 +692,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeShieldNow => '立即屏蔽';
+
+  @override
+  String get homeShieldQueuedForRetry => '屏蔽已排队等待重试。请查看活动。';
 
   @override
   String get homeShieldQueuedTitle => '屏蔽已加入队列';
@@ -726,6 +741,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeShieldToggleFlashlight => '切换手电筒';
 
   @override
+  String get homeShieldWaitingForPrivateRecovery =>
+      '私密恢复正在追赶最新区块。请稍后重试；你的 Keystone 签名已保留。';
+
+  @override
   String get homeShieldedBalance => '屏蔽余额';
 
   @override
@@ -738,6 +757,40 @@ class AppLocalizationsZh extends AppLocalizations {
   String homeTransparentBalance(String balance) {
     return '透明：$balance';
   }
+
+  @override
+  String homeTransparentLastKnown(String amount) {
+    return '$amount（上次已知）';
+  }
+
+  @override
+  String homeTransparentLastKnownStopped(String amount) {
+    return '$amount（上次已知，恢复已停止）';
+  }
+
+  @override
+  String get homeTransparentRecoveryStopped => '恢复已停止';
+
+  @override
+  String get homeTransparentStopLegacyDiscrepancy =>
+      '之前的公开记录与私密恢复结果不一致。关闭私密查询会丢弃私密恢复的记录，并公开查询透明资金。';
+
+  @override
+  String get homeTransparentStopOptOutUnfinished =>
+      '关闭私密查询未完成。请在设置中再次关闭，以公开查询透明资金。';
+
+  @override
+  String get homeTransparentStopQuarantined =>
+      '私密恢复发现此账户的记录相互冲突。关闭私密查询会丢弃私密恢复的记录，并公开查询透明资金。';
+
+  @override
+  String get homeTransparentStopStalled => '此账户的私密恢复无法继续。Vizor 稍后会重试。';
+
+  @override
+  String get homeTransparentStopWithdrawn => '私密恢复服务撤回了此账户的数据。Vizor 稍后会重试。';
+
+  @override
+  String get homeTransparentUnavailable => '不可用';
 
   @override
   String get homeVotingSemantics => '打开持币者投票';
