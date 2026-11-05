@@ -43,6 +43,7 @@
   "accountsRemovePasswordHint": "비밀번호를 입력하세요",
   "accountsRemoveStoppingSync": "동기화를 중지하는 중...",
   "accountsRemoveSwapsCheckFailed": "이 계정에 진행 중인 스왑이 있는지 확인하지 못했어요. 삭제하기 전에 다시 시도해 주세요.",
+  "accountsRemoveWaitForGiftCards": "이 계정을 삭제하기 전에 받는 중인 기프트 카드가 끝날 때까지 기다려 주세요.",
   "accountsRemoving": "계정을 삭제하는 중...",
   "accountsResetBody": "Vizor를 초기화하면 모든 계정과 지갑 데이터가 삭제돼요. 계속하기 전에 계정을 다시 가져올 수 있는지 꼭 확인하세요.",
   "accountsResetFailed": "Vizor를 초기화하지 못했어요.",
@@ -3335,5 +3336,10 @@
   "walletLinkSelectAll": "모두 선택",
   "walletLinkStepOpenSettings": "설정 → Vizor 모바일 연결로 이동하세요",
   "walletLinkStepScanQr": "다음 화면에서 데스크탑에 표시된 QR 코드를 스캔하세요.",
-  "walletLinkStepUnlockDesktop": "Vizor 데스크탑 앱을 열고 잠금을 해제하세요"
+  "walletLinkStepUnlockDesktop": "Vizor 데스크탑 앱을 열고 잠금을 해제하세요",
+  "walletResetDeviceAuthFailed": "기기 소유자를 확인하지 못했어요. 다시 시도해 주세요.",
+  "walletResetDeviceAuthRequired": "Vizor를 초기화하려면 기기 인증이 필요해요.",
+  "walletResetFailed": "Vizor를 초기화하지 못했어요. 다시 시도해 주세요.",
+  "walletResetGiftCardInFlight": "기프트 카드를 아직 받는 중이에요. 끝날 때까지 기다려 주세요.",
+  "walletResetGiftCardWarning": "기프트 카드를 아직 받는 중이에요. 초기화하면 잃게 돼요."
 }

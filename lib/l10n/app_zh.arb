@@ -43,6 +43,7 @@
   "accountsRemovePasswordHint": "请输入密码",
   "accountsRemoveStoppingSync": "正在停止同步...",
   "accountsRemoveSwapsCheckFailed": "无法检查此账户是否有进行中的兑换。移除前请重试。",
+  "accountsRemoveWaitForGiftCards": "请等待正在接收的礼品卡完成后再删除此账户。",
   "accountsRemoving": "正在移除账户...",
   "accountsResetBody": "重置 Vizor 会删除所有账户和全部本地钱包数据。继续之前，请确保你可以重新导入账户。",
   "accountsResetFailed": "无法重置 Vizor。",
@@ -3335,5 +3336,10 @@
   "walletLinkSelectAll": "全选",
   "walletLinkStepOpenSettings": "前往 设置 → 关联 Vizor 手机端",
   "walletLinkStepScanQr": "在下一个屏幕中扫描桌面端上的二维码。",
-  "walletLinkStepUnlockDesktop": "打开并解锁 Vizor 桌面应用"
+  "walletLinkStepUnlockDesktop": "打开并解锁 Vizor 桌面应用",
+  "walletResetDeviceAuthFailed": "无法验证设备所有权，请重试。",
+  "walletResetDeviceAuthRequired": "重置 Vizor 需要进行设备验证。",
+  "walletResetFailed": "无法重置 Vizor，请重试。",
+  "walletResetGiftCardInFlight": "仍在接收礼品卡，请等待完成。",
+  "walletResetGiftCardWarning": "仍在接收礼品卡，重置将导致其丢失。"
 }

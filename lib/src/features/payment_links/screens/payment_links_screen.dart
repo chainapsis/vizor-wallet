@@ -75,7 +75,6 @@ import '../widgets/payment_link_wizard_chrome.dart';
 import 'payment_links_local_page.dart';
 import 'payment_links_mobile_body.dart';
 import '../../../providers/network_upgrade_window_provider.dart';
-import '../../../core/l10n/l10n.dart';
 
 part 'payment_links_batch_creation.dart';
 

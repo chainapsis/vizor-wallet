@@ -153,6 +153,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsRemoveSwapsCheckFailed => '无法检查此账户是否有进行中的兑换。移除前请重试。';
 
   @override
+  String get accountsRemoveWaitForGiftCards => '请等待正在接收的礼品卡完成后再删除此账户。';
+
+  @override
   String get accountsRemoving => '正在移除账户...';
 
   @override
@@ -11222,4 +11225,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get walletLinkStepUnlockDesktop => '打开并解锁 Vizor 桌面应用';
+
+  @override
+  String get walletResetDeviceAuthFailed => '无法验证设备所有权，请重试。';
+
+  @override
+  String get walletResetDeviceAuthRequired => '重置 Vizor 需要进行设备验证。';
+
+  @override
+  String get walletResetFailed => '无法重置 Vizor，请重试。';
+
+  @override
+  String get walletResetGiftCardInFlight => '仍在接收礼品卡，请等待完成。';
+
+  @override
+  String get walletResetGiftCardWarning => '仍在接收礼品卡，重置将导致其丢失。';
 }

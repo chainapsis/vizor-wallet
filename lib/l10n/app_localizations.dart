@@ -358,6 +358,12 @@ abstract class AppLocalizations {
   /// **'Couldn\'t check this account for active swaps. Try again before removing it.'**
   String get accountsRemoveSwapsCheckFailed;
 
+  /// [security] Toast when an account cannot be deleted because gift cards are still being received into it.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for incoming gift cards to finish before deleting this account.'**
+  String get accountsRemoveWaitForGiftCards;
+
   /// [security] Label of the confirm button in the desktop remove-account dialog while the account is removed.
   ///
   /// In en, this message translates to:
@@ -20165,6 +20171,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open & unlock your Vizor desktop app'**
   String get walletLinkStepUnlockDesktop;
+
+  /// [security] Error when the device passcode check before a wallet reset failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t verify device ownership. Please try again.'**
+  String get walletResetDeviceAuthFailed;
+
+  /// [security] Error when the user skipped the device passcode check before resetting the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Device authentication is required to reset Vizor.'**
+  String get walletResetDeviceAuthRequired;
+
+  /// Error when erasing the wallet failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reset Vizor. Please try again.'**
+  String get walletResetFailed;
+
+  /// [security] Reset or account removal is refused while a gift card claim is in progress. Keep it to one short line.
+  ///
+  /// In en, this message translates to:
+  /// **'A gift card is still being received. Wait for it to finish.'**
+  String get walletResetGiftCardInFlight;
+
+  /// [security] Warning on the locked reset screens while a gift card claim is in progress; reset is still allowed.
+  ///
+  /// In en, this message translates to:
+  /// **'A gift card is still being received. Resetting loses it.'**
+  String get walletResetGiftCardWarning;
 }
 
 class _AppLocalizationsDelegate

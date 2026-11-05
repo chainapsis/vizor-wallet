@@ -160,6 +160,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 계⁠정⁠에 진⁠행 중⁠인 스⁠왑⁠이 있⁠는⁠지 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 삭⁠제⁠하⁠기 전⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
+  String get accountsRemoveWaitForGiftCards =>
+      '이 계⁠정⁠을 삭⁠제⁠하⁠기 전⁠에 받⁠는 중⁠인 기⁠프⁠트 카⁠드⁠가 끝⁠날 때⁠까⁠지 기⁠다⁠려 주⁠세⁠요.';
+
+  @override
   String get accountsRemoving => '계⁠정⁠을 삭⁠제⁠하⁠는 중...';
 
   @override
@@ -11909,4 +11913,23 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get walletLinkStepUnlockDesktop =>
       'Vizor 데⁠스⁠크⁠탑 앱⁠을 열⁠고 잠⁠금⁠을 해⁠제⁠하⁠세⁠요';
+
+  @override
+  String get walletResetDeviceAuthFailed =>
+      '기⁠기 소⁠유⁠자⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletResetDeviceAuthRequired =>
+      'Vizor⁠를 초⁠기⁠화⁠하⁠려⁠면 기⁠기 인⁠증⁠이 필⁠요⁠해⁠요.';
+
+  @override
+  String get walletResetFailed => 'Vizor⁠를 초⁠기⁠화⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletResetGiftCardInFlight =>
+      '기⁠프⁠트 카⁠드⁠를 아⁠직 받⁠는 중⁠이⁠에⁠요. 끝⁠날 때⁠까⁠지 기⁠다⁠려 주⁠세⁠요.';
+
+  @override
+  String get walletResetGiftCardWarning =>
+      '기⁠프⁠트 카⁠드⁠를 아⁠직 받⁠는 중⁠이⁠에⁠요. 초⁠기⁠화⁠하⁠면 잃⁠게 돼⁠요.';
 }

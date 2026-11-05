@@ -70,7 +70,7 @@ class PaymentLinkInFlightClaimsException implements Exception {
 
   @override
   String toString() =>
-      'Wait for incoming gift cards to finish before deleting this account.'; // l10n-ignore: exception text shown by mobile_accounts_screen via toString (out of scope)
+      'Wait for incoming gift cards to finish before deleting this account.'; // l10n-ignore: log text; screens show accountsRemoveWaitForGiftCards
 }
 
 class PaymentLinkReceivedRecord {

@@ -139,8 +139,8 @@ class PaymentLinkBatchCostSummary extends StatelessWidget {
         children: [
           Opacity(
             opacity: 0,
-            child: Text('0 ZEC', style: style),
-          ), // l10n-ignore: amount format
+            child: Text('0 ZEC', style: style), // l10n-ignore: amount format
+          ),
           skeleton,
         ],
       ),

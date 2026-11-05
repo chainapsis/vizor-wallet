@@ -200,6 +200,10 @@
   "@accountsRemoveSwapsCheckFailed": {
     "description": "Message in the desktop remove-account dialog when the pending-swap check failed."
   },
+  "accountsRemoveWaitForGiftCards": "Wait for incoming gift cards to finish before deleting this account.",
+  "@accountsRemoveWaitForGiftCards": {
+    "description": "[security] Toast when an account cannot be deleted because gift cards are still being received into it."
+  },
   "accountsRemoving": "Removing account...",
   "@accountsRemoving": {
     "description": "[security] Label of the confirm button in the desktop remove-account dialog while the account is removed."
@@ -15673,5 +15677,25 @@
   "walletLinkStepUnlockDesktop": "Open & unlock your Vizor desktop app",
   "@walletLinkStepUnlockDesktop": {
     "description": "Step 1 of the desktop link instructions (the number is added by the app)."
+  },
+  "walletResetDeviceAuthFailed": "Couldn't verify device ownership. Please try again.",
+  "@walletResetDeviceAuthFailed": {
+    "description": "[security] Error when the device passcode check before a wallet reset failed."
+  },
+  "walletResetDeviceAuthRequired": "Device authentication is required to reset Vizor.",
+  "@walletResetDeviceAuthRequired": {
+    "description": "[security] Error when the user skipped the device passcode check before resetting the wallet."
+  },
+  "walletResetFailed": "Couldn't reset Vizor. Please try again.",
+  "@walletResetFailed": {
+    "description": "Error when erasing the wallet failed."
+  },
+  "walletResetGiftCardInFlight": "A gift card is still being received. Wait for it to finish.",
+  "@walletResetGiftCardInFlight": {
+    "description": "[security] Reset or account removal is refused while a gift card claim is in progress. Keep it to one short line."
+  },
+  "walletResetGiftCardWarning": "A gift card is still being received. Resetting loses it.",
+  "@walletResetGiftCardWarning": {
+    "description": "[security] Warning on the locked reset screens while a gift card claim is in progress; reset is still allowed."
   }
 }

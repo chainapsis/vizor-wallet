@@ -20,7 +20,6 @@ import '../../payment_links/providers/payment_link_intake_provider.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/biometric_unlock_provider.dart';
-import '../../../providers/device_owner_auth_provider.dart';
 import '../../../providers/payment_request_flow_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -390,8 +389,8 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
         _submitting = false;
         _error = OnboardingSubmitError.text(
           e.kind == DeviceOwnerAuthErrorKind.unavailable
-              ? kWalletResetDeviceAuthRequiredMessage
-              : kWalletResetDeviceAuthFailedMessage,
+              ? context.l10n.walletResetDeviceAuthRequired
+              : context.l10n.walletResetDeviceAuthFailed,
         );
       });
       return;
@@ -401,8 +400,8 @@ class _MobileUnlockScreenState extends ConsumerState<MobileUnlockScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = const OnboardingSubmitError.text(
-          kWalletResetInFlightGiftCardClaimsMessage,
+        _error = OnboardingSubmitError.localized(
+          (l10n) => l10n.walletResetGiftCardInFlight,
         );
       });
       return;

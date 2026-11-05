@@ -117,8 +117,8 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       setState(() {
         _isResetting = false;
         _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
-            ? kWalletResetDeviceAuthRequiredMessage
-            : kWalletResetDeviceAuthFailedMessage;
+            ? context.l10n.walletResetDeviceAuthRequired
+            : context.l10n.walletResetDeviceAuthFailed;
       });
     } on WalletResetInFlightGiftCardClaimsException catch (e, st) {
       // Not a failed wipe: nothing was deleted, and the user only has to wait.
@@ -126,7 +126,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _isResetting = false;
-        _error = kWalletResetInFlightGiftCardClaimsMessage;
+        _error = context.l10n.walletResetGiftCardInFlight;
       });
     } catch (e, st) {
       log('LostPasswordScreen._handleReset: ERROR: $e\n$st');
@@ -135,7 +135,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
         _isResetting = false;
         // Auth already succeeded; the wipe itself failed. Surface it instead of
         // silently falling back to the default status line.
-        _error = kWalletResetFailedMessage;
+        _error = context.l10n.walletResetFailed;
       });
     }
   }
@@ -200,7 +200,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
               // wallet is locked, so refusing here would never lift.
               warning:
                   (ref.watch(paymentLinkClaimsInFlightProvider).value ?? 0) > 0
-                  ? kWalletResetInFlightGiftCardWarningMessage
+                  ? context.l10n.walletResetGiftCardWarning
                   : null,
               onBack: _handleBack,
               onReset: _handleReset,

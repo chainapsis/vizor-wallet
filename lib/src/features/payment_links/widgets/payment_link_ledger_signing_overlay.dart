@@ -22,7 +22,6 @@ import '../models/vizor_payment_link.dart';
 import '../services/payment_link_hardware_signing_service.dart';
 import '../services/payment_link_ledger_funding_service.dart';
 import '../services/payment_link_service.dart';
-import '../../../core/l10n/l10n.dart';
 
 class PaymentLinkLedgerSigningOverlay extends ConsumerStatefulWidget {
   const PaymentLinkLedgerSigningOverlay({

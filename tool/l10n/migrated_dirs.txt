@@ -19,6 +19,7 @@ lib/src/features/ledger
 lib/src/features/migration
 lib/src/features/onboarding
 lib/src/features/pay
+lib/src/features/payment_links
 lib/src/features/receive
 lib/src/features/send
 lib/src/features/settings

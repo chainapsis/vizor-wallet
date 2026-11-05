@@ -177,6 +177,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Couldn\'t check this account for active swaps. Try again before removing it.';
 
   @override
+  String get accountsRemoveWaitForGiftCards =>
+      'Wait for incoming gift cards to finish before deleting this account.';
+
+  @override
   String get accountsRemoving => 'Removing account...';
 
   @override
@@ -12181,4 +12185,23 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get walletLinkStepUnlockDesktop =>
       'Open & unlock your Vizor desktop app';
+
+  @override
+  String get walletResetDeviceAuthFailed =>
+      'Couldn\'t verify device ownership. Please try again.';
+
+  @override
+  String get walletResetDeviceAuthRequired =>
+      'Device authentication is required to reset Vizor.';
+
+  @override
+  String get walletResetFailed => 'Couldn\'t reset Vizor. Please try again.';
+
+  @override
+  String get walletResetGiftCardInFlight =>
+      'A gift card is still being received. Wait for it to finish.';
+
+  @override
+  String get walletResetGiftCardWarning =>
+      'A gift card is still being received. Resetting loses it.';
 }
