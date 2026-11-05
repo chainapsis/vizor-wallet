@@ -3098,6 +3098,858 @@ class AppLocalizationsZh extends AppLocalizations {
   String get secretPassphraseTitle => '助记词';
 
   @override
+  String get sendAddMemo => '添加备注';
+
+  @override
+  String get sendAddressTypeShielded => '屏蔽地址';
+
+  @override
+  String get sendAddressTypeTex => 'TEX 地址';
+
+  @override
+  String get sendAddressTypeTransparent => '透明地址';
+
+  @override
+  String get sendAddressValidationFailed => '地址验证失败';
+
+  @override
+  String get sendAmountCtaEnterAmount => '输入金额以继续';
+
+  @override
+  String get sendAmountCtaReviewAndFinish => '查看并完成';
+
+  @override
+  String get sendAmountLabel => '金额';
+
+  @override
+  String get sendBroadcastCancelledBeforeParams => '在下载证明参数之前，发送已取消。';
+
+  @override
+  String get sendBroadcastDependentIncomplete =>
+      '第一笔交易已被接受，但后续交易未完成。再次发送前请先查看“活动”。';
+
+  @override
+  String get sendBroadcastFirstUnknown =>
+      '第一笔交易已保存在本地，可能已到达网络，但确认超时。再次发送前请先查看“活动”。';
+
+  @override
+  String get sendBroadcastHardwareExpired =>
+      '硬件签名请求在广播前已过期。请返回钱包，等待同步完成后重新确认付款并重试。';
+
+  @override
+  String get sendBroadcastIncomplete => '交易广播未完成。再次发送前请先查看“活动”。';
+
+  @override
+  String get sendBroadcastLedgerFirstUnknown =>
+      '第一笔交易可能已到达网络，但确认超时。再次发送前请先查看“活动”。';
+
+  @override
+  String get sendBroadcastLedgerNotStored =>
+      '交易已到达网络，但 Vizor 无法将其保存在本地。在同步或区块浏览器确认最新状态之前，请勿再次发送。';
+
+  @override
+  String get sendBroadcastLedgerRejected => '交易被网络拒绝。请稍后重试。';
+
+  @override
+  String get sendBroadcastLocalRetry =>
+      '交易已在本地创建，但无法广播。网络可用时将自动重试。除非此交易过期，否则请勿再次发送。';
+
+  @override
+  String get sendBroadcastMnemonicMissing => '找不到发送账户的助记词。';
+
+  @override
+  String get sendBroadcastPartial => '部分交易已广播，其余交易将自动重试。再次发送前请先查看活动。';
+
+  @override
+  String get sendBroadcastProofParamsRequired => '重试这笔已签名的交易需要证明参数。';
+
+  @override
+  String get sendBroadcastRejectedLocal =>
+      '交易已在本地创建，但未到达网络。钱包会持续重试直至其过期。除非此交易过期，否则请勿再次发送。';
+
+  @override
+  String get sendBroadcastTrackingFailed =>
+      '交易已到达网络，但本地追踪失败。再次发送前请先查看“活动”或区块浏览器。';
+
+  @override
+  String get sendCalculatingMax => '正在计算最大金额';
+
+  @override
+  String get sendClearAction => '清除';
+
+  @override
+  String get sendCloseMessageField => '关闭留言';
+
+  @override
+  String get sendContactPickerEmpty => '没有 Zcash 联系人';
+
+  @override
+  String get sendContactPickerTitle => 'Zcash 联系人';
+
+  @override
+  String get sendContactsLink => '联系人';
+
+  @override
+  String get sendDonationAddressTitle => 'Vizor 捐赠地址';
+
+  @override
+  String get sendEnterAddressToContinue => '输入地址以继续';
+
+  @override
+  String sendEnterAmountInCurrency(String currency) {
+    return '以 $currency 输入金额';
+  }
+
+  @override
+  String get sendEnterValidAddress => '请输入有效地址';
+
+  @override
+  String get sendErrorCouldNotBeSent => '无法发送交易。请返回钱包查看最新状态。';
+
+  @override
+  String get sendErrorDonationFailed => '捐赠失败。请重试。';
+
+  @override
+  String get sendErrorExpiredBeforeSent => '交易在发送前已过期。';
+
+  @override
+  String get sendErrorExpiredTryAgain => '交易在发送前已过期。请重试。';
+
+  @override
+  String get sendErrorInsufficientShielded => '屏蔽余额不足以支付金额和手续费。';
+
+  @override
+  String get sendErrorNetwork => '网络错误。请检查网络连接后重试。';
+
+  @override
+  String get sendErrorPartiallySent => '此交易的部分内容已发送。重试前，请在“活动”中查看已完成的部分。';
+
+  @override
+  String get sendErrorRejectedTryAgain => '网络拒绝了此交易。请重试。';
+
+  @override
+  String get sendErrorRejectedTryLater => '网络拒绝了此交易。请稍后重试。';
+
+  @override
+  String get sendErrorSendFailed => '发送失败。请重试。';
+
+  @override
+  String get sendErrorSyncFinishing => '正在完成钱包同步，请稍后重试。';
+
+  @override
+  String get sendFeeAboutSemantics => '关于交易手续费';
+
+  @override
+  String get sendFeeUnavailableTryAgain => '无法获取手续费。请重试。';
+
+  @override
+  String get sendFeeUpdatedAfterSync => '同步后手续费已更新。请重新确认后再继续。';
+
+  @override
+  String get sendFinishingSync => '正在完成钱包同步。';
+
+  @override
+  String get sendInsufficientBalanceIncludingFeeShielded => '含手续费后屏蔽余额不足';
+
+  @override
+  String get sendInsufficientBalanceIncludingFeeTex => '含手续费后余额不足';
+
+  @override
+  String get sendInsufficientBalanceSentenceShielded => '屏蔽余额不足。';
+
+  @override
+  String get sendInsufficientBalanceSentenceTex => '余额不足。';
+
+  @override
+  String get sendInsufficientBalanceShielded => '屏蔽余额不足';
+
+  @override
+  String get sendInsufficientBalanceTex => '余额不足';
+
+  @override
+  String get sendInsufficientBalanceToCoverFeeShielded => '屏蔽余额不足以支付手续费';
+
+  @override
+  String get sendInsufficientBalanceToCoverFeeTex => '余额不足以支付手续费';
+
+  @override
+  String sendInsufficientBalanceWithFeeShielded(String fee) {
+    return '屏蔽余额不足（手续费：$fee）';
+  }
+
+  @override
+  String sendInsufficientBalanceWithFeeTex(String fee) {
+    return '余额不足（手续费：$fee）';
+  }
+
+  @override
+  String get sendInvalidAddress => '地址无效';
+
+  @override
+  String get sendInvalidAmount => '金额无效';
+
+  @override
+  String get sendKeystoneAfterScan => '扫描后，请点击“获取签名”。';
+
+  @override
+  String get sendKeystoneConfirmTitle => '使用 Keystone 确认';
+
+  @override
+  String get sendKeystoneExpired => '交易在签名前已过期。';
+
+  @override
+  String get sendKeystoneGetSignature => '获取签名';
+
+  @override
+  String get sendKeystonePrepareFailedGoBack => '无法准备 Keystone 签名。请返回后重试。';
+
+  @override
+  String get sendKeystonePrepareFailedReturnToSend =>
+      '无法准备 Keystone 签名。请返回发送页面重试。';
+
+  @override
+  String get sendKeystonePreparing => '准备中';
+
+  @override
+  String get sendKeystoneProvingCancelled => '在下载证明参数之前，签名已取消。';
+
+  @override
+  String get sendKeystoneProvingParamsFailed => '无法准备所需的证明参数。';
+
+  @override
+  String get sendKeystoneQrMismatch => '此二维码与当前的 Keystone 签名请求不匹配。';
+
+  @override
+  String get sendKeystoneScanCameraOnly => 'Keystone 签名仅支持摄像头扫描二维码。请连接摄像头后重试。';
+
+  @override
+  String get sendKeystoneScanDecodeFailed => '无法将此二维码解码为 Keystone 交易签名。';
+
+  @override
+  String get sendKeystoneScanHoldSteady => '请将二维码稳定地对准摄像头';
+
+  @override
+  String get sendKeystoneScanNow => '请立即扫描。证明准备好后即可导入签名。';
+
+  @override
+  String get sendKeystoneScanReading => '正在读取签名...';
+
+  @override
+  String get sendKeystoneScanSubtitle => '请用 Keystone 扫描';
+
+  @override
+  String get sendKeystoneScanToFinish => '请扫描 Keystone 上的二维码以完成发送';
+
+  @override
+  String get sendKeystoneScanTransactionInstruction =>
+      '请用 Keystone 钱包扫描此交易二维码，并按设备上的步骤操作。';
+
+  @override
+  String get sendKeystoneScanUnexpectedSignature =>
+      '请在 Keystone 上打开签名结果二维码，然后重新扫描。';
+
+  @override
+  String get sendKeystoneScanUnexpectedTransaction =>
+      '请在 Keystone 上打开已签名交易的二维码，然后重新扫描。';
+
+  @override
+  String sendKeystoneTexTwoApprovals(int index) {
+    return '此 TEX 发送需要在 Keystone 上确认两次。请扫描第 $index 笔交易，共 2 笔。';
+  }
+
+  @override
+  String sendKeystoneTransactionOfTwo(int index) {
+    return '第 $index 笔交易，共 2 笔';
+  }
+
+  @override
+  String sendLedgerConnectAndUnlock(String instruction) {
+    return '请连接并解锁 Ledger。$instruction';
+  }
+
+  @override
+  String get sendLedgerCouldNotFinishTitle => '无法完成交易';
+
+  @override
+  String get sendLedgerCouldNotPrepare => 'Vizor 无法准备交易，请重试。';
+
+  @override
+  String get sendLedgerCouldNotSaveTitle => '无法保存已签名的交易';
+
+  @override
+  String get sendLedgerCouldNotVerifySaved => 'Vizor 无法验证已保存的交易。请勿再次签名或发送。';
+
+  @override
+  String get sendLedgerCreateNewTransaction => '新建交易';
+
+  @override
+  String get sendLedgerExpiredMessage => '此交易无法再签名。请新建并确认交易。';
+
+  @override
+  String get sendLedgerExpiredTitle => '交易已过期';
+
+  @override
+  String get sendLedgerKeepOpenRetry => '请保持 Vizor 打开并重试。无需再次在 Ledger 上确认。';
+
+  @override
+  String get sendLedgerKeepOpenRetrySaving =>
+      '请保持 Vizor 打开并重试保存。无需再次在 Ledger 上确认。';
+
+  @override
+  String get sendLedgerNeedsAttentionTitle => 'Ledger 需要处理';
+
+  @override
+  String get sendLedgerRejectedOnDevice => '交易已在 Ledger 上被拒绝。';
+
+  @override
+  String get sendLedgerRetrySaving => '重试保存';
+
+  @override
+  String get sendLedgerSignaturePreservedMessage =>
+      '你的 Ledger 签名已保留。请重试保存，无需再确认其他交易。';
+
+  @override
+  String get sendLedgerSignedNeedsAttentionTitle => '已签名的交易需要处理';
+
+  @override
+  String get sendLedgerSigningFailedTitle => 'Ledger 签名失败';
+
+  @override
+  String get sendLedgerSigningIncomplete => '无法完成 Ledger 签名。请检查设备后重试。';
+
+  @override
+  String get sendLedgerSigningUnavailableTitle => '无法使用 Ledger 签名';
+
+  @override
+  String get sendLedgerStatusActionNeeded => '需要操作';
+
+  @override
+  String get sendLedgerStatusNewTransactionRequired => '需要新建交易';
+
+  @override
+  String get sendLedgerStatusRecoveryRequired => '需要恢复';
+
+  @override
+  String get sendLedgerStatusSignaturePreserved => '签名已保留';
+
+  @override
+  String get sendLedgerStatusUnsupportedTransaction => '不支持的交易';
+
+  @override
+  String sendLoadError(String error) {
+    return '出了点问题，请稍后重试。\n\n详情：$error';
+  }
+
+  @override
+  String get sendMaxButton => '最大';
+
+  @override
+  String get sendMaxNeedsAddress => '请输入有效地址以使用最大金额';
+
+  @override
+  String get sendMaxUnavailable => '无法获取最大金额';
+
+  @override
+  String get sendMemoAddShortEncrypted => '添加简短的加密留言';
+
+  @override
+  String get sendMemoClear => '清除备注';
+
+  @override
+  String get sendMemoCollapse => '收起';
+
+  @override
+  String get sendMemoEncryptedHint => '已加密，仅适用于屏蔽地址。';
+
+  @override
+  String get sendMemoRecipientOnly => '仅收款方可以阅读';
+
+  @override
+  String get sendMemoSheetAdd => '添加备注';
+
+  @override
+  String get sendMemoShieldedOnly => '仅屏蔽地址支持留言';
+
+  @override
+  String get sendMemoTooLong => '留言过长';
+
+  @override
+  String get sendMemoWhitespaceOnly => '仅含空白字符';
+
+  @override
+  String get sendMessageHint => '添加留言';
+
+  @override
+  String get sendMessageLabel => '留言';
+
+  @override
+  String get sendNoActiveAccount => '没有活动账户';
+
+  @override
+  String get sendNotEnoughZec => 'ZEC 不足';
+
+  @override
+  String get sendOpenContacts => '打开联系人';
+
+  @override
+  String get sendPasteAction => '粘贴';
+
+  @override
+  String get sendPaymentRequestAmountNotSpecified => '未指定金额';
+
+  @override
+  String get sendPaymentRequestCheckAgain => '重新检查';
+
+  @override
+  String get sendPaymentRequestCheckBeforePayBody => '其他应用可能会更改请求链接中的地址或金额。';
+
+  @override
+  String get sendPaymentRequestCheckBeforePayTitle => '付款前请核对';
+
+  @override
+  String get sendPaymentRequestCheckFailed => '无法检查此请求';
+
+  @override
+  String get sendPaymentRequestChecking => '正在检查…';
+
+  @override
+  String get sendPaymentRequestClose => '关闭收款请求';
+
+  @override
+  String get sendPaymentRequestConfirmWithSender => '请与发送者确认详情。';
+
+  @override
+  String get sendPaymentRequestEdit => '编辑';
+
+  @override
+  String get sendPaymentRequestEnterAmount => '输入金额';
+
+  @override
+  String get sendPaymentRequestHideFullAddress => '隐藏完整收款地址';
+
+  @override
+  String get sendPaymentRequestHidePaymentDetails => '隐藏付款详情';
+
+  @override
+  String get sendPaymentRequestHideRequesterInfo => '隐藏请求方信息';
+
+  @override
+  String sendPaymentRequestHideRequesterInfoFor(String name) {
+    return '隐藏 $name 的请求方信息';
+  }
+
+  @override
+  String get sendPaymentRequestInsufficientFunds => 'ZEC 不足以支付此金额和网络手续费';
+
+  @override
+  String sendPaymentRequestInsufficientFundsWithSpendable(String spendable) {
+    return 'ZEC 不足以支付此金额和网络手续费（可用 $spendable）';
+  }
+
+  @override
+  String get sendPaymentRequestInvalidAddress => '收款地址看起来不对';
+
+  @override
+  String get sendPaymentRequestLinkDifferentAddress => '链接中的地址不同';
+
+  @override
+  String get sendPaymentRequestLinkDifferentAmount => '链接中的金额不同';
+
+  @override
+  String get sendPaymentRequestLinkDifferentDetails => '链接的详情不同';
+
+  @override
+  String get sendPaymentRequestLinkDifferentMemo => '链接中的备注不同';
+
+  @override
+  String get sendPaymentRequestMatchesLink => '与链接一致';
+
+  @override
+  String get sendPaymentRequestMemoIncluded => '包含备注';
+
+  @override
+  String get sendPaymentRequestMemoIncludedHint => '包含备注。查看交易备注。';
+
+  @override
+  String get sendPaymentRequestNameDisclaimer => '此名称来自请求，并不能证明谁拥有收款地址。';
+
+  @override
+  String get sendPaymentRequestNameSuppliedInRequest => '请求中提供的名称。';
+
+  @override
+  String get sendPaymentRequestNoteFromRequester => '请求方的留言';
+
+  @override
+  String get sendPaymentRequestPaymentDetails => '付款详情';
+
+  @override
+  String get sendPaymentRequestRecipient => '收款方';
+
+  @override
+  String get sendPaymentRequestReplacedNotice => '已替换之前的链接';
+
+  @override
+  String get sendPaymentRequestRequestFrom => '请求来自';
+
+  @override
+  String get sendPaymentRequestReviewLinkDetails => '查看链接详情';
+
+  @override
+  String get sendPaymentRequestReviewPayment => '查看付款确认';
+
+  @override
+  String get sendPaymentRequestScanOriginalHint => '请直接在 Vizor 中扫描原始二维码。';
+
+  @override
+  String get sendPaymentRequestScanOriginalQr => '扫描原始二维码';
+
+  @override
+  String get sendPaymentRequestShowFullAddress => '显示完整收款地址';
+
+  @override
+  String get sendPaymentRequestShowRequesterInfo => '显示请求方信息';
+
+  @override
+  String sendPaymentRequestShowRequesterInfoFor(String name) {
+    return '显示 $name 的请求方信息';
+  }
+
+  @override
+  String get sendPaymentRequestSyncStalled => '仍在同步——钱包同步到最新后请再次检查';
+
+  @override
+  String get sendPaymentRequestSyncing => '钱包仍在同步——同步完成后将自动更新';
+
+  @override
+  String get sendPaymentRequestTitle => '收款请求';
+
+  @override
+  String get sendPaymentRequestTransactionMemo => '交易备注';
+
+  @override
+  String sendPaymentRequestUnavailableLabel(String label) {
+    return '$label，不可用';
+  }
+
+  @override
+  String sendPaymentRequestUnavailableWithReason(String label, String reason) {
+    return '$label，不可用。$reason';
+  }
+
+  @override
+  String get sendPaymentRequestUsingQrInstead => '改用二维码——链接可能已被更改。';
+
+  @override
+  String get sendPaymentRequestViewNote => '查看留言';
+
+  @override
+  String get sendPaymentRequestYourAccount => '你的账户';
+
+  @override
+  String get sendQrScannerOpenFailed => '无法打开二维码扫描器，请重试。';
+
+  @override
+  String get sendRecentsSection => '最近';
+
+  @override
+  String get sendRecipientHint => '地址或请求链接';
+
+  @override
+  String get sendRecipientLabel => '发送至';
+
+  @override
+  String get sendRecipientUnreadableRequestLink => '无法读取此请求链接';
+
+  @override
+  String get sendRecipientWrongNetwork => '此地址属于另一个 Zcash 网络';
+
+  @override
+  String get sendRequestScanBackLabel => '收款请求';
+
+  @override
+  String get sendRequestScanCheckFailed => '无法检查此二维码，请重试。';
+
+  @override
+  String get sendRequestScanPermission =>
+      '扫描收款请求二维码需要使用摄像头。\n你可以随时在设置中更改摄像头权限。';
+
+  @override
+  String get sendRequestScanSubtitle => '请将请求方的原始二维码对准摄像头';
+
+  @override
+  String get sendRequestScanTipContinuity =>
+      '在 Mac 上，你也可以使用连续互通相机，用 iPhone 进行扫描。';
+
+  @override
+  String get sendRequestScanTipDistance => '请将二维码移远几厘米，以便摄像头对焦。';
+
+  @override
+  String get sendRequestScanTipLight => '请确保光线充足，且二维码没有反光。';
+
+  @override
+  String get sendRequestScanTipOriginal => '请在另一台设备上全屏打开请求方的原始二维码。';
+
+  @override
+  String get sendRequestScanTitle => '扫描原始二维码';
+
+  @override
+  String get sendRequestScanUnavailable => '请连接摄像头，或返回查看链接详情。';
+
+  @override
+  String get sendReviewAction => '查看确认';
+
+  @override
+  String get sendReviewBackSupportVizor => '支持 Vizor';
+
+  @override
+  String get sendReviewCalculatingFee => '正在计算手续费...';
+
+  @override
+  String get sendReviewConfirmAndSend => '确认并发送';
+
+  @override
+  String get sendReviewConfirmAndSendMobile => '确认并发送';
+
+  @override
+  String get sendReviewConfirmDonation => '确认捐赠';
+
+  @override
+  String get sendReviewConfirmWithLedger => '使用 Ledger 确认';
+
+  @override
+  String get sendReviewFeeUnavailable => '无法获取手续费';
+
+  @override
+  String get sendReviewFinishingSyncButton => '正在完成钱包同步...';
+
+  @override
+  String get sendReviewFullAddress => '完整地址';
+
+  @override
+  String get sendReviewPaymentTitle => '查看付款确认';
+
+  @override
+  String get sendReviewPreparing => '准备中...';
+
+  @override
+  String sendReviewRequestedAmount(String amount) {
+    return '请求金额 $amount';
+  }
+
+  @override
+  String get sendReviewRequestedBy => '请求方';
+
+  @override
+  String get sendReviewShowFullAddress => '显示完整地址';
+
+  @override
+  String get sendReviewTitle => '查看发送确认';
+
+  @override
+  String get sendReviewTo => '收款方';
+
+  @override
+  String get sendSaplingDownloadBody => '要创建这笔隐私交易，钱包需要下载约 50MB 的加密参数。';
+
+  @override
+  String get sendSaplingDownloadButton => '下载';
+
+  @override
+  String get sendSaplingDownloadNote => '只需下载一次。\n可能会产生流量费用。';
+
+  @override
+  String get sendSaplingDownloadTitle => '需要下载';
+
+  @override
+  String get sendScanDowngradePastedMalformedRequest => '仅粘贴了地址——无法读取此付款请求';
+
+  @override
+  String get sendScanDowngradePastedMultipleRecipients =>
+      '仅粘贴了第一位收款人——此请求包含多位收款人';
+
+  @override
+  String get sendScanDowngradePastedUnsupportedMemo => '仅粘贴了地址——无法读取此请求中的留言';
+
+  @override
+  String get sendScanDowngradeScannedMalformedRequest => '仅扫描了地址——无法读取此付款请求';
+
+  @override
+  String get sendScanDowngradeScannedMultipleRecipients =>
+      '仅扫描了第一位收款人——此请求包含多位收款人';
+
+  @override
+  String get sendScanDowngradeScannedUnsupportedMemo => '仅扫描了地址——无法读取此请求中的留言';
+
+  @override
+  String get sendScanNotZcashAddress => '此二维码不是 Zcash 地址。';
+
+  @override
+  String get sendScanQrSubtitle => '扫描地址或收款请求';
+
+  @override
+  String get sendScanQrTitle => '扫描二维码';
+
+  @override
+  String get sendSendingToLabel => '发送至';
+
+  @override
+  String get sendSignCancelFailed => '无法完成取消，请重试。';
+
+  @override
+  String get sendSignCancelling => '正在取消…';
+
+  @override
+  String get sendSignConfirmTransaction => '确认交易';
+
+  @override
+  String sendSignConfirmTransactionOfTwo(int index) {
+    return '确认交易（第 $index 笔，共 2 笔）';
+  }
+
+  @override
+  String get sendSpendableInfoLabel => '可用余额说明';
+
+  @override
+  String get sendSpendableTooltipBody =>
+      '资金需要先获得确认才能使用：来自自己钱包的找零需要 3 次确认，收到的他人转账需要 6 次确认。屏蔽票据还需要完整扫描。它们很快就会可用。';
+
+  @override
+  String get sendSpendableTooltipTitle => '可用余额可能低于总余额。';
+
+  @override
+  String get sendStatusBackToWallet => '返回钱包';
+
+  @override
+  String get sendStatusDonationFailed => '捐赠失败';
+
+  @override
+  String get sendStatusDonationInProgress => '正在捐赠...';
+
+  @override
+  String sendStatusFailureSummary(String amount, String recipient) {
+    return '$amount 发送给 $recipient';
+  }
+
+  @override
+  String get sendStatusMobileConfirmSoon => '交易即将在链上确认。可在“活动”中追踪。';
+
+  @override
+  String get sendStatusMobileDonationQueued => '捐赠已排队';
+
+  @override
+  String get sendStatusMobileDonationSupport => '你的支持让 Vizor 得以持续发展。';
+
+  @override
+  String get sendStatusMobileDonationThanks => '感谢你\n支持 Vizor';
+
+  @override
+  String get sendStatusMobileDone => '完成';
+
+  @override
+  String get sendStatusMobileNothingSent => '未发送任何内容，你的资金没有变动。请重试。';
+
+  @override
+  String get sendStatusMobilePendingDefault => '交易已创建，将自动提交。再次发送前，请先查看“活动”页面。';
+
+  @override
+  String get sendStatusMobileQueued => '已排队等待发送';
+
+  @override
+  String get sendStatusMobileReturnHome => '返回首页';
+
+  @override
+  String get sendStatusMobileReturnToSettings => '返回设置';
+
+  @override
+  String get sendStatusMobileSending => '正在发送...';
+
+  @override
+  String get sendStatusMobileSendingDonation => '正在发送捐赠...';
+
+  @override
+  String get sendStatusMobileSent => '已发送！';
+
+  @override
+  String get sendStatusMobileSubmitting => '正在向网络提交你的交易...';
+
+  @override
+  String get sendStatusRetryAfterSync => '请等待钱包同步完成，然后重试这笔已签名的交易。';
+
+  @override
+  String get sendStatusRowStatus => '状态';
+
+  @override
+  String get sendStatusRowTimestamp => '时间';
+
+  @override
+  String get sendStatusRowTxId => '交易 ID';
+
+  @override
+  String get sendStatusScanKeystoneTitle => '请扫描 Keystone 二维码';
+
+  @override
+  String get sendStatusTitleCompleted => '发送成功';
+
+  @override
+  String get sendStatusTitleFailed => '发送失败';
+
+  @override
+  String get sendStatusTitleInProgress => '正在发送...';
+
+  @override
+  String get sendStatusTxHashCopied => '已复制交易哈希';
+
+  @override
+  String get sendStatusValueCompleted => '已完成';
+
+  @override
+  String get sendStatusValueFailed => '失败';
+
+  @override
+  String get sendStatusValueInProgress => '进行中';
+
+  @override
+  String get sendStepEnterAmount => '输入金额';
+
+  @override
+  String get sendStepReviewDonation => '查看捐赠确认';
+
+  @override
+  String get sendStepReviewSend => '查看发送确认';
+
+  @override
+  String get sendStepSelectRecipient => '选择收款方';
+
+  @override
+  String sendTitle(String currency) {
+    return '发送 $currency';
+  }
+
+  @override
+  String get sendUseMax => '使用最大金额';
+
+  @override
+  String sendUseMaxSemantics(String spendable) {
+    return '使用最大可用余额，可用 $spendable';
+  }
+
+  @override
+  String get sendUseMaxSemanticsShort => '使用最大可用余额';
+
+  @override
+  String sendVerifyAddressPreviousTransactions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 笔历史交易',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get sendZcashAddress => 'Zcash 地址';
+
+  @override
   String get settingsAccountChangedPasscode => '所选账户已更改。请重新输入数字密码。';
 
   @override

@@ -31,7 +31,7 @@ class SendReviewContentView extends StatelessWidget {
     this.memoExpanded = false,
     this.requestedAmountText,
     this.isPaymentRequest = false,
-    this.confirmLabel = 'Confirm & send',
+    this.confirmLabel,
     this.confirmLeadingIconName = AppIcons.plane,
     this.onConfirm,
     this.onCancel,
@@ -76,7 +76,7 @@ class SendReviewContentView extends StatelessWidget {
 
   /// Primary CTA label. The hardware-account wiring swaps in
   /// "Confirm with Keystone" while keeping the shared layout.
-  final String confirmLabel;
+  final String? confirmLabel;
 
   /// 20px leading icon on the primary CTA (plane, or QR for Keystone).
   final String confirmLeadingIconName;
@@ -92,7 +92,9 @@ class SendReviewContentView extends StatelessWidget {
     final colors = context.colors;
 
     return SendReviewContentColumn(
-      title: isPaymentRequest ? 'Review Payment' : 'Review send',
+      title: isPaymentRequest
+          ? context.l10n.sendReviewPaymentTitle
+          : context.l10n.sendReviewTitle,
       children: [
         SendReviewInfoSection(
           amountText: amountText,
@@ -115,7 +117,7 @@ class SendReviewContentView extends StatelessWidget {
               const ReviewWrapDivider(),
             ],
             ReviewListRow(
-              label: 'Tx fee',
+              label: context.l10n.txFeeInfoTitle,
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,
@@ -126,10 +128,10 @@ class SendReviewContentView extends StatelessWidget {
         ),
         ReviewButtonsStack(
           primaryKey: const ValueKey('send_confirm_button'),
-          primaryLabel: confirmLabel,
+          primaryLabel: confirmLabel ?? context.l10n.sendReviewConfirmAndSend,
           primaryLeadingIconName: confirmLeadingIconName,
           onPrimaryPressed: onConfirm,
-          secondaryLabel: 'Cancel',
+          secondaryLabel: context.l10n.commonCancel,
           onSecondaryPressed: onCancel,
         ),
       ],

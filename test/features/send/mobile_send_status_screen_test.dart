@@ -38,6 +38,7 @@ final _args = SendReviewArgs(
 MobileSendBroadcastRunner _runner(Future<SendBroadcastOutcome> outcome) {
   return ({
     required ref,
+    required l10n,
     required args,
     keystone,
     ledger,
@@ -257,6 +258,7 @@ void main() {
           broadcastRunner:
               ({
                 required ref,
+                required l10n,
                 required args,
                 keystone,
                 ledger,
@@ -379,6 +381,7 @@ void main() {
         broadcastRunner:
             ({
               required ref,
+              required l10n,
               required args,
               keystone,
               ledger,

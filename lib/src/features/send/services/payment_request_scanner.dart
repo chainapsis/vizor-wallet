@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/navigation/payment_uri_drain_policy.dart';
@@ -43,6 +44,7 @@ Future<SendPrefillArgs?> showPaymentRequestScanSheet(
   return showAppMobileSheet<SendPrefillArgs>(
     context: context,
     builder: (sheetContext) {
+      final l10n = sheetContext.l10n;
       void complete(SendPrefillArgs? result) {
         // A dismissed sheet remains mounted during its reverse transition.
         // Its late validation must not pop the screen underneath it.
@@ -69,9 +71,7 @@ Future<SendPrefillArgs?> showPaymentRequestScanSheet(
             return MobileScanOutcome.rejected(error.message);
           } catch (_) {
             decoded = null;
-            return const MobileScanOutcome.rejected(
-              "Couldn't check this QR code. Try again.",
-            );
+            return MobileScanOutcome.rejected(l10n.sendRequestScanCheckFailed);
           }
         },
         onScanned: (_) => complete(decoded),

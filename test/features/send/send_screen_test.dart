@@ -35,6 +35,7 @@ import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../support/leading_decimal_input.dart';
+import '../../support/test_l10n.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -153,6 +154,7 @@ void main() {
       expect(
         find.text(
           sendScanDowngradeMessage(
+            testL10n,
             SendScanDowngrade.multipleRecipients,
             pasted: true,
           )!,

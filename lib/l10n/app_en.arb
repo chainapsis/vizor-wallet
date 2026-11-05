@@ -4281,6 +4281,1158 @@
   "@secretPassphraseTitle": {
     "description": "[security] Name of the seed phrase screen or step."
   },
+  "sendAddMemo": "Add a memo",
+  "@sendAddMemo": {
+    "description": "Button on the send screen that reveals the optional memo field."
+  },
+  "sendAddressTypeShielded": "Shielded address",
+  "@sendAddressTypeShielded": {
+    "description": "Fallback label for a recipient whose address is shielded."
+  },
+  "sendAddressTypeTex": "TEX address",
+  "@sendAddressTypeTex": {
+    "description": "Fallback label for a recipient whose address is a transparent-source-only (TEX) address."
+  },
+  "sendAddressTypeTransparent": "Transparent address",
+  "@sendAddressTypeTransparent": {
+    "description": "Fallback label for a recipient whose address is transparent."
+  },
+  "sendAddressValidationFailed": "Address validation failed",
+  "@sendAddressValidationFailed": {
+    "description": "[security] Error under the recipient field when checking the address failed unexpectedly."
+  },
+  "sendAmountCtaEnterAmount": "Enter amount to continue",
+  "@sendAmountCtaEnterAmount": {
+    "description": "Label of the disabled primary button on the mobile amount step before an amount is entered."
+  },
+  "sendAmountCtaReviewAndFinish": "Review & finish",
+  "@sendAmountCtaReviewAndFinish": {
+    "description": "Label of the primary button on the mobile amount step once the amount is valid."
+  },
+  "sendAmountLabel": "Amount",
+  "@sendAmountLabel": {
+    "description": "Label above the amount field."
+  },
+  "sendBroadcastCancelledBeforeParams": "Sending was cancelled before proving parameters were downloaded.",
+  "@sendBroadcastCancelledBeforeParams": {
+    "description": "Error when the user declined the proving-parameter download during a send."
+  },
+  "sendBroadcastDependentIncomplete": "The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.",
+  "@sendBroadcastDependentIncomplete": {
+    "description": "[security] Status when the first of two linked transactions was accepted but the second did not complete; the user must check Activity before sending again."
+  },
+  "sendBroadcastFirstUnknown": "The first transaction is stored locally and may have reached the network, but confirmation timed out. Check Activity before sending again.",
+  "@sendBroadcastFirstUnknown": {
+    "description": "[security] Status when confirmation of the first transaction timed out; it may have been sent, so the user must check Activity before sending again."
+  },
+  "sendBroadcastHardwareExpired": "The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.",
+  "@sendBroadcastHardwareExpired": {
+    "description": "[security] Error when a hardware-wallet signing request expired before it could be broadcast; the user must return, wait for sync and review the payment again."
+  },
+  "sendBroadcastIncomplete": "The transaction broadcast did not complete. Check Activity before sending again.",
+  "@sendBroadcastIncomplete": {
+    "description": "[security] Fallback status when broadcasting did not complete; the user must check Activity before sending again."
+  },
+  "sendBroadcastLedgerFirstUnknown": "The first transaction may have reached the network, but confirmation timed out. Check Activity before sending again.",
+  "@sendBroadcastLedgerFirstUnknown": {
+    "description": "[security] Ledger-flow status when confirmation of the first transaction timed out; the user must check Activity before sending again."
+  },
+  "sendBroadcastLedgerNotStored": "The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.",
+  "@sendBroadcastLedgerNotStored": {
+    "description": "[security] Ledger-flow status when the transaction was broadcast but could not be stored locally; the user must not send again until sync or an explorer confirms the status."
+  },
+  "sendBroadcastLedgerRejected": "Transaction was rejected by the network. Please try again later.",
+  "@sendBroadcastLedgerRejected": {
+    "description": "Ledger-flow status when the network rejected the transaction."
+  },
+  "sendBroadcastLocalRetry": "Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.",
+  "@sendBroadcastLocalRetry": {
+    "description": "[security] Status when a locally created transaction could not be broadcast; it retries automatically and the user must not send again unless it expires."
+  },
+  "sendBroadcastMnemonicMissing": "Mnemonic not found for the proposal account.",
+  "@sendBroadcastMnemonicMissing": {
+    "description": "[security] Error when the secret passphrase (mnemonic) of the sending account cannot be found on the device."
+  },
+  "sendBroadcastPartial": "Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.",
+  "@sendBroadcastPartial": {
+    "description": "[security] Status when only part of a multi-transaction send was broadcast; the rest retries automatically and the user must not send again before checking activity."
+  },
+  "sendBroadcastProofParamsRequired": "Proof parameters are required to retry this signed transaction.",
+  "@sendBroadcastProofParamsRequired": {
+    "description": "Error when the user declines the proving-parameter download while retrying a signed transaction."
+  },
+  "sendBroadcastRejectedLocal": "Transaction was created locally but didn't reach the network. The wallet will keep retrying until it expires. Don't send again unless this one expires.",
+  "@sendBroadcastRejectedLocal": {
+    "description": "[security] Status when the network rejected a locally created transaction; the wallet keeps retrying and the user must not send again unless it expires."
+  },
+  "sendBroadcastTrackingFailed": "The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.",
+  "@sendBroadcastTrackingFailed": {
+    "description": "[security] Status when the transaction reached the network but the wallet failed to record it; the user must check Activity or an explorer before sending again."
+  },
+  "sendCalculatingMax": "Calculating max amount",
+  "@sendCalculatingMax": {
+    "description": "Message shown while the maximum sendable amount is still being calculated."
+  },
+  "sendClearAction": "Clear",
+  "@sendClearAction": {
+    "description": "Button inside the filled recipient field that clears it."
+  },
+  "sendCloseMessageField": "Close message",
+  "@sendCloseMessageField": {
+    "description": "Accessibility label of the button that closes the message field."
+  },
+  "sendContactPickerEmpty": "No Zcash contacts",
+  "@sendContactPickerEmpty": {
+    "description": "Empty-state title in the contact picker when the user has no Zcash contacts."
+  },
+  "sendContactPickerTitle": "Contacts Zcash",
+  "@sendContactPickerTitle": {
+    "description": "Title of the contact picker modal opened from the send screen, listing Zcash contacts."
+  },
+  "sendContactsLink": "Contacts",
+  "@sendContactsLink": {
+    "description": "Link next to the recipient field that opens the contact picker."
+  },
+  "sendDonationAddressTitle": "Vizor donation address",
+  "@sendDonationAddressTitle": {
+    "description": "[security] Title of the sheet that shows the full Vizor donation address so the user can verify it."
+  },
+  "sendEnterAddressToContinue": "Enter address to continue",
+  "@sendEnterAddressToContinue": {
+    "description": "Label of the disabled primary button on the mobile recipient step before an address is entered."
+  },
+  "sendEnterAmountInCurrency": "Enter amount in {currency}",
+  "@sendEnterAmountInCurrency": {
+    "description": "Accessibility label of the control that switches the amount input to {currency}, such as ZEC or USD.",
+    "placeholders": {
+      "currency": {
+        "type": "String"
+      }
+    }
+  },
+  "sendEnterValidAddress": "Enter a valid address",
+  "@sendEnterValidAddress": {
+    "description": "[security] Error shown when the user tries to continue without a valid recipient address."
+  },
+  "sendErrorCouldNotBeSent": "Transaction couldn't be sent. Go back to your wallet and check the latest status.",
+  "@sendErrorCouldNotBeSent": {
+    "description": "[security] Generic error when broadcasting failed; asks the user to check the wallet's latest status before trying again."
+  },
+  "sendErrorDonationFailed": "Donation failed. Try again.",
+  "@sendErrorDonationFailed": {
+    "description": "Generic error when a donation could not be sent."
+  },
+  "sendErrorExpiredBeforeSent": "Transaction expired before it could be sent.",
+  "@sendErrorExpiredBeforeSent": {
+    "description": "Error when the transaction expired before it could be broadcast."
+  },
+  "sendErrorExpiredTryAgain": "Transaction expired before it could be sent. Try again.",
+  "@sendErrorExpiredTryAgain": {
+    "description": "Error when the transaction proposal expired before it could be sent."
+  },
+  "sendErrorInsufficientShielded": "Insufficient shielded balance to cover amount and fee.",
+  "@sendErrorInsufficientShielded": {
+    "description": "[security] Error shown when the shielded balance cannot cover the amount plus the network fee."
+  },
+  "sendErrorNetwork": "Network error. Check your connection and try again.",
+  "@sendErrorNetwork": {
+    "description": "Error shown when the wallet could not reach the network while sending."
+  },
+  "sendErrorPartiallySent": "Some parts of this transaction were sent. Open Activity to see what went through before you try again.",
+  "@sendErrorPartiallySent": {
+    "description": "[security] Error when part of a multi-transaction send was already broadcast; the user must check Activity before retrying to avoid paying twice."
+  },
+  "sendErrorRejectedTryAgain": "The network rejected this transaction. Try again.",
+  "@sendErrorRejectedTryAgain": {
+    "description": "Error when the network rejected the transaction while it was being prepared."
+  },
+  "sendErrorRejectedTryLater": "The network rejected this transaction. Try again later.",
+  "@sendErrorRejectedTryLater": {
+    "description": "Error when the network rejected the transaction at broadcast time."
+  },
+  "sendErrorSendFailed": "Send failed. Try again.",
+  "@sendErrorSendFailed": {
+    "description": "Generic error when a send could not be completed."
+  },
+  "sendErrorSyncFinishing": "Finishing wallet sync. Try again shortly.",
+  "@sendErrorSyncFinishing": {
+    "description": "Error shown when the wallet is still finishing its sync and cannot build a send yet."
+  },
+  "sendFeeAboutSemantics": "About the transaction fee",
+  "@sendFeeAboutSemantics": {
+    "description": "Accessibility label of the fee row on the mobile review step; opens an explanation of the network fee."
+  },
+  "sendFeeUnavailableTryAgain": "Fee unavailable. Try again.",
+  "@sendFeeUnavailableTryAgain": {
+    "description": "[security] Notice on the mobile review step when the network fee could not be calculated."
+  },
+  "sendFeeUpdatedAfterSync": "Fee updated after sync. Review and confirm again.",
+  "@sendFeeUpdatedAfterSync": {
+    "description": "[security] Notice on the mobile review step: the fee changed after the wallet synced, so the user must review the new fee before confirming."
+  },
+  "sendFinishingSync": "Finishing wallet sync.",
+  "@sendFinishingSync": {
+    "description": "Notice on the mobile review step while the wallet is finishing its sync before the fee can be shown."
+  },
+  "sendInsufficientBalanceIncludingFeeShielded": "Insufficient shielded balance including fee",
+  "@sendInsufficientBalanceIncludingFeeShielded": {
+    "description": "[security] Error under the send amount field when the amount plus the network fee exceeds the spendable balance. Variant for a shielded or transparent recipient."
+  },
+  "sendInsufficientBalanceIncludingFeeTex": "Insufficient balance including fee",
+  "@sendInsufficientBalanceIncludingFeeTex": {
+    "description": "[security] Error under the send amount field when the amount plus the network fee exceeds the spendable balance. Variant for a transparent-only (TEX) recipient."
+  },
+  "sendInsufficientBalanceSentenceShielded": "Insufficient shielded balance.",
+  "@sendInsufficientBalanceSentenceShielded": {
+    "description": "[security] Error shown on the send screen when the user tries to review an amount above the spendable balance. Variant for a shielded or transparent recipient."
+  },
+  "sendInsufficientBalanceSentenceTex": "Insufficient balance.",
+  "@sendInsufficientBalanceSentenceTex": {
+    "description": "[security] Error shown on the send screen when the user tries to review an amount above the spendable balance. Variant for a transparent-only (TEX) recipient."
+  },
+  "sendInsufficientBalanceShielded": "Insufficient shielded balance",
+  "@sendInsufficientBalanceShielded": {
+    "description": "[security] Error under the send amount field when the amount exceeds the spendable balance. Variant for a shielded or transparent recipient."
+  },
+  "sendInsufficientBalanceTex": "Insufficient balance",
+  "@sendInsufficientBalanceTex": {
+    "description": "[security] Error under the send amount field when the amount exceeds the spendable balance. Variant for a transparent-only (TEX) recipient."
+  },
+  "sendInsufficientBalanceToCoverFeeShielded": "Insufficient shielded balance to cover fee",
+  "@sendInsufficientBalanceToCoverFeeShielded": {
+    "description": "[security] Error under the send amount field when the maximum amount cannot cover the network fee. Variant for a shielded or transparent recipient."
+  },
+  "sendInsufficientBalanceToCoverFeeTex": "Insufficient balance to cover fee",
+  "@sendInsufficientBalanceToCoverFeeTex": {
+    "description": "[security] Error under the send amount field when the maximum amount cannot cover the network fee. Variant for a transparent-only (TEX) recipient."
+  },
+  "sendInsufficientBalanceWithFeeShielded": "Insufficient shielded balance (fee: {fee})",
+  "@sendInsufficientBalanceWithFeeShielded": {
+    "description": "[security] Error under the send amount field when the amount is above the spendable balance; {fee} is the formatted network fee. Variant for a shielded or transparent recipient.",
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "sendInsufficientBalanceWithFeeTex": "Insufficient balance (fee: {fee})",
+  "@sendInsufficientBalanceWithFeeTex": {
+    "description": "[security] Error under the send amount field when the amount is above the spendable balance; {fee} is the formatted network fee. Variant for a transparent-only (TEX) recipient.",
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "sendInvalidAddress": "Invalid address",
+  "@sendInvalidAddress": {
+    "description": "[security] Error under the recipient field when the address is not valid."
+  },
+  "sendInvalidAmount": "Invalid amount",
+  "@sendInvalidAmount": {
+    "description": "Error under the amount field when the entered amount cannot be parsed."
+  },
+  "sendKeystoneAfterScan": "After you scanned, click Get signature.",
+  "@sendKeystoneAfterScan": {
+    "description": "[security] Instruction in the desktop Keystone modal after proofs are ready."
+  },
+  "sendKeystoneConfirmTitle": "Confirm with Keystone",
+  "@sendKeystoneConfirmTitle": {
+    "description": "[security] Title of the desktop Keystone signing modal and label of the review button for a Keystone account."
+  },
+  "sendKeystoneExpired": "Transaction expired before it could be signed.",
+  "@sendKeystoneExpired": {
+    "description": "[security] Error shown when the transaction expired before the Keystone could sign it."
+  },
+  "sendKeystoneGetSignature": "Get signature",
+  "@sendKeystoneGetSignature": {
+    "description": "[security] Primary button in the desktop Keystone modal that opens the scanner to read the signature QR code from the device."
+  },
+  "sendKeystonePrepareFailedGoBack": "Keystone signing could not be prepared. Go back and try again.",
+  "@sendKeystonePrepareFailedGoBack": {
+    "description": "Error on the mobile review screen when the Keystone signing request could not be prepared."
+  },
+  "sendKeystonePrepareFailedReturnToSend": "Keystone signing could not be prepared. Return to Send and try again.",
+  "@sendKeystonePrepareFailedReturnToSend": {
+    "description": "Error on the desktop review screen when the Keystone signing request could not be prepared."
+  },
+  "sendKeystonePreparing": "Preparing",
+  "@sendKeystonePreparing": {
+    "description": "Disabled primary button label in the desktop Keystone modal while proofs are being prepared."
+  },
+  "sendKeystoneProvingCancelled": "Signing was cancelled before proving parameters were downloaded.",
+  "@sendKeystoneProvingCancelled": {
+    "description": "Error shown when the user declined the proving-parameter download during Keystone signing."
+  },
+  "sendKeystoneProvingParamsFailed": "Required proving parameters could not be prepared.",
+  "@sendKeystoneProvingParamsFailed": {
+    "description": "Error shown when the proving parameters needed for the signature could not be prepared."
+  },
+  "sendKeystoneQrMismatch": "This QR code does not match the current Keystone signing request.",
+  "@sendKeystoneQrMismatch": {
+    "description": "[security] Error when the scanned signature QR code does not belong to the signing request currently displayed."
+  },
+  "sendKeystoneScanCameraOnly": "Keystone signing uses camera QR scanning only. Connect a camera and try again.",
+  "@sendKeystoneScanCameraOnly": {
+    "description": "Message shown on the Keystone scan screen when no camera is available."
+  },
+  "sendKeystoneScanDecodeFailed": "This QR code could not be decoded as a Keystone transaction signature.",
+  "@sendKeystoneScanDecodeFailed": {
+    "description": "Error when the scanned QR code is not a valid Keystone signature."
+  },
+  "sendKeystoneScanHoldSteady": "Hold the QR code steady in front of your camera",
+  "@sendKeystoneScanHoldSteady": {
+    "description": "Subtitle on the desktop Keystone scan screen."
+  },
+  "sendKeystoneScanNow": "Scan now. Signature import unlocks after proofs are ready.",
+  "@sendKeystoneScanNow": {
+    "description": "[security] Instruction in the desktop Keystone modal while proofs are still being prepared."
+  },
+  "sendKeystoneScanReading": "Reading signature...",
+  "@sendKeystoneScanReading": {
+    "description": "Label shown over the scanner while the signature QR code is being decoded."
+  },
+  "sendKeystoneScanSubtitle": "Scan with your Keystone",
+  "@sendKeystoneScanSubtitle": {
+    "description": "[security] Subtitle of the desktop Keystone signing modal asking the user to scan the QR code with the device."
+  },
+  "sendKeystoneScanToFinish": "Scan the QR code on your Keystone to finish sending",
+  "@sendKeystoneScanToFinish": {
+    "description": "Caption under the camera view asking the user to scan the signature QR code shown on the Keystone to finish sending."
+  },
+  "sendKeystoneScanTransactionInstruction": "Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.",
+  "@sendKeystoneScanTransactionInstruction": {
+    "description": "[security] Instruction on the mobile Keystone screen to scan the transaction QR code with the Keystone device and follow its prompts."
+  },
+  "sendKeystoneScanUnexpectedSignature": "Open the signature result QR on Keystone, then scan again.",
+  "@sendKeystoneScanUnexpectedSignature": {
+    "description": "Hint when the scanned QR code is of the wrong type; asks to open the signature result QR code on the Keystone device."
+  },
+  "sendKeystoneScanUnexpectedTransaction": "Open the signed transaction QR on Keystone, then scan again.",
+  "@sendKeystoneScanUnexpectedTransaction": {
+    "description": "Hint when the scanned QR code is of the wrong type; asks to open the signed transaction QR code on the Keystone device."
+  },
+  "sendKeystoneTexTwoApprovals": "This TEX send requires two Keystone approvals. Scan transaction {index} of 2.",
+  "@sendKeystoneTexTwoApprovals": {
+    "description": "[security] Instruction on the mobile Keystone screen for a TEX send that needs two device approvals; {index} is 1 or 2.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "sendKeystoneTransactionOfTwo": "Transaction {index} of 2",
+  "@sendKeystoneTransactionOfTwo": {
+    "description": "[security] Subtitle of the desktop Keystone modal for a two-transaction send; {index} is 1 or 2.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "sendLedgerConnectAndUnlock": "Connect and unlock your Ledger. {instruction}",
+  "@sendLedgerConnectAndUnlock": {
+    "description": "Failure message asking the user to reconnect and unlock the Ledger; {instruction} is a sentence telling which app to open on the device.",
+    "placeholders": {
+      "instruction": {
+        "type": "String"
+      }
+    }
+  },
+  "sendLedgerCouldNotFinishTitle": "Could not finish transaction",
+  "@sendLedgerCouldNotFinishTitle": {
+    "description": "Title of the Ledger signing failure panel when Vizor could not complete preparing or signing the transaction."
+  },
+  "sendLedgerCouldNotPrepare": "Vizor could not prepare the transaction. Try again.",
+  "@sendLedgerCouldNotPrepare": {
+    "description": "Ledger failure message when Vizor failed to prepare the transaction proofs before the device signed."
+  },
+  "sendLedgerCouldNotSaveTitle": "Could not save signed transaction",
+  "@sendLedgerCouldNotSaveTitle": {
+    "description": "Title shown when the signed transaction could not be saved locally after the Ledger signed it."
+  },
+  "sendLedgerCouldNotVerifySaved": "Vizor could not verify the saved transaction. Do not sign or send it again.",
+  "@sendLedgerCouldNotVerifySaved": {
+    "description": "[security] Warning that the saved signed transaction could not be verified; the user must not sign or send it again to avoid a duplicate payment."
+  },
+  "sendLedgerCreateNewTransaction": "Create new transaction",
+  "@sendLedgerCreateNewTransaction": {
+    "description": "Button on a Ledger failure panel that discards the failed transaction and returns to build a new one."
+  },
+  "sendLedgerExpiredMessage": "This transaction can no longer be signed. Create and review a new transaction.",
+  "@sendLedgerExpiredMessage": {
+    "description": "[security] Ledger failure message: the expired transaction cannot be signed anymore and the user must start a new one."
+  },
+  "sendLedgerExpiredTitle": "Transaction expired",
+  "@sendLedgerExpiredTitle": {
+    "description": "Title of the Ledger failure panel when the transaction proposal expired before it could be signed."
+  },
+  "sendLedgerKeepOpenRetry": "Keep Vizor open and try again. No new Ledger approval needed.",
+  "@sendLedgerKeepOpenRetry": {
+    "description": "[security] Ledger failure message: the device already signed, so the user only needs to retry in Vizor without approving again on the Ledger."
+  },
+  "sendLedgerKeepOpenRetrySaving": "Keep Vizor open and retry saving. No new Ledger approval needed.",
+  "@sendLedgerKeepOpenRetrySaving": {
+    "description": "[security] Message telling the user to keep Vizor open and retry saving the signed transaction; no new Ledger approval is needed."
+  },
+  "sendLedgerNeedsAttentionTitle": "Ledger needs attention",
+  "@sendLedgerNeedsAttentionTitle": {
+    "description": "Title of the failure panel when the Ledger device needs the user to act (unlock, open the app, reconnect)."
+  },
+  "sendLedgerRejectedOnDevice": "The transaction was rejected on your Ledger.",
+  "@sendLedgerRejectedOnDevice": {
+    "description": "[security] Failure message when the user declined the transaction on their Ledger device."
+  },
+  "sendLedgerRetrySaving": "Retry saving",
+  "@sendLedgerRetrySaving": {
+    "description": "Button that retries saving a Ledger-signed transaction."
+  },
+  "sendLedgerSignaturePreservedMessage": "Your Ledger signature is preserved. Retry saving without approving another transaction.",
+  "@sendLedgerSignaturePreservedMessage": {
+    "description": "[security] Message saying the Ledger signature was kept; the user should retry saving and must not approve another transaction on the device."
+  },
+  "sendLedgerSignedNeedsAttentionTitle": "Signed transaction needs attention",
+  "@sendLedgerSignedNeedsAttentionTitle": {
+    "description": "[security] Title shown when the signed transaction could not be verified and must not be signed or sent again."
+  },
+  "sendLedgerSigningFailedTitle": "Ledger signing failed",
+  "@sendLedgerSigningFailedTitle": {
+    "description": "Title of the generic Ledger signing failure panel."
+  },
+  "sendLedgerSigningIncomplete": "Ledger signing could not be completed. Check your device and try again.",
+  "@sendLedgerSigningIncomplete": {
+    "description": "Generic Ledger failure message asking the user to check the device and retry."
+  },
+  "sendLedgerSigningUnavailableTitle": "Ledger signing unavailable",
+  "@sendLedgerSigningUnavailableTitle": {
+    "description": "Title of the failure panel when the Ledger cannot sign this kind of transaction."
+  },
+  "sendLedgerStatusActionNeeded": "Action needed",
+  "@sendLedgerStatusActionNeeded": {
+    "description": "Status chip on a Ledger signing failure panel telling the user to take an action."
+  },
+  "sendLedgerStatusNewTransactionRequired": "New transaction required",
+  "@sendLedgerStatusNewTransactionRequired": {
+    "description": "Status chip telling the user the failed transaction cannot be reused and a new one must be created."
+  },
+  "sendLedgerStatusRecoveryRequired": "Recovery required",
+  "@sendLedgerStatusRecoveryRequired": {
+    "description": "Status chip when a signed Ledger transaction needs recovery before anything else."
+  },
+  "sendLedgerStatusSignaturePreserved": "Signature preserved",
+  "@sendLedgerStatusSignaturePreserved": {
+    "description": "Status chip saying the Ledger signature was kept and saving can be retried."
+  },
+  "sendLedgerStatusUnsupportedTransaction": "Unsupported transaction",
+  "@sendLedgerStatusUnsupportedTransaction": {
+    "description": "Status chip when the Ledger device app does not support the transaction type."
+  },
+  "sendLoadError": "Something went wrong. Try again in a moment.\n\nDetails: {error}",
+  "@sendLoadError": {
+    "description": "Message shown on the send screen when the wallet fails to load; {error} is technical error text.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "sendMaxButton": "Max",
+  "@sendMaxButton": {
+    "description": "Label of the button on the mobile amount step that fills in the maximum spendable amount."
+  },
+  "sendMaxNeedsAddress": "Enter a valid address to use Max",
+  "@sendMaxNeedsAddress": {
+    "description": "Error shown when the user taps Max before entering a valid recipient address."
+  },
+  "sendMaxUnavailable": "Max amount unavailable",
+  "@sendMaxUnavailable": {
+    "description": "Error under the amount field when the maximum sendable amount could not be calculated."
+  },
+  "sendMemoAddShortEncrypted": "Add short encrypted message",
+  "@sendMemoAddShortEncrypted": {
+    "description": "Prompt on the mobile review step's memo row when no message has been added."
+  },
+  "sendMemoClear": "Clear memo",
+  "@sendMemoClear": {
+    "description": "Label of the memo sheet's button that removes the existing memo."
+  },
+  "sendMemoCollapse": "Collapse",
+  "@sendMemoCollapse": {
+    "description": "Value of the message row when expanded; tapping it collapses the full message."
+  },
+  "sendMemoEncryptedHint": "Encrypted, for shielded addresses only.",
+  "@sendMemoEncryptedHint": {
+    "description": "Caption under Add a memo explaining memos work only for shielded recipients."
+  },
+  "sendMemoRecipientOnly": "Only the recipient can read this",
+  "@sendMemoRecipientOnly": {
+    "description": "Placeholder in the memo entry sheet explaining that the message is encrypted for the recipient."
+  },
+  "sendMemoSheetAdd": "Add Memo",
+  "@sendMemoSheetAdd": {
+    "description": "Title of the memo entry sheet and label of its confirm button on the mobile review step."
+  },
+  "sendMemoShieldedOnly": "Message is only available for shielded addresses",
+  "@sendMemoShieldedOnly": {
+    "description": "Error under the message field when a memo is entered for a transparent recipient."
+  },
+  "sendMemoTooLong": "Message is too long",
+  "@sendMemoTooLong": {
+    "description": "Error under the message field when the memo exceeds 512 bytes."
+  },
+  "sendMemoWhitespaceOnly": "Whitespace only",
+  "@sendMemoWhitespaceOnly": {
+    "description": "Muted value shown in place of a message that consists only of spaces or blank lines."
+  },
+  "sendMessageHint": "Add a message",
+  "@sendMessageHint": {
+    "description": "Placeholder in the optional message field."
+  },
+  "sendMessageLabel": "Message",
+  "@sendMessageLabel": {
+    "description": "Label above the optional message (memo) field on the send screen."
+  },
+  "sendNoActiveAccount": "No active account",
+  "@sendNoActiveAccount": {
+    "description": "Error shown on the send screen when no account is selected."
+  },
+  "sendNotEnoughZec": "Not enough ZEC",
+  "@sendNotEnoughZec": {
+    "description": "[security] Error under the mobile amount field when the amount is higher than the spendable balance."
+  },
+  "sendOpenContacts": "Open contacts",
+  "@sendOpenContacts": {
+    "description": "Accessibility label of the control that opens the contact picker."
+  },
+  "sendPasteAction": "Paste",
+  "@sendPasteAction": {
+    "description": "Button inside the empty recipient field that pastes the clipboard."
+  },
+  "sendPaymentRequestAmountNotSpecified": "Amount not specified",
+  "@sendPaymentRequestAmountNotSpecified": {
+    "description": "[security] Shown on the payment request card instead of an amount when the link does not ask for a specific amount."
+  },
+  "sendPaymentRequestCheckAgain": "Check again",
+  "@sendPaymentRequestCheckAgain": {
+    "description": "Label of the primary button on the payment request card that reruns the check."
+  },
+  "sendPaymentRequestCheckBeforePayBody": "Other apps can change the address or amount in a request link.",
+  "@sendPaymentRequestCheckBeforePayBody": {
+    "description": "[security] Warning that a payment request link can be altered by other apps, so the address or amount may not be what the requester intended."
+  },
+  "sendPaymentRequestCheckBeforePayTitle": "Check before you pay",
+  "@sendPaymentRequestCheckBeforePayTitle": {
+    "description": "[security] Heading of the notice shown when a payment request came from a link and the user is advised to verify it against the original QR code."
+  },
+  "sendPaymentRequestCheckFailed": "Couldn't check this request",
+  "@sendPaymentRequestCheckFailed": {
+    "description": "Fallback status line on the payment request card when checking the request failed without a specific reason."
+  },
+  "sendPaymentRequestChecking": "Checking…",
+  "@sendPaymentRequestChecking": {
+    "description": "Label of the primary button on the payment request card while the request is being checked."
+  },
+  "sendPaymentRequestClose": "Close payment request",
+  "@sendPaymentRequestClose": {
+    "description": "Accessibility label of the button that closes the payment request card."
+  },
+  "sendPaymentRequestConfirmWithSender": "Confirm the details with the person who sent it.",
+  "@sendPaymentRequestConfirmWithSender": {
+    "description": "[security] Advice in the check-before-you-pay notice to confirm the payment details with the sender when no QR code can be scanned."
+  },
+  "sendPaymentRequestEdit": "Edit",
+  "@sendPaymentRequestEdit": {
+    "description": "Label of the button on the payment request card that opens the compose form to change the request."
+  },
+  "sendPaymentRequestEnterAmount": "Enter amount",
+  "@sendPaymentRequestEnterAmount": {
+    "description": "Label of the primary button on the payment request card for a request without an amount."
+  },
+  "sendPaymentRequestHideFullAddress": "Hide full recipient address",
+  "@sendPaymentRequestHideFullAddress": {
+    "description": "Accessibility label of the control that collapses the full recipient address."
+  },
+  "sendPaymentRequestHidePaymentDetails": "Hide payment details",
+  "@sendPaymentRequestHidePaymentDetails": {
+    "description": "Label of the toggle that collapses the payment details (memo) on the payment request card."
+  },
+  "sendPaymentRequestHideRequesterInfo": "Hide requester information",
+  "@sendPaymentRequestHideRequesterInfo": {
+    "description": "Accessibility label of the toggle that collapses the requester details on the payment request card."
+  },
+  "sendPaymentRequestHideRequesterInfoFor": "Hide requester information for {name}",
+  "@sendPaymentRequestHideRequesterInfoFor": {
+    "description": "Accessibility label of the toggle that collapses the requester details; {name} is the name supplied by the link.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "sendPaymentRequestInsufficientFunds": "Not enough ZEC for this amount and the network fee",
+  "@sendPaymentRequestInsufficientFunds": {
+    "description": "[security] Status line on the payment request card when the spendable balance cannot cover the requested amount plus the network fee."
+  },
+  "sendPaymentRequestInsufficientFundsWithSpendable": "Not enough ZEC for this amount and the network fee ({spendable} available)",
+  "@sendPaymentRequestInsufficientFundsWithSpendable": {
+    "description": "[security] Status line on the payment request card when the balance cannot cover the amount plus fee; {spendable} is the spendable amount without a currency suffix.",
+    "placeholders": {
+      "spendable": {
+        "type": "String"
+      }
+    }
+  },
+  "sendPaymentRequestInvalidAddress": "Recipient address doesn't look right",
+  "@sendPaymentRequestInvalidAddress": {
+    "description": "[security] Status line on the payment request card when the requested recipient address is not valid."
+  },
+  "sendPaymentRequestLinkDifferentAddress": "The link had a different address",
+  "@sendPaymentRequestLinkDifferentAddress": {
+    "description": "[security] Warning that the payment request link had a different recipient address than the scanned QR code."
+  },
+  "sendPaymentRequestLinkDifferentAmount": "The link had a different amount",
+  "@sendPaymentRequestLinkDifferentAmount": {
+    "description": "[security] Warning that the payment request link had a different amount than the scanned QR code."
+  },
+  "sendPaymentRequestLinkDifferentDetails": "The link had different details",
+  "@sendPaymentRequestLinkDifferentDetails": {
+    "description": "[security] Warning that the payment request link differs from the scanned QR code in more than one way."
+  },
+  "sendPaymentRequestLinkDifferentMemo": "The link had a different memo",
+  "@sendPaymentRequestLinkDifferentMemo": {
+    "description": "[security] Warning that the payment request link had a different memo than the scanned QR code."
+  },
+  "sendPaymentRequestMatchesLink": "Matches the link",
+  "@sendPaymentRequestMatchesLink": {
+    "description": "Confirmation on the payment request card that the scanned QR code has the same details as the link."
+  },
+  "sendPaymentRequestMemoIncluded": "Memo included",
+  "@sendPaymentRequestMemoIncluded": {
+    "description": "Caption under the payment details toggle saying the request carries a memo."
+  },
+  "sendPaymentRequestMemoIncludedHint": "Memo included. View the transaction memo.",
+  "@sendPaymentRequestMemoIncludedHint": {
+    "description": "Accessibility value of the payment details toggle saying a memo is included."
+  },
+  "sendPaymentRequestNameDisclaimer": "This name comes from the request. It doesn't confirm who owns the receiving address.",
+  "@sendPaymentRequestNameDisclaimer": {
+    "description": "[security] Warning on the payment request card: the requester name is unverified and does not prove who owns the receiving address."
+  },
+  "sendPaymentRequestNameSuppliedInRequest": "Name supplied in the request.",
+  "@sendPaymentRequestNameSuppliedInRequest": {
+    "description": "Accessibility value saying the shown name was typed into the link by the requester."
+  },
+  "sendPaymentRequestNoteFromRequester": "Note from requester",
+  "@sendPaymentRequestNoteFromRequester": {
+    "description": "Label for a note that came with the payment request link, written by whoever created the link."
+  },
+  "sendPaymentRequestPaymentDetails": "Payment details",
+  "@sendPaymentRequestPaymentDetails": {
+    "description": "Label of the toggle that expands the payment details (memo) on the payment request card."
+  },
+  "sendPaymentRequestRecipient": "Recipient",
+  "@sendPaymentRequestRecipient": {
+    "description": "Label above the recipient on the payment request card."
+  },
+  "sendPaymentRequestReplacedNotice": "Replaced an earlier link",
+  "@sendPaymentRequestReplacedNotice": {
+    "description": "Small notice on the payment request card saying this request replaced a payment link the user opened earlier."
+  },
+  "sendPaymentRequestRequestFrom": "Request from",
+  "@sendPaymentRequestRequestFrom": {
+    "description": "Label above the name the requester put in the payment request link."
+  },
+  "sendPaymentRequestReviewLinkDetails": "Review link details",
+  "@sendPaymentRequestReviewLinkDetails": {
+    "description": "Button that shows the details of the payment request link."
+  },
+  "sendPaymentRequestReviewPayment": "Review payment",
+  "@sendPaymentRequestReviewPayment": {
+    "description": "Label of the primary button on the payment request card that continues to the review step."
+  },
+  "sendPaymentRequestScanOriginalHint": "Scan the original QR code directly in Vizor.",
+  "@sendPaymentRequestScanOriginalHint": {
+    "description": "[security] Advice in the check-before-you-pay notice to scan the requester's original QR code in Vizor instead of trusting a link."
+  },
+  "sendPaymentRequestScanOriginalQr": "Scan original QR",
+  "@sendPaymentRequestScanOriginalQr": {
+    "description": "Button that opens the camera to scan the requester's original payment request QR code."
+  },
+  "sendPaymentRequestShowFullAddress": "Show full recipient address",
+  "@sendPaymentRequestShowFullAddress": {
+    "description": "[security] Accessibility label of the control that expands the full recipient address so the user can verify it."
+  },
+  "sendPaymentRequestShowRequesterInfo": "Show requester information",
+  "@sendPaymentRequestShowRequesterInfo": {
+    "description": "Accessibility label of the toggle that expands the requester details on the payment request card."
+  },
+  "sendPaymentRequestShowRequesterInfoFor": "Show requester information for {name}",
+  "@sendPaymentRequestShowRequesterInfoFor": {
+    "description": "Accessibility label of the toggle that expands the requester details; {name} is the name supplied by the link.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "sendPaymentRequestSyncStalled": "Still syncing — check again when the wallet is up to date",
+  "@sendPaymentRequestSyncStalled": {
+    "description": "Status line on the payment request card when syncing has stalled and the user must press Check again later."
+  },
+  "sendPaymentRequestSyncing": "Wallet is still syncing — this will update when it finishes",
+  "@sendPaymentRequestSyncing": {
+    "description": "Status line on the payment request card while the wallet is still syncing; the check reruns automatically afterwards."
+  },
+  "sendPaymentRequestTitle": "Payment request",
+  "@sendPaymentRequestTitle": {
+    "description": "Title of the payment request card that opens when the user follows a zcash: link or scans a payment request QR code."
+  },
+  "sendPaymentRequestTransactionMemo": "Transaction memo",
+  "@sendPaymentRequestTransactionMemo": {
+    "description": "Label above the memo text on the payment request card."
+  },
+  "sendPaymentRequestUnavailableLabel": "{label}, unavailable",
+  "@sendPaymentRequestUnavailableLabel": {
+    "description": "Accessibility label of a disabled button on the payment request card; {label} is the button label.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "sendPaymentRequestUnavailableWithReason": "{label}, unavailable. {reason}",
+  "@sendPaymentRequestUnavailableWithReason": {
+    "description": "Accessibility label of a disabled button on the payment request card; {label} is the button label and {reason} the status message explaining why.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "sendPaymentRequestUsingQrInstead": "Using the QR instead — the link may have been changed.",
+  "@sendPaymentRequestUsingQrInstead": {
+    "description": "[security] Explains that the card uses the scanned QR details because the link may have been tampered with."
+  },
+  "sendPaymentRequestViewNote": "View note",
+  "@sendPaymentRequestViewNote": {
+    "description": "Prompt on the collapsed requester row to open the requester's note."
+  },
+  "sendPaymentRequestYourAccount": "Your account",
+  "@sendPaymentRequestYourAccount": {
+    "description": "Sub-label shown when the recipient address of a request belongs to one of the user's own accounts."
+  },
+  "sendQrScannerOpenFailed": "Couldn't open the QR scanner. Try again.",
+  "@sendQrScannerOpenFailed": {
+    "description": "Toast shown when the payment-request QR scanner could not be opened."
+  },
+  "sendRecentsSection": "Recents",
+  "@sendRecentsSection": {
+    "description": "Section header above recently used recipients on the mobile recipient step."
+  },
+  "sendRecipientHint": "Address or request link",
+  "@sendRecipientHint": {
+    "description": "Placeholder in the recipient field; the user can type an address or paste a zcash: payment request link."
+  },
+  "sendRecipientLabel": "Send to",
+  "@sendRecipientLabel": {
+    "description": "Label above the recipient address field on the send screen."
+  },
+  "sendRecipientUnreadableRequestLink": "This request link couldn't be read",
+  "@sendRecipientUnreadableRequestLink": {
+    "description": "[security] Error under the recipient field when a pasted zcash: payment link is not a valid address or request."
+  },
+  "sendRecipientWrongNetwork": "This address is for a different Zcash network",
+  "@sendRecipientWrongNetwork": {
+    "description": "[security] Error under the recipient field when a well-formed Zcash address belongs to another network than this wallet (for example a testnet address on mainnet)."
+  },
+  "sendRequestScanBackLabel": "Payment request",
+  "@sendRequestScanBackLabel": {
+    "description": "Back link label on the payment request QR scan screen."
+  },
+  "sendRequestScanCheckFailed": "Couldn't check this QR code. Try again.",
+  "@sendRequestScanCheckFailed": {
+    "description": "Error when a scanned payment request QR code could not be checked."
+  },
+  "sendRequestScanPermission": "A camera is required to scan the payment request QR code.\nYou can change camera access in settings at any time.",
+  "@sendRequestScanPermission": {
+    "description": "Explains why camera permission is needed for scanning the payment request QR code and that it can be changed in settings."
+  },
+  "sendRequestScanSubtitle": "Show the requester’s original QR code to your camera",
+  "@sendRequestScanSubtitle": {
+    "description": "Subtitle of the payment request scan screen."
+  },
+  "sendRequestScanTipContinuity": "On a Mac, you can use Continuity Camera to scan with your iPhone instead.",
+  "@sendRequestScanTipContinuity": {
+    "description": "Troubleshooting tip suggesting Continuity Camera on a Mac."
+  },
+  "sendRequestScanTipDistance": "Move the QR code a few inches further from the camera so it can focus.",
+  "@sendRequestScanTipDistance": {
+    "description": "Troubleshooting tip when the QR code cannot be scanned."
+  },
+  "sendRequestScanTipLight": "Make sure the room is well-lit and the QR code isn't reflecting glare.",
+  "@sendRequestScanTipLight": {
+    "description": "Troubleshooting tip when the QR code cannot be scanned."
+  },
+  "sendRequestScanTipOriginal": "Open the requester’s original QR code full screen on another device.",
+  "@sendRequestScanTipOriginal": {
+    "description": "Troubleshooting tip when the payment request QR code cannot be scanned."
+  },
+  "sendRequestScanTitle": "Scan original QR",
+  "@sendRequestScanTitle": {
+    "description": "Title of the screen that scans the requester's original payment request QR code."
+  },
+  "sendRequestScanUnavailable": "Connect a camera, or go back and review the link details.",
+  "@sendRequestScanUnavailable": {
+    "description": "Message when no camera is available for scanning the payment request QR code."
+  },
+  "sendReviewAction": "Review",
+  "@sendReviewAction": {
+    "description": "Label of the primary button on the send screen that opens the review step."
+  },
+  "sendReviewBackSupportVizor": "Support Vizor",
+  "@sendReviewBackSupportVizor": {
+    "description": "Back link label on the donation review screen."
+  },
+  "sendReviewCalculatingFee": "Calculating fee...",
+  "@sendReviewCalculatingFee": {
+    "description": "[security] Label of the disabled review button while the network fee is being calculated."
+  },
+  "sendReviewConfirmAndSend": "Confirm & send",
+  "@sendReviewConfirmAndSend": {
+    "description": "[security] Primary button on the send review screen that approves and broadcasts the transaction."
+  },
+  "sendReviewConfirmAndSendMobile": "Confirm & Send",
+  "@sendReviewConfirmAndSendMobile": {
+    "description": "[security] Primary button on the mobile review step that approves and sends the transaction."
+  },
+  "sendReviewConfirmDonation": "Confirm donation",
+  "@sendReviewConfirmDonation": {
+    "description": "[security] Primary button on the donation review screen."
+  },
+  "sendReviewConfirmWithLedger": "Confirm with Ledger",
+  "@sendReviewConfirmWithLedger": {
+    "description": "[security] Primary button on the review screen for a Ledger account; starts signing on the Ledger device."
+  },
+  "sendReviewFeeUnavailable": "Fee unavailable",
+  "@sendReviewFeeUnavailable": {
+    "description": "[security] Label of the disabled review button when the network fee could not be determined."
+  },
+  "sendReviewFinishingSyncButton": "Finishing wallet sync...",
+  "@sendReviewFinishingSyncButton": {
+    "description": "Label of the disabled review button while the wallet finishes syncing."
+  },
+  "sendReviewFullAddress": "Full address",
+  "@sendReviewFullAddress": {
+    "description": "[security] Action on the recipient row of the mobile review that opens the complete address."
+  },
+  "sendReviewPaymentTitle": "Review Payment",
+  "@sendReviewPaymentTitle": {
+    "description": "[security] Title of the review screen for a payment request, shown before the user approves an irreversible payment."
+  },
+  "sendReviewPreparing": "Preparing...",
+  "@sendReviewPreparing": {
+    "description": "Label of the review button while the transaction is being prepared."
+  },
+  "sendReviewRequestedAmount": "Requested {amount}",
+  "@sendReviewRequestedAmount": {
+    "description": "Line under the amount on the payment-request review screen showing the amount the requester asked for; {amount} is a formatted amount with currency.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "sendReviewRequestedBy": "Requested by",
+  "@sendReviewRequestedBy": {
+    "description": "Row label on the review screen for the recipient of a payment request; the value is the address or contact that asked to be paid."
+  },
+  "sendReviewShowFullAddress": "Show full address",
+  "@sendReviewShowFullAddress": {
+    "description": "[security] Action on the recipient row that opens the complete address so the user can verify it before sending."
+  },
+  "sendReviewTitle": "Review send",
+  "@sendReviewTitle": {
+    "description": "[security] Title of the review screen shown before the user approves an irreversible send."
+  },
+  "sendReviewTo": "To",
+  "@sendReviewTo": {
+    "description": "Row label on the review and receipt screens for the recipient."
+  },
+  "sendSaplingDownloadBody": "To create this private transaction, your wallet needs to download about 50MB of cryptographic parameters.",
+  "@sendSaplingDownloadBody": {
+    "description": "Body of the dialog explaining that about 50MB of cryptographic proving parameters must be downloaded to create a private transaction."
+  },
+  "sendSaplingDownloadButton": "Download",
+  "@sendSaplingDownloadButton": {
+    "description": "Button in the proving-parameters dialog that starts the download."
+  },
+  "sendSaplingDownloadNote": "This happens once, then it's done.\nNetwork data charges may apply.",
+  "@sendSaplingDownloadNote": {
+    "description": "Note under the download explanation: the download happens only once and may use mobile data."
+  },
+  "sendSaplingDownloadTitle": "Download Required",
+  "@sendSaplingDownloadTitle": {
+    "description": "Title of the dialog asking permission to download proving parameters before a private send."
+  },
+  "sendScanDowngradePastedMalformedRequest": "Pasted the address only — the payment request couldn't be read",
+  "@sendScanDowngradePastedMalformedRequest": {
+    "description": "Toast shown after a pasted payment link is reduced to its address because the rest of the request is malformed or unsupported."
+  },
+  "sendScanDowngradePastedMultipleRecipients": "Pasted the first recipient only — this request asks for more than one",
+  "@sendScanDowngradePastedMultipleRecipients": {
+    "description": "Toast shown after a pasted payment link is reduced to its first recipient because the link asks to pay several recipients."
+  },
+  "sendScanDowngradePastedUnsupportedMemo": "Pasted the address only — the request's message couldn't be read",
+  "@sendScanDowngradePastedUnsupportedMemo": {
+    "description": "Toast shown after a pasted payment link is reduced to its address because the memo it carries cannot be read as text."
+  },
+  "sendScanDowngradeScannedMalformedRequest": "Scanned the address only — the payment request couldn't be read",
+  "@sendScanDowngradeScannedMalformedRequest": {
+    "description": "Message shown after a scanned QR payment request is reduced to its address because the rest of the request is malformed or unsupported."
+  },
+  "sendScanDowngradeScannedMultipleRecipients": "Scanned the first recipient only — this request asks for more than one",
+  "@sendScanDowngradeScannedMultipleRecipients": {
+    "description": "Message shown after a scanned QR payment request is reduced to its first recipient because it asks to pay several recipients."
+  },
+  "sendScanDowngradeScannedUnsupportedMemo": "Scanned the address only — the request's message couldn't be read",
+  "@sendScanDowngradeScannedUnsupportedMemo": {
+    "description": "Message shown after a scanned QR payment request is reduced to its address because the memo it carries cannot be read as text."
+  },
+  "sendScanNotZcashAddress": "This QR code isn't a Zcash address.",
+  "@sendScanNotZcashAddress": {
+    "description": "[security] Error in the mobile scanner when the scanned QR code does not hold a Zcash address."
+  },
+  "sendScanQrSubtitle": "Scan an address or payment request",
+  "@sendScanQrSubtitle": {
+    "description": "Subtitle of the row that opens the QR scanner on the mobile recipient step."
+  },
+  "sendScanQrTitle": "Scan a QR Code",
+  "@sendScanQrTitle": {
+    "description": "Title of the row on the mobile recipient step that opens the QR scanner."
+  },
+  "sendSendingToLabel": "Sending to",
+  "@sendSendingToLabel": {
+    "description": "Label above the chosen recipient on the mobile amount step."
+  },
+  "sendSignCancelFailed": "Could not finish cancelling. Please try again.",
+  "@sendSignCancelFailed": {
+    "description": "Error shown when cancelling a signing request could not be completed."
+  },
+  "sendSignCancelling": "Cancelling…",
+  "@sendSignCancelling": {
+    "description": "Label shown on a button or title while a signing request is being cancelled."
+  },
+  "sendSignConfirmTransaction": "Confirm transaction",
+  "@sendSignConfirmTransaction": {
+    "description": "Title of the mobile hardware-wallet signing screen."
+  },
+  "sendSignConfirmTransactionOfTwo": "Confirm transaction {index} of 2",
+  "@sendSignConfirmTransactionOfTwo": {
+    "description": "Title of the mobile Keystone signing screen for a two-transaction send; {index} is 1 or 2.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "sendSpendableInfoLabel": "Spendable balance info",
+  "@sendSpendableInfoLabel": {
+    "description": "Accessibility label of the help icon that opens the spendable balance tooltip."
+  },
+  "sendSpendableTooltipBody": "Funds need confirmations before they can be spent: 3 for change from your own wallet, 6 for funds received from others. Shielded notes also need to be fully scanned. They'll become available shortly.",
+  "@sendSpendableTooltipBody": {
+    "description": "[security] Body of the tooltip next to Use Max explaining confirmation counts before funds are spendable."
+  },
+  "sendSpendableTooltipTitle": "Your spendable balance may be lower than your total balance.",
+  "@sendSpendableTooltipTitle": {
+    "description": "[security] Bold first line of the tooltip next to Use Max explaining why spendable balance can be lower than total."
+  },
+  "sendStatusBackToWallet": "Back to wallet",
+  "@sendStatusBackToWallet": {
+    "description": "Link on the mobile failed-send screen that returns to the wallet home."
+  },
+  "sendStatusDonationFailed": "Donation failed",
+  "@sendStatusDonationFailed": {
+    "description": "Title on the status screen when a donation failed."
+  },
+  "sendStatusDonationInProgress": "Donation in progress...",
+  "@sendStatusDonationInProgress": {
+    "description": "Title on the status screen while a donation is being sent."
+  },
+  "sendStatusFailureSummary": "{amount} to {recipient}",
+  "@sendStatusFailureSummary": {
+    "description": "Line on the mobile failed-send screen summarising the attempted payment; {amount} is a formatted amount with currency and {recipient} is a contact name or truncated address.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "recipient": {
+        "type": "String"
+      }
+    }
+  },
+  "sendStatusMobileConfirmSoon": "It will confirm on-chain shortly. Track it in Activity.",
+  "@sendStatusMobileConfirmSoon": {
+    "description": "Subtitle on the mobile status screen after a successful send."
+  },
+  "sendStatusMobileDonationQueued": "Donation queued",
+  "@sendStatusMobileDonationQueued": {
+    "description": "Title on the mobile status screen when a donation was created and queued for submission."
+  },
+  "sendStatusMobileDonationSupport": "Your support keeps Vizor going.",
+  "@sendStatusMobileDonationSupport": {
+    "description": "Subtitle on the mobile status screen after a donation succeeded."
+  },
+  "sendStatusMobileDonationThanks": "Thank you for\nsupporting Vizor",
+  "@sendStatusMobileDonationThanks": {
+    "description": "Title on the mobile status screen after a donation succeeded; the line break is intentional."
+  },
+  "sendStatusMobileDone": "Done",
+  "@sendStatusMobileDone": {
+    "description": "Primary button on the mobile status screen after a send was submitted or finished."
+  },
+  "sendStatusMobileNothingSent": "Nothing was sent, your funds haven't moved. Try again.",
+  "@sendStatusMobileNothingSent": {
+    "description": "[security] Subtitle on the mobile status screen after a failed send: nothing left the wallet, so the user's funds are unchanged."
+  },
+  "sendStatusMobilePendingDefault": "Your transaction was created and will be submitted automatically. Check the Activity page before sending again.",
+  "@sendStatusMobilePendingDefault": {
+    "description": "[security] Subtitle when the transaction was created but not yet submitted; warns the user to check Activity before sending again so they do not pay twice."
+  },
+  "sendStatusMobileQueued": "Queued to send",
+  "@sendStatusMobileQueued": {
+    "description": "Title on the mobile status screen when the transaction was created and will be submitted automatically."
+  },
+  "sendStatusMobileReturnHome": "Return home",
+  "@sendStatusMobileReturnHome": {
+    "description": "Button on the mobile status screen that returns to the home screen."
+  },
+  "sendStatusMobileReturnToSettings": "Return to settings",
+  "@sendStatusMobileReturnToSettings": {
+    "description": "Button on the mobile status screen that returns to Settings after a donation attempt."
+  },
+  "sendStatusMobileSending": "Sending...",
+  "@sendStatusMobileSending": {
+    "description": "Title on the mobile status screen while a transaction is being sent."
+  },
+  "sendStatusMobileSendingDonation": "Sending donation...",
+  "@sendStatusMobileSendingDonation": {
+    "description": "Title on the mobile status screen while a donation is being sent."
+  },
+  "sendStatusMobileSent": "Sent!",
+  "@sendStatusMobileSent": {
+    "description": "Title on the mobile status screen after the transaction was sent."
+  },
+  "sendStatusMobileSubmitting": "Submitting your transaction to the network...",
+  "@sendStatusMobileSubmitting": {
+    "description": "Subtitle on the mobile status screen while the transaction is being submitted."
+  },
+  "sendStatusRetryAfterSync": "Wait for wallet sync, then retry this signed transaction.",
+  "@sendStatusRetryAfterSync": {
+    "description": "[security] Message shown when a signed transaction could not be sent yet; the user should wait for sync and retry the same transaction instead of creating a new one."
+  },
+  "sendStatusRowStatus": "Status",
+  "@sendStatusRowStatus": {
+    "description": "Row label on the send receipt for the transaction status."
+  },
+  "sendStatusRowTimestamp": "Timestamp",
+  "@sendStatusRowTimestamp": {
+    "description": "Row label on the send receipt for the date and time."
+  },
+  "sendStatusRowTxId": "Tx ID",
+  "@sendStatusRowTxId": {
+    "description": "Row label on the send receipt for the transaction ID; tapping opens a block explorer."
+  },
+  "sendStatusScanKeystoneTitle": "Scan your Keystone QR Code",
+  "@sendStatusScanKeystoneTitle": {
+    "description": "[security] Heading on the desktop send status screen asking the user to scan the signing QR code shown on their Keystone hardware wallet."
+  },
+  "sendStatusTitleCompleted": "Sent successfully",
+  "@sendStatusTitleCompleted": {
+    "description": "Title on the send status screen after the transaction was sent."
+  },
+  "sendStatusTitleFailed": "Send failed",
+  "@sendStatusTitleFailed": {
+    "description": "Title on the send status screen when sending failed, and the fallback error text."
+  },
+  "sendStatusTitleInProgress": "Send in progress...",
+  "@sendStatusTitleInProgress": {
+    "description": "Title on the send status screen while the transaction is being sent."
+  },
+  "sendStatusTxHashCopied": "Transaction hash copied",
+  "@sendStatusTxHashCopied": {
+    "description": "Toast shown after the user copies the transaction hash."
+  },
+  "sendStatusValueCompleted": "Completed",
+  "@sendStatusValueCompleted": {
+    "description": "Value of the Status row on the send receipt after sending."
+  },
+  "sendStatusValueFailed": "Failed",
+  "@sendStatusValueFailed": {
+    "description": "Value of the Status row on the send receipt when sending failed."
+  },
+  "sendStatusValueInProgress": "In progress",
+  "@sendStatusValueInProgress": {
+    "description": "Value of the Status row on the send receipt while sending."
+  },
+  "sendStepEnterAmount": "Enter Amount",
+  "@sendStepEnterAmount": {
+    "description": "Title of the second step of the mobile send flow where the user enters the amount."
+  },
+  "sendStepReviewDonation": "Review donation",
+  "@sendStepReviewDonation": {
+    "description": "[security] Title of the review step of a mobile donation, before the user approves an irreversible payment."
+  },
+  "sendStepReviewSend": "Review Send",
+  "@sendStepReviewSend": {
+    "description": "[security] Title of the review step of the mobile send flow, before the user approves an irreversible send."
+  },
+  "sendStepSelectRecipient": "Select Recipient",
+  "@sendStepSelectRecipient": {
+    "description": "Title of the first step of the mobile send flow where the user picks the recipient."
+  },
+  "sendTitle": "Send {currency}",
+  "@sendTitle": {
+    "description": "Page title of the send screen; {currency} is the network ticker such as ZEC.",
+    "placeholders": {
+      "currency": {
+        "type": "String"
+      }
+    }
+  },
+  "sendUseMax": "Use Max",
+  "@sendUseMax": {
+    "description": "Button label that fills the amount field with the maximum spendable balance."
+  },
+  "sendUseMaxSemantics": "Use maximum spendable balance, {spendable} available",
+  "@sendUseMaxSemantics": {
+    "description": "Accessibility label of the Use Max button; {spendable} is the formatted spendable balance.",
+    "placeholders": {
+      "spendable": {
+        "type": "String"
+      }
+    }
+  },
+  "sendUseMaxSemanticsShort": "Use maximum spendable balance",
+  "@sendUseMaxSemanticsShort": {
+    "description": "Accessibility label of the Max button on the mobile amount step."
+  },
+  "sendVerifyAddressPreviousTransactions": "{count, plural, =1{1 previous transaction} other{{count} previous transactions}}",
+  "@sendVerifyAddressPreviousTransactions": {
+    "description": "Sub-line under a saved contact's name in the verify-address dialog giving how many earlier transactions were sent to them.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sendZcashAddress": "Zcash address",
+  "@sendZcashAddress": {
+    "description": "Placeholder or label for a Zcash address field or address type."
+  },
   "settingsAccountChangedPasscode": "Selected account changed. Enter your passcode again.",
   "@settingsAccountChangedPasscode": {
     "description": "[security] Error shown when the selected account changed while a passcode-protected secret screen was open."

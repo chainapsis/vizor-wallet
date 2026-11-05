@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -283,7 +284,7 @@ class _DonationScreenState extends ConsumerState<DonationScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _globalError = friendlyProposeSendError(error.toString());
+        _globalError = friendlyProposeSendError(context.l10n, error.toString());
       });
     } finally {
       if (proposalId != null && !openedReview) {

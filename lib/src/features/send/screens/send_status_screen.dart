@@ -36,6 +36,7 @@ enum _SendStatusPhase { sending, pendingBroadcast, succeeded, failed }
 typedef SendStatusBroadcastRunner =
     Future<SendBroadcastOutcome> Function({
       required WidgetRef ref,
+      required AppLocalizations l10n,
       required SendReviewArgs args,
       KeystoneBroadcastArgs? keystone,
       LedgerBroadcastArgs? ledger,
@@ -206,7 +207,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     copyTextWithToast(
       context,
       text: txid,
-      toastMessage: 'Transaction hash copied',
+      toastMessage: context.l10n.sendStatusTxHashCopied,
     );
   }
 
@@ -245,6 +246,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       args: widget.args,
       keystone: _keystoneRecovery ?? widget.keystone,
       ledger: widget.ledger,
+      l10n: context.l10n,
       confirmSaplingParamsDownload: _showSaplingParamsDialog,
       shouldAbort: () async => !mounted,
     );
@@ -312,7 +314,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Scan your Keystone QR Code',
+                      context.l10n.sendStatusScanKeystoneTitle,
                       style: AppTypography.headlineLarge.copyWith(
                         color: colors.button.ghost.label,
                       ),
@@ -408,8 +410,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         phase: statusPhase,
                         titleOverride: isDonation
                             ? switch (_phase) {
-                                _SendStatusPhase.failed => 'Donation failed',
-                                _ => 'Donation in progress...',
+                                _SendStatusPhase.failed =>
+                                  context.l10n.sendStatusDonationFailed,
+                                _ => context.l10n.sendStatusDonationInProgress,
                               }
                             : null,
                         amountText: _formatAmount(widget.args.amountZatoshi),
@@ -435,7 +438,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                         memoText: hasMemo ? memo : null,
                         memoExpanded: _messageExpanded,
                         noticeText: _phase == _SendStatusPhase.failed
-                            ? (_error ?? 'Send failed')
+                            ? (_error ?? context.l10n.sendStatusTitleFailed)
                             : _statusMessage,
                         onShowFullAddress: isDonation
                             ? null

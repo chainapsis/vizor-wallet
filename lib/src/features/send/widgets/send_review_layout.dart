@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/formatting/address_display.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
@@ -115,11 +116,12 @@ class SendReviewInfoSection extends StatelessWidget {
         _ => isShieldedRecipient,
       };
 
-  String get _recipientBadgeText => _normalizedRecipientAddressType == 'tex'
-      ? 'TEX'
+  String _recipientBadgeText(AppLocalizations l10n) =>
+      _normalizedRecipientAddressType == 'tex'
+      ? 'TEX' // l10n-ignore: protocol name
       : _recipientBadgeIsShielded
-      ? 'Shielded'
-      : 'Transparent';
+      ? l10n.poolShielded
+      : l10n.poolTransparent;
 
   bool get _recipientBadgeIsTex => _normalizedRecipientAddressType == 'tex';
 
@@ -128,13 +130,15 @@ class SendReviewInfoSection extends StatelessWidget {
 
   String _contactRecipientBottomLeftText(String address) {
     final displayAddress = truncatedAddress(address);
-    return _recipientBadgeIsTex ? 'TEX - $displayAddress' : displayAddress;
+    return _recipientBadgeIsTex
+        ? 'TEX - $displayAddress' // l10n-ignore: protocol name and address
+        : displayAddress;
   }
 
   @override
   Widget build(BuildContext context) {
     final amountRow = ReviewInfoRow(
-      label: 'Amount',
+      label: context.l10n.sendAmountLabel,
       value: amountText,
       leading: const ReviewZecCoinImage(),
       bottomLeftText: fiatText,
@@ -154,7 +158,9 @@ class SendReviewInfoSection extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: AppSpacing.xl),
                   child: Text(
-                    'Requested $requestedAmountText',
+                    context.l10n.sendReviewRequestedAmount(
+                      requestedAmountText!,
+                    ),
                     key: const ValueKey('send_review_requested_amount'),
                     style: AppTypography.bodySmall.copyWith(
                       color: context.colors.text.secondary,
@@ -173,7 +179,9 @@ class SendReviewInfoSection extends StatelessWidget {
     // A request only changes what the row is called. The value stays the
     // recipient the wallet resolved, so an unverified link label can never
     // stand in for the identity the user is consenting to pay.
-    final rowLabel = isPaymentRequest ? 'Requested by' : 'To';
+    final rowLabel = isPaymentRequest
+        ? context.l10n.sendReviewRequestedBy
+        : context.l10n.sendReviewTo;
     final rowKey = isPaymentRequest
         ? const ValueKey('send_review_requested_by')
         : null;
@@ -190,8 +198,8 @@ class SendReviewInfoSection extends StatelessWidget {
         bottomLeftIconColor: _recipientBadgeIsShielded
             ? context.colors.text.brandCrimson
             : null,
-        bottomLeftText: _recipientBadgeText,
-        trailingActionLabel: 'Show full address',
+        bottomLeftText: _recipientBadgeText(context.l10n),
+        trailingActionLabel: context.l10n.sendReviewShowFullAddress,
         onTrailingAction: onShowFullAddress,
       ),
       SendReviewContactRecipient(
@@ -210,7 +218,7 @@ class SendReviewInfoSection extends StatelessWidget {
           struckThrough: recipientStruckThrough,
           bottomLeftIconName: _contactRecipientBottomLeftIconName,
           bottomLeftText: _contactRecipientBottomLeftText(address),
-          trailingActionLabel: 'Show full address',
+          trailingActionLabel: context.l10n.sendReviewShowFullAddress,
           onTrailingAction: onShowFullAddress,
         ),
     };
@@ -291,18 +299,16 @@ class SendReviewContentColumn extends StatelessWidget {
 /// payment carries and what the recipient decrypts — so the row stays and says
 /// so, instead of a blank value the payer would take for an empty one. The
 /// payment-request card uses the same words for the same memo.
-const kWhitespaceOnlyMemoPlaceholder = 'Whitespace only';
-
 class ReviewMemoRows extends StatelessWidget {
   const ReviewMemoRows({
     required this.memoText,
-    this.label = 'Message',
+    this.label,
     this.expanded = false,
     this.onToggle,
     super.key,
   });
 
-  final String label;
+  final String? label;
 
   /// Full memo text; the collapsed row truncates it to one line. Non-empty:
   /// a memo made only of whitespace is shown as
@@ -318,8 +324,9 @@ class ReviewMemoRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final label = this.label ?? context.l10n.sendMessageLabel;
     final placeholder = memoText.trim().isEmpty
-        ? kWhitespaceOnlyMemoPlaceholder
+        ? context.l10n.sendMemoWhitespaceOnly
         : null;
     final valueColor = placeholder == null ? null : colors.text.muted;
     if (!expanded) {
@@ -337,7 +344,7 @@ class ReviewMemoRows extends StatelessWidget {
       children: [
         ReviewListRow(
           label: label,
-          value: 'Collapse',
+          value: context.l10n.sendMemoCollapse,
           trailingIconName: AppIcons.collapsed,
           onPressed: onToggle,
         ),

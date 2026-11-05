@@ -16,6 +16,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/feedback/app_review.dart';
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/l10n/l10n.dart';
 import '../../../core/layout/app_form_factor.dart';
 import '../../../core/navigation/external_action_guard_provider.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -353,7 +354,7 @@ class _PaymentRequestHostState extends ConsumerState<PaymentRequestHost>
           )) {
         showAppToast(
           scanContext,
-          "Couldn't open the QR scanner. Try again.",
+          scanContext.l10n.sendQrScannerOpenFailed,
           iconName: AppIcons.warning,
         );
       }

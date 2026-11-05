@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import 'dart:async';
 import 'dart:typed_data';
@@ -49,9 +50,9 @@ class MobileKeystoneSigningRounds {
   final List<List<int>> proofs = [];
   final List<List<int>> signatures = [];
 
-  String get title => count == 2
-      ? 'Confirm transaction ${index + 1} of 2'
-      : 'Confirm transaction';
+  String title(AppLocalizations l10n) => count == 2
+      ? l10n.sendSignConfirmTransactionOfTwo(index + 1)
+      : l10n.sendSignConfirmTransaction;
 
   bool add(List<int> proof, List<int> signature) {
     proofs.add(proof);
@@ -121,11 +122,12 @@ class _MobileKeystoneSignScreenState
           absorbing: _cancelRequested,
           child: MobileKeystonePcztSigningFlow(
             key: ValueKey('mobile_keystone_sign_round_${_rounds.index}'),
-            title: _cancelRequested ? 'Cancelling…' : _rounds.title,
+            title: _cancelRequested
+                ? context.l10n.sendSignCancelling
+                : _rounds.title(context.l10n),
             description: widget.args.addressType == 'tex'
-                ? 'This TEX send requires two Keystone approvals. Scan transaction ${_rounds.index + 1} of 2.'
-                : 'Use your Keystone wallet to scan this transaction QR code. '
-                      'Follow the steps on your device.',
+                ? context.l10n.sendKeystoneTexTwoApprovals(_rounds.index + 1)
+                : context.l10n.sendKeystoneScanTransactionInstruction,
             preparePczt: _preparePczt,
             onSigned: _handleSignedPczt,
             signedPcztDecoder: _decodeKeystoneResponse,
@@ -134,7 +136,7 @@ class _MobileKeystoneSignScreenState
                 : 'zcash-batch-sig-result',
             friendlyError: _friendlyError,
             keyPrefix: 'mobile_keystone_sign',
-            scanCaption: 'Scan the QR code on your Keystone to finish sending',
+            scanCaption: context.l10n.sendKeystoneScanToFinish,
             logTag: 'MobileKeystoneSign',
             onCancel: _cancelSigning,
           ),
@@ -335,13 +337,13 @@ class _MobileKeystoneSignScreenState
     final lower = error.toString().toLowerCase();
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be signed.';
+      return context.l10n.sendKeystoneExpired;
     }
     final batchError = keystoneBatchSigningFriendlyError(error);
     if (batchError != null) return batchError;
     if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
+      return context.l10n.sendKeystoneProvingParamsFailed;
     }
-    return 'Keystone signing could not be prepared. Go back and try again.';
+    return context.l10n.sendKeystonePrepareFailedGoBack;
   }
 }

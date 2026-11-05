@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -72,7 +73,7 @@ class SaplingParamsPrompt extends StatelessWidget {
                       const SizedBox(width: AppSpacing.xs),
                       Expanded(
                         child: Text(
-                          'Download Required',
+                          context.l10n.sendSaplingDownloadTitle,
                           style: AppTypography.bodyLarge.copyWith(
                             color: colors.text.accent,
                             fontWeight: FontWeight.w500,
@@ -90,17 +91,14 @@ class SaplingParamsPrompt extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'To create this private transaction, your wallet '
-                          'needs to download about 50MB of cryptographic '
-                          'parameters.',
+                          context.l10n.sendSaplingDownloadBody,
                           style: AppTypography.bodyMedium.copyWith(
                             color: colors.text.accent,
                           ),
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
-                          "This happens once, then it's done.\n"
-                          'Network data charges may apply.',
+                          context.l10n.sendSaplingDownloadNote,
                           style: AppTypography.bodyMedium.copyWith(
                             color: colors.text.secondary,
                           ),
@@ -112,14 +110,14 @@ class SaplingParamsPrompt extends StatelessWidget {
                   AppButton(
                     onPressed: onDownload,
                     minWidth: 280,
-                    child: const Text('Download'),
+                    child: Text(context.l10n.sendSaplingDownloadButton),
                   ),
                   const SizedBox(height: AppSpacing.s),
                   AppButton(
                     onPressed: onCancel,
                     variant: AppButtonVariant.ghost,
                     minWidth: 280,
-                    child: const Text('Cancel'),
+                    child: Text(context.l10n.commonCancel),
                   ),
                 ],
               ),

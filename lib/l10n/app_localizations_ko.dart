@@ -3242,6 +3242,918 @@ class AppLocalizationsKo extends AppLocalizations {
   String get secretPassphraseTitle => '복⁠구 문⁠구';
 
   @override
+  String get sendAddMemo => '메⁠모 추⁠가';
+
+  @override
+  String get sendAddressTypeShielded => '차⁠폐 주⁠소';
+
+  @override
+  String get sendAddressTypeTex => 'TEX 주⁠소';
+
+  @override
+  String get sendAddressTypeTransparent => '투⁠명 주⁠소';
+
+  @override
+  String get sendAddressValidationFailed => '주⁠소⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get sendAmountCtaEnterAmount => '계⁠속⁠하⁠려⁠면 금⁠액⁠을 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get sendAmountCtaReviewAndFinish => '검⁠토⁠하⁠고 완⁠료';
+
+  @override
+  String get sendAmountLabel => '금⁠액';
+
+  @override
+  String get sendBroadcastCancelledBeforeParams =>
+      '증⁠명 매⁠개⁠변⁠수⁠를 내⁠려⁠받⁠기 전⁠에 보⁠내⁠기⁠가 취⁠소⁠됐⁠어⁠요.';
+
+  @override
+  String get sendBroadcastDependentIncomplete =>
+      '첫 번⁠째 거⁠래⁠는 수⁠락⁠됐⁠지⁠만 이⁠어⁠지⁠는 거⁠래⁠가 완⁠료⁠되⁠지 않⁠았⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendBroadcastFirstUnknown =>
+      '첫 번⁠째 거⁠래⁠는 로⁠컬⁠에 저⁠장⁠됐⁠고 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠을 수 있⁠지⁠만 확⁠인⁠이 시⁠간 초⁠과⁠됐⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendBroadcastHardwareExpired =>
+      '하⁠드⁠웨⁠어 서⁠명 요⁠청⁠이 전⁠송⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요. 지⁠갑⁠으⁠로 돌⁠아⁠가 동⁠기⁠화⁠가 끝⁠나⁠길 기⁠다⁠린 다⁠음 결⁠제⁠를 다⁠시 검⁠토⁠하⁠고 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendBroadcastIncomplete =>
+      '거⁠래 전⁠송⁠이 완⁠료⁠되⁠지 않⁠았⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendBroadcastLedgerFirstUnknown =>
+      '첫 번⁠째 거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠을 수 있⁠지⁠만 확⁠인⁠이 시⁠간 초⁠과⁠됐⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendBroadcastLedgerNotStored =>
+      '거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠지⁠만 Vizor⁠가 로⁠컬⁠에 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠나 탐⁠색⁠기⁠에⁠서 최⁠신 상⁠태⁠를 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+
+  @override
+  String get sendBroadcastLedgerRejected =>
+      '네⁠트⁠워⁠크⁠가 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 나⁠중⁠에 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendBroadcastLocalRetry =>
+      '거⁠래⁠가 로⁠컬⁠에⁠서 만⁠들⁠어⁠졌⁠지⁠만 전⁠송⁠하⁠지 못⁠했⁠어⁠요. 네⁠트⁠워⁠크⁠가 연⁠결⁠되⁠면 자⁠동⁠으⁠로 다⁠시 시⁠도⁠해⁠요. 이 거⁠래⁠가 만⁠료⁠되⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+
+  @override
+  String get sendBroadcastMnemonicMissing => '이 계⁠정⁠의 복⁠구 문⁠구⁠를 찾⁠을 수 없⁠어⁠요.';
+
+  @override
+  String get sendBroadcastPartial =>
+      '일⁠부 거⁠래⁠는 전⁠송⁠됐⁠고 나⁠머⁠지⁠는 자⁠동⁠으⁠로 다⁠시 시⁠도⁠해⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendBroadcastProofParamsRequired =>
+      '서⁠명⁠된 이 거⁠래⁠를 다⁠시 시⁠도⁠하⁠려⁠면 증⁠명 매⁠개⁠변⁠수⁠가 필⁠요⁠해⁠요.';
+
+  @override
+  String get sendBroadcastRejectedLocal =>
+      '거⁠래⁠가 로⁠컬⁠에⁠서 만⁠들⁠어⁠졌⁠지⁠만 네⁠트⁠워⁠크⁠에 도⁠달⁠하⁠지 않⁠았⁠어⁠요. 지⁠갑⁠이 만⁠료⁠될 때⁠까⁠지 계⁠속 다⁠시 시⁠도⁠해⁠요. 이 거⁠래⁠가 만⁠료⁠되⁠기 전⁠에⁠는 다⁠시 보⁠내⁠지 마⁠세⁠요.';
+
+  @override
+  String get sendBroadcastTrackingFailed =>
+      '거⁠래⁠가 네⁠트⁠워⁠크⁠에 도⁠달⁠했⁠지⁠만 로⁠컬 추⁠적⁠에 실⁠패⁠했⁠어⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동⁠이⁠나 탐⁠색⁠기⁠를 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendCalculatingMax => '최⁠대 금⁠액⁠을 계⁠산⁠하⁠고 있⁠어⁠요';
+
+  @override
+  String get sendClearAction => '지⁠우⁠기';
+
+  @override
+  String get sendCloseMessageField => '메⁠시⁠지 닫⁠기';
+
+  @override
+  String get sendContactPickerEmpty => 'Zcash 연⁠락⁠처⁠가 없⁠어⁠요';
+
+  @override
+  String get sendContactPickerTitle => 'Zcash 연⁠락⁠처';
+
+  @override
+  String get sendContactsLink => '연⁠락⁠처';
+
+  @override
+  String get sendDonationAddressTitle => 'Vizor 후⁠원 주⁠소';
+
+  @override
+  String get sendEnterAddressToContinue => '계⁠속⁠하⁠려⁠면 주⁠소⁠를 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String sendEnterAmountInCurrency(String currency) {
+    return '$currency⁠로 금⁠액 입⁠력';
+  }
+
+  @override
+  String get sendEnterValidAddress => '올⁠바⁠른 주⁠소⁠를 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get sendErrorCouldNotBeSent =>
+      '거⁠래⁠를 보⁠내⁠지 못⁠했⁠어⁠요. 지⁠갑⁠으⁠로 돌⁠아⁠가 최⁠신 상⁠태⁠를 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendErrorDonationFailed => '후⁠원⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendErrorExpiredBeforeSent => '거⁠래⁠가 전⁠송⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요.';
+
+  @override
+  String get sendErrorExpiredTryAgain =>
+      '거⁠래⁠가 전⁠송⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendErrorInsufficientShielded =>
+      '금⁠액⁠과 수⁠수⁠료⁠를 낼 차⁠폐 잔⁠액⁠이 부⁠족⁠해⁠요.';
+
+  @override
+  String get sendErrorNetwork =>
+      '네⁠트⁠워⁠크 오⁠류⁠예⁠요. 연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendErrorPartiallySent =>
+      '거⁠래⁠의 일⁠부⁠가 이⁠미 전⁠송⁠됐⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동⁠에⁠서 전⁠송⁠된 내⁠역⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendErrorRejectedTryAgain =>
+      '네⁠트⁠워⁠크⁠가 이 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendErrorRejectedTryLater =>
+      '네⁠트⁠워⁠크⁠가 이 거⁠래⁠를 거⁠부⁠했⁠어⁠요. 나⁠중⁠에 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendErrorSendFailed => '보⁠내⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendErrorSyncFinishing =>
+      '지⁠갑 동⁠기⁠화⁠를 마⁠무⁠리⁠하⁠는 중⁠이⁠에⁠요. 잠⁠시 후 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendFeeAboutSemantics => '거⁠래 수⁠수⁠료 안⁠내';
+
+  @override
+  String get sendFeeUnavailableTryAgain =>
+      '수⁠수⁠료⁠를 확⁠인⁠할 수 없⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendFeeUpdatedAfterSync =>
+      '동⁠기⁠화 후 수⁠수⁠료⁠가 바⁠뀌⁠었⁠어⁠요. 다⁠시 검⁠토⁠하⁠고 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendFinishingSync => '지⁠갑 동⁠기⁠화⁠를 마⁠무⁠리⁠하⁠는 중⁠이⁠에⁠요.';
+
+  @override
+  String get sendInsufficientBalanceIncludingFeeShielded =>
+      '수⁠수⁠료⁠를 포⁠함⁠하⁠면 차⁠폐 잔⁠액⁠이 부⁠족⁠해⁠요';
+
+  @override
+  String get sendInsufficientBalanceIncludingFeeTex =>
+      '수⁠수⁠료⁠를 포⁠함⁠하⁠면 잔⁠액⁠이 부⁠족⁠해⁠요';
+
+  @override
+  String get sendInsufficientBalanceSentenceShielded => '차⁠폐 잔⁠액⁠이 부⁠족⁠해⁠요.';
+
+  @override
+  String get sendInsufficientBalanceSentenceTex => '잔⁠액⁠이 부⁠족⁠해⁠요.';
+
+  @override
+  String get sendInsufficientBalanceShielded => '차⁠폐 잔⁠액⁠이 부⁠족⁠해⁠요';
+
+  @override
+  String get sendInsufficientBalanceTex => '잔⁠액⁠이 부⁠족⁠해⁠요';
+
+  @override
+  String get sendInsufficientBalanceToCoverFeeShielded =>
+      '수⁠수⁠료⁠를 낼 차⁠폐 잔⁠액⁠이 부⁠족⁠해⁠요';
+
+  @override
+  String get sendInsufficientBalanceToCoverFeeTex => '수⁠수⁠료⁠를 낼 잔⁠액⁠이 부⁠족⁠해⁠요';
+
+  @override
+  String sendInsufficientBalanceWithFeeShielded(String fee) {
+    return '차⁠폐 잔⁠액⁠이 부⁠족⁠해⁠요 (수⁠수⁠료: $fee)';
+  }
+
+  @override
+  String sendInsufficientBalanceWithFeeTex(String fee) {
+    return '잔⁠액⁠이 부⁠족⁠해⁠요 (수⁠수⁠료: $fee)';
+  }
+
+  @override
+  String get sendInvalidAddress => '올⁠바⁠르⁠지 않⁠은 주⁠소⁠예⁠요';
+
+  @override
+  String get sendInvalidAmount => '올⁠바⁠르⁠지 않⁠은 금⁠액⁠이⁠에⁠요';
+
+  @override
+  String get sendKeystoneAfterScan => '스⁠캔⁠한 뒤 서⁠명 가⁠져⁠오⁠기⁠를 누⁠르⁠세⁠요.';
+
+  @override
+  String get sendKeystoneConfirmTitle => 'Keystone⁠으⁠로 확⁠인';
+
+  @override
+  String get sendKeystoneExpired => '거⁠래⁠가 서⁠명⁠되⁠기 전⁠에 만⁠료⁠됐⁠어⁠요.';
+
+  @override
+  String get sendKeystoneGetSignature => '서⁠명 가⁠져⁠오⁠기';
+
+  @override
+  String get sendKeystonePrepareFailedGoBack =>
+      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 뒤⁠로 가⁠서 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendKeystonePrepareFailedReturnToSend =>
+      'Keystone 서⁠명⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 보⁠내⁠기⁠로 돌⁠아⁠가 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendKeystonePreparing => '준⁠비⁠하⁠는 중';
+
+  @override
+  String get sendKeystoneProvingCancelled =>
+      '증⁠명 매⁠개⁠변⁠수⁠를 내⁠려⁠받⁠기 전⁠에 서⁠명⁠이 취⁠소⁠됐⁠어⁠요.';
+
+  @override
+  String get sendKeystoneProvingParamsFailed =>
+      '필⁠요⁠한 증⁠명 매⁠개⁠변⁠수⁠를 준⁠비⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String get sendKeystoneQrMismatch =>
+      '이 QR 코⁠드⁠는 현⁠재 Keystone 서⁠명 요⁠청⁠과 일⁠치⁠하⁠지 않⁠아⁠요.';
+
+  @override
+  String get sendKeystoneScanCameraOnly =>
+      'Keystone 서⁠명⁠은 카⁠메⁠라 QR 스⁠캔⁠만 지⁠원⁠해⁠요. 카⁠메⁠라⁠를 연⁠결⁠하⁠고 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendKeystoneScanDecodeFailed =>
+      '이 QR 코⁠드⁠를 Keystone 거⁠래 서⁠명⁠으⁠로 해⁠석⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get sendKeystoneScanHoldSteady => 'QR 코⁠드⁠를 카⁠메⁠라 앞⁠에 고⁠정⁠해 주⁠세⁠요';
+
+  @override
+  String get sendKeystoneScanNow =>
+      '지⁠금 스⁠캔⁠하⁠세⁠요. 증⁠명⁠이 준⁠비⁠되⁠면 서⁠명 가⁠져⁠오⁠기⁠가 활⁠성⁠화⁠돼⁠요.';
+
+  @override
+  String get sendKeystoneScanReading => '서⁠명⁠을 읽⁠는 중...';
+
+  @override
+  String get sendKeystoneScanSubtitle => 'Keystone⁠으⁠로 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get sendKeystoneScanToFinish =>
+      '보⁠내⁠기⁠를 마⁠치⁠려⁠면 Keystone⁠의 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get sendKeystoneScanTransactionInstruction =>
+      'Keystone 지⁠갑⁠으⁠로 이 거⁠래 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요. 기⁠기⁠의 안⁠내⁠를 따⁠르⁠세⁠요.';
+
+  @override
+  String get sendKeystoneScanUnexpectedSignature =>
+      'Keystone⁠에⁠서 서⁠명 결⁠과 QR⁠을 연 다⁠음 다⁠시 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get sendKeystoneScanUnexpectedTransaction =>
+      'Keystone⁠에⁠서 서⁠명⁠된 거⁠래 QR⁠을 연 다⁠음 다⁠시 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String sendKeystoneTexTwoApprovals(int index) {
+    return '이 TEX 보⁠내⁠기⁠는 Keystone⁠에⁠서 두 번 승⁠인⁠해⁠야 해⁠요. $index/2⁠번⁠째 거⁠래⁠를 스⁠캔⁠하⁠세⁠요.';
+  }
+
+  @override
+  String sendKeystoneTransactionOfTwo(int index) {
+    return '거⁠래 $index/2';
+  }
+
+  @override
+  String sendLedgerConnectAndUnlock(String instruction) {
+    return 'Ledger⁠를 연⁠결⁠하⁠고 잠⁠금⁠을 해⁠제⁠하⁠세⁠요. $instruction';
+  }
+
+  @override
+  String get sendLedgerCouldNotFinishTitle => '거⁠래⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get sendLedgerCouldNotPrepare =>
+      'Vizor⁠가 거⁠래⁠를 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendLedgerCouldNotSaveTitle => '서⁠명⁠한 거⁠래⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get sendLedgerCouldNotVerifySaved =>
+      'Vizor⁠가 저⁠장⁠된 거⁠래⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 서⁠명⁠하⁠거⁠나 보⁠내⁠지 마⁠세⁠요.';
+
+  @override
+  String get sendLedgerCreateNewTransaction => '새 거⁠래 만⁠들⁠기';
+
+  @override
+  String get sendLedgerExpiredMessage =>
+      '이 거⁠래⁠는 더 이⁠상 서⁠명⁠할 수 없⁠어⁠요. 새 거⁠래⁠를 만⁠들⁠어 검⁠토⁠하⁠세⁠요.';
+
+  @override
+  String get sendLedgerExpiredTitle => '거⁠래⁠가 만⁠료⁠됐⁠어⁠요';
+
+  @override
+  String get sendLedgerKeepOpenRetry =>
+      'Vizor⁠를 열⁠어 둔 채⁠로 다⁠시 시⁠도⁠하⁠세⁠요. Ledger⁠에⁠서 다⁠시 승⁠인⁠하⁠지 않⁠아⁠도 돼⁠요.';
+
+  @override
+  String get sendLedgerKeepOpenRetrySaving =>
+      'Vizor⁠를 열⁠어 둔 채⁠로 저⁠장⁠을 다⁠시 시⁠도⁠하⁠세⁠요. Ledger⁠에⁠서 다⁠시 승⁠인⁠하⁠지 않⁠아⁠도 돼⁠요.';
+
+  @override
+  String get sendLedgerNeedsAttentionTitle => 'Ledger 확⁠인⁠이 필⁠요⁠해⁠요';
+
+  @override
+  String get sendLedgerRejectedOnDevice => 'Ledger⁠에⁠서 거⁠래⁠가 거⁠부⁠됐⁠어⁠요.';
+
+  @override
+  String get sendLedgerRetrySaving => '저⁠장 다⁠시 시⁠도';
+
+  @override
+  String get sendLedgerSignaturePreservedMessage =>
+      'Ledger 서⁠명⁠이 보⁠존⁠돼 있⁠어⁠요. 다⁠른 거⁠래⁠를 승⁠인⁠하⁠지 말⁠고 저⁠장⁠만 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendLedgerSignedNeedsAttentionTitle => '서⁠명⁠한 거⁠래⁠를 확⁠인⁠해⁠야 해⁠요';
+
+  @override
+  String get sendLedgerSigningFailedTitle => 'Ledger 서⁠명⁠에 실⁠패⁠했⁠어⁠요';
+
+  @override
+  String get sendLedgerSigningIncomplete =>
+      'Ledger 서⁠명⁠을 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 기⁠기⁠를 확⁠인⁠하⁠고 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendLedgerSigningUnavailableTitle => 'Ledger⁠로 서⁠명⁠할 수 없⁠어⁠요';
+
+  @override
+  String get sendLedgerStatusActionNeeded => '조⁠치⁠가 필⁠요⁠해⁠요';
+
+  @override
+  String get sendLedgerStatusNewTransactionRequired => '새 거⁠래⁠가 필⁠요⁠해⁠요';
+
+  @override
+  String get sendLedgerStatusRecoveryRequired => '복⁠구⁠가 필⁠요⁠해⁠요';
+
+  @override
+  String get sendLedgerStatusSignaturePreserved => '서⁠명⁠이 보⁠존⁠돼 있⁠어⁠요';
+
+  @override
+  String get sendLedgerStatusUnsupportedTransaction => '지⁠원⁠하⁠지 않⁠는 거⁠래⁠예⁠요';
+
+  @override
+  String sendLoadError(String error) {
+    return '문⁠제⁠가 생⁠겼⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠하⁠세⁠요.\n\n자⁠세⁠한 내⁠용: $error';
+  }
+
+  @override
+  String get sendMaxButton => '최⁠대';
+
+  @override
+  String get sendMaxNeedsAddress => '최⁠대 금⁠액⁠을 쓰⁠려⁠면 올⁠바⁠른 주⁠소⁠를 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get sendMaxUnavailable => '최⁠대 금⁠액⁠을 확⁠인⁠할 수 없⁠어⁠요';
+
+  @override
+  String get sendMemoAddShortEncrypted => '짧⁠은 암⁠호⁠화 메⁠시⁠지 추⁠가';
+
+  @override
+  String get sendMemoClear => '메⁠모 지⁠우⁠기';
+
+  @override
+  String get sendMemoCollapse => '접⁠기';
+
+  @override
+  String get sendMemoEncryptedHint => '암⁠호⁠화⁠되⁠며 차⁠폐 주⁠소⁠에⁠서⁠만 쓸 수 있⁠어⁠요.';
+
+  @override
+  String get sendMemoRecipientOnly => '받⁠는 사⁠람⁠만 읽⁠을 수 있⁠어⁠요';
+
+  @override
+  String get sendMemoSheetAdd => '메⁠모 추⁠가';
+
+  @override
+  String get sendMemoShieldedOnly => '메⁠시⁠지⁠는 차⁠폐 주⁠소⁠에⁠서⁠만 쓸 수 있⁠어⁠요';
+
+  @override
+  String get sendMemoTooLong => '메⁠시⁠지⁠가 너⁠무 길⁠어⁠요';
+
+  @override
+  String get sendMemoWhitespaceOnly => '공⁠백⁠만 있⁠어⁠요';
+
+  @override
+  String get sendMessageHint => '메⁠시⁠지 추⁠가';
+
+  @override
+  String get sendMessageLabel => '메⁠시⁠지';
+
+  @override
+  String get sendNoActiveAccount => '선⁠택⁠된 계⁠정⁠이 없⁠어⁠요';
+
+  @override
+  String get sendNotEnoughZec => 'ZEC⁠가 부⁠족⁠해⁠요';
+
+  @override
+  String get sendOpenContacts => '연⁠락⁠처 열⁠기';
+
+  @override
+  String get sendPasteAction => '붙⁠여⁠넣⁠기';
+
+  @override
+  String get sendPaymentRequestAmountNotSpecified => '금⁠액⁠이 지⁠정⁠되⁠지 않⁠았⁠어⁠요';
+
+  @override
+  String get sendPaymentRequestCheckAgain => '다⁠시 확⁠인';
+
+  @override
+  String get sendPaymentRequestCheckBeforePayBody =>
+      '다⁠른 앱⁠이 요⁠청 링⁠크⁠의 주⁠소⁠나 금⁠액⁠을 바⁠꿀 수 있⁠어⁠요.';
+
+  @override
+  String get sendPaymentRequestCheckBeforePayTitle => '결⁠제⁠하⁠기 전⁠에 확⁠인⁠하⁠세⁠요';
+
+  @override
+  String get sendPaymentRequestCheckFailed => '이 요⁠청⁠을 확⁠인⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get sendPaymentRequestChecking => '확⁠인⁠하⁠는 중…';
+
+  @override
+  String get sendPaymentRequestClose => '결⁠제 요⁠청 닫⁠기';
+
+  @override
+  String get sendPaymentRequestConfirmWithSender =>
+      '보⁠낸 사⁠람⁠에⁠게 내⁠용⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendPaymentRequestEdit => '수⁠정';
+
+  @override
+  String get sendPaymentRequestEnterAmount => '금⁠액 입⁠력';
+
+  @override
+  String get sendPaymentRequestHideFullAddress => '받⁠는 전⁠체 주⁠소 숨⁠기⁠기';
+
+  @override
+  String get sendPaymentRequestHidePaymentDetails => '결⁠제 상⁠세 숨⁠기⁠기';
+
+  @override
+  String get sendPaymentRequestHideRequesterInfo => '요⁠청⁠자 정⁠보 숨⁠기⁠기';
+
+  @override
+  String sendPaymentRequestHideRequesterInfoFor(String name) {
+    return '$name⁠의 요⁠청⁠자 정⁠보 숨⁠기⁠기';
+  }
+
+  @override
+  String get sendPaymentRequestInsufficientFunds =>
+      '이 금⁠액⁠과 네⁠트⁠워⁠크 수⁠수⁠료⁠를 낼 ZEC⁠가 부⁠족⁠해⁠요';
+
+  @override
+  String sendPaymentRequestInsufficientFundsWithSpendable(String spendable) {
+    return '이 금⁠액⁠과 네⁠트⁠워⁠크 수⁠수⁠료⁠를 낼 ZEC⁠가 부⁠족⁠해⁠요 ($spendable 사⁠용 가⁠능)';
+  }
+
+  @override
+  String get sendPaymentRequestInvalidAddress => '받⁠는 주⁠소⁠가 올⁠바⁠르⁠지 않⁠아⁠요';
+
+  @override
+  String get sendPaymentRequestLinkDifferentAddress => '링⁠크⁠의 주⁠소⁠가 달⁠랐⁠어⁠요';
+
+  @override
+  String get sendPaymentRequestLinkDifferentAmount => '링⁠크⁠의 금⁠액⁠이 달⁠랐⁠어⁠요';
+
+  @override
+  String get sendPaymentRequestLinkDifferentDetails => '링⁠크⁠의 내⁠용⁠이 달⁠랐⁠어⁠요';
+
+  @override
+  String get sendPaymentRequestLinkDifferentMemo => '링⁠크⁠의 메⁠모⁠가 달⁠랐⁠어⁠요';
+
+  @override
+  String get sendPaymentRequestMatchesLink => '링⁠크⁠와 일⁠치⁠해⁠요';
+
+  @override
+  String get sendPaymentRequestMemoIncluded => '메⁠모 포⁠함';
+
+  @override
+  String get sendPaymentRequestMemoIncludedHint =>
+      '메⁠모⁠가 포⁠함⁠되⁠어 있⁠어⁠요. 거⁠래 메⁠모⁠를 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendPaymentRequestNameDisclaimer =>
+      '이 이⁠름⁠은 요⁠청⁠에 포⁠함⁠된 것⁠이⁠에⁠요. 받⁠는 주⁠소⁠의 주⁠인⁠을 확⁠인⁠해 주⁠지⁠는 않⁠아⁠요.';
+
+  @override
+  String get sendPaymentRequestNameSuppliedInRequest =>
+      '요⁠청⁠에 포⁠함⁠된 이⁠름⁠이⁠에⁠요.';
+
+  @override
+  String get sendPaymentRequestNoteFromRequester => '요⁠청⁠자⁠의 메⁠모';
+
+  @override
+  String get sendPaymentRequestPaymentDetails => '결⁠제 상⁠세';
+
+  @override
+  String get sendPaymentRequestRecipient => '받⁠는 사⁠람';
+
+  @override
+  String get sendPaymentRequestReplacedNotice => '이⁠전 링⁠크⁠를 대⁠체⁠했⁠어⁠요';
+
+  @override
+  String get sendPaymentRequestRequestFrom => '요⁠청⁠한 사⁠람';
+
+  @override
+  String get sendPaymentRequestReviewLinkDetails => '링⁠크 상⁠세 검⁠토';
+
+  @override
+  String get sendPaymentRequestReviewPayment => '결⁠제 검⁠토';
+
+  @override
+  String get sendPaymentRequestScanOriginalHint =>
+      '원⁠래 QR 코⁠드⁠를 Vizor⁠에⁠서 직⁠접 스⁠캔⁠하⁠세⁠요.';
+
+  @override
+  String get sendPaymentRequestScanOriginalQr => '원⁠래 QR 스⁠캔';
+
+  @override
+  String get sendPaymentRequestShowFullAddress => '받⁠는 전⁠체 주⁠소 보⁠기';
+
+  @override
+  String get sendPaymentRequestShowRequesterInfo => '요⁠청⁠자 정⁠보 보⁠기';
+
+  @override
+  String sendPaymentRequestShowRequesterInfoFor(String name) {
+    return '$name⁠의 요⁠청⁠자 정⁠보 보⁠기';
+  }
+
+  @override
+  String get sendPaymentRequestSyncStalled =>
+      '아⁠직 동⁠기⁠화⁠하⁠는 중⁠이⁠에⁠요. 지⁠갑⁠이 최⁠신 상⁠태⁠가 되⁠면 다⁠시 확⁠인⁠하⁠세⁠요';
+
+  @override
+  String get sendPaymentRequestSyncing =>
+      '지⁠갑⁠을 아⁠직 동⁠기⁠화⁠하⁠는 중⁠이⁠에⁠요. 끝⁠나⁠면 자⁠동⁠으⁠로 업⁠데⁠이⁠트⁠돼⁠요';
+
+  @override
+  String get sendPaymentRequestTitle => '결⁠제 요⁠청';
+
+  @override
+  String get sendPaymentRequestTransactionMemo => '거⁠래 메⁠모';
+
+  @override
+  String sendPaymentRequestUnavailableLabel(String label) {
+    return '$label, 사⁠용⁠할 수 없⁠음';
+  }
+
+  @override
+  String sendPaymentRequestUnavailableWithReason(String label, String reason) {
+    return '$label, 사⁠용⁠할 수 없⁠음. $reason';
+  }
+
+  @override
+  String get sendPaymentRequestUsingQrInstead =>
+      '대⁠신 QR 코⁠드⁠를 사⁠용⁠해⁠요. 링⁠크⁠가 바⁠뀌⁠었⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get sendPaymentRequestViewNote => '메⁠모 보⁠기';
+
+  @override
+  String get sendPaymentRequestYourAccount => '내 계⁠정';
+
+  @override
+  String get sendQrScannerOpenFailed =>
+      'QR 스⁠캐⁠너⁠를 열⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendRecentsSection => '최⁠근 보⁠낸 곳';
+
+  @override
+  String get sendRecipientHint => '주⁠소 또⁠는 요⁠청 링⁠크';
+
+  @override
+  String get sendRecipientLabel => '받⁠는 사⁠람';
+
+  @override
+  String get sendRecipientUnreadableRequestLink => '이 요⁠청 링⁠크⁠를 읽⁠을 수 없⁠어⁠요';
+
+  @override
+  String get sendRecipientWrongNetwork => '이 주⁠소⁠는 다⁠른 Zcash 네⁠트⁠워⁠크⁠의 주⁠소⁠예⁠요';
+
+  @override
+  String get sendRequestScanBackLabel => '결⁠제 요⁠청';
+
+  @override
+  String get sendRequestScanCheckFailed =>
+      '이 QR 코⁠드⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendRequestScanPermission =>
+      '결⁠제 요⁠청 QR 코⁠드⁠를 스⁠캔⁠하⁠려⁠면 카⁠메⁠라⁠가 필⁠요⁠해⁠요.\n카⁠메⁠라 접⁠근 권⁠한⁠은 언⁠제⁠든 설⁠정⁠에⁠서 바⁠꿀 수 있⁠어⁠요.';
+
+  @override
+  String get sendRequestScanSubtitle =>
+      '요⁠청⁠한 사⁠람⁠의 원⁠래 QR 코⁠드⁠를 카⁠메⁠라⁠에 보⁠여 주⁠세⁠요';
+
+  @override
+  String get sendRequestScanTipContinuity =>
+      'Mac⁠에⁠서⁠는 연⁠속⁠성 카⁠메⁠라⁠로 iPhone⁠을 대⁠신 사⁠용⁠해 스⁠캔⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get sendRequestScanTipDistance =>
+      '카⁠메⁠라⁠가 초⁠점⁠을 맞⁠출 수 있⁠게 QR 코⁠드⁠를 몇 센⁠티⁠미⁠터 더 멀⁠리 두⁠세⁠요.';
+
+  @override
+  String get sendRequestScanTipLight =>
+      '방⁠이 밝⁠은⁠지, QR 코⁠드⁠에 빛⁠이 반⁠사⁠되⁠지 않⁠는⁠지 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendRequestScanTipOriginal =>
+      '다⁠른 기⁠기⁠에⁠서 요⁠청⁠한 사⁠람⁠의 원⁠래 QR 코⁠드⁠를 전⁠체 화⁠면⁠으⁠로 여⁠세⁠요.';
+
+  @override
+  String get sendRequestScanTitle => '원⁠래 QR 스⁠캔';
+
+  @override
+  String get sendRequestScanUnavailable =>
+      '카⁠메⁠라⁠를 연⁠결⁠하⁠거⁠나 뒤⁠로 가⁠서 링⁠크 상⁠세⁠를 검⁠토⁠하⁠세⁠요.';
+
+  @override
+  String get sendReviewAction => '검⁠토';
+
+  @override
+  String get sendReviewBackSupportVizor => 'Vizor 후⁠원⁠하⁠기';
+
+  @override
+  String get sendReviewCalculatingFee => '수⁠수⁠료⁠를 계⁠산⁠하⁠는 중...';
+
+  @override
+  String get sendReviewConfirmAndSend => '확⁠인⁠하⁠고 보⁠내⁠기';
+
+  @override
+  String get sendReviewConfirmAndSendMobile => '확⁠인⁠하⁠고 보⁠내⁠기';
+
+  @override
+  String get sendReviewConfirmDonation => '후⁠원 확⁠인';
+
+  @override
+  String get sendReviewConfirmWithLedger => 'Ledger⁠로 확⁠인';
+
+  @override
+  String get sendReviewFeeUnavailable => '수⁠수⁠료⁠를 확⁠인⁠할 수 없⁠어⁠요';
+
+  @override
+  String get sendReviewFinishingSyncButton => '지⁠갑 동⁠기⁠화⁠를 마⁠무⁠리⁠하⁠는 중...';
+
+  @override
+  String get sendReviewFullAddress => '전⁠체 주⁠소';
+
+  @override
+  String get sendReviewPaymentTitle => '결⁠제 검⁠토';
+
+  @override
+  String get sendReviewPreparing => '준⁠비⁠하⁠는 중...';
+
+  @override
+  String sendReviewRequestedAmount(String amount) {
+    return '요⁠청 금⁠액 $amount';
+  }
+
+  @override
+  String get sendReviewRequestedBy => '요⁠청⁠한 사⁠람';
+
+  @override
+  String get sendReviewShowFullAddress => '전⁠체 주⁠소 보⁠기';
+
+  @override
+  String get sendReviewTitle => '보⁠내⁠기 검⁠토';
+
+  @override
+  String get sendReviewTo => '받⁠는 사⁠람';
+
+  @override
+  String get sendSaplingDownloadBody =>
+      '이 비⁠공⁠개 거⁠래⁠를 만⁠들⁠려⁠면 지⁠갑⁠이 약 50MB⁠의 암⁠호⁠화 매⁠개⁠변⁠수⁠를 내⁠려⁠받⁠아⁠야 해⁠요.';
+
+  @override
+  String get sendSaplingDownloadButton => '다⁠운⁠로⁠드';
+
+  @override
+  String get sendSaplingDownloadNote =>
+      '한 번⁠만 내⁠려⁠받⁠으⁠면 돼⁠요.\n데⁠이⁠터 요⁠금⁠이 발⁠생⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get sendSaplingDownloadTitle => '다⁠운⁠로⁠드⁠가 필⁠요⁠해⁠요';
+
+  @override
+  String get sendScanDowngradePastedMalformedRequest =>
+      '주⁠소⁠만 붙⁠여⁠넣⁠었⁠어⁠요. 결⁠제 요⁠청⁠을 읽⁠을 수 없⁠었⁠어⁠요';
+
+  @override
+  String get sendScanDowngradePastedMultipleRecipients =>
+      '첫 번⁠째 받⁠는 사⁠람⁠만 붙⁠여⁠넣⁠었⁠어⁠요. 이 요⁠청⁠에⁠는 받⁠는 사⁠람⁠이 여⁠러 명⁠이⁠에⁠요';
+
+  @override
+  String get sendScanDowngradePastedUnsupportedMemo =>
+      '주⁠소⁠만 붙⁠여⁠넣⁠었⁠어⁠요. 요⁠청⁠의 메⁠시⁠지⁠를 읽⁠을 수 없⁠었⁠어⁠요';
+
+  @override
+  String get sendScanDowngradeScannedMalformedRequest =>
+      '주⁠소⁠만 스⁠캔⁠했⁠어⁠요. 결⁠제 요⁠청⁠을 읽⁠을 수 없⁠었⁠어⁠요';
+
+  @override
+  String get sendScanDowngradeScannedMultipleRecipients =>
+      '첫 번⁠째 받⁠는 사⁠람⁠만 스⁠캔⁠했⁠어⁠요. 이 요⁠청⁠에⁠는 받⁠는 사⁠람⁠이 여⁠러 명⁠이⁠에⁠요';
+
+  @override
+  String get sendScanDowngradeScannedUnsupportedMemo =>
+      '주⁠소⁠만 스⁠캔⁠했⁠어⁠요. 요⁠청⁠의 메⁠시⁠지⁠를 읽⁠을 수 없⁠었⁠어⁠요';
+
+  @override
+  String get sendScanNotZcashAddress => '이 QR 코⁠드⁠는 Zcash 주⁠소⁠가 아⁠니⁠에⁠요.';
+
+  @override
+  String get sendScanQrSubtitle => '주⁠소 또⁠는 결⁠제 요⁠청 스⁠캔';
+
+  @override
+  String get sendScanQrTitle => 'QR 코⁠드 스⁠캔';
+
+  @override
+  String get sendSendingToLabel => '받⁠는 사⁠람';
+
+  @override
+  String get sendSignCancelFailed => '취⁠소⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendSignCancelling => '취⁠소⁠하⁠는 중…';
+
+  @override
+  String get sendSignConfirmTransaction => '거⁠래 확⁠인';
+
+  @override
+  String sendSignConfirmTransactionOfTwo(int index) {
+    return '거⁠래 확⁠인 ($index/2)';
+  }
+
+  @override
+  String get sendSpendableInfoLabel => '사⁠용 가⁠능⁠한 잔⁠액 정⁠보';
+
+  @override
+  String get sendSpendableTooltipBody =>
+      '자⁠금⁠은 사⁠용⁠하⁠기 전⁠에 확⁠인⁠이 필⁠요⁠해⁠요. 내 지⁠갑⁠에⁠서 돌⁠아⁠온 잔⁠돈⁠은 3⁠번, 다⁠른 사⁠람⁠에⁠게 받⁠은 자⁠금⁠은 6⁠번⁠이⁠에⁠요. 차⁠폐⁠된 노⁠트⁠도 모⁠두 스⁠캔⁠되⁠어⁠야 해⁠요. 곧 사⁠용⁠할 수 있⁠게 돼⁠요.';
+
+  @override
+  String get sendSpendableTooltipTitle =>
+      '사⁠용 가⁠능⁠한 잔⁠액⁠이 전⁠체 잔⁠액⁠보⁠다 적⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get sendStatusBackToWallet => '지⁠갑⁠으⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get sendStatusDonationFailed => '후⁠원⁠하⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get sendStatusDonationInProgress => '후⁠원⁠하⁠는 중...';
+
+  @override
+  String sendStatusFailureSummary(String amount, String recipient) {
+    return '$recipient⁠에⁠게 $amount';
+  }
+
+  @override
+  String get sendStatusMobileConfirmSoon =>
+      '곧 블⁠록⁠체⁠인⁠에⁠서 확⁠인⁠돼⁠요. 활⁠동⁠에⁠서 진⁠행 상⁠황⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendStatusMobileDonationQueued => '후⁠원⁠이 대⁠기 중⁠이⁠에⁠요';
+
+  @override
+  String get sendStatusMobileDonationSupport =>
+      '보⁠내 주⁠신 후⁠원⁠이 Vizor⁠를 계⁠속 움⁠직⁠이⁠게 해⁠요.';
+
+  @override
+  String get sendStatusMobileDonationThanks => 'Vizor⁠를\n후⁠원⁠해 주⁠셔⁠서 감⁠사⁠해⁠요';
+
+  @override
+  String get sendStatusMobileDone => '완⁠료';
+
+  @override
+  String get sendStatusMobileNothingSent =>
+      '아⁠무⁠것⁠도 보⁠내⁠지 않⁠았⁠고 자⁠금⁠은 그⁠대⁠로⁠예⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendStatusMobilePendingDefault =>
+      '거⁠래⁠가 만⁠들⁠어⁠졌⁠고 자⁠동⁠으⁠로 제⁠출⁠돼⁠요. 다⁠시 보⁠내⁠기 전⁠에 활⁠동 페⁠이⁠지⁠를 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get sendStatusMobileQueued => '보⁠내⁠기 대⁠기 중';
+
+  @override
+  String get sendStatusMobileReturnHome => '홈⁠으⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get sendStatusMobileReturnToSettings => '설⁠정⁠으⁠로 돌⁠아⁠가⁠기';
+
+  @override
+  String get sendStatusMobileSending => '보⁠내⁠는 중...';
+
+  @override
+  String get sendStatusMobileSendingDonation => '후⁠원⁠을 보⁠내⁠는 중...';
+
+  @override
+  String get sendStatusMobileSent => '보⁠냈⁠어⁠요!';
+
+  @override
+  String get sendStatusMobileSubmitting => '거⁠래⁠를 네⁠트⁠워⁠크⁠에 제⁠출⁠하⁠는 중...';
+
+  @override
+  String get sendStatusRetryAfterSync =>
+      '지⁠갑 동⁠기⁠화⁠가 끝⁠날 때⁠까⁠지 기⁠다⁠린 다⁠음 서⁠명⁠된 이 거⁠래⁠를 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get sendStatusRowStatus => '상⁠태';
+
+  @override
+  String get sendStatusRowTimestamp => '일⁠시';
+
+  @override
+  String get sendStatusRowTxId => '거⁠래 ID';
+
+  @override
+  String get sendStatusScanKeystoneTitle => 'Keystone QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get sendStatusTitleCompleted => '보⁠냈⁠어⁠요';
+
+  @override
+  String get sendStatusTitleFailed => '보⁠내⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get sendStatusTitleInProgress => '보⁠내⁠는 중...';
+
+  @override
+  String get sendStatusTxHashCopied => '거⁠래 해⁠시⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get sendStatusValueCompleted => '완⁠료';
+
+  @override
+  String get sendStatusValueFailed => '실⁠패';
+
+  @override
+  String get sendStatusValueInProgress => '진⁠행 중';
+
+  @override
+  String get sendStepEnterAmount => '금⁠액 입⁠력';
+
+  @override
+  String get sendStepReviewDonation => '후⁠원 검⁠토';
+
+  @override
+  String get sendStepReviewSend => '보⁠내⁠기 검⁠토';
+
+  @override
+  String get sendStepSelectRecipient => '받⁠는 사⁠람 선⁠택';
+
+  @override
+  String sendTitle(String currency) {
+    return '$currency 보⁠내⁠기';
+  }
+
+  @override
+  String get sendUseMax => '최⁠대 사⁠용';
+
+  @override
+  String sendUseMaxSemantics(String spendable) {
+    return '사⁠용 가⁠능⁠한 최⁠대 잔⁠액 사⁠용, $spendable 사⁠용 가⁠능';
+  }
+
+  @override
+  String get sendUseMaxSemanticsShort => '사⁠용 가⁠능⁠한 최⁠대 잔⁠액 사⁠용';
+
+  @override
+  String sendVerifyAddressPreviousTransactions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '이⁠전 거⁠래 $count⁠건',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get sendZcashAddress => 'Zcash 주⁠소';
+
+  @override
   String get settingsAccountChangedPasscode =>
       '선⁠택⁠한 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 암⁠호⁠를 다⁠시 입⁠력⁠해 주⁠세⁠요.';
 

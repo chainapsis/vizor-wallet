@@ -307,7 +307,7 @@ class PaymentRequestPrecheck {
     final amountZatoshi = parseZecAmount(amountText);
     if (amountZatoshi == null) {
       return const PaymentRequestPrecheckFailed(
-        "This link doesn't ask for a payable amount — enter one to continue",
+        "This link doesn't ask for a payable amount — enter one to continue", // l10n-ignore: stored by the payment request flow state (deferred)
       );
     }
     if (amountZatoshi <= BigInt.zero) {
@@ -319,7 +319,7 @@ class PaymentRequestPrecheck {
 
     if (accountUuid == null) {
       return const PaymentRequestPrecheckFailed(
-        'No active account — choose one, then open this link again',
+        'No active account — choose one, then open this link again', // l10n-ignore: stored by the payment request flow state (deferred)
       );
     }
 

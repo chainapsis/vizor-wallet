@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/features/send/widgets/payment_request_card.dart
 import 'package:zcash_wallet/src/features/send/widgets/payment_request_surface.dart';
 import 'package:zcash_wallet/widgetbook/payment_request_use_cases.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../support/test_l10n.dart';
 
 const _desktopSize = Size(1080, 720);
 const _mobileSize = Size(393, 852);
@@ -256,9 +257,9 @@ void main() {
           ),
           findsOneWidget,
         );
-        if (defaultPaymentRequestStatusMessage(status) != null) {
+        if (defaultPaymentRequestStatusMessage(testL10n, status) != null) {
           expect(
-            find.text(defaultPaymentRequestStatusMessage(status)!),
+            find.text(defaultPaymentRequestStatusMessage(testL10n, status)!),
             findsOneWidget,
           );
           final icons = find.descendant(

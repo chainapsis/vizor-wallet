@@ -35,7 +35,7 @@ class SendStatusContentView extends StatelessWidget {
     this.isShieldedRecipient = true,
     this.recipientAddressType,
     this.fiatText,
-    this.feeLabel = 'Tx fee',
+    this.feeLabel,
     this.feeHelpText,
     this.memoText,
     this.memoExpanded = false,
@@ -78,7 +78,7 @@ class SendStatusContentView extends StatelessWidget {
   final String? fiatText;
 
   /// Optional memo; the Message row is omitted when null.
-  final String feeLabel;
+  final String? feeLabel;
   final String? feeHelpText;
   final String? memoText;
 
@@ -114,9 +114,10 @@ class SendStatusContentView extends StatelessWidget {
       title:
           titleOverride ??
           switch (phase) {
-            SendStatusPhase.inProgress => 'Send in progress...',
-            SendStatusPhase.completed => 'Sent successfully',
-            SendStatusPhase.failed => 'Send failed',
+            SendStatusPhase.inProgress =>
+              context.l10n.sendStatusTitleInProgress,
+            SendStatusPhase.completed => context.l10n.sendStatusTitleCompleted,
+            SendStatusPhase.failed => context.l10n.sendStatusTitleFailed,
           },
       children: [
         SendReviewInfoSection(
@@ -146,7 +147,10 @@ class SendStatusContentView extends StatelessWidget {
           ),
         if (onRetry != null)
           Center(
-            child: AppButton(onPressed: onRetry, child: const Text('Retry')),
+            child: AppButton(
+              onPressed: onRetry,
+              child: Text(context.l10n.commonRetry),
+            ),
           ),
       ],
     );
@@ -158,17 +162,17 @@ class SendStatusContentView extends StatelessWidget {
         final colors = context.colors;
         final (statusValue, statusIconName, statusColor) = switch (phase) {
           SendStatusPhase.inProgress => (
-            'In progress',
+            context.l10n.sendStatusValueInProgress,
             AppIcons.loader,
             colors.text.secondary,
           ),
           SendStatusPhase.completed => (
-            'Completed',
+            context.l10n.sendStatusValueCompleted,
             AppIcons.checkCircle,
             colors.text.positiveStrong,
           ),
           SendStatusPhase.failed => (
-            'Failed',
+            context.l10n.sendStatusValueFailed,
             AppIcons.cancel,
             colors.text.destructive,
           ),
@@ -178,7 +182,7 @@ class SendStatusContentView extends StatelessWidget {
           surfaceColor: _failed ? Primitives.p50Dark : null,
           children: [
             ReviewListRow(
-              label: 'Status',
+              label: context.l10n.sendStatusRowStatus,
               value: statusValue,
               labelColor: _failed ? colors.text.destructive : null,
               valueColor: statusColor,
@@ -197,10 +201,13 @@ class SendStatusContentView extends StatelessWidget {
                     expanded: memoExpanded,
                     onToggle: onExpandMemo,
                   ),
-                ReviewListRow(label: 'Timestamp', value: timestampText),
+                ReviewListRow(
+                  label: context.l10n.sendStatusRowTimestamp,
+                  value: timestampText,
+                ),
                 if (txIdText != null)
                   ReviewListRow(
-                    label: 'Tx ID',
+                    label: context.l10n.sendStatusRowTxId,
                     value: txIdText!,
                     trailingIconName: AppIcons.arrowTopRight,
                     onPressed: onOpenExplorer,
@@ -209,7 +216,7 @@ class SendStatusContentView extends StatelessWidget {
             ),
             const ReviewWrapDivider(),
             ReviewListRow(
-              label: feeLabel,
+              label: feeLabel ?? context.l10n.txFeeInfoTitle,
               value: feeText,
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.text.secondary,

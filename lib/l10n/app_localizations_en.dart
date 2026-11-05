@@ -3294,6 +3294,941 @@ class AppLocalizationsEn extends AppLocalizations {
   String get secretPassphraseTitle => 'Secret Passphrase';
 
   @override
+  String get sendAddMemo => 'Add a memo';
+
+  @override
+  String get sendAddressTypeShielded => 'Shielded address';
+
+  @override
+  String get sendAddressTypeTex => 'TEX address';
+
+  @override
+  String get sendAddressTypeTransparent => 'Transparent address';
+
+  @override
+  String get sendAddressValidationFailed => 'Address validation failed';
+
+  @override
+  String get sendAmountCtaEnterAmount => 'Enter amount to continue';
+
+  @override
+  String get sendAmountCtaReviewAndFinish => 'Review & finish';
+
+  @override
+  String get sendAmountLabel => 'Amount';
+
+  @override
+  String get sendBroadcastCancelledBeforeParams =>
+      'Sending was cancelled before proving parameters were downloaded.';
+
+  @override
+  String get sendBroadcastDependentIncomplete =>
+      'The first transaction was accepted, but the dependent transaction did not complete. Check Activity before sending again.';
+
+  @override
+  String get sendBroadcastFirstUnknown =>
+      'The first transaction is stored locally and may have reached the network, but confirmation timed out. Check Activity before sending again.';
+
+  @override
+  String get sendBroadcastHardwareExpired =>
+      'The hardware signing request expired before broadcast. Return to your wallet, wait for sync, then review the payment and try again.';
+
+  @override
+  String get sendBroadcastIncomplete =>
+      'The transaction broadcast did not complete. Check Activity before sending again.';
+
+  @override
+  String get sendBroadcastLedgerFirstUnknown =>
+      'The first transaction may have reached the network, but confirmation timed out. Check Activity before sending again.';
+
+  @override
+  String get sendBroadcastLedgerNotStored =>
+      'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.';
+
+  @override
+  String get sendBroadcastLedgerRejected =>
+      'Transaction was rejected by the network. Please try again later.';
+
+  @override
+  String get sendBroadcastLocalRetry =>
+      'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+
+  @override
+  String get sendBroadcastMnemonicMissing =>
+      'Mnemonic not found for the proposal account.';
+
+  @override
+  String get sendBroadcastPartial =>
+      'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
+
+  @override
+  String get sendBroadcastProofParamsRequired =>
+      'Proof parameters are required to retry this signed transaction.';
+
+  @override
+  String get sendBroadcastRejectedLocal =>
+      'Transaction was created locally but didn\'t reach the network. The wallet will keep retrying until it expires. Don\'t send again unless this one expires.';
+
+  @override
+  String get sendBroadcastTrackingFailed =>
+      'The transaction reached the network, but local tracking failed. Check Activity or an explorer before sending again.';
+
+  @override
+  String get sendCalculatingMax => 'Calculating max amount';
+
+  @override
+  String get sendClearAction => 'Clear';
+
+  @override
+  String get sendCloseMessageField => 'Close message';
+
+  @override
+  String get sendContactPickerEmpty => 'No Zcash contacts';
+
+  @override
+  String get sendContactPickerTitle => 'Contacts Zcash';
+
+  @override
+  String get sendContactsLink => 'Contacts';
+
+  @override
+  String get sendDonationAddressTitle => 'Vizor donation address';
+
+  @override
+  String get sendEnterAddressToContinue => 'Enter address to continue';
+
+  @override
+  String sendEnterAmountInCurrency(String currency) {
+    return 'Enter amount in $currency';
+  }
+
+  @override
+  String get sendEnterValidAddress => 'Enter a valid address';
+
+  @override
+  String get sendErrorCouldNotBeSent =>
+      'Transaction couldn\'t be sent. Go back to your wallet and check the latest status.';
+
+  @override
+  String get sendErrorDonationFailed => 'Donation failed. Try again.';
+
+  @override
+  String get sendErrorExpiredBeforeSent =>
+      'Transaction expired before it could be sent.';
+
+  @override
+  String get sendErrorExpiredTryAgain =>
+      'Transaction expired before it could be sent. Try again.';
+
+  @override
+  String get sendErrorInsufficientShielded =>
+      'Insufficient shielded balance to cover amount and fee.';
+
+  @override
+  String get sendErrorNetwork =>
+      'Network error. Check your connection and try again.';
+
+  @override
+  String get sendErrorPartiallySent =>
+      'Some parts of this transaction were sent. Open Activity to see what went through before you try again.';
+
+  @override
+  String get sendErrorRejectedTryAgain =>
+      'The network rejected this transaction. Try again.';
+
+  @override
+  String get sendErrorRejectedTryLater =>
+      'The network rejected this transaction. Try again later.';
+
+  @override
+  String get sendErrorSendFailed => 'Send failed. Try again.';
+
+  @override
+  String get sendErrorSyncFinishing =>
+      'Finishing wallet sync. Try again shortly.';
+
+  @override
+  String get sendFeeAboutSemantics => 'About the transaction fee';
+
+  @override
+  String get sendFeeUnavailableTryAgain => 'Fee unavailable. Try again.';
+
+  @override
+  String get sendFeeUpdatedAfterSync =>
+      'Fee updated after sync. Review and confirm again.';
+
+  @override
+  String get sendFinishingSync => 'Finishing wallet sync.';
+
+  @override
+  String get sendInsufficientBalanceIncludingFeeShielded =>
+      'Insufficient shielded balance including fee';
+
+  @override
+  String get sendInsufficientBalanceIncludingFeeTex =>
+      'Insufficient balance including fee';
+
+  @override
+  String get sendInsufficientBalanceSentenceShielded =>
+      'Insufficient shielded balance.';
+
+  @override
+  String get sendInsufficientBalanceSentenceTex => 'Insufficient balance.';
+
+  @override
+  String get sendInsufficientBalanceShielded => 'Insufficient shielded balance';
+
+  @override
+  String get sendInsufficientBalanceTex => 'Insufficient balance';
+
+  @override
+  String get sendInsufficientBalanceToCoverFeeShielded =>
+      'Insufficient shielded balance to cover fee';
+
+  @override
+  String get sendInsufficientBalanceToCoverFeeTex =>
+      'Insufficient balance to cover fee';
+
+  @override
+  String sendInsufficientBalanceWithFeeShielded(String fee) {
+    return 'Insufficient shielded balance (fee: $fee)';
+  }
+
+  @override
+  String sendInsufficientBalanceWithFeeTex(String fee) {
+    return 'Insufficient balance (fee: $fee)';
+  }
+
+  @override
+  String get sendInvalidAddress => 'Invalid address';
+
+  @override
+  String get sendInvalidAmount => 'Invalid amount';
+
+  @override
+  String get sendKeystoneAfterScan => 'After you scanned, click Get signature.';
+
+  @override
+  String get sendKeystoneConfirmTitle => 'Confirm with Keystone';
+
+  @override
+  String get sendKeystoneExpired =>
+      'Transaction expired before it could be signed.';
+
+  @override
+  String get sendKeystoneGetSignature => 'Get signature';
+
+  @override
+  String get sendKeystonePrepareFailedGoBack =>
+      'Keystone signing could not be prepared. Go back and try again.';
+
+  @override
+  String get sendKeystonePrepareFailedReturnToSend =>
+      'Keystone signing could not be prepared. Return to Send and try again.';
+
+  @override
+  String get sendKeystonePreparing => 'Preparing';
+
+  @override
+  String get sendKeystoneProvingCancelled =>
+      'Signing was cancelled before proving parameters were downloaded.';
+
+  @override
+  String get sendKeystoneProvingParamsFailed =>
+      'Required proving parameters could not be prepared.';
+
+  @override
+  String get sendKeystoneQrMismatch =>
+      'This QR code does not match the current Keystone signing request.';
+
+  @override
+  String get sendKeystoneScanCameraOnly =>
+      'Keystone signing uses camera QR scanning only. Connect a camera and try again.';
+
+  @override
+  String get sendKeystoneScanDecodeFailed =>
+      'This QR code could not be decoded as a Keystone transaction signature.';
+
+  @override
+  String get sendKeystoneScanHoldSteady =>
+      'Hold the QR code steady in front of your camera';
+
+  @override
+  String get sendKeystoneScanNow =>
+      'Scan now. Signature import unlocks after proofs are ready.';
+
+  @override
+  String get sendKeystoneScanReading => 'Reading signature...';
+
+  @override
+  String get sendKeystoneScanSubtitle => 'Scan with your Keystone';
+
+  @override
+  String get sendKeystoneScanToFinish =>
+      'Scan the QR code on your Keystone to finish sending';
+
+  @override
+  String get sendKeystoneScanTransactionInstruction =>
+      'Use your Keystone wallet to scan this transaction QR code. Follow the steps on your device.';
+
+  @override
+  String get sendKeystoneScanUnexpectedSignature =>
+      'Open the signature result QR on Keystone, then scan again.';
+
+  @override
+  String get sendKeystoneScanUnexpectedTransaction =>
+      'Open the signed transaction QR on Keystone, then scan again.';
+
+  @override
+  String sendKeystoneTexTwoApprovals(int index) {
+    return 'This TEX send requires two Keystone approvals. Scan transaction $index of 2.';
+  }
+
+  @override
+  String sendKeystoneTransactionOfTwo(int index) {
+    return 'Transaction $index of 2';
+  }
+
+  @override
+  String sendLedgerConnectAndUnlock(String instruction) {
+    return 'Connect and unlock your Ledger. $instruction';
+  }
+
+  @override
+  String get sendLedgerCouldNotFinishTitle => 'Could not finish transaction';
+
+  @override
+  String get sendLedgerCouldNotPrepare =>
+      'Vizor could not prepare the transaction. Try again.';
+
+  @override
+  String get sendLedgerCouldNotSaveTitle => 'Could not save signed transaction';
+
+  @override
+  String get sendLedgerCouldNotVerifySaved =>
+      'Vizor could not verify the saved transaction. Do not sign or send it again.';
+
+  @override
+  String get sendLedgerCreateNewTransaction => 'Create new transaction';
+
+  @override
+  String get sendLedgerExpiredMessage =>
+      'This transaction can no longer be signed. Create and review a new transaction.';
+
+  @override
+  String get sendLedgerExpiredTitle => 'Transaction expired';
+
+  @override
+  String get sendLedgerKeepOpenRetry =>
+      'Keep Vizor open and try again. No new Ledger approval needed.';
+
+  @override
+  String get sendLedgerKeepOpenRetrySaving =>
+      'Keep Vizor open and retry saving. No new Ledger approval needed.';
+
+  @override
+  String get sendLedgerNeedsAttentionTitle => 'Ledger needs attention';
+
+  @override
+  String get sendLedgerRejectedOnDevice =>
+      'The transaction was rejected on your Ledger.';
+
+  @override
+  String get sendLedgerRetrySaving => 'Retry saving';
+
+  @override
+  String get sendLedgerSignaturePreservedMessage =>
+      'Your Ledger signature is preserved. Retry saving without approving another transaction.';
+
+  @override
+  String get sendLedgerSignedNeedsAttentionTitle =>
+      'Signed transaction needs attention';
+
+  @override
+  String get sendLedgerSigningFailedTitle => 'Ledger signing failed';
+
+  @override
+  String get sendLedgerSigningIncomplete =>
+      'Ledger signing could not be completed. Check your device and try again.';
+
+  @override
+  String get sendLedgerSigningUnavailableTitle => 'Ledger signing unavailable';
+
+  @override
+  String get sendLedgerStatusActionNeeded => 'Action needed';
+
+  @override
+  String get sendLedgerStatusNewTransactionRequired =>
+      'New transaction required';
+
+  @override
+  String get sendLedgerStatusRecoveryRequired => 'Recovery required';
+
+  @override
+  String get sendLedgerStatusSignaturePreserved => 'Signature preserved';
+
+  @override
+  String get sendLedgerStatusUnsupportedTransaction =>
+      'Unsupported transaction';
+
+  @override
+  String sendLoadError(String error) {
+    return 'Something went wrong. Try again in a moment.\n\nDetails: $error';
+  }
+
+  @override
+  String get sendMaxButton => 'Max';
+
+  @override
+  String get sendMaxNeedsAddress => 'Enter a valid address to use Max';
+
+  @override
+  String get sendMaxUnavailable => 'Max amount unavailable';
+
+  @override
+  String get sendMemoAddShortEncrypted => 'Add short encrypted message';
+
+  @override
+  String get sendMemoClear => 'Clear memo';
+
+  @override
+  String get sendMemoCollapse => 'Collapse';
+
+  @override
+  String get sendMemoEncryptedHint => 'Encrypted, for shielded addresses only.';
+
+  @override
+  String get sendMemoRecipientOnly => 'Only the recipient can read this';
+
+  @override
+  String get sendMemoSheetAdd => 'Add Memo';
+
+  @override
+  String get sendMemoShieldedOnly =>
+      'Message is only available for shielded addresses';
+
+  @override
+  String get sendMemoTooLong => 'Message is too long';
+
+  @override
+  String get sendMemoWhitespaceOnly => 'Whitespace only';
+
+  @override
+  String get sendMessageHint => 'Add a message';
+
+  @override
+  String get sendMessageLabel => 'Message';
+
+  @override
+  String get sendNoActiveAccount => 'No active account';
+
+  @override
+  String get sendNotEnoughZec => 'Not enough ZEC';
+
+  @override
+  String get sendOpenContacts => 'Open contacts';
+
+  @override
+  String get sendPasteAction => 'Paste';
+
+  @override
+  String get sendPaymentRequestAmountNotSpecified => 'Amount not specified';
+
+  @override
+  String get sendPaymentRequestCheckAgain => 'Check again';
+
+  @override
+  String get sendPaymentRequestCheckBeforePayBody =>
+      'Other apps can change the address or amount in a request link.';
+
+  @override
+  String get sendPaymentRequestCheckBeforePayTitle => 'Check before you pay';
+
+  @override
+  String get sendPaymentRequestCheckFailed => 'Couldn\'t check this request';
+
+  @override
+  String get sendPaymentRequestChecking => 'Checking…';
+
+  @override
+  String get sendPaymentRequestClose => 'Close payment request';
+
+  @override
+  String get sendPaymentRequestConfirmWithSender =>
+      'Confirm the details with the person who sent it.';
+
+  @override
+  String get sendPaymentRequestEdit => 'Edit';
+
+  @override
+  String get sendPaymentRequestEnterAmount => 'Enter amount';
+
+  @override
+  String get sendPaymentRequestHideFullAddress => 'Hide full recipient address';
+
+  @override
+  String get sendPaymentRequestHidePaymentDetails => 'Hide payment details';
+
+  @override
+  String get sendPaymentRequestHideRequesterInfo =>
+      'Hide requester information';
+
+  @override
+  String sendPaymentRequestHideRequesterInfoFor(String name) {
+    return 'Hide requester information for $name';
+  }
+
+  @override
+  String get sendPaymentRequestInsufficientFunds =>
+      'Not enough ZEC for this amount and the network fee';
+
+  @override
+  String sendPaymentRequestInsufficientFundsWithSpendable(String spendable) {
+    return 'Not enough ZEC for this amount and the network fee ($spendable available)';
+  }
+
+  @override
+  String get sendPaymentRequestInvalidAddress =>
+      'Recipient address doesn\'t look right';
+
+  @override
+  String get sendPaymentRequestLinkDifferentAddress =>
+      'The link had a different address';
+
+  @override
+  String get sendPaymentRequestLinkDifferentAmount =>
+      'The link had a different amount';
+
+  @override
+  String get sendPaymentRequestLinkDifferentDetails =>
+      'The link had different details';
+
+  @override
+  String get sendPaymentRequestLinkDifferentMemo =>
+      'The link had a different memo';
+
+  @override
+  String get sendPaymentRequestMatchesLink => 'Matches the link';
+
+  @override
+  String get sendPaymentRequestMemoIncluded => 'Memo included';
+
+  @override
+  String get sendPaymentRequestMemoIncludedHint =>
+      'Memo included. View the transaction memo.';
+
+  @override
+  String get sendPaymentRequestNameDisclaimer =>
+      'This name comes from the request. It doesn\'t confirm who owns the receiving address.';
+
+  @override
+  String get sendPaymentRequestNameSuppliedInRequest =>
+      'Name supplied in the request.';
+
+  @override
+  String get sendPaymentRequestNoteFromRequester => 'Note from requester';
+
+  @override
+  String get sendPaymentRequestPaymentDetails => 'Payment details';
+
+  @override
+  String get sendPaymentRequestRecipient => 'Recipient';
+
+  @override
+  String get sendPaymentRequestReplacedNotice => 'Replaced an earlier link';
+
+  @override
+  String get sendPaymentRequestRequestFrom => 'Request from';
+
+  @override
+  String get sendPaymentRequestReviewLinkDetails => 'Review link details';
+
+  @override
+  String get sendPaymentRequestReviewPayment => 'Review payment';
+
+  @override
+  String get sendPaymentRequestScanOriginalHint =>
+      'Scan the original QR code directly in Vizor.';
+
+  @override
+  String get sendPaymentRequestScanOriginalQr => 'Scan original QR';
+
+  @override
+  String get sendPaymentRequestShowFullAddress => 'Show full recipient address';
+
+  @override
+  String get sendPaymentRequestShowRequesterInfo =>
+      'Show requester information';
+
+  @override
+  String sendPaymentRequestShowRequesterInfoFor(String name) {
+    return 'Show requester information for $name';
+  }
+
+  @override
+  String get sendPaymentRequestSyncStalled =>
+      'Still syncing — check again when the wallet is up to date';
+
+  @override
+  String get sendPaymentRequestSyncing =>
+      'Wallet is still syncing — this will update when it finishes';
+
+  @override
+  String get sendPaymentRequestTitle => 'Payment request';
+
+  @override
+  String get sendPaymentRequestTransactionMemo => 'Transaction memo';
+
+  @override
+  String sendPaymentRequestUnavailableLabel(String label) {
+    return '$label, unavailable';
+  }
+
+  @override
+  String sendPaymentRequestUnavailableWithReason(String label, String reason) {
+    return '$label, unavailable. $reason';
+  }
+
+  @override
+  String get sendPaymentRequestUsingQrInstead =>
+      'Using the QR instead — the link may have been changed.';
+
+  @override
+  String get sendPaymentRequestViewNote => 'View note';
+
+  @override
+  String get sendPaymentRequestYourAccount => 'Your account';
+
+  @override
+  String get sendQrScannerOpenFailed =>
+      'Couldn\'t open the QR scanner. Try again.';
+
+  @override
+  String get sendRecentsSection => 'Recents';
+
+  @override
+  String get sendRecipientHint => 'Address or request link';
+
+  @override
+  String get sendRecipientLabel => 'Send to';
+
+  @override
+  String get sendRecipientUnreadableRequestLink =>
+      'This request link couldn\'t be read';
+
+  @override
+  String get sendRecipientWrongNetwork =>
+      'This address is for a different Zcash network';
+
+  @override
+  String get sendRequestScanBackLabel => 'Payment request';
+
+  @override
+  String get sendRequestScanCheckFailed =>
+      'Couldn\'t check this QR code. Try again.';
+
+  @override
+  String get sendRequestScanPermission =>
+      'A camera is required to scan the payment request QR code.\nYou can change camera access in settings at any time.';
+
+  @override
+  String get sendRequestScanSubtitle =>
+      'Show the requester’s original QR code to your camera';
+
+  @override
+  String get sendRequestScanTipContinuity =>
+      'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
+
+  @override
+  String get sendRequestScanTipDistance =>
+      'Move the QR code a few inches further from the camera so it can focus.';
+
+  @override
+  String get sendRequestScanTipLight =>
+      'Make sure the room is well-lit and the QR code isn\'t reflecting glare.';
+
+  @override
+  String get sendRequestScanTipOriginal =>
+      'Open the requester’s original QR code full screen on another device.';
+
+  @override
+  String get sendRequestScanTitle => 'Scan original QR';
+
+  @override
+  String get sendRequestScanUnavailable =>
+      'Connect a camera, or go back and review the link details.';
+
+  @override
+  String get sendReviewAction => 'Review';
+
+  @override
+  String get sendReviewBackSupportVizor => 'Support Vizor';
+
+  @override
+  String get sendReviewCalculatingFee => 'Calculating fee...';
+
+  @override
+  String get sendReviewConfirmAndSend => 'Confirm & send';
+
+  @override
+  String get sendReviewConfirmAndSendMobile => 'Confirm & Send';
+
+  @override
+  String get sendReviewConfirmDonation => 'Confirm donation';
+
+  @override
+  String get sendReviewConfirmWithLedger => 'Confirm with Ledger';
+
+  @override
+  String get sendReviewFeeUnavailable => 'Fee unavailable';
+
+  @override
+  String get sendReviewFinishingSyncButton => 'Finishing wallet sync...';
+
+  @override
+  String get sendReviewFullAddress => 'Full address';
+
+  @override
+  String get sendReviewPaymentTitle => 'Review Payment';
+
+  @override
+  String get sendReviewPreparing => 'Preparing...';
+
+  @override
+  String sendReviewRequestedAmount(String amount) {
+    return 'Requested $amount';
+  }
+
+  @override
+  String get sendReviewRequestedBy => 'Requested by';
+
+  @override
+  String get sendReviewShowFullAddress => 'Show full address';
+
+  @override
+  String get sendReviewTitle => 'Review send';
+
+  @override
+  String get sendReviewTo => 'To';
+
+  @override
+  String get sendSaplingDownloadBody =>
+      'To create this private transaction, your wallet needs to download about 50MB of cryptographic parameters.';
+
+  @override
+  String get sendSaplingDownloadButton => 'Download';
+
+  @override
+  String get sendSaplingDownloadNote =>
+      'This happens once, then it\'s done.\nNetwork data charges may apply.';
+
+  @override
+  String get sendSaplingDownloadTitle => 'Download Required';
+
+  @override
+  String get sendScanDowngradePastedMalformedRequest =>
+      'Pasted the address only — the payment request couldn\'t be read';
+
+  @override
+  String get sendScanDowngradePastedMultipleRecipients =>
+      'Pasted the first recipient only — this request asks for more than one';
+
+  @override
+  String get sendScanDowngradePastedUnsupportedMemo =>
+      'Pasted the address only — the request\'s message couldn\'t be read';
+
+  @override
+  String get sendScanDowngradeScannedMalformedRequest =>
+      'Scanned the address only — the payment request couldn\'t be read';
+
+  @override
+  String get sendScanDowngradeScannedMultipleRecipients =>
+      'Scanned the first recipient only — this request asks for more than one';
+
+  @override
+  String get sendScanDowngradeScannedUnsupportedMemo =>
+      'Scanned the address only — the request\'s message couldn\'t be read';
+
+  @override
+  String get sendScanNotZcashAddress => 'This QR code isn\'t a Zcash address.';
+
+  @override
+  String get sendScanQrSubtitle => 'Scan an address or payment request';
+
+  @override
+  String get sendScanQrTitle => 'Scan a QR Code';
+
+  @override
+  String get sendSendingToLabel => 'Sending to';
+
+  @override
+  String get sendSignCancelFailed =>
+      'Could not finish cancelling. Please try again.';
+
+  @override
+  String get sendSignCancelling => 'Cancelling…';
+
+  @override
+  String get sendSignConfirmTransaction => 'Confirm transaction';
+
+  @override
+  String sendSignConfirmTransactionOfTwo(int index) {
+    return 'Confirm transaction $index of 2';
+  }
+
+  @override
+  String get sendSpendableInfoLabel => 'Spendable balance info';
+
+  @override
+  String get sendSpendableTooltipBody =>
+      'Funds need confirmations before they can be spent: 3 for change from your own wallet, 6 for funds received from others. Shielded notes also need to be fully scanned. They\'ll become available shortly.';
+
+  @override
+  String get sendSpendableTooltipTitle =>
+      'Your spendable balance may be lower than your total balance.';
+
+  @override
+  String get sendStatusBackToWallet => 'Back to wallet';
+
+  @override
+  String get sendStatusDonationFailed => 'Donation failed';
+
+  @override
+  String get sendStatusDonationInProgress => 'Donation in progress...';
+
+  @override
+  String sendStatusFailureSummary(String amount, String recipient) {
+    return '$amount to $recipient';
+  }
+
+  @override
+  String get sendStatusMobileConfirmSoon =>
+      'It will confirm on-chain shortly. Track it in Activity.';
+
+  @override
+  String get sendStatusMobileDonationQueued => 'Donation queued';
+
+  @override
+  String get sendStatusMobileDonationSupport =>
+      'Your support keeps Vizor going.';
+
+  @override
+  String get sendStatusMobileDonationThanks =>
+      'Thank you for\nsupporting Vizor';
+
+  @override
+  String get sendStatusMobileDone => 'Done';
+
+  @override
+  String get sendStatusMobileNothingSent =>
+      'Nothing was sent, your funds haven\'t moved. Try again.';
+
+  @override
+  String get sendStatusMobilePendingDefault =>
+      'Your transaction was created and will be submitted automatically. Check the Activity page before sending again.';
+
+  @override
+  String get sendStatusMobileQueued => 'Queued to send';
+
+  @override
+  String get sendStatusMobileReturnHome => 'Return home';
+
+  @override
+  String get sendStatusMobileReturnToSettings => 'Return to settings';
+
+  @override
+  String get sendStatusMobileSending => 'Sending...';
+
+  @override
+  String get sendStatusMobileSendingDonation => 'Sending donation...';
+
+  @override
+  String get sendStatusMobileSent => 'Sent!';
+
+  @override
+  String get sendStatusMobileSubmitting =>
+      'Submitting your transaction to the network...';
+
+  @override
+  String get sendStatusRetryAfterSync =>
+      'Wait for wallet sync, then retry this signed transaction.';
+
+  @override
+  String get sendStatusRowStatus => 'Status';
+
+  @override
+  String get sendStatusRowTimestamp => 'Timestamp';
+
+  @override
+  String get sendStatusRowTxId => 'Tx ID';
+
+  @override
+  String get sendStatusScanKeystoneTitle => 'Scan your Keystone QR Code';
+
+  @override
+  String get sendStatusTitleCompleted => 'Sent successfully';
+
+  @override
+  String get sendStatusTitleFailed => 'Send failed';
+
+  @override
+  String get sendStatusTitleInProgress => 'Send in progress...';
+
+  @override
+  String get sendStatusTxHashCopied => 'Transaction hash copied';
+
+  @override
+  String get sendStatusValueCompleted => 'Completed';
+
+  @override
+  String get sendStatusValueFailed => 'Failed';
+
+  @override
+  String get sendStatusValueInProgress => 'In progress';
+
+  @override
+  String get sendStepEnterAmount => 'Enter Amount';
+
+  @override
+  String get sendStepReviewDonation => 'Review donation';
+
+  @override
+  String get sendStepReviewSend => 'Review Send';
+
+  @override
+  String get sendStepSelectRecipient => 'Select Recipient';
+
+  @override
+  String sendTitle(String currency) {
+    return 'Send $currency';
+  }
+
+  @override
+  String get sendUseMax => 'Use Max';
+
+  @override
+  String sendUseMaxSemantics(String spendable) {
+    return 'Use maximum spendable balance, $spendable available';
+  }
+
+  @override
+  String get sendUseMaxSemanticsShort => 'Use maximum spendable balance';
+
+  @override
+  String sendVerifyAddressPreviousTransactions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count previous transactions',
+      one: '1 previous transaction',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get sendZcashAddress => 'Zcash address';
+
+  @override
   String get settingsAccountChangedPasscode =>
       'Selected account changed. Enter your passcode again.';
 

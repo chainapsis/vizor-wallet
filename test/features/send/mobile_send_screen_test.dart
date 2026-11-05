@@ -46,6 +46,7 @@ import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 import '../../fakes/fake_zec_market_data_cache.dart';
 
 import '../../support/leading_decimal_input.dart';
+import '../../support/test_l10n.dart';
 
 const _shieldedAddress =
     'u1testshieldedaddress00000000000000000000000000000000000000000000000';
@@ -3084,7 +3085,10 @@ void main() {
     expect(editable.controller.text, _shieldedAddress);
     expect(
       find.text(
-        sendScanDowngradeMessage(SendScanDowngrade.multipleRecipients)!,
+        sendScanDowngradeMessage(
+          testL10n,
+          SendScanDowngrade.multipleRecipients,
+        )!,
       ),
       findsOneWidget,
     );
@@ -3104,7 +3108,7 @@ void main() {
 
     for (final downgrade in SendScanDowngrade.values) {
       expect(
-        find.text(sendScanDowngradeMessage(downgrade)!),
+        find.text(sendScanDowngradeMessage(testL10n, downgrade)!),
         findsNothing,
         reason: '$downgrade',
       );
@@ -3288,7 +3292,10 @@ void main() {
 
       await _enterAddress(tester, 'zcash:?amount=0.25');
 
-      expect(find.text(kUnreadablePaymentLinkMessage), findsOneWidget);
+      expect(
+        find.text(testL10n.sendRecipientUnreadableRequestLink),
+        findsOneWidget,
+      );
     });
   });
 

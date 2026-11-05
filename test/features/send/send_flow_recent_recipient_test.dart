@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
+import '../../support/test_l10n.dart';
 
 const _account = 'test-account';
 const _recipient = 'u1recipient000000000000000000000000000000';
@@ -92,6 +93,7 @@ void main() {
     await tester.runAsync(
       () => runSendBroadcast(
         ref: widgetRef,
+        l10n: testL10n,
         args: args,
         keystone: keystone
             ? KeystoneBroadcastArgs(
