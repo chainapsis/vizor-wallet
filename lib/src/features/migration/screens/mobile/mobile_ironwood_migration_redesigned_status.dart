@@ -1117,7 +1117,8 @@ class _MobileMigrationRedesignedStatusState
             nextHeight,
             blockTimes: _blockTimes(),
             currentHeight: currentHeight,
-          ).replaceFirst('~in ', '~')
+            relative: false,
+          )
         : l10n.migrationMobileTimingUpdating;
     if (state == _MigrationProgressState.waitingNotificationsOff) {
       if (nextHeight != null) {

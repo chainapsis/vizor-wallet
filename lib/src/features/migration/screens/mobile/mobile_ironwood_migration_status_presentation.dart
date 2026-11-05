@@ -294,21 +294,16 @@ String _mobileWaitingLabel(
   required int? currentHeight,
 }) {
   final nextHeight = status.nextActionHeight;
-  final timing =
-      nextHeight == null || currentHeight == null || currentHeight <= 0
-      ? null
-      : migrationHeightRemainingDurationLabel(
-          l10n,
-          nextHeight,
-          blockTimes: blockTimes,
-          currentHeight: currentHeight,
-        );
-  if (timing != null &&
-      status.signedChildPcztCount > 0 &&
-      status.pendingTxCount == 0) {
-    return timing.replaceFirst('~in ', '~');
+  if (nextHeight == null || currentHeight == null || currentHeight <= 0) {
+    return l10n.migrationMobilePartQueued;
   }
-  return timing ?? l10n.migrationMobilePartQueued;
+  return migrationHeightRemainingDurationLabel(
+    l10n,
+    nextHeight,
+    blockTimes: blockTimes,
+    currentHeight: currentHeight,
+    relative: !(status.signedChildPcztCount > 0 && status.pendingTxCount == 0),
+  );
 }
 
 String _mobilePlannedPartDurationLabel(

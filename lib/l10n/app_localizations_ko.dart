@@ -2210,6 +2210,16 @@ class AppLocalizationsKo extends AppLocalizations {
       '계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
 
   @override
+  String migrationAboutMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '약 $count⁠분',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get migrationAnalyzingBalance => '잔⁠액⁠을 분⁠석⁠하⁠는 중...';
 
   @override

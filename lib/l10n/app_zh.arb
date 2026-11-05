@@ -652,6 +652,7 @@
   "lockUnlockToContinue": "解锁以继续",
   "lockUnlockToContinueBody": "解锁 Vizor 以继续",
   "lockUnlockToContinuePausedBody": "解锁 Vizor 以继续。",
+  "migrationAboutMinutes": "{count, plural, other{约 {count} 分钟}}",
   "migrationAnalyzingBalance": "正在分析您的余额...",
   "migrationAnalyzingCaption": "Vizor 正在为您的迁移寻找安全、隐私\n与速度之间的最佳平衡",
   "migrationAnalyzingFindingBatches": "正在寻找私密批次...",

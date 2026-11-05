@@ -945,16 +945,23 @@ String migrationHeightTimingLabel(
   return '~${formatMonthDay(nextTime, l10n.localeName)}';
 }
 
+/// Time left until [targetHeight]. [relative] phrases minutes as "~in 5
+/// minutes"; otherwise as a value ("~5 minutes").
 String migrationHeightRemainingDurationLabel(
   AppLocalizations l10n,
   int targetHeight, {
   required BlockTimeEstimate blockTimes,
   required int currentHeight,
+  bool relative = true,
 }) {
   if (targetHeight <= currentHeight) return l10n.migrationReadyNow;
   final seconds = blockTimes.secondsBetween(currentHeight, targetHeight);
   final minutes = (seconds / Duration.secondsPerMinute).ceil();
-  if (minutes < 60) return l10n.migrationInMinutes(minutes);
+  if (minutes < 60) {
+    return relative
+        ? l10n.migrationInMinutes(minutes)
+        : l10n.migrationAboutMinutes(minutes);
+  }
   return _formatMigrationDuration(l10n, seconds);
 }
 

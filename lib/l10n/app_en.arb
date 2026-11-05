@@ -2959,6 +2959,16 @@
   "@lockUnlockToContinuePausedBody": {
     "description": "[security] Body on the sync lock screen after an interrupted sync asking the user to unlock the wallet."
   },
+  "migrationAboutMinutes": "{count, plural, =1{~1 minute} other{~{count} minutes}}",
+  "@migrationAboutMinutes": {
+    "description": "Approximate time left before the next migration step, without 'in' (shown as a value, e.g. in a status row).",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "5"
+      }
+    }
+  },
   "migrationAnalyzingBalance": "Analyzing your balance...",
   "@migrationAnalyzingBalance": {
     "description": "Rotating status message while the private migration plan is being computed."

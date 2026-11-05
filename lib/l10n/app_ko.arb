@@ -652,6 +652,7 @@
   "lockUnlockToContinue": "계⁠속⁠하⁠려⁠면 잠⁠금⁠을 해⁠제⁠하⁠세⁠요",
   "lockUnlockToContinueBody": "계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요",
   "lockUnlockToContinuePausedBody": "계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.",
+  "migrationAboutMinutes": "{count, plural, other{약 {count}⁠분}}",
   "migrationAnalyzingBalance": "잔⁠액⁠을 분⁠석⁠하⁠는 중...",
   "migrationAnalyzingCaption": "Vizor⁠가 이⁠전⁠의 안⁠전, 프⁠라⁠이⁠버⁠시, 속⁠도 사⁠이⁠에⁠서\n최⁠적⁠의 균⁠형⁠을 찾⁠고 있⁠어⁠요",
   "migrationAnalyzingFindingBatches": "비⁠공⁠개 배⁠치⁠를 찾⁠는 중...",

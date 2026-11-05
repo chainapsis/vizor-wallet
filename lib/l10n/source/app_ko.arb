@@ -652,6 +652,7 @@
   "lockUnlockToContinue": "계속하려면 잠금을 해제하세요",
   "lockUnlockToContinueBody": "계속하려면 Vizor 잠금을 해제하세요",
   "lockUnlockToContinuePausedBody": "계속하려면 Vizor 잠금을 해제하세요.",
+  "migrationAboutMinutes": "{count, plural, other{약 {count}분}}",
   "migrationAnalyzingBalance": "잔액을 분석하는 중...",
   "migrationAnalyzingCaption": "Vizor가 이전의 안전, 프라이버시, 속도 사이에서\n최적의 균형을 찾고 있어요",
   "migrationAnalyzingFindingBatches": "비공개 배치를 찾는 중...",

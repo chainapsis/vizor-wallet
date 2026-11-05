@@ -2249,6 +2249,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lockUnlockToContinuePausedBody => 'Unlock Vizor to continue.';
 
   @override
+  String migrationAboutMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '~$count minutes',
+      one: '~1 minute',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get migrationAnalyzingBalance => 'Analyzing your balance...';
 
   @override

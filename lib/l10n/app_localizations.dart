@@ -4022,6 +4022,12 @@ abstract class AppLocalizations {
   /// **'Unlock Vizor to continue.'**
   String get lockUnlockToContinuePausedBody;
 
+  /// Approximate time left before the next migration step, without 'in' (shown as a value, e.g. in a status row).
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{~1 minute} other{~{count} minutes}}'**
+  String migrationAboutMinutes(int count);
+
   /// Rotating status message while the private migration plan is being computed.
   ///
   /// In en, this message translates to:

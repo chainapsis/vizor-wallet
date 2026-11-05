@@ -2114,6 +2114,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lockUnlockToContinuePausedBody => '解锁 Vizor 以继续。';
 
   @override
+  String migrationAboutMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '约 $count 分钟',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get migrationAnalyzingBalance => '正在分析您的余额...';
 
   @override
