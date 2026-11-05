@@ -22,9 +22,17 @@ Map<String, Object?> _readArb(String tag) {
 List<String> _messageKeys(Map<String, Object?> arb) =>
     arb.keys.where((k) => !k.startsWith('@')).toList();
 
-Set<String> _placeholders(String message) => RegExp(
+/// Placeholder names used in [message], limited to [declared] so the text of
+/// an ICU branch such as `=1{1hr}` is not read as a placeholder.
+Set<String> _placeholders(String message, Set<String> declared) => RegExp(
   r'\{(\w+)\s*[,}]',
-).allMatches(message).map((m) => m.group(1)!).toSet();
+).allMatches(message).map((m) => m.group(1)!).toSet().intersection(declared);
+
+Set<String> _declaredPlaceholders(Map<String, Object?> template, String key) {
+  final meta = template['@$key'];
+  final placeholders = meta is Map ? meta['placeholders'] : null;
+  return placeholders is Map ? placeholders.keys.cast<String>().toSet() : {};
+}
 
 Set<String> _urls(String message) =>
     RegExp(r'https?://[^\s"}]+').allMatches(message).map((m) => m[0]!).toSet();
@@ -85,9 +93,10 @@ void main() {
         for (final key in _messageKeys(arb)) {
           final source = template[key]! as String;
           final message = arb[key]! as String;
+          final declared = _declaredPlaceholders(template, key);
           expect(
-            _placeholders(message),
-            _placeholders(source),
+            _placeholders(message, declared),
+            _placeholders(source, declared),
             reason: '$key placeholders',
           );
           expect(_urls(message), _urls(source), reason: '$key URLs');
