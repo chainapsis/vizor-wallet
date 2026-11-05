@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/app_bootstrap.dart';
+import '../src/features/accounts/screens/mobile/mobile_account_removal_passcode_screen.dart';
 import '../src/core/config/rpc_endpoint_config.dart';
 import '../src/core/layout/mobile/mobile_window_layout.dart';
 import '../src/core/layout/mobile/mobile_window_policy.dart';
@@ -18,7 +19,14 @@ import '../src/providers/app_security_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
 
 /// Real passcode screens with no wallet, storage, network or Rust dependency.
-enum PasscodeCaptureScreen { change, create, unlock, viewingKey, seedPhrase }
+enum PasscodeCaptureScreen {
+  change,
+  create,
+  unlock,
+  viewingKey,
+  seedPhrase,
+  accountRemoval,
+}
 
 class MobilePasscodeCapture extends StatefulWidget {
   const MobilePasscodeCapture({
@@ -71,6 +79,10 @@ class _MobilePasscodeCaptureState extends State<MobilePasscodeCapture> {
                   ? mobilePaneMedia(media, pane)
                   : media,
               child: switch (widget.screen) {
+                PasscodeCaptureScreen.accountRemoval =>
+                  const MobileAccountRemovalPasscodeScreen(
+                    isLastAccount: false,
+                  ),
                 PasscodeCaptureScreen.change =>
                   const MobileChangePasscodeScreen(),
                 PasscodeCaptureScreen.create => MobileOnboardingProgressScope(
@@ -128,3 +140,6 @@ Widget buildMobilePasscodeViewingKeyCapture(BuildContext context) =>
     const MobilePasscodeCapture(screen: PasscodeCaptureScreen.viewingKey);
 Widget buildMobilePasscodeSeedPhraseCapture(BuildContext context) =>
     const MobilePasscodeCapture(screen: PasscodeCaptureScreen.seedPhrase);
+
+Widget buildMobilePasscodeAccountRemovalCapture(BuildContext context) =>
+    const MobilePasscodeCapture(screen: PasscodeCaptureScreen.accountRemoval);

@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
+import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 import 'support/mobile_regtest_flow.dart';
 
@@ -9,8 +14,8 @@ import 'support/mobile_regtest_flow.dart';
 /// the regtest counterpart of the old mainnet dogfood:
 ///
 ///   create wallet → add second account → manage accounts (rename →
-///   remove) → change passcode 111111→222222 → change back (the verify
-///   step proves the rotated credential against the real store).
+///   reject/cancel removal → authenticate removal → change passcode
+///   111111→222222 → authenticate last-account reset with the new passcode.
 ///
 /// Run via scripts/e2e/flutter-ios-regtest-mobile-account-management.sh.
 void main() {
@@ -21,7 +26,7 @@ void main() {
   });
 
   testWidgets(
-    'manages accounts and rotates the passcode on regtest',
+    'authenticates account removal and last-account reset on regtest',
     (tester) async {
       tolerateRenderOverflows();
       addTearDown(() async {
@@ -33,6 +38,15 @@ void main() {
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
       await createWalletWithPasscode(tester);
+      final originalUuid = await accountUuidAtOrder(0);
+      final dbPath = await getWalletDbPath();
+      Future<List<String>> databaseAccountUuids() async => [
+        for (final account in await rust_wallet.listAccounts(
+          dbPath: dbPath,
+          network: mobileE2eNetwork,
+        ))
+          account.uuid,
+      ];
 
       // ── Add a second account through the create flow ─────────────
       await openAddAccountFlow(tester);
@@ -74,6 +88,19 @@ void main() {
       );
       await tapWidget(tester, ValueKey('mobile_accounts_menu_$addedUuid'));
       await tapWidget(tester, const ValueKey('mobile_account_menu_edit'));
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('mobile_account_edit_name')),
+                matching: find.byType(EditableText),
+                matchRoot: true,
+              )
+              .hitTestable(),
+        ),
+        description: 'account name field after the edit sheet transition',
+      );
       await enterText(
         tester,
         const ValueKey('mobile_account_edit_name'),
@@ -87,25 +114,74 @@ void main() {
       );
       logE2e('account renamed');
 
-      await tapWidget(tester, ValueKey('mobile_accounts_menu_$addedUuid'));
-      await tapWidget(tester, const ValueKey('mobile_account_menu_remove'));
-      await tapAppButton(
+      Future<void> confirmRemoval(String uuid) async {
+        await tapWidget(tester, ValueKey('mobile_accounts_menu_$uuid'));
+        await tapWidget(tester, const ValueKey('mobile_account_menu_remove'));
+        await tapAppButton(
+          tester,
+          const ValueKey('mobile_account_remove_confirm'),
+        );
+        await pumpUntil(
+          tester,
+          () => tester.any(
+            find.byKey(const ValueKey('mobile_account_removal_passcode')),
+          ),
+          description: 'account removal passcode',
+        );
+        expect(find.bySemanticsLabel('Passcode help'), findsNothing);
+      }
+
+      await confirmRemoval(addedUuid);
+      await enterPasscode(tester, '000000');
+      await pumpUntil(
         tester,
-        const ValueKey('mobile_account_remove_confirm'),
+        () => tester.any(find.text('Incorrect passcode')),
+        description: 'incorrect removal passcode error',
       );
+      expect(
+        await databaseAccountUuids(),
+        unorderedEquals([originalUuid, addedUuid]),
+      );
+      expect(await accountUuidAtOrder(1), addedUuid);
+      logE2e('incorrect passcode preserved both database accounts');
+      await tapBack(tester);
       await pumpUntil(
         tester,
         () =>
+            tester.any(find.byKey(ValueKey('mobile_accounts_menu_$addedUuid'))),
+        description: 'accounts after cancelling removal authentication',
+      );
+      expect(
+        await databaseAccountUuids(),
+        unorderedEquals([originalUuid, addedUuid]),
+      );
+      logE2e('cancelled authentication preserved both database accounts');
+
+      await confirmRemoval(addedUuid);
+      await enterPasscode(tester, mobileE2ePasscode);
+      await pumpUntil(
+        tester,
+        () =>
+            !tester.any(
+              find.byKey(const ValueKey('mobile_account_removal_passcode')),
+            ) &&
+            tester.any(
+              find
+                  .byKey(ValueKey('mobile_accounts_row_$originalUuid'))
+                  .hitTestable(),
+            ) &&
             !tester.any(find.byKey(ValueKey('mobile_accounts_row_$addedUuid'))),
-        description: 'removed account row to disappear',
+        description: 'account screen after authenticated removal',
         timeout: const Duration(seconds: 30),
       );
+      expect(await databaseAccountUuids(), [originalUuid]);
+      expect(await accountUuidAtOrder(0), originalUuid);
       logE2e('account removed');
       await tapBack(tester);
 
-      // ── Passcode change round-trip ───────────────────────────────
+      // ── Passcode change, then last-account reset ─────────────────
       Future<void> changePasscode(String current, String next) async {
-        logE2e('changing passcode $current -> $next');
+        logE2e('changing passcode');
         await tapUntilVisible(
           tester,
           trigger: find.text('Password'),
@@ -151,7 +227,64 @@ void main() {
         description: 'settings tab',
       );
       await changePasscode(mobileE2ePasscode, '222222');
-      await changePasscode('222222', mobileE2ePasscode);
+
+      await tapUntilVisible(
+        tester,
+        trigger: find.bySemanticsLabel('Home'),
+        outcome: find.byKey(const ValueKey('mobile_home_shielded_balance')),
+        description: 'home tab before last-account reset',
+      );
+      await openAccountsSheet(tester);
+      await tapUntilVisible(
+        tester,
+        trigger: find.text('Manage accounts'),
+        outcome: find.byKey(ValueKey('mobile_accounts_menu_$originalUuid')),
+        description: 'last account management screen',
+      );
+      await confirmRemoval(originalUuid);
+      expect(find.text('Enter your passcode to reset Vizor.'), findsOneWidget);
+      await enterPasscode(tester, mobileE2ePasscode);
+      await pumpUntil(
+        tester,
+        () => tester.any(find.text('Incorrect passcode')),
+        description: 'old passcode rejected before reset',
+      );
+      expect(await databaseAccountUuids(), [originalUuid]);
+      logE2e('old passcode rejected; last account remains');
+      await tapBack(tester);
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find
+              .byKey(ValueKey('mobile_accounts_menu_$originalUuid'))
+              .hitTestable(),
+        ),
+        description: 'last account after cancelling reset authentication',
+      );
+      expect(await databaseAccountUuids(), [originalUuid]);
+      logE2e(
+        'cancelled reset authentication preserved the last database account',
+      );
+      await confirmRemoval(originalUuid);
+      await enterPasscode(tester, '222222');
+      await pumpUntil(
+        tester,
+        () => tester.any(
+          find.byKey(const ValueKey('mobile_welcome_get_started')),
+        ),
+        description: 'welcome after authenticated last-account reset',
+        timeout: const Duration(seconds: 30),
+      );
+      expect(await File(dbPath).exists(), isFalse);
+      expect(await getExistingWalletDbPath(), isNull);
+      expect(
+        await AppSecureStore.instance.readString('zcash_accounts'),
+        isNull,
+      );
+      expect(await AppSecureStore.instance.isPasswordConfigured(), isFalse);
+      logE2e(
+        'new passcode authorized last-account reset; wallet state cleared',
+      );
     },
     timeout: const Timeout(Duration(minutes: 8)),
   );
