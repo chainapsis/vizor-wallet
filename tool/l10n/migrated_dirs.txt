@@ -4,6 +4,7 @@
 lib/app.dart
 lib/src/core/formatting
 lib/src/core/layout
+lib/src/core/navigation
 lib/src/core/privacy
 lib/src/core/widgets
 lib/src/features/accounts
