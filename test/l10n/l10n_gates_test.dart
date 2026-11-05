@@ -170,6 +170,37 @@ void main() {
     });
   }
 
+  // A display label is translated, so code that compares one with English
+  // copy (`status == 'Completed'`) silently fails in other languages. Give
+  // the data a kind instead; mark a genuine protocol or device string with
+  // `// l10n-ignore: <reason>`.
+  test('code does not compare text with English copy', () {
+    final comparison = RegExp(
+      r"(==|!=)\s*'[A-Z][a-z]+[^']*'|'[A-Z][a-z]+[^']*'\s*(==|!=)|"
+      r"\.(startsWith|endsWith|contains)\('[A-Z][a-z]+ [^']*'\)",
+    );
+    final findings = <String>[];
+    for (final path in migratedDirs()) {
+      final files = FileSystemEntity.isDirectorySync(path)
+          ? Directory(path)
+                .listSync(recursive: true)
+                .whereType<File>()
+                .where((file) => file.path.endsWith('.dart'))
+          : [File(path)];
+      for (final file in files) {
+        final lines = file.readAsLinesSync();
+        for (var i = 0; i < lines.length; i++) {
+          final line = lines[i];
+          if (line.contains('l10n-ignore')) continue;
+          if (comparison.hasMatch(line)) {
+            findings.add('${file.path}:${i + 1}: ${line.trim()}');
+          }
+        }
+      }
+    }
+    expect(findings, isEmpty);
+  });
+
   test('migrated directories have no hardcoded user-facing strings', () {
     final findings = scan(migratedDirs());
     expect(
