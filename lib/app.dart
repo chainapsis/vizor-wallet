@@ -1861,6 +1861,7 @@ class ZcashWalletApp extends ConsumerWidget {
     final router = appRouter.router;
     final themeMode = ref.watch(themeModeProvider);
     final appLanguage = ref.watch(appLanguageProvider);
+    final languages = ref.watch(availableAppLanguagesProvider);
 
     return MaterialApp.router(
       title: 'Vizor',
@@ -1868,8 +1869,8 @@ class ZcashWalletApp extends ConsumerWidget {
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
       themeMode: themeMode,
-      locale: appLocaleFor(appLanguage),
-      supportedLocales: appSupportedLocales(),
+      locale: appLocaleFor(appLanguage, languages),
+      supportedLocales: [for (final language in languages) language.locale],
       localizationsDelegates: appLocalizationsDelegates,
       routeInformationProvider: router.routeInformationProvider,
       routeInformationParser: router.routeInformationParser,

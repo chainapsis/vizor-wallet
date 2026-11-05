@@ -40,9 +40,34 @@ void main() {
     });
 
     test('a language this build does not offer follows the device', () {
-      expect(appLocaleFor(AppLanguage.ko, preview: false), isNull);
-      expect(appLocaleFor(AppLanguage.ko, preview: true), const Locale('ko'));
-      expect(appLocaleFor(null, preview: true), isNull);
+      final released = availableAppLanguages(preview: false);
+      final all = availableAppLanguages(preview: true);
+      expect(appLocaleFor(AppLanguage.ko, released), isNull);
+      expect(appLocaleFor(AppLanguage.ko, all), const Locale('ko'));
+      expect(appLocaleFor(null, all), isNull);
+    });
+
+    test('the device language resolves like MaterialApp', () {
+      final all = availableAppLanguages(preview: true);
+      const hant = Locale.fromSubtags(
+        languageCode: 'zh',
+        scriptCode: 'Hant',
+        countryCode: 'TW',
+      );
+      expect(
+        resolveDeviceLanguage(const [Locale('ko', 'KR')], all),
+        AppLanguage.ko,
+      );
+      expect(resolveDeviceLanguage(const [hant], all), AppLanguage.zh);
+      expect(
+        resolveDeviceLanguage(const [Locale('ja'), Locale('zh')], all),
+        AppLanguage.zh,
+      );
+      expect(resolveDeviceLanguage(const [Locale('ja')], all), AppLanguage.en);
+      expect(
+        resolveDeviceLanguage(const [Locale('ko')], [AppLanguage.en]),
+        AppLanguage.en,
+      );
     });
   });
 

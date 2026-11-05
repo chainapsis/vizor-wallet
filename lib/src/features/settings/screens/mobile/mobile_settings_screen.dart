@@ -29,13 +29,18 @@ import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/zcash_explorer_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
+import '../../../../core/l10n/app_language.dart';
+import '../../../../core/l10n/l10n.dart';
+import '../../../../providers/app_language_provider.dart';
 import '../../../../providers/theme_mode_provider.dart';
 import '../../../../services/biometric_unlock.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart';
 import '../../../onboarding/shared/onboarding_welcome_art.dart'
     show VizorWordmark;
 import '../../widgets/mobile/mobile_network_privacy_card.dart';
+import '../../widgets/language_picker.dart';
 import '../../widgets/settings_new_badge.dart';
+import '../../widgets/settings_option_card.dart';
 import '../../../donation/donation_config.dart';
 
 /// Mobile settings tab — Figma `SETTINGS` root frame (4494:65997).
@@ -55,6 +60,8 @@ class MobileSettingsScreen extends ConsumerWidget {
       networkName: endpointConfig.networkName,
     );
     final themeMode = ref.watch(themeModeProvider);
+    final appLanguage = ref.watch(appLanguageProvider);
+    final languages = ref.watch(availableAppLanguagesProvider);
     final profilePictureId =
         account?.profilePictureId ?? kDefaultProfilePictureId;
     final profilePictureLabel = _profilePictureDisplayLabel(profilePictureId);
@@ -276,6 +283,32 @@ class MobileSettingsScreen extends ConsumerWidget {
                       showChevron: true,
                       onTap: () => _showThemeSheet(context, ref, themeMode),
                     ),
+                    // With English alone there is nothing to choose.
+                    if (languages.length > 1)
+                      MobileListRow(
+                        key: const ValueKey('mobile_settings_language_row'),
+                        leading: _RowIcon(AppIcons.language),
+                        label: context.l10n.settingsLanguageLabel,
+                        value: appLanguageLabel(
+                          context,
+                          appLanguage,
+                          languages,
+                        ),
+                        minRowHeight: _settingsRowHeight,
+                        textStyle: settingsRowStyle,
+                        valueTextStyle: settingsRowStyle,
+                        valueColor: settingsValueColor,
+                        chevronColor: settingsChevronColor,
+                        showChevron: true,
+                        onTap: () => unawaited(
+                          _showLanguageSheet(
+                            context,
+                            ref,
+                            appLanguage,
+                            languages,
+                          ),
+                        ),
+                      ),
                     // No Figma frame for this row yet — listed in
                     // design_suggestion. Hidden on devices without
                     // biometric hardware.
@@ -461,6 +494,27 @@ class MobileSettingsScreen extends ConsumerWidget {
     );
     if (selected != null && selected != current) {
       await ref.read(themeModeProvider.notifier).set(selected);
+    }
+  }
+
+  Future<void> _showLanguageSheet(
+    BuildContext context,
+    WidgetRef ref,
+    AppLanguage? current,
+    List<AppLanguage> languages,
+  ) async {
+    final choice = await showMobileLanguageSheet(
+      context,
+      current: current,
+      available: languages,
+    );
+    if (choice == null || choice.language == current) return;
+    try {
+      await ref.read(appLanguageProvider.notifier).set(choice.language);
+    } catch (_) {
+      if (context.mounted) {
+        showAppToast(context, context.l10n.settingsLanguageUpdateFailed);
+      }
     }
   }
 
@@ -813,7 +867,7 @@ class _ThemeSheetState extends State<_ThemeSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final (mode, iconName, label) in _options) ...[
-            _ThemeOptionCard(
+            MobileSettingsOptionCard(
               key: ValueKey('mobile_theme_option_${mode.name}'),
               iconName: iconName,
               label: label,
@@ -832,93 +886,6 @@ class _ThemeSheetState extends State<_ThemeSheet> {
           const SizedBox(height: AppSpacing.xs),
           MobileSheetCancel(onTap: () => Navigator.of(context).pop()),
         ],
-      ),
-    );
-  }
-}
-
-class _ThemeOptionCard extends StatelessWidget {
-  const _ThemeOptionCard({
-    required this.iconName,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    super.key,
-  });
-
-  final String iconName;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (!selected) unawaited(AppHaptics.selection());
-          onTap();
-        },
-        child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(
-              color: selected ? colors.border.strong : colors.border.subtle,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Opacity(
-                opacity: selected ? 1 : 0.5,
-                child: AppIcon(iconName, size: 20, color: colors.icon.accent),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Text(
-                  label,
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-              if (selected)
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: colors.background.inverse,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: AppIcon(
-                      AppIcons.check,
-                      size: 14,
-                      color: colors.text.inverse,
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors.background.raised,
-                  ),
-                ),
-            ],
-          ),
-        ),
       ),
     );
   }

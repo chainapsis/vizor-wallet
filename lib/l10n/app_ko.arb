@@ -1,5 +1,9 @@
 {
   "@@locale": "ko",
+  "commonCancel": "취⁠소",
+  "commonUpdate": "변⁠경",
+  "commonUpdating": "변⁠경 중...",
   "languageSystemOption": "시⁠스⁠템 ({language})",
-  "settingsLanguageLabel": "언⁠어"
+  "settingsLanguageLabel": "언⁠어",
+  "settingsLanguageUpdateFailed": "언⁠어⁠를 바⁠꾸⁠지 못⁠했⁠어⁠요."
 }

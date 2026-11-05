@@ -66,15 +66,22 @@ const appLocalizationsDelegates = AppLocalizations.localizationsDelegates;
 
 /// The `MaterialApp.locale` for a saved preference. `null` follows the
 /// device; a language this build does not offer also follows the device.
-Locale? appLocaleFor(
-  AppLanguage? preference, {
-  bool preview = kI18nPreviewEnabled,
-}) {
-  if (preference == null) return null;
-  if (!availableAppLanguages(preview: preview).contains(preference)) {
-    return null;
-  }
+Locale? appLocaleFor(AppLanguage? preference, List<AppLanguage> available) {
+  if (preference == null || !available.contains(preference)) return null;
   return preference.locale;
+}
+
+/// The language "follow the device" resolves to, matching `MaterialApp`'s
+/// default resolution: the first device locale whose language is offered,
+/// else English.
+AppLanguage resolveDeviceLanguage(
+  List<Locale> deviceLocales,
+  List<AppLanguage> available,
+) {
+  final locale = basicLocaleListResolution(deviceLocales, [
+    for (final language in available) language.locale,
+  ]);
+  return AppLanguage.fromTag(locale.languageCode) ?? AppLanguage.en;
 }
 
 /// `null` means follow the device language, including for unknown values.

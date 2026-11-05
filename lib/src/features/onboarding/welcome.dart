@@ -12,12 +12,16 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/app_pane_modal_overlay.dart';
 import '../../core/widgets/app_tooltip.dart';
+import '../../core/l10n/app_language.dart';
+import '../../providers/app_language_provider.dart';
 import '../../providers/enhance_pir_provider.dart';
+import '../settings/widgets/language_picker.dart';
 import '../settings/widgets/custom_endpoint_settings_panel.dart';
 import 'shared/onboarding_welcome_art.dart';
 import 'shared/welcome_accent_button.dart';
 import 'shared/welcome_button_tokens.dart';
 import 'shared/welcome_gift_card_button.dart';
+import 'shared/welcome_language_button.dart';
 import 'shared/welcome_video_backdrop.dart';
 import 'shared/welcome_art_assets.dart';
 import 'providers/welcome_network_settings_provider.dart';
@@ -48,6 +52,7 @@ class WelcomeScreen extends ConsumerStatefulWidget {
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   late bool _showEndpointSettings;
+  bool _showLanguagePicker = false;
   late final WelcomeNetworkSettingsNotifier _networkSettings;
 
   @override
@@ -68,7 +73,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 
   @override
   void dispose() {
-    if (_showEndpointSettings && !widget.showBackButton) {
+    if ((_showEndpointSettings || _showLanguagePicker) &&
+        !widget.showBackButton) {
       final settings = _networkSettings;
       scheduleMicrotask(() => settings.setPresented(false));
     }
@@ -80,6 +86,22 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     _networkSettings.setPresented(true);
   }
 
+  // Holds incoming Gift links like the network editor does.
+  void _openLanguagePicker() {
+    setState(() => _showLanguagePicker = true);
+    _networkSettings.setPresented(true);
+  }
+
+  void _dismissLanguagePicker() {
+    setState(() => _showLanguagePicker = false);
+    _networkSettings.setPresented(false);
+  }
+
+  Future<void> _updateLanguage(AppLanguage? language) async {
+    await ref.read(appLanguageProvider.notifier).set(language);
+    if (mounted) _dismissLanguagePicker();
+  }
+
   void _dismissEndpointSettings() {
     if (ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage) {
       return;
@@ -89,100 +111,136 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xff000000),
-    body: LayoutBuilder(
-      builder: (context, constraints) {
-        final scale = constraints.maxHeight / 720;
-        return Stack(
-          fit: StackFit.expand,
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Positioned(
-              left: 75 * scale + (constraints.maxWidth - 1080 * scale) / 2,
-              top: 0,
-              width: 1280 * scale,
-              height: constraints.maxHeight,
-              child: WelcomeVideoBackdrop(
-                videoAsset: kDesktopWelcomeVideoAsset,
-                posterAsset: kDesktopWelcomePosterAsset,
-                animatedImageAsset: kDesktopWelcomeAnimatedImageAsset,
-                animate: widget.animateBackground,
-              ),
-            ),
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        Color(0xff000000),
-                        Color(0x80000000),
-                        Color(0x4d000000),
-                        Color(0x00000000),
-                      ],
-                      stops: [0.13333, 0.43813, 0.56875, 0.65583],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              top: 0,
-              width: math.min(_welcomePaneWidth, constraints.maxWidth),
-              height: constraints.maxHeight,
-              child: ExcludeFocus(
-                excluding: _showEndpointSettings,
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 48,
-                    ),
-                    child: _WelcomeContent(
-                      showBackButton: widget.showBackButton,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (!widget.showBackButton)
+  Widget build(BuildContext context) {
+    final languages = ref.watch(availableAppLanguagesProvider);
+    // First run only, and only when there is a language to choose.
+    final showLanguage = !widget.showBackButton && languages.length > 1;
+    return Scaffold(
+      backgroundColor: const Color(0xff000000),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final scale = constraints.maxHeight / 720;
+          return Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.hardEdge,
+            children: [
               Positioned(
-                right: AppSpacing.md,
-                top: AppSpacing.md,
-                child: _WelcomeIconButton(
-                  key: const ValueKey('welcome_endpoint_settings_button'),
-                  icon: AppIcons.cog,
-                  tooltip: 'Network settings',
-                  semanticLabel: 'Network settings',
-                  onTap: _openEndpointSettings,
+                left: 75 * scale + (constraints.maxWidth - 1080 * scale) / 2,
+                top: 0,
+                width: 1280 * scale,
+                height: constraints.maxHeight,
+                child: WelcomeVideoBackdrop(
+                  videoAsset: kDesktopWelcomeVideoAsset,
+                  posterAsset: kDesktopWelcomePosterAsset,
+                  animatedImageAsset: kDesktopWelcomeAnimatedImageAsset,
+                  animate: widget.animateBackground,
                 ),
               ),
-            if (widget.showBackButton)
-              const Positioned(
-                left: AppSpacing.md,
-                top: _welcomeBackButtonTop,
-                child: _BackRow(),
-              ),
-            if (!widget.showBackButton && _showEndpointSettings)
-              AppPaneModalOverlay(
-                borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                onDismiss: _dismissEndpointSettings,
-                child: CustomEndpointSettingsPanel(
-                  key: const ValueKey('welcome_endpoint_settings_modal'),
-                  restartSyncAfterUpdate: false,
-                  onClose: _dismissEndpointSettings,
-                  onUpdated: _dismissEndpointSettings,
+              const Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Color(0xff000000),
+                          Color(0x80000000),
+                          Color(0x4d000000),
+                          Color(0x00000000),
+                        ],
+                        stops: [0.13333, 0.43813, 0.56875, 0.65583],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-          ],
-        );
-      },
-    ),
-  );
+              Positioned(
+                left: 0,
+                top: 0,
+                width: math.min(_welcomePaneWidth, constraints.maxWidth),
+                height: constraints.maxHeight,
+                child: ExcludeFocus(
+                  excluding: _showEndpointSettings || _showLanguagePicker,
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 48,
+                      ),
+                      child: _WelcomeContent(
+                        showBackButton: widget.showBackButton,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              if (!widget.showBackButton)
+                Positioned(
+                  right: AppSpacing.md,
+                  top: AppSpacing.md,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showLanguage) ...[
+                        WelcomeLanguageButton(
+                          key: const ValueKey('welcome_language_button'),
+                          height: 32,
+                          background: context.colors.background.neutralScrim,
+                          hoverBackground: context
+                              .colors
+                              .background
+                              .neutralScrim
+                              .withValues(alpha: 0.7),
+                          onTap: _openLanguagePicker,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                      ],
+                      _WelcomeIconButton(
+                        key: const ValueKey('welcome_endpoint_settings_button'),
+                        icon: AppIcons.cog,
+                        tooltip: 'Network settings',
+                        semanticLabel: 'Network settings',
+                        onTap: _openEndpointSettings,
+                      ),
+                    ],
+                  ),
+                ),
+              if (widget.showBackButton)
+                const Positioned(
+                  left: AppSpacing.md,
+                  top: _welcomeBackButtonTop,
+                  child: _BackRow(),
+                ),
+              if (!widget.showBackButton && _showEndpointSettings)
+                AppPaneModalOverlay(
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  onDismiss: _dismissEndpointSettings,
+                  child: CustomEndpointSettingsPanel(
+                    key: const ValueKey('welcome_endpoint_settings_modal'),
+                    restartSyncAfterUpdate: false,
+                    onClose: _dismissEndpointSettings,
+                    onUpdated: _dismissEndpointSettings,
+                  ),
+                ),
+              if (showLanguage && _showLanguagePicker)
+                AppPaneModalOverlay(
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  onDismiss: _dismissLanguagePicker,
+                  child: DesktopLanguageModal(
+                    key: const ValueKey('welcome_language_modal'),
+                    current: ref.watch(appLanguageProvider),
+                    available: languages,
+                    onCancel: _dismissLanguagePicker,
+                    onUpdate: _updateLanguage,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _WelcomeContent extends StatelessWidget {

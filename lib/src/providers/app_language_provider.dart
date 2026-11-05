@@ -27,3 +27,9 @@ class AppLanguageNotifier extends Notifier<AppLanguage?> {
 final appLanguageProvider = NotifierProvider<AppLanguageNotifier, AppLanguage?>(
   AppLanguageNotifier.new,
 );
+
+/// The languages this build offers. Tests override it to exercise the picker
+/// without `VIZOR_I18N_PREVIEW`; with English alone the pickers stay hidden.
+final availableAppLanguagesProvider = Provider<List<AppLanguage>>(
+  (_) => availableAppLanguages(),
+);

@@ -1,5 +1,9 @@
 {
   "@@locale": "zh",
+  "commonCancel": "取消",
+  "commonUpdate": "更改",
+  "commonUpdating": "正在更改...",
   "languageSystemOption": "系统（{language}）",
-  "settingsLanguageLabel": "语言"
+  "settingsLanguageLabel": "语言",
+  "settingsLanguageUpdateFailed": "无法更改语言。"
 }

@@ -100,17 +100,41 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// Button that closes a modal or sheet without applying a change.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get commonCancel;
+
+  /// Button that applies a setting chosen in a picker modal or sheet (theme, language).
+  ///
+  /// In en, this message translates to:
+  /// **'Update'**
+  String get commonUpdate;
+
+  /// The Update button label while the change is being saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating...'**
+  String get commonUpdating;
+
   /// Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.
   ///
   /// In en, this message translates to:
   /// **'System ({language})'**
   String languageSystemOption(String language);
 
-  /// Settings > System row label and picker title for choosing the app language.
+  /// Settings > System row label and picker title for choosing the app language. Also the screen-reader label of the Welcome language button.
   ///
   /// In en, this message translates to:
   /// **'Language'**
   String get settingsLanguageLabel;
+
+  /// Error under the language options when saving the choice failed. The modal stays open.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update language.'**
+  String get settingsLanguageUpdateFailed;
 }
 
 class _AppLocalizationsDelegate

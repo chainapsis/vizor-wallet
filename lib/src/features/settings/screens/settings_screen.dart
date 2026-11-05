@@ -23,6 +23,9 @@ import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/enhance_pir_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../core/l10n/app_language.dart';
+import '../../../core/l10n/l10n.dart';
+import '../../../providers/app_language_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/zcash_explorer_provider.dart';
 import '../../../providers/windows_update_provider.dart';
@@ -35,7 +38,9 @@ import '../settings_platform.dart';
 import '../widgets/network_privacy_control.dart';
 import '../widgets/enhance_pir_privacy_control.dart';
 import '../widgets/private_queries_turn_off.dart';
+import '../widgets/language_picker.dart';
 import '../widgets/settings_new_badge.dart';
+import '../widgets/settings_option_card.dart';
 import '../widgets/windows_update_download_flow.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
@@ -52,7 +57,13 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-enum _SettingsModalType { accountName, profilePicture, theme, updates }
+enum _SettingsModalType {
+  accountName,
+  profilePicture,
+  theme,
+  language,
+  updates,
+}
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   _SettingsModalType? _activeModal;
@@ -133,6 +144,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _closeModal();
   }
 
+  Future<void> _updateLanguage(AppLanguage? language) async {
+    await ref.read(appLanguageProvider.notifier).set(language);
+    if (!mounted) return;
+    _closeModal();
+  }
+
   Future<void> _updateProfilePicture(String profilePictureId) async {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
@@ -202,6 +219,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
+    final appLanguage = ref.watch(appLanguageProvider);
+    final languages = ref.watch(availableAppLanguagesProvider);
+    // With English alone there is nothing to choose.
+    final showLanguage = languages.length > 1;
     final endpoint = ref.watch(rpcEndpointProvider);
     final endpointLabel = endpoint.hostPort;
     final explorerLabel = explorerSettingsLabel(
@@ -237,6 +258,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 endpointLabel: endpointLabel,
                 explorerLabel: explorerLabel,
                 themeLabel: _themeLabel(themeMode),
+                languageLabel: showLanguage
+                    ? appLanguageLabel(context, appLanguage, languages)
+                    : null,
                 updateLabel: updateState == null
                     ? null
                     : _updateLabel(updateState),
@@ -258,6 +282,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : () => unawaited(_openGiftCards()),
                 onLinkMobile: () => context.push('/settings/link-mobile'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
+                onLanguage: showLanguage
+                    ? () => _showModal(_SettingsModalType.language)
+                    : null,
                 onUpdates: updateState == null
                     ? null
                     : () => _showModal(_SettingsModalType.updates),
@@ -314,6 +341,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onCancel: _closeModal,
                     onUpdate: _updateTheme,
                   ),
+                  _SettingsModalType.language => DesktopLanguageModal(
+                    current: appLanguage,
+                    available: languages,
+                    onCancel: _closeModal,
+                    onUpdate: _updateLanguage,
+                  ),
                   _SettingsModalType.updates => _WindowsUpdateModal(
                     onCancel: _closeModal,
                   ),
@@ -361,6 +394,7 @@ class _SettingsPane extends StatelessWidget {
     required this.endpointLabel,
     required this.explorerLabel,
     required this.themeLabel,
+    required this.languageLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onViewingKey,
@@ -373,6 +407,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onGiftCards,
     required this.onLinkMobile,
     required this.onTheme,
+    required this.onLanguage,
     required this.onUpdates,
     required this.onAbout,
     required this.onDonation,
@@ -386,6 +421,9 @@ class _SettingsPane extends StatelessWidget {
   final String endpointLabel;
   final String explorerLabel;
   final String themeLabel;
+
+  /// `null` hides the Language row.
+  final String? languageLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onViewingKey;
@@ -398,6 +436,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback? onGiftCards;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
+  final VoidCallback? onLanguage;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onDonation;
@@ -434,6 +473,7 @@ class _SettingsPane extends StatelessWidget {
                 endpointLabel: endpointLabel,
                 explorerLabel: explorerLabel,
                 themeLabel: themeLabel,
+                languageLabel: languageLabel,
                 updateLabel: updateLabel,
                 onSeedPhrase: onSeedPhrase,
                 onViewingKey: onViewingKey,
@@ -446,6 +486,7 @@ class _SettingsPane extends StatelessWidget {
                 onGiftCards: onGiftCards,
                 onLinkMobile: onLinkMobile,
                 onTheme: onTheme,
+                onLanguage: onLanguage,
                 onUpdates: onUpdates,
                 onAbout: onAbout,
                 onDonation: onDonation,
@@ -469,6 +510,7 @@ class _SettingsList extends ConsumerWidget {
     required this.endpointLabel,
     required this.explorerLabel,
     required this.themeLabel,
+    required this.languageLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onViewingKey,
@@ -481,6 +523,7 @@ class _SettingsList extends ConsumerWidget {
     required this.onGiftCards,
     required this.onLinkMobile,
     required this.onTheme,
+    required this.onLanguage,
     required this.onUpdates,
     required this.onAbout,
     required this.onDonation,
@@ -494,6 +537,9 @@ class _SettingsList extends ConsumerWidget {
   final String endpointLabel;
   final String explorerLabel;
   final String themeLabel;
+
+  /// `null` hides the Language row.
+  final String? languageLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onViewingKey;
@@ -506,6 +552,7 @@ class _SettingsList extends ConsumerWidget {
   final VoidCallback? onGiftCards;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
+  final VoidCallback? onLanguage;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onDonation;
@@ -602,6 +649,14 @@ class _SettingsList extends ConsumerWidget {
               value: themeLabel,
               onTap: onTheme,
             ),
+            if (languageLabel case final languageLabel?)
+              _SettingsRow(
+                key: const ValueKey('settings_language_row'),
+                iconName: AppIcons.language,
+                label: context.l10n.settingsLanguageLabel,
+                value: languageLabel,
+                onTap: onLanguage,
+              ),
             if (updateLabel != null && onUpdates != null)
               _SettingsRow(
                 iconName: AppIcons.sync,
@@ -736,21 +791,21 @@ class _ThemeModalState extends State<_ThemeModal> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          _ThemeOptionCard(
+          SettingsOptionCard(
             iconName: AppIcons.monitor,
             label: 'System (Auto)',
             selected: _selectedMode == ThemeMode.system,
             onTap: () => _select(ThemeMode.system),
           ),
           const SizedBox(height: AppSpacing.xs),
-          _ThemeOptionCard(
+          SettingsOptionCard(
             iconName: AppIcons.day,
             label: 'Light',
             selected: _selectedMode == ThemeMode.light,
             onTap: () => _select(ThemeMode.light),
           ),
           const SizedBox(height: AppSpacing.xs),
-          _ThemeOptionCard(
+          SettingsOptionCard(
             iconName: AppIcons.night,
             label: 'Dark',
             selected: _selectedMode == ThemeMode.dark,
@@ -972,114 +1027,6 @@ class _UpdateProgressBar extends StatelessWidget {
           decoration: BoxDecoration(color: colors.background.inverse),
         ),
       ),
-    );
-  }
-}
-
-class _ThemeOptionCard extends StatelessWidget {
-  const _ThemeOptionCard({
-    required this.iconName,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String iconName;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          height: 40,
-          padding: const EdgeInsets.only(
-            left: AppSpacing.xs,
-            right: AppSpacing.s,
-          ),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            boxShadow: _settingsSurfaceShadow(colors),
-          ),
-          foregroundDecoration: selected
-              ? BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadii.medium),
-                  border: Border.all(
-                    color: colors.border.strong,
-                    width: 2,
-                    strokeAlign: BorderSide.strokeAlignInside,
-                  ),
-                )
-              : null,
-          child: Row(
-            children: [
-              SizedBox(
-                width: 32,
-                height: 32,
-                child: Center(
-                  child: AppIcon(
-                    iconName,
-                    size: 18,
-                    color: selected
-                        ? colors.icon.accent
-                        : colors.icon.accent.withValues(alpha: 0.5),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(
-                    color: colors.text.accent,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ),
-              _ThemeOptionIndicator(selected: selected),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ThemeOptionIndicator extends StatelessWidget {
-  const _ThemeOptionIndicator({required this.selected});
-
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: 16,
-      height: 16,
-      decoration: BoxDecoration(
-        color: selected
-            ? colors.background.inverse
-            : colors.background.neutralSubtleOpacity,
-        shape: BoxShape.circle,
-      ),
-      child: selected
-          ? Center(
-              child: AppIcon(
-                AppIcons.check,
-                size: 12,
-                color: colors.background.ground,
-              ),
-            )
-          : null,
     );
   }
 }
