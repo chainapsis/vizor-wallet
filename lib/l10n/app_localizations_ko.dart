@@ -1901,7 +1901,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get onboardingUnlockOpening => '지⁠갑⁠을 여⁠는 중...';
 
   @override
-  String get onboardingUnlockWelcomeBack => '다⁠시 오⁠신 걸 환⁠영⁠해⁠요';
+  String get onboardingUnlockWelcomeBack => '다⁠시 오⁠신 것⁠을 환⁠영⁠해⁠요';
 
   @override
   String get onboardingWelcome => '시⁠작 화⁠면';

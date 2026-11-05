@@ -845,7 +845,7 @@ class _MobileSeedPhraseScreenState
                     value: _birthdayBlockTime != null
                         ? _formatBirthdayDate(
                             _birthdayBlockTime!,
-                            Localizations.localeOf(context).toString(),
+                            context.l10n.localeName,
                           )
                         : _birthdayLoading
                         ? '…'
@@ -855,7 +855,7 @@ class _MobileSeedPhraseScreenState
                         : () => _copy(
                             _formatBirthdayDate(
                               _birthdayBlockTime!,
-                              Localizations.localeOf(context).toString(),
+                              context.l10n.localeName,
                             ),
                             context.l10n.settingsBirthdayDateCopied,
                           ),

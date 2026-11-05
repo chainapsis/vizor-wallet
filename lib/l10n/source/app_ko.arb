@@ -555,7 +555,7 @@
   "onboardingUnlockIncorrectPassword": "비밀번호가 맞지 않아요. 다시 시도해 주세요.",
   "onboardingUnlockOpenFailed": "지갑을 열지 못했어요. 다시 시도해 주세요.",
   "onboardingUnlockOpening": "지갑을 여는 중...",
-  "onboardingUnlockWelcomeBack": "다시 오신 걸 환영해요",
+  "onboardingUnlockWelcomeBack": "다시 오신 것을 환영해요",
   "onboardingWelcome": "시작 화면",
   "onboardingWelcomeActivateGiftCard": "기프트 카드 활성화",
   "onboardingWelcomeGetStarted": "시작하기",

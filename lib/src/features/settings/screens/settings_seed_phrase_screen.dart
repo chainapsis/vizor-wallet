@@ -468,7 +468,7 @@ class _SettingsSeedPhraseScreenState
   Future<void> _copyBirthdayDate() async {
     final blockTime = _birthdayBlockTime;
     if (blockTime == null || blockTime <= 0) return;
-    final localeName = Localizations.localeOf(context).toString();
+    final localeName = context.l10n.localeName;
     await Clipboard.setData(
       ClipboardData(text: _formatBirthdayDate(blockTime, localeName)),
     );
@@ -1204,10 +1204,7 @@ class _SeedBirthdayCard extends StatelessWidget {
     final blockTime = birthdayBlockTime;
     final birthdayDate = blockTime == null || blockTime <= 0
         ? '-'
-        : _formatBirthdayDate(
-            blockTime,
-            Localizations.localeOf(context).toString(),
-          );
+        : _formatBirthdayDate(blockTime, context.l10n.localeName);
     final birthdayHeightText = birthdayHeight == null || birthdayHeight! <= 0
         ? '-'
         : birthdayHeight.toString();
