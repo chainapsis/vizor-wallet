@@ -18,6 +18,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/core/l10n/app_language.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
+import '../../support/test_l10n.dart';
 
 const _address =
     'u1l8xunezsvhq8fgzfl7404m450nwnd76zshe7f5dxv5z3w4gthawuwukdn5aalh6g'
@@ -544,17 +545,17 @@ void main() {
     await tester.pump();
 
     broadcast.complete(
-      const SendBroadcastOutcome(
+      SendBroadcastOutcome(
         phase: SendBroadcastPhase.failed,
         proposalConsumed: true,
-        error: kNetworkUpgradeHoldMessage,
+        error: networkUpgradeHoldText(testL10n),
       ),
     );
     await tester.pump();
     await tester.pump();
 
     expect(find.text('Send failed'), findsOneWidget);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
     expect(find.text('Return home'), findsOneWidget);
     await tester.pumpAndSettle();
   });
@@ -599,7 +600,7 @@ void main() {
     expect(_statusRouteCanPop(tester), isFalse);
 
     broadcast.complete(
-      const SendBroadcastOutcome(
+      SendBroadcastOutcome(
         phase: SendBroadcastPhase.failed,
         proposalConsumed: true,
         error: 'failed',
@@ -924,7 +925,7 @@ void main() {
     await tester.pump();
 
     broadcast.complete(
-      const SendBroadcastOutcome(
+      SendBroadcastOutcome(
         phase: SendBroadcastPhase.failed,
         proposalConsumed: true,
         error: 'failed',

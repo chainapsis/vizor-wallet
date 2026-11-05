@@ -77,30 +77,28 @@ void main() {
     );
   }
 
-  testWidgets(
-    'mobile required migration presentation leaves send accessible',
-    (tester) async {
-      await tester.pumpWidget(
-        _appHarness(
-          '/send',
-          ironwoodPostMigrationState:
-              const IronwoodPostMigrationState.unavailable(),
-          ironwoodHomeMigrationCtaState:
-              const IronwoodHomeMigrationCtaState.start(
-                network: 'main',
-                accountUuid: 'account-1',
-              ),
-          ironwoodMigrationFlowData: _migrationFlowData,
-        ),
-      );
+  testWidgets('mobile required migration presentation leaves send accessible', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/send',
+        ironwoodPostMigrationState:
+            const IronwoodPostMigrationState.unavailable(),
+        ironwoodHomeMigrationCtaState:
+            const IronwoodHomeMigrationCtaState.start(
+              network: 'main',
+              accountUuid: 'account-1',
+            ),
+        ironwoodMigrationFlowData: _migrationFlowData,
+      ),
+    );
 
-      await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
 
-      expect(find.byType(MobileSendScreen), findsOneWidget);
-      expect(find.byType(MobileIronwoodMigrationFlowScreen), findsNothing);
-    },
-    tags: 'mobile',
-  );
+    expect(find.byType(MobileSendScreen), findsOneWidget);
+    expect(find.byType(MobileIronwoodMigrationFlowScreen), findsNothing);
+  }, tags: 'mobile');
 
   testWidgets('completed Ironwood migration leaves swap route accessible', (
     tester,

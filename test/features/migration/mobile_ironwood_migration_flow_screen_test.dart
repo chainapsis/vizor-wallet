@@ -2459,13 +2459,13 @@ void main() {
       error:
           "Migrations can't start this close to the network upgrade. Try "
           'again after it activates.',
-      copy: kNetworkUpgradeHoldMessage,
+      copy: networkUpgradeHoldText(testL10n),
     ),
     (
       error:
           'Migration schedule was drawn before the network upgrade; review '
           'the plan again',
-      copy: kNetworkUpgradeScheduleChangedMessage,
+      copy: testL10n.sendPaymentRequestCheckUpgradeScheduleChanged,
     ),
   ]) {
     testWidgets('a draft resume explains an upgrade refusal: ${refusal.copy}', (

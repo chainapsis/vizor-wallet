@@ -74,7 +74,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   String? get _passwordMessage {
     if (_passwordError != null) return _passwordError;
-    return validateWalletPassword(_passwordController.text);
+    return validateWalletPassword(context.l10n, _passwordController.text);
   }
 
   String? get _removalBlockMessage {
@@ -110,6 +110,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     if (_isSubmitting) return;
     if (_removalBlockMessage != null) return;
     final passwordError = validateRequiredWalletPassword(
+      context.l10n,
       _passwordController.text,
     );
     if (passwordError != null) {
@@ -161,7 +162,11 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
       await widget.onRemove(_setProgress);
     } on UnsharedGiftCardsChangedException catch (error) {
       if (!mounted) return;
-      setState(() => _submitError = error.toString());
+      setState(
+        () => _submitError = error.count == null
+            ? context.l10n.accountsRemoveGiftCardsRecheckFailed
+            : context.l10n.accountsRemoveGiftCardsMoreFunded,
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {

@@ -321,7 +321,7 @@ class _SyncKeepAwakePrivacyLockScreenState
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
       final error = wasEnabled && now != null && !now.enabled
-          ? biometric.availability.kind.changedMessage
+          ? biometric.availability.kind.changedMessage(context.l10n)
           : null;
       _openPasscodePrompt(error: error);
       return;

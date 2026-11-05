@@ -217,7 +217,7 @@ class _PaymentLinkLedgerSigningOverlayState
               ? error.userMessage(context.l10n)
               : _checkpointed
               ? context.l10n.paymentLinkLedgerSavedForRecovery
-              : networkUpgradeHoldMessage(error) ??
+              : networkUpgradeHoldMessage(context.l10n, error) ??
                     _deviceGuidance?.message ??
                     _ledgerFailureMessage(error);
         });
@@ -311,7 +311,7 @@ class _PaymentLinkLedgerSigningOverlayState
 
   @override
   Widget build(BuildContext context) {
-    final upgradeHold = _error == kNetworkUpgradeHoldMessage;
+    final upgradeHold = _error == networkUpgradeHoldText(context.l10n);
     final canRetry = !_terminal && !_requestNeedsRebuilding;
     final canLeave = !_durableBusy && !_cancelled;
     final modal = LedgerSigningModal(
@@ -332,7 +332,7 @@ class _PaymentLinkLedgerSigningOverlayState
                   !_terminal &&
                   (_deviceGuidance?.bluetoothRecovery ?? false),
               title: upgradeHold
-                  ? kNetworkUpgradeHoldActionLabel
+                  ? networkUpgradeHoldActionLabel(context.l10n)
                   : context.l10n.paymentLinkFundingNeedsAttention,
               statusLabel: _requestNeedsRebuilding
                   ? context.l10n.paymentLinkNewGiftCardRequired

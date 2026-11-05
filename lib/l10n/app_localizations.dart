@@ -196,6 +196,12 @@ abstract class AppLocalizations {
   /// **'Account name'**
   String get accountNameLabel;
 
+  /// Validation message when an account name is longer than 20 characters.
+  ///
+  /// In en, this message translates to:
+  /// **'Name can be up to 20 characters.'**
+  String get accountNameTooLong;
+
   /// Screen-reader label of the button that opens an account's action menu on desktop.
   ///
   /// In en, this message translates to:
@@ -327,6 +333,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t check this account for incoming gift cards. Try again before removing it.'**
   String get accountsRemoveGiftCardsCheckFailed;
+
+  /// Error in the remove-account dialog when more gift card links were funded while the removal was pending.
+  ///
+  /// In en, this message translates to:
+  /// **'More gift card links were funded. Review the warning and confirm again.'**
+  String get accountsRemoveGiftCardsMoreFunded;
+
+  /// Error in the remove-account dialog when the gift card links could not be rechecked before removal.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t recheck gift card links. Review the warning and confirm again.'**
+  String get accountsRemoveGiftCardsRecheckFailed;
 
   /// [security] Body of the mobile remove-account sheet when that account has an active Ironwood migration. Removal deletes the account's local data.
   ///
@@ -1605,6 +1623,60 @@ abstract class AppLocalizations {
   /// **'Restarting Vizor'**
   String get appUpdateRestartingTitle;
 
+  /// [security] Message on the unlock screen after the device's biometrics changed, so the passcode is required. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID changed. Enter your passcode.} touchId{Touch ID changed. Enter your passcode.} fingerprint{Fingerprint changed. Enter your passcode.} other{Biometric unlock changed. Enter your passcode.}}'**
+  String biometricChangedMessage(String kind);
+
+  /// Button label that turns on biometric unlock. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Enable Face ID} touchId{Enable Touch ID} fingerprint{Enable fingerprint} other{Enable biometrics}}'**
+  String biometricEnableLabel(String kind);
+
+  /// Biometric method name used inside a sentence. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID} touchId{Touch ID} fingerprint{fingerprint} other{biometrics}}'**
+  String biometricNameInline(String kind);
+
+  /// Biometric method name as the object of the heading 'Unlock your wallet with ...'. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID} touchId{Touch ID} fingerprint{your fingerprint} other{biometrics}}'**
+  String biometricNameOnboardingTitle(String kind);
+
+  /// Biometric method name used as a standalone label or row title. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID} touchId{Touch ID} fingerprint{Fingerprint} other{Biometrics}}'**
+  String biometricNameStandalone(String kind);
+
+  /// Button label that unlocks the wallet with biometrics. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Sign in with Face ID} touchId{Sign in with Touch ID} fingerprint{Sign in with fingerprint} other{Sign in with biometrics}}'**
+  String biometricSignInLabel(String kind);
+
+  /// Name of the biometric unlock feature used inside a sentence. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID unlock} touchId{Touch ID unlock} fingerprint{fingerprint unlock} other{biometric unlock}}'**
+  String biometricUnlockFeatureInline(String kind);
+
+  /// Name of the biometric unlock feature as a capitalized label. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Face ID unlock} touchId{Touch ID unlock} fingerprint{Fingerprint unlock} other{Biometric unlock}}'**
+  String biometricUnlockFeatureLabel(String kind);
+
+  /// Checkbox label on the unlock screen that remembers biometrics for the next unlock. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{kind, select, face{Use Face ID next time} touchId{Use Touch ID next time} fingerprint{Use fingerprint next time} other{Use biometrics next time}}'**
+  String biometricUseNextTimeLabel(String kind);
+
   /// [security] Name of the optional BIP39 passphrase (25th word), not the seed phrase.
   ///
   /// In en, this message translates to:
@@ -1616,6 +1688,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'BIP39 Passphrase: {passphrase}'**
   String bip39PassphraseValue(String passphrase);
+
+  /// Tooltip on a password field warning that Caps Lock is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Caps Lock is on'**
+  String get capsLockWarning;
 
   /// Screen-reader label of a carousel card. {name} is the carousel name, e.g. Information.
   ///
@@ -2378,6 +2456,12 @@ abstract class AppLocalizations {
   /// **'Open the signed transaction QR on Keystone, then scan again.'**
   String get commonOpenTheSignedTransactionQROn;
 
+  /// Label of the disabled action while an operation is held until the Zcash network upgrade activates.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused for network upgrade'**
+  String get commonPausedForNetworkUpgrade;
+
   /// Error on the Pay recipient step when the quote costs more ZEC than is spendable. Shared by: pay, swap.
   ///
   /// In en, this message translates to:
@@ -3080,6 +3164,36 @@ abstract class AppLocalizations {
   /// **'Custom endpoint'**
   String get endpointCustom;
 
+  /// Toast when the wallet switched back to the selected server endpoint after it recovered.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected endpoint recovered. Switched back.'**
+  String get endpointFailoverSwitchedBack;
+
+  /// Toast when the wallet switched from an unstable server endpoint to a fallback endpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected endpoint is unstable. Switched to fallback endpoint.'**
+  String get endpointFailoverSwitchedToFallback;
+
+  /// Latency label of a server endpoint that could not be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable'**
+  String get endpointLatencyUnavailable;
+
+  /// Latency label of a server endpoint that serves a different Zcash network than the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong network'**
+  String get endpointLatencyWrongNetwork;
+
+  /// Group heading in the server endpoint list. Regtest is a developer network name and stays in English.
+  ///
+  /// In en, this message translates to:
+  /// **'{region, select, standard{Default} europe{Europe} global{Global} americas{Americas} asiaPacific{Asia Pacific} community{Community} testnet{Testnet} regtest{Regtest} other{Other}}'**
+  String endpointRegionName(String region);
+
   /// Button that saves a new lightwalletd endpoint.
   ///
   /// In en, this message translates to:
@@ -3091,6 +3205,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Endpoint updated'**
   String get endpointUpdated;
+
+  /// Status line under the Private queries switch while the setting is being changed.
+  ///
+  /// In en, this message translates to:
+  /// **'Changing setting…'**
+  String get enhancePirChanging;
+
+  /// Status line under the Private queries switch: turning it off did not finish, so it is still on.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries are still on. Try turning them off again.'**
+  String get enhancePirOptOutPending;
+
+  /// Status line under the Private queries switch: the setting is on but private recovery of transparent funds could not start yet and will be retried.
+  ///
+  /// In en, this message translates to:
+  /// **'Private queries are on. Private transparent recovery could not start yet and will be retried.'**
+  String get enhancePirRaisePending;
+
+  /// Status line under the Private queries switch when the setting could not be changed at all.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting unchanged. Try again.'**
+  String get enhancePirUnchanged;
 
   /// Empty-state title on Home when the wallet has no transactions.
   ///
@@ -9425,6 +9563,36 @@ abstract class AppLocalizations {
   /// **'Vote'**
   String get navVote;
 
+  /// Toast when the user turns off Tor while a software update is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish the current software update before turning off Tor.'**
+  String get networkPrivacyFinishUpdateBeforeTorOff;
+
+  /// Toast when the user turns on Tor while a software update is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish the current software update before turning on Tor.'**
+  String get networkPrivacyFinishUpdateBeforeTorOn;
+
+  /// Toast at launch when Tor is on but could not connect, so network requests are paused.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t connect to Tor. Network requests are paused.'**
+  String get networkPrivacyTorStartupFailed;
+
+  /// Toast when Tor is connected but the software updater cannot use it.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor is connected, but software updates are unavailable. Turn off Tor to update directly.'**
+  String get networkPrivacyTorUpdatesUnavailable;
+
+  /// Toast when software updates are unavailable while other network requests use a direct connection.
+  ///
+  /// In en, this message translates to:
+  /// **'Software updates are unavailable. Other network requests still use a direct connection.'**
+  String get networkPrivacyUpdatesUnavailable;
+
   /// Title of the network settings (endpoint) screen or sheet.
   ///
   /// In en, this message translates to:
@@ -9691,6 +9859,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Block height'**
   String get onboardingBlockHeight;
+
+  /// Error shown when creating a wallet fails because the current Zcash block height could not be fetched.
+  ///
+  /// In en, this message translates to:
+  /// **'We need the current Zcash block height to create your wallet. Check your network connection and try again.'**
+  String get onboardingBlockHeightRequired;
 
   /// Disabled primary button label while the import looks for additional accounts of the same secret passphrase.
   ///
@@ -10406,6 +10580,12 @@ abstract class AppLocalizations {
   /// **'Vizor could not load the local startup state. Try again, or quit and restart Vizor.'**
   String get onboardingStorageStartupFailureBody;
 
+  /// Detail line on the startup failure screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not load its startup state.'**
+  String get onboardingStorageStartupFailureDetail;
+
   /// Primary button on the Zcash education steps that continues to the next explanation.
   ///
   /// In en, this message translates to:
@@ -10579,6 +10759,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Password'**
   String get passwordLabel;
+
+  /// Validation message when a wallet password contains characters other than printable English letters, numbers and symbols.
+  ///
+  /// In en, this message translates to:
+  /// **'Use only English letters, numbers, and symbols.'**
+  String get passwordPolicyAscii;
+
+  /// Validation message when a wallet password is shorter than the minimum; {min} is the minimum length.
+  ///
+  /// In en, this message translates to:
+  /// **'Password must be at least {min} characters.'**
+  String passwordPolicyMinLength(int min);
+
+  /// Validation message when the new wallet password equals the current one.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a different password.'**
+  String get passwordPolicyMustDiffer;
 
   /// [security] Error when the two new password entries differ.
   ///
@@ -12968,11 +13166,23 @@ abstract class AppLocalizations {
   /// **'Transparent'**
   String get poolTransparent;
 
+  /// [security] Error shown when the wallet still requires private recovery because turning off Private queries did not finish.
+  ///
+  /// In en, this message translates to:
+  /// **'Turning off Private queries didn\'t finish. Turn it off again in Settings to use transparent funds.'**
+  String get privateQueriesOptOutUnfinished;
+
   /// Button or label that opens the profile picture picker.
   ///
   /// In en, this message translates to:
   /// **'Change profile picture'**
   String get profilePictureChange;
+
+  /// Name of a built-in profile picture character, shown in the profile picture picker; {id} is the picture number such as p01.
+  ///
+  /// In en, this message translates to:
+  /// **'{id, select, p01{Knight} p02{Viking} p03{Samurai} p04{Monarch} p05{Iron helm} p06{Ronin} p07{Skull knight} p08{Seer} p09{Berserker} p10{Rogue} p11{Mage} p12{Masked cat} p13{Warden} p14{Bronze helm} p15{Fish knight} other{}}'**
+  String profilePictureName(String id);
 
   /// Title of the profile picture picker.
   ///
@@ -14750,11 +14960,23 @@ abstract class AppLocalizations {
   /// **'Any explorer you prefer'**
   String get settingsExplorerCustomSubtitle;
 
+  /// [security] Privacy note under the block explorer setting: opening a public explorer can link the user's IP address to a transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.'**
+  String get settingsExplorerPrivacyCopy;
+
   /// Error shown under the custom explorer URL field when saving it failed.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t save that explorer URL.'**
   String get settingsExplorerSaveFailed;
+
+  /// Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation.
+  ///
+  /// In en, this message translates to:
+  /// **'Use {txid} or {txHash} in the path, or enter just the origin.'**
+  String settingsExplorerTemplateHint(String txid, String txHash);
 
   /// Title of the block explorer setting, used as the Settings row label and the screen heading; the explorer is the website used to look up transactions.
   ///
@@ -15031,6 +15253,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Privacy'**
   String get settingsPrivacyTitle;
+
+  /// [security] Description under the Private queries setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Experimental. Recovers transparent funds privately, preventing the server from learning your transparent addresses. Looks up supported transactions without revealing their IDs to servers.'**
+  String get settingsPrivateQueriesCopy;
+
+  /// Extra sentence on iOS under the Private queries description: migration confirmations are not checked in the background while it is on.
+  ///
+  /// In en, this message translates to:
+  /// **'While on, migration confirmations are checked only when Vizor is open.'**
+  String get settingsPrivateQueriesIosNote;
 
   /// Label of the Settings toggle row and its accessibility label for the private queries feature, which sends wallet lookups to a privacy-preserving server.
   ///
@@ -17502,6 +17736,60 @@ abstract class AppLocalizations {
   /// **'Syncing failed. {reason}'**
   String syncFailedSemantics(String reason);
 
+  /// Sync failure notice on Home: a chain reorganization happened during sync and the wallet is recovering.
+  ///
+  /// In en, this message translates to:
+  /// **'The chain changed while syncing. We\'ll keep trying to recover.'**
+  String get syncFailureChainRecovery;
+
+  /// Sync failure notice on Home: the wallet database is locked and sync retries by itself.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet data is busy. We\'ll try syncing again automatically.'**
+  String get syncFailureDatabaseBusy;
+
+  /// Sync failure notice on Home: the wallet database could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet data could not be read. Restart the app and retry sync.'**
+  String get syncFailureDatabaseFatal;
+
+  /// Sync failure notice on Home: the configured lightwalletd endpoint is unreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot reach the configured Zcash endpoint. Check your endpoint settings.'**
+  String get syncFailureEndpoint;
+
+  /// Sync failure notice on Home: the network connection dropped and sync retries by itself.
+  ///
+  /// In en, this message translates to:
+  /// **'Network connection lost. We\'ll keep trying automatically.'**
+  String get syncFailureNetwork;
+
+  /// Sync failure notice on Home: data from the server could not be parsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync data could not be processed. Retry sync or check your endpoint.'**
+  String get syncFailureParse;
+
+  /// Sync failure notice on Home: experimental private queries could not determine a transaction's status and block syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Private transaction lookup couldn\'t determine a transaction\'s status. Turn off experimental private queries in Settings to continue syncing.'**
+  String get syncFailurePrivateStatus;
+
+  /// Sync failure notice on Home: the Tor connection failed and the user can retry or turn Tor off.
+  ///
+  /// In en, this message translates to:
+  /// **'Tor couldn\'t connect. Retry, or turn Tor off in Settings.'**
+  String get syncFailureTor;
+
+  /// Sync failure notice on Home: sync failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync failed. Retry sync to continue.'**
+  String get syncFailureUnknown;
+
   /// Sync status when the wallet is up to date.
   ///
   /// In en, this message translates to:
@@ -17543,6 +17831,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Vizor is synced'**
   String get syncVizorSynced;
+
+  /// Error shown when this build of the app cannot operate on the wallet's transparent funds and the user must update Vizor.
+  ///
+  /// In en, this message translates to:
+  /// **'This wallet needs a newer version of Vizor to use its transparent funds.'**
+  String get transparentLedgerNeedsNewerBuild;
+
+  /// Error shown when transparent funds cannot be used yet because private recovery of the transparent history has not finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent funds are unavailable until private recovery completes.'**
+  String get transparentRecoveryIncomplete;
 
   /// Tooltip on the fee row of transaction review and receipt screens.
   ///
@@ -19372,11 +19672,23 @@ abstract class AppLocalizations {
   /// **'Open & unlock your Vizor desktop app'**
   String get walletLinkStepUnlockDesktop;
 
+  /// Toast shown when another wallet change, such as switching an account or toggling Private queries, is still running.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish the current wallet operation before starting another.'**
+  String get walletMutationBusy;
+
   /// [security] Error when the device passcode check before a wallet reset failed.
   ///
   /// In en, this message translates to:
   /// **'Couldn\'t verify device ownership. Please try again.'**
   String get walletResetDeviceAuthFailed;
+
+  /// Reason line in the operating system's device-authentication prompt when the user resets the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm reset Vizor'**
+  String get walletResetDeviceAuthReason;
 
   /// [security] Error when the user skipped the device passcode check before resetting the wallet.
   ///
@@ -19401,6 +19713,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A gift card is still being received. Resetting loses it.'**
   String get walletResetGiftCardWarning;
+
+  /// Error shown when the user starts a software update download that is no longer available.
+  ///
+  /// In en, this message translates to:
+  /// **'This update is no longer ready to download. Check for updates again.'**
+  String get windowsUpdateNotReady;
+
+  /// Error shown when a software update cannot start because the updater has no Tor connection.
+  ///
+  /// In en, this message translates to:
+  /// **'The software updater is not connected to Tor. Retry updates in Settings, or turn off Tor and try again.'**
+  String get windowsUpdateTorRouteUnavailable;
 }
 
 class _AppLocalizationsDelegate

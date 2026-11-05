@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/l10n/l10n.dart';
 import '../core/layout/app_form_factor.dart';
 import '../core/layout/app_process_work_policy.dart';
 import '../core/network/network_http_client.dart';
@@ -17,16 +18,29 @@ import '../services/windows_update_service.dart';
 import 'sync_provider.dart';
 
 const kTorEnabledPreferenceKey = 'zcash_tor_enabled';
-const kTorStartupFailureNotice =
-    "Couldn't connect to Tor. Network requests are paused.";
-const kTorUpdateInProgressNotice =
-    'Finish the current software update before turning on Tor.';
-const kTorDisableUpdateInProgressNotice =
-    'Finish the current software update before turning off Tor.';
-const kTorUpdateUnavailableNotice =
-    'Tor is connected, but software updates are unavailable. Turn off Tor to update directly.';
-const kSoftwareUpdateUnavailableNotice =
-    'Software updates are unavailable. Other network requests still use a direct connection.';
+
+/// A one-time notice about Tor or software updates, raised while the network
+/// route changes.
+enum NetworkPrivacyNotice {
+  torStartupFailure,
+  torUpdateInProgress,
+  torDisableUpdateInProgress,
+  torUpdateUnavailable,
+  softwareUpdateUnavailable;
+
+  String message(AppLocalizations l10n) => switch (this) {
+    NetworkPrivacyNotice.torStartupFailure =>
+      l10n.networkPrivacyTorStartupFailed,
+    NetworkPrivacyNotice.torUpdateInProgress =>
+      l10n.networkPrivacyFinishUpdateBeforeTorOn,
+    NetworkPrivacyNotice.torDisableUpdateInProgress =>
+      l10n.networkPrivacyFinishUpdateBeforeTorOff,
+    NetworkPrivacyNotice.torUpdateUnavailable =>
+      l10n.networkPrivacyTorUpdatesUnavailable,
+    NetworkPrivacyNotice.softwareUpdateUnavailable =>
+      l10n.networkPrivacyUpdatesUnavailable,
+  };
+}
 
 enum NetworkPrivacyConnectionStatus { off, connecting, connected, failed }
 
@@ -53,7 +67,7 @@ class NetworkPrivacyState {
   final bool? targetTorEnabled;
   final bool softwareUpdatesAvailable;
   final String? error;
-  final String? startupNotice;
+  final NetworkPrivacyNotice? startupNotice;
 
   bool get isBusy => status == NetworkPrivacyConnectionStatus.connecting;
 
@@ -517,18 +531,18 @@ Future<void> initializeNetworkPrivacyRuntime({
     // No `configure` follows: turn "still connecting" into a definite failure.
     runtime.failEnable();
     final failureDetails = [
-      'Could not read the saved Tor preference: $error',
+      'Could not read the saved Tor preference: $error', // l10n-ignore: diagnostic detail, never shown
       if (drainFailure != null)
-        'Could not stop direct requests: ${drainFailure.error}',
+        'Could not stop direct requests: ${drainFailure.error}', // l10n-ignore: diagnostic detail, never shown
       if (nativeUpdateError != null)
-        'Could not pause software updates: $nativeUpdateError',
+        'Could not pause software updates: $nativeUpdateError', // l10n-ignore: diagnostic detail, never shown
     ].join(' ');
     _initialNetworkPrivacyState = NetworkPrivacyState(
       torEnabled: true,
       status: NetworkPrivacyConnectionStatus.failed,
       softwareUpdatesAvailable: false,
       error: failureDetails,
-      startupNotice: kTorStartupFailureNotice,
+      startupNotice: NetworkPrivacyNotice.torStartupFailure,
     );
     return;
   }
@@ -544,7 +558,7 @@ Future<void> initializeNetworkPrivacyRuntime({
         status: NetworkPrivacyConnectionStatus.off,
         softwareUpdatesAvailable: false,
         error: error.toString(),
-        startupNotice: kSoftwareUpdateUnavailableNotice,
+        startupNotice: NetworkPrivacyNotice.softwareUpdateUnavailable,
       );
     }
     return;
@@ -577,13 +591,13 @@ Future<NetworkPrivacyState?> _activateTorForStartup({
     if (_startupActivationSuperseded) return null;
     final status = await runtime.configure(enabled: true);
     if (_startupActivationSuperseded) return null;
-    String? startupNotice;
+    NetworkPrivacyNotice? startupNotice;
     var softwareUpdatesAvailable = true;
     if (status == NetworkPrivacyConnectionStatus.connected) {
       try {
         await nativeUpdates.resumeTorUpdates();
       } catch (_) {
-        startupNotice = kTorUpdateUnavailableNotice;
+        startupNotice = NetworkPrivacyNotice.torUpdateUnavailable;
         softwareUpdatesAvailable = false;
       }
     }
@@ -603,7 +617,7 @@ Future<NetworkPrivacyState?> _activateTorForStartup({
       status: NetworkPrivacyConnectionStatus.failed,
       softwareUpdatesAvailable: false,
       error: error.toString(),
-      startupNotice: kTorStartupFailureNotice,
+      startupNotice: NetworkPrivacyNotice.torStartupFailure,
     );
   }
 }
@@ -712,7 +726,7 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
           targetTorEnabled: true,
           softwareUpdatesAvailable: previousState.softwareUpdatesAvailable,
           error: error.toString(),
-          startupNotice: kTorUpdateInProgressNotice,
+          startupNotice: NetworkPrivacyNotice.torUpdateInProgress,
         );
         return;
       }
@@ -771,7 +785,7 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
           targetTorEnabled: false,
           softwareUpdatesAvailable: previousState.softwareUpdatesAvailable,
           error: error.toString(),
-          startupNotice: kTorDisableUpdateInProgressNotice,
+          startupNotice: NetworkPrivacyNotice.torDisableUpdateInProgress,
         );
         return;
       }
@@ -822,20 +836,20 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         }
       });
       if (generation != _generation) return;
-      String? startupNotice;
+      NetworkPrivacyNotice? startupNotice;
       var softwareUpdatesAvailable = true;
       if (enabled && nextStatus == NetworkPrivacyConnectionStatus.connected) {
         try {
           await nativeUpdates.resumeTorUpdates();
         } catch (_) {
-          startupNotice = kTorUpdateUnavailableNotice;
+          startupNotice = NetworkPrivacyNotice.torUpdateUnavailable;
           softwareUpdatesAvailable = false;
         }
       } else if (!enabled) {
         try {
           await nativeUpdates.setTorEnabled(false);
         } catch (_) {
-          startupNotice = kSoftwareUpdateUnavailableNotice;
+          startupNotice = NetworkPrivacyNotice.softwareUpdateUnavailable;
           softwareUpdatesAvailable = false;
         }
       }
@@ -855,13 +869,13 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
       var softwareUpdatesAvailable = enabled
           ? false
           : previousState.softwareUpdatesAvailable;
-      String? startupNotice;
+      NetworkPrivacyNotice? startupNotice;
       if (!enabled && effectiveTorEnabled) {
         try {
           await nativeUpdates.resumeTorUpdates();
         } catch (_) {
           softwareUpdatesAvailable = false;
-          startupNotice = kTorUpdateUnavailableNotice;
+          startupNotice = NetworkPrivacyNotice.torUpdateUnavailable;
         }
       }
       if (generation != _generation) return;
@@ -905,8 +919,8 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         softwareUpdatesAvailable: false,
         error: error.toString(),
         startupNotice: state.torEnabled
-            ? kTorUpdateUnavailableNotice
-            : kSoftwareUpdateUnavailableNotice,
+            ? NetworkPrivacyNotice.torUpdateUnavailable
+            : NetworkPrivacyNotice.softwareUpdateUnavailable,
       );
     }
   }

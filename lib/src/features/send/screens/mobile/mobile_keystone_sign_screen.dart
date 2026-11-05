@@ -332,7 +332,7 @@ class _MobileKeystoneSignScreenState
   }
 
   String _friendlyError(Object error) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('proposal not found') ||

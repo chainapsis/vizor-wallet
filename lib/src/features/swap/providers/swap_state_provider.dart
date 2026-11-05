@@ -21,7 +21,6 @@ import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
 import '../../../providers/network_upgrade_window_provider.dart';
-import '../../../core/zcash/network_upgrade_hold.dart';
 
 export 'swap_provider_config.dart';
 
@@ -905,7 +904,7 @@ class SwapNotifier extends Notifier<SwapState> {
         log('Swap: start held for the network upgrade');
         state = state.copyWith(
           startSubmitting: false,
-          statusError: const SwapLiteralMessage(kNetworkUpgradeHoldMessage),
+          statusError: const SwapNotice(SwapNoticeKind.networkUpgradeHold),
         );
         return null;
       }

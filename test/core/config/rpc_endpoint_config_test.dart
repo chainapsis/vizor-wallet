@@ -93,28 +93,28 @@ void main() {
           'us.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Default',
+        RpcEndpointRegion.standard,
       );
       expect(
         findRpcEndpointPresetByUrl(
           'eu.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Europe',
+        RpcEndpointRegion.europe,
       );
       expect(
         findRpcEndpointPresetByUrl(
           'kr.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Asia Pacific',
+        RpcEndpointRegion.asiaPacific,
       );
       expect(
         findRpcEndpointPresetByUrl(
           'ap.zec.rocks:443',
           networkName: 'main',
         )?.region,
-        'Asia Pacific',
+        RpcEndpointRegion.asiaPacific,
       );
       expect(
         findRpcEndpointPresetByUrl(

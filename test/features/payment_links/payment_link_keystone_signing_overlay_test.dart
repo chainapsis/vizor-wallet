@@ -240,7 +240,7 @@ void main() {
     (
       "Transactions can't be sent this close to the network upgrade. "
           'Try again after it activates.',
-      kNetworkUpgradeHoldMessage,
+      networkUpgradeHoldText(testL10n),
     ),
     (
       'Hardware signing request expired before broadcast: txid=ab',

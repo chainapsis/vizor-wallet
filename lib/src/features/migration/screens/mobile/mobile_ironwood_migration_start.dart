@@ -367,8 +367,7 @@ class _MobileIronwoodMigrationStartScreenState
       _isPreparing = false;
       // A schedule drawn before the upgrade can never start; Retry draws a
       // new one.
-      if (networkUpgradeHoldMessage(error) ==
-          kNetworkUpgradeScheduleChangedMessage) {
+      if (networkUpgradeHoldKind(error) == NetworkUpgradeHold.scheduleChanged) {
         ref.invalidate(ironwoodMigrationPrivatePlanProvider);
         _approvedPlanRefused = true;
       }

@@ -289,12 +289,12 @@ Future<AppBootstrapState> loadAppBootstrap({
     final syncKeepAwakeEnabled = await _readPlainBool(
       storage,
       key: kSyncKeepAwakeEnabledKey,
-      label: 'sync keep-awake enabled flag',
+      label: 'sync keep-awake enabled flag', // l10n-ignore: log label
     );
     final syncKeepAwakePromptSeen = await _readPlainBool(
       storage,
       key: kSyncKeepAwakePromptSeenKey,
-      label: 'sync keep-awake prompt seen flag',
+      label: 'sync keep-awake prompt seen flag', // l10n-ignore: log label
     );
     final enhancePirEnabled = await readEnhancePirEnabledPreference(storage);
     var isPasswordConfigured = await storage.isPasswordConfigured();
@@ -510,7 +510,7 @@ Future<AppBootstrapState> loadAppBootstrap({
     return AppBootstrapState.blocked(
       failureKind: AppBootstrapFailureKind.secureStorageUnavailable,
       failureMessage:
-          'Vizor needs access to secure storage before it can open your wallet.',
+          'Vizor needs access to secure storage before it can open your wallet.', // l10n-ignore: diagnostic; the screen words it by failureKind
     );
   } catch (e) {
     log('bootstrap: failed, blocking startup: $e');
@@ -519,7 +519,8 @@ Future<AppBootstrapState> loadAppBootstrap({
     );
     return AppBootstrapState.blocked(
       failureKind: AppBootstrapFailureKind.startupFailure,
-      failureMessage: 'Vizor could not load its startup state.',
+      failureMessage:
+          'Vizor could not load its startup state.', // l10n-ignore: diagnostic; the screen words it by failureKind
     );
   }
 }
@@ -542,19 +543,19 @@ String _walletDbMigrationFailureMessage(Object error) {
   if (message.contains('seedrequired') ||
       message.contains('seed is required') ||
       message.contains('wallet seed is required')) {
-    return 'This wallet requires a database update that cannot be completed automatically.';
+    return 'This wallet requires a database update that cannot be completed automatically.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
   if (message.contains('seednotrelevant') ||
       message.contains('seed is not relevant') ||
       message.contains('not relevant to any derived accounts')) {
-    return 'The available wallet seed does not match the database update requirement.';
+    return 'The available wallet seed does not match the database update requirement.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
   if (message.contains('sqlite') &&
       (message.contains('not supported') ||
           message.contains('database not supported'))) {
-    return 'The local SQLite version cannot open this wallet database.';
+    return 'The local SQLite version cannot open this wallet database.'; // l10n-ignore: diagnostic; the screen words it by failureKind
   }
-  return 'The wallet database update did not complete.';
+  return 'The wallet database update did not complete.'; // l10n-ignore: diagnostic; the screen words it by failureKind
 }
 
 Future<void> _applyE2eBootstrapOverrides(AppSecureStore storage) async {
@@ -691,7 +692,7 @@ Future<bool> _readBiometricUnlockEnabled(AppSecureStore storage) async {
   return _readPlainBool(
     storage,
     key: _biometricUnlockEnabledKey,
-    label: 'biometric unlock flag',
+    label: 'biometric unlock flag', // l10n-ignore: log label
   );
 }
 

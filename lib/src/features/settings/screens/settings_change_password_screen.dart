@@ -40,18 +40,21 @@ class _SettingsChangePasswordScreenState
   bool _isSubmitting = false;
 
   String? get _currentPasswordPolicyMessage =>
-      validateWalletPassword(_currentPasswordController.text);
+      validateWalletPassword(context.l10n, _currentPasswordController.text);
 
   bool get _canContinue =>
       !_isSubmitting && isWalletPasswordValid(_currentPasswordController.text);
 
   String? get _passwordMessage {
-    final policyError = validateWalletPassword(_passwordController.text);
+    final policyError = validateWalletPassword(
+      context.l10n,
+      _passwordController.text,
+    );
     if (policyError != null) return policyError;
     if (_passwordController.text.isNotEmpty &&
         _verifiedCurrentPassword != null &&
         _passwordController.text == _verifiedCurrentPassword) {
-      return kWalletPasswordMustDifferMessage;
+      return PasswordPolicyIssue.mustDiffer.message(context.l10n);
     }
     return null;
   }
@@ -209,8 +212,8 @@ class _SettingsChangePasswordScreenState
       log('SettingsChangePasswordScreen._submitNewPassword: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _submitError = e is ArgumentError && e.message != null
-            ? e.message.toString()
+        _submitError = e is PasswordPolicyViolation
+            ? e.issue.message(context.l10n)
             : context.l10n.settingsPasswordUpdateFailed;
         _isSubmitting = false;
       });

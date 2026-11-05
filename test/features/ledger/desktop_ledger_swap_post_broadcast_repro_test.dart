@@ -520,7 +520,7 @@ void main() {
     );
     await _pumpUntil(
       tester,
-      () => find.text(kNetworkUpgradeHoldMessage).evaluate().isNotEmpty,
+      () => find.text(networkUpgradeHoldText(testL10n)).evaluate().isNotEmpty,
     );
 
     expect(operations.acknowledgeCalls, 1);

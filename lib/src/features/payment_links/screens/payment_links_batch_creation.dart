@@ -312,7 +312,7 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
       return;
     }
     if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
-      _showError(kNetworkUpgradeHoldMessage);
+      _showError(networkUpgradeHoldText(context.l10n));
       return;
     }
     final draft = quote.draft;
@@ -334,7 +334,10 @@ mixin _PaymentLinksBatchCreation on ConsumerState<PaymentLinksScreen> {
     } on PaymentLinkBatchQuoteChanged {
       _requoteBatch(context.l10n.paymentLinkBatchFeeChanged);
     } on PaymentLinkBatchPreSubmissionFailure catch (failure) {
-      _requoteBatch(failure.message ?? context.l10n.paymentLinkBatchNoneFunded);
+      _requoteBatch(
+        failure.hold?.message(context.l10n) ??
+            context.l10n.paymentLinkBatchNoneFunded,
+      );
     } on PaymentLinkBatchRejected catch (rejected) {
       // Rejected while proposing: nothing reached the network.
       if (!mounted) return;

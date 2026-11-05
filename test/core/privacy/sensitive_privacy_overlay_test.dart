@@ -9,139 +9,133 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import '../../support/localized_test_scope.dart';
 
 void main() {
-  testWidgets(
-    'late native reply cannot overwrite a newer disabled state',
-    (tester) async {
-      const channel = MethodChannel('com.zcash.wallet/privacy_shield');
-      NativeSensitiveContentBridge.resetForTesting();
-      addTearDown(NativeSensitiveContentBridge.resetForTesting);
-      final pending = Completer<Object?>();
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
-        call,
-      ) async {
-        if ((call.arguments as Map)['visible'] == true) return pending.future;
-        return {'state': 'disabled', 'visible': false};
-      });
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          channel,
-          null,
-        ),
-      );
-      final token = NativeSensitiveContentBridge.createToken();
-      NativeSensitiveContentBridge.updateToken(token, true);
-      NativeSensitiveContentBridge.clearToken(token);
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'disabled');
-      pending.complete({'state': 'applied', 'visible': true});
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'disabled');
-    },
-    skip: !Platform.isMacOS,
-  );
-
-  testWidgets(
-    'native attachment reports pending then applied and disabled',
-    (tester) async {
-      const channel = MethodChannel('com.zcash.wallet/privacy_shield');
-      NativeSensitiveContentBridge.resetForTesting();
-      addTearDown(NativeSensitiveContentBridge.resetForTesting);
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  testWidgets('late native reply cannot overwrite a newer disabled state', (
+    tester,
+  ) async {
+    const channel = MethodChannel('com.zcash.wallet/privacy_shield');
+    NativeSensitiveContentBridge.resetForTesting();
+    addTearDown(NativeSensitiveContentBridge.resetForTesting);
+    final pending = Completer<Object?>();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if ((call.arguments as Map)['visible'] == true) return pending.future;
+      return {'state': 'disabled', 'visible': false};
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         channel,
-        (call) async => {
-          'state': (call.arguments as Map)['visible'] == true
-              ? 'pending'
-              : 'disabled',
-          'visible': (call.arguments as Map)['visible'],
-          'reason': '',
-        },
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          channel,
-          null,
-        ),
-      );
-      final token = NativeSensitiveContentBridge.createToken();
-      NativeSensitiveContentBridge.updateToken(token, true);
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'pending');
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        channel.name,
-        const StandardMethodCodec().encodeMethodCall(
-          const MethodCall('protectionStatusChanged', {
-            'state': 'failed',
-            'visible': true,
-            'reason': 'secure_canvas_unavailable',
-          }),
-        ),
-        (_) {},
-      );
-      expect(NativeSensitiveContentBridge.status.value, 'failed');
-      expect(
-        NativeSensitiveContentBridge.failureReason,
-        'secure_canvas_unavailable',
-      );
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        channel.name,
-        const StandardMethodCodec().encodeMethodCall(
-          const MethodCall('protectionStatusChanged', {
-            'state': 'applied',
-            'visible': true,
-            'reason': '',
-          }),
-        ),
-        (_) {},
-      );
-      expect(NativeSensitiveContentBridge.status.value, 'applied');
-      NativeSensitiveContentBridge.clearToken(token);
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'disabled');
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        channel.name,
-        const StandardMethodCodec().encodeMethodCall(
-          const MethodCall('protectionStatusChanged', {
-            'state': 'applied',
-            'visible': true,
-          }),
-        ),
-        (_) {},
-      );
-      expect(NativeSensitiveContentBridge.status.value, 'disabled');
-    },
-    skip: !Platform.isMacOS,
-  );
+        null,
+      ),
+    );
+    final token = NativeSensitiveContentBridge.createToken();
+    NativeSensitiveContentBridge.updateToken(token, true);
+    NativeSensitiveContentBridge.clearToken(token);
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'disabled');
+    pending.complete({'state': 'applied', 'visible': true});
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'disabled');
+  }, skip: !Platform.isMacOS);
 
-  testWidgets(
-    'failed native request can retry without visibility toggling',
-    (tester) async {
-      const channel = MethodChannel('com.zcash.wallet/privacy_shield');
-      NativeSensitiveContentBridge.resetForTesting();
-      addTearDown(NativeSensitiveContentBridge.resetForTesting);
-      var calls = 0;
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
-        call,
-      ) async {
-        if (++calls == 1) throw PlatformException(code: 'unavailable');
-        return {'state': 'applied', 'visible': true};
-      });
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          channel,
-          null,
-        ),
-      );
-      final token = NativeSensitiveContentBridge.createToken();
-      NativeSensitiveContentBridge.updateToken(token, true);
-      await tester.pump();
-      expect(NativeSensitiveContentBridge.status.value, 'failed');
-      NativeSensitiveContentBridge.updateToken(token, true);
-      await tester.pump();
-      expect(calls, 2);
-      expect(NativeSensitiveContentBridge.status.value, 'applied');
-    },
-    skip: !Platform.isMacOS,
-  );
+  testWidgets('native attachment reports pending then applied and disabled', (
+    tester,
+  ) async {
+    const channel = MethodChannel('com.zcash.wallet/privacy_shield');
+    NativeSensitiveContentBridge.resetForTesting();
+    addTearDown(NativeSensitiveContentBridge.resetForTesting);
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (call) async => {
+        'state': (call.arguments as Map)['visible'] == true
+            ? 'pending'
+            : 'disabled',
+        'visible': (call.arguments as Map)['visible'],
+        'reason': '',
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    final token = NativeSensitiveContentBridge.createToken();
+    NativeSensitiveContentBridge.updateToken(token, true);
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'pending');
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('protectionStatusChanged', {
+          'state': 'failed',
+          'visible': true,
+          'reason': 'secure_canvas_unavailable',
+        }),
+      ),
+      (_) {},
+    );
+    expect(NativeSensitiveContentBridge.status.value, 'failed');
+    expect(
+      NativeSensitiveContentBridge.failureReason,
+      'secure_canvas_unavailable',
+    );
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('protectionStatusChanged', {
+          'state': 'applied',
+          'visible': true,
+          'reason': '',
+        }),
+      ),
+      (_) {},
+    );
+    expect(NativeSensitiveContentBridge.status.value, 'applied');
+    NativeSensitiveContentBridge.clearToken(token);
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'disabled');
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('protectionStatusChanged', {
+          'state': 'applied',
+          'visible': true,
+        }),
+      ),
+      (_) {},
+    );
+    expect(NativeSensitiveContentBridge.status.value, 'disabled');
+  }, skip: !Platform.isMacOS);
+
+  testWidgets('failed native request can retry without visibility toggling', (
+    tester,
+  ) async {
+    const channel = MethodChannel('com.zcash.wallet/privacy_shield');
+    NativeSensitiveContentBridge.resetForTesting();
+    addTearDown(NativeSensitiveContentBridge.resetForTesting);
+    var calls = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      if (++calls == 1) throw PlatformException(code: 'unavailable');
+      return {'state': 'applied', 'visible': true};
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    final token = NativeSensitiveContentBridge.createToken();
+    NativeSensitiveContentBridge.updateToken(token, true);
+    await tester.pump();
+    expect(NativeSensitiveContentBridge.status.value, 'failed');
+    NativeSensitiveContentBridge.updateToken(token, true);
+    await tester.pump();
+    expect(calls, 2);
+    expect(NativeSensitiveContentBridge.status.value, 'applied');
+  }, skip: !Platform.isMacOS);
 
   test('platform privacy signals are macOS-only', () {
     expect(supportsPlatformPrivacySignals(isWeb: false, isMacOS: true), isTrue);

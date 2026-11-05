@@ -1753,7 +1753,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
       return;
     }
     if (ref.read(networkUpgradeWindowProvider).holdsTransactions) {
-      _showError(kNetworkUpgradeHoldMessage);
+      _showError(networkUpgradeHoldText(context.l10n));
       return;
     }
     final sourceAccountUuid = quote.sourceAccountUuid;
@@ -1843,7 +1843,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
     } catch (error) {
       if (mounted) {
         _showError(
-          networkUpgradeHoldMessage(error) ??
+          networkUpgradeHoldMessage(context.l10n, error) ??
               context.l10n.paymentLinkCreationFailed,
         );
       }
@@ -2791,7 +2791,7 @@ class _PaymentLinksScreenState extends ConsumerState<PaymentLinksScreen>
         if (mobile) setState(() => _operationInProgress = false);
         unawaited(_refreshReceivedClaims());
         _showError(
-          networkUpgradeHoldMessage(error) ??
+          networkUpgradeHoldMessage(context.l10n, error) ??
               (mobile
                   ? context.l10n.paymentLinkReceiveFinishFailed
                   : context.l10n.paymentLinkClaimFailedMaybePending),

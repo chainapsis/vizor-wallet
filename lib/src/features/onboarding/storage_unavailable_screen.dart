@@ -174,7 +174,7 @@ class _StorageUnavailableContent extends ConsumerWidget {
           null => null,
         } ??
         (failureKind == AppBootstrapFailureKind.startupFailure
-            ? bootstrap.failureMessage
+            ? l10n.onboardingStorageStartupFailureDetail
             : null);
     return SizedBox(
       width: _contentWidth,

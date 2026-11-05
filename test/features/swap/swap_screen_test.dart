@@ -9455,7 +9455,7 @@ void main() {
     expect(depositSender.preflightRequests, isEmpty);
     expect(swapProvider.startedQuotes, isEmpty);
     expect(sessionStore.savedIntents, isEmpty);
-    expect(find.text(kNetworkUpgradeHoldMessage), findsOneWidget);
+    expect(find.text(networkUpgradeHoldText(testL10n)), findsOneWidget);
   });
 
   testWidgets('ZEC deposit preflight failure does not start a swap intent', (

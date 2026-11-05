@@ -50,6 +50,8 @@ enum SwapNoticeKind {
   broadcastUnknown,
   broadcastStorageFailed,
   broadcastUncertain,
+  networkUpgradeHold,
+  networkUpgradeScheduleChanged,
 }
 
 /// A message that swap state or a persisted swap record keeps. It records
@@ -113,6 +115,10 @@ final class SwapNotice extends SwapMessage {
     SwapNoticeKind.broadcastUnknown => l10n.swapNoticeBroadcastUnknown,
     SwapNoticeKind.broadcastStorageFailed => l10n.swapNoticeBroadcastNotStored,
     SwapNoticeKind.broadcastUncertain => l10n.swapNoticeBroadcastUncertain,
+    SwapNoticeKind.networkUpgradeHold =>
+      l10n.sendPaymentRequestCheckUpgradeHold,
+    SwapNoticeKind.networkUpgradeScheduleChanged =>
+      l10n.sendPaymentRequestCheckUpgradeScheduleChanged,
   };
 
   @override
@@ -125,8 +131,7 @@ final class SwapNotice extends SwapMessage {
   String toString() => 'SwapNotice(${kind.name})';
 }
 
-/// Text shown as it is: Rust and SDK errors, the network-upgrade hold, and
-/// stored text that no code describes.
+/// Text shown as it is: Rust and SDK errors and stored text that no code describes.
 final class SwapLiteralMessage extends SwapMessage {
   const SwapLiteralMessage(this.value);
 
@@ -281,6 +286,14 @@ T? _enumByName<T extends Enum>(List<T> values, Object? name) {
 /// that exact English. Several codes share one English text; any of them
 /// renders the same copy in every language.
 const _legacySwapMessages = <String, SwapMessage>{
+  'Paused for the network upgrade. Try again in a few minutes.': // l10n-ignore: legacy persisted text
+  SwapNotice(
+    SwapNoticeKind.networkUpgradeHold,
+  ),
+  'The network upgrade changed the migration timing. Review the plan and start again.': // l10n-ignore: legacy persisted text
+  SwapNotice(
+    SwapNoticeKind.networkUpgradeScheduleChanged,
+  ),
   "We couldn't refresh the latest status.\nWe'll keep trying and update this screen automatically.": // l10n-ignore: legacy persisted text
   SwapFailureMessage(
     SwapFailureOperation.refreshStatus,

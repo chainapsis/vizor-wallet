@@ -227,8 +227,11 @@ class _ModalButtonLabel extends StatelessWidget {
 /// recovery without the passcode is wiping the wallet and importing
 /// again. The caller routes to `/welcome` on success and owns error
 /// presentation.
-Future<bool> resetWalletForForgottenPasscode(WidgetRef ref) async {
-  final verified = await verifyDeviceOwnerForWalletReset(ref);
+Future<bool> resetWalletForForgottenPasscode(
+  WidgetRef ref,
+  AppLocalizations l10n,
+) async {
+  final verified = await verifyDeviceOwnerForWalletReset(ref, l10n);
   if (!verified) return false;
 
   final syncNotifier = ref.read(syncProvider.notifier);

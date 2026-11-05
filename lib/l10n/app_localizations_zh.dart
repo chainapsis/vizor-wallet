@@ -65,6 +65,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountNameLabel => '账户名称';
 
   @override
+  String get accountNameTooLong => '名称最多 20 个字符。';
+
+  @override
   String get accountsActionsLabel => '账户操作';
 
   @override
@@ -135,6 +138,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get accountsRemoveGiftCardsCheckFailed => '无法检查此账户是否有正在接收的礼品卡。移除前请重试。';
+
+  @override
+  String get accountsRemoveGiftCardsMoreFunded => '更多礼品卡链接已充值。请查看警告并再次确认。';
+
+  @override
+  String get accountsRemoveGiftCardsRecheckFailed => '无法重新检查礼品卡链接。请查看警告并再次确认。';
 
   @override
   String get accountsRemoveMigrationBody =>
@@ -831,12 +840,114 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appUpdateRestartingTitle => '正在重启 Vizor';
 
   @override
+  String biometricChangedMessage(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 已更改。请输入你的密码。',
+      'touchId': 'Touch ID 已更改。请输入你的密码。',
+      'fingerprint': '指纹已更改。请输入你的密码。',
+      'other': '生物识别已更改。请输入你的密码。',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricEnableLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': '启用 Face ID',
+      'touchId': '启用 Touch ID',
+      'fingerprint': '启用指纹',
+      'other': '启用生物识别',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '指纹',
+      'other': '生物识别',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameOnboardingTitle(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '指纹',
+      'other': '生物识别',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameStandalone(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '指纹',
+      'other': '生物识别',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricSignInLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': '使用 Face ID 登录',
+      'touchId': '使用 Touch ID 登录',
+      'fingerprint': '使用指纹登录',
+      'other': '使用生物识别登录',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 解锁',
+      'touchId': 'Touch ID 解锁',
+      'fingerprint': '指纹解锁',
+      'other': '生物识别解锁',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 解锁',
+      'touchId': 'Touch ID 解锁',
+      'fingerprint': '指纹解锁',
+      'other': '生物识别解锁',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUseNextTimeLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': '下次使用 Face ID',
+      'touchId': '下次使用 Touch ID',
+      'fingerprint': '下次使用指纹',
+      'other': '下次使用生物识别',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get bip39PassphraseTitle => 'BIP39 密码短语';
 
   @override
   String bip39PassphraseValue(String passphrase) {
     return 'BIP39 密码短语：$passphrase';
   }
+
+  @override
+  String get capsLockWarning => '大写锁定已开启';
 
   @override
   String carouselPageSemantics(
@@ -1238,6 +1349,9 @@ class AppLocalizationsZh extends AppLocalizations {
       '请在 Keystone 上打开已签名交易的二维码，然后重新扫描。';
 
   @override
+  String get commonPausedForNetworkUpgrade => '因网络升级已暂停';
+
+  @override
   String get commonPayInsufficientZec => '你的 ZEC 不足以完成此支付。请尝试较小的金额。';
 
   @override
@@ -1601,10 +1715,50 @@ class AppLocalizationsZh extends AppLocalizations {
   String get endpointCustom => '自定义节点';
 
   @override
+  String get endpointFailoverSwitchedBack => '所选端点已恢复，已切换回来。';
+
+  @override
+  String get endpointFailoverSwitchedToFallback => '所选端点不稳定，已切换到备用端点。';
+
+  @override
+  String get endpointLatencyUnavailable => '不可用';
+
+  @override
+  String get endpointLatencyWrongNetwork => '网络不匹配';
+
+  @override
+  String endpointRegionName(String region) {
+    String _temp0 = intl.Intl.selectLogic(region, {
+      'standard': '默认',
+      'europe': '欧洲',
+      'global': '全球',
+      'americas': '美洲',
+      'asiaPacific': '亚太',
+      'community': '社区',
+      'testnet': '测试网',
+      'regtest': 'Regtest',
+      'other': '其他',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get endpointUpdate => '更新节点';
 
   @override
   String get endpointUpdated => '节点已更新';
+
+  @override
+  String get enhancePirChanging => '正在更改设置…';
+
+  @override
+  String get enhancePirOptOutPending => '隐私查询仍处于开启状态。请再次尝试关闭。';
+
+  @override
+  String get enhancePirRaisePending => '隐私查询已开启。透明资金的隐私恢复暂时无法启动，稍后会重试。';
+
+  @override
+  String get enhancePirUnchanged => '设置未更改。请重试。';
 
   @override
   String get homeActivityEmpty => '暂无活动...';
@@ -5261,6 +5415,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navVote => '投票';
 
   @override
+  String get networkPrivacyFinishUpdateBeforeTorOff => '关闭 Tor 之前，请先完成当前的软件更新。';
+
+  @override
+  String get networkPrivacyFinishUpdateBeforeTorOn => '开启 Tor 之前，请先完成当前的软件更新。';
+
+  @override
+  String get networkPrivacyTorStartupFailed => '无法连接到 Tor。网络请求已暂停。';
+
+  @override
+  String get networkPrivacyTorUpdatesUnavailable =>
+      'Tor 已连接，但软件更新不可用。请关闭 Tor 以直接更新。';
+
+  @override
+  String get networkPrivacyUpdatesUnavailable => '软件更新不可用。其他网络请求仍使用直接连接。';
+
+  @override
   String get networkSettingsTitle => '网络设置';
 
   @override
@@ -5411,6 +5581,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get onboardingBlockHeight => '区块高度';
+
+  @override
+  String get onboardingBlockHeightRequired =>
+      '创建钱包需要当前的 Zcash 区块高度。请检查网络连接后重试。';
 
   @override
   String get onboardingCheckingAccounts => '正在检查账户...';
@@ -5791,6 +5965,9 @@ class AppLocalizationsZh extends AppLocalizations {
       'Vizor 无法加载本地启动状态。请重试，或退出后重新启动 Vizor。';
 
   @override
+  String get onboardingStorageStartupFailureDetail => 'Vizor 无法加载其启动状态。';
+
+  @override
   String get onboardingTellMeHowZcashWorks => '了解 Zcash 如何运作';
 
   @override
@@ -5879,6 +6056,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get passwordLabel => '密码';
+
+  @override
+  String get passwordPolicyAscii => '仅可使用英文字母、数字和符号。';
+
+  @override
+  String passwordPolicyMinLength(int min) {
+    return '密码至少需要 $min 个字符。';
+  }
+
+  @override
+  String get passwordPolicyMustDiffer => '请使用不同的密码。';
 
   @override
   String get passwordsDoNotMatch => '两次输入的密码不一致。';
@@ -7227,7 +7415,33 @@ class AppLocalizationsZh extends AppLocalizations {
   String get poolTransparent => '透明';
 
   @override
+  String get privateQueriesOptOutUnfinished => '关闭隐私查询未完成。请在设置中再次关闭，以使用透明资金。';
+
+  @override
   String get profilePictureChange => '更换头像';
+
+  @override
+  String profilePictureName(String id) {
+    String _temp0 = intl.Intl.selectLogic(id, {
+      'p01': '骑士',
+      'p02': '维京人',
+      'p03': '武士',
+      'p04': '君主',
+      'p05': '铁盔',
+      'p06': '浪人',
+      'p07': '骷髅骑士',
+      'p08': '先知',
+      'p09': '狂战士',
+      'p10': '盗贼',
+      'p11': '法师',
+      'p12': '蒙面猫',
+      'p13': '守卫',
+      'p14': '青铜盔',
+      'p15': '鱼骑士',
+      'other': '',
+    });
+    return '$_temp0';
+  }
 
   @override
   String get profilePictureSelect => '选择头像';
@@ -8213,7 +8427,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsExplorerCustomSubtitle => '任何你喜欢的区块浏览器';
 
   @override
+  String get settingsExplorerPrivacyCopy =>
+      '交易链接会在此区块浏览器中打开。你可以使用 ZecBlock 或其他你喜欢的网站。发送后打开公共区块浏览器，可能会将你的 IP 地址与该交易关联。';
+
+  @override
   String get settingsExplorerSaveFailed => '无法保存该区块浏览器网址。';
+
+  @override
+  String settingsExplorerTemplateHint(String txid, String txHash) {
+    return '在路径中使用 $txid 或 $txHash，或只输入域名。';
+  }
 
   @override
   String get settingsExplorerTitle => '区块浏览器';
@@ -8355,6 +8578,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsPrivacyTitle => '隐私';
+
+  @override
+  String get settingsPrivateQueriesCopy =>
+      '实验性功能。以隐私方式恢复透明资金，使服务器无法得知你的透明地址。查询受支持的交易时不会向服务器透露其 ID。';
+
+  @override
+  String get settingsPrivateQueriesIosNote => '开启期间，仅在 Vizor 打开时才会检查迁移确认。';
 
   @override
   String get settingsPrivateQueriesLabel => '隐私查询';
@@ -9754,6 +9984,34 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get syncFailureChainRecovery => '同步期间区块链发生了变化。我们会继续尝试恢复。';
+
+  @override
+  String get syncFailureDatabaseBusy => '钱包数据正忙。我们会自动重新同步。';
+
+  @override
+  String get syncFailureDatabaseFatal => '无法读取钱包数据。请重启应用并重试同步。';
+
+  @override
+  String get syncFailureEndpoint => '无法连接到已配置的 Zcash 端点。请检查你的端点设置。';
+
+  @override
+  String get syncFailureNetwork => '网络连接已断开。我们会自动继续尝试。';
+
+  @override
+  String get syncFailureParse => '无法处理同步数据。请重试同步或检查你的端点。';
+
+  @override
+  String get syncFailurePrivateStatus =>
+      '隐私交易查询无法确定某笔交易的状态。请在设置中关闭实验性隐私查询，以继续同步。';
+
+  @override
+  String get syncFailureTor => 'Tor 无法连接。请重试，或在设置中关闭 Tor。';
+
+  @override
+  String get syncFailureUnknown => '同步失败。请重试同步以继续。';
+
+  @override
   String get syncSynced => '已同步';
 
   @override
@@ -9779,6 +10037,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get syncVizorSynced => 'Vizor 已同步';
+
+  @override
+  String get transparentLedgerNeedsNewerBuild => '此钱包的透明资金需要更新版本的 Vizor 才能使用。';
+
+  @override
+  String get transparentRecoveryIncomplete => '在隐私恢复完成之前，透明资金不可用。';
 
   @override
   String get txFeeHelpTooltip => '支付给 Zcash 网络以处理此交易的费用。';
@@ -10856,7 +11120,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get walletLinkStepUnlockDesktop => '打开并解锁 Vizor 桌面应用';
 
   @override
+  String get walletMutationBusy => '请先完成当前的钱包操作，再开始其他操作。';
+
+  @override
   String get walletResetDeviceAuthFailed => '无法验证设备所有权，请重试。';
+
+  @override
+  String get walletResetDeviceAuthReason => '确认重置 Vizor';
 
   @override
   String get walletResetDeviceAuthRequired => '重置 Vizor 需要进行设备验证。';
@@ -10869,4 +11139,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get walletResetGiftCardWarning => '仍在接收礼品卡，重置将导致其丢失。';
+
+  @override
+  String get windowsUpdateNotReady => '此更新已无法下载。请重新检查更新。';
+
+  @override
+  String get windowsUpdateTorRouteUnavailable =>
+      '软件更新程序未连接到 Tor。请在设置中重试更新，或关闭 Tor 后重试。';
 }

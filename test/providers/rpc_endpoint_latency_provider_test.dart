@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_latency_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart'
     show LightwalletdEndpointProbe;
+import '../support/test_l10n.dart';
 
 void main() {
   group('measureRpcEndpointLatency', () {
@@ -25,7 +26,7 @@ void main() {
 
       expect(sample.status, RpcEndpointLatencyStatus.available);
       expect(sample.latency, const Duration(milliseconds: 123));
-      expect(sample.label, '123ms');
+      expect(sample.label(testL10n), '123ms');
     });
 
     test(
@@ -41,7 +42,7 @@ void main() {
         );
 
         expect(sample.status, RpcEndpointLatencyStatus.wrongNetwork);
-        expect(sample.label, 'Wrong network');
+        expect(sample.label(testL10n), 'Wrong network');
       },
     );
 
@@ -53,7 +54,7 @@ void main() {
       );
 
       expect(sample.status, RpcEndpointLatencyStatus.unavailable);
-      expect(sample.label, 'Unavailable');
+      expect(sample.label(testL10n), 'Unavailable');
     });
   });
 

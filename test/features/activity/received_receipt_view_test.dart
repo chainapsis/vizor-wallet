@@ -236,9 +236,7 @@ void main() {
     expect(statusText.style?.color, AppThemeData.light.colors.text.destructive);
   });
 
-  testWidgets('shows no network fee row or divider', (
-    tester,
-  ) async {
+  testWidgets('shows no network fee row or divider', (tester) async {
     await _pump(
       tester,
       const ReceivedReceiptView(

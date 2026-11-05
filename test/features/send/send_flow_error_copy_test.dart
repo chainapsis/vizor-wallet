@@ -58,7 +58,7 @@ void main() {
           "than the wallet's applied policy PrivateRequired; this build "
           "cannot operate on this wallet's transparent funds",
         ),
-        transparentLedgerNeedsNewerBuildMessage,
+        transparentLedgerNeedsNewerBuildMessage(testL10n),
       );
     });
 
@@ -68,12 +68,15 @@ void main() {
           'network upgrade. Try again after it activates.';
       expect(
         friendlyProposeSendError(testL10n, raw),
-        kNetworkUpgradeHoldMessage,
+        networkUpgradeHoldText(testL10n),
       );
-      expect(friendlyBroadcastError(testL10n, raw), kNetworkUpgradeHoldMessage);
+      expect(
+        friendlyBroadcastError(testL10n, raw),
+        networkUpgradeHoldText(testL10n),
+      );
       expect(
         paymentRequestCheckIssueFor(raw).text(testL10n),
-        kNetworkUpgradeHoldMessage,
+        networkUpgradeHoldText(testL10n),
       );
     });
 
@@ -84,7 +87,7 @@ void main() {
           'Propose failed: Transparent funds are unavailable: private '
           'transparent authority is required but not available',
         ),
-        transparentRecoveryIncompleteMessage,
+        transparentRecoveryIncompleteMessage(testL10n),
       );
     });
   });

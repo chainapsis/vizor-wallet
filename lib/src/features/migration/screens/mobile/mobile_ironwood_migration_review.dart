@@ -10,7 +10,7 @@ String _mobilePrivateMigrationStartErrorMessage(
   AppLocalizations l10n,
   Object error,
 ) {
-  final upgradeHold = networkUpgradeHoldMessage(error);
+  final upgradeHold = networkUpgradeHoldMessage(l10n, error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString().toLowerCase();
   if (message.contains('mnemonic')) {

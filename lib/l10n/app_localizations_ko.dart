@@ -65,6 +65,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountNameLabel => '계⁠정 이⁠름';
 
   @override
+  String get accountNameTooLong => '이⁠름⁠은 20⁠자⁠까⁠지 입⁠력⁠할 수 있⁠어⁠요.';
+
+  @override
   String get accountsActionsLabel => '계⁠정 작⁠업';
 
   @override
@@ -140,6 +143,14 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get accountsRemoveGiftCardsCheckFailed =>
       '이 계⁠정⁠으⁠로 받⁠는 중⁠인 기⁠프⁠트 카⁠드⁠가 있⁠는⁠지 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 삭⁠제⁠하⁠기 전⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get accountsRemoveGiftCardsMoreFunded =>
+      '더 많⁠은 기⁠프⁠트 카⁠드 링⁠크⁠에 자⁠금⁠이 채⁠워⁠졌⁠어⁠요. 경⁠고⁠를 확⁠인⁠하⁠고 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get accountsRemoveGiftCardsRecheckFailed =>
+      '기⁠프⁠트 카⁠드 링⁠크⁠를 다⁠시 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 경⁠고⁠를 확⁠인⁠하⁠고 다⁠시 확⁠인⁠해 주⁠세⁠요.';
 
   @override
   String get accountsRemoveMigrationBody =>
@@ -856,12 +867,114 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appUpdateRestartingTitle => 'Vizor 다⁠시 시⁠작 중';
 
   @override
+  String biometricChangedMessage(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID⁠가 변⁠경⁠되⁠었⁠어⁠요. 패⁠스⁠코⁠드⁠를 입⁠력⁠하⁠세⁠요.',
+      'touchId': 'Touch ID⁠가 변⁠경⁠되⁠었⁠어⁠요. 패⁠스⁠코⁠드⁠를 입⁠력⁠하⁠세⁠요.',
+      'fingerprint': '지⁠문⁠이 변⁠경⁠되⁠었⁠어⁠요. 패⁠스⁠코⁠드⁠를 입⁠력⁠하⁠세⁠요.',
+      'other': '생⁠체 인⁠식⁠이 변⁠경⁠되⁠었⁠어⁠요. 패⁠스⁠코⁠드⁠를 입⁠력⁠하⁠세⁠요.',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricEnableLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 켜⁠기',
+      'touchId': 'Touch ID 켜⁠기',
+      'fingerprint': '지⁠문 켜⁠기',
+      'other': '생⁠체 인⁠식 켜⁠기',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '지⁠문',
+      'other': '생⁠체 인⁠식',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameOnboardingTitle(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '지⁠문',
+      'other': '생⁠체 인⁠식',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameStandalone(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': '지⁠문',
+      'other': '생⁠체 인⁠식',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricSignInLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID⁠로 로⁠그⁠인',
+      'touchId': 'Touch ID⁠로 로⁠그⁠인',
+      'fingerprint': '지⁠문⁠으⁠로 로⁠그⁠인',
+      'other': '생⁠체 인⁠식⁠으⁠로 로⁠그⁠인',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 잠⁠금 해⁠제',
+      'touchId': 'Touch ID 잠⁠금 해⁠제',
+      'fingerprint': '지⁠문 잠⁠금 해⁠제',
+      'other': '생⁠체 인⁠식 잠⁠금 해⁠제',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID 잠⁠금 해⁠제',
+      'touchId': 'Touch ID 잠⁠금 해⁠제',
+      'fingerprint': '지⁠문 잠⁠금 해⁠제',
+      'other': '생⁠체 인⁠식 잠⁠금 해⁠제',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUseNextTimeLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': '다⁠음⁠에 Face ID 사⁠용',
+      'touchId': '다⁠음⁠에 Touch ID 사⁠용',
+      'fingerprint': '다⁠음⁠에 지⁠문 사⁠용',
+      'other': '다⁠음⁠에 생⁠체 인⁠식 사⁠용',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get bip39PassphraseTitle => 'BIP39 패⁠스⁠프⁠레⁠이⁠즈';
 
   @override
   String bip39PassphraseValue(String passphrase) {
     return 'BIP39 패⁠스⁠프⁠레⁠이⁠즈: $passphrase';
   }
+
+  @override
+  String get capsLockWarning => 'Caps Lock⁠이 켜⁠져 있⁠어⁠요';
 
   @override
   String carouselPageSemantics(
@@ -1275,6 +1388,9 @@ class AppLocalizationsKo extends AppLocalizations {
       'Keystone⁠에⁠서 서⁠명⁠된 거⁠래 QR⁠을 연 다⁠음 다⁠시 스⁠캔⁠해 주⁠세⁠요.';
 
   @override
+  String get commonPausedForNetworkUpgrade => '네⁠트⁠워⁠크 업⁠그⁠레⁠이⁠드⁠로 일⁠시 중⁠지⁠됨';
+
+  @override
   String get commonPayInsufficientZec =>
       '이 결⁠제⁠에 필⁠요⁠한 ZEC⁠가 부⁠족⁠해⁠요. 더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠해 보⁠세⁠요.';
 
@@ -1643,10 +1759,54 @@ class AppLocalizationsKo extends AppLocalizations {
   String get endpointCustom => '사⁠용⁠자 지⁠정 엔⁠드⁠포⁠인⁠트';
 
   @override
+  String get endpointFailoverSwitchedBack =>
+      '선⁠택⁠한 엔⁠드⁠포⁠인⁠트⁠가 복⁠구⁠되⁠어 다⁠시 전⁠환⁠했⁠어⁠요.';
+
+  @override
+  String get endpointFailoverSwitchedToFallback =>
+      '선⁠택⁠한 엔⁠드⁠포⁠인⁠트⁠가 불⁠안⁠정⁠해⁠서 대⁠체 엔⁠드⁠포⁠인⁠트⁠로 전⁠환⁠했⁠어⁠요.';
+
+  @override
+  String get endpointLatencyUnavailable => '사⁠용 불⁠가';
+
+  @override
+  String get endpointLatencyWrongNetwork => '다⁠른 네⁠트⁠워⁠크';
+
+  @override
+  String endpointRegionName(String region) {
+    String _temp0 = intl.Intl.selectLogic(region, {
+      'standard': '기⁠본',
+      'europe': '유⁠럽',
+      'global': '글⁠로⁠벌',
+      'americas': '아⁠메⁠리⁠카',
+      'asiaPacific': '아⁠시⁠아 태⁠평⁠양',
+      'community': '커⁠뮤⁠니⁠티',
+      'testnet': '테⁠스⁠트⁠넷',
+      'regtest': 'Regtest',
+      'other': '기⁠타',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get endpointUpdate => '엔⁠드⁠포⁠인⁠트 업⁠데⁠이⁠트';
 
   @override
   String get endpointUpdated => '엔⁠드⁠포⁠인⁠트⁠를 업⁠데⁠이⁠트⁠했⁠어⁠요';
+
+  @override
+  String get enhancePirChanging => '설⁠정 변⁠경 중…';
+
+  @override
+  String get enhancePirOptOutPending =>
+      '비⁠공⁠개 조⁠회⁠가 아⁠직 켜⁠져 있⁠어⁠요. 다⁠시 꺼 보⁠세⁠요.';
+
+  @override
+  String get enhancePirRaisePending =>
+      '비⁠공⁠개 조⁠회⁠가 켜⁠졌⁠어⁠요. 투⁠명 자⁠금⁠의 비⁠공⁠개 복⁠구⁠를 아⁠직 시⁠작⁠하⁠지 못⁠했⁠고, 다⁠시 시⁠도⁠할 거⁠예⁠요.';
+
+  @override
+  String get enhancePirUnchanged => '설⁠정⁠이 바⁠뀌⁠지 않⁠았⁠어⁠요. 다⁠시 시⁠도⁠하⁠세⁠요.';
 
   @override
   String get homeActivityEmpty => '아⁠직 활⁠동⁠이 없⁠어⁠요...';
@@ -5561,6 +5721,26 @@ class AppLocalizationsKo extends AppLocalizations {
   String get navVote => '투⁠표';
 
   @override
+  String get networkPrivacyFinishUpdateBeforeTorOff =>
+      'Tor⁠를 끄⁠기 전⁠에 진⁠행 중⁠인 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 끝⁠내⁠세⁠요.';
+
+  @override
+  String get networkPrivacyFinishUpdateBeforeTorOn =>
+      'Tor⁠를 켜⁠기 전⁠에 진⁠행 중⁠인 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 끝⁠내⁠세⁠요.';
+
+  @override
+  String get networkPrivacyTorStartupFailed =>
+      'Tor⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 네⁠트⁠워⁠크 요⁠청⁠이 일⁠시 중⁠지⁠됐⁠어⁠요.';
+
+  @override
+  String get networkPrivacyTorUpdatesUnavailable =>
+      'Tor⁠는 연⁠결⁠되⁠었⁠지⁠만 소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 사⁠용⁠할 수 없⁠어⁠요. 직⁠접 업⁠데⁠이⁠트⁠하⁠려⁠면 Tor⁠를 끄⁠세⁠요.';
+
+  @override
+  String get networkPrivacyUpdatesUnavailable =>
+      '소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠트⁠를 사⁠용⁠할 수 없⁠어⁠요. 다⁠른 네⁠트⁠워⁠크 요⁠청⁠은 계⁠속 직⁠접 연⁠결⁠을 사⁠용⁠해⁠요.';
+
+  @override
   String get networkSettingsTitle => '네⁠트⁠워⁠크 설⁠정';
 
   @override
@@ -5717,6 +5897,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get onboardingBlockHeight => '블⁠록 높⁠이';
+
+  @override
+  String get onboardingBlockHeightRequired =>
+      '지⁠갑⁠을 만⁠들⁠려⁠면 현⁠재 Zcash 블⁠록 높⁠이⁠가 필⁠요⁠해⁠요. 네⁠트⁠워⁠크 연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠하⁠세⁠요.';
 
   @override
   String get onboardingCheckingAccounts => '계⁠정 확⁠인⁠하⁠는 중...';
@@ -6122,6 +6306,10 @@ class AppLocalizationsKo extends AppLocalizations {
       'Vizor⁠가 로⁠컬 시⁠작 상⁠태⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 Vizor⁠를 종⁠료⁠한 뒤 다⁠시 실⁠행⁠해 주⁠세⁠요.';
 
   @override
+  String get onboardingStorageStartupFailureDetail =>
+      'Vizor⁠가 시⁠작 상⁠태⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요.';
+
+  @override
   String get onboardingTellMeHowZcashWorks => 'Zcash 작⁠동 방⁠식 알⁠아⁠보⁠기';
 
   @override
@@ -6214,6 +6402,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get passwordLabel => '비⁠밀⁠번⁠호';
+
+  @override
+  String get passwordPolicyAscii => '영⁠문, 숫⁠자, 기⁠호⁠만 사⁠용⁠하⁠세⁠요.';
+
+  @override
+  String passwordPolicyMinLength(int min) {
+    return '비⁠밀⁠번⁠호⁠는 $min⁠자 이⁠상⁠이⁠어⁠야 해⁠요.';
+  }
+
+  @override
+  String get passwordPolicyMustDiffer => '다⁠른 비⁠밀⁠번⁠호⁠를 사⁠용⁠하⁠세⁠요.';
 
   @override
   String get passwordsDoNotMatch => '비⁠밀⁠번⁠호⁠가 일⁠치⁠하⁠지 않⁠아⁠요.';
@@ -7670,7 +7869,34 @@ class AppLocalizationsKo extends AppLocalizations {
   String get poolTransparent => '투⁠명';
 
   @override
+  String get privateQueriesOptOutUnfinished =>
+      '비⁠공⁠개 조⁠회 끄⁠기⁠가 완⁠료⁠되⁠지 않⁠았⁠어⁠요. 투⁠명 자⁠금⁠을 사⁠용⁠하⁠려⁠면 설⁠정⁠에⁠서 다⁠시 끄⁠세⁠요.';
+
+  @override
   String get profilePictureChange => '프⁠로⁠필 사⁠진 변⁠경';
+
+  @override
+  String profilePictureName(String id) {
+    String _temp0 = intl.Intl.selectLogic(id, {
+      'p01': '기⁠사',
+      'p02': '바⁠이⁠킹',
+      'p03': '사⁠무⁠라⁠이',
+      'p04': '군⁠주',
+      'p05': '철⁠투⁠구',
+      'p06': '로⁠닌',
+      'p07': '해⁠골 기⁠사',
+      'p08': '예⁠언⁠자',
+      'p09': '광⁠전⁠사',
+      'p10': '도⁠적',
+      'p11': '마⁠법⁠사',
+      'p12': '가⁠면 쓴 고⁠양⁠이',
+      'p13': '감⁠시⁠자',
+      'p14': '청⁠동 투⁠구',
+      'p15': '물⁠고⁠기 기⁠사',
+      'other': '',
+    });
+    return '$_temp0';
+  }
 
   @override
   String get profilePictureSelect => '프⁠로⁠필 사⁠진 선⁠택';
@@ -8737,7 +8963,16 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsExplorerCustomSubtitle => '원⁠하⁠는 탐⁠색⁠기⁠를 사⁠용⁠해⁠요';
 
   @override
+  String get settingsExplorerPrivacyCopy =>
+      '거⁠래 링⁠크⁠는 이 탐⁠색⁠기⁠에⁠서 열⁠려⁠요. ZecBlock⁠이⁠나 원⁠하⁠는 다⁠른 사⁠이⁠트⁠를 사⁠용⁠하⁠세⁠요. 송⁠금⁠한 뒤 공⁠개 탐⁠색⁠기⁠를 열⁠면 내 IP 주⁠소⁠가 해⁠당 거⁠래⁠와 연⁠결⁠될 수 있⁠어⁠요.';
+
+  @override
   String get settingsExplorerSaveFailed => '탐⁠색⁠기 URL⁠을 저⁠장⁠하⁠지 못⁠했⁠어⁠요.';
+
+  @override
+  String settingsExplorerTemplateHint(String txid, String txHash) {
+    return '경⁠로⁠에 $txid 또⁠는 $txHash⁠를 넣⁠거⁠나 도⁠메⁠인⁠만 입⁠력⁠하⁠세⁠요.';
+  }
 
   @override
   String get settingsExplorerTitle => '블⁠록 탐⁠색⁠기';
@@ -8895,6 +9130,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsPrivacyTitle => '개⁠인⁠정⁠보 보⁠호';
+
+  @override
+  String get settingsPrivateQueriesCopy =>
+      '실⁠험⁠적 기⁠능⁠이⁠에⁠요. 투⁠명 자⁠금⁠을 비⁠공⁠개⁠로 복⁠구⁠해 서⁠버⁠가 내 투⁠명 주⁠소⁠를 알⁠지 못⁠하⁠게 해⁠요. 지⁠원⁠되⁠는 거⁠래⁠는 서⁠버⁠에 ID⁠를 알⁠리⁠지 않⁠고 조⁠회⁠해⁠요.';
+
+  @override
+  String get settingsPrivateQueriesIosNote =>
+      '켜⁠져 있⁠는 동⁠안⁠에⁠는 Vizor⁠가 열⁠려 있⁠을 때⁠만 마⁠이⁠그⁠레⁠이⁠션 확⁠인⁠을 점⁠검⁠해⁠요.';
 
   @override
   String get settingsPrivateQueriesLabel => '비⁠공⁠개 조⁠회';
@@ -10371,6 +10614,42 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get syncFailureChainRecovery =>
+      '동⁠기⁠화 중 체⁠인⁠이 바⁠뀌⁠었⁠어⁠요. 복⁠구⁠를 계⁠속 시⁠도⁠할⁠게⁠요.';
+
+  @override
+  String get syncFailureDatabaseBusy =>
+      '지⁠갑 데⁠이⁠터⁠가 사⁠용 중⁠이⁠에⁠요. 자⁠동⁠으⁠로 다⁠시 동⁠기⁠화⁠할⁠게⁠요.';
+
+  @override
+  String get syncFailureDatabaseFatal =>
+      '지⁠갑 데⁠이⁠터⁠를 읽⁠지 못⁠했⁠어⁠요. 앱⁠을 다⁠시 시⁠작⁠한 뒤 동⁠기⁠화⁠를 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
+  String get syncFailureEndpoint =>
+      '설⁠정⁠된 Zcash 엔⁠드⁠포⁠인⁠트⁠에 연⁠결⁠할 수 없⁠어⁠요. 엔⁠드⁠포⁠인⁠트 설⁠정⁠을 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get syncFailureNetwork =>
+      '네⁠트⁠워⁠크 연⁠결⁠이 끊⁠어⁠졌⁠어⁠요. 자⁠동⁠으⁠로 계⁠속 시⁠도⁠할⁠게⁠요.';
+
+  @override
+  String get syncFailureParse =>
+      '동⁠기⁠화 데⁠이⁠터⁠를 처⁠리⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠를 다⁠시 시⁠도⁠하⁠거⁠나 엔⁠드⁠포⁠인⁠트⁠를 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get syncFailurePrivateStatus =>
+      '비⁠공⁠개 거⁠래 조⁠회⁠로 거⁠래 상⁠태⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠를 계⁠속⁠하⁠려⁠면 설⁠정⁠에⁠서 실⁠험⁠적 비⁠공⁠개 조⁠회⁠를 끄⁠세⁠요.';
+
+  @override
+  String get syncFailureTor =>
+      'Tor⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 설⁠정⁠에⁠서 Tor⁠를 끄⁠세⁠요.';
+
+  @override
+  String get syncFailureUnknown =>
+      '동⁠기⁠화⁠에 실⁠패⁠했⁠어⁠요. 계⁠속⁠하⁠려⁠면 동⁠기⁠화⁠를 다⁠시 시⁠도⁠하⁠세⁠요.';
+
+  @override
   String get syncSynced => '동⁠기⁠화 완⁠료';
 
   @override
@@ -10396,6 +10675,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get syncVizorSynced => 'Vizor 동⁠기⁠화⁠됨';
+
+  @override
+  String get transparentLedgerNeedsNewerBuild =>
+      '이 지⁠갑⁠의 투⁠명 자⁠금⁠을 사⁠용⁠하⁠려⁠면 더 최⁠신 버⁠전⁠의 Vizor⁠가 필⁠요⁠해⁠요.';
+
+  @override
+  String get transparentRecoveryIncomplete =>
+      '비⁠공⁠개 복⁠구⁠가 끝⁠날 때⁠까⁠지 투⁠명 자⁠금⁠을 사⁠용⁠할 수 없⁠어⁠요.';
 
   @override
   String get txFeeHelpTooltip =>
@@ -11535,8 +11822,15 @@ class AppLocalizationsKo extends AppLocalizations {
       'Vizor 데⁠스⁠크⁠탑 앱⁠을 열⁠고 잠⁠금⁠을 해⁠제⁠하⁠세⁠요';
 
   @override
+  String get walletMutationBusy =>
+      '다⁠른 지⁠갑 작⁠업⁠을 시⁠작⁠하⁠기 전⁠에 현⁠재 작⁠업⁠을 먼⁠저 끝⁠내⁠세⁠요.';
+
+  @override
   String get walletResetDeviceAuthFailed =>
       '기⁠기 소⁠유⁠자⁠를 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get walletResetDeviceAuthReason => 'Vizor 초⁠기⁠화 확⁠인';
 
   @override
   String get walletResetDeviceAuthRequired =>
@@ -11552,4 +11846,12 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get walletResetGiftCardWarning =>
       '기⁠프⁠트 카⁠드⁠를 아⁠직 받⁠는 중⁠이⁠에⁠요. 초⁠기⁠화⁠하⁠면 잃⁠게 돼⁠요.';
+
+  @override
+  String get windowsUpdateNotReady =>
+      '이 업⁠데⁠이⁠트⁠는 더 이⁠상 다⁠운⁠로⁠드⁠할 수 없⁠어⁠요. 업⁠데⁠이⁠트⁠를 다⁠시 확⁠인⁠하⁠세⁠요.';
+
+  @override
+  String get windowsUpdateTorRouteUnavailable =>
+      '소⁠프⁠트⁠웨⁠어 업⁠데⁠이⁠터⁠가 Tor⁠에 연⁠결⁠되⁠어 있⁠지 않⁠아⁠요. 설⁠정⁠에⁠서 업⁠데⁠이⁠트⁠를 다⁠시 시⁠도⁠하⁠거⁠나 Tor⁠를 끄⁠고 다⁠시 시⁠도⁠하⁠세⁠요.';
 }

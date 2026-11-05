@@ -312,10 +312,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     await _trackPendingNavigation(() async {
       try {
         await accountNotifier.switchAccount(uuid);
-      } on WalletMutationBusyException catch (error) {
+      } on WalletMutationBusyException {
         // Another wallet mutation, such as the private queries toggle, holds
         // the wallet: stay on this screen and say why nothing happened.
-        if (mounted) showAppToast(context, error.toString());
+        if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
         return;
       }
       if (mounted) {

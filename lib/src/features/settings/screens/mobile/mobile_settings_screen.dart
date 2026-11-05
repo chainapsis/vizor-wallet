@@ -56,6 +56,7 @@ class MobileSettingsScreen extends ConsumerWidget {
     final endpointConfig = ref.watch(rpcEndpointProvider);
     final endpoint = endpointConfig.hostPort;
     final explorer = explorerSettingsLabel(
+      context.l10n,
       ref.watch(zcashExplorerProvider),
       networkName: endpointConfig.networkName,
     );
@@ -319,7 +320,9 @@ class MobileSettingsScreen extends ConsumerWidget {
                       MobileListRow(
                         key: const ValueKey('mobile_settings_biometric_row'),
                         leading: _RowIcon(AppIcons.lock),
-                        label: biometric.availability.kind.standaloneLabel,
+                        label: biometric.availability.kind.standaloneLabel(
+                          context.l10n,
+                        ),
                         value: biometric.enabled
                             ? context.l10n.settingsStatusOn
                             : context.l10n.settingsStatusOff,
@@ -436,7 +439,7 @@ class MobileSettingsScreen extends ConsumerWidget {
       'pfp-02' => l10n.settingsPfpViking,
       'pfp-03' => l10n.settingsPfpSamurai,
       'pfp-11' => l10n.commonWizard,
-      _ => option.label,
+      _ => option.label(l10n),
     };
   }
 
@@ -457,7 +460,7 @@ class MobileSettingsScreen extends ConsumerWidget {
           showAppToast(
             context,
             context.l10n.settingsBiometricOffToast(
-              state.availability.kind.unlockFeatureLabel,
+              state.availability.kind.unlockFeatureLabel(context.l10n),
             ),
           );
         }
@@ -467,7 +470,7 @@ class MobileSettingsScreen extends ConsumerWidget {
         showAppToast(
           context,
           context.l10n.settingsBiometricSetupFirst(
-            state.availability.kind.inlineLabel,
+            state.availability.kind.inlineLabel(context.l10n),
           ),
         );
         return;
@@ -481,7 +484,7 @@ class MobileSettingsScreen extends ConsumerWidget {
         showAppToast(
           context,
           context.l10n.settingsBiometricOnToast(
-            state.availability.kind.unlockFeatureLabel,
+            state.availability.kind.unlockFeatureLabel(context.l10n),
           ),
         );
       }
@@ -490,7 +493,7 @@ class MobileSettingsScreen extends ConsumerWidget {
       showAppToast(
         context,
         context.l10n.settingsBiometricUpdateFailed(
-          state.availability.kind.inlineUnlockFeatureLabel,
+          state.availability.kind.inlineUnlockFeatureLabel(context.l10n),
         ),
       );
     }
@@ -576,7 +579,7 @@ class _DisableBiometricSheet extends StatelessWidget {
     final colors = context.colors;
     return MobileModalScaffold(
       title: context.l10n.settingsBiometricTurnOffTitle(
-        kind.inlineUnlockFeatureLabel,
+        kind.inlineUnlockFeatureLabel(context.l10n),
       ),
       onClose: () => Navigator.of(context).pop(false),
       leading: AppIcon(AppIcons.lock, size: 20, color: colors.icon.accent),
@@ -587,7 +590,7 @@ class _DisableBiometricSheet extends StatelessWidget {
         children: [
           Text(
             context.l10n.settingsBiometricTurnOffBody(
-              kind.inlineUnlockFeatureLabel,
+              kind.inlineUnlockFeatureLabel(context.l10n),
             ),
             style: _bodyStyle.copyWith(color: colors.text.accent),
           ),

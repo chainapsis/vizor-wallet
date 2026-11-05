@@ -334,7 +334,10 @@ class _KeystoneShieldSigningOverlayState
   String _pcztBroadcastStatusMessage(
     rust_sync.ExtractAndBroadcastPcztResult result,
   ) {
-    final upgradeHold = networkUpgradeHoldMessage(result.message ?? '');
+    final upgradeHold = networkUpgradeHoldMessage(
+      context.l10n,
+      result.message ?? '',
+    );
     if (upgradeHold != null) return upgradeHold;
     if (result.status == 'broadcast_unknown') {
       return result.message ?? context.l10n.homeShieldBroadcastUnknown;
@@ -352,7 +355,7 @@ class _KeystoneShieldSigningOverlayState
   }
 
   String _friendlyError(Object error) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('sync')) {

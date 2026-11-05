@@ -282,7 +282,7 @@ class _KeystoneWalletBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _KeystoneBirthdaySubmitPhase.idle;
-        _submitError = onboardingSubmitErrorMessage(e);
+        _submitError = onboardingSubmitErrorMessage(context.l10n, e);
       });
       return;
     }

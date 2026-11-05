@@ -13,8 +13,7 @@ export '../models/swap_message.dart'
         SwapLiteralMessage,
         SwapMessage;
 
-/// The message for a failed swap [operation]. The network-upgrade hold stays
-/// English pass-through text; everything else is a code the screen words.
+/// The message for a failed swap [operation], as a code the screen words.
 SwapMessage swapFailureMessage(
   SwapFailureOperation operation,
   Object error, {
@@ -22,8 +21,14 @@ SwapMessage swapFailureMessage(
   bool torEnabled = false,
 }) {
   if (operation == SwapFailureOperation.sendZecDeposit) {
-    final upgradeHold = networkUpgradeHoldMessage(error);
-    if (upgradeHold != null) return SwapLiteralMessage(upgradeHold);
+    switch (networkUpgradeHoldKind(error)) {
+      case NetworkUpgradeHold.hold:
+        return const SwapNotice(SwapNoticeKind.networkUpgradeHold);
+      case NetworkUpgradeHold.scheduleChanged:
+        return const SwapNotice(SwapNoticeKind.networkUpgradeScheduleChanged);
+      case null:
+        break;
+    }
   }
   return SwapFailureMessage(
     operation,

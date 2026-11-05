@@ -53,7 +53,7 @@ void main() {
               'Try again after it activates.',
         ),
       ),
-      kNetworkUpgradeHoldMessage,
+      networkUpgradeHoldText(testL10n),
     );
   });
 }

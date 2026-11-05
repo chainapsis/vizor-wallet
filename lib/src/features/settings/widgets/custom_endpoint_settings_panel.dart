@@ -61,7 +61,8 @@ class _CustomEndpointSettingsPanelState
 
   bool _canUpdate(RpcEndpointConfig current) {
     if (_isSubmitting ||
-        ref.read(enhancePirTransitionProvider) == kEnhancePirChangingMessage) {
+        ref.read(enhancePirTransitionProvider) ==
+            EnhancePirTransition.changing) {
       return false;
     }
     try {
@@ -132,7 +133,7 @@ class _CustomEndpointSettingsPanelState
     final enabled = ref.watch(privateQueriesControlEnabledProvider);
     final available = ref.watch(enhancePirAvailableProvider) || enabled;
     final transition = ref.watch(enhancePirTransitionProvider);
-    final changingRecovery = transition == kEnhancePirChangingMessage;
+    final changingRecovery = transition == EnhancePirTransition.changing;
 
     return DecoratedBox(
       key: const ValueKey('network_settings_panel_surface'),
@@ -285,7 +286,7 @@ class CurrentEndpointText extends StatelessWidget {
       current.normalizedLightwalletdUrl,
     );
     final suffix = [
-      if (latency != null) latency.label,
+      if (latency != null) latency.label(context.l10n),
       if (preset?.isDefault ?? false)
         context.l10n.settingsEndpointDefaultMarker,
     ].join(' ');

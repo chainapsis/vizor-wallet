@@ -14,11 +14,7 @@ void main() {
           home: ColoredBox(
             color: Color(0xFF121212),
             child: Center(
-              child: AppIcon(
-                AppIcons.vote,
-                size: 20,
-                color: Color(0xFFF7F7F7),
-              ),
+              child: AppIcon(AppIcons.vote, size: 20, color: Color(0xFFF7F7F7)),
             ),
           ),
         ),

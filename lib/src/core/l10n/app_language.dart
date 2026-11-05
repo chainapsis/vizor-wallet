@@ -15,7 +15,11 @@ const kI18nPreviewEnabled = bool.fromEnvironment('VIZOR_I18N_PREVIEW');
 /// [released].
 enum AppLanguage {
   // English stays first: locale resolution falls back to the first entry.
-  en(tag: 'en', nativeName: 'English', released: true),
+  en(
+    tag: 'en',
+    nativeName: 'English', // l10n-ignore: language's own name
+    released: true,
+  ), // l10n-ignore: language's own name
   ko(tag: 'ko', nativeName: '한국어', released: false),
 
   /// Simplified Chinese. The `zh` base also serves Traditional-script devices

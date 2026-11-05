@@ -153,7 +153,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       return Future.value(true);
     }
     try {
-      return await verifyDeviceOwnerForWalletReset(ref);
+      return await verifyDeviceOwnerForWalletReset(ref, context.l10n);
     } on DeviceOwnerAuthException catch (e, st) {
       if (e.kind == DeviceOwnerAuthErrorKind.noLocalCredential) {
         log(

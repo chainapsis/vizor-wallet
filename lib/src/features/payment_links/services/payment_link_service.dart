@@ -276,11 +276,11 @@ class PaymentLinkBatchQuoteChanged implements Exception {
 }
 
 class PaymentLinkBatchPreSubmissionFailure implements Exception {
-  const PaymentLinkBatchPreSubmissionFailure([this.message]);
+  const PaymentLinkBatchPreSubmissionFailure([this.hold]);
 
-  /// User copy when a later attempt can pass, such as the network upgrade
-  /// hold; null for the generic retry copy.
-  final String? message;
+  /// Set when a later attempt can pass because of the network upgrade hold;
+  /// null for the generic retry copy.
+  final NetworkUpgradeHold? hold;
 }
 
 /// A batch the wallet cannot fund as asked (a signer limit or the
@@ -958,9 +958,7 @@ class PaymentLinkService
       final error = failure.error;
       if (error is PaymentLinkBatchQuoteChanged) throw error;
       throw PaymentLinkBatchRejected.from(error) ??
-          PaymentLinkBatchPreSubmissionFailure(
-            networkUpgradeHoldMessage(error),
-          );
+          PaymentLinkBatchPreSubmissionFailure(networkUpgradeHoldKind(error));
     }
     if (isPaymentLinkFundingBroadcastAccepted(result.status)) {
       observeActivityBroadcast(accountUuid: accountUuid, txids: result.txids);
@@ -2252,7 +2250,7 @@ class PaymentLinkService
     } catch (error) {
       // Rust raises the upgrade hold before it builds the claim, so the card
       // is still ready even after the submission marker.
-      if (!submissionStarted || networkUpgradeHoldMessage(error) != null) {
+      if (!submissionStarted || networkUpgradeHoldKind(error) != null) {
         await _receivedStore.markReadyToClaim(
           address: session.link.address,
           expected: startedRecord,

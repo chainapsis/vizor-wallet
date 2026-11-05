@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_version_config.dart';
+import '../core/l10n/l10n.dart';
 import '../rust/api/network_privacy.dart' as rust_network_privacy;
 import '../services/windows_update_service.dart';
 
@@ -21,20 +22,44 @@ enum WindowsUpdateStatus {
   failed,
 }
 
-const kWindowsTorUpdateRouteUnavailableMessage =
-    'The software updater is not connected to Tor. Retry updates in Settings, '
-    'or turn off Tor and try again.';
+/// Why an update operation failed when the app, not the native updater, found
+/// the reason. The native updater's own wording travels as text instead.
+enum WindowsUpdateIssue {
+  torRouteUnavailable,
+  notReadyToDownload,
+  generic;
 
-const kWindowsUpdateGenericFailureMessage =
-    "Couldn't complete the update. Try again.";
+  String message(AppLocalizations l10n) => switch (this) {
+    WindowsUpdateIssue.torRouteUnavailable =>
+      l10n.windowsUpdateTorRouteUnavailable,
+    WindowsUpdateIssue.notReadyToDownload => l10n.windowsUpdateNotReady,
+    WindowsUpdateIssue.generic => l10n.updateFailedMessage,
+  };
+}
 
 class WindowsUpdateDownloadResult {
-  const WindowsUpdateDownloadResult.started() : started = true, message = '';
+  const WindowsUpdateDownloadResult.started()
+    : started = true,
+      issue = null,
+      nativeMessage = '';
 
-  const WindowsUpdateDownloadResult.failed(this.message) : started = false;
+  const WindowsUpdateDownloadResult.failed({
+    this.issue,
+    this.nativeMessage = '',
+  }) : started = false;
 
   final bool started;
-  final String message;
+
+  /// Set when the app found the reason; otherwise [nativeMessage] holds the
+  /// native updater's text.
+  final WindowsUpdateIssue? issue;
+  final String nativeMessage;
+
+  String message(AppLocalizations l10n) =>
+      issue?.message(l10n) ??
+      (nativeMessage.trim().isEmpty
+          ? WindowsUpdateIssue.generic.message(l10n)
+          : nativeMessage.trim());
 }
 
 /// Why an update operation failed, and whether the user was waiting on it.
@@ -65,6 +90,7 @@ class WindowsUpdateState {
     required this.pendingRestart,
     required this.torProxyReady,
     required this.message,
+    this.issue,
     this.failure,
   });
 
@@ -116,6 +142,17 @@ class WindowsUpdateState {
   final bool pendingRestart;
   final bool torProxyReady;
   final String message;
+
+  /// Set when the app, not the native updater, found why the update failed.
+  final WindowsUpdateIssue? issue;
+
+  /// The failure text to show: the app's own reason, else the native
+  /// updater's, else the generic one.
+  String failureMessage(AppLocalizations l10n) =>
+      issue?.message(l10n) ??
+      (message.trim().isEmpty
+          ? WindowsUpdateIssue.generic.message(l10n)
+          : message.trim());
 
   /// Set only while [status] is [WindowsUpdateStatus.failed]. Carries what the
   /// prompt needs to decide whether the user should be interrupted, and to tell
@@ -214,7 +251,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   Future<void> checkForUpdates() async {
     _userInitiatedOperation = true;
     if (!await _updateNetworkReady()) {
-      _setFailed(kWindowsTorUpdateRouteUnavailableMessage);
+      _setFailedWith(issue: WindowsUpdateIssue.torRouteUnavailable);
       return;
     }
     try {
@@ -229,7 +266,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   Future<WindowsUpdateDownloadResult> downloadUpdate() async {
     if (!state.canDownload) {
       return const WindowsUpdateDownloadResult.failed(
-        'This update is no longer ready to download. Check for updates again.',
+        issue: WindowsUpdateIssue.notReadyToDownload,
       );
     }
 
@@ -237,22 +274,25 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     try {
       if (!await _updateNetworkReady()) {
         return const WindowsUpdateDownloadResult.failed(
-          kWindowsTorUpdateRouteUnavailableMessage,
+          issue: WindowsUpdateIssue.torRouteUnavailable,
         );
       }
       await _runAndPoll(
         ref.read(windowsUpdateServiceProvider).downloadUpdate(),
       );
     } catch (error) {
-      final message = _updateErrorMessage(error);
-      _setFailed(message);
-      return WindowsUpdateDownloadResult.failed(message);
+      final failure = _updateErrorMessage(error);
+      _setFailed(failure);
+      return WindowsUpdateDownloadResult.failed(
+        issue: failure.issue,
+        nativeMessage: failure.message,
+      );
     }
 
     if (state.status == WindowsUpdateStatus.failed) {
-      final message = state.message.trim();
       return WindowsUpdateDownloadResult.failed(
-        message.isEmpty ? kWindowsUpdateGenericFailureMessage : message,
+        issue: state.issue,
+        nativeMessage: state.message,
       );
     }
     return const WindowsUpdateDownloadResult.started();
@@ -303,7 +343,10 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     ordinal: ++_failureOrdinal,
   );
 
-  void _setFailed(String message) {
+  void _setFailed(({String message, WindowsUpdateIssue? issue}) failure) =>
+      _setFailedWith(message: failure.message, issue: failure.issue);
+
+  void _setFailedWith({String message = '', WindowsUpdateIssue? issue}) {
     final current = state;
     state = WindowsUpdateState(
       supported: current.supported,
@@ -316,6 +359,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       pendingRestart: current.pendingRestart,
       torProxyReady: current.torProxyReady,
       message: message,
+      issue: issue,
       failure: _nextFailure(),
     );
   }
@@ -340,15 +384,19 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 }
 
-String _updateErrorMessage(Object error) {
+({String message, WindowsUpdateIssue? issue}) _updateErrorMessage(
+  Object error,
+) {
   if (error is PlatformException) {
     final message = error.message?.trim();
-    if (message != null && message.isNotEmpty) return message;
+    if (message != null && message.isNotEmpty) {
+      return (message: message, issue: null);
+    }
   }
   // Only the native updater writes copy meant for the user. Anything else can
   // carry local paths or transport internals, so it stays in the log.
   debugPrint('[zcash] Windows update failed: $error');
-  return kWindowsUpdateGenericFailureMessage;
+  return (message: '', issue: WindowsUpdateIssue.generic);
 }
 
 final windowsUpdateProvider =

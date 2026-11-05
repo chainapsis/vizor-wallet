@@ -368,7 +368,7 @@ class _ImportWalletBirthdayScreenState
       setState(() {
         _submitPhase = _ImportWalletSubmitPhase.idle;
         _submitError = OnboardingSubmitError.text(
-          onboardingSubmitErrorMessage(e),
+          onboardingSubmitErrorMessage(context.l10n, e),
         );
       });
       return;

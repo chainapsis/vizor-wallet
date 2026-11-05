@@ -423,11 +423,11 @@ class _MobileLedgerSendSignScreenState
     late final LedgerSigningFailurePresentation presentation;
     late final _LedgerSendRecoveryAction? action;
 
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) {
       // Nothing to do here until the upgrade; the sheet only closes.
       presentation = LedgerSigningFailurePresentation(
-        title: kNetworkUpgradeHoldActionLabel,
+        title: networkUpgradeHoldActionLabel(context.l10n),
         statusLabel: context.l10n.commonActionNeeded,
         actionNeeded: true,
         message: upgradeHold,

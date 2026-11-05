@@ -58,7 +58,7 @@ class LedgerGiftFundingTerminalException implements Exception {
   final String? reason;
 
   String userMessage(AppLocalizations l10n) =>
-      networkUpgradeHoldMessage(reason ?? '') ??
+      networkUpgradeHoldMessage(l10n, reason ?? '') ??
       l10n.paymentLinkLedgerFundingExpired;
 
   @override

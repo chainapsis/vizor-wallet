@@ -66,6 +66,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountNameLabel => 'Account name';
 
   @override
+  String get accountNameTooLong => 'Name can be up to 20 characters.';
+
+  @override
   String get accountsActionsLabel => 'Account actions';
 
   @override
@@ -157,6 +160,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get accountsRemoveGiftCardsCheckFailed =>
       'Couldn\'t check this account for incoming gift cards. Try again before removing it.';
+
+  @override
+  String get accountsRemoveGiftCardsMoreFunded =>
+      'More gift card links were funded. Review the warning and confirm again.';
+
+  @override
+  String get accountsRemoveGiftCardsRecheckFailed =>
+      'Couldn\'t recheck gift card links. Review the warning and confirm again.';
 
   @override
   String get accountsRemoveMigrationBody =>
@@ -873,12 +884,114 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appUpdateRestartingTitle => 'Restarting Vizor';
 
   @override
+  String biometricChangedMessage(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID changed. Enter your passcode.',
+      'touchId': 'Touch ID changed. Enter your passcode.',
+      'fingerprint': 'Fingerprint changed. Enter your passcode.',
+      'other': 'Biometric unlock changed. Enter your passcode.',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricEnableLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Enable Face ID',
+      'touchId': 'Enable Touch ID',
+      'fingerprint': 'Enable fingerprint',
+      'other': 'Enable biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': 'fingerprint',
+      'other': 'biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameOnboardingTitle(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': 'your fingerprint',
+      'other': 'biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricNameStandalone(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID',
+      'touchId': 'Touch ID',
+      'fingerprint': 'Fingerprint',
+      'other': 'Biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricSignInLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Sign in with Face ID',
+      'touchId': 'Sign in with Touch ID',
+      'fingerprint': 'Sign in with fingerprint',
+      'other': 'Sign in with biometrics',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureInline(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID unlock',
+      'touchId': 'Touch ID unlock',
+      'fingerprint': 'fingerprint unlock',
+      'other': 'biometric unlock',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUnlockFeatureLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Face ID unlock',
+      'touchId': 'Touch ID unlock',
+      'fingerprint': 'Fingerprint unlock',
+      'other': 'Biometric unlock',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String biometricUseNextTimeLabel(String kind) {
+    String _temp0 = intl.Intl.selectLogic(kind, {
+      'face': 'Use Face ID next time',
+      'touchId': 'Use Touch ID next time',
+      'fingerprint': 'Use fingerprint next time',
+      'other': 'Use biometrics next time',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get bip39PassphraseTitle => 'BIP39 Passphrase';
 
   @override
   String bip39PassphraseValue(String passphrase) {
     return 'BIP39 Passphrase: $passphrase';
   }
+
+  @override
+  String get capsLockWarning => 'Caps Lock is on';
 
   @override
   String carouselPageSemantics(
@@ -1295,6 +1408,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Open the signed transaction QR on Keystone, then scan again.';
 
   @override
+  String get commonPausedForNetworkUpgrade => 'Paused for network upgrade';
+
+  @override
   String get commonPayInsufficientZec =>
       'You don\'t have enough ZEC for this payment. Try a smaller amount.';
 
@@ -1665,10 +1781,54 @@ class AppLocalizationsEn extends AppLocalizations {
   String get endpointCustom => 'Custom endpoint';
 
   @override
+  String get endpointFailoverSwitchedBack =>
+      'Selected endpoint recovered. Switched back.';
+
+  @override
+  String get endpointFailoverSwitchedToFallback =>
+      'Selected endpoint is unstable. Switched to fallback endpoint.';
+
+  @override
+  String get endpointLatencyUnavailable => 'Unavailable';
+
+  @override
+  String get endpointLatencyWrongNetwork => 'Wrong network';
+
+  @override
+  String endpointRegionName(String region) {
+    String _temp0 = intl.Intl.selectLogic(region, {
+      'standard': 'Default',
+      'europe': 'Europe',
+      'global': 'Global',
+      'americas': 'Americas',
+      'asiaPacific': 'Asia Pacific',
+      'community': 'Community',
+      'testnet': 'Testnet',
+      'regtest': 'Regtest',
+      'other': 'Other',
+    });
+    return '$_temp0';
+  }
+
+  @override
   String get endpointUpdate => 'Update endpoint';
 
   @override
   String get endpointUpdated => 'Endpoint updated';
+
+  @override
+  String get enhancePirChanging => 'Changing setting…';
+
+  @override
+  String get enhancePirOptOutPending =>
+      'Private queries are still on. Try turning them off again.';
+
+  @override
+  String get enhancePirRaisePending =>
+      'Private queries are on. Private transparent recovery could not start yet and will be retried.';
+
+  @override
+  String get enhancePirUnchanged => 'Setting unchanged. Try again.';
 
   @override
   String get homeActivityEmpty => 'No activity, yet...';
@@ -5673,6 +5833,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navVote => 'Vote';
 
   @override
+  String get networkPrivacyFinishUpdateBeforeTorOff =>
+      'Finish the current software update before turning off Tor.';
+
+  @override
+  String get networkPrivacyFinishUpdateBeforeTorOn =>
+      'Finish the current software update before turning on Tor.';
+
+  @override
+  String get networkPrivacyTorStartupFailed =>
+      'Couldn\'t connect to Tor. Network requests are paused.';
+
+  @override
+  String get networkPrivacyTorUpdatesUnavailable =>
+      'Tor is connected, but software updates are unavailable. Turn off Tor to update directly.';
+
+  @override
+  String get networkPrivacyUpdatesUnavailable =>
+      'Software updates are unavailable. Other network requests still use a direct connection.';
+
+  @override
   String get networkSettingsTitle => 'Network settings';
 
   @override
@@ -5832,6 +6012,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingBlockHeight => 'Block height';
+
+  @override
+  String get onboardingBlockHeightRequired =>
+      'We need the current Zcash block height to create your wallet. Check your network connection and try again.';
 
   @override
   String get onboardingCheckingAccounts => 'Checking accounts...';
@@ -6246,6 +6430,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Vizor could not load the local startup state. Try again, or quit and restart Vizor.';
 
   @override
+  String get onboardingStorageStartupFailureDetail =>
+      'Vizor could not load its startup state.';
+
+  @override
   String get onboardingTellMeHowZcashWorks => 'Tell me how Zcash works';
 
   @override
@@ -6340,6 +6528,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get passwordLabel => 'Password';
+
+  @override
+  String get passwordPolicyAscii =>
+      'Use only English letters, numbers, and symbols.';
+
+  @override
+  String passwordPolicyMinLength(int min) {
+    return 'Password must be at least $min characters.';
+  }
+
+  @override
+  String get passwordPolicyMustDiffer => 'Use a different password.';
 
   @override
   String get passwordsDoNotMatch => 'Passwords do not match.';
@@ -7821,7 +8021,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get poolTransparent => 'Transparent';
 
   @override
+  String get privateQueriesOptOutUnfinished =>
+      'Turning off Private queries didn\'t finish. Turn it off again in Settings to use transparent funds.';
+
+  @override
   String get profilePictureChange => 'Change profile picture';
+
+  @override
+  String profilePictureName(String id) {
+    String _temp0 = intl.Intl.selectLogic(id, {
+      'p01': 'Knight',
+      'p02': 'Viking',
+      'p03': 'Samurai',
+      'p04': 'Monarch',
+      'p05': 'Iron helm',
+      'p06': 'Ronin',
+      'p07': 'Skull knight',
+      'p08': 'Seer',
+      'p09': 'Berserker',
+      'p10': 'Rogue',
+      'p11': 'Mage',
+      'p12': 'Masked cat',
+      'p13': 'Warden',
+      'p14': 'Bronze helm',
+      'p15': 'Fish knight',
+      'other': '',
+    });
+    return '$_temp0';
+  }
 
   @override
   String get profilePictureSelect => 'Select profile picture';
@@ -8911,7 +9138,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsExplorerCustomSubtitle => 'Any explorer you prefer';
 
   @override
+  String get settingsExplorerPrivacyCopy =>
+      'Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.';
+
+  @override
   String get settingsExplorerSaveFailed => 'Couldn\'t save that explorer URL.';
+
+  @override
+  String settingsExplorerTemplateHint(String txid, String txHash) {
+    return 'Use $txid or $txHash in the path, or enter just the origin.';
+  }
 
   @override
   String get settingsExplorerTitle => 'Explorer';
@@ -9072,6 +9308,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsPrivacyTitle => 'Privacy';
+
+  @override
+  String get settingsPrivateQueriesCopy =>
+      'Experimental. Recovers transparent funds privately, preventing the server from learning your transparent addresses. Looks up supported transactions without revealing their IDs to servers.';
+
+  @override
+  String get settingsPrivateQueriesIosNote =>
+      'While on, migration confirmations are checked only when Vizor is open.';
 
   @override
   String get settingsPrivateQueriesLabel => 'Private queries';
@@ -10568,6 +10812,41 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get syncFailureChainRecovery =>
+      'The chain changed while syncing. We\'ll keep trying to recover.';
+
+  @override
+  String get syncFailureDatabaseBusy =>
+      'Wallet data is busy. We\'ll try syncing again automatically.';
+
+  @override
+  String get syncFailureDatabaseFatal =>
+      'Wallet data could not be read. Restart the app and retry sync.';
+
+  @override
+  String get syncFailureEndpoint =>
+      'Cannot reach the configured Zcash endpoint. Check your endpoint settings.';
+
+  @override
+  String get syncFailureNetwork =>
+      'Network connection lost. We\'ll keep trying automatically.';
+
+  @override
+  String get syncFailureParse =>
+      'Sync data could not be processed. Retry sync or check your endpoint.';
+
+  @override
+  String get syncFailurePrivateStatus =>
+      'Private transaction lookup couldn\'t determine a transaction\'s status. Turn off experimental private queries in Settings to continue syncing.';
+
+  @override
+  String get syncFailureTor =>
+      'Tor couldn\'t connect. Retry, or turn Tor off in Settings.';
+
+  @override
+  String get syncFailureUnknown => 'Sync failed. Retry sync to continue.';
+
+  @override
   String get syncSynced => 'Synced';
 
   @override
@@ -10593,6 +10872,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncVizorSynced => 'Vizor is synced';
+
+  @override
+  String get transparentLedgerNeedsNewerBuild =>
+      'This wallet needs a newer version of Vizor to use its transparent funds.';
+
+  @override
+  String get transparentRecoveryIncomplete =>
+      'Transparent funds are unavailable until private recovery completes.';
 
   @override
   String get txFeeHelpTooltip =>
@@ -11802,8 +12089,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'Open & unlock your Vizor desktop app';
 
   @override
+  String get walletMutationBusy =>
+      'Finish the current wallet operation before starting another.';
+
+  @override
   String get walletResetDeviceAuthFailed =>
       'Couldn\'t verify device ownership. Please try again.';
+
+  @override
+  String get walletResetDeviceAuthReason => 'Confirm reset Vizor';
 
   @override
   String get walletResetDeviceAuthRequired =>
@@ -11819,4 +12113,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get walletResetGiftCardWarning =>
       'A gift card is still being received. Resetting loses it.';
+
+  @override
+  String get windowsUpdateNotReady =>
+      'This update is no longer ready to download. Check for updates again.';
+
+  @override
+  String get windowsUpdateTorRouteUnavailable =>
+      'The software updater is not connected to Tor. Retry updates in Settings, or turn off Tor and try again.';
 }

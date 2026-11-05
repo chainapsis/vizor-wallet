@@ -272,7 +272,9 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
         _phase = _PasscodePhase.create;
         _entry = '';
         _firstPasscode = null;
-        _error = OnboardingSubmitError.text(onboardingSubmitErrorMessage(e));
+        _error = OnboardingSubmitError.text(
+          onboardingSubmitErrorMessage(context.l10n, e),
+        );
       });
     }
   }

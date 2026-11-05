@@ -268,12 +268,12 @@ void main() {
             message: 'reworded',
           ),
         ),
-        transparentRecoveryIncompleteMessage,
+        transparentRecoveryIncompleteMessage(testL10n),
       );
       // The library's refusal still reaches the app as text.
       expect(
         friendlyShieldBalanceError(testL10n, Exception(libraryRefusal)),
-        transparentRecoveryIncompleteMessage,
+        transparentRecoveryIncompleteMessage(testL10n),
       );
     });
 
@@ -282,7 +282,7 @@ void main() {
         testL10n,
         optOutUnfinishedRefusal,
       );
-      expect(copy, privateQueriesOptOutUnfinishedMessage);
+      expect(copy, privateQueriesOptOutUnfinishedMessage(testL10n));
       expect(copy, contains('Turn it off again'));
       expect(copy, isNot(contains('until private recovery completes')));
     });

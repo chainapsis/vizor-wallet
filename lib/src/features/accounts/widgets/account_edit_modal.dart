@@ -78,7 +78,7 @@ class _AccountEditModalState extends State<AccountEditModal> {
     if (accountNameCharacterLength(_trimmedName) <= kAccountNameMaxCharacters) {
       return null;
     }
-    return kAccountNameLengthMessage;
+    return context.l10n.accountNameTooLong;
   }
 
   @override

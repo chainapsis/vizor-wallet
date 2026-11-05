@@ -128,10 +128,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (draftPicture != null && draftPicture != account.profilePictureId) {
         await notifier.updateProfilePicture(account.uuid, draftPicture);
       }
-    } on WalletMutationBusyException catch (error) {
+    } on WalletMutationBusyException {
       // Another wallet mutation, such as the private queries toggle, holds
       // the wallet. The modal stays open with its drafts for a retry.
-      if (mounted) showAppToast(context, error.toString());
+      if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
       return;
     }
     if (!mounted) return;
@@ -157,8 +157,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref
           .read(accountProvider.notifier)
           .updateProfilePicture(accountUuid, profilePictureId);
-    } on WalletMutationBusyException catch (error) {
-      if (mounted) showAppToast(context, error.toString());
+    } on WalletMutationBusyException {
+      if (mounted) showAppToast(context, context.l10n.walletMutationBusy);
       return;
     }
     if (!mounted) return;
@@ -228,6 +228,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final endpoint = ref.watch(rpcEndpointProvider);
     final endpointLabel = endpoint.hostPort;
     final explorerLabel = explorerSettingsLabel(
+      context.l10n,
       ref.watch(zcashExplorerProvider),
       networkName: endpoint.networkName,
     );
@@ -373,7 +374,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     AppLocalizations l10n,
     String profilePictureId,
   ) {
-    return findProfilePictureOption(profilePictureId)?.label ??
+    return findProfilePictureOption(profilePictureId)?.label(l10n) ??
         l10n.settingsProfilePictureCustom;
   }
 
@@ -571,7 +572,8 @@ class _SettingsList extends ConsumerWidget {
     final enhancePirAvailable =
         ref.watch(enhancePirAvailableProvider) || enhancePirEnabled;
     final recoveryTransition = ref.watch(enhancePirTransitionProvider);
-    final changingRecovery = recoveryTransition == kEnhancePirChangingMessage;
+    final changingRecovery =
+        recoveryTransition == EnhancePirTransition.changing;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -970,10 +972,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
         state.availableVersion,
       ),
       WindowsUpdateStatus.applying => l10n.settingsUpdateStatusRestarting,
-      WindowsUpdateStatus.failed =>
-        state.message.trim().isEmpty
-            ? l10n.updateFailedMessage
-            : state.message.trim(),
+      WindowsUpdateStatus.failed => state.failureMessage(l10n),
       _ => l10n.settingsUpdateStatusIdle,
     };
   }

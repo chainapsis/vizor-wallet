@@ -56,7 +56,7 @@ class WalletMutationBusyException implements Exception {
 
   @override
   String toString() =>
-      'Finish the current wallet operation before starting another.';
+      'Finish the current wallet operation before starting another.'; // l10n-ignore: exception text; screens show walletMutationBusy
 }
 
 enum _RecoveryAction { retry, cancel, disposed }

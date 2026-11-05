@@ -12,7 +12,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/app_version_config.dart';
-import 'package:zcash_wallet/src/core/config/private_transparent_recovery_config.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_shell.dart';
@@ -40,6 +39,7 @@ import '../../fakes/fake_sync_notifier.dart';
 import '../../figma_compare/figma_compare_font_loader.dart';
 import '../../fakes/fake_app_language_notifier.dart';
 import 'package:zcash_wallet/l10n/app_localizations.dart';
+import '../../support/test_l10n.dart';
 
 final _en = lookupAppLocalizations(const Locale('en'));
 
@@ -357,16 +357,16 @@ void main() {
     expect(note, findsOneWidget);
     expect(find.textContaining('suspended'), findsNothing);
     expect(find.textContaining('transparent funds'), findsOneWidget);
-    expect(find.text(kPrivateQueriesSettingsCopy), findsOneWidget);
+    expect(find.text(testL10n.settingsPrivateQueriesCopy), findsOneWidget);
   });
 
   for (final (platform, copy) in [
     (
       TargetPlatform.iOS,
-      '$kPrivateQueriesSettingsCopy While on, migration confirmations are '
-          'checked only when Vizor is open.',
+      '${testL10n.settingsPrivateQueriesCopy} '
+          '${testL10n.settingsPrivateQueriesIosNote}',
     ),
-    (TargetPlatform.android, kPrivateQueriesSettingsCopy),
+    (TargetPlatform.android, testL10n.settingsPrivateQueriesCopy),
   ]) {
     testWidgets(
       'private queries uses the shared settings copy on ${platform.name}, '

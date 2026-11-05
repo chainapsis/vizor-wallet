@@ -185,7 +185,7 @@ class _MobileSeedPhraseScreenState
         _entry = '';
         _checking = false;
         if (wasEnabled && now != null && !now.enabled) {
-          _gateError = biometric.availability.kind.changedMessage;
+          _gateError = biometric.availability.kind.changedMessage(context.l10n);
         }
       });
       return;
@@ -650,7 +650,7 @@ class _MobileSeedPhraseScreenState
           height: biometricHeight,
           child: Center(
             child: PasscodeBiometricButton(
-              label: biometric.availability.kind.signInLabel,
+              label: biometric.availability.kind.signInLabel(context.l10n),
               icon: Center(
                 child: BiometricIcon(
                   kind: biometric.availability.kind,
@@ -684,7 +684,7 @@ class _MobileSeedPhraseScreenState
               height: 36,
               child: Center(
                 child: PasscodeBiometricButton(
-                  label: biometric.availability.kind.signInLabel,
+                  label: biometric.availability.kind.signInLabel(context.l10n),
                   icon: Center(
                     child: BiometricIcon(
                       kind: biometric.availability.kind,

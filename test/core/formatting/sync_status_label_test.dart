@@ -95,7 +95,6 @@ void main() {
         failure: const SyncFailure(
           kind: SyncFailureKind.network,
           rawMessage: 'connection refused',
-          userMessage: 'Network error',
         ),
       ),
     );
@@ -252,8 +251,5 @@ void main() {
 NetworkPrivacyState _tor(NetworkPrivacyConnectionStatus status) =>
     NetworkPrivacyState(torEnabled: true, status: status);
 
-SyncFailure _networkFailure(String raw) => SyncFailure(
-  kind: SyncFailureKind.network,
-  rawMessage: raw,
-  userMessage: 'Network error',
-);
+SyncFailure _networkFailure(String raw) =>
+    SyncFailure(kind: SyncFailureKind.network, rawMessage: raw);

@@ -144,7 +144,7 @@ class _LedgerImmediateMigrationSigningOverlayState
       requestKind: LedgerRequestKind.migration,
     );
     if (_deviceGuidance != null) return _deviceGuidance!.message;
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final message = error.toString().toLowerCase();
     if (LedgerRequestFailure.fromError(error) ==

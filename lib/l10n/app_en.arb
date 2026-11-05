@@ -74,6 +74,10 @@
   "@accountNameLabel": {
     "description": "Label of the account name field or row."
   },
+  "accountNameTooLong": "Name can be up to 20 characters.",
+  "@accountNameTooLong": {
+    "description": "Validation message when an account name is longer than 20 characters."
+  },
   "accountsActionsLabel": "Account actions",
   "@accountsActionsLabel": {
     "description": "Screen-reader label of the button that opens an account's action menu on desktop."
@@ -179,6 +183,14 @@
   "accountsRemoveGiftCardsCheckFailed": "Couldn't check this account for incoming gift cards. Try again before removing it.",
   "@accountsRemoveGiftCardsCheckFailed": {
     "description": "Message in the desktop remove-account dialog when the incoming gift card check failed."
+  },
+  "accountsRemoveGiftCardsMoreFunded": "More gift card links were funded. Review the warning and confirm again.",
+  "@accountsRemoveGiftCardsMoreFunded": {
+    "description": "Error in the remove-account dialog when more gift card links were funded while the removal was pending."
+  },
+  "accountsRemoveGiftCardsRecheckFailed": "Couldn't recheck gift card links. Review the warning and confirm again.",
+  "@accountsRemoveGiftCardsRecheckFailed": {
+    "description": "Error in the remove-account dialog when the gift card links could not be rechecked before removal."
   },
   "accountsRemoveMigrationBody": "This account's migration will no longer continue in Vizor. Transactions already submitted to the Zcash network may still complete. After re-importing, let the account fully sync before starting migration again.",
   "@accountsRemoveMigrationBody": {
@@ -1165,6 +1177,87 @@
   "@appUpdateRestartingTitle": {
     "description": "Title of the in-app update prompt while the app restarts to apply the update."
   },
+  "biometricChangedMessage": "{kind, select, face{Face ID changed. Enter your passcode.} touchId{Touch ID changed. Enter your passcode.} fingerprint{Fingerprint changed. Enter your passcode.} other{Biometric unlock changed. Enter your passcode.}}",
+  "@biometricChangedMessage": {
+    "description": "[security] Message on the unlock screen after the device's biometrics changed, so the passcode is required. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricEnableLabel": "{kind, select, face{Enable Face ID} touchId{Enable Touch ID} fingerprint{Enable fingerprint} other{Enable biometrics}}",
+  "@biometricEnableLabel": {
+    "description": "Button label that turns on biometric unlock. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricNameInline": "{kind, select, face{Face ID} touchId{Touch ID} fingerprint{fingerprint} other{biometrics}}",
+  "@biometricNameInline": {
+    "description": "Biometric method name used inside a sentence. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricNameOnboardingTitle": "{kind, select, face{Face ID} touchId{Touch ID} fingerprint{your fingerprint} other{biometrics}}",
+  "@biometricNameOnboardingTitle": {
+    "description": "Biometric method name as the object of the heading 'Unlock your wallet with ...'. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricNameStandalone": "{kind, select, face{Face ID} touchId{Touch ID} fingerprint{Fingerprint} other{Biometrics}}",
+  "@biometricNameStandalone": {
+    "description": "Biometric method name used as a standalone label or row title. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricSignInLabel": "{kind, select, face{Sign in with Face ID} touchId{Sign in with Touch ID} fingerprint{Sign in with fingerprint} other{Sign in with biometrics}}",
+  "@biometricSignInLabel": {
+    "description": "Button label that unlocks the wallet with biometrics. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricUnlockFeatureInline": "{kind, select, face{Face ID unlock} touchId{Touch ID unlock} fingerprint{fingerprint unlock} other{biometric unlock}}",
+  "@biometricUnlockFeatureInline": {
+    "description": "Name of the biometric unlock feature used inside a sentence. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricUnlockFeatureLabel": "{kind, select, face{Face ID unlock} touchId{Touch ID unlock} fingerprint{Fingerprint unlock} other{Biometric unlock}}",
+  "@biometricUnlockFeatureLabel": {
+    "description": "Name of the biometric unlock feature as a capitalized label. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricUseNextTimeLabel": "{kind, select, face{Use Face ID next time} touchId{Use Touch ID next time} fingerprint{Use fingerprint next time} other{Use biometrics next time}}",
+  "@biometricUseNextTimeLabel": {
+    "description": "Checkbox label on the unlock screen that remembers biometrics for the next unlock. {kind} is the device's biometric type: face, touchId, fingerprint or none. Face ID and Touch ID are Apple product names and stay in English.",
+    "placeholders": {
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
   "bip39PassphraseTitle": "BIP39 Passphrase",
   "@bip39PassphraseTitle": {
     "description": "[security] Name of the optional BIP39 passphrase (25th word), not the seed phrase."
@@ -1177,6 +1270,10 @@
         "type": "String"
       }
     }
+  },
+  "capsLockWarning": "Caps Lock is on",
+  "@capsLockWarning": {
+    "description": "Tooltip on a password field warning that Caps Lock is on."
   },
   "carouselPageSemantics": "{name} {page} of {count}. {message}",
   "@carouselPageSemantics": {
@@ -1735,6 +1832,10 @@
   "@commonOpenTheSignedTransactionQROn": {
     "description": "Hint when the scanned QR code is not the signed transaction. Shared by: keystone, send."
   },
+  "commonPausedForNetworkUpgrade": "Paused for network upgrade",
+  "@commonPausedForNetworkUpgrade": {
+    "description": "Label of the disabled action while an operation is held until the Zcash network upgrade activates."
+  },
   "commonPayInsufficientZec": "You don't have enough ZEC for this payment. Try a smaller amount.",
   "@commonPayInsufficientZec": {
     "description": "Error on the Pay recipient step when the quote costs more ZEC than is spendable. Shared by: pay, swap."
@@ -2231,6 +2332,31 @@
   "@endpointCustom": {
     "description": "Option to enter a custom lightwalletd endpoint."
   },
+  "endpointFailoverSwitchedBack": "Selected endpoint recovered. Switched back.",
+  "@endpointFailoverSwitchedBack": {
+    "description": "Toast when the wallet switched back to the selected server endpoint after it recovered."
+  },
+  "endpointFailoverSwitchedToFallback": "Selected endpoint is unstable. Switched to fallback endpoint.",
+  "@endpointFailoverSwitchedToFallback": {
+    "description": "Toast when the wallet switched from an unstable server endpoint to a fallback endpoint."
+  },
+  "endpointLatencyUnavailable": "Unavailable",
+  "@endpointLatencyUnavailable": {
+    "description": "Latency label of a server endpoint that could not be reached."
+  },
+  "endpointLatencyWrongNetwork": "Wrong network",
+  "@endpointLatencyWrongNetwork": {
+    "description": "Latency label of a server endpoint that serves a different Zcash network than the wallet."
+  },
+  "endpointRegionName": "{region, select, standard{Default} europe{Europe} global{Global} americas{Americas} asiaPacific{Asia Pacific} community{Community} testnet{Testnet} regtest{Regtest} other{Other}}",
+  "@endpointRegionName": {
+    "description": "Group heading in the server endpoint list. Regtest is a developer network name and stays in English.",
+    "placeholders": {
+      "region": {
+        "type": "String"
+      }
+    }
+  },
   "endpointUpdate": "Update endpoint",
   "@endpointUpdate": {
     "description": "Button that saves a new lightwalletd endpoint."
@@ -2238,6 +2364,22 @@
   "endpointUpdated": "Endpoint updated",
   "@endpointUpdated": {
     "description": "Toast after the lightwalletd endpoint changed."
+  },
+  "enhancePirChanging": "Changing setting…",
+  "@enhancePirChanging": {
+    "description": "Status line under the Private queries switch while the setting is being changed."
+  },
+  "enhancePirOptOutPending": "Private queries are still on. Try turning them off again.",
+  "@enhancePirOptOutPending": {
+    "description": "Status line under the Private queries switch: turning it off did not finish, so it is still on."
+  },
+  "enhancePirRaisePending": "Private queries are on. Private transparent recovery could not start yet and will be retried.",
+  "@enhancePirRaisePending": {
+    "description": "Status line under the Private queries switch: the setting is on but private recovery of transparent funds could not start yet and will be retried."
+  },
+  "enhancePirUnchanged": "Setting unchanged. Try again.",
+  "@enhancePirUnchanged": {
+    "description": "Status line under the Private queries switch when the setting could not be changed at all."
   },
   "homeActivityEmpty": "No activity, yet...",
   "@homeActivityEmpty": {
@@ -7315,6 +7457,26 @@
   "@navVote": {
     "description": "Sidebar destination: coinholder voting."
   },
+  "networkPrivacyFinishUpdateBeforeTorOff": "Finish the current software update before turning off Tor.",
+  "@networkPrivacyFinishUpdateBeforeTorOff": {
+    "description": "Toast when the user turns off Tor while a software update is in progress."
+  },
+  "networkPrivacyFinishUpdateBeforeTorOn": "Finish the current software update before turning on Tor.",
+  "@networkPrivacyFinishUpdateBeforeTorOn": {
+    "description": "Toast when the user turns on Tor while a software update is in progress."
+  },
+  "networkPrivacyTorStartupFailed": "Couldn't connect to Tor. Network requests are paused.",
+  "@networkPrivacyTorStartupFailed": {
+    "description": "Toast at launch when Tor is on but could not connect, so network requests are paused."
+  },
+  "networkPrivacyTorUpdatesUnavailable": "Tor is connected, but software updates are unavailable. Turn off Tor to update directly.",
+  "@networkPrivacyTorUpdatesUnavailable": {
+    "description": "Toast when Tor is connected but the software updater cannot use it."
+  },
+  "networkPrivacyUpdatesUnavailable": "Software updates are unavailable. Other network requests still use a direct connection.",
+  "@networkPrivacyUpdatesUnavailable": {
+    "description": "Toast when software updates are unavailable while other network requests use a direct connection."
+  },
   "networkSettingsTitle": "Network settings",
   "@networkSettingsTitle": {
     "description": "Title of the network settings (endpoint) screen or sheet."
@@ -7526,6 +7688,10 @@
   "onboardingBlockHeight": "Block height",
   "@onboardingBlockHeight": {
     "description": "Placeholder of the block height field."
+  },
+  "onboardingBlockHeightRequired": "We need the current Zcash block height to create your wallet. Check your network connection and try again.",
+  "@onboardingBlockHeightRequired": {
+    "description": "Error shown when creating a wallet fails because the current Zcash block height could not be fetched."
   },
   "onboardingCheckingAccounts": "Checking accounts...",
   "@onboardingCheckingAccounts": {
@@ -8026,6 +8192,10 @@
   "@onboardingStorageStartupFailureBody": {
     "description": "Body of the startup failure screen when the app's local startup state could not be loaded."
   },
+  "onboardingStorageStartupFailureDetail": "Vizor could not load its startup state.",
+  "@onboardingStorageStartupFailureDetail": {
+    "description": "Detail line on the startup failure screen."
+  },
   "onboardingTellMeHowZcashWorks": "Tell me how Zcash works",
   "@onboardingTellMeHowZcashWorks": {
     "description": "Primary button on the Zcash education steps that continues to the next explanation."
@@ -8141,6 +8311,23 @@
   "passwordLabel": "Password",
   "@passwordLabel": {
     "description": "[security] Label of a wallet password field."
+  },
+  "passwordPolicyAscii": "Use only English letters, numbers, and symbols.",
+  "@passwordPolicyAscii": {
+    "description": "Validation message when a wallet password contains characters other than printable English letters, numbers and symbols."
+  },
+  "passwordPolicyMinLength": "Password must be at least {min} characters.",
+  "@passwordPolicyMinLength": {
+    "description": "Validation message when a wallet password is shorter than the minimum; {min} is the minimum length.",
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "passwordPolicyMustDiffer": "Use a different password.",
+  "@passwordPolicyMustDiffer": {
+    "description": "Validation message when the new wallet password equals the current one."
   },
   "passwordsDoNotMatch": "Passwords do not match.",
   "@passwordsDoNotMatch": {
@@ -10009,9 +10196,22 @@
   "@poolTransparent": {
     "description": "Badge naming a transparent pool or address."
   },
+  "privateQueriesOptOutUnfinished": "Turning off Private queries didn't finish. Turn it off again in Settings to use transparent funds.",
+  "@privateQueriesOptOutUnfinished": {
+    "description": "[security] Error shown when the wallet still requires private recovery because turning off Private queries did not finish."
+  },
   "profilePictureChange": "Change profile picture",
   "@profilePictureChange": {
     "description": "Button or label that opens the profile picture picker."
+  },
+  "profilePictureName": "{id, select, p01{Knight} p02{Viking} p03{Samurai} p04{Monarch} p05{Iron helm} p06{Ronin} p07{Skull knight} p08{Seer} p09{Berserker} p10{Rogue} p11{Mage} p12{Masked cat} p13{Warden} p14{Bronze helm} p15{Fish knight} other{}}",
+  "@profilePictureName": {
+    "description": "Name of a built-in profile picture character, shown in the profile picture picker; {id} is the picture number such as p01.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
   },
   "profilePictureSelect": "Select profile picture",
   "@profilePictureSelect": {
@@ -11371,9 +11571,25 @@
   "@settingsExplorerCustomSubtitle": {
     "description": "Subtitle of the custom block explorer option card."
   },
+  "settingsExplorerPrivacyCopy": "Transaction links open in this explorer. Use ZecBlock or another site you prefer. Opening a public explorer after you send can link your IP address to that transaction.",
+  "@settingsExplorerPrivacyCopy": {
+    "description": "[security] Privacy note under the block explorer setting: opening a public explorer can link the user's IP address to a transaction."
+  },
   "settingsExplorerSaveFailed": "Couldn't save that explorer URL.",
   "@settingsExplorerSaveFailed": {
     "description": "Error shown under the custom explorer URL field when saving it failed."
+  },
+  "settingsExplorerTemplateHint": "Use {txid} or {txHash} in the path, or enter just the origin.",
+  "@settingsExplorerTemplateHint": {
+    "description": "Hint under the custom block explorer field; {txid} and {txHash} are the literal URL placeholders the user types, passed in as arguments, and must stay unchanged in translation.",
+    "placeholders": {
+      "txid": {
+        "type": "String"
+      },
+      "txHash": {
+        "type": "String"
+      }
+    }
   },
   "settingsExplorerTitle": "Explorer",
   "@settingsExplorerTitle": {
@@ -11558,6 +11774,14 @@
   "settingsPrivacyTitle": "Privacy",
   "@settingsPrivacyTitle": {
     "description": "Title of the Settings card or section that holds network privacy options such as Tor and private queries."
+  },
+  "settingsPrivateQueriesCopy": "Experimental. Recovers transparent funds privately, preventing the server from learning your transparent addresses. Looks up supported transactions without revealing their IDs to servers.",
+  "@settingsPrivateQueriesCopy": {
+    "description": "[security] Description under the Private queries setting."
+  },
+  "settingsPrivateQueriesIosNote": "While on, migration confirmations are checked only when Vizor is open.",
+  "@settingsPrivateQueriesIosNote": {
+    "description": "Extra sentence on iOS under the Private queries description: migration confirmations are not checked in the background while it is on."
   },
   "settingsPrivateQueriesLabel": "Private queries",
   "@settingsPrivateQueriesLabel": {
@@ -13551,6 +13775,42 @@
       }
     }
   },
+  "syncFailureChainRecovery": "The chain changed while syncing. We'll keep trying to recover.",
+  "@syncFailureChainRecovery": {
+    "description": "Sync failure notice on Home: a chain reorganization happened during sync and the wallet is recovering."
+  },
+  "syncFailureDatabaseBusy": "Wallet data is busy. We'll try syncing again automatically.",
+  "@syncFailureDatabaseBusy": {
+    "description": "Sync failure notice on Home: the wallet database is locked and sync retries by itself."
+  },
+  "syncFailureDatabaseFatal": "Wallet data could not be read. Restart the app and retry sync.",
+  "@syncFailureDatabaseFatal": {
+    "description": "Sync failure notice on Home: the wallet database could not be read."
+  },
+  "syncFailureEndpoint": "Cannot reach the configured Zcash endpoint. Check your endpoint settings.",
+  "@syncFailureEndpoint": {
+    "description": "Sync failure notice on Home: the configured lightwalletd endpoint is unreachable."
+  },
+  "syncFailureNetwork": "Network connection lost. We'll keep trying automatically.",
+  "@syncFailureNetwork": {
+    "description": "Sync failure notice on Home: the network connection dropped and sync retries by itself."
+  },
+  "syncFailureParse": "Sync data could not be processed. Retry sync or check your endpoint.",
+  "@syncFailureParse": {
+    "description": "Sync failure notice on Home: data from the server could not be parsed."
+  },
+  "syncFailurePrivateStatus": "Private transaction lookup couldn't determine a transaction's status. Turn off experimental private queries in Settings to continue syncing.",
+  "@syncFailurePrivateStatus": {
+    "description": "Sync failure notice on Home: experimental private queries could not determine a transaction's status and block syncing."
+  },
+  "syncFailureTor": "Tor couldn't connect. Retry, or turn Tor off in Settings.",
+  "@syncFailureTor": {
+    "description": "Sync failure notice on Home: the Tor connection failed and the user can retry or turn Tor off."
+  },
+  "syncFailureUnknown": "Sync failed. Retry sync to continue.",
+  "@syncFailureUnknown": {
+    "description": "Sync failure notice on Home: sync failed for an unknown reason."
+  },
   "syncSynced": "Synced",
   "@syncSynced": {
     "description": "Sync status when the wallet is up to date."
@@ -13596,6 +13856,14 @@
   "syncVizorSynced": "Vizor is synced",
   "@syncVizorSynced": {
     "description": "Sync status, and screen-reader label, when the wallet is up to date. Shared by: lock, sync."
+  },
+  "transparentLedgerNeedsNewerBuild": "This wallet needs a newer version of Vizor to use its transparent funds.",
+  "@transparentLedgerNeedsNewerBuild": {
+    "description": "Error shown when this build of the app cannot operate on the wallet's transparent funds and the user must update Vizor."
+  },
+  "transparentRecoveryIncomplete": "Transparent funds are unavailable until private recovery completes.",
+  "@transparentRecoveryIncomplete": {
+    "description": "Error shown when transparent funds cannot be used yet because private recovery of the transparent history has not finished."
   },
   "txFeeHelpTooltip": "Fee paid to the Zcash network to process this transaction.",
   "@txFeeHelpTooltip": {
@@ -15217,9 +15485,17 @@
   "@walletLinkStepUnlockDesktop": {
     "description": "Step 1 of the desktop link instructions (the number is added by the app)."
   },
+  "walletMutationBusy": "Finish the current wallet operation before starting another.",
+  "@walletMutationBusy": {
+    "description": "Toast shown when another wallet change, such as switching an account or toggling Private queries, is still running."
+  },
   "walletResetDeviceAuthFailed": "Couldn't verify device ownership. Please try again.",
   "@walletResetDeviceAuthFailed": {
     "description": "[security] Error when the device passcode check before a wallet reset failed."
+  },
+  "walletResetDeviceAuthReason": "Confirm reset Vizor",
+  "@walletResetDeviceAuthReason": {
+    "description": "Reason line in the operating system's device-authentication prompt when the user resets the wallet."
   },
   "walletResetDeviceAuthRequired": "Device authentication is required to reset Vizor.",
   "@walletResetDeviceAuthRequired": {
@@ -15236,5 +15512,13 @@
   "walletResetGiftCardWarning": "A gift card is still being received. Resetting loses it.",
   "@walletResetGiftCardWarning": {
     "description": "[security] Warning on the locked reset screens while a gift card claim is in progress; reset is still allowed."
+  },
+  "windowsUpdateNotReady": "This update is no longer ready to download. Check for updates again.",
+  "@windowsUpdateNotReady": {
+    "description": "Error shown when the user starts a software update download that is no longer available."
+  },
+  "windowsUpdateTorRouteUnavailable": "The software updater is not connected to Tor. Retry updates in Settings, or turn off Tor and try again.",
+  "@windowsUpdateTorRouteUnavailable": {
+    "description": "Error shown when a software update cannot start because the updater has no Tor connection."
   }
 }

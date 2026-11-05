@@ -39,7 +39,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   _UnlockFailure? _failure;
 
   String? get _passwordPolicyMessage =>
-      validateWalletPassword(_passwordController.text);
+      validateWalletPassword(context.l10n, _passwordController.text);
 
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);

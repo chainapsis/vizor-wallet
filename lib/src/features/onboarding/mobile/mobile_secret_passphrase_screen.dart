@@ -101,7 +101,7 @@ class _MobileSecretPassphraseScreenState
       });
     } catch (e, st) {
       log('MobileSecretPassphrase: ERROR generating mnemonic: $e\n$st');
-      _error = onboardingSubmitErrorMessage(e);
+      _error = onboardingSubmitErrorMessage(context.l10n, e);
     }
   }
 

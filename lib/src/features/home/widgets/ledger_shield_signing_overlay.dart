@@ -607,7 +607,7 @@ class _LedgerShieldSigningOverlayState
     required String status,
     required String? message,
   }) {
-    final upgradeHold = networkUpgradeHoldMessage(message ?? '');
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, message ?? '');
     if (upgradeHold != null) return upgradeHold;
     if (status == 'broadcast_unknown') {
       return message ?? context.l10n.homeLedgerBroadcastUnknown;
@@ -641,7 +641,7 @@ class _LedgerShieldSigningOverlayState
       requestKind: LedgerRequestKind.shield,
     );
     _deviceGuidance = guidance;
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     // Retrying the same request fails the same way on the device.
     if (guidance?.retryable == false) _canRetry = false;
@@ -713,7 +713,7 @@ class _LedgerShieldSigningOverlayState
   Widget build(BuildContext context) {
     final canLeave = !_cancelled && (_momentComplete || !_isBroadcasting);
     final broadcasting = _phase == LedgerSigningModalPhase.broadcasting;
-    final upgradeHold = _error == kNetworkUpgradeHoldMessage;
+    final upgradeHold = _error == networkUpgradeHoldText(context.l10n);
     final modal = LedgerSigningModal(
       cancelling: _cancelled,
       resumingApproval: _resumingApproval,
@@ -735,7 +735,7 @@ class _LedgerShieldSigningOverlayState
               title: _pausedEarly
                   ? context.l10n.homeLedgerPausedTitle
                   : upgradeHold
-                  ? kNetworkUpgradeHoldActionLabel
+                  ? networkUpgradeHoldActionLabel(context.l10n)
                   : context.l10n.commonLedgerSigningFailed,
               statusLabel: _pausedEarly
                   ? context.l10n.homeLedgerInputsRemaining

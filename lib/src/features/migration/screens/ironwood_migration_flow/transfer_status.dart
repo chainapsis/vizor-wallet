@@ -2300,7 +2300,7 @@ int _currentMigrationHeight(SyncState? syncState) {
 }
 
 String _privateMigrationStartErrorMessage(AppLocalizations l10n, Object error) {
-  final upgradeHold = networkUpgradeHoldMessage(error);
+  final upgradeHold = networkUpgradeHoldMessage(l10n, error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   final lower = message.toLowerCase();

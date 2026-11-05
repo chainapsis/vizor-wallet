@@ -5,16 +5,16 @@ import 'package:flutter/material.dart';
 /// system language, not app language, so on a Korean Mac Chinese text draws
 /// Korean-style Han glyphs.
 const kSimplifiedChineseFontFallback = [
-  'PingFang SC',
-  'Microsoft YaHei',
-  'Noto Sans CJK SC',
-  'Noto Sans SC',
+  'PingFang SC', // l10n-ignore: font family name
+  'Microsoft YaHei', // l10n-ignore: font family name
+  'Noto Sans CJK SC', // l10n-ignore: font family name
+  'Noto Sans SC', // l10n-ignore: font family name
 ];
 const kKoreanFontFallback = [
-  'Apple SD Gothic Neo',
-  'Malgun Gothic',
-  'Noto Sans CJK KR',
-  'Noto Sans KR',
+  'Apple SD Gothic Neo', // l10n-ignore: font family name
+  'Malgun Gothic', // l10n-ignore: font family name
+  'Noto Sans CJK KR', // l10n-ignore: font family name
+  'Noto Sans KR', // l10n-ignore: font family name
 ];
 
 List<String>? fontFamilyFallbackFor(Locale locale) {

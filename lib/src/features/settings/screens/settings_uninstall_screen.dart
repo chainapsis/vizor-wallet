@@ -191,7 +191,10 @@ class _SettingsUninstallScreenState
   Future<void> _submitGatePassword() async {
     if (_isSubmitting) return;
     if (!isWalletPasswordValid(_passwordController.text)) {
-      final policyError = validateWalletPassword(_passwordController.text);
+      final policyError = validateWalletPassword(
+        context.l10n,
+        _passwordController.text,
+      );
       if (policyError == null) return;
       setState(() {
         _gateError = policyError;

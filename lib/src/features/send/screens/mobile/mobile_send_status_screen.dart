@@ -286,8 +286,8 @@ class _MobileSendStatusScreenState
       _MobileSendStatusPhase.failed =>
         _canRetryBroadcast
             ? (_error ?? context.l10n.sendStatusRetryAfterSync)
-            : _error == kNetworkUpgradeHoldMessage
-            ? kNetworkUpgradeHoldMessage
+            : _error == networkUpgradeHoldText(context.l10n)
+            ? networkUpgradeHoldText(context.l10n)
             : context.l10n.sendStatusMobileNothingSent,
     };
   }

@@ -29,7 +29,7 @@ class TorUnsupportedHttpMethodException implements Exception {
 
   @override
   String toString() =>
-      'The $method request was blocked because the embedded Tor transport '
+      'The $method request was blocked because the embedded Tor transport ' // l10n-ignore: HTTP method or exception text for logs
       'does not support this method.';
 }
 
@@ -38,14 +38,14 @@ class DirectNetworkRequestsBlockedException implements Exception {
 
   @override
   String toString() =>
-      'Direct network requests are blocked while the app switches to Tor.';
+      'Direct network requests are blocked while the app switches to Tor.'; // l10n-ignore: HTTP method or exception text for logs
 }
 
 class NetworkHttpRequestCancelledException implements Exception {
   const NetworkHttpRequestCancelledException();
 
   @override
-  String toString() => 'Network HTTP request cancelled';
+  String toString() => 'Network HTTP request cancelled'; // l10n-ignore: HTTP method or exception text for logs
 }
 
 class _DirectRequestOperation<T> {
@@ -94,7 +94,8 @@ abstract interface class TorHttpBridge {
 class RustTorHttpBridge implements TorHttpBridge {
   const RustTorHttpBridge();
 
-  static const _requestTimeoutError = 'Tor HTTP request timed out';
+  static const _requestTimeoutError =
+      'Tor HTTP request timed out'; // l10n-ignore: HTTP method or exception text for logs
 
   @override
   Future<NetworkHttpResponse> get(
@@ -378,7 +379,7 @@ class NetworkHttpClient {
   }) {
     final future = _torDesired()
         ? _requestViaTorWithRedirects(
-            'GET',
+            'GET', // l10n-ignore: HTTP method or exception text for logs
             uri,
             headers: headers,
             bodyBytes: const [],
@@ -517,7 +518,8 @@ class NetworkHttpClient {
           (response.statusCode == HttpStatus.movedPermanently ||
               response.statusCode == HttpStatus.found ||
               response.statusCode == HttpStatus.seeOther)) {
-        currentMethod = 'GET';
+        currentMethod =
+            'GET'; // l10n-ignore: HTTP method or exception text for logs
         currentBody = const [];
       }
       currentUri = nextUri;
@@ -581,7 +583,7 @@ class NetworkHttpClient {
             if (maxBodyBytes != null &&
                 bytes.length + chunk.length > maxBodyBytes) {
               final error = const HttpException(
-                'HTTP response exceeds byte limit',
+                'HTTP response exceeds byte limit', // l10n-ignore: HTTP method or exception text for logs
               );
               body.completeError(error);
               unawaited(abort(error));
@@ -678,8 +680,12 @@ class NetworkHttpClient {
     }
   }
 
-  static TimeoutException _timeoutException(Duration timeout) =>
-      TimeoutException('Network HTTP request timed out', timeout);
+  static TimeoutException _timeoutException(
+    Duration timeout,
+  ) => TimeoutException(
+    'Network HTTP request timed out', // l10n-ignore: exception text for logs
+    timeout,
+  ); // l10n-ignore: HTTP method or exception text for logs
 
   static Map<String, String> _headersForRedirect(
     Uri from,

@@ -293,7 +293,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
     RpcEndpointLatencyState latencyState,
   ) {
     final colors = context.colors;
-    final groups = <String, List<RpcEndpointPreset>>{};
+    final groups = <RpcEndpointRegion, List<RpcEndpointPreset>>{};
     for (final preset in rpcEndpointPresetsForNetwork(current.networkName)) {
       groups.putIfAbsent(preset.region, () => []).add(preset);
     }
@@ -313,7 +313,7 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
               bottom: AppSpacing.xs,
             ),
             child: Text(
-              entry.key,
+              entry.key.label(context.l10n),
               style: AppTypography.labelMedium.copyWith(
                 color: colors.text.secondary,
               ),
@@ -323,7 +323,9 @@ class _MobileEndpointScreenState extends ConsumerState<MobileEndpointScreen> {
             _PresetCard(
               key: ValueKey('mobile_endpoint_preset_${preset.id}'),
               preset: preset,
-              latencyLabel: latencyState.sampleForUrl(preset.url)?.label,
+              latencyLabel: latencyState
+                  .sampleForUrl(preset.url)
+                  ?.label(context.l10n),
               selected: preset.id == _selectedPresetId,
               onTap: _isSubmitting
                   ? null
@@ -580,7 +582,7 @@ class _MobileCurrentEndpointText extends StatelessWidget {
       current.normalizedLightwalletdUrl,
     );
     final suffix = [
-      if (latency != null) latency.label,
+      if (latency != null) latency.label(context.l10n),
       if (preset?.isDefault ?? false)
         context.l10n.settingsEndpointDefaultMarker,
     ].join(' ');

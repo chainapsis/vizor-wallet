@@ -304,7 +304,9 @@ class _MobileImportBirthdayScreenState
         if (!mounted) return;
         setState(() {
           _submitPhase = _MobileImportSubmitPhase.idle;
-          _error = OnboardingSubmitError.text(onboardingSubmitErrorMessage(e));
+          _error = OnboardingSubmitError.text(
+            onboardingSubmitErrorMessage(context.l10n, e),
+          );
         });
       }
       return;
@@ -336,7 +338,9 @@ class _MobileImportBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _MobileImportSubmitPhase.idle;
-        _error = OnboardingSubmitError.text(onboardingSubmitErrorMessage(e));
+        _error = OnboardingSubmitError.text(
+          onboardingSubmitErrorMessage(context.l10n, e),
+        );
       });
       return;
     }

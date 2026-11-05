@@ -29,7 +29,9 @@ class OnboardingSubmitError {
     required bool requiresRecovery,
   }) => requiresRecovery
       ? OnboardingSubmitError.setupInterrupted()
-      : OnboardingSubmitError.text(onboardingSubmitErrorMessage(error));
+      : OnboardingSubmitError.localized(
+          (l10n) => onboardingSubmitErrorMessage(l10n, error),
+        );
 
   final String? _text;
   final String Function(AppLocalizations l10n)? _localize;
@@ -44,9 +46,9 @@ const kDuplicateKeystoneAccountImportErrorMessage =
 const kDuplicateAccountImportErrorMessage =
     'This account is already in your wallet.'; // l10n-ignore: context-free producer
 
-String onboardingSubmitErrorMessage(Object error) {
+String onboardingSubmitErrorMessage(AppLocalizations l10n, Object error) {
   if (error is WalletCreationCurrentBlockHeightException) {
-    return kWalletCreationCurrentBlockHeightErrorMessage;
+    return l10n.onboardingBlockHeightRequired;
   }
 
   const exceptionPrefix = 'Exception: ';

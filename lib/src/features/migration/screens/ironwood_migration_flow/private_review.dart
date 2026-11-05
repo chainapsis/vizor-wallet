@@ -104,8 +104,7 @@ class _IronwoodMigrationPrivateReviewContentState
       }
       if (!mounted) return;
       // A schedule drawn before the upgrade can never start; draw a new one.
-      if (networkUpgradeHoldMessage(e) ==
-          kNetworkUpgradeScheduleChangedMessage) {
+      if (networkUpgradeHoldKind(e) == NetworkUpgradeHold.scheduleChanged) {
         ref.invalidate(ironwoodMigrationPrivatePlanProvider);
       }
       setState(() {

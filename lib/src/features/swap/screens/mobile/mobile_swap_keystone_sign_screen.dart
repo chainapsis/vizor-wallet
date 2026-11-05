@@ -449,7 +449,7 @@ class _MobileSwapKeystoneSignScreenState
     if (error is _MobileSwapKeystoneSignFailureException) {
       return error.message;
     }
-    final upgradeHold = networkUpgradeHoldMessage(error);
+    final upgradeHold = networkUpgradeHoldMessage(context.l10n, error);
     if (upgradeHold != null) return upgradeHold;
     final lower = error.toString().toLowerCase();
     if (lower.contains('does not support tex')) {

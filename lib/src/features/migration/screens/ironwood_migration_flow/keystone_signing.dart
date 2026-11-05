@@ -980,7 +980,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           _decoding = false;
           // Rust drops a request held for the upgrade; say why.
           _error =
-              networkUpgradeHoldMessage(e) ??
+              networkUpgradeHoldMessage(context.l10n, e) ??
               context.l10n.migrationKeystoneRequestUnusable;
         });
         return;
@@ -2303,7 +2303,7 @@ String ironwoodMigrationKeystoneSigningErrorMessage(
   AppLocalizations l10n,
   Object error,
 ) {
-  final upgradeHold = networkUpgradeHoldMessage(error);
+  final upgradeHold = networkUpgradeHoldMessage(l10n, error);
   if (upgradeHold != null) return upgradeHold;
   final message = error.toString();
   final lower = message.toLowerCase();
