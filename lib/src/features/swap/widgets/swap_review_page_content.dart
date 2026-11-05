@@ -14,6 +14,7 @@ import '../models/swap_address_book_helpers.dart';
 import '../models/swap_address_formatting.dart';
 import '../models/swap_detail_tooltips.dart';
 import '../models/swap_fiat_value_formatting.dart';
+import '../models/swap_quote_text.dart';
 import 'swap_amount_text.dart';
 import 'swap_review_info.dart';
 
@@ -305,7 +306,7 @@ class _PayReviewCard extends StatelessWidget {
           children: [
             ReviewListRow(
               label: context.l10n.commonRate,
-              value: quote.rateText,
+              value: swapDetailValueText(context.l10n, quote.rateText),
             ),
             if (feeText != null && feeText.isNotEmpty)
               ReviewListRow(
@@ -314,7 +315,7 @@ class _PayReviewCard extends StatelessWidget {
               ),
             ReviewListRow(
               label: context.l10n.swapReviewQuoteHolds,
-              value: quote.expiryLabel,
+              value: swapQuoteExpiryText(context.l10n, quote),
             ),
           ],
         ),
@@ -505,11 +506,11 @@ class _SwapReviewDetailCard extends StatelessWidget {
               label: context.l10n.commonSlippageTolerance,
               value:
                   slippageToleranceTextOverride ??
-                  swapReviewSlippageToleranceText(quote),
+                  swapReviewSlippageToleranceText(context.l10n, quote),
             ),
             ReviewListRow(
               label: context.l10n.commonGuaranteedMinimum,
-              value: compactSwapAmountText(quote.minimumReceiveText),
+              value: swapReviewMinimumReceiveText(context.l10n, quote),
               trailingIconName: AppIcons.help,
               trailingIconColor: colors.icon.muted,
               trailingIconTooltip: swapMinimumReceiveTooltip(
@@ -522,7 +523,7 @@ class _SwapReviewDetailCard extends StatelessWidget {
         const ReviewWrapDivider(),
         ReviewListRow(
           label: context.l10n.commonSwapFee,
-          value: quote.feeLabel,
+          value: swapDetailValueText(context.l10n, quote.feeLabel),
           trailingIconName: AppIcons.help,
           trailingIconColor: colors.icon.muted,
           trailingIconTooltip: swapFeeTooltip(context.l10n),
@@ -578,6 +579,16 @@ String _quoteFiatText(double? value) {
 }
 
 /// Public for the mobile review content, which renders the same row.
-String swapReviewSlippageToleranceText(SwapQuote quote) {
-  return compactSwapAmountText(quote.slippageToleranceText);
+String swapReviewSlippageToleranceText(AppLocalizations l10n, SwapQuote quote) {
+  return _compactDetailValueText(l10n, quote.slippageToleranceText);
+}
+
+/// Public for the mobile review content, which renders the same row.
+String swapReviewMinimumReceiveText(AppLocalizations l10n, SwapQuote quote) {
+  return _compactDetailValueText(l10n, quote.minimumReceiveText);
+}
+
+String _compactDetailValueText(AppLocalizations l10n, String value) {
+  final worded = swapDetailValueText(l10n, value);
+  return worded == value ? compactSwapAmountText(value) : worded;
 }

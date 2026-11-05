@@ -893,9 +893,10 @@ final _torBlockedState = SwapState(
   reviewVisible: false,
   intents: [],
   slippageBps: 50,
-  supportedAssetsError:
-      'Swap is unavailable over Tor because the service blocked this connection.\n'
-      'Turn off Tor in Settings to use swap.',
+  supportedAssetsError: SwapFailureMessage(
+    SwapFailureOperation.tokenList,
+    SwapFailureCategory.torBlocked,
+  ),
 );
 
 const _designProgressSteps = <SwapStatusStepData>[

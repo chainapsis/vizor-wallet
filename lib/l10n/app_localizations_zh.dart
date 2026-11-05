@@ -8514,6 +8514,88 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapDismissBarrierLabel => '关闭';
 
   @override
+  String get swapFailureAmountPrecision => '金额的小数位数过多。\n请减少小数位数后重试。';
+
+  @override
+  String get swapFailureAmountTooLowPay => '此笔支付的金额过低。\n请尝试更大的金额。';
+
+  @override
+  String get swapFailureAmountTooLowSwap => '此笔兑换的金额过低。\n请尝试更大的金额。';
+
+  @override
+  String get swapFailureAssetUnavailable => '此资产目前无法兑换。\n请选择其他资产或稍后重试。';
+
+  @override
+  String get swapFailureDepositNotIndexed => '存入尚未被索引。\n请几分钟后再查看。';
+
+  @override
+  String get swapFailureDepositRejected => '存入交易被拒绝。\n请检查地址、备注和交易哈希。';
+
+  @override
+  String get swapFailureDepositSubmitFailed => '无法提交存入状态。\n请稍后重试。';
+
+  @override
+  String get swapFailureNoQuote => '此路线或金额暂无可用报价。\n请调整金额、滑点或资产后重试。';
+
+  @override
+  String get swapFailureQuoteTimeout => '报价请求超时。\n请检查网络连接后重试。';
+
+  @override
+  String get swapFailureQuoteUnavailable => '目前无法获取报价。\n请稍后重试。';
+
+  @override
+  String get swapFailureQuoteUnverified => '无法验证报价响应。\n请稍后重试。';
+
+  @override
+  String get swapFailureRefreshFailed => '无法刷新兑换状态。\n请稍后重试。';
+
+  @override
+  String get swapFailureRequestTimeout => '请求超时。\n请检查网络连接后重试。';
+
+  @override
+  String get swapFailureResponseUnverified => '无法验证兑换响应。\n请稍后重试。';
+
+  @override
+  String get swapFailureRouteRejected => '此路线或地址被拒绝。\n请修改详情并重新获取报价。';
+
+  @override
+  String get swapFailureServiceUnavailable => '兑换服务暂时不可用。\n请稍后重试。';
+
+  @override
+  String get swapFailureStartFailed => '无法开始兑换。\n请稍后重试。';
+
+  @override
+  String get swapFailureStatusAssetUnsupported =>
+      '兑换状态使用了不受支持的资产对。\n请勿重新发送资金。请稍后重试。';
+
+  @override
+  String get swapFailureStatusAutoRefresh => '无法刷新最新状态。\n我们会继续尝试，并自动更新此页面。';
+
+  @override
+  String get swapFailureStillProcessing => '兑换服务仍在处理中。\n请稍候再试。';
+
+  @override
+  String get swapFailureTokensUnavailable => '无法加载兑换代币。\n请稍后重试。';
+
+  @override
+  String get swapFailureTorBlockedPay =>
+      '该服务阻止了此连接，因此无法通过 Tor 支付。\n如需支付，请在设置中关闭 Tor。';
+
+  @override
+  String get swapFailureTorBlockedSwap =>
+      '该服务阻止了此连接，因此无法通过 Tor 兑换。\n如需兑换，请在设置中关闭 Tor。';
+
+  @override
+  String get swapFailureZecDepositFunding =>
+      '可用 ZEC 不足以支付此笔兑换及其网络手续费。\n请尝试更小的金额，或使用最大值。';
+
+  @override
+  String get swapFailureZecDepositPreflight => '无法准备 ZEC 存入。\n请检查余额后重试。';
+
+  @override
+  String get swapFailureZecDepositSendFailed => '无法发送 ZEC 存入。\n请稍后重试。';
+
+  @override
   String get swapKeystoneBroadcastFailed => '无法广播交易。';
 
   @override
@@ -8592,13 +8674,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get swapLedgerTitleSent => '交易已发送';
 
   @override
+  String get swapNoticeAccountChanged => '当前账户已更改。开始前请重新查看报价。';
+
+  @override
   String get swapNoticeAffectedNetworks => '受影响的网络';
 
   @override
   String get swapNoticeAllChains => '所有链';
 
   @override
+  String get swapNoticeBroadcastNotStored =>
+      '交易已到达网络，但 Vizor 无法在本地保存。在同步或区块浏览器确认最新状态之前，请勿重试。';
+
+  @override
+  String get swapNoticeBroadcastPartial => '部分存入交易可能已到达网络。重试前请先查看活动。';
+
+  @override
+  String get swapNoticeBroadcastPending => '存入已在本地创建，但无法广播。重试前请先查看活动。';
+
+  @override
+  String get swapNoticeBroadcastUncertain => '存入状态不确定。重试前请先查看活动。';
+
+  @override
+  String get swapNoticeBroadcastUnknown => '交易可能已到达网络，但确认超时。重试前请先查看活动。';
+
+  @override
   String get swapNoticeCloseLabel => '关闭服务通知';
+
+  @override
+  String get swapNoticeDepositIntentMissing =>
+      'ZEC 存入已广播，但找不到已保存的兑换记录。离开此页面前，请复制交易哈希。';
 
   @override
   String swapNoticeExpectedEnd(String time) {
@@ -8624,6 +8729,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapNoticePaymentsMayFail => '支付目前可能无法使用。';
+
+  @override
+  String get swapNoticeReceiveAddressUnavailable =>
+      '无法准备新的钱包接收地址。请在钱包同步后重试，或在获取新报价前关闭处理中的旧兑换。';
 
   @override
   String get swapNoticeServiceTitle => '服务通知';
@@ -8670,6 +8779,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get swapPoweredByLabel => '由以下提供支持';
+
+  @override
+  String swapQuoteExpiresAt(String time) {
+    return '$time 到期';
+  }
+
+  @override
+  String get swapQuoteExpiryPending => '报价到期时间待定';
+
+  @override
+  String get swapQuoteRatePending => '汇率待定';
 
   @override
   String get swapReviewBackPay => '支付';

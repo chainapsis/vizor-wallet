@@ -4,6 +4,7 @@ import '../../address_book/models/address_format_validator.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_intent.dart';
+import 'swap_message.dart';
 
 const defaultSwapSlippageBps = 200;
 const swapSlippagePresetBps = <int>[50, 100, 200];
@@ -108,18 +109,18 @@ class SwapState {
   /// True only while the supported-asset/indicative-price snapshot is being
   /// loaded or refreshed. Live review quote submission uses [quoteLoading].
   final bool pricingLoading;
-  final String? supportedAssetsError;
+  final SwapMessage? supportedAssetsError;
   final SwapQuote? reviewQuote;
   final SwapAddressPlan? reviewAddressPlan;
   final String? reviewAccountUuid;
   final bool quoteLoading;
   final bool quoteExpired;
-  final String? quoteError;
+  final SwapMessage? quoteError;
   final bool statusRefreshing;
-  final String? statusError;
+  final SwapMessage? statusError;
   final bool startSubmitting;
   final bool maxAmountLoading;
-  final String? maxAmountError;
+  final SwapMessage? maxAmountError;
   final String depositTxHashText;
   final bool depositSubmitting;
   final String? selectedIntentId;
@@ -233,7 +234,8 @@ class SwapState {
 
   String? externalAssetSupportError(AppLocalizations l10n) {
     if (pricingLoading) return null;
-    if (supportedAssetsError != null) return supportedAssetsError;
+    final loadError = supportedAssetsError;
+    if (loadError != null) return loadError.text(l10n);
     if (externalAssetIsSupported) return null;
     return l10n.swapActivityStateAssetUnsupported(
       externalAsset.symbol,
@@ -331,18 +333,18 @@ class SwapState {
     Map<SwapAsset, double>? indicativeExternalPerZec,
     Map<SwapAsset, double>? indicativeUsdPrices,
     bool? pricingLoading,
-    String? supportedAssetsError,
+    SwapMessage? supportedAssetsError,
     SwapQuote? reviewQuote,
     SwapAddressPlan? reviewAddressPlan,
     String? reviewAccountUuid,
     bool? quoteLoading,
     bool? quoteExpired,
-    String? quoteError,
+    SwapMessage? quoteError,
     bool? statusRefreshing,
-    String? statusError,
+    SwapMessage? statusError,
     bool? startSubmitting,
     bool? maxAmountLoading,
-    String? maxAmountError,
+    SwapMessage? maxAmountError,
     String? depositTxHashText,
     bool? depositSubmitting,
     String? selectedIntentId,

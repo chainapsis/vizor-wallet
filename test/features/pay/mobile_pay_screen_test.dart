@@ -147,7 +147,9 @@ class _DelayedPayReviewNotifier extends SwapNotifier {
       state = state.copyWith(
         reviewVisible: false,
         quoteLoading: false,
-        quoteError: 'Unable to fetch a quote. Try again.',
+        quoteError: const SwapLiteralMessage(
+          'Unable to fetch a quote. Try again.',
+        ),
         clearReview: true,
       );
       return;
@@ -243,7 +245,9 @@ class _RefreshFailPayReviewNotifier extends SwapNotifier {
     state = state.copyWith(
       reviewVisible: false,
       quoteLoading: false,
-      quoteError: 'Unable to fetch a quote. Try again.',
+      quoteError: const SwapLiteralMessage(
+        'Unable to fetch a quote. Try again.',
+      ),
       clearReview: true,
     );
   }
@@ -268,7 +272,13 @@ class _TorBlockablePayNotifier extends SwapNotifier {
   );
 
   void blockTokenListOverTor() {
-    state = state.copyWith(supportedAssetsError: _torBlockedPayMessage);
+    state = state.copyWith(
+      supportedAssetsError: const SwapFailureMessage(
+        SwapFailureOperation.tokenList,
+        SwapFailureCategory.torBlocked,
+        surface: SwapFailureSurface.pay,
+      ),
+    );
   }
 }
 

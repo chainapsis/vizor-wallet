@@ -18,7 +18,7 @@ class MobilePayDepositProgress {
   const MobilePayDepositProgress({required this.phase, this.notice});
 
   final MobileTransactionProgressPhase phase;
-  final String? notice;
+  final SwapMessage? notice;
 }
 
 /// Maps the Pay deposit broadcast lifecycle without treating an intent being
@@ -47,7 +47,7 @@ MobilePayDepositProgress mobilePayDepositProgressFor({
     return MobilePayDepositProgress(
       phase: MobileTransactionProgressPhase.pending,
       // A null notice falls back to the localized default in `build`.
-      notice: _nonEmpty(intent?.broadcastNotice),
+      notice: _nonEmptyMessage(intent?.broadcastNotice),
     );
   }
 
@@ -59,8 +59,8 @@ MobilePayDepositProgress mobilePayDepositProgressFor({
   }
 
   final error =
-      _nonEmpty(intent?.statusError) ??
-      (isRelevantIntent ? _nonEmpty(state.statusError) : null);
+      _nonEmptyMessage(intent?.statusError) ??
+      (isRelevantIntent ? _nonEmptyMessage(state.statusError) : null);
   if (error != null) {
     return MobilePayDepositProgress(
       phase: MobileTransactionProgressPhase.failed,
@@ -78,6 +78,13 @@ MobilePayDepositProgress mobilePayDepositProgressFor({
 String? _nonEmpty(String? value) {
   final trimmed = value?.trim();
   return trimmed == null || trimmed.isEmpty ? null : trimmed;
+}
+
+/// Drops blank pass-through text; coded messages always have copy.
+SwapMessage? _nonEmptyMessage(SwapMessage? message) {
+  if (message is! SwapLiteralMessage) return message;
+  final trimmed = message.value.trim();
+  return trimmed.isEmpty ? null : SwapLiteralMessage(trimmed);
 }
 
 /// Mobile Pay handoff while its ZEC deposit is being submitted.
@@ -160,7 +167,7 @@ class _MobilePaySubmittedScreenState
     final progress = paymentUnavailable
         ? MobilePayDepositProgress(
             phase: MobileTransactionProgressPhase.failed,
-            notice: l10n.paySubmittedUnavailableNotice,
+            notice: SwapLiteralMessage(l10n.paySubmittedUnavailableNotice),
           )
         : submissionInterrupted
         ? const MobilePayDepositProgress(
@@ -184,11 +191,11 @@ class _MobilePaySubmittedScreenState
       MobileTransactionProgressPhase.inProgress =>
         l10n.paySubmittedSubmittingBody,
       MobileTransactionProgressPhase.pending =>
-        progress.notice ?? l10n.paySubmittedStatusUncertainNotice,
+        progress.notice?.text(l10n) ?? l10n.paySubmittedStatusUncertainNotice,
       MobileTransactionProgressPhase.succeeded =>
         l10n.paySubmittedSucceededBody,
       MobileTransactionProgressPhase.failed =>
-        progress.notice ?? l10n.paySubmittedFailedBody,
+        progress.notice?.text(l10n) ?? l10n.paySubmittedFailedBody,
     };
 
     return MobileSidebarExitScope(

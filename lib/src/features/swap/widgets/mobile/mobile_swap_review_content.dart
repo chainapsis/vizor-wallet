@@ -12,7 +12,9 @@ import '../../domain/swap_contract.dart';
 import '../../models/swap_address_book_helpers.dart';
 import '../../models/swap_address_formatting.dart';
 import '../../models/swap_detail_tooltips.dart';
-import '../swap_review_page_content.dart' show swapReviewSlippageToleranceText;
+import '../../models/swap_quote_text.dart';
+import '../swap_review_page_content.dart'
+    show swapReviewMinimumReceiveText, swapReviewSlippageToleranceText;
 import '../swap_amount_text.dart' show compactSwapAmountText;
 import 'mobile_swap_review_header.dart';
 
@@ -159,11 +161,11 @@ class _ReviewCard extends StatelessWidget {
         children: [
           _ReviewRow(
             label: context.l10n.commonSlippageTolerance,
-            value: swapReviewSlippageToleranceText(quote),
+            value: swapReviewSlippageToleranceText(context.l10n, quote),
           ),
           _ReviewRow(
             label: context.l10n.commonGuaranteedMinimum,
-            value: compactSwapAmountText(quote.minimumReceiveText),
+            value: swapReviewMinimumReceiveText(context.l10n, quote),
             helpTooltip: swapMinimumReceiveTooltip(
               context.l10n,
               quote.receiveAsset.symbol,
@@ -175,7 +177,7 @@ class _ReviewCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           _ReviewRow(
             label: context.l10n.commonSwapFee,
-            value: quote.feeLabel,
+            value: swapDetailValueText(context.l10n, quote.feeLabel),
             helpTooltip: swapFeeTooltip(context.l10n),
           ),
         ],

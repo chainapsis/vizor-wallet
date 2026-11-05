@@ -10,6 +10,7 @@ import '../../../../core/widgets/review_info_row.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../swap/domain/swap_quote.dart';
 import '../../../swap/models/swap_address_formatting.dart';
+import '../../../swap/models/swap_quote_text.dart';
 import '../../../swap/widgets/swap_asset_icon.dart';
 
 const _reviewCardRadius = 28.0;
@@ -120,7 +121,8 @@ class _MobilePayReviewContentState extends State<MobilePayReviewContent> {
         const SizedBox(height: AppSpacing.md),
         _QuoteExpiryDivider(
           expired: widget.expired,
-          expiresInText: widget.expiresInText ?? quote.expiryLabel,
+          expiresInText:
+              widget.expiresInText ?? swapQuoteExpiryText(context.l10n, quote),
         ),
         const SizedBox(height: AppSpacing.md),
         Container(

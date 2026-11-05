@@ -656,11 +656,13 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
           kind: payMode
               ? SwapStatusDetailKind.other
               : SwapStatusDetailKind.totalFees,
-          value:
-              intent.totalFeesText ??
-              intent.swapFeeText ??
-              intent.providerRefundInfo?.refundFeeText ??
-              l10n.swapActivityDetailIncluded,
+          value: swapDetailValueText(
+            l10n,
+            intent.totalFeesText ??
+                intent.swapFeeText ??
+                intent.providerRefundInfo?.refundFeeText ??
+                l10n.swapActivityDetailIncluded,
+          ),
           help: true,
           helpTooltip: swapTotalFeesTooltip(l10n),
         ),
@@ -730,15 +732,20 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
       SwapStatusDetailRowData(
         label: l10n.commonSlippageTolerance,
         kind: SwapStatusDetailKind.slippageTolerance,
-        value:
-            intent.slippageToleranceText ??
-            l10n.swapActivityDetailConfiguredQuote,
+        value: swapDetailValueText(
+          l10n,
+          intent.slippageToleranceText ??
+              l10n.swapActivityDetailConfiguredQuote,
+        ),
       ),
     if (!payMode)
       SwapStatusDetailRowData(
         label: l10n.commonGuaranteedMinimum,
         kind: SwapStatusDetailKind.guaranteedMinimum,
-        value: intent.minimumReceiveText ?? intent.receiveEstimate,
+        value: swapDetailValueText(
+          l10n,
+          intent.minimumReceiveText ?? intent.receiveEstimate,
+        ),
         help: true,
         helpTooltip: swapMinimumReceiveTooltip(l10n, receiveSymbol),
       ),
@@ -786,7 +793,10 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
     SwapStatusDetailRowData(
       label: l10n.commonSwapFee,
       kind: SwapStatusDetailKind.swapFee,
-      value: intent.swapFeeText ?? l10n.swapActivityDetailIncludedInRate,
+      value: swapDetailValueText(
+        l10n,
+        intent.swapFeeText ?? l10n.swapActivityDetailIncludedInRate,
+      ),
       help: true,
       helpTooltip: swapFeeTooltip(l10n),
     ),
@@ -827,7 +837,7 @@ List<SwapStatusDetailRowData> _swapActivityPayDetails(
         label: terminal
             ? l10n.swapActivityDetailFees
             : l10n.commonNetworkConversionFees,
-        value: feeText,
+        value: swapDetailValueText(l10n, feeText),
         help: true,
         helpTooltip: terminal
             ? swapTotalFeesTooltip(l10n)

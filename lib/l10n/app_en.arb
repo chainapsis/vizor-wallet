@@ -11803,6 +11803,110 @@
   "@swapDismissBarrierLabel": {
     "description": "Accessibility label of the tappable backdrop behind swap modals on mobile."
   },
+  "swapFailureAmountPrecision": "Amount has too many decimal places.\nUse fewer decimals and try again.",
+  "@swapFailureAmountPrecision": {
+    "description": "Swap or Pay quote error: the amount has more decimal places than the token supports."
+  },
+  "swapFailureAmountTooLowPay": "Amount is too low for this payment.\nTry a larger amount.",
+  "@swapFailureAmountTooLowPay": {
+    "description": "Pay error under the amount field: the payment provider rejected the amount as below its minimum."
+  },
+  "swapFailureAmountTooLowSwap": "Amount is too low for this swap.\nTry a larger amount.",
+  "@swapFailureAmountTooLowSwap": {
+    "description": "Swap error under the amount field: the swap provider rejected the amount as below its minimum."
+  },
+  "swapFailureAssetUnavailable": "This asset is not available for swap right now.\nChoose another asset or try again later.",
+  "@swapFailureAssetUnavailable": {
+    "description": "Swap or Pay error: the provider does not currently offer the chosen asset."
+  },
+  "swapFailureDepositNotIndexed": "Deposit is not indexed yet.\nCheck again in a few minutes.",
+  "@swapFailureDepositNotIndexed": {
+    "description": "Swap status panel: the provider has not seen the deposit transaction yet."
+  },
+  "swapFailureDepositRejected": "Deposit transaction was rejected.\nCheck the address, memo, and tx hash.",
+  "@swapFailureDepositRejected": {
+    "description": "[security] Swap status panel: the provider rejected the submitted deposit transaction. Tells the user which deposit details to check."
+  },
+  "swapFailureDepositSubmitFailed": "Deposit status could not be submitted.\nTry again later.",
+  "@swapFailureDepositSubmitFailed": {
+    "description": "Swap status panel: telling the provider about the deposit transaction failed."
+  },
+  "swapFailureNoQuote": "No quote is available for this route or amount.\nAdjust the amount, slippage, or asset and try again.",
+  "@swapFailureNoQuote": {
+    "description": "Swap or Pay quote error: no provider can fill this route or amount."
+  },
+  "swapFailureQuoteTimeout": "Quote request timed out.\nCheck your connection and try again.",
+  "@swapFailureQuoteTimeout": {
+    "description": "Swap or Pay error: the quote request to the provider timed out."
+  },
+  "swapFailureQuoteUnavailable": "Quote is unavailable right now.\nTry again later.",
+  "@swapFailureQuoteUnavailable": {
+    "description": "Swap or Pay error: requesting a quote failed for an unknown reason."
+  },
+  "swapFailureQuoteUnverified": "Quote response could not be verified.\nTry again later.",
+  "@swapFailureQuoteUnverified": {
+    "description": "Swap or Pay error: the provider's quote did not match the request or was malformed, so the wallet refused it."
+  },
+  "swapFailureRefreshFailed": "Could not refresh swap status.\nTry again later.",
+  "@swapFailureRefreshFailed": {
+    "description": "Swap status panel: checking the swap status with the provider failed."
+  },
+  "swapFailureRequestTimeout": "Request timed out.\nCheck your connection and try again.",
+  "@swapFailureRequestTimeout": {
+    "description": "Swap or Pay error: a request to the swap provider timed out."
+  },
+  "swapFailureResponseUnverified": "Swap response could not be verified.\nTry again later.",
+  "@swapFailureResponseUnverified": {
+    "description": "Swap or Pay error: a provider response was malformed, so the wallet refused it."
+  },
+  "swapFailureRouteRejected": "This route or address was rejected.\nEdit the details and request a new quote.",
+  "@swapFailureRouteRejected": {
+    "description": "Swap or Pay error: the provider rejected the asset route or the destination/refund address."
+  },
+  "swapFailureServiceUnavailable": "Swap service is temporarily unavailable.\nTry again later.",
+  "@swapFailureServiceUnavailable": {
+    "description": "Swap or Pay error: the swap provider is down or refused the request."
+  },
+  "swapFailureStartFailed": "Swap could not be started.\nTry again later.",
+  "@swapFailureStartFailed": {
+    "description": "Swap or Pay error on review: starting the swap with the provider failed."
+  },
+  "swapFailureStatusAssetUnsupported": "Swap status uses an unsupported asset pair.\nDo not resend funds. Try again later.",
+  "@swapFailureStatusAssetUnsupported": {
+    "description": "[security] Swap status panel: the provider reports a status for an asset pair this wallet does not support. Warns the user not to send the deposit again."
+  },
+  "swapFailureStatusAutoRefresh": "We couldn't refresh the latest status.\nWe'll keep trying and update this screen automatically.",
+  "@swapFailureStatusAutoRefresh": {
+    "description": "Swap or Pay status panel: the provider status check failed for a temporary reason; the screen keeps retrying. Two lines: what happened, then what happens next."
+  },
+  "swapFailureStillProcessing": "Swap service is still processing.\nWait a moment and try again.",
+  "@swapFailureStillProcessing": {
+    "description": "Swap or Pay error: the provider asked the wallet to retry later (busy or rate limited)."
+  },
+  "swapFailureTokensUnavailable": "Swap tokens could not be loaded.\nTry again later.",
+  "@swapFailureTokensUnavailable": {
+    "description": "Swap or Pay error: the list of supported tokens failed to load."
+  },
+  "swapFailureTorBlockedPay": "Pay is unavailable over Tor because the service blocked this connection.\nTurn off Tor in Settings to pay.",
+  "@swapFailureTorBlockedPay": {
+    "description": "Pay error: the payment provider blocks requests from Tor exit nodes. Tells the user how to pay anyway."
+  },
+  "swapFailureTorBlockedSwap": "Swap is unavailable over Tor because the service blocked this connection.\nTurn off Tor in Settings to use swap.",
+  "@swapFailureTorBlockedSwap": {
+    "description": "Swap error: the swap provider blocks requests from Tor exit nodes. Tells the user how to swap anyway."
+  },
+  "swapFailureZecDepositFunding": "Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.",
+  "@swapFailureZecDepositFunding": {
+    "description": "Swap error when preparing the ZEC deposit: the spendable balance cannot cover the amount plus the network fee. Max is the button that fills the largest amount."
+  },
+  "swapFailureZecDepositPreflight": "ZEC deposit could not be prepared.\nCheck your balance and try again.",
+  "@swapFailureZecDepositPreflight": {
+    "description": "Swap error: the wallet could not build the ZEC deposit transaction before starting the swap."
+  },
+  "swapFailureZecDepositSendFailed": "ZEC deposit could not be sent.\nTry again later.",
+  "@swapFailureZecDepositSendFailed": {
+    "description": "Swap or Pay error: sending the ZEC deposit transaction failed."
+  },
   "swapKeystoneBroadcastFailed": "Transaction could not be broadcast.",
   "@swapKeystoneBroadcastFailed": {
     "description": "[security] Error in swap Keystone signing when broadcasting failed."
@@ -11907,6 +12011,10 @@
   "@swapLedgerTitleSent": {
     "description": "[security] Title of the swap Ledger recovery modal when the transaction was sent but could not be saved locally."
   },
+  "swapNoticeAccountChanged": "Active account changed. Review the quote again before starting.",
+  "@swapNoticeAccountChanged": {
+    "description": "Swap or Pay review error: the user switched accounts after the quote was made, so the quote must be reviewed again."
+  },
   "swapNoticeAffectedNetworks": "Affected networks",
   "@swapNoticeAffectedNetworks": {
     "description": "Heading of the list of networks affected by an incident."
@@ -11915,9 +12023,33 @@
   "@swapNoticeAllChains": {
     "description": "Network list text meaning the notice applies to every chain."
   },
+  "swapNoticeBroadcastNotStored": "The transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.",
+  "@swapNoticeBroadcastNotStored": {
+    "description": "[security] Swap or Pay deposit notice: the deposit was broadcast but the wallet failed to save it. Warns against sending again until the status is confirmed."
+  },
+  "swapNoticeBroadcastPartial": "Some deposit transactions may have reached the network. Check activity before trying again.",
+  "@swapNoticeBroadcastPartial": {
+    "description": "[security] Swap or Pay deposit notice: only part of a multi-transaction deposit was broadcast. Warns against sending again before checking."
+  },
+  "swapNoticeBroadcastPending": "The deposit was created locally but could not be broadcast. Check activity before trying again.",
+  "@swapNoticeBroadcastPending": {
+    "description": "[security] Swap or Pay deposit notice: the deposit transaction was built but never reached the network. Warns against sending again before checking."
+  },
+  "swapNoticeBroadcastUncertain": "The deposit status is uncertain. Check activity before trying again.",
+  "@swapNoticeBroadcastUncertain": {
+    "description": "[security] Swap or Pay deposit notice: the deposit broadcast ended in a state the wallet cannot classify. Warns against sending again before checking."
+  },
+  "swapNoticeBroadcastUnknown": "The transaction may have reached the network, but confirmation timed out. Check activity before trying again.",
+  "@swapNoticeBroadcastUnknown": {
+    "description": "[security] Swap or Pay deposit notice: the broadcast result is unknown because confirmation timed out. Warns against sending again before checking."
+  },
   "swapNoticeCloseLabel": "Close service notice",
   "@swapNoticeCloseLabel": {
     "description": "Accessibility label of the close button on the NEAR Intents service notice."
+  },
+  "swapNoticeDepositIntentMissing": "ZEC deposit was broadcast, but the saved swap intent was not found. Copy the transaction hash before leaving this screen.",
+  "@swapNoticeDepositIntentMissing": {
+    "description": "[security] Swap or Pay error after sending: the deposit reached the network but the wallet lost its record of the swap. The user must copy the transaction hash to track the funds."
   },
   "swapNoticeExpectedEnd": "Expected end: {time}",
   "@swapNoticeExpectedEnd": {
@@ -11956,6 +12088,10 @@
   "swapNoticePaymentsMayFail": "Payments may not work right now.",
   "@swapNoticePaymentsMayFail": {
     "description": "Service notice line shown in pay mode explaining that payments may fail."
+  },
+  "swapNoticeReceiveAddressUnavailable": "Could not prepare a fresh wallet receive address. Retry after wallet sync or close older pending swaps before requesting a new quote.",
+  "@swapNoticeReceiveAddressUnavailable": {
+    "description": "Swap or Pay quote error: the wallet could not reserve a new receive address for the swap."
   },
   "swapNoticeServiceTitle": "Service notice",
   "@swapNoticeServiceTitle": {
@@ -12022,6 +12158,24 @@
   "swapPoweredByLabel": "Powered by",
   "@swapPoweredByLabel": {
     "description": "Accessibility label of the \"Powered by\" artwork in the NEAR Intents attribution."
+  },
+  "swapQuoteExpiresAt": "Expires {time}",
+  "@swapQuoteExpiresAt": {
+    "description": "Swap and Pay review, value of the row that says how long the quote holds. {time} is a 24-hour local time such as 14:05.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "14:05"
+      }
+    }
+  },
+  "swapQuoteExpiryPending": "Quote expiry pending",
+  "@swapQuoteExpiryPending": {
+    "description": "Swap and Pay review, value of the row that says how long the quote holds, when the provider gave no expiry time."
+  },
+  "swapQuoteRatePending": "Rate pending",
+  "@swapQuoteRatePending": {
+    "description": "Swap review, value of the exchange rate row when the provider quote has no usable rate yet."
   },
   "swapReviewBackPay": "Pay",
   "@swapReviewBackPay": {

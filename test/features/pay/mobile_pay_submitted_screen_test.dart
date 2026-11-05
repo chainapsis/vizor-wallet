@@ -119,7 +119,10 @@ void main() {
         MobileTransactionProgressPhase.pending,
         reason: status,
       );
-      expect(progress.notice, 'Check activity before trying again.');
+      expect(
+        progress.notice,
+        const SwapLiteralMessage('Check activity before trying again.'),
+      );
     }
   });
 
@@ -143,7 +146,7 @@ void main() {
 
     expect(submitting.phase, MobileTransactionProgressPhase.inProgress);
     expect(failed.phase, MobileTransactionProgressPhase.failed);
-    expect(failed.notice, 'Deposit failed.');
+    expect(failed.notice, const SwapLiteralMessage('Deposit failed.'));
     expect(unrelatedFailure.phase, MobileTransactionProgressPhase.inProgress);
   });
 
@@ -388,7 +391,7 @@ SwapState _state({
     intents: [?intent],
     selectedIntentId: selectedIntentId,
     depositSubmitting: depositSubmitting,
-    statusError: statusError,
+    statusError: statusError == null ? null : SwapLiteralMessage(statusError),
     payMode: true,
   );
 }
@@ -416,8 +419,10 @@ SwapIntent _intent({
     originChainTxHash: originChainTxHash,
     providerRefundInfo: providerRefundInfo,
     broadcastStatus: broadcastStatus,
-    broadcastNotice: broadcastNotice,
-    statusError: statusError,
+    broadcastNotice: broadcastNotice == null
+        ? null
+        : SwapLiteralMessage(broadcastNotice),
+    statusError: statusError == null ? null : SwapLiteralMessage(statusError),
     payMode: true,
   );
 }

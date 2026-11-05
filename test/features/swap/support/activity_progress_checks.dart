@@ -100,9 +100,7 @@ void runActivityProgressChecks({required bool mobile}) {
       await tester.pumpAndSettle();
       expect(find.text(progressLabel), findsNothing);
       expect(
-        find.text(
-          pay || mobile ? 'Completed' : SwapIntentStatus.complete.label,
-        ),
+        find.text(pay || mobile ? 'Completed' : 'Complete'),
         findsOneWidget,
       );
       expect(find.text('Tx ID'), findsOneWidget);

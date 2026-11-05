@@ -9187,6 +9187,110 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapDismissBarrierLabel => 'Dismiss';
 
   @override
+  String get swapFailureAmountPrecision =>
+      'Amount has too many decimal places.\nUse fewer decimals and try again.';
+
+  @override
+  String get swapFailureAmountTooLowPay =>
+      'Amount is too low for this payment.\nTry a larger amount.';
+
+  @override
+  String get swapFailureAmountTooLowSwap =>
+      'Amount is too low for this swap.\nTry a larger amount.';
+
+  @override
+  String get swapFailureAssetUnavailable =>
+      'This asset is not available for swap right now.\nChoose another asset or try again later.';
+
+  @override
+  String get swapFailureDepositNotIndexed =>
+      'Deposit is not indexed yet.\nCheck again in a few minutes.';
+
+  @override
+  String get swapFailureDepositRejected =>
+      'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.';
+
+  @override
+  String get swapFailureDepositSubmitFailed =>
+      'Deposit status could not be submitted.\nTry again later.';
+
+  @override
+  String get swapFailureNoQuote =>
+      'No quote is available for this route or amount.\nAdjust the amount, slippage, or asset and try again.';
+
+  @override
+  String get swapFailureQuoteTimeout =>
+      'Quote request timed out.\nCheck your connection and try again.';
+
+  @override
+  String get swapFailureQuoteUnavailable =>
+      'Quote is unavailable right now.\nTry again later.';
+
+  @override
+  String get swapFailureQuoteUnverified =>
+      'Quote response could not be verified.\nTry again later.';
+
+  @override
+  String get swapFailureRefreshFailed =>
+      'Could not refresh swap status.\nTry again later.';
+
+  @override
+  String get swapFailureRequestTimeout =>
+      'Request timed out.\nCheck your connection and try again.';
+
+  @override
+  String get swapFailureResponseUnverified =>
+      'Swap response could not be verified.\nTry again later.';
+
+  @override
+  String get swapFailureRouteRejected =>
+      'This route or address was rejected.\nEdit the details and request a new quote.';
+
+  @override
+  String get swapFailureServiceUnavailable =>
+      'Swap service is temporarily unavailable.\nTry again later.';
+
+  @override
+  String get swapFailureStartFailed =>
+      'Swap could not be started.\nTry again later.';
+
+  @override
+  String get swapFailureStatusAssetUnsupported =>
+      'Swap status uses an unsupported asset pair.\nDo not resend funds. Try again later.';
+
+  @override
+  String get swapFailureStatusAutoRefresh =>
+      'We couldn\'t refresh the latest status.\nWe\'ll keep trying and update this screen automatically.';
+
+  @override
+  String get swapFailureStillProcessing =>
+      'Swap service is still processing.\nWait a moment and try again.';
+
+  @override
+  String get swapFailureTokensUnavailable =>
+      'Swap tokens could not be loaded.\nTry again later.';
+
+  @override
+  String get swapFailureTorBlockedPay =>
+      'Pay is unavailable over Tor because the service blocked this connection.\nTurn off Tor in Settings to pay.';
+
+  @override
+  String get swapFailureTorBlockedSwap =>
+      'Swap is unavailable over Tor because the service blocked this connection.\nTurn off Tor in Settings to use swap.';
+
+  @override
+  String get swapFailureZecDepositFunding =>
+      'Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.';
+
+  @override
+  String get swapFailureZecDepositPreflight =>
+      'ZEC deposit could not be prepared.\nCheck your balance and try again.';
+
+  @override
+  String get swapFailureZecDepositSendFailed =>
+      'ZEC deposit could not be sent.\nTry again later.';
+
+  @override
   String get swapKeystoneBroadcastFailed =>
       'Transaction could not be broadcast.';
 
@@ -9277,13 +9381,41 @@ class AppLocalizationsEn extends AppLocalizations {
   String get swapLedgerTitleSent => 'Transaction sent';
 
   @override
+  String get swapNoticeAccountChanged =>
+      'Active account changed. Review the quote again before starting.';
+
+  @override
   String get swapNoticeAffectedNetworks => 'Affected networks';
 
   @override
   String get swapNoticeAllChains => 'All chains';
 
   @override
+  String get swapNoticeBroadcastNotStored =>
+      'The transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
+
+  @override
+  String get swapNoticeBroadcastPartial =>
+      'Some deposit transactions may have reached the network. Check activity before trying again.';
+
+  @override
+  String get swapNoticeBroadcastPending =>
+      'The deposit was created locally but could not be broadcast. Check activity before trying again.';
+
+  @override
+  String get swapNoticeBroadcastUncertain =>
+      'The deposit status is uncertain. Check activity before trying again.';
+
+  @override
+  String get swapNoticeBroadcastUnknown =>
+      'The transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
+
+  @override
   String get swapNoticeCloseLabel => 'Close service notice';
+
+  @override
+  String get swapNoticeDepositIntentMissing =>
+      'ZEC deposit was broadcast, but the saved swap intent was not found. Copy the transaction hash before leaving this screen.';
 
   @override
   String swapNoticeExpectedEnd(String time) {
@@ -9309,6 +9441,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapNoticePaymentsMayFail => 'Payments may not work right now.';
+
+  @override
+  String get swapNoticeReceiveAddressUnavailable =>
+      'Could not prepare a fresh wallet receive address. Retry after wallet sync or close older pending swaps before requesting a new quote.';
 
   @override
   String get swapNoticeServiceTitle => 'Service notice';
@@ -9357,6 +9493,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get swapPoweredByLabel => 'Powered by';
+
+  @override
+  String swapQuoteExpiresAt(String time) {
+    return 'Expires $time';
+  }
+
+  @override
+  String get swapQuoteExpiryPending => 'Quote expiry pending';
+
+  @override
+  String get swapQuoteRatePending => 'Rate pending';
 
   @override
   String get swapReviewBackPay => 'Pay';

@@ -5,6 +5,8 @@ import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_in
 import 'package:zcash_wallet/src/features/swap/providers/swap_failure_policy.dart';
 import 'package:zcash_wallet/src/core/zcash/network_upgrade_hold.dart';
 
+import '../../support/test_l10n.dart';
+
 void main() {
   test('credential failures are hidden as temporary service issues', () {
     const error = OneClickApiException('unauthorized', statusCode: 401);
@@ -14,7 +16,7 @@ void main() {
       SwapFailureCategory.serviceUnavailable,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'Swap service is temporarily unavailable.\nTry again later.',
     );
   });
@@ -41,7 +43,7 @@ void main() {
         SwapFailureOperation.tokenList,
         error,
         torEnabled: true,
-      ),
+      ).text(testL10n),
       'Swap is unavailable over Tor because the service blocked this '
       'connection.\nTurn off Tor in Settings to use swap.',
     );
@@ -62,7 +64,7 @@ void main() {
         error,
         surface: SwapFailureSurface.pay,
         torEnabled: true,
-      ),
+      ).text(testL10n),
       'Pay is unavailable over Tor because the service blocked this '
       'connection.\nTurn off Tor in Settings to pay.',
     );
@@ -93,7 +95,7 @@ void main() {
       SwapFailureCategory.noQuoteOrLiquidity,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'No quote is available for this route or amount.\n'
       'Adjust the amount, slippage, or asset and try again.',
     );
@@ -112,7 +114,7 @@ void main() {
       SwapFailureCategory.amountTooLow,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'Amount is too low for this swap.\nTry a larger amount.',
     );
   });
@@ -130,7 +132,7 @@ void main() {
         SwapFailureOperation.quote,
         error,
         surface: SwapFailureSurface.pay,
-      ),
+      ).text(testL10n),
       'Amount is too low for this payment.\nTry a larger amount.',
     );
   });
@@ -147,7 +149,7 @@ void main() {
       SwapFailureCategory.amountTooLow,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'Amount is too low for this swap.\nTry a larger amount.',
     );
   });
@@ -164,7 +166,7 @@ void main() {
       SwapFailureCategory.noQuoteOrLiquidity,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'No quote is available for this route or amount.\n'
       'Adjust the amount, slippage, or asset and try again.',
     );
@@ -182,7 +184,10 @@ void main() {
       SwapFailureCategory.depositNotFound,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.refreshStatus, error),
+      swapFailureMessage(
+        SwapFailureOperation.refreshStatus,
+        error,
+      ).text(testL10n),
       'Deposit is not indexed yet.\nCheck again in a few minutes.',
     );
   });
@@ -200,7 +205,10 @@ void main() {
       SwapFailureCategory.depositRejected,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.submitDeposit, error),
+      swapFailureMessage(
+        SwapFailureOperation.submitDeposit,
+        error,
+      ).text(testL10n),
       'Deposit transaction was rejected.\n'
       'Check the address, memo, and tx hash.',
     );
@@ -214,7 +222,7 @@ void main() {
       SwapFailureCategory.invalidRouteOrAddress,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'This route or address was rejected.\n'
       'Edit the details and request a new quote.',
     );
@@ -231,7 +239,7 @@ void main() {
       SwapFailureCategory.unsupportedAsset,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'This asset is not available for swap right now.\n'
       'Choose another asset or try again later.',
     );
@@ -248,7 +256,10 @@ void main() {
       SwapFailureCategory.unsupportedAsset,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.refreshStatus, error),
+      swapFailureMessage(
+        SwapFailureOperation.refreshStatus,
+        error,
+      ).text(testL10n),
       'Swap status uses an unsupported asset pair.\n'
       'Do not resend funds. Try again later.',
     );
@@ -262,7 +273,7 @@ void main() {
       SwapFailureCategory.amountPrecision,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'Amount has too many decimal places.\n'
       'Use fewer decimals and try again.',
     );
@@ -279,7 +290,7 @@ void main() {
       SwapFailureCategory.unverifiedResponse,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.quote, error),
+      swapFailureMessage(SwapFailureOperation.quote, error).text(testL10n),
       'Quote response could not be verified.\nTry again later.',
     );
   });
@@ -292,7 +303,10 @@ void main() {
       SwapFailureCategory.depositNotFound,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.refreshStatus, error),
+      swapFailureMessage(
+        SwapFailureOperation.refreshStatus,
+        error,
+      ).text(testL10n),
       'Deposit is not indexed yet.\nCheck again in a few minutes.',
     );
   });
@@ -305,7 +319,10 @@ void main() {
       SwapFailureCategory.depositRejected,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.submitDeposit, error),
+      swapFailureMessage(
+        SwapFailureOperation.submitDeposit,
+        error,
+      ).text(testL10n),
       'Deposit transaction was rejected.\n'
       'Check the address, memo, and tx hash.',
     );
@@ -319,7 +336,10 @@ void main() {
       SwapFailureCategory.serviceUnavailable,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.submitDeposit, error),
+      swapFailureMessage(
+        SwapFailureOperation.submitDeposit,
+        error,
+      ).text(testL10n),
       "We couldn't refresh the latest status.\n"
       "We'll keep trying and update this screen automatically.",
     );
@@ -333,7 +353,10 @@ void main() {
       SwapFailureCategory.retryLater,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.submitDeposit, error),
+      swapFailureMessage(
+        SwapFailureOperation.submitDeposit,
+        error,
+      ).text(testL10n),
       "We couldn't refresh the latest status.\n"
       "We'll keep trying and update this screen automatically.",
     );
@@ -343,11 +366,11 @@ void main() {
     final quoteMessage = swapFailureMessage(
       SwapFailureOperation.quote,
       TimeoutException('slow provider'),
-    );
+    ).text(testL10n);
     final statusMessage = swapFailureMessage(
       SwapFailureOperation.refreshStatus,
       TimeoutException('slow provider'),
-    );
+    ).text(testL10n);
 
     expect(
       swapFailureCategory(
@@ -378,7 +401,10 @@ void main() {
       SwapFailureCategory.zecDepositFunding,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      swapFailureMessage(
+        SwapFailureOperation.sendZecDeposit,
+        error,
+      ).text(testL10n),
       'Not enough spendable ZEC to cover this swap and its network fee.\n'
       'Try a smaller amount or use Max.',
     );
@@ -391,7 +417,10 @@ void main() {
     );
 
     expect(
-      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      swapFailureMessage(
+        SwapFailureOperation.sendZecDeposit,
+        error,
+      ).text(testL10n),
       kNetworkUpgradeHoldMessage,
     );
   });
@@ -404,7 +433,10 @@ void main() {
       SwapFailureCategory.walletPreflight,
     );
     expect(
-      swapFailureMessage(SwapFailureOperation.sendZecDeposit, error),
+      swapFailureMessage(
+        SwapFailureOperation.sendZecDeposit,
+        error,
+      ).text(testL10n),
       'ZEC deposit could not be prepared.\nCheck your balance and try again.',
     );
   });

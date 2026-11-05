@@ -351,7 +351,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       enabled: swapState.externalAssetIsAvailable && !addressBookInitialLoading,
       quoteError:
           swapState.externalAssetSupportError(context.l10n) ??
-          swapState.quoteError,
+          swapState.quoteError?.text(context.l10n),
       onSelectRecipient: () => unawaited(_reviewRecipient(effectiveSelection)),
       onAddToContacts: network == null
           ? () {}
@@ -477,7 +477,9 @@ class _PayScreenState extends ConsumerState<PayScreen> {
                             starting:
                                 _startingIntent || swapState.startSubmitting,
                             startBlockedReason: startBlockedReason,
-                            startError: swapState.statusError,
+                            startError: swapState.statusError?.text(
+                              context.l10n,
+                            ),
                             onShowFullAddress: () => setState(
                               () => _payModal = _PayModalSurface.verifyAddress,
                             ),

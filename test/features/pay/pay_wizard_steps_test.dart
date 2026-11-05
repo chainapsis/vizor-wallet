@@ -520,9 +520,11 @@ void main() {
           Center(
             child: PayAmountAction(
               state: _amountState.copyWith(
-                supportedAssetsError:
-                    'Pay is unavailable over Tor because the service blocked '
-                    'this connection.\nTurn off Tor in Settings to pay.',
+                supportedAssetsError: const SwapFailureMessage(
+                  SwapFailureOperation.tokenList,
+                  SwapFailureCategory.torBlocked,
+                  surface: SwapFailureSurface.pay,
+                ),
               ),
               onContinue: () {},
             ),
@@ -550,9 +552,10 @@ void main() {
         _harness(
           PayAmountStep(
             state: _amountState.copyWith(
-              quoteError:
-                  'This route or address was rejected.\n'
-                  'Edit the details and request a new quote.',
+              quoteError: const SwapFailureMessage(
+                SwapFailureOperation.quote,
+                SwapFailureCategory.invalidRouteOrAddress,
+              ),
             ),
             controller: controller,
             focusNode: focusNode,

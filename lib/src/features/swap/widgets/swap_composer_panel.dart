@@ -132,11 +132,11 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final receiveInputIsFiat =
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final targetDirection = state.direction.toggled;
-    final rateText = _rateTextForState(state);
+    final rateText = _rateTextForState(context.l10n, state);
     final quoteError =
         state.quoteAmountPrecisionError(context.l10n) ??
         state.externalAssetSupportError(context.l10n) ??
-        state.quoteError;
+        state.quoteError?.text(context.l10n);
     final zecAmountOverAvailable = _zecAmountOverAvailable(
       state,
       widget.zecAvailableZatoshi,
@@ -181,7 +181,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
             ? _MaxAmountTrigger(
                 availableText: widget.zecAvailableText,
                 loading: state.maxAmountLoading,
-                errorText: state.maxAmountError,
+                errorText: state.maxAmountError?.text(context.l10n),
                 balanceExceeded: zecAmountOverAvailable,
                 onTap: widget.onUseMaxZecAmount,
               )
@@ -781,9 +781,9 @@ class _MaxAmountTrigger extends StatelessWidget {
   }
 }
 
-String _rateTextForState(SwapState state) {
+String _rateTextForState(AppLocalizations l10n, SwapState state) {
   final quote = state.quote;
-  if (quote != null) return quote.rateText;
+  if (quote != null) return swapDetailValueText(l10n, quote.rateText);
 
   final externalPerZec =
       state.indicativeExternalPerZec[state.externalAsset] ??

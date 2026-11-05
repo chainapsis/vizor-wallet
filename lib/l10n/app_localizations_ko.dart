@@ -9011,6 +9011,110 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapDismissBarrierLabel => '닫⁠기';
 
   @override
+  String get swapFailureAmountPrecision =>
+      '금⁠액⁠의 소⁠수⁠점 자⁠릿⁠수⁠가 너⁠무 많⁠아⁠요.\n소⁠수⁠점 자⁠릿⁠수⁠를 줄⁠여 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureAmountTooLowPay =>
+      '이 결⁠제⁠에⁠는 금⁠액⁠이 너⁠무 적⁠어⁠요.\n더 큰 금⁠액⁠으⁠로 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureAmountTooLowSwap =>
+      '이 스⁠왑⁠에⁠는 금⁠액⁠이 너⁠무 적⁠어⁠요.\n더 큰 금⁠액⁠으⁠로 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureAssetUnavailable =>
+      '지⁠금⁠은 이 자⁠산⁠을 스⁠왑⁠할 수 없⁠어⁠요.\n다⁠른 자⁠산⁠을 선⁠택⁠하⁠거⁠나 나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureDepositNotIndexed =>
+      '아⁠직 입⁠금⁠이 확⁠인⁠되⁠지 않⁠았⁠어⁠요.\n몇 분 후⁠에 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureDepositRejected =>
+      '입⁠금 거⁠래⁠가 거⁠부⁠됐⁠어⁠요.\n주⁠소, 메⁠모, 거⁠래 해⁠시⁠를 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureDepositSubmitFailed =>
+      '입⁠금 상⁠태⁠를 제⁠출⁠하⁠지 못⁠했⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureNoQuote =>
+      '이 경⁠로⁠나 금⁠액⁠에 사⁠용⁠할 수 있⁠는 견⁠적⁠이 없⁠어⁠요.\n금⁠액, 슬⁠리⁠피⁠지 또⁠는 자⁠산⁠을 조⁠정⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureQuoteTimeout =>
+      '견⁠적 요⁠청 시⁠간⁠이 초⁠과⁠됐⁠어⁠요.\n연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureQuoteUnavailable =>
+      '지⁠금⁠은 견⁠적⁠을 받⁠을 수 없⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureQuoteUnverified =>
+      '견⁠적 응⁠답⁠을 검⁠증⁠하⁠지 못⁠했⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureRefreshFailed =>
+      '스⁠왑 상⁠태⁠를 새⁠로⁠고⁠침⁠하⁠지 못⁠했⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureRequestTimeout =>
+      '요⁠청 시⁠간⁠이 초⁠과⁠됐⁠어⁠요.\n연⁠결⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureResponseUnverified =>
+      '스⁠왑 응⁠답⁠을 검⁠증⁠하⁠지 못⁠했⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureRouteRejected =>
+      '이 경⁠로 또⁠는 주⁠소⁠가 거⁠부⁠됐⁠어⁠요.\n세⁠부 정⁠보⁠를 수⁠정⁠하⁠고 새 견⁠적⁠을 요⁠청⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureServiceUnavailable =>
+      '스⁠왑 서⁠비⁠스⁠를 일⁠시⁠적⁠으⁠로 사⁠용⁠할 수 없⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureStartFailed =>
+      '스⁠왑⁠을 시⁠작⁠하⁠지 못⁠했⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureStatusAssetUnsupported =>
+      '스⁠왑 상⁠태⁠에 지⁠원⁠되⁠지 않⁠는 자⁠산 쌍⁠이 있⁠어⁠요.\n자⁠금⁠을 다⁠시 보⁠내⁠지 마⁠세⁠요. 나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureStatusAutoRefresh =>
+      '최⁠신 상⁠태⁠를 새⁠로⁠고⁠침⁠하⁠지 못⁠했⁠어⁠요.\n계⁠속 시⁠도⁠하⁠고 이 화⁠면⁠을 자⁠동⁠으⁠로 업⁠데⁠이⁠트⁠할⁠게⁠요.';
+
+  @override
+  String get swapFailureStillProcessing =>
+      '스⁠왑 서⁠비⁠스⁠가 아⁠직 처⁠리 중⁠이⁠에⁠요.\n잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureTokensUnavailable =>
+      '스⁠왑 토⁠큰⁠을 불⁠러⁠오⁠지 못⁠했⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureTorBlockedPay =>
+      '서⁠비⁠스⁠가 이 연⁠결⁠을 차⁠단⁠해⁠서 Tor⁠로⁠는 결⁠제⁠할 수 없⁠어⁠요.\n결⁠제⁠하⁠려⁠면 설⁠정⁠에⁠서 Tor⁠를 꺼 주⁠세⁠요.';
+
+  @override
+  String get swapFailureTorBlockedSwap =>
+      '서⁠비⁠스⁠가 이 연⁠결⁠을 차⁠단⁠해⁠서 Tor⁠로⁠는 스⁠왑⁠할 수 없⁠어⁠요.\n스⁠왑⁠하⁠려⁠면 설⁠정⁠에⁠서 Tor⁠를 꺼 주⁠세⁠요.';
+
+  @override
+  String get swapFailureZecDepositFunding =>
+      '이 스⁠왑⁠과 네⁠트⁠워⁠크 수⁠수⁠료⁠를 낼 수 있⁠는 ZEC⁠가 부⁠족⁠해⁠요.\n더 적⁠은 금⁠액⁠으⁠로 시⁠도⁠하⁠거⁠나 최⁠대⁠를 사⁠용⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureZecDepositPreflight =>
+      'ZEC 입⁠금⁠을 준⁠비⁠하⁠지 못⁠했⁠어⁠요.\n잔⁠액⁠을 확⁠인⁠하⁠고 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapFailureZecDepositSendFailed =>
+      'ZEC 입⁠금⁠을 보⁠내⁠지 못⁠했⁠어⁠요.\n나⁠중⁠에 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
   String get swapKeystoneBroadcastFailed => '거⁠래⁠를 전⁠송⁠하⁠지 못⁠했⁠어⁠요.';
 
   @override
@@ -9096,13 +9200,41 @@ class AppLocalizationsKo extends AppLocalizations {
   String get swapLedgerTitleSent => '거⁠래⁠를 보⁠냈⁠어⁠요';
 
   @override
+  String get swapNoticeAccountChanged =>
+      '활⁠성 계⁠정⁠이 바⁠뀌⁠었⁠어⁠요. 시⁠작⁠하⁠기 전⁠에 견⁠적⁠을 다⁠시 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
   String get swapNoticeAffectedNetworks => '영⁠향⁠받⁠는 네⁠트⁠워⁠크';
 
   @override
   String get swapNoticeAllChains => '모⁠든 체⁠인';
 
   @override
+  String get swapNoticeBroadcastNotStored =>
+      '거⁠래⁠가 네⁠트⁠워⁠크⁠에 전⁠달⁠됐⁠지⁠만 Vizor⁠가 기⁠기⁠에 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 동⁠기⁠화⁠나 블⁠록 탐⁠색⁠기⁠에⁠서 최⁠신 상⁠태⁠를 확⁠인⁠하⁠기 전⁠에⁠는 다⁠시 시⁠도⁠하⁠지 마⁠세⁠요.';
+
+  @override
+  String get swapNoticeBroadcastPartial =>
+      '일⁠부 입⁠금 거⁠래⁠가 네⁠트⁠워⁠크⁠에 전⁠달⁠됐⁠을 수 있⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동⁠을 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapNoticeBroadcastPending =>
+      '입⁠금⁠이 기⁠기⁠에⁠서 생⁠성⁠됐⁠지⁠만 전⁠송⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동⁠을 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapNoticeBroadcastUncertain =>
+      '입⁠금 상⁠태⁠가 확⁠실⁠하⁠지 않⁠아⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동⁠을 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get swapNoticeBroadcastUnknown =>
+      '거⁠래⁠가 네⁠트⁠워⁠크⁠에 전⁠달⁠됐⁠을 수 있⁠지⁠만 확⁠인 시⁠간⁠이 초⁠과⁠됐⁠어⁠요. 다⁠시 시⁠도⁠하⁠기 전⁠에 활⁠동⁠을 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
   String get swapNoticeCloseLabel => '서⁠비⁠스 안⁠내 닫⁠기';
+
+  @override
+  String get swapNoticeDepositIntentMissing =>
+      'ZEC 입⁠금⁠이 전⁠송⁠됐⁠지⁠만 저⁠장⁠된 스⁠왑 정⁠보⁠를 찾⁠지 못⁠했⁠어⁠요. 이 화⁠면⁠을 나⁠가⁠기 전⁠에 거⁠래 해⁠시⁠를 복⁠사⁠해 주⁠세⁠요.';
 
   @override
   String swapNoticeExpectedEnd(String time) {
@@ -9128,6 +9260,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapNoticePaymentsMayFail => '지⁠금⁠은 결⁠제⁠가 되⁠지 않⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get swapNoticeReceiveAddressUnavailable =>
+      '새 지⁠갑 받⁠기 주⁠소⁠를 준⁠비⁠하⁠지 못⁠했⁠어⁠요. 지⁠갑 동⁠기⁠화 후 다⁠시 시⁠도⁠하⁠거⁠나, 새 견⁠적⁠을 요⁠청⁠하⁠기 전⁠에 대⁠기 중⁠인 이⁠전 스⁠왑⁠을 닫⁠아 주⁠세⁠요.';
 
   @override
   String get swapNoticeServiceTitle => '서⁠비⁠스 안⁠내';
@@ -9176,6 +9312,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get swapPoweredByLabel => '제⁠공:';
+
+  @override
+  String swapQuoteExpiresAt(String time) {
+    return '$time⁠에 만⁠료';
+  }
+
+  @override
+  String get swapQuoteExpiryPending => '견⁠적 만⁠료 시⁠간 확⁠인 중';
+
+  @override
+  String get swapQuoteRatePending => '환⁠율 확⁠인 중';
 
   @override
   String get swapReviewBackPay => '결⁠제';

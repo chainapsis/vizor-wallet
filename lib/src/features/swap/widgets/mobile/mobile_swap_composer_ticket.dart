@@ -168,7 +168,7 @@ class _MobileSwapComposerTicketState extends State<MobileSwapComposerTicket> {
           ? _MaxAmountTrigger(
               availableText: widget.zecAvailableText,
               loading: state.maxAmountLoading,
-              errorText: state.maxAmountError,
+              errorText: state.maxAmountError?.text(context.l10n),
               onTap: widget.onUseMaxZecAmount,
             )
           : null,

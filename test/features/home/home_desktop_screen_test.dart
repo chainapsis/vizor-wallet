@@ -1909,7 +1909,7 @@ SwapIntentRecord _swapActivityRecord({
     sellAmountText: '1.0000 ZEC',
     receiveEstimateText: '70.170000 USDC',
     status: status,
-    nextAction: status.label,
+    nextAction: status.name,
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: 't1home-deposit',

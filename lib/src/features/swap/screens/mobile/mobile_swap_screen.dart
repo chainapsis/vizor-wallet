@@ -363,7 +363,7 @@ class _MobileSwapScreenState extends ConsumerState<MobileSwapScreen> {
     final quoteError =
         swapState.quoteAmountPrecisionError(context.l10n) ??
         swapState.externalAssetSupportError(context.l10n) ??
-        swapState.quoteError;
+        swapState.quoteError?.text(context.l10n);
 
     return NearIntentsServiceNoticeHost(
       direction: swapState.direction,

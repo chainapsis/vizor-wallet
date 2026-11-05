@@ -10,6 +10,7 @@ import '../../address_book/models/address_book_contact.dart';
 import '../../swap/domain/swap_asset.dart';
 import '../../swap/domain/swap_quote.dart';
 import '../../swap/models/swap_address_formatting.dart';
+import '../../swap/models/swap_quote_text.dart';
 import '../../swap/widgets/swap_asset_icon.dart';
 
 /// Step 3 "Review Payment" of the desktop pay wizard — Figma 6245:108761.
@@ -148,7 +149,9 @@ class PayReviewStep extends StatelessWidget {
                           ),
                           if (!expired)
                             TextSpan(
-                              text: expiresInText ?? quote.expiryLabel,
+                              text:
+                                  expiresInText ??
+                                  swapQuoteExpiryText(context.l10n, quote),
                               style: AppTypography.labelLarge.copyWith(
                                 color: colors.text.accent,
                               ),

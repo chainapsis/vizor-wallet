@@ -43,11 +43,9 @@ class SwapZecStagingAddressUnavailableException implements Exception {
 
   final Object cause;
 
+  // The quote error shows SwapNoticeKind.receiveAddressUnavailable instead.
   @override
-  String toString() {
-    return 'Could not prepare a fresh wallet receive address. '
-        'Retry after wallet sync or close older pending swaps before requesting a new quote.';
-  }
+  String toString() => 'SwapZecStagingAddressUnavailableException: $cause';
 }
 
 class SwapZecStagingAddressService {

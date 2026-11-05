@@ -15372,6 +15372,162 @@ abstract class AppLocalizations {
   /// **'Dismiss'**
   String get swapDismissBarrierLabel;
 
+  /// Swap or Pay quote error: the amount has more decimal places than the token supports.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount has too many decimal places.\nUse fewer decimals and try again.'**
+  String get swapFailureAmountPrecision;
+
+  /// Pay error under the amount field: the payment provider rejected the amount as below its minimum.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount is too low for this payment.\nTry a larger amount.'**
+  String get swapFailureAmountTooLowPay;
+
+  /// Swap error under the amount field: the swap provider rejected the amount as below its minimum.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount is too low for this swap.\nTry a larger amount.'**
+  String get swapFailureAmountTooLowSwap;
+
+  /// Swap or Pay error: the provider does not currently offer the chosen asset.
+  ///
+  /// In en, this message translates to:
+  /// **'This asset is not available for swap right now.\nChoose another asset or try again later.'**
+  String get swapFailureAssetUnavailable;
+
+  /// Swap status panel: the provider has not seen the deposit transaction yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit is not indexed yet.\nCheck again in a few minutes.'**
+  String get swapFailureDepositNotIndexed;
+
+  /// [security] Swap status panel: the provider rejected the submitted deposit transaction. Tells the user which deposit details to check.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.'**
+  String get swapFailureDepositRejected;
+
+  /// Swap status panel: telling the provider about the deposit transaction failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit status could not be submitted.\nTry again later.'**
+  String get swapFailureDepositSubmitFailed;
+
+  /// Swap or Pay quote error: no provider can fill this route or amount.
+  ///
+  /// In en, this message translates to:
+  /// **'No quote is available for this route or amount.\nAdjust the amount, slippage, or asset and try again.'**
+  String get swapFailureNoQuote;
+
+  /// Swap or Pay error: the quote request to the provider timed out.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote request timed out.\nCheck your connection and try again.'**
+  String get swapFailureQuoteTimeout;
+
+  /// Swap or Pay error: requesting a quote failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote is unavailable right now.\nTry again later.'**
+  String get swapFailureQuoteUnavailable;
+
+  /// Swap or Pay error: the provider's quote did not match the request or was malformed, so the wallet refused it.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote response could not be verified.\nTry again later.'**
+  String get swapFailureQuoteUnverified;
+
+  /// Swap status panel: checking the swap status with the provider failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not refresh swap status.\nTry again later.'**
+  String get swapFailureRefreshFailed;
+
+  /// Swap or Pay error: a request to the swap provider timed out.
+  ///
+  /// In en, this message translates to:
+  /// **'Request timed out.\nCheck your connection and try again.'**
+  String get swapFailureRequestTimeout;
+
+  /// Swap or Pay error: a provider response was malformed, so the wallet refused it.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap response could not be verified.\nTry again later.'**
+  String get swapFailureResponseUnverified;
+
+  /// Swap or Pay error: the provider rejected the asset route or the destination/refund address.
+  ///
+  /// In en, this message translates to:
+  /// **'This route or address was rejected.\nEdit the details and request a new quote.'**
+  String get swapFailureRouteRejected;
+
+  /// Swap or Pay error: the swap provider is down or refused the request.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap service is temporarily unavailable.\nTry again later.'**
+  String get swapFailureServiceUnavailable;
+
+  /// Swap or Pay error on review: starting the swap with the provider failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap could not be started.\nTry again later.'**
+  String get swapFailureStartFailed;
+
+  /// [security] Swap status panel: the provider reports a status for an asset pair this wallet does not support. Warns the user not to send the deposit again.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap status uses an unsupported asset pair.\nDo not resend funds. Try again later.'**
+  String get swapFailureStatusAssetUnsupported;
+
+  /// Swap or Pay status panel: the provider status check failed for a temporary reason; the screen keeps retrying. Two lines: what happened, then what happens next.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t refresh the latest status.\nWe\'ll keep trying and update this screen automatically.'**
+  String get swapFailureStatusAutoRefresh;
+
+  /// Swap or Pay error: the provider asked the wallet to retry later (busy or rate limited).
+  ///
+  /// In en, this message translates to:
+  /// **'Swap service is still processing.\nWait a moment and try again.'**
+  String get swapFailureStillProcessing;
+
+  /// Swap or Pay error: the list of supported tokens failed to load.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap tokens could not be loaded.\nTry again later.'**
+  String get swapFailureTokensUnavailable;
+
+  /// Pay error: the payment provider blocks requests from Tor exit nodes. Tells the user how to pay anyway.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay is unavailable over Tor because the service blocked this connection.\nTurn off Tor in Settings to pay.'**
+  String get swapFailureTorBlockedPay;
+
+  /// Swap error: the swap provider blocks requests from Tor exit nodes. Tells the user how to swap anyway.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap is unavailable over Tor because the service blocked this connection.\nTurn off Tor in Settings to use swap.'**
+  String get swapFailureTorBlockedSwap;
+
+  /// Swap error when preparing the ZEC deposit: the spendable balance cannot cover the amount plus the network fee. Max is the button that fills the largest amount.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enough spendable ZEC to cover this swap and its network fee.\nTry a smaller amount or use Max.'**
+  String get swapFailureZecDepositFunding;
+
+  /// Swap error: the wallet could not build the ZEC deposit transaction before starting the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit could not be prepared.\nCheck your balance and try again.'**
+  String get swapFailureZecDepositPreflight;
+
+  /// Swap or Pay error: sending the ZEC deposit transaction failed.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit could not be sent.\nTry again later.'**
+  String get swapFailureZecDepositSendFailed;
+
   /// [security] Error in swap Keystone signing when broadcasting failed.
   ///
   /// In en, this message translates to:
@@ -15528,6 +15684,12 @@ abstract class AppLocalizations {
   /// **'Transaction sent'**
   String get swapLedgerTitleSent;
 
+  /// Swap or Pay review error: the user switched accounts after the quote was made, so the quote must be reviewed again.
+  ///
+  /// In en, this message translates to:
+  /// **'Active account changed. Review the quote again before starting.'**
+  String get swapNoticeAccountChanged;
+
   /// Heading of the list of networks affected by an incident.
   ///
   /// In en, this message translates to:
@@ -15540,11 +15702,47 @@ abstract class AppLocalizations {
   /// **'All chains'**
   String get swapNoticeAllChains;
 
+  /// [security] Swap or Pay deposit notice: the deposit was broadcast but the wallet failed to save it. Warns against sending again until the status is confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.'**
+  String get swapNoticeBroadcastNotStored;
+
+  /// [security] Swap or Pay deposit notice: only part of a multi-transaction deposit was broadcast. Warns against sending again before checking.
+  ///
+  /// In en, this message translates to:
+  /// **'Some deposit transactions may have reached the network. Check activity before trying again.'**
+  String get swapNoticeBroadcastPartial;
+
+  /// [security] Swap or Pay deposit notice: the deposit transaction was built but never reached the network. Warns against sending again before checking.
+  ///
+  /// In en, this message translates to:
+  /// **'The deposit was created locally but could not be broadcast. Check activity before trying again.'**
+  String get swapNoticeBroadcastPending;
+
+  /// [security] Swap or Pay deposit notice: the deposit broadcast ended in a state the wallet cannot classify. Warns against sending again before checking.
+  ///
+  /// In en, this message translates to:
+  /// **'The deposit status is uncertain. Check activity before trying again.'**
+  String get swapNoticeBroadcastUncertain;
+
+  /// [security] Swap or Pay deposit notice: the broadcast result is unknown because confirmation timed out. Warns against sending again before checking.
+  ///
+  /// In en, this message translates to:
+  /// **'The transaction may have reached the network, but confirmation timed out. Check activity before trying again.'**
+  String get swapNoticeBroadcastUnknown;
+
   /// Accessibility label of the close button on the NEAR Intents service notice.
   ///
   /// In en, this message translates to:
   /// **'Close service notice'**
   String get swapNoticeCloseLabel;
+
+  /// [security] Swap or Pay error after sending: the deposit reached the network but the wallet lost its record of the swap. The user must copy the transaction hash to track the funds.
+  ///
+  /// In en, this message translates to:
+  /// **'ZEC deposit was broadcast, but the saved swap intent was not found. Copy the transaction hash before leaving this screen.'**
+  String get swapNoticeDepositIntentMissing;
 
   /// Service notice line with the expected end time of a maintenance window; {time} is a formatted local date and UTC offset.
   ///
@@ -15587,6 +15785,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Payments may not work right now.'**
   String get swapNoticePaymentsMayFail;
+
+  /// Swap or Pay quote error: the wallet could not reserve a new receive address for the swap.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare a fresh wallet receive address. Retry after wallet sync or close older pending swaps before requesting a new quote.'**
+  String get swapNoticeReceiveAddressUnavailable;
 
   /// Title of the NEAR Intents service banner when an incident affects swaps.
   ///
@@ -15671,6 +15875,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Powered by'**
   String get swapPoweredByLabel;
+
+  /// Swap and Pay review, value of the row that says how long the quote holds. {time} is a 24-hour local time such as 14:05.
+  ///
+  /// In en, this message translates to:
+  /// **'Expires {time}'**
+  String swapQuoteExpiresAt(String time);
+
+  /// Swap and Pay review, value of the row that says how long the quote holds, when the provider gave no expiry time.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote expiry pending'**
+  String get swapQuoteExpiryPending;
+
+  /// Swap review, value of the exchange rate row when the provider quote has no usable rate yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate pending'**
+  String get swapQuoteRatePending;
 
   /// Back link label on the review screen that returns to the Pay composer.
   ///
