@@ -1,4 +1,3 @@
-// l10n-ignore-file: deposit instruction text is stored on persisted intents
 import 'swap_asset.dart';
 import 'swap_direction.dart';
 import 'swap_fiat_value_basis.dart';

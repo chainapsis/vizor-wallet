@@ -1,4 +1,3 @@
-// l10n-ignore-file: exception text surfaced through toString() into provider state
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;

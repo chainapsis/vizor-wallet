@@ -1,4 +1,3 @@
-// l10n-ignore-file: provider snapshot text is persisted in swap intents
 part of 'near_intents_one_click_swap_adapter.dart';
 
 String _string(Map<String, dynamic> json, String key) {
@@ -262,7 +261,7 @@ String _rateText({
   }
   final precision = receiveAsset == SwapAsset.zec ? 4 : 2;
   final rate = receiveAmount / sellAmount;
-  return '1 ${sellAsset.symbol} = '
+  return '1 ${sellAsset.symbol} = ' // l10n-ignore: rate format
       '${rate.toStringAsFixed(precision)} ${receiveAsset.symbol}';
 }
 

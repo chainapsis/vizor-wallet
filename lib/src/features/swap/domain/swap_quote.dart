@@ -1,4 +1,3 @@
-// l10n-ignore-file: quote labels are stored on persisted quotes and intents
 import 'swap_asset.dart';
 import 'swap_direction.dart';
 import 'swap_fiat_value_basis.dart';
@@ -154,7 +153,7 @@ class SwapQuote {
     double? amount,
     double? sellAmount,
     SwapQuoteMode mode = SwapQuoteMode.exactInput,
-    String providerLabel = 'NEAR Intents',
+    String providerLabel = 'NEAR Intents', // l10n-ignore: brand name
     String expiryLabel = '07:12',
     DateTime? quoteExpiresAt,
     DateTime? depositDeadline,
@@ -180,8 +179,8 @@ class SwapQuote {
       SwapQuoteMode.exactOutput => quoteAmount,
     };
     final rateText = direction.sendsZec
-        ? '1 ZEC = ${rate.toStringAsFixed(2)} ${externalAsset.symbol}'
-        : '1 ${externalAsset.symbol} = ${(1 / rate).toStringAsFixed(4)} ZEC';
+        ? '1 ZEC = ${rate.toStringAsFixed(2)} ${externalAsset.symbol}' // l10n-ignore: rate format
+        : '1 ${externalAsset.symbol} = ${(1 / rate).toStringAsFixed(4)} ZEC'; // l10n-ignore: rate format
     return SwapQuote(
       direction: direction,
       sellAsset: sellAsset,
@@ -259,7 +258,7 @@ class SwapQuote {
     }
     final percent = receiveProtectionPercent;
     final sellBuffer = sellAmount * percent / 100;
-    return '${formatSwapProtectionAmount(sellAsset, sellBuffer)} '
+    return '${formatSwapProtectionAmount(sellAsset, sellBuffer)} ' // l10n-ignore: amount format
         '${sellAsset.symbol} (${formatSwapProtectionPercent(percent)})';
   }
 
@@ -277,7 +276,7 @@ class SwapQuote {
     final percent = receiveProtectionPercent;
     final buffer = receiveAmount - minimumReceiveAmount;
     final amount = buffer <= 0 || !buffer.isFinite ? 0.0 : buffer;
-    return '${formatSwapProtectionAmount(receiveAsset, amount)} '
+    return '${formatSwapProtectionAmount(receiveAsset, amount)} ' // l10n-ignore: amount format
         '${receiveAsset.symbol} (${formatSwapProtectionPercent(percent)})';
   }
 
@@ -288,8 +287,8 @@ class SwapQuote {
     }
     final rate = externalAsset.fallbackExternalPerZec;
     if (direction.sendsZec) {
-      return '1 ZEC = ${rate.toStringAsFixed(2)} ${externalAsset.symbol}';
+      return '1 ZEC = ${rate.toStringAsFixed(2)} ${externalAsset.symbol}'; // l10n-ignore: rate format
     }
-    return '1 ${externalAsset.symbol} = ${(1 / rate).toStringAsFixed(4)} ZEC';
+    return '1 ${externalAsset.symbol} = ${(1 / rate).toStringAsFixed(4)} ZEC'; // l10n-ignore: rate format
   }
 }

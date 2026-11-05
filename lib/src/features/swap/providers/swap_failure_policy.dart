@@ -1,4 +1,3 @@
-// l10n-ignore-file: messages are stored in provider state and persisted swap intents (statusError), built without a BuildContext
 import 'dart:async';
 
 import '../integrations/near_intents/near_intents_one_click_swap_adapter.dart';

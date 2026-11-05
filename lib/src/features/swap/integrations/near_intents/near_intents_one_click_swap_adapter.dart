@@ -1,4 +1,3 @@
-// l10n-ignore-file: provider snapshot text is persisted in swap intents; protocol values
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -42,7 +41,7 @@ class NearIntentsOneClickSwapAdapter
   List<_OneClickToken>? _tokenCache;
 
   @override
-  String get providerLabel => 'NEAR Intents';
+  String get providerLabel => 'NEAR Intents'; // l10n-ignore: brand name
 
   @override
   Future<List<SwapAsset>> listSupportedExternalAssets() async {
@@ -102,7 +101,7 @@ class NearIntentsOneClickSwapAdapter
       'recipient': requestedRecipient,
       'recipientType': 'DESTINATION_CHAIN',
       'deadline': _deadlineIso(request.deadline ?? quoteDeadline),
-      'depositMode': 'SIMPLE',
+      'depositMode': 'SIMPLE', // l10n-ignore: protocol value
       'quoteWaitingTimeMs': quoteWaitingTimeMs,
       if (referral != null && referral!.isNotEmpty) 'referral': referral,
     };
@@ -204,7 +203,7 @@ class NearIntentsOneClickSwapAdapter
           'nearSenderAccount': nearSenderAccount,
       },
     );
-    _expectSuccess(response, 'deposit submit');
+    _expectSuccess(response, 'deposit submit'); // l10n-ignore: log label
     return _snapshotFromStatusResponse(
       _OneClickStatusResponse.fromJson(response.jsonObject),
       tokens,
@@ -223,7 +222,7 @@ class NearIntentsOneClickSwapAdapter
       _endpoint('/v0/tokens'),
       headers: _headers(),
     );
-    _expectSuccess(response, 'token list');
+    _expectSuccess(response, 'token list'); // l10n-ignore: log label
     final tokens = [
       for (final item in response.jsonList)
         if (item is Map<String, dynamic>) _OneClickToken.fromJson(item),
@@ -940,7 +939,8 @@ class NearIntentsOneClickSwapAdapter
     return {
       if (contentType) HttpHeaders.contentTypeHeader: 'application/json',
       if (bearerToken != null && bearerToken!.isNotEmpty)
-        HttpHeaders.authorizationHeader: 'Bearer $bearerToken',
+        HttpHeaders.authorizationHeader:
+            'Bearer $bearerToken', // l10n-ignore: HTTP header
     };
   }
 
