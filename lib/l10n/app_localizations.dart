@@ -100,6 +100,192 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// Back-link label shown during desktop onboarding that returns to the Add account screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Add account'**
+  String get appBackAddAccount;
+
+  /// Back-link label shown during desktop import that returns to the hardware wallet list.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardware wallets'**
+  String get appBackHardwareWallets;
+
+  /// Back-link label shown during desktop import that returns to the list of import methods.
+  ///
+  /// In en, this message translates to:
+  /// **'Import methods'**
+  String get appBackImportMethods;
+
+  /// Back-link label on the Ledger account customisation screen that returns to the wallet birthday height step.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet Birthday Height'**
+  String get appBackWalletBirthdayHeight;
+
+  /// Back-link label shown during desktop onboarding that returns to the Welcome screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome'**
+  String get appBackWelcome;
+
+  /// Hint shown on Android after the first Back press at the root, telling the user to press Back again to exit the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Go back again to exit'**
+  String get appExitBackHint;
+
+  /// Toast shown when cancelling a gift card claim during wallet setup fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn’t close the card. Try again.'**
+  String get appGiftCloseCardFailed;
+
+  /// Snackbar on Linux announcing a new version is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor {version} is available.'**
+  String appLinuxUpdateAvailable(String version);
+
+  /// Snackbar on Linux announcing a new version when Tor is on; warns that the release page opens in the browser outside Tor.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor {version} is available. The release page opens in your browser, outside Vizor’s Tor connection.'**
+  String appLinuxUpdateAvailableTor(String version);
+
+  /// Snackbar action on Linux that opens the release page in the browser (shown when Tor is on).
+  ///
+  /// In en, this message translates to:
+  /// **'Open in browser'**
+  String get appLinuxUpdateOpenInBrowser;
+
+  /// Snackbar action on Linux that opens the release page.
+  ///
+  /// In en, this message translates to:
+  /// **'View release'**
+  String get appLinuxUpdateViewRelease;
+
+  /// Title of the Privacy Policy legal screen on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Policy'**
+  String get appPrivacyPolicyTitle;
+
+  /// Title of the Terms of Use legal screen on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of Use'**
+  String get appTermsOfUseTitle;
+
+  /// Message of the in-app update prompt while the update is applied after the app closes.
+  ///
+  /// In en, this message translates to:
+  /// **'Applying after Vizor closes.'**
+  String get appUpdateApplyingMessage;
+
+  /// Message of the in-app update prompt when an update can be downloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Download now or keep working.'**
+  String get appUpdateAvailableMessage;
+
+  /// Fallback title of the in-app update prompt when an update is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Update available'**
+  String get appUpdateAvailableTitle;
+
+  /// Title of the in-app update prompt (Windows) when a specific version can be downloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Update {version} available'**
+  String appUpdateAvailableVersionTitle(String version);
+
+  /// Button on the in-app update prompt that hides it after a failed update.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get appUpdateDismiss;
+
+  /// Button on the in-app update prompt that starts downloading the update.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get appUpdateDownload;
+
+  /// Disabled button label on the in-app update prompt while the update downloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get appUpdateDownloading;
+
+  /// Message of the in-app update prompt showing download progress as a percentage.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% downloaded.'**
+  String appUpdateDownloadingMessage(int percent);
+
+  /// Title of the in-app update prompt while the update downloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading update'**
+  String get appUpdateDownloadingTitle;
+
+  /// Message of the in-app update prompt when the update failed and no detail is available.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t complete the update. Try again.'**
+  String get appUpdateFailedMessage;
+
+  /// Title of the in-app update prompt when the update failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Update failed'**
+  String get appUpdateFailedTitle;
+
+  /// Button on the in-app update prompt that postpones the update.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get appUpdateLater;
+
+  /// Message of the in-app update prompt when the update is ready to install.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart when you are ready.'**
+  String get appUpdateReadyMessage;
+
+  /// Title of the in-app update prompt once the update is downloaded and ready to install.
+  ///
+  /// In en, this message translates to:
+  /// **'Update ready'**
+  String get appUpdateReadyTitle;
+
+  /// Button on the in-app update prompt that restarts the app to apply the update.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart'**
+  String get appUpdateRestart;
+
+  /// Disabled button label on the in-app update prompt while the app restarts.
+  ///
+  /// In en, this message translates to:
+  /// **'Restarting'**
+  String get appUpdateRestarting;
+
+  /// Title of the in-app update prompt while the app restarts to apply the update.
+  ///
+  /// In en, this message translates to:
+  /// **'Restarting Vizor'**
+  String get appUpdateRestartingTitle;
+
+  /// Button on the in-app update prompt that retries a failed update.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get appUpdateTryAgain;
+
   /// Screen-reader label of a carousel card. {name} is the carousel name, e.g. Information.
   ///
   /// In en, this message translates to:
@@ -219,11 +405,209 @@ abstract class AppLocalizations {
   /// **'Updating...'**
   String get commonUpdating;
 
+  /// [security] Body of the Linux keyring screen when the system keyring is locked; mentions the keyring password prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor cannot access your system keyring. Unlock the keyring, then choose Retry. A system prompt may ask for your keyring password.'**
+  String get keyringLockedBody;
+
+  /// Message on the Linux keyring screen when a retry or cancel request failed.
+  ///
+  /// In en, this message translates to:
+  /// **'The keyring did not respond. Try again.'**
+  String get keyringNoResponse;
+
+  /// Title of the startup screen on Linux when the app failed to start.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to open Vizor'**
+  String get keyringOpenFailedTitle;
+
+  /// Title of the startup screen on Linux while the app loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening Vizor'**
+  String get keyringOpeningTitle;
+
+  /// Body of the Linux keyring screen while waiting for the user to answer a system keyring prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete any system keyring prompt to continue in Vizor.'**
+  String get keyringPromptBody;
+
+  /// Button on the Linux startup and keyring screens that quits the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Quit'**
+  String get keyringQuit;
+
+  /// Body of the startup failure screen on Linux.
+  ///
+  /// In en, this message translates to:
+  /// **'Quit and restart Vizor to try again.'**
+  String get keyringRestartHint;
+
+  /// Button on the Linux keyring screen that retries accessing the system keyring.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get keyringRetry;
+
+  /// Body of the Linux keyring screen when it is unknown whether a save succeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not confirm whether your changes were saved. Quit and restart Vizor before continuing.'**
+  String get keyringSaveUnconfirmedBody;
+
+  /// Title of the Linux keyring screen when it is unknown whether a save to secure storage succeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to confirm the save'**
+  String get keyringSaveUnconfirmedTitle;
+
+  /// Title of the Linux keyring screen while access to secure storage is retried.
+  ///
+  /// In en, this message translates to:
+  /// **'Trying secure storage'**
+  String get keyringTryingTitle;
+
+  /// Body of the Linux keyring screen when the system keyring service is unreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor cannot connect to the system keyring. Try again, or quit and restart Vizor.'**
+  String get keyringUnavailableBody;
+
+  /// Title of the Linux keyring screen when the system keyring service cannot be reached.
+  ///
+  /// In en, this message translates to:
+  /// **'Secure storage is unavailable'**
+  String get keyringUnavailableTitle;
+
+  /// [security] Title of the Linux keyring screen asking the user to unlock the system keyring.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock your keyring'**
+  String get keyringUnlockTitle;
+
+  /// Body of the Linux keyring screen when the stored keyring data is unreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not read the data in your system keyring. Retry after restoring access, or quit Vizor.'**
+  String get keyringUnreadableBody;
+
+  /// Title of the Linux keyring screen when the stored keyring data is unreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to read secure storage'**
+  String get keyringUnreadableTitle;
+
   /// Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.
   ///
   /// In en, this message translates to:
   /// **'System ({language})'**
   String languageSystemOption(String language);
+
+  /// [security] Body of the passcode entry screen after sync was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync paused. Unlock Vizor to continue.'**
+  String get lockBodyPaused;
+
+  /// [security] Body of the passcode entry screen after sync has finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced successfully. Unlock Vizor to continue.'**
+  String get lockBodySynced;
+
+  /// [security] Body of the passcode entry screen while the entered passcode is verified.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking passcode...'**
+  String get lockCheckingPasscode;
+
+  /// [security] Screen-reader label of the passcode entry screen that unlocks the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm passcode to unlock Vizor'**
+  String get lockConfirmPasscodeSemantics;
+
+  /// Top bar title of the passcode entry screen when sync has finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Synced'**
+  String get lockNavSynced;
+
+  /// Top bar title of the passcode entry screen while sync runs, with the percentage complete.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% Syncing...'**
+  String lockNavSyncing(int percent);
+
+  /// [security] Error under the passcode dots when the entered unlock passcode is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect Passcode'**
+  String get lockPasscodeIncorrect;
+
+  /// Title on the sync lock screen when sync has finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync Complete'**
+  String get lockSyncCompleteTitle;
+
+  /// Screen-reader label of the sync lock screen when sync was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor sync is paused'**
+  String get lockSyncPausedSemantics;
+
+  /// Title on the sync lock screen and passcode screen header when sync was interrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync paused'**
+  String get lockSyncPausedTitle;
+
+  /// Screen-reader label of the sync lock screen when sync has finished.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is synced'**
+  String get lockSyncedSemantics;
+
+  /// Screen-reader label and caption on the sync lock screen while sync is running.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor is syncing'**
+  String get lockSyncingMessage;
+
+  /// [security] Body of the passcode entry screen while sync is running.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock to continue'**
+  String get lockUnlockToContinue;
+
+  /// [security] Body on the sync lock screen asking the user to unlock the wallet to continue.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor to continue'**
+  String get lockUnlockToContinueBody;
+
+  /// [security] Body on the sync lock screen after an interrupted sync asking the user to unlock the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor to continue.'**
+  String get lockUnlockToContinuePausedBody;
+
+  /// [security] Button label on the sync lock screen, and the reason text of the system biometric prompt, that unlocks the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Vizor'**
+  String get lockUnlockVizor;
+
+  /// [security] Heading of the passcode entry screen shown to unlock the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome Back'**
+  String get lockWelcomeBack;
 
   /// Sidebar and tab bar destination: transaction history.
   ///

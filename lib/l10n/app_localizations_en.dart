@@ -9,6 +9,108 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get appBackAddAccount => 'Add account';
+
+  @override
+  String get appBackHardwareWallets => 'Hardware wallets';
+
+  @override
+  String get appBackImportMethods => 'Import methods';
+
+  @override
+  String get appBackWalletBirthdayHeight => 'Wallet Birthday Height';
+
+  @override
+  String get appBackWelcome => 'Welcome';
+
+  @override
+  String get appExitBackHint => 'Go back again to exit';
+
+  @override
+  String get appGiftCloseCardFailed => 'Couldn’t close the card. Try again.';
+
+  @override
+  String appLinuxUpdateAvailable(String version) {
+    return 'Vizor $version is available.';
+  }
+
+  @override
+  String appLinuxUpdateAvailableTor(String version) {
+    return 'Vizor $version is available. The release page opens in your browser, outside Vizor’s Tor connection.';
+  }
+
+  @override
+  String get appLinuxUpdateOpenInBrowser => 'Open in browser';
+
+  @override
+  String get appLinuxUpdateViewRelease => 'View release';
+
+  @override
+  String get appPrivacyPolicyTitle => 'Privacy Policy';
+
+  @override
+  String get appTermsOfUseTitle => 'Terms of Use';
+
+  @override
+  String get appUpdateApplyingMessage => 'Applying after Vizor closes.';
+
+  @override
+  String get appUpdateAvailableMessage => 'Download now or keep working.';
+
+  @override
+  String get appUpdateAvailableTitle => 'Update available';
+
+  @override
+  String appUpdateAvailableVersionTitle(String version) {
+    return 'Update $version available';
+  }
+
+  @override
+  String get appUpdateDismiss => 'Dismiss';
+
+  @override
+  String get appUpdateDownload => 'Download';
+
+  @override
+  String get appUpdateDownloading => 'Downloading';
+
+  @override
+  String appUpdateDownloadingMessage(int percent) {
+    return '$percent% downloaded.';
+  }
+
+  @override
+  String get appUpdateDownloadingTitle => 'Downloading update';
+
+  @override
+  String get appUpdateFailedMessage =>
+      'Couldn\'t complete the update. Try again.';
+
+  @override
+  String get appUpdateFailedTitle => 'Update failed';
+
+  @override
+  String get appUpdateLater => 'Later';
+
+  @override
+  String get appUpdateReadyMessage => 'Restart when you are ready.';
+
+  @override
+  String get appUpdateReadyTitle => 'Update ready';
+
+  @override
+  String get appUpdateRestart => 'Restart';
+
+  @override
+  String get appUpdateRestarting => 'Restarting';
+
+  @override
+  String get appUpdateRestartingTitle => 'Restarting Vizor';
+
+  @override
+  String get appUpdateTryAgain => 'Try again';
+
+  @override
   String carouselPageSemantics(
     String name,
     int page,
@@ -78,9 +180,115 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonUpdating => 'Updating...';
 
   @override
+  String get keyringLockedBody =>
+      'Vizor cannot access your system keyring. Unlock the keyring, then choose Retry. A system prompt may ask for your keyring password.';
+
+  @override
+  String get keyringNoResponse => 'The keyring did not respond. Try again.';
+
+  @override
+  String get keyringOpenFailedTitle => 'Unable to open Vizor';
+
+  @override
+  String get keyringOpeningTitle => 'Opening Vizor';
+
+  @override
+  String get keyringPromptBody =>
+      'Complete any system keyring prompt to continue in Vizor.';
+
+  @override
+  String get keyringQuit => 'Quit';
+
+  @override
+  String get keyringRestartHint => 'Quit and restart Vizor to try again.';
+
+  @override
+  String get keyringRetry => 'Retry';
+
+  @override
+  String get keyringSaveUnconfirmedBody =>
+      'Vizor could not confirm whether your changes were saved. Quit and restart Vizor before continuing.';
+
+  @override
+  String get keyringSaveUnconfirmedTitle => 'Unable to confirm the save';
+
+  @override
+  String get keyringTryingTitle => 'Trying secure storage';
+
+  @override
+  String get keyringUnavailableBody =>
+      'Vizor cannot connect to the system keyring. Try again, or quit and restart Vizor.';
+
+  @override
+  String get keyringUnavailableTitle => 'Secure storage is unavailable';
+
+  @override
+  String get keyringUnlockTitle => 'Unlock your keyring';
+
+  @override
+  String get keyringUnreadableBody =>
+      'Vizor could not read the data in your system keyring. Retry after restoring access, or quit Vizor.';
+
+  @override
+  String get keyringUnreadableTitle => 'Unable to read secure storage';
+
+  @override
   String languageSystemOption(String language) {
     return 'System ($language)';
   }
+
+  @override
+  String get lockBodyPaused => 'Sync paused. Unlock Vizor to continue.';
+
+  @override
+  String get lockBodySynced => 'Synced successfully. Unlock Vizor to continue.';
+
+  @override
+  String get lockCheckingPasscode => 'Checking passcode...';
+
+  @override
+  String get lockConfirmPasscodeSemantics => 'Confirm passcode to unlock Vizor';
+
+  @override
+  String get lockNavSynced => 'Synced';
+
+  @override
+  String lockNavSyncing(int percent) {
+    return '$percent% Syncing...';
+  }
+
+  @override
+  String get lockPasscodeIncorrect => 'Incorrect Passcode';
+
+  @override
+  String get lockSyncCompleteTitle => 'Sync Complete';
+
+  @override
+  String get lockSyncPausedSemantics => 'Vizor sync is paused';
+
+  @override
+  String get lockSyncPausedTitle => 'Sync paused';
+
+  @override
+  String get lockSyncedSemantics => 'Vizor is synced';
+
+  @override
+  String get lockSyncingMessage => 'Vizor is syncing';
+
+  @override
+  String get lockUnlockToContinue => 'Unlock to continue';
+
+  @override
+  String get lockUnlockToContinueBody => 'Unlock Vizor to continue';
+
+  @override
+  String get lockUnlockToContinuePausedBody => 'Unlock Vizor to continue.';
+
+  @override
+  String get lockUnlockVizor => 'Unlock Vizor';
+
+  @override
+  String get lockWelcomeBack => 'Welcome Back';
 
   @override
   String get navActivity => 'Activity';

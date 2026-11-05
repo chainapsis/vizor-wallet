@@ -233,7 +233,7 @@ void main() {
     }
     expect(router.canPop(), isTrue);
     expect(cardDismissals, 0);
-    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(find.text('Go back again to exit'), findsNothing);
     await tester.tap(find.text('Unlock Vizor'));
     await tester.pump();
     expect(find.text('Welcome Back'), findsOneWidget);

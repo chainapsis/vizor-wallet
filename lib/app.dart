@@ -147,6 +147,7 @@ import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_language_provider.dart';
 import 'src/core/l10n/app_language.dart';
+import 'src/core/l10n/l10n.dart';
 import 'src/core/l10n/locale_typography.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/sync_keep_awake_provider.dart';
@@ -804,39 +805,48 @@ List<RouteBase> appAuthRoutes(
   ),
   GoRoute(
     path: '/terms',
-    builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
-        ? const MobileLegalScreen(title: 'Terms of Use')
+    builder: (context, state) => kAppFormFactor == AppFormFactor.mobile
+        ? MobileLegalScreen(title: context.l10n.appTermsOfUseTitle)
         : TermsScreen(
             forceFullPane: state.uri.queryParameters['from'] == 'onboarding',
           ),
   ),
   GoRoute(
     path: '/privacy',
-    builder: (_, state) => kAppFormFactor == AppFormFactor.mobile
-        ? const MobileLegalScreen(title: 'Privacy Policy')
+    builder: (context, state) => kAppFormFactor == AppFormFactor.mobile
+        ? MobileLegalScreen(title: context.l10n.appPrivacyPolicyTitle)
         : PrivacyPolicyScreen(
             forceFullPane: state.uri.queryParameters['from'] == 'onboarding',
           ),
   ),
 ];
 
-OnboardingBackTarget _desktopOnboardingEntryBackTarget(Ref ref) {
+OnboardingBackTarget _desktopOnboardingEntryBackTarget(
+  BuildContext context,
+  Ref ref,
+) {
   final hasWallet =
       ref.read(walletProvider).value?.hasWallet ??
       ref.read(appBootstrapProvider).hasWallet;
   return OnboardingBackTarget.route(
-    label: hasWallet ? 'Add account' : 'Welcome',
+    label: hasWallet
+        ? context.l10n.appBackAddAccount
+        : context.l10n.appBackWelcome,
     routePath: hasWallet ? '/add-account' : '/welcome',
   );
 }
 
-OnboardingBackTarget _desktopImportBackTarget(Ref ref, GoRouterState state) {
+OnboardingBackTarget _desktopImportBackTarget(
+  BuildContext context,
+  Ref ref,
+  GoRouterState state,
+) {
   final selection = desktopImportSelectionLocation(state.uri);
-  if (selection == null) return _desktopOnboardingEntryBackTarget(ref);
+  if (selection == null) return _desktopOnboardingEntryBackTarget(context, ref);
   return OnboardingBackTarget.route(
     label: selection.startsWith('/import/hardware')
-        ? 'Hardware wallets'
-        : 'Import methods',
+        ? context.l10n.appBackHardwareWallets
+        : context.l10n.appBackImportMethods,
     routePath: selection,
   );
 }
@@ -914,7 +924,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
                   if (context.mounted) {
                     showAppToast(
                       context,
-                      'Couldn’t close the card. Try again.',
+                      context.l10n.appGiftCloseCardFailed,
                       iconName: AppIcons.warning,
                     );
                   }
@@ -986,7 +996,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       transitionDuration: kOnboardingForwardDuration,
       reverseTransitionDuration: kOnboardingReverseDuration,
       child: LedgerConnectScreen(
-        backTarget: _desktopImportBackTarget(ref, state),
+        backTarget: _desktopImportBackTarget(context, ref, state),
       ),
       transitionsBuilder: _onboardingFadeTransition,
     ),
@@ -1067,7 +1077,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           initialPersona: args.persona,
           continueToSecurity: needsPassword,
           ledgerBackTarget: OnboardingBackTarget.route(
-            label: 'Wallet Birthday Height',
+            label: context.l10n.appBackWalletBirthdayHeight,
             routePath: preserveDesktopImportEntry(
               state.uri,
               '/onboarding/ledger/birthday',
@@ -1231,7 +1241,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: KeystoneHowToConnectScreen(
-            backTarget: _desktopImportBackTarget(ref, state),
+            backTarget: _desktopImportBackTarget(context, ref, state),
           ),
           transitionsBuilder: _onboardingFadeTransition,
         ),
@@ -1347,7 +1357,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             reverseTransitionDuration: kOnboardingReverseDuration,
             child: ImportSecretPassphraseScreen(
               args: args,
-              backTarget: _desktopImportBackTarget(ref, state),
+              backTarget: _desktopImportBackTarget(context, ref, state),
             ),
             transitionsBuilder: _onboardingFadeTransition,
           );
@@ -1864,7 +1874,7 @@ class ZcashWalletApp extends ConsumerWidget {
     final languages = ref.watch(availableAppLanguagesProvider);
 
     return MaterialApp.router(
-      title: 'Vizor',
+      title: 'Vizor', // l10n-ignore: product name
       debugShowCheckedModeBanner: false,
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
@@ -2796,7 +2806,8 @@ class _WindowsUpdatePrompt extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final action = _primaryAction();
+    final l10n = context.l10n;
+    final action = _primaryAction(l10n);
 
     return DefaultTextStyle.merge(
       style: const TextStyle(decoration: TextDecoration.none),
@@ -2835,7 +2846,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _title(),
+                            _title(l10n),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.labelLarge.copyWith(
@@ -2845,7 +2856,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _message(),
+                            _message(l10n),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.bodySmall.copyWith(
@@ -2874,8 +2885,8 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                         size: AppButtonSize.small,
                         child: Text(
                           state.status == WindowsUpdateStatus.failed
-                              ? 'Dismiss'
-                              : 'Later',
+                              ? l10n.appUpdateDismiss
+                              : l10n.appUpdateLater,
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
@@ -2896,28 +2907,30 @@ class _WindowsUpdatePrompt extends StatelessWidget {
     );
   }
 
-  String _title() {
+  String _title(AppLocalizations l10n) {
     return switch (state.status) {
-      WindowsUpdateStatus.available =>
-        'Update ${state.availableVersion} available',
-      WindowsUpdateStatus.downloading => 'Downloading update',
-      WindowsUpdateStatus.ready => 'Update ready',
-      WindowsUpdateStatus.applying => 'Restarting Vizor',
-      WindowsUpdateStatus.failed => 'Update failed',
-      _ => 'Update available',
+      WindowsUpdateStatus.available => l10n.appUpdateAvailableVersionTitle(
+        state.availableVersion,
+      ),
+      WindowsUpdateStatus.downloading => l10n.appUpdateDownloadingTitle,
+      WindowsUpdateStatus.ready => l10n.appUpdateReadyTitle,
+      WindowsUpdateStatus.applying => l10n.appUpdateRestartingTitle,
+      WindowsUpdateStatus.failed => l10n.appUpdateFailedTitle,
+      _ => l10n.appUpdateAvailableTitle,
     };
   }
 
-  String _message() {
+  String _message(AppLocalizations l10n) {
     return switch (state.status) {
-      WindowsUpdateStatus.available => 'Download now or keep working.',
-      WindowsUpdateStatus.downloading =>
-        '${state.downloadProgress}% downloaded.',
-      WindowsUpdateStatus.ready => 'Restart when you are ready.',
-      WindowsUpdateStatus.applying => 'Applying after Vizor closes.',
+      WindowsUpdateStatus.available => l10n.appUpdateAvailableMessage,
+      WindowsUpdateStatus.downloading => l10n.appUpdateDownloadingMessage(
+        state.downloadProgress,
+      ),
+      WindowsUpdateStatus.ready => l10n.appUpdateReadyMessage,
+      WindowsUpdateStatus.applying => l10n.appUpdateApplyingMessage,
       WindowsUpdateStatus.failed =>
         state.message.trim().isEmpty
-            ? "Couldn't complete the update. Try again."
+            ? l10n.appUpdateFailedMessage
             : state.message.trim(),
       _ => '',
     };
@@ -2929,27 +2942,27 @@ class _WindowsUpdatePrompt extends StatelessWidget {
         state.status == WindowsUpdateStatus.failed;
   }
 
-  _WindowsUpdatePromptAction _primaryAction() {
+  _WindowsUpdatePromptAction _primaryAction(AppLocalizations l10n) {
     return switch (state.status) {
       WindowsUpdateStatus.available => _WindowsUpdatePromptAction(
-        label: 'Download',
+        label: l10n.appUpdateDownload,
         onPressed: onDownload,
       ),
       WindowsUpdateStatus.ready => _WindowsUpdatePromptAction(
-        label: 'Restart',
+        label: l10n.appUpdateRestart,
         onPressed: onRestart,
       ),
-      WindowsUpdateStatus.downloading => const _WindowsUpdatePromptAction(
-        label: 'Downloading',
+      WindowsUpdateStatus.downloading => _WindowsUpdatePromptAction(
+        label: l10n.appUpdateDownloading,
       ),
-      WindowsUpdateStatus.applying => const _WindowsUpdatePromptAction(
-        label: 'Restarting',
+      WindowsUpdateStatus.applying => _WindowsUpdatePromptAction(
+        label: l10n.appUpdateRestarting,
       ),
       WindowsUpdateStatus.failed => _WindowsUpdatePromptAction(
-        label: 'Try again',
+        label: l10n.appUpdateTryAgain,
         onPressed: onRetry,
       ),
-      _ => const _WindowsUpdatePromptAction(label: 'Update'),
+      _ => _WindowsUpdatePromptAction(label: l10n.commonUpdate),
     };
   }
 }
@@ -3041,20 +3054,21 @@ class _LinuxUpdateNoticeListener extends ConsumerWidget {
         final messenger = ScaffoldMessenger.maybeOf(context);
         if (messenger == null) return;
         final torEnabled = ref.read(networkPrivacyProvider).torEnabled;
+        final l10n = context.l10n;
 
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
           SnackBar(
             content: Text(
               torEnabled
-                  ? 'Vizor ${update.assetVersion} is available. The release '
-                        'page opens in your browser, outside Vizor’s Tor '
-                        'connection.'
-                  : 'Vizor ${update.assetVersion} is available.',
+                  ? l10n.appLinuxUpdateAvailableTor(update.assetVersion)
+                  : l10n.appLinuxUpdateAvailable(update.assetVersion),
             ),
             duration: const Duration(seconds: 8),
             action: SnackBarAction(
-              label: torEnabled ? 'Open in browser' : 'View release',
+              label: torEnabled
+                  ? l10n.appLinuxUpdateOpenInBrowser
+                  : l10n.appLinuxUpdateViewRelease,
               onPressed: () => unawaited(_openLinuxUpdateRelease(update)),
             ),
           ),

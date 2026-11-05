@@ -1,5 +1,149 @@
 {
   "@@locale": "en",
+  "appBackAddAccount": "Add account",
+  "@appBackAddAccount": {
+    "description": "Back-link label shown during desktop onboarding that returns to the Add account screen."
+  },
+  "appBackHardwareWallets": "Hardware wallets",
+  "@appBackHardwareWallets": {
+    "description": "Back-link label shown during desktop import that returns to the hardware wallet list."
+  },
+  "appBackImportMethods": "Import methods",
+  "@appBackImportMethods": {
+    "description": "Back-link label shown during desktop import that returns to the list of import methods."
+  },
+  "appBackWalletBirthdayHeight": "Wallet Birthday Height",
+  "@appBackWalletBirthdayHeight": {
+    "description": "Back-link label on the Ledger account customisation screen that returns to the wallet birthday height step."
+  },
+  "appBackWelcome": "Welcome",
+  "@appBackWelcome": {
+    "description": "Back-link label shown during desktop onboarding that returns to the Welcome screen."
+  },
+  "appExitBackHint": "Go back again to exit",
+  "@appExitBackHint": {
+    "description": "Hint shown on Android after the first Back press at the root, telling the user to press Back again to exit the app."
+  },
+  "appGiftCloseCardFailed": "Couldn’t close the card. Try again.",
+  "@appGiftCloseCardFailed": {
+    "description": "Toast shown when cancelling a gift card claim during wallet setup fails."
+  },
+  "appLinuxUpdateAvailable": "Vizor {version} is available.",
+  "@appLinuxUpdateAvailable": {
+    "description": "Snackbar on Linux announcing a new version is available.",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "appLinuxUpdateAvailableTor": "Vizor {version} is available. The release page opens in your browser, outside Vizor’s Tor connection.",
+  "@appLinuxUpdateAvailableTor": {
+    "description": "Snackbar on Linux announcing a new version when Tor is on; warns that the release page opens in the browser outside Tor.",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "appLinuxUpdateOpenInBrowser": "Open in browser",
+  "@appLinuxUpdateOpenInBrowser": {
+    "description": "Snackbar action on Linux that opens the release page in the browser (shown when Tor is on)."
+  },
+  "appLinuxUpdateViewRelease": "View release",
+  "@appLinuxUpdateViewRelease": {
+    "description": "Snackbar action on Linux that opens the release page."
+  },
+  "appPrivacyPolicyTitle": "Privacy Policy",
+  "@appPrivacyPolicyTitle": {
+    "description": "Title of the Privacy Policy legal screen on mobile."
+  },
+  "appTermsOfUseTitle": "Terms of Use",
+  "@appTermsOfUseTitle": {
+    "description": "Title of the Terms of Use legal screen on mobile."
+  },
+  "appUpdateApplyingMessage": "Applying after Vizor closes.",
+  "@appUpdateApplyingMessage": {
+    "description": "Message of the in-app update prompt while the update is applied after the app closes."
+  },
+  "appUpdateAvailableMessage": "Download now or keep working.",
+  "@appUpdateAvailableMessage": {
+    "description": "Message of the in-app update prompt when an update can be downloaded."
+  },
+  "appUpdateAvailableTitle": "Update available",
+  "@appUpdateAvailableTitle": {
+    "description": "Fallback title of the in-app update prompt when an update is available."
+  },
+  "appUpdateAvailableVersionTitle": "Update {version} available",
+  "@appUpdateAvailableVersionTitle": {
+    "description": "Title of the in-app update prompt (Windows) when a specific version can be downloaded.",
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "appUpdateDismiss": "Dismiss",
+  "@appUpdateDismiss": {
+    "description": "Button on the in-app update prompt that hides it after a failed update."
+  },
+  "appUpdateDownload": "Download",
+  "@appUpdateDownload": {
+    "description": "Button on the in-app update prompt that starts downloading the update."
+  },
+  "appUpdateDownloading": "Downloading",
+  "@appUpdateDownloading": {
+    "description": "Disabled button label on the in-app update prompt while the update downloads."
+  },
+  "appUpdateDownloadingMessage": "{percent}% downloaded.",
+  "@appUpdateDownloadingMessage": {
+    "description": "Message of the in-app update prompt showing download progress as a percentage.",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "appUpdateDownloadingTitle": "Downloading update",
+  "@appUpdateDownloadingTitle": {
+    "description": "Title of the in-app update prompt while the update downloads."
+  },
+  "appUpdateFailedMessage": "Couldn't complete the update. Try again.",
+  "@appUpdateFailedMessage": {
+    "description": "Message of the in-app update prompt when the update failed and no detail is available."
+  },
+  "appUpdateFailedTitle": "Update failed",
+  "@appUpdateFailedTitle": {
+    "description": "Title of the in-app update prompt when the update failed."
+  },
+  "appUpdateLater": "Later",
+  "@appUpdateLater": {
+    "description": "Button on the in-app update prompt that postpones the update."
+  },
+  "appUpdateReadyMessage": "Restart when you are ready.",
+  "@appUpdateReadyMessage": {
+    "description": "Message of the in-app update prompt when the update is ready to install."
+  },
+  "appUpdateReadyTitle": "Update ready",
+  "@appUpdateReadyTitle": {
+    "description": "Title of the in-app update prompt once the update is downloaded and ready to install."
+  },
+  "appUpdateRestart": "Restart",
+  "@appUpdateRestart": {
+    "description": "Button on the in-app update prompt that restarts the app to apply the update."
+  },
+  "appUpdateRestarting": "Restarting",
+  "@appUpdateRestarting": {
+    "description": "Disabled button label on the in-app update prompt while the app restarts."
+  },
+  "appUpdateRestartingTitle": "Restarting Vizor",
+  "@appUpdateRestartingTitle": {
+    "description": "Title of the in-app update prompt while the app restarts to apply the update."
+  },
+  "appUpdateTryAgain": "Try again",
+  "@appUpdateTryAgain": {
+    "description": "Button on the in-app update prompt that retries a failed update."
+  },
   "carouselPageSemantics": "{name} {page} of {count}. {message}",
   "@carouselPageSemantics": {
     "description": "Screen-reader label of a carousel card. {name} is the carousel name, e.g. Information.",
@@ -114,6 +258,70 @@
   "@commonUpdating": {
     "description": "The Update button label while the change is being saved."
   },
+  "keyringLockedBody": "Vizor cannot access your system keyring. Unlock the keyring, then choose Retry. A system prompt may ask for your keyring password.",
+  "@keyringLockedBody": {
+    "description": "[security] Body of the Linux keyring screen when the system keyring is locked; mentions the keyring password prompt."
+  },
+  "keyringNoResponse": "The keyring did not respond. Try again.",
+  "@keyringNoResponse": {
+    "description": "Message on the Linux keyring screen when a retry or cancel request failed."
+  },
+  "keyringOpenFailedTitle": "Unable to open Vizor",
+  "@keyringOpenFailedTitle": {
+    "description": "Title of the startup screen on Linux when the app failed to start."
+  },
+  "keyringOpeningTitle": "Opening Vizor",
+  "@keyringOpeningTitle": {
+    "description": "Title of the startup screen on Linux while the app loads."
+  },
+  "keyringPromptBody": "Complete any system keyring prompt to continue in Vizor.",
+  "@keyringPromptBody": {
+    "description": "Body of the Linux keyring screen while waiting for the user to answer a system keyring prompt."
+  },
+  "keyringQuit": "Quit",
+  "@keyringQuit": {
+    "description": "Button on the Linux startup and keyring screens that quits the app."
+  },
+  "keyringRestartHint": "Quit and restart Vizor to try again.",
+  "@keyringRestartHint": {
+    "description": "Body of the startup failure screen on Linux."
+  },
+  "keyringRetry": "Retry",
+  "@keyringRetry": {
+    "description": "Button on the Linux keyring screen that retries accessing the system keyring."
+  },
+  "keyringSaveUnconfirmedBody": "Vizor could not confirm whether your changes were saved. Quit and restart Vizor before continuing.",
+  "@keyringSaveUnconfirmedBody": {
+    "description": "Body of the Linux keyring screen when it is unknown whether a save succeeded."
+  },
+  "keyringSaveUnconfirmedTitle": "Unable to confirm the save",
+  "@keyringSaveUnconfirmedTitle": {
+    "description": "Title of the Linux keyring screen when it is unknown whether a save to secure storage succeeded."
+  },
+  "keyringTryingTitle": "Trying secure storage",
+  "@keyringTryingTitle": {
+    "description": "Title of the Linux keyring screen while access to secure storage is retried."
+  },
+  "keyringUnavailableBody": "Vizor cannot connect to the system keyring. Try again, or quit and restart Vizor.",
+  "@keyringUnavailableBody": {
+    "description": "Body of the Linux keyring screen when the system keyring service is unreachable."
+  },
+  "keyringUnavailableTitle": "Secure storage is unavailable",
+  "@keyringUnavailableTitle": {
+    "description": "Title of the Linux keyring screen when the system keyring service cannot be reached."
+  },
+  "keyringUnlockTitle": "Unlock your keyring",
+  "@keyringUnlockTitle": {
+    "description": "[security] Title of the Linux keyring screen asking the user to unlock the system keyring."
+  },
+  "keyringUnreadableBody": "Vizor could not read the data in your system keyring. Retry after restoring access, or quit Vizor.",
+  "@keyringUnreadableBody": {
+    "description": "Body of the Linux keyring screen when the stored keyring data is unreadable."
+  },
+  "keyringUnreadableTitle": "Unable to read secure storage",
+  "@keyringUnreadableTitle": {
+    "description": "Title of the Linux keyring screen when the stored keyring data is unreadable."
+  },
   "languageSystemOption": "System ({language})",
   "@languageSystemOption": {
     "description": "Language picker option that follows the device language. Shown in Settings > System > Language and the Welcome language picker.",
@@ -124,6 +332,79 @@
         "description": "The resolved language, written in its own script."
       }
     }
+  },
+  "lockBodyPaused": "Sync paused. Unlock Vizor to continue.",
+  "@lockBodyPaused": {
+    "description": "[security] Body of the passcode entry screen after sync was interrupted."
+  },
+  "lockBodySynced": "Synced successfully. Unlock Vizor to continue.",
+  "@lockBodySynced": {
+    "description": "[security] Body of the passcode entry screen after sync has finished."
+  },
+  "lockCheckingPasscode": "Checking passcode...",
+  "@lockCheckingPasscode": {
+    "description": "[security] Body of the passcode entry screen while the entered passcode is verified."
+  },
+  "lockConfirmPasscodeSemantics": "Confirm passcode to unlock Vizor",
+  "@lockConfirmPasscodeSemantics": {
+    "description": "[security] Screen-reader label of the passcode entry screen that unlocks the wallet."
+  },
+  "lockNavSynced": "Synced",
+  "@lockNavSynced": {
+    "description": "Top bar title of the passcode entry screen when sync has finished."
+  },
+  "lockNavSyncing": "{percent}% Syncing...",
+  "@lockNavSyncing": {
+    "description": "Top bar title of the passcode entry screen while sync runs, with the percentage complete.",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "lockPasscodeIncorrect": "Incorrect Passcode",
+  "@lockPasscodeIncorrect": {
+    "description": "[security] Error under the passcode dots when the entered unlock passcode is wrong."
+  },
+  "lockSyncCompleteTitle": "Sync Complete",
+  "@lockSyncCompleteTitle": {
+    "description": "Title on the sync lock screen when sync has finished."
+  },
+  "lockSyncPausedSemantics": "Vizor sync is paused",
+  "@lockSyncPausedSemantics": {
+    "description": "Screen-reader label of the sync lock screen when sync was interrupted."
+  },
+  "lockSyncPausedTitle": "Sync paused",
+  "@lockSyncPausedTitle": {
+    "description": "Title on the sync lock screen and passcode screen header when sync was interrupted."
+  },
+  "lockSyncedSemantics": "Vizor is synced",
+  "@lockSyncedSemantics": {
+    "description": "Screen-reader label of the sync lock screen when sync has finished."
+  },
+  "lockSyncingMessage": "Vizor is syncing",
+  "@lockSyncingMessage": {
+    "description": "Screen-reader label and caption on the sync lock screen while sync is running."
+  },
+  "lockUnlockToContinue": "Unlock to continue",
+  "@lockUnlockToContinue": {
+    "description": "[security] Body of the passcode entry screen while sync is running."
+  },
+  "lockUnlockToContinueBody": "Unlock Vizor to continue",
+  "@lockUnlockToContinueBody": {
+    "description": "[security] Body on the sync lock screen asking the user to unlock the wallet to continue."
+  },
+  "lockUnlockToContinuePausedBody": "Unlock Vizor to continue.",
+  "@lockUnlockToContinuePausedBody": {
+    "description": "[security] Body on the sync lock screen after an interrupted sync asking the user to unlock the wallet."
+  },
+  "lockUnlockVizor": "Unlock Vizor",
+  "@lockUnlockVizor": {
+    "description": "[security] Button label on the sync lock screen, and the reason text of the system biometric prompt, that unlocks the wallet."
+  },
+  "lockWelcomeBack": "Welcome Back",
+  "@lockWelcomeBack": {
+    "description": "[security] Heading of the passcode entry screen shown to unlock the wallet."
   },
   "navActivity": "Activity",
   "@navActivity": {

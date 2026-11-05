@@ -9,6 +9,109 @@ class AppLocalizationsKo extends AppLocalizations {
   AppLocalizationsKo([String locale = 'ko']) : super(locale);
 
   @override
+  String get appBackAddAccount => '계⁠정 추⁠가';
+
+  @override
+  String get appBackHardwareWallets => '하⁠드⁠웨⁠어 지⁠갑';
+
+  @override
+  String get appBackImportMethods => '가⁠져⁠오⁠기 방⁠법';
+
+  @override
+  String get appBackWalletBirthdayHeight => '지⁠갑 생⁠일 높⁠이';
+
+  @override
+  String get appBackWelcome => '시⁠작 화⁠면';
+
+  @override
+  String get appExitBackHint => '한 번 더 뒤⁠로 가⁠면 종⁠료⁠돼⁠요';
+
+  @override
+  String get appGiftCloseCardFailed => '카⁠드⁠를 닫⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String appLinuxUpdateAvailable(String version) {
+    return 'Vizor $version⁠을(를) 사⁠용⁠할 수 있⁠어⁠요.';
+  }
+
+  @override
+  String appLinuxUpdateAvailableTor(String version) {
+    return 'Vizor $version⁠을(를) 사⁠용⁠할 수 있⁠어⁠요. 릴⁠리⁠스 페⁠이⁠지⁠는 Vizor⁠의 Tor 연⁠결 밖⁠에⁠서 브⁠라⁠우⁠저⁠로 열⁠려⁠요.';
+  }
+
+  @override
+  String get appLinuxUpdateOpenInBrowser => '브⁠라⁠우⁠저⁠에⁠서 열⁠기';
+
+  @override
+  String get appLinuxUpdateViewRelease => '릴⁠리⁠스 보⁠기';
+
+  @override
+  String get appPrivacyPolicyTitle => '개⁠인⁠정⁠보 처⁠리⁠방⁠침';
+
+  @override
+  String get appTermsOfUseTitle => '이⁠용 약⁠관';
+
+  @override
+  String get appUpdateApplyingMessage => 'Vizor⁠가 종⁠료⁠되⁠면 적⁠용⁠돼⁠요.';
+
+  @override
+  String get appUpdateAvailableMessage =>
+      '지⁠금 다⁠운⁠로⁠드⁠하⁠거⁠나 계⁠속 사⁠용⁠할 수 있⁠어⁠요.';
+
+  @override
+  String get appUpdateAvailableTitle => '업⁠데⁠이⁠트 사⁠용 가⁠능';
+
+  @override
+  String appUpdateAvailableVersionTitle(String version) {
+    return '업⁠데⁠이⁠트 $version 사⁠용 가⁠능';
+  }
+
+  @override
+  String get appUpdateDismiss => '닫⁠기';
+
+  @override
+  String get appUpdateDownload => '다⁠운⁠로⁠드';
+
+  @override
+  String get appUpdateDownloading => '다⁠운⁠로⁠드 중';
+
+  @override
+  String appUpdateDownloadingMessage(int percent) {
+    return '$percent% 다⁠운⁠로⁠드⁠했⁠어⁠요.';
+  }
+
+  @override
+  String get appUpdateDownloadingTitle => '업⁠데⁠이⁠트 다⁠운⁠로⁠드 중';
+
+  @override
+  String get appUpdateFailedMessage =>
+      '업⁠데⁠이⁠트⁠를 완⁠료⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get appUpdateFailedTitle => '업⁠데⁠이⁠트 실⁠패';
+
+  @override
+  String get appUpdateLater => '나⁠중⁠에';
+
+  @override
+  String get appUpdateReadyMessage => '준⁠비⁠되⁠면 다⁠시 시⁠작⁠해 주⁠세⁠요.';
+
+  @override
+  String get appUpdateReadyTitle => '업⁠데⁠이⁠트 준⁠비 완⁠료';
+
+  @override
+  String get appUpdateRestart => '다⁠시 시⁠작';
+
+  @override
+  String get appUpdateRestarting => '다⁠시 시⁠작 중';
+
+  @override
+  String get appUpdateRestartingTitle => 'Vizor 다⁠시 시⁠작 중';
+
+  @override
+  String get appUpdateTryAgain => '다⁠시 시⁠도';
+
+  @override
   String carouselPageSemantics(
     String name,
     int page,
@@ -78,9 +181,118 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonUpdating => '변⁠경 중...';
 
   @override
+  String get keyringLockedBody =>
+      'Vizor⁠가 시⁠스⁠템 키⁠링⁠에 접⁠근⁠할 수 없⁠어⁠요. 키⁠링 잠⁠금⁠을 해⁠제⁠한 뒤 다⁠시 시⁠도⁠를 선⁠택⁠하⁠세⁠요. 시⁠스⁠템⁠에⁠서 키⁠링 비⁠밀⁠번⁠호⁠를 물⁠어⁠볼 수 있⁠어⁠요.';
+
+  @override
+  String get keyringNoResponse => '키⁠링⁠이 응⁠답⁠하⁠지 않⁠았⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get keyringOpenFailedTitle => 'Vizor⁠를 열 수 없⁠어⁠요';
+
+  @override
+  String get keyringOpeningTitle => 'Vizor 여⁠는 중';
+
+  @override
+  String get keyringPromptBody =>
+      'Vizor⁠를 계⁠속 사⁠용⁠하⁠려⁠면 시⁠스⁠템 키⁠링 안⁠내⁠를 완⁠료⁠하⁠세⁠요.';
+
+  @override
+  String get keyringQuit => '종⁠료';
+
+  @override
+  String get keyringRestartHint => 'Vizor⁠를 종⁠료⁠하⁠고 다⁠시 시⁠작⁠해 주⁠세⁠요.';
+
+  @override
+  String get keyringRetry => '다⁠시 시⁠도';
+
+  @override
+  String get keyringSaveUnconfirmedBody =>
+      '변⁠경 사⁠항⁠이 저⁠장⁠되⁠었⁠는⁠지 Vizor⁠가 확⁠인⁠하⁠지 못⁠했⁠어⁠요. 계⁠속⁠하⁠기 전⁠에 Vizor⁠를 종⁠료⁠하⁠고 다⁠시 시⁠작⁠해 주⁠세⁠요.';
+
+  @override
+  String get keyringSaveUnconfirmedTitle => '저⁠장⁠을 확⁠인⁠할 수 없⁠어⁠요';
+
+  @override
+  String get keyringTryingTitle => '보⁠안 저⁠장⁠소⁠에 접⁠근⁠하⁠는 중';
+
+  @override
+  String get keyringUnavailableBody =>
+      'Vizor⁠가 시⁠스⁠템 키⁠링⁠에 연⁠결⁠할 수 없⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 Vizor⁠를 종⁠료⁠하⁠고 다⁠시 시⁠작⁠해 주⁠세⁠요.';
+
+  @override
+  String get keyringUnavailableTitle => '보⁠안 저⁠장⁠소⁠를 사⁠용⁠할 수 없⁠어⁠요';
+
+  @override
+  String get keyringUnlockTitle => '키⁠링 잠⁠금 해⁠제';
+
+  @override
+  String get keyringUnreadableBody =>
+      'Vizor⁠가 시⁠스⁠템 키⁠링⁠의 데⁠이⁠터⁠를 읽⁠지 못⁠했⁠어⁠요. 접⁠근⁠을 복⁠구⁠한 뒤 다⁠시 시⁠도⁠하⁠거⁠나 Vizor⁠를 종⁠료⁠해 주⁠세⁠요.';
+
+  @override
+  String get keyringUnreadableTitle => '보⁠안 저⁠장⁠소⁠를 읽⁠을 수 없⁠어⁠요';
+
+  @override
   String languageSystemOption(String language) {
     return '시⁠스⁠템 ($language)';
   }
+
+  @override
+  String get lockBodyPaused =>
+      '동⁠기⁠화⁠가 일⁠시 중⁠지⁠됐⁠어⁠요. 계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+
+  @override
+  String get lockBodySynced =>
+      '동⁠기⁠화⁠를 마⁠쳤⁠어⁠요. 계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+
+  @override
+  String get lockCheckingPasscode => '암⁠호⁠를 확⁠인⁠하⁠는 중...';
+
+  @override
+  String get lockConfirmPasscodeSemantics => '암⁠호⁠를 확⁠인⁠하⁠여 Vizor 잠⁠금 해⁠제';
+
+  @override
+  String get lockNavSynced => '동⁠기⁠화⁠됨';
+
+  @override
+  String lockNavSyncing(int percent) {
+    return '$percent% 동⁠기⁠화 중...';
+  }
+
+  @override
+  String get lockPasscodeIncorrect => '암⁠호⁠가 올⁠바⁠르⁠지 않⁠아⁠요';
+
+  @override
+  String get lockSyncCompleteTitle => '동⁠기⁠화 완⁠료';
+
+  @override
+  String get lockSyncPausedSemantics => 'Vizor 동⁠기⁠화⁠가 일⁠시 중⁠지⁠됨';
+
+  @override
+  String get lockSyncPausedTitle => '동⁠기⁠화 일⁠시 중⁠지⁠됨';
+
+  @override
+  String get lockSyncedSemantics => 'Vizor 동⁠기⁠화⁠됨';
+
+  @override
+  String get lockSyncingMessage => 'Vizor 동⁠기⁠화 중';
+
+  @override
+  String get lockUnlockToContinue => '계⁠속⁠하⁠려⁠면 잠⁠금⁠을 해⁠제⁠하⁠세⁠요';
+
+  @override
+  String get lockUnlockToContinueBody => '계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요';
+
+  @override
+  String get lockUnlockToContinuePausedBody =>
+      '계⁠속⁠하⁠려⁠면 Vizor 잠⁠금⁠을 해⁠제⁠하⁠세⁠요.';
+
+  @override
+  String get lockUnlockVizor => 'Vizor 잠⁠금 해⁠제';
+
+  @override
+  String get lockWelcomeBack => '다⁠시 오⁠신 것⁠을 환⁠영⁠해⁠요';
 
   @override
   String get navActivity => '활⁠동';
