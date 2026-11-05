@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/navigation/external_action_guard_hold.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -80,11 +81,11 @@ class _MobileSoftwareShieldScreenState
     amount: formatZecAmount(_amount),
     resultAmount: formatZecAmount(_resultAmount ?? _expected),
     title: switch (_phase) {
-      MobileShieldPhase.review => 'Transparent Balance',
-      MobileShieldPhase.succeeded => 'Shielded successfully',
-      MobileShieldPhase.pending => 'Shielding queued',
-      MobileShieldPhase.failed => 'Shielding could not be completed',
-      _ => 'Shielding your balance…',
+      MobileShieldPhase.review => context.l10n.homeShieldBalanceTitle,
+      MobileShieldPhase.succeeded => context.l10n.homeShieldSucceededTitle,
+      MobileShieldPhase.pending => context.l10n.homeShieldQueuedTitle,
+      MobileShieldPhase.failed => context.l10n.homeShieldFailedTitle,
+      _ => context.l10n.homeShieldingBalance,
     },
     body: _message,
     canLeave: _phase != MobileShieldPhase.working,
@@ -97,7 +98,7 @@ class _MobileSoftwareShieldScreenState
         ? AppButton(
             onPressed: _close,
             expand: true,
-            child: const Text('Back to wallet'),
+            child: Text(context.l10n.homeShieldBackToWallet),
           )
         : null,
   );

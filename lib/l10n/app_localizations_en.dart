@@ -9,6 +9,194 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get accountsActionsLabel => 'Account actions';
+
+  @override
+  String get accountsAdd => 'Add account';
+
+  @override
+  String get accountsAddressLoadFailed => 'Couldn\'t load the account address';
+
+  @override
+  String get accountsChangeProfilePicture => 'Change profile picture';
+
+  @override
+  String get accountsClearName => 'Clear account name';
+
+  @override
+  String get accountsCurrent => 'Current';
+
+  @override
+  String get accountsEdit => 'Edit account';
+
+  @override
+  String get accountsEditFailed => 'Couldn\'t update account.';
+
+  @override
+  String get accountsEditNameHint => '1-20 characters';
+
+  @override
+  String get accountsEditNameLabel => 'Account name';
+
+  @override
+  String get accountsManage => 'Manage accounts';
+
+  @override
+  String accountsOptionsFor(String name) {
+    return 'Account options for $name';
+  }
+
+  @override
+  String get accountsOther => 'Other';
+
+  @override
+  String get accountsOtherAccounts => 'Other accounts';
+
+  @override
+  String get accountsRemove => 'Remove account';
+
+  @override
+  String get accountsRemoveBackupWarning =>
+      'If you haven’t backed up this account’s secret passphrase, you can’t recover its funds after removal.';
+
+  @override
+  String accountsRemoveBlockedByGiftCards(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'This account is receiving $count gift cards. Wait for them to finish before removing this account.',
+      one:
+          'This account is receiving a gift card. Wait for it to finish before removing this account.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String accountsRemoveBlockedBySwaps(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'This account has $count active swaps. Complete or remove them from swap activity before removing this account.',
+      one:
+          'This account has 1 active swap. Complete or remove them from swap activity before removing this account.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get accountsRemoveBody =>
+      'Removing this account deletes its local data from Vizor. Make sure you can re-import it before continuing.';
+
+  @override
+  String get accountsRemoveCheckingGiftCards =>
+      'Checking this account for incoming gift cards before removal.';
+
+  @override
+  String get accountsRemoveCheckingPassword => 'Checking password...';
+
+  @override
+  String get accountsRemoveCheckingSwaps =>
+      'Checking this account for active swaps before removal.';
+
+  @override
+  String get accountsRemoveConfirm => 'Remove';
+
+  @override
+  String get accountsRemoveFailed => 'Couldn\'t remove account.';
+
+  @override
+  String get accountsRemoveFailedToast => 'Couldn\'t remove the account';
+
+  @override
+  String get accountsRemoveGiftCardsCheckFailed =>
+      'Couldn\'t check this account for incoming gift cards. Try again before removing it.';
+
+  @override
+  String get accountsRemoveMigrationBody =>
+      'This account\'s migration will no longer continue in Vizor. Transactions already submitted to the Zcash network may still complete. After re-importing, let the account fully sync before starting migration again.';
+
+  @override
+  String get accountsRemoveModalBody =>
+      'Are you sure you want to remove this account? This action can\'t be reverted.\nYou will have to re-import your account.';
+
+  @override
+  String get accountsRemovePasswordCheckFailed =>
+      'Couldn\'t check your password. Please try again.';
+
+  @override
+  String get accountsRemovePasswordHint => 'Enter your password';
+
+  @override
+  String get accountsRemovePasswordIncorrect =>
+      'Incorrect password. Please try again.';
+
+  @override
+  String get accountsRemovePasswordLabel => 'Password';
+
+  @override
+  String get accountsRemoveStoppingSync => 'Stopping sync...';
+
+  @override
+  String get accountsRemoveSwapsCheckFailed =>
+      'Couldn\'t check this account for active swaps. Try again before removing it.';
+
+  @override
+  String get accountsRemoving => 'Removing account...';
+
+  @override
+  String get accountsResetBody =>
+      'Resetting Vizor deletes every account and all local wallet data. Make sure you can re-import your accounts before continuing.';
+
+  @override
+  String get accountsResetFailed => 'Couldn\'t reset Vizor.';
+
+  @override
+  String get accountsResetFailedToast => 'Couldn\'t reset Vizor';
+
+  @override
+  String get accountsResetMigrationBody =>
+      'Resetting Vizor stops migrations on this device and deletes every account and all local wallet data. Transactions already submitted to the Zcash network may still complete. After re-importing, let each account fully sync before starting migration again.';
+
+  @override
+  String get accountsResetModalBody =>
+      'Removing this account will completely reset the Vizor app. This means deleting all accounts and requiring you to import accounts again.\nUnshared gift card links will also be permanently lost.\nThis cannot be undone.';
+
+  @override
+  String get accountsResetVizor => 'Reset Vizor';
+
+  @override
+  String get accountsResetting => 'Resetting...';
+
+  @override
+  String get accountsSaveEdits => 'Save edits';
+
+  @override
+  String get accountsSaveFailed => 'Couldn\'t save the account changes';
+
+  @override
+  String get accountsSelectProfilePicture => 'Select profile picture';
+
+  @override
+  String get accountsSendFailed => 'Send couldn\'t be started';
+
+  @override
+  String get accountsSendZec => 'Send ZEC';
+
+  @override
+  String get accountsTitle => 'Accounts';
+
+  @override
+  String get accountsUpdatePicture => 'Update picture';
+
+  @override
+  String get accountsViewSecretPhrase => 'View secret phrase';
+
+  @override
+  String get accountsViewViewingKey => 'View viewing key';
+
+  @override
   String get appBackAddAccount => 'Add account';
 
   @override
@@ -178,6 +366,424 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonUpdating => 'Updating...';
+
+  @override
+  String get homeActivityEmpty => 'No activity, yet...';
+
+  @override
+  String get homeActivityEmptyHint => 'How about running your first ZEC tx?';
+
+  @override
+  String get homeActivityEmptyHintMobile =>
+      'How about running your\nfirst ZEC tx?';
+
+  @override
+  String get homeActivityLoading => 'Loading activity';
+
+  @override
+  String get homeActivityUnavailable => 'Unable to load activity.';
+
+  @override
+  String get homeBackupSubtitle => 'Back up your secret passphrase\nLast step';
+
+  @override
+  String get homeBackupTitle => 'Secure your wallet';
+
+  @override
+  String get homeDismiss => 'Dismiss';
+
+  @override
+  String get homeEducationSubtitle =>
+      'Privacy, address types, and what to expect';
+
+  @override
+  String get homeEducationTitle => 'Learn about Zcash';
+
+  @override
+  String get homeImportingBodyMobile =>
+      'Hang tight ... It might take some time. Keep Vizor open & running.';
+
+  @override
+  String get homeImportingDetail =>
+      'It might take some time.\nKeep Vizor open & running.';
+
+  @override
+  String homeImportingDetailNamed(String name) {
+    return 'Importing $name\nKeep Vizor open & running.';
+  }
+
+  @override
+  String get homeImportingTitle => 'We\'re importing\nyour wallet...';
+
+  @override
+  String get homeImportingTitleMobile => 'We\'re importing your wallet...';
+
+  @override
+  String get homeKeepAwakeBody =>
+      'Your phone pauses syncing when screen is off. This allows sync to finish faster.';
+
+  @override
+  String get homeKeepAwakeEnable => 'Keep screen awake';
+
+  @override
+  String get homeKeepAwakeLater => 'Maybe later';
+
+  @override
+  String get homeKeepAwakeLockNote =>
+      'The app locks after 1 minute of inactivity. Syncing continues behind the lock.';
+
+  @override
+  String get homeKeepAwakeSettingsNote =>
+      'You can change this anytime in the Settings.';
+
+  @override
+  String get homeKeepAwakeTitle => 'Stay awake to sync?';
+
+  @override
+  String get homeLedgerActionNeeded => 'Action needed';
+
+  @override
+  String get homeLedgerApprovalNotAccepted =>
+      'Your Ledger couldn’t accept this approval. Earlier approvals were already sent.';
+
+  @override
+  String get homeLedgerBroadcastNotStored =>
+      'The shield transaction reached the network but was not stored locally. Do not try again until sync confirms it.';
+
+  @override
+  String get homeLedgerBroadcastUnknown =>
+      'The shield transaction may have reached the network. Check activity before trying again.';
+
+  @override
+  String get homeLedgerCancelShielding => 'Cancel shielding';
+
+  @override
+  String get homeLedgerContextChanged =>
+      'The selected account or network changed. Return to your wallet.';
+
+  @override
+  String get homeLedgerInputsRemaining => 'Inputs remaining';
+
+  @override
+  String get homeLedgerNoFundsRemain =>
+      'No spendable transparent funds remain. Return to your wallet.';
+
+  @override
+  String get homeLedgerNoSapling =>
+      'This Ledger preview does not support Sapling inputs or outputs.';
+
+  @override
+  String get homeLedgerPausedBelowThreshold =>
+      'The remaining funds are below the shielding threshold.';
+
+  @override
+  String get homeLedgerPausedTitle => 'Shielding paused';
+
+  @override
+  String get homeLedgerPausedWalletChanges =>
+      'Shielding paused while wallet changes finish. Return to your wallet.';
+
+  @override
+  String get homeLedgerRejected =>
+      'The shield transaction was rejected on your Ledger.';
+
+  @override
+  String get homeLedgerRoundFeeNotice =>
+      'Each approval creates a separate transaction with its own network fee.';
+
+  @override
+  String homeLedgerRoundSentBelowThreshold(int round) {
+    return 'Round $round was sent. The remaining funds are below the shielding threshold.';
+  }
+
+  @override
+  String homeLedgerRoundSentNoReduction(int round) {
+    return 'Round $round was sent, but no reduction in spendable inputs could be confirmed. Wait for sync before shielding again.';
+  }
+
+  @override
+  String homeLedgerRoundSentUnchecked(int round) {
+    return 'Round $round was sent, but the remaining funds could not be checked. Return to your wallet and try again after sync.';
+  }
+
+  @override
+  String get homeLedgerShieldTitle => 'Shield with Ledger';
+
+  @override
+  String get homeLedgerShieldingFailed =>
+      'Ledger shielding could not be completed.';
+
+  @override
+  String get homeLedgerSigningFailedTitle => 'Ledger signing failed';
+
+  @override
+  String homeLoadFailed(String details) {
+    return 'Something went wrong. Try again in a moment.\n\nDetails: $details';
+  }
+
+  @override
+  String get homeMigrateToIronwood => 'Migrate to Ironwood';
+
+  @override
+  String get homeMigrationRequired => 'Migration required';
+
+  @override
+  String get homeMigrationRequiredTitle => 'Migration Required';
+
+  @override
+  String homeMigrationStillMigrating(String amount) {
+    return '$amount still migrating';
+  }
+
+  @override
+  String get homeMigrationStoppedByUpgrade =>
+      'Migration stopped by network upgrade';
+
+  @override
+  String get homeMigrationWaitingConfirmation => 'Waiting for confirmation...';
+
+  @override
+  String get homeNu7FasterBody =>
+      'Average wait for first confirmation drops from ~75s to ~25s.';
+
+  @override
+  String get homeNu7FasterTitle => '~3× faster blocks';
+
+  @override
+  String get homeNu7GotIt => 'Got it';
+
+  @override
+  String get homeNu7ThroughputBody =>
+      'Network can handle 2.3x more shielded transactions per block.';
+
+  @override
+  String get homeNu7ThroughputTitle => 'Higher shielded throughput';
+
+  @override
+  String get homeNu7Title => 'NU7 Update is live.\nWhat does this mean?';
+
+  @override
+  String get homePasswordChangeUnverified =>
+      'We couldn\'t verify the previous password change. Try again or restart Vizor.';
+
+  @override
+  String get homePayInUsdc => 'Pay in USDC';
+
+  @override
+  String get homeReceive => 'Receive';
+
+  @override
+  String get homeReceiveFirstZec => 'Receive your first ZEC';
+
+  @override
+  String get homeRecentActivity => 'Recent activity';
+
+  @override
+  String get homeSeeAll => 'See all';
+
+  @override
+  String get homeSend => 'Send';
+
+  @override
+  String get homeSetupBackupMessage =>
+      'Back up your wallet. Keep your secret passphrase safe.';
+
+  @override
+  String get homeSetupCarouselLabel => 'Wallet setup';
+
+  @override
+  String get homeSetupCarouselName => 'wallet setup banner';
+
+  @override
+  String get homeSetupEducationMessage =>
+      'Learn how Zcash protects your privacy and which address to use.';
+
+  @override
+  String get homeShield => 'Shield';
+
+  @override
+  String get homeShieldAfterScan => 'After you scanned, click Get Signature.';
+
+  @override
+  String get homeShieldApproveTitle => 'Approve with Keystone';
+
+  @override
+  String get homeShieldAttentionTitle => 'Shielding needs attention';
+
+  @override
+  String get homeShieldBackToWallet => 'Back to wallet';
+
+  @override
+  String get homeShieldBackToWalletTitleCase => 'Back to Wallet';
+
+  @override
+  String get homeShieldBalanceTitle => 'Transparent Balance';
+
+  @override
+  String get homeShieldBroadcastNotStored =>
+      'The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
+
+  @override
+  String get homeShieldBroadcastUnknown =>
+      'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
+
+  @override
+  String get homeShieldBroadcastingTitle => 'Broadcasting shield tx';
+
+  @override
+  String get homeShieldCameraDenied =>
+      'Allow camera access in Settings to scan Keystone signatures.';
+
+  @override
+  String get homeShieldCameraUnavailable =>
+      'The camera is unavailable right now.';
+
+  @override
+  String get homeShieldCancelFailed =>
+      'Could not finish cancelling. Please try again.';
+
+  @override
+  String get homeShieldCancelled => 'Shielding was cancelled.';
+
+  @override
+  String get homeShieldCancelledBeforeParams =>
+      'Shielding was cancelled before proving parameters were downloaded.';
+
+  @override
+  String get homeShieldComplete => 'Complete';
+
+  @override
+  String get homeShieldDrag => 'Drag to shield';
+
+  @override
+  String get homeShieldErrorBroadcast =>
+      'Shield transaction could not be broadcast.';
+
+  @override
+  String get homeShieldErrorGeneric =>
+      'Shield balance failed. Please try again.';
+
+  @override
+  String get homeShieldErrorNotFinalized =>
+      'Shield transaction could not be finalized.';
+
+  @override
+  String get homeShieldErrorProvingParams =>
+      'Required proving parameters could not be prepared.';
+
+  @override
+  String get homeShieldErrorSignatureNotApplied =>
+      'Keystone signature could not be applied.';
+
+  @override
+  String get homeShieldErrorSigningNotPrepared =>
+      'Keystone signing could not be prepared.';
+
+  @override
+  String get homeShieldErrorSyncFirst =>
+      'Sync the wallet before shielding transparent balance.';
+
+  @override
+  String get homeShieldErrorTooSmall =>
+      'Transparent balance is too small to shield after fees.';
+
+  @override
+  String get homeShieldFailedTitle => 'Shielding could not be completed';
+
+  @override
+  String get homeShieldGetSignature => 'Get Signature';
+
+  @override
+  String get homeShieldKeepOpen =>
+      'Keep Vizor open while the transaction is sent.';
+
+  @override
+  String get homeShieldKeystoneQrSemantics => 'Keystone transaction QR';
+
+  @override
+  String get homeShieldNextStep => 'Next step';
+
+  @override
+  String get homeShieldNoActiveAccount => 'No active account.';
+
+  @override
+  String get homeShieldNow => 'Shield now';
+
+  @override
+  String get homeShieldQueuedTitle => 'Shielding queued';
+
+  @override
+  String get homeShieldReadingSignature => 'Reading signature…';
+
+  @override
+  String get homeShieldReject => 'Reject';
+
+  @override
+  String get homeShieldScanDecodeFailed =>
+      'This QR code could not be decoded as a Keystone signature.';
+
+  @override
+  String get homeShieldScanHold => 'Keep the QR code steady and fully visible.';
+
+  @override
+  String get homeShieldScanTitle => 'Scan your Keystone signature';
+
+  @override
+  String get homeShieldScanToSign => 'Scan the QR code to sign';
+
+  @override
+  String get homeShieldScanWrongQr =>
+      'Open the signed shield QR on Keystone, then scan again.';
+
+  @override
+  String homeShieldScanning(int progress) {
+    return 'Scanning… $progress%';
+  }
+
+  @override
+  String get homeShieldShowQr => 'Show QR';
+
+  @override
+  String get homeShieldSignTitle => 'Sign tx on your Keystone';
+
+  @override
+  String get homeShieldStatusUncertain =>
+      'The shield transaction status is uncertain. Check activity before trying again.';
+
+  @override
+  String get homeShieldSubmitting => 'Submitting transaction';
+
+  @override
+  String get homeShieldSucceededTitle => 'Shielded successfully';
+
+  @override
+  String get homeShieldToggleFlashlight => 'Toggle flashlight';
+
+  @override
+  String get homeShieldTryAgain => 'Try again';
+
+  @override
+  String get homeShieldedBalance => 'Shielded balance';
+
+  @override
+  String get homeShieldingBalance => 'Shielding your balance…';
+
+  @override
+  String get homeShieldingProgress => 'Shielding...';
+
+  @override
+  String homeTransparentBalance(String balance) {
+    return 'Transparent: $balance';
+  }
+
+  @override
+  String get homeVotingSemantics => 'Open coinholder voting';
+
+  @override
+  String get homeVotingSubtitle => 'Help to shape the network';
+
+  @override
+  String get homeVotingTitle => 'Coinholder voting';
 
   @override
   String get keyringLockedBody =>

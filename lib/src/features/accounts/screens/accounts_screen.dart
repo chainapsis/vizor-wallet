@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_pane_floating_bar.dart';
@@ -484,16 +485,20 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       final address = await _loadShieldedAddressForAccount(account);
       if (!mounted) return;
       if (address.trim().isEmpty) {
-        showAppToast(context, "Address couldn't be copied");
+        showAppToast(context, context.l10n.sidebarAddressCopyFailed);
         return;
       }
 
       if (!mounted) return;
-      copyTextWithToast(context, text: address, toastMessage: 'Address copied');
+      copyTextWithToast(
+        context,
+        text: address,
+        toastMessage: context.l10n.commonAddressCopied,
+      );
     } catch (e) {
       log('AccountsScreen: ERROR copying shielded address: $e');
       if (!mounted) return;
-      showAppToast(context, "Address couldn't be copied");
+      showAppToast(context, context.l10n.sidebarAddressCopyFailed);
     } finally {
       if (mounted) {
         setState(() {
@@ -514,7 +519,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       final address = (await _loadShieldedAddressForAccount(account)).trim();
       if (!mounted) return;
       if (address.isEmpty) {
-        showAppToast(context, "Send couldn't be started");
+        showAppToast(context, context.l10n.accountsSendFailed);
         return;
       }
 
@@ -522,7 +527,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         '/send',
         extra: SendPrefillArgs(
           id: 'account-address:${account.uuid}:$address',
-          source: 'Accounts',
+          source: 'Accounts', // l10n-ignore: analytics source id
           address: address,
           label: account.name,
         ),
@@ -530,7 +535,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     } catch (e) {
       log('AccountsScreen: ERROR opening send flow for account address: $e');
       if (!mounted) return;
-      showAppToast(context, "Send couldn't be started");
+      showAppToast(context, context.l10n.accountsSendFailed);
     } finally {
       if (mounted) {
         setState(() {
@@ -635,7 +640,7 @@ class _AccountsPane extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Accounts',
+                context.l10n.accountsTitle,
                 textAlign: TextAlign.center,
                 style: AppTypography.headlineLarge.copyWith(
                   color: context.colors.text.accent,
@@ -728,7 +733,7 @@ class _AccountsAddAccountButtonState extends State<_AccountsAddAccountButton> {
           onTapCancel: () => _setPressed(false),
           child: Semantics(
             button: true,
-            label: 'Add account',
+            label: context.l10n.accountsAdd,
             child: ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 96),
               child: AnimatedContainer(
@@ -744,17 +749,17 @@ class _AccountsAddAccountButtonState extends State<_AccountsAddAccountButton> {
                   data: IconThemeData(color: labelColor, size: 16),
                   child: DefaultTextStyle.merge(
                     style: AppTypography.labelLarge.copyWith(color: labelColor),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        AppIcon(AppIcons.addNew),
-                        SizedBox(width: AppSpacing.xxs),
+                        const AppIcon(AppIcons.addNew),
+                        const SizedBox(width: AppSpacing.xxs),
                         Padding(
-                          padding: EdgeInsets.symmetric(
+                          padding: const EdgeInsets.symmetric(
                             horizontal: AppSpacing.xxs,
                           ),
-                          child: Text('Add account'),
+                          child: Text(context.l10n.accountsAdd),
                         ),
                       ],
                     ),
@@ -809,7 +814,7 @@ class _AccountsList extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const _AccountsSectionLabel(label: 'Current'),
+                    _AccountsSectionLabel(label: context.l10n.accountsCurrent),
                     const SizedBox(height: _accountsRowGap),
                     _AccountRow(
                       key: ValueKey(
@@ -838,7 +843,7 @@ class _AccountsList extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const _AccountsSectionLabel(label: 'Other'),
+                    _AccountsSectionLabel(label: context.l10n.accountsOther),
                     const SizedBox(height: _accountsRowGap),
                     _OtherAccountsRows(
                       accounts: otherAccounts,
@@ -1323,7 +1328,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
           onTap: _toggleMenu,
           child: Semantics(
             button: true,
-            label: 'Account actions',
+            label: context.l10n.accountsActionsLabel,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               curve: Curves.easeOut,
@@ -1398,45 +1403,45 @@ class _AccountContextMenu extends StatelessWidget {
         if (onViewSecretPassphrase != null) ...[
           AppContextMenuItem(
             iconName: AppIcons.key,
-            label: 'View secret phrase',
+            label: context.l10n.accountsViewSecretPhrase,
             onTap: onViewSecretPassphrase!,
           ),
           const SizedBox(height: AppSpacing.xxs),
         ],
         AppContextMenuItem(
           iconName: AppIcons.eye,
-          label: 'View viewing key',
+          label: context.l10n.accountsViewViewingKey,
           onTap: onViewViewingKey,
         ),
         const SizedBox(height: AppSpacing.xxs),
         if (!showSendZec) ...[
           AppContextMenuItem(
             iconName: AppIcons.edit,
-            label: 'Edit account',
+            label: context.l10n.accountsEdit,
             onTap: onEditAccount,
           ),
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.copy,
-            label: 'Copy address',
+            label: context.l10n.commonCopyAddress,
             onTap: onCopyAddress,
           ),
         ] else ...[
           AppContextMenuItem(
             iconName: AppIcons.copy,
-            label: 'Copy address',
+            label: context.l10n.commonCopyAddress,
             onTap: onCopyAddress,
           ),
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.plane,
-            label: 'Send ZEC',
+            label: context.l10n.accountsSendZec,
             onTap: onSendZec,
           ),
           const SizedBox(height: AppSpacing.xxs),
           AppContextMenuItem(
             iconName: AppIcons.edit,
-            label: 'Edit account',
+            label: context.l10n.accountsEdit,
             onTap: onEditAccount,
           ),
         ],
@@ -1444,7 +1449,7 @@ class _AccountContextMenu extends StatelessWidget {
           const AppContextMenuDivider(),
           AppContextMenuItem(
             iconName: AppIcons.trash,
-            label: 'Remove account',
+            label: context.l10n.accountsRemove,
             destructive: true,
             onTap: onRemove,
           ),

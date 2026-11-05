@@ -1,5 +1,227 @@
 {
   "@@locale": "en",
+  "accountsActionsLabel": "Account actions",
+  "@accountsActionsLabel": {
+    "description": "Screen-reader label of the button that opens an account's action menu on desktop."
+  },
+  "accountsAdd": "Add account",
+  "@accountsAdd": {
+    "description": "Button and screen-reader label that starts adding or creating another account."
+  },
+  "accountsAddressLoadFailed": "Couldn't load the account address",
+  "@accountsAddressLoadFailed": {
+    "description": "Toast on the mobile Accounts screen when an account's address could not be loaded for sending."
+  },
+  "accountsChangeProfilePicture": "Change profile picture",
+  "@accountsChangeProfilePicture": {
+    "description": "Screen-reader label of the avatar button in the edit-account dialog and sheet that opens the profile picture picker."
+  },
+  "accountsClearName": "Clear account name",
+  "@accountsClearName": {
+    "description": "Screen-reader label of the clear button in the mobile account name field."
+  },
+  "accountsCurrent": "Current",
+  "@accountsCurrent": {
+    "description": "Section heading on the Accounts screen for the selected account."
+  },
+  "accountsEdit": "Edit account",
+  "@accountsEdit": {
+    "description": "Account menu item that opens the account editor for name and picture."
+  },
+  "accountsEditFailed": "Couldn't update account.",
+  "@accountsEditFailed": {
+    "description": "Error in the desktop edit-account dialog when saving failed."
+  },
+  "accountsEditNameHint": "1-20 characters",
+  "@accountsEditNameHint": {
+    "description": "Placeholder of the account name field: the name must be 1 to 20 characters long."
+  },
+  "accountsEditNameLabel": "Account name",
+  "@accountsEditNameLabel": {
+    "description": "Label of the account name field in the edit-account dialog and sheet."
+  },
+  "accountsManage": "Manage accounts",
+  "@accountsManage": {
+    "description": "Button in the mobile account switcher sheet that opens the Accounts screen."
+  },
+  "accountsOptionsFor": "Account options for {name}",
+  "@accountsOptionsFor": {
+    "description": "Screen-reader label of the button that opens the options menu of an account. {name} is the account name the user chose.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Savings"
+      }
+    }
+  },
+  "accountsOther": "Other",
+  "@accountsOther": {
+    "description": "Section heading on the Accounts screen for the accounts that are not selected."
+  },
+  "accountsOtherAccounts": "Other accounts",
+  "@accountsOtherAccounts": {
+    "description": "Heading above the unselected accounts in the mobile account switcher sheet."
+  },
+  "accountsRemove": "Remove account",
+  "@accountsRemove": {
+    "description": "[security] Account menu item and sheet title for removing an account from the wallet; this deletes its local data."
+  },
+  "accountsRemoveBackupWarning": "If you haven’t backed up this account’s secret passphrase, you can’t recover its funds after removal.",
+  "@accountsRemoveBackupWarning": {
+    "description": "[security] Warning in the mobile remove-account sheet when the account's secret passphrase was never backed up; its funds would be lost."
+  },
+  "accountsRemoveBlockedByGiftCards": "{count, plural, =1{This account is receiving a gift card. Wait for it to finish before removing this account.} other{This account is receiving {count} gift cards. Wait for them to finish before removing this account.}}",
+  "@accountsRemoveBlockedByGiftCards": {
+    "description": "Message in the desktop remove-account dialog when gift cards being received block removal. {count} is the number of incoming gift cards, at least 1.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "accountsRemoveBlockedBySwaps": "{count, plural, =1{This account has 1 active swap. Complete or remove them from swap activity before removing this account.} other{This account has {count} active swaps. Complete or remove them from swap activity before removing this account.}}",
+  "@accountsRemoveBlockedBySwaps": {
+    "description": "Message in the desktop remove-account dialog when pending swaps block removal. {count} is the number of active swaps, at least 1.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "accountsRemoveBody": "Removing this account deletes its local data from Vizor. Make sure you can re-import it before continuing.",
+  "@accountsRemoveBody": {
+    "description": "[security] Body of the mobile remove-account sheet. Removal deletes the account's local data irreversibly."
+  },
+  "accountsRemoveCheckingGiftCards": "Checking this account for incoming gift cards before removal.",
+  "@accountsRemoveCheckingGiftCards": {
+    "description": "Message in the desktop remove-account dialog while the wallet looks for gift cards being received."
+  },
+  "accountsRemoveCheckingPassword": "Checking password...",
+  "@accountsRemoveCheckingPassword": {
+    "description": "[security] Label of the confirm button in the desktop remove-account dialog while the password is checked."
+  },
+  "accountsRemoveCheckingSwaps": "Checking this account for active swaps before removal.",
+  "@accountsRemoveCheckingSwaps": {
+    "description": "Message in the desktop remove-account dialog while the wallet looks for pending swaps."
+  },
+  "accountsRemoveConfirm": "Remove",
+  "@accountsRemoveConfirm": {
+    "description": "[security] Destructive button that confirms removing one account and its local data."
+  },
+  "accountsRemoveFailed": "Couldn't remove account.",
+  "@accountsRemoveFailed": {
+    "description": "[security] Error in the desktop remove-account dialog when removing the account failed."
+  },
+  "accountsRemoveFailedToast": "Couldn't remove the account",
+  "@accountsRemoveFailedToast": {
+    "description": "[security] Toast on the mobile Accounts screen when removing an account failed."
+  },
+  "accountsRemoveGiftCardsCheckFailed": "Couldn't check this account for incoming gift cards. Try again before removing it.",
+  "@accountsRemoveGiftCardsCheckFailed": {
+    "description": "Message in the desktop remove-account dialog when the incoming gift card check failed."
+  },
+  "accountsRemoveMigrationBody": "This account's migration will no longer continue in Vizor. Transactions already submitted to the Zcash network may still complete. After re-importing, let the account fully sync before starting migration again.",
+  "@accountsRemoveMigrationBody": {
+    "description": "[security] Body of the mobile remove-account sheet when that account has an active Ironwood migration. Removal deletes the account's local data."
+  },
+  "accountsRemoveModalBody": "Are you sure you want to remove this account? This action can't be reverted.\nYou will have to re-import your account.",
+  "@accountsRemoveModalBody": {
+    "description": "[security] Body of the desktop remove-account confirmation dialog. Two lines; removal is irreversible."
+  },
+  "accountsRemovePasswordCheckFailed": "Couldn't check your password. Please try again.",
+  "@accountsRemovePasswordCheckFailed": {
+    "description": "[security] Error under the password field of the desktop remove-account dialog when the password check itself failed."
+  },
+  "accountsRemovePasswordHint": "Enter your password",
+  "@accountsRemovePasswordHint": {
+    "description": "[security] Placeholder of the wallet password field in the desktop remove-account dialog."
+  },
+  "accountsRemovePasswordIncorrect": "Incorrect password. Please try again.",
+  "@accountsRemovePasswordIncorrect": {
+    "description": "[security] Error under the password field of the desktop remove-account dialog when the password is wrong."
+  },
+  "accountsRemovePasswordLabel": "Password",
+  "@accountsRemovePasswordLabel": {
+    "description": "[security] Label of the wallet password field in the desktop remove-account dialog."
+  },
+  "accountsRemoveStoppingSync": "Stopping sync...",
+  "@accountsRemoveStoppingSync": {
+    "description": "Label of the confirm button in the desktop remove-account dialog while sync is stopped."
+  },
+  "accountsRemoveSwapsCheckFailed": "Couldn't check this account for active swaps. Try again before removing it.",
+  "@accountsRemoveSwapsCheckFailed": {
+    "description": "Message in the desktop remove-account dialog when the pending-swap check failed."
+  },
+  "accountsRemoving": "Removing account...",
+  "@accountsRemoving": {
+    "description": "[security] Label of the confirm button in the desktop remove-account dialog while the account is removed."
+  },
+  "accountsResetBody": "Resetting Vizor deletes every account and all local wallet data. Make sure you can re-import your accounts before continuing.",
+  "@accountsResetBody": {
+    "description": "[security] Body of the mobile reset confirmation sheet shown when the last account is removed. Resetting deletes all local wallet data irreversibly."
+  },
+  "accountsResetFailed": "Couldn't reset Vizor.",
+  "@accountsResetFailed": {
+    "description": "[security] Error in the desktop remove-account dialog when resetting the whole wallet failed."
+  },
+  "accountsResetFailedToast": "Couldn't reset Vizor",
+  "@accountsResetFailedToast": {
+    "description": "[security] Toast on the mobile Accounts screen when resetting the whole wallet failed."
+  },
+  "accountsResetMigrationBody": "Resetting Vizor stops migrations on this device and deletes every account and all local wallet data. Transactions already submitted to the Zcash network may still complete. After re-importing, let each account fully sync before starting migration again.",
+  "@accountsResetMigrationBody": {
+    "description": "[security] Body of the mobile reset confirmation sheet when an Ironwood migration is active. Resetting deletes all local wallet data irreversibly."
+  },
+  "accountsResetModalBody": "Removing this account will completely reset the Vizor app. This means deleting all accounts and requiring you to import accounts again.\nUnshared gift card links will also be permanently lost.\nThis cannot be undone.",
+  "@accountsResetModalBody": {
+    "description": "[security] Body of the desktop dialog for removing the last account, which resets the whole app. Three lines; the last says the deletion is irreversible."
+  },
+  "accountsResetVizor": "Reset Vizor",
+  "@accountsResetVizor": {
+    "description": "[security] Destructive button that deletes every account and all local wallet data."
+  },
+  "accountsResetting": "Resetting...",
+  "@accountsResetting": {
+    "description": "[security] Label of the confirm button in the desktop remove-account dialog while the wallet is reset."
+  },
+  "accountsSaveEdits": "Save edits",
+  "@accountsSaveEdits": {
+    "description": "Button in the mobile edit-account sheet that saves the name and picture."
+  },
+  "accountsSaveFailed": "Couldn't save the account changes",
+  "@accountsSaveFailed": {
+    "description": "Toast on the mobile Accounts screen when saving name or picture edits failed."
+  },
+  "accountsSelectProfilePicture": "Select profile picture",
+  "@accountsSelectProfilePicture": {
+    "description": "Title of the profile picture picker."
+  },
+  "accountsSendFailed": "Send couldn't be started",
+  "@accountsSendFailed": {
+    "description": "Toast on the Accounts screen when sending to an account's address could not be started."
+  },
+  "accountsSendZec": "Send ZEC",
+  "@accountsSendZec": {
+    "description": "Account menu item that starts a send to that account's address."
+  },
+  "accountsTitle": "Accounts",
+  "@accountsTitle": {
+    "description": "Title of the Accounts screen that lists the wallet's accounts."
+  },
+  "accountsUpdatePicture": "Update picture",
+  "@accountsUpdatePicture": {
+    "description": "Button in the mobile profile picture picker that confirms the selected picture."
+  },
+  "accountsViewSecretPhrase": "View secret phrase",
+  "@accountsViewSecretPhrase": {
+    "description": "[security] Account menu item that shows the account's secret passphrase."
+  },
+  "accountsViewViewingKey": "View viewing key",
+  "@accountsViewViewingKey": {
+    "description": "[security] Account menu item that shows the account's viewing key."
+  },
   "appBackAddAccount": "Add account",
   "@appBackAddAccount": {
     "description": "Back-link label shown during desktop onboarding that returns to the Add account screen."
@@ -257,6 +479,534 @@
   "commonUpdating": "Updating...",
   "@commonUpdating": {
     "description": "The Update button label while the change is being saved."
+  },
+  "homeActivityEmpty": "No activity, yet...",
+  "@homeActivityEmpty": {
+    "description": "Empty-state title on Home when the wallet has no transactions."
+  },
+  "homeActivityEmptyHint": "How about running your first ZEC tx?",
+  "@homeActivityEmptyHint": {
+    "description": "Hint under the desktop Home empty-state title; tx is short for transaction."
+  },
+  "homeActivityEmptyHintMobile": "How about running your\nfirst ZEC tx?",
+  "@homeActivityEmptyHintMobile": {
+    "description": "Two-line hint under the mobile Home empty-state title; tx is short for transaction."
+  },
+  "homeActivityLoading": "Loading activity",
+  "@homeActivityLoading": {
+    "description": "Screen-reader label of the Home recent-activity list while it loads."
+  },
+  "homeActivityUnavailable": "Unable to load activity.",
+  "@homeActivityUnavailable": {
+    "description": "Empty-state title on Home when the activity list could not be loaded."
+  },
+  "homeBackupSubtitle": "Back up your secret passphrase\nLast step",
+  "@homeBackupSubtitle": {
+    "description": "[security] Two-line subtitle of the mobile Home backup reminder card; the second line marks it as the last setup step."
+  },
+  "homeBackupTitle": "Secure your wallet",
+  "@homeBackupTitle": {
+    "description": "[security] Title of the mobile Home card that reminds the user to back up their secret passphrase."
+  },
+  "homeDismiss": "Dismiss",
+  "@homeDismiss": {
+    "description": "Action on a desktop Home notice that hides the notice."
+  },
+  "homeEducationSubtitle": "Privacy, address types, and what to expect",
+  "@homeEducationSubtitle": {
+    "description": "Subtitle of the mobile Home Zcash introduction card."
+  },
+  "homeEducationTitle": "Learn about Zcash",
+  "@homeEducationTitle": {
+    "description": "Title of the mobile Home card that opens the Zcash introduction."
+  },
+  "homeImportingBodyMobile": "Hang tight ... It might take some time. Keep Vizor open & running.",
+  "@homeImportingBodyMobile": {
+    "description": "Body of the mobile Home import-progress screen asking the user to keep the app open."
+  },
+  "homeImportingDetail": "It might take some time.\nKeep Vizor open & running.",
+  "@homeImportingDetail": {
+    "description": "Two-line detail on desktop Home while an imported wallet scans and the account has no name."
+  },
+  "homeImportingDetailNamed": "Importing {name}\nKeep Vizor open & running.",
+  "@homeImportingDetailNamed": {
+    "description": "Two-line detail on desktop Home while an imported account scans. {name} is the account name entered by the user.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Savings"
+      }
+    }
+  },
+  "homeImportingTitle": "We're importing\nyour wallet...",
+  "@homeImportingTitle": {
+    "description": "Two-line title on desktop Home while an imported wallet scans the chain."
+  },
+  "homeImportingTitleMobile": "We're importing your wallet...",
+  "@homeImportingTitleMobile": {
+    "description": "Title of the mobile Home screen while an imported wallet is scanning the chain."
+  },
+  "homeKeepAwakeBody": "Your phone pauses syncing when screen is off. This allows sync to finish faster.",
+  "@homeKeepAwakeBody": {
+    "description": "Body of the keep-awake sheet explaining why the screen should stay on during sync."
+  },
+  "homeKeepAwakeEnable": "Keep screen awake",
+  "@homeKeepAwakeEnable": {
+    "description": "Button in the keep-awake sheet that turns on the keep-screen-awake option."
+  },
+  "homeKeepAwakeLater": "Maybe later",
+  "@homeKeepAwakeLater": {
+    "description": "Ghost button in the keep-awake sheet that dismisses it without turning the option on."
+  },
+  "homeKeepAwakeLockNote": "The app locks after 1 minute of inactivity. Syncing continues behind the lock.",
+  "@homeKeepAwakeLockNote": {
+    "description": "Bullet in the keep-awake sheet: the app still locks after one idle minute while sync continues."
+  },
+  "homeKeepAwakeSettingsNote": "You can change this anytime in the Settings.",
+  "@homeKeepAwakeSettingsNote": {
+    "description": "Bullet in the keep-awake sheet saying the choice can be changed later in Settings."
+  },
+  "homeKeepAwakeTitle": "Stay awake to sync?",
+  "@homeKeepAwakeTitle": {
+    "description": "Title of the mobile Home sheet that offers to keep the screen awake while the wallet syncs."
+  },
+  "homeLedgerActionNeeded": "Action needed",
+  "@homeLedgerActionNeeded": {
+    "description": "Status label of the Ledger shield failure panel after an error."
+  },
+  "homeLedgerApprovalNotAccepted": "Your Ledger couldn’t accept this approval. Earlier approvals were already sent.",
+  "@homeLedgerApprovalNotAccepted": {
+    "description": "Ledger shield dialog error when the device refused a later round; earlier rounds were already broadcast."
+  },
+  "homeLedgerBroadcastNotStored": "The shield transaction reached the network but was not stored locally. Do not try again until sync confirms it.",
+  "@homeLedgerBroadcastNotStored": {
+    "description": "Warning on the Ledger shield dialog when the transaction was broadcast but not saved; retrying could send it twice."
+  },
+  "homeLedgerBroadcastUnknown": "The shield transaction may have reached the network. Check activity before trying again.",
+  "@homeLedgerBroadcastUnknown": {
+    "description": "Warning on the Ledger shield dialog when the broadcast outcome is unknown."
+  },
+  "homeLedgerCancelShielding": "Cancel shielding",
+  "@homeLedgerCancelShielding": {
+    "description": "Screen-reader label of the close button on the mobile Ledger shield panel while shielding can still be cancelled."
+  },
+  "homeLedgerContextChanged": "The selected account or network changed. Return to your wallet.",
+  "@homeLedgerContextChanged": {
+    "description": "Ledger shield dialog message when the user switched account or network while shielding was in progress."
+  },
+  "homeLedgerInputsRemaining": "Inputs remaining",
+  "@homeLedgerInputsRemaining": {
+    "description": "Status label of the Ledger shield failure panel when shielding paused with funds still unshielded."
+  },
+  "homeLedgerNoFundsRemain": "No spendable transparent funds remain. Return to your wallet.",
+  "@homeLedgerNoFundsRemain": {
+    "description": "Ledger shield dialog message when nothing was shielded because no transparent funds can be spent."
+  },
+  "homeLedgerNoSapling": "This Ledger preview does not support Sapling inputs or outputs.",
+  "@homeLedgerNoSapling": {
+    "description": "Ledger shield dialog error when the transaction involves Sapling, which the Ledger preview app cannot sign."
+  },
+  "homeLedgerPausedBelowThreshold": "The remaining funds are below the shielding threshold.",
+  "@homeLedgerPausedBelowThreshold": {
+    "description": "Ledger shield dialog message when the remaining transparent funds are too small to shield further."
+  },
+  "homeLedgerPausedTitle": "Shielding paused",
+  "@homeLedgerPausedTitle": {
+    "description": "Title of the Ledger shield failure panel when shielding stopped early without an error."
+  },
+  "homeLedgerPausedWalletChanges": "Shielding paused while wallet changes finish. Return to your wallet.",
+  "@homeLedgerPausedWalletChanges": {
+    "description": "Ledger shield dialog message when shielding was paused because the wallet is changing accounts or resetting."
+  },
+  "homeLedgerRejected": "The shield transaction was rejected on your Ledger.",
+  "@homeLedgerRejected": {
+    "description": "Ledger shield dialog error when the user rejected the transaction on the device."
+  },
+  "homeLedgerRoundFeeNotice": "Each approval creates a separate transaction with its own network fee.",
+  "@homeLedgerRoundFeeNotice": {
+    "description": "Notice on the desktop Ledger shield dialog when shielding needs several approvals."
+  },
+  "homeLedgerRoundSentBelowThreshold": "Round {round} was sent. The remaining funds are below the shielding threshold.",
+  "@homeLedgerRoundSentBelowThreshold": {
+    "description": "Ledger shield dialog message after a round was sent and the rest is too small to shield. {round} is the round number.",
+    "placeholders": {
+      "round": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "homeLedgerRoundSentNoReduction": "Round {round} was sent, but no reduction in spendable inputs could be confirmed. Wait for sync before shielding again.",
+  "@homeLedgerRoundSentNoReduction": {
+    "description": "Ledger shield dialog message after a round was sent but the wallet has not yet shown that inputs were spent. {round} is the round number.",
+    "placeholders": {
+      "round": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "homeLedgerRoundSentUnchecked": "Round {round} was sent, but the remaining funds could not be checked. Return to your wallet and try again after sync.",
+  "@homeLedgerRoundSentUnchecked": {
+    "description": "Ledger shield dialog message. Shielding runs in rounds, one Ledger approval each; {round} is the number of the round that was just sent.",
+    "placeholders": {
+      "round": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "homeLedgerShieldTitle": "Shield with Ledger",
+  "@homeLedgerShieldTitle": {
+    "description": "Title of the mobile Ledger shield screen while waiting for the user to approve on the Ledger."
+  },
+  "homeLedgerShieldingFailed": "Ledger shielding could not be completed.",
+  "@homeLedgerShieldingFailed": {
+    "description": "Generic error on the Ledger shield dialog."
+  },
+  "homeLedgerSigningFailedTitle": "Ledger signing failed",
+  "@homeLedgerSigningFailedTitle": {
+    "description": "Title of the Ledger shield failure panel after an error."
+  },
+  "homeLoadFailed": "Something went wrong. Try again in a moment.\n\nDetails: {details}",
+  "@homeLoadFailed": {
+    "description": "Error text on desktop Home when the wallet failed to load. {details} is the technical error text, passed through untranslated.",
+    "placeholders": {
+      "details": {
+        "type": "String",
+        "example": "Bad state"
+      }
+    }
+  },
+  "homeMigrateToIronwood": "Migrate to Ironwood",
+  "@homeMigrateToIronwood": {
+    "description": "Desktop Home button that starts the Ironwood pool migration."
+  },
+  "homeMigrationRequired": "Migration required",
+  "@homeMigrationRequired": {
+    "description": "Pill on the mobile Home balance card shown when the Ironwood migration needs the user to act."
+  },
+  "homeMigrationRequiredTitle": "Migration Required",
+  "@homeMigrationRequiredTitle": {
+    "description": "Title-case heading of the desktop Home balance card when the Ironwood migration needs the user to act."
+  },
+  "homeMigrationStillMigrating": "{amount} still migrating",
+  "@homeMigrationStillMigrating": {
+    "description": "Desktop Home migration button text. {amount} is the formatted amount still being moved, such as 1.5 ZEC.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "1.5 ZEC"
+      }
+    }
+  },
+  "homeMigrationStoppedByUpgrade": "Migration stopped by network upgrade",
+  "@homeMigrationStoppedByUpgrade": {
+    "description": "Desktop Home migration button text after a network upgrade stopped the Ironwood migration."
+  },
+  "homeMigrationWaitingConfirmation": "Waiting for confirmation...",
+  "@homeMigrationWaitingConfirmation": {
+    "description": "Desktop Home migration button text while a migration transaction waits for confirmations."
+  },
+  "homeNu7FasterBody": "Average wait for first confirmation drops from ~75s to ~25s.",
+  "@homeNu7FasterBody": {
+    "description": "Body of the first NU7 announcement point; s means seconds."
+  },
+  "homeNu7FasterTitle": "~3× faster blocks",
+  "@homeNu7FasterTitle": {
+    "description": "Heading of the first NU7 announcement point: blocks arrive about three times as often."
+  },
+  "homeNu7GotIt": "Got it",
+  "@homeNu7GotIt": {
+    "description": "Button that dismisses the NU7 announcement."
+  },
+  "homeNu7ThroughputBody": "Network can handle 2.3x more shielded transactions per block.",
+  "@homeNu7ThroughputBody": {
+    "description": "Body of the second NU7 announcement point."
+  },
+  "homeNu7ThroughputTitle": "Higher shielded throughput",
+  "@homeNu7ThroughputTitle": {
+    "description": "Heading of the second NU7 announcement point. See the glossary entry for shielded."
+  },
+  "homeNu7Title": "NU7 Update is live.\nWhat does this mean?",
+  "@homeNu7Title": {
+    "description": "Two-line title of the announcement shown after the NU7 network upgrade activates."
+  },
+  "homePasswordChangeUnverified": "We couldn't verify the previous password change. Try again or restart Vizor.",
+  "@homePasswordChangeUnverified": {
+    "description": "[security] Notice on desktop Home when the outcome of an earlier wallet password change could not be confirmed."
+  },
+  "homePayInUsdc": "Pay in USDC",
+  "@homePayInUsdc": {
+    "description": "Screen-reader and tooltip label of the icon-only Pay button on desktop Home."
+  },
+  "homeReceive": "Receive",
+  "@homeReceive": {
+    "description": "Home action button that opens the receive screen."
+  },
+  "homeReceiveFirstZec": "Receive your first ZEC",
+  "@homeReceiveFirstZec": {
+    "description": "Mobile Home button shown instead of Send/Receive while the wallet has no funds; opens the receive screen."
+  },
+  "homeRecentActivity": "Recent activity",
+  "@homeRecentActivity": {
+    "description": "Heading above the recent transactions list on Home."
+  },
+  "homeSeeAll": "See all",
+  "@homeSeeAll": {
+    "description": "Link next to the Home recent-activity heading that opens the full activity list."
+  },
+  "homeSend": "Send",
+  "@homeSend": {
+    "description": "Home action button that opens the send screen."
+  },
+  "homeSetupBackupMessage": "Back up your wallet. Keep your secret passphrase safe.",
+  "@homeSetupBackupMessage": {
+    "description": "[security] Card text in the desktop Home setup carousel reminding the user to back up their secret passphrase."
+  },
+  "homeSetupCarouselLabel": "Wallet setup",
+  "@homeSetupCarouselLabel": {
+    "description": "Screen-reader name of the desktop Home carousel with wallet setup reminders."
+  },
+  "homeSetupCarouselName": "wallet setup banner",
+  "@homeSetupCarouselName": {
+    "description": "Lowercase name of the Home wallet-setup carousel, used in the screen-reader label of its page dots (Show wallet setup banner 1 of 2)."
+  },
+  "homeSetupEducationMessage": "Learn how Zcash protects your privacy and which address to use.",
+  "@homeSetupEducationMessage": {
+    "description": "Card text in the desktop Home setup carousel that opens the Zcash introduction."
+  },
+  "homeShield": "Shield",
+  "@homeShield": {
+    "description": "Label of the mobile Home button that shields the transparent balance."
+  },
+  "homeShieldAfterScan": "After you scanned, click Get Signature.",
+  "@homeShieldAfterScan": {
+    "description": "Instruction in the desktop Keystone shield dialog; Get Signature is the name of the button next to it."
+  },
+  "homeShieldApproveTitle": "Approve with Keystone",
+  "@homeShieldApproveTitle": {
+    "description": "Title of the mobile Keystone shield screen while the transaction QR is shown for the Keystone to scan."
+  },
+  "homeShieldAttentionTitle": "Shielding needs attention",
+  "@homeShieldAttentionTitle": {
+    "description": "Title of the mobile Keystone shield screen when shielding failed or ended with a warning."
+  },
+  "homeShieldBackToWallet": "Back to wallet",
+  "@homeShieldBackToWallet": {
+    "description": "Button on the shield result screens that returns to the wallet."
+  },
+  "homeShieldBackToWalletTitleCase": "Back to Wallet",
+  "@homeShieldBackToWalletTitleCase": {
+    "description": "Button on the desktop Keystone shield dialog that closes it after a failure or warning."
+  },
+  "homeShieldBalanceTitle": "Transparent Balance",
+  "@homeShieldBalanceTitle": {
+    "description": "Title of the mobile shield screens that move the transparent balance into a shielded pool."
+  },
+  "homeShieldBroadcastNotStored": "The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.",
+  "@homeShieldBroadcastNotStored": {
+    "description": "Warning on the Keystone shield dialog when the transaction was broadcast but not saved in the wallet; retrying could send it twice."
+  },
+  "homeShieldBroadcastUnknown": "The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.",
+  "@homeShieldBroadcastUnknown": {
+    "description": "Warning on the Keystone shield dialog when broadcasting timed out and the outcome is unknown."
+  },
+  "homeShieldBroadcastingTitle": "Broadcasting shield tx",
+  "@homeShieldBroadcastingTitle": {
+    "description": "Title of the desktop Keystone shield dialog while the signed transaction is sent; tx is short for transaction."
+  },
+  "homeShieldCameraDenied": "Allow camera access in Settings to scan Keystone signatures.",
+  "@homeShieldCameraDenied": {
+    "description": "Message over the mobile Keystone scanner when camera permission is denied."
+  },
+  "homeShieldCameraUnavailable": "The camera is unavailable right now.",
+  "@homeShieldCameraUnavailable": {
+    "description": "Message over the mobile Keystone scanner when the camera cannot start."
+  },
+  "homeShieldCancelFailed": "Could not finish cancelling. Please try again.",
+  "@homeShieldCancelFailed": {
+    "description": "Error on the shield screens when cancelling could not release the pending work."
+  },
+  "homeShieldCancelled": "Shielding was cancelled.",
+  "@homeShieldCancelled": {
+    "description": "Message on the mobile Keystone shield screen after the user cancelled shielding."
+  },
+  "homeShieldCancelledBeforeParams": "Shielding was cancelled before proving parameters were downloaded.",
+  "@homeShieldCancelledBeforeParams": {
+    "description": "Error on the desktop Keystone shield dialog when the user declined the proving parameter download."
+  },
+  "homeShieldComplete": "Complete",
+  "@homeShieldComplete": {
+    "description": "Button on the mobile shield screen that finishes the animation after shielding succeeded."
+  },
+  "homeShieldDrag": "Drag to shield",
+  "@homeShieldDrag": {
+    "description": "Label of the mobile slide-to-shield control; the user drags the handle to confirm shielding."
+  },
+  "homeShieldErrorBroadcast": "Shield transaction could not be broadcast.",
+  "@homeShieldErrorBroadcast": {
+    "description": "Error on the Keystone and Ledger shield dialogs when sending the transaction to the network failed."
+  },
+  "homeShieldErrorGeneric": "Shield balance failed. Please try again.",
+  "@homeShieldErrorGeneric": {
+    "description": "Generic error on the desktop Keystone shield dialog."
+  },
+  "homeShieldErrorNotFinalized": "Shield transaction could not be finalized.",
+  "@homeShieldErrorNotFinalized": {
+    "description": "Error on the mobile Keystone shield screen when the signed transaction could not be extracted."
+  },
+  "homeShieldErrorProvingParams": "Required proving parameters could not be prepared.",
+  "@homeShieldErrorProvingParams": {
+    "description": "Error on the Keystone shield screens when the Sapling proving parameters failed to download or load."
+  },
+  "homeShieldErrorSignatureNotApplied": "Keystone signature could not be applied.",
+  "@homeShieldErrorSignatureNotApplied": {
+    "description": "Error on the Keystone shield screens when the scanned signature could not be added to the transaction."
+  },
+  "homeShieldErrorSigningNotPrepared": "Keystone signing could not be prepared.",
+  "@homeShieldErrorSigningNotPrepared": {
+    "description": "Error on the mobile Keystone shield screen when the signing request was not ready when the user started scanning."
+  },
+  "homeShieldErrorSyncFirst": "Sync the wallet before shielding transparent balance.",
+  "@homeShieldErrorSyncFirst": {
+    "description": "Error on the Keystone and Ledger shield dialogs when the wallet is not synced yet."
+  },
+  "homeShieldErrorTooSmall": "Transparent balance is too small to shield after fees.",
+  "@homeShieldErrorTooSmall": {
+    "description": "Error on the Keystone and Ledger shield dialogs when the transparent balance would not cover the network fee."
+  },
+  "homeShieldFailedTitle": "Shielding could not be completed",
+  "@homeShieldFailedTitle": {
+    "description": "Title of the mobile software-account shield screen when shielding failed."
+  },
+  "homeShieldGetSignature": "Get Signature",
+  "@homeShieldGetSignature": {
+    "description": "Button in the desktop Keystone shield dialog that opens the camera to read the signature QR."
+  },
+  "homeShieldKeepOpen": "Keep Vizor open while the transaction is sent.",
+  "@homeShieldKeepOpen": {
+    "description": "Instruction in the desktop Keystone shield dialog while the transaction is being sent."
+  },
+  "homeShieldKeystoneQrSemantics": "Keystone transaction QR",
+  "@homeShieldKeystoneQrSemantics": {
+    "description": "Screen-reader label of the transaction QR code the Keystone device scans."
+  },
+  "homeShieldNextStep": "Next step",
+  "@homeShieldNextStep": {
+    "description": "Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature."
+  },
+  "homeShieldNoActiveAccount": "No active account.",
+  "@homeShieldNoActiveAccount": {
+    "description": "Error notice on desktop Home when Shield is pressed but no account is selected."
+  },
+  "homeShieldNow": "Shield now",
+  "@homeShieldNow": {
+    "description": "Label of the desktop Home button that shields the transparent balance."
+  },
+  "homeShieldQueuedTitle": "Shielding queued",
+  "@homeShieldQueuedTitle": {
+    "description": "Title of the mobile software-account shield screen when the shielding transaction is queued for retry."
+  },
+  "homeShieldReadingSignature": "Reading signature…",
+  "@homeShieldReadingSignature": {
+    "description": "Status text on the mobile Keystone scanner while the scanned signature QR is decoded."
+  },
+  "homeShieldReject": "Reject",
+  "@homeShieldReject": {
+    "description": "Button in the desktop Keystone shield dialog that cancels shielding."
+  },
+  "homeShieldScanDecodeFailed": "This QR code could not be decoded as a Keystone signature.",
+  "@homeShieldScanDecodeFailed": {
+    "description": "Hint under the mobile Keystone scanner when the scanned QR is not a valid signature."
+  },
+  "homeShieldScanHold": "Keep the QR code steady and fully visible.",
+  "@homeShieldScanHold": {
+    "description": "Hint under the mobile Keystone scanner when a frame could not be read."
+  },
+  "homeShieldScanTitle": "Scan your Keystone signature",
+  "@homeShieldScanTitle": {
+    "description": "Title of the mobile Keystone shield screen while the camera scans the signature QR."
+  },
+  "homeShieldScanToSign": "Scan the QR code to sign",
+  "@homeShieldScanToSign": {
+    "description": "Subtitle of the desktop Keystone shield dialog above the transaction QR."
+  },
+  "homeShieldScanWrongQr": "Open the signed shield QR on Keystone, then scan again.",
+  "@homeShieldScanWrongQr": {
+    "description": "Hint under the mobile Keystone scanner when the wrong kind of QR was scanned."
+  },
+  "homeShieldScanning": "Scanning… {progress}%",
+  "@homeShieldScanning": {
+    "description": "Status text on the mobile Keystone scanner while an animated signature QR is read. {progress} is a whole percentage.",
+    "placeholders": {
+      "progress": {
+        "type": "int",
+        "example": "40"
+      }
+    }
+  },
+  "homeShieldShowQr": "Show QR",
+  "@homeShieldShowQr": {
+    "description": "Mobile shield footer button that shows the transaction QR code for the Keystone to scan."
+  },
+  "homeShieldSignTitle": "Sign tx on your Keystone",
+  "@homeShieldSignTitle": {
+    "description": "Title of the desktop Keystone shield dialog while the user signs on the device; tx is short for transaction."
+  },
+  "homeShieldStatusUncertain": "The shield transaction status is uncertain. Check activity before trying again.",
+  "@homeShieldStatusUncertain": {
+    "description": "Warning on the Keystone and Ledger shield dialogs when the outcome of the broadcast is unclear."
+  },
+  "homeShieldSubmitting": "Submitting transaction",
+  "@homeShieldSubmitting": {
+    "description": "Subtitle of the desktop Keystone shield dialog while the transaction is being sent."
+  },
+  "homeShieldSucceededTitle": "Shielded successfully",
+  "@homeShieldSucceededTitle": {
+    "description": "Title of the mobile shield screens after shielding completed."
+  },
+  "homeShieldToggleFlashlight": "Toggle flashlight",
+  "@homeShieldToggleFlashlight": {
+    "description": "Screen-reader label of the flashlight button on the mobile Keystone scanner."
+  },
+  "homeShieldTryAgain": "Try again",
+  "@homeShieldTryAgain": {
+    "description": "Button on the shield screens that retries the failed step."
+  },
+  "homeShieldedBalance": "Shielded balance",
+  "@homeShieldedBalance": {
+    "description": "Label on the Home balance card for the shielded balance. See the glossary entry for shielded."
+  },
+  "homeShieldingBalance": "Shielding your balance…",
+  "@homeShieldingBalance": {
+    "description": "Status text on the mobile shield screens while the transparent balance is being shielded."
+  },
+  "homeShieldingProgress": "Shielding...",
+  "@homeShieldingProgress": {
+    "description": "Label of the mobile Home shield button while shielding is in progress."
+  },
+  "homeTransparentBalance": "Transparent: {balance}",
+  "@homeTransparentBalance": {
+    "description": "Row on the mobile Home card showing the transparent balance. {balance} is a formatted amount such as 0.5 ZEC.",
+    "placeholders": {
+      "balance": {
+        "type": "String",
+        "example": "0.5 ZEC"
+      }
+    }
+  },
+  "homeVotingSemantics": "Open coinholder voting",
+  "@homeVotingSemantics": {
+    "description": "Screen-reader label of the Home coinholder voting card."
+  },
+  "homeVotingSubtitle": "Help to shape the network",
+  "@homeVotingSubtitle": {
+    "description": "Subtitle of the Home coinholder voting card."
+  },
+  "homeVotingTitle": "Coinholder voting",
+  "@homeVotingTitle": {
+    "description": "Title of the Home card that opens coinholder voting."
   },
   "keyringLockedBody": "Vizor cannot access your system keyring. Unlock the keyring, then choose Retry. A system prompt may ask for your keyring password.",
   "@keyringLockedBody": {

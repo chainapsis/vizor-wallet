@@ -1,3 +1,4 @@
+import '../../../../core/l10n/l10n.dart';
 import '../../../../core/navigation/mobile_sidebar_exit.dart';
 import '../../../../core/layout/mobile/mobile_navigation_scope.dart';
 import 'dart:async';
@@ -245,32 +246,32 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         item(
           key: const ValueKey('mobile_account_menu_secret_passphrase'),
           iconName: AppIcons.key,
-          label: 'View secret phrase',
+          label: context.l10n.accountsViewSecretPhrase,
           action: _AccountAction.viewSecretPassphrase,
         ),
       item(
         key: const ValueKey('mobile_account_menu_viewing_key'),
         iconName: AppIcons.eye,
-        label: 'View viewing key',
+        label: context.l10n.accountsViewViewingKey,
         action: _AccountAction.viewViewingKey,
       ),
       item(
         key: const ValueKey('mobile_account_menu_copy'),
         iconName: AppIcons.copy,
-        label: 'Copy address',
+        label: context.l10n.commonCopyAddress,
         action: _AccountAction.copy,
       ),
       if (!isCurrentAccount)
         item(
           key: const ValueKey('mobile_account_menu_send'),
           iconName: AppIcons.plane,
-          label: 'Send ZEC',
+          label: context.l10n.accountsSendZec,
           action: _AccountAction.send,
         ),
       item(
         key: const ValueKey('mobile_account_menu_edit'),
         iconName: AppIcons.edit,
-        label: 'Edit account',
+        label: context.l10n.accountsEdit,
         action: _AccountAction.edit,
       ),
       if (canRemove) ...[
@@ -278,7 +279,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         item(
           key: const ValueKey('mobile_account_menu_remove'),
           iconName: AppIcons.trash,
-          label: 'Remove account',
+          label: context.l10n.accountsRemove,
           action: _AccountAction.remove,
           textColor: colors.text.destructiveLight,
           iconColor: colors.icon.destructiveLight,
@@ -396,14 +397,16 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     if (address == null) {
       showAppToast(
         context,
-        "Address couldn't be copied",
+        context.l10n.sidebarAddressCopyFailed,
         iconName: AppIcons.cross,
       );
       return;
     }
     await Clipboard.setData(ClipboardData(text: address));
     unawaited(AppHaptics.copy());
-    if (mounted) showAppToast(context, 'Shielded address copied');
+    if (mounted) {
+      showAppToast(context, context.l10n.sidebarShieldedAddressCopied);
+    }
   }
 
   Future<void> _sendToAccount(AccountInfo account) async {
@@ -412,7 +415,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     if (address == null) {
       showAppToast(
         context,
-        "Couldn't load the account address",
+        context.l10n.accountsAddressLoadFailed,
         iconName: AppIcons.cross,
       );
       return;
@@ -430,7 +433,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       if (!saved) {
         showAppToast(
           context,
-          "Couldn't save the account changes",
+          context.l10n.accountsSaveFailed,
           iconName: AppIcons.cross,
         );
       }
@@ -532,8 +535,8 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         showAppToast(context, switch (e) {
           PaymentLinkInFlightClaimsException() => e.toString(),
           WalletResetInFlightGiftCardClaimsException() => e.toString(),
-          _ when isLastAccount => "Couldn't reset Vizor",
-          _ => "Couldn't remove the account",
+          _ when isLastAccount => context.l10n.accountsResetFailedToast,
+          _ => context.l10n.accountsRemoveFailedToast,
         }, iconName: AppIcons.cross);
       }
     } finally {
@@ -568,7 +571,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
             child: Column(
               children: [
                 MobileTopNav.back(
-                  title: 'Accounts',
+                  title: context.l10n.accountsTitle,
                   titleStyle: AppTypography.headlineLarge,
                   onBack: _busy ? null : () => context.pop(),
                 ),
@@ -586,14 +589,14 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                     children: [
                       if (active != null)
                         _AccountsGroupCard(
-                          title: 'Current',
+                          title: context.l10n.accountsCurrent,
                           titleGap: AppSpacing.s,
                           children: [_accountRow(active, enabled: !_busy)],
                         ),
                       if (others.isNotEmpty) ...[
                         const SizedBox(height: AppSpacing.sm),
                         _AccountsGroupCard(
-                          title: 'Other',
+                          title: context.l10n.accountsOther,
                           titleGap: AppSpacing.xs,
                           children: [
                             for (final account in others)
@@ -610,7 +613,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                             ? null
                             : () => context.push('/add-account'),
                         leading: const AppIcon(AppIcons.addNew),
-                        child: const Text('Add account'),
+                        child: Text(context.l10n.accountsAdd),
                       ),
                     ],
                   ),
@@ -645,7 +648,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           _openInitialRowMenuIfNeeded(account, anchorContext);
           return Semantics(
             button: true,
-            label: 'Account options for ${account.name}',
+            label: context.l10n.accountsOptionsFor(account.name),
             excludeSemantics: true,
             child: GestureDetector(
               key: ValueKey('mobile_accounts_menu_${account.uuid}'),
@@ -775,26 +778,14 @@ class MobileAccountRemovalSheet extends StatelessWidget {
     letterSpacing: -0.21,
   );
 
-  String get _description {
+  String _description(BuildContext context) {
+    final l10n = context.l10n;
     if (hasActiveMigration) {
-      if (isLastAccount) {
-        return 'Resetting Vizor stops migrations on this device and deletes '
-            'every account and all local wallet data. Transactions already '
-            'submitted to the Zcash network may still complete. After '
-            're-importing, let each account fully sync before starting '
-            'migration again.';
-      }
-      return "This account's migration will no longer continue in Vizor. "
-          'Transactions already submitted to the Zcash network may still '
-          'complete. After re-importing, let the account fully sync before '
-          'starting migration again.';
+      return isLastAccount
+          ? l10n.accountsResetMigrationBody
+          : l10n.accountsRemoveMigrationBody;
     }
-    if (isLastAccount) {
-      return 'Resetting Vizor deletes every account and all local wallet data. '
-          'Make sure you can re-import your accounts before continuing.';
-    }
-    return 'Removing this account deletes its local data from Vizor. Make '
-        'sure you can re-import it before continuing.';
+    return isLastAccount ? l10n.accountsResetBody : l10n.accountsRemoveBody;
   }
 
   @override
@@ -805,7 +796,7 @@ class MobileAccountRemovalSheet extends StatelessWidget {
       walletReset: isLastAccount,
     );
     return MobileModalScaffold(
-      title: 'Remove account',
+      title: context.l10n.accountsRemove,
       onClose: () => Navigator.of(context).pop(false),
       leading: MobileAccountAvatar(
         profilePictureId: account.profilePictureId,
@@ -820,14 +811,13 @@ class MobileAccountRemovalSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              _description,
+              _description(context),
               style: _bodyStyle.copyWith(color: colors.text.accent),
             ),
             if (account.setupPending && !account.isHardware) ...[
               const SizedBox(height: AppSpacing.s),
               Text(
-                'If you haven’t backed up this account’s secret passphrase, '
-                'you can’t recover its funds after removal.',
+                context.l10n.accountsRemoveBackupWarning,
                 key: const ValueKey('mobile_account_remove_backup_warning'),
                 style: _bodyStyle.copyWith(color: colors.text.destructive),
               ),
@@ -850,7 +840,9 @@ class MobileAccountRemovalSheet extends StatelessWidget {
               onPressed: () => Navigator.of(context).pop(true),
               leading: isLastAccount ? null : const AppIcon(AppIcons.trash),
               child: Text(
-                isLastAccount ? 'Reset Vizor' : 'Remove',
+                isLastAccount
+                    ? context.l10n.accountsResetVizor
+                    : context.l10n.accountsRemoveConfirm,
                 style: AppTypography.labelLarge.copyWith(
                   color: colors.button.destructive.label,
                 ),

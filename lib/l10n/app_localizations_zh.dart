@@ -9,6 +9,169 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get accountsActionsLabel => '账户操作';
+
+  @override
+  String get accountsAdd => '添加账户';
+
+  @override
+  String get accountsAddressLoadFailed => '无法加载账户地址';
+
+  @override
+  String get accountsChangeProfilePicture => '更改头像';
+
+  @override
+  String get accountsClearName => '清除账户名称';
+
+  @override
+  String get accountsCurrent => '当前账户';
+
+  @override
+  String get accountsEdit => '编辑账户';
+
+  @override
+  String get accountsEditFailed => '无法更新账户。';
+
+  @override
+  String get accountsEditNameHint => '1-20 个字符';
+
+  @override
+  String get accountsEditNameLabel => '账户名称';
+
+  @override
+  String get accountsManage => '管理账户';
+
+  @override
+  String accountsOptionsFor(String name) {
+    return '$name 的账户选项';
+  }
+
+  @override
+  String get accountsOther => '其他账户';
+
+  @override
+  String get accountsOtherAccounts => '其他账户';
+
+  @override
+  String get accountsRemove => '移除账户';
+
+  @override
+  String get accountsRemoveBackupWarning => '如果你尚未备份此账户的助记词，移除后将无法找回其资金。';
+
+  @override
+  String accountsRemoveBlockedByGiftCards(int count) {
+    return '此账户正在接收 $count 张礼品卡。移除此账户前，请等待完成。';
+  }
+
+  @override
+  String accountsRemoveBlockedBySwaps(int count) {
+    return '此账户有 $count 个进行中的兑换。移除此账户前，请先在兑换活动中完成或移除它们。';
+  }
+
+  @override
+  String get accountsRemoveBody => '移除此账户会从 Vizor 中删除其本地数据。继续之前，请确保你可以重新导入该账户。';
+
+  @override
+  String get accountsRemoveCheckingGiftCards => '正在检查此账户在移除前是否有正在接收的礼品卡。';
+
+  @override
+  String get accountsRemoveCheckingPassword => '正在验证密码...';
+
+  @override
+  String get accountsRemoveCheckingSwaps => '正在检查此账户在移除前是否有进行中的兑换。';
+
+  @override
+  String get accountsRemoveConfirm => '移除';
+
+  @override
+  String get accountsRemoveFailed => '无法移除账户。';
+
+  @override
+  String get accountsRemoveFailedToast => '无法移除账户';
+
+  @override
+  String get accountsRemoveGiftCardsCheckFailed => '无法检查此账户是否有正在接收的礼品卡。移除前请重试。';
+
+  @override
+  String get accountsRemoveMigrationBody =>
+      '此账户的迁移将不再在 Vizor 中继续。已提交到 Zcash 网络的交易仍可能完成。重新导入后，请先让该账户完全同步，再重新开始迁移。';
+
+  @override
+  String get accountsRemoveModalBody => '确定要移除此账户吗？此操作无法撤销。\n你需要重新导入该账户。';
+
+  @override
+  String get accountsRemovePasswordCheckFailed => '无法验证你的密码，请重试。';
+
+  @override
+  String get accountsRemovePasswordHint => '请输入密码';
+
+  @override
+  String get accountsRemovePasswordIncorrect => '密码不正确，请重试。';
+
+  @override
+  String get accountsRemovePasswordLabel => '密码';
+
+  @override
+  String get accountsRemoveStoppingSync => '正在停止同步...';
+
+  @override
+  String get accountsRemoveSwapsCheckFailed => '无法检查此账户是否有进行中的兑换。移除前请重试。';
+
+  @override
+  String get accountsRemoving => '正在移除账户...';
+
+  @override
+  String get accountsResetBody =>
+      '重置 Vizor 会删除所有账户和全部本地钱包数据。继续之前，请确保你可以重新导入账户。';
+
+  @override
+  String get accountsResetFailed => '无法重置 Vizor。';
+
+  @override
+  String get accountsResetFailedToast => '无法重置 Vizor';
+
+  @override
+  String get accountsResetMigrationBody =>
+      '重置 Vizor 会停止此设备上的迁移，并删除所有账户和全部本地钱包数据。已提交到 Zcash 网络的交易仍可能完成。重新导入后，请先让每个账户完全同步，再重新开始迁移。';
+
+  @override
+  String get accountsResetModalBody =>
+      '移除此账户将彻底重置 Vizor 应用，即删除所有账户，并需要重新导入账户。\n未分享的礼品卡链接也将永久丢失。\n此操作无法撤销。';
+
+  @override
+  String get accountsResetVizor => '重置 Vizor';
+
+  @override
+  String get accountsResetting => '正在重置...';
+
+  @override
+  String get accountsSaveEdits => '保存更改';
+
+  @override
+  String get accountsSaveFailed => '无法保存账户更改';
+
+  @override
+  String get accountsSelectProfilePicture => '选择头像';
+
+  @override
+  String get accountsSendFailed => '无法开始发送';
+
+  @override
+  String get accountsSendZec => '发送 ZEC';
+
+  @override
+  String get accountsTitle => '账户';
+
+  @override
+  String get accountsUpdatePicture => '更新头像';
+
+  @override
+  String get accountsViewSecretPhrase => '查看助记词';
+
+  @override
+  String get accountsViewViewingKey => '显示查看密钥';
+
+  @override
   String get appBackAddAccount => '添加账户';
 
   @override
@@ -176,6 +339,383 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonUpdating => '正在更改...';
+
+  @override
+  String get homeActivityEmpty => '暂无活动...';
+
+  @override
+  String get homeActivityEmptyHint => '不如发起你的第一笔 ZEC 交易？';
+
+  @override
+  String get homeActivityEmptyHintMobile => '不如发起你的\n第一笔 ZEC 交易？';
+
+  @override
+  String get homeActivityLoading => '正在加载活动';
+
+  @override
+  String get homeActivityUnavailable => '无法加载活动。';
+
+  @override
+  String get homeBackupSubtitle => '备份你的助记词\n最后一步';
+
+  @override
+  String get homeBackupTitle => '保护你的钱包';
+
+  @override
+  String get homeDismiss => '忽略';
+
+  @override
+  String get homeEducationSubtitle => '隐私、地址类型及注意事项';
+
+  @override
+  String get homeEducationTitle => '了解 Zcash';
+
+  @override
+  String get homeImportingBodyMobile => '请稍候...这可能需要一些时间。请保持 Vizor 打开并运行。';
+
+  @override
+  String get homeImportingDetail => '这可能需要一些时间。\n请保持 Vizor 打开并运行。';
+
+  @override
+  String homeImportingDetailNamed(String name) {
+    return '正在导入 $name\n请保持 Vizor 打开并运行。';
+  }
+
+  @override
+  String get homeImportingTitle => '正在导入\n你的钱包...';
+
+  @override
+  String get homeImportingTitleMobile => '正在导入你的钱包...';
+
+  @override
+  String get homeKeepAwakeBody => '屏幕关闭时，手机会暂停同步。保持常亮可让同步更快完成。';
+
+  @override
+  String get homeKeepAwakeEnable => '保持屏幕常亮';
+
+  @override
+  String get homeKeepAwakeLater => '以后再说';
+
+  @override
+  String get homeKeepAwakeLockNote => '1 分钟无操作后应用会锁定，同步仍会在锁定状态下继续。';
+
+  @override
+  String get homeKeepAwakeSettingsNote => '你可以随时在设置中更改。';
+
+  @override
+  String get homeKeepAwakeTitle => '同步时保持屏幕常亮？';
+
+  @override
+  String get homeLedgerActionNeeded => '需要操作';
+
+  @override
+  String get homeLedgerApprovalNotAccepted => '你的 Ledger 无法接受此次批准。之前的批准已发送。';
+
+  @override
+  String get homeLedgerBroadcastNotStored => '屏蔽交易已到达网络，但未保存在本地。在同步确认之前，请勿重试。';
+
+  @override
+  String get homeLedgerBroadcastUnknown => '屏蔽交易可能已到达网络。重试前请先查看活动。';
+
+  @override
+  String get homeLedgerCancelShielding => '取消屏蔽';
+
+  @override
+  String get homeLedgerContextChanged => '所选账户或网络已更改。请返回钱包。';
+
+  @override
+  String get homeLedgerInputsRemaining => '仍有剩余输入';
+
+  @override
+  String get homeLedgerNoFundsRemain => '没有可花费的透明资金。请返回钱包。';
+
+  @override
+  String get homeLedgerNoSapling => '此 Ledger 预览版不支持 Sapling 输入或输出。';
+
+  @override
+  String get homeLedgerPausedBelowThreshold => '剩余资金低于屏蔽门槛。';
+
+  @override
+  String get homeLedgerPausedTitle => '屏蔽已暂停';
+
+  @override
+  String get homeLedgerPausedWalletChanges => '钱包更改完成期间，屏蔽已暂停。请返回钱包。';
+
+  @override
+  String get homeLedgerRejected => '屏蔽交易已在你的 Ledger 上被拒绝。';
+
+  @override
+  String get homeLedgerRoundFeeNotice => '每次批准都会创建一笔单独的交易，并各自产生网络手续费。';
+
+  @override
+  String homeLedgerRoundSentBelowThreshold(int round) {
+    return '第 $round 轮已发送。剩余资金低于屏蔽门槛。';
+  }
+
+  @override
+  String homeLedgerRoundSentNoReduction(int round) {
+    return '第 $round 轮已发送，但无法确认可花费输入是否减少。请等待同步完成后再次屏蔽。';
+  }
+
+  @override
+  String homeLedgerRoundSentUnchecked(int round) {
+    return '第 $round 轮已发送，但无法检查剩余资金。请返回钱包，同步后重试。';
+  }
+
+  @override
+  String get homeLedgerShieldTitle => '使用 Ledger 屏蔽';
+
+  @override
+  String get homeLedgerShieldingFailed => '无法使用 Ledger 完成屏蔽。';
+
+  @override
+  String get homeLedgerSigningFailedTitle => 'Ledger 签名失败';
+
+  @override
+  String homeLoadFailed(String details) {
+    return '出了点问题，请稍后重试。\n\n详情：$details';
+  }
+
+  @override
+  String get homeMigrateToIronwood => '迁移到 Ironwood';
+
+  @override
+  String get homeMigrationRequired => '需要迁移';
+
+  @override
+  String get homeMigrationRequiredTitle => '需要迁移';
+
+  @override
+  String homeMigrationStillMigrating(String amount) {
+    return '$amount 仍在迁移';
+  }
+
+  @override
+  String get homeMigrationStoppedByUpgrade => '迁移因网络升级而停止';
+
+  @override
+  String get homeMigrationWaitingConfirmation => '正在等待确认...';
+
+  @override
+  String get homeNu7FasterBody => '首次确认的平均等待时间从约 75 秒缩短到约 25 秒。';
+
+  @override
+  String get homeNu7FasterTitle => '区块速度提升约 3×';
+
+  @override
+  String get homeNu7GotIt => '知道了';
+
+  @override
+  String get homeNu7ThroughputBody => '每个区块可处理的屏蔽交易增加到 2.3x。';
+
+  @override
+  String get homeNu7ThroughputTitle => '屏蔽交易吞吐量提高';
+
+  @override
+  String get homeNu7Title => 'NU7 升级已上线。\n这意味着什么？';
+
+  @override
+  String get homePasswordChangeUnverified => '无法确认之前的密码更改。请重试或重新启动 Vizor。';
+
+  @override
+  String get homePayInUsdc => '使用 USDC 支付';
+
+  @override
+  String get homeReceive => '接收';
+
+  @override
+  String get homeReceiveFirstZec => '接收你的第一笔 ZEC';
+
+  @override
+  String get homeRecentActivity => '最近活动';
+
+  @override
+  String get homeSeeAll => '查看全部';
+
+  @override
+  String get homeSend => '发送';
+
+  @override
+  String get homeSetupBackupMessage => '请备份你的钱包，并妥善保管助记词。';
+
+  @override
+  String get homeSetupCarouselLabel => '钱包设置';
+
+  @override
+  String get homeSetupCarouselName => '钱包设置横幅';
+
+  @override
+  String get homeSetupEducationMessage => '了解 Zcash 如何保护你的隐私，以及该使用哪种地址。';
+
+  @override
+  String get homeShield => '屏蔽';
+
+  @override
+  String get homeShieldAfterScan => '扫描后，请点击“获取签名”。';
+
+  @override
+  String get homeShieldApproveTitle => '在 Keystone 上批准';
+
+  @override
+  String get homeShieldAttentionTitle => '屏蔽需要处理';
+
+  @override
+  String get homeShieldBackToWallet => '返回钱包';
+
+  @override
+  String get homeShieldBackToWalletTitleCase => '返回钱包';
+
+  @override
+  String get homeShieldBalanceTitle => '透明余额';
+
+  @override
+  String get homeShieldBroadcastNotStored =>
+      '屏蔽交易已到达网络，但 Vizor 无法将其保存在本地。在同步或区块浏览器确认最新状态之前，请勿重试。';
+
+  @override
+  String get homeShieldBroadcastUnknown => '屏蔽交易可能已到达网络，但确认超时。重试前请先查看活动。';
+
+  @override
+  String get homeShieldBroadcastingTitle => '正在广播屏蔽交易';
+
+  @override
+  String get homeShieldCameraDenied => '请在设置中允许访问相机，以扫描 Keystone 签名。';
+
+  @override
+  String get homeShieldCameraUnavailable => '相机暂时不可用。';
+
+  @override
+  String get homeShieldCancelFailed => '无法完成取消，请重试。';
+
+  @override
+  String get homeShieldCancelled => '屏蔽已取消。';
+
+  @override
+  String get homeShieldCancelledBeforeParams => '在下载证明参数之前，屏蔽已取消。';
+
+  @override
+  String get homeShieldComplete => '完成';
+
+  @override
+  String get homeShieldDrag => '拖动以屏蔽';
+
+  @override
+  String get homeShieldErrorBroadcast => '无法广播屏蔽交易。';
+
+  @override
+  String get homeShieldErrorGeneric => '屏蔽余额失败，请重试。';
+
+  @override
+  String get homeShieldErrorNotFinalized => '无法完成屏蔽交易。';
+
+  @override
+  String get homeShieldErrorProvingParams => '无法准备所需的证明参数。';
+
+  @override
+  String get homeShieldErrorSignatureNotApplied => '无法应用 Keystone 签名。';
+
+  @override
+  String get homeShieldErrorSigningNotPrepared => '无法准备 Keystone 签名。';
+
+  @override
+  String get homeShieldErrorSyncFirst => '屏蔽透明余额之前，请先同步钱包。';
+
+  @override
+  String get homeShieldErrorTooSmall => '扣除手续费后，透明余额太少，无法屏蔽。';
+
+  @override
+  String get homeShieldFailedTitle => '无法完成屏蔽';
+
+  @override
+  String get homeShieldGetSignature => '获取签名';
+
+  @override
+  String get homeShieldKeepOpen => '交易发送期间请保持 Vizor 打开。';
+
+  @override
+  String get homeShieldKeystoneQrSemantics => 'Keystone 交易二维码';
+
+  @override
+  String get homeShieldNextStep => '下一步';
+
+  @override
+  String get homeShieldNoActiveAccount => '没有活动账户。';
+
+  @override
+  String get homeShieldNow => '立即屏蔽';
+
+  @override
+  String get homeShieldQueuedTitle => '屏蔽已加入队列';
+
+  @override
+  String get homeShieldReadingSignature => '正在读取签名…';
+
+  @override
+  String get homeShieldReject => '拒绝';
+
+  @override
+  String get homeShieldScanDecodeFailed => '无法将此二维码解码为 Keystone 签名。';
+
+  @override
+  String get homeShieldScanHold => '请保持二维码稳定且完整可见。';
+
+  @override
+  String get homeShieldScanTitle => '扫描 Keystone 签名';
+
+  @override
+  String get homeShieldScanToSign => '扫描二维码进行签名';
+
+  @override
+  String get homeShieldScanWrongQr => '请在 Keystone 上打开已签名的屏蔽二维码，然后重新扫描。';
+
+  @override
+  String homeShieldScanning(int progress) {
+    return '正在扫描… $progress%';
+  }
+
+  @override
+  String get homeShieldShowQr => '显示二维码';
+
+  @override
+  String get homeShieldSignTitle => '在 Keystone 上签名交易';
+
+  @override
+  String get homeShieldStatusUncertain => '屏蔽交易的状态不确定。重试前请先查看活动。';
+
+  @override
+  String get homeShieldSubmitting => '正在提交交易';
+
+  @override
+  String get homeShieldSucceededTitle => '屏蔽成功';
+
+  @override
+  String get homeShieldToggleFlashlight => '切换手电筒';
+
+  @override
+  String get homeShieldTryAgain => '重试';
+
+  @override
+  String get homeShieldedBalance => '屏蔽余额';
+
+  @override
+  String get homeShieldingBalance => '正在屏蔽你的余额…';
+
+  @override
+  String get homeShieldingProgress => '正在屏蔽...';
+
+  @override
+  String homeTransparentBalance(String balance) {
+    return '透明：$balance';
+  }
+
+  @override
+  String get homeVotingSemantics => '打开持币者投票';
+
+  @override
+  String get homeVotingSubtitle => '参与塑造网络未来';
+
+  @override
+  String get homeVotingTitle => '持币者投票';
 
   @override
   String get keyringLockedBody =>

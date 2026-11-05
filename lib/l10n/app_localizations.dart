@@ -100,6 +100,312 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// Screen-reader label of the button that opens an account's action menu on desktop.
+  ///
+  /// In en, this message translates to:
+  /// **'Account actions'**
+  String get accountsActionsLabel;
+
+  /// Button and screen-reader label that starts adding or creating another account.
+  ///
+  /// In en, this message translates to:
+  /// **'Add account'**
+  String get accountsAdd;
+
+  /// Toast on the mobile Accounts screen when an account's address could not be loaded for sending.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the account address'**
+  String get accountsAddressLoadFailed;
+
+  /// Screen-reader label of the avatar button in the edit-account dialog and sheet that opens the profile picture picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Change profile picture'**
+  String get accountsChangeProfilePicture;
+
+  /// Screen-reader label of the clear button in the mobile account name field.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear account name'**
+  String get accountsClearName;
+
+  /// Section heading on the Accounts screen for the selected account.
+  ///
+  /// In en, this message translates to:
+  /// **'Current'**
+  String get accountsCurrent;
+
+  /// Account menu item that opens the account editor for name and picture.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit account'**
+  String get accountsEdit;
+
+  /// Error in the desktop edit-account dialog when saving failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update account.'**
+  String get accountsEditFailed;
+
+  /// Placeholder of the account name field: the name must be 1 to 20 characters long.
+  ///
+  /// In en, this message translates to:
+  /// **'1-20 characters'**
+  String get accountsEditNameHint;
+
+  /// Label of the account name field in the edit-account dialog and sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Account name'**
+  String get accountsEditNameLabel;
+
+  /// Button in the mobile account switcher sheet that opens the Accounts screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage accounts'**
+  String get accountsManage;
+
+  /// Screen-reader label of the button that opens the options menu of an account. {name} is the account name the user chose.
+  ///
+  /// In en, this message translates to:
+  /// **'Account options for {name}'**
+  String accountsOptionsFor(String name);
+
+  /// Section heading on the Accounts screen for the accounts that are not selected.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get accountsOther;
+
+  /// Heading above the unselected accounts in the mobile account switcher sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Other accounts'**
+  String get accountsOtherAccounts;
+
+  /// [security] Account menu item and sheet title for removing an account from the wallet; this deletes its local data.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove account'**
+  String get accountsRemove;
+
+  /// [security] Warning in the mobile remove-account sheet when the account's secret passphrase was never backed up; its funds would be lost.
+  ///
+  /// In en, this message translates to:
+  /// **'If you haven’t backed up this account’s secret passphrase, you can’t recover its funds after removal.'**
+  String get accountsRemoveBackupWarning;
+
+  /// Message in the desktop remove-account dialog when gift cards being received block removal. {count} is the number of incoming gift cards, at least 1.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{This account is receiving a gift card. Wait for it to finish before removing this account.} other{This account is receiving {count} gift cards. Wait for them to finish before removing this account.}}'**
+  String accountsRemoveBlockedByGiftCards(int count);
+
+  /// Message in the desktop remove-account dialog when pending swaps block removal. {count} is the number of active swaps, at least 1.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{This account has 1 active swap. Complete or remove them from swap activity before removing this account.} other{This account has {count} active swaps. Complete or remove them from swap activity before removing this account.}}'**
+  String accountsRemoveBlockedBySwaps(int count);
+
+  /// [security] Body of the mobile remove-account sheet. Removal deletes the account's local data irreversibly.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing this account deletes its local data from Vizor. Make sure you can re-import it before continuing.'**
+  String get accountsRemoveBody;
+
+  /// Message in the desktop remove-account dialog while the wallet looks for gift cards being received.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking this account for incoming gift cards before removal.'**
+  String get accountsRemoveCheckingGiftCards;
+
+  /// [security] Label of the confirm button in the desktop remove-account dialog while the password is checked.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking password...'**
+  String get accountsRemoveCheckingPassword;
+
+  /// Message in the desktop remove-account dialog while the wallet looks for pending swaps.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking this account for active swaps before removal.'**
+  String get accountsRemoveCheckingSwaps;
+
+  /// [security] Destructive button that confirms removing one account and its local data.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get accountsRemoveConfirm;
+
+  /// [security] Error in the desktop remove-account dialog when removing the account failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove account.'**
+  String get accountsRemoveFailed;
+
+  /// [security] Toast on the mobile Accounts screen when removing an account failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove the account'**
+  String get accountsRemoveFailedToast;
+
+  /// Message in the desktop remove-account dialog when the incoming gift card check failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check this account for incoming gift cards. Try again before removing it.'**
+  String get accountsRemoveGiftCardsCheckFailed;
+
+  /// [security] Body of the mobile remove-account sheet when that account has an active Ironwood migration. Removal deletes the account's local data.
+  ///
+  /// In en, this message translates to:
+  /// **'This account\'s migration will no longer continue in Vizor. Transactions already submitted to the Zcash network may still complete. After re-importing, let the account fully sync before starting migration again.'**
+  String get accountsRemoveMigrationBody;
+
+  /// [security] Body of the desktop remove-account confirmation dialog. Two lines; removal is irreversible.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to remove this account? This action can\'t be reverted.\nYou will have to re-import your account.'**
+  String get accountsRemoveModalBody;
+
+  /// [security] Error under the password field of the desktop remove-account dialog when the password check itself failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check your password. Please try again.'**
+  String get accountsRemovePasswordCheckFailed;
+
+  /// [security] Placeholder of the wallet password field in the desktop remove-account dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your password'**
+  String get accountsRemovePasswordHint;
+
+  /// [security] Error under the password field of the desktop remove-account dialog when the password is wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Incorrect password. Please try again.'**
+  String get accountsRemovePasswordIncorrect;
+
+  /// [security] Label of the wallet password field in the desktop remove-account dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Password'**
+  String get accountsRemovePasswordLabel;
+
+  /// Label of the confirm button in the desktop remove-account dialog while sync is stopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping sync...'**
+  String get accountsRemoveStoppingSync;
+
+  /// Message in the desktop remove-account dialog when the pending-swap check failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t check this account for active swaps. Try again before removing it.'**
+  String get accountsRemoveSwapsCheckFailed;
+
+  /// [security] Label of the confirm button in the desktop remove-account dialog while the account is removed.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing account...'**
+  String get accountsRemoving;
+
+  /// [security] Body of the mobile reset confirmation sheet shown when the last account is removed. Resetting deletes all local wallet data irreversibly.
+  ///
+  /// In en, this message translates to:
+  /// **'Resetting Vizor deletes every account and all local wallet data. Make sure you can re-import your accounts before continuing.'**
+  String get accountsResetBody;
+
+  /// [security] Error in the desktop remove-account dialog when resetting the whole wallet failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reset Vizor.'**
+  String get accountsResetFailed;
+
+  /// [security] Toast on the mobile Accounts screen when resetting the whole wallet failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t reset Vizor'**
+  String get accountsResetFailedToast;
+
+  /// [security] Body of the mobile reset confirmation sheet when an Ironwood migration is active. Resetting deletes all local wallet data irreversibly.
+  ///
+  /// In en, this message translates to:
+  /// **'Resetting Vizor stops migrations on this device and deletes every account and all local wallet data. Transactions already submitted to the Zcash network may still complete. After re-importing, let each account fully sync before starting migration again.'**
+  String get accountsResetMigrationBody;
+
+  /// [security] Body of the desktop dialog for removing the last account, which resets the whole app. Three lines; the last says the deletion is irreversible.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing this account will completely reset the Vizor app. This means deleting all accounts and requiring you to import accounts again.\nUnshared gift card links will also be permanently lost.\nThis cannot be undone.'**
+  String get accountsResetModalBody;
+
+  /// [security] Destructive button that deletes every account and all local wallet data.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset Vizor'**
+  String get accountsResetVizor;
+
+  /// [security] Label of the confirm button in the desktop remove-account dialog while the wallet is reset.
+  ///
+  /// In en, this message translates to:
+  /// **'Resetting...'**
+  String get accountsResetting;
+
+  /// Button in the mobile edit-account sheet that saves the name and picture.
+  ///
+  /// In en, this message translates to:
+  /// **'Save edits'**
+  String get accountsSaveEdits;
+
+  /// Toast on the mobile Accounts screen when saving name or picture edits failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the account changes'**
+  String get accountsSaveFailed;
+
+  /// Title of the profile picture picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select profile picture'**
+  String get accountsSelectProfilePicture;
+
+  /// Toast on the Accounts screen when sending to an account's address could not be started.
+  ///
+  /// In en, this message translates to:
+  /// **'Send couldn\'t be started'**
+  String get accountsSendFailed;
+
+  /// Account menu item that starts a send to that account's address.
+  ///
+  /// In en, this message translates to:
+  /// **'Send ZEC'**
+  String get accountsSendZec;
+
+  /// Title of the Accounts screen that lists the wallet's accounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Accounts'**
+  String get accountsTitle;
+
+  /// Button in the mobile profile picture picker that confirms the selected picture.
+  ///
+  /// In en, this message translates to:
+  /// **'Update picture'**
+  String get accountsUpdatePicture;
+
+  /// [security] Account menu item that shows the account's secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'View secret phrase'**
+  String get accountsViewSecretPhrase;
+
+  /// [security] Account menu item that shows the account's viewing key.
+  ///
+  /// In en, this message translates to:
+  /// **'View viewing key'**
+  String get accountsViewViewingKey;
+
   /// Back-link label shown during desktop onboarding that returns to the Add account screen.
   ///
   /// In en, this message translates to:
@@ -404,6 +710,726 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Updating...'**
   String get commonUpdating;
+
+  /// Empty-state title on Home when the wallet has no transactions.
+  ///
+  /// In en, this message translates to:
+  /// **'No activity, yet...'**
+  String get homeActivityEmpty;
+
+  /// Hint under the desktop Home empty-state title; tx is short for transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'How about running your first ZEC tx?'**
+  String get homeActivityEmptyHint;
+
+  /// Two-line hint under the mobile Home empty-state title; tx is short for transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'How about running your\nfirst ZEC tx?'**
+  String get homeActivityEmptyHintMobile;
+
+  /// Screen-reader label of the Home recent-activity list while it loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading activity'**
+  String get homeActivityLoading;
+
+  /// Empty-state title on Home when the activity list could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to load activity.'**
+  String get homeActivityUnavailable;
+
+  /// [security] Two-line subtitle of the mobile Home backup reminder card; the second line marks it as the last setup step.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up your secret passphrase\nLast step'**
+  String get homeBackupSubtitle;
+
+  /// [security] Title of the mobile Home card that reminds the user to back up their secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Secure your wallet'**
+  String get homeBackupTitle;
+
+  /// Action on a desktop Home notice that hides the notice.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get homeDismiss;
+
+  /// Subtitle of the mobile Home Zcash introduction card.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy, address types, and what to expect'**
+  String get homeEducationSubtitle;
+
+  /// Title of the mobile Home card that opens the Zcash introduction.
+  ///
+  /// In en, this message translates to:
+  /// **'Learn about Zcash'**
+  String get homeEducationTitle;
+
+  /// Body of the mobile Home import-progress screen asking the user to keep the app open.
+  ///
+  /// In en, this message translates to:
+  /// **'Hang tight ... It might take some time. Keep Vizor open & running.'**
+  String get homeImportingBodyMobile;
+
+  /// Two-line detail on desktop Home while an imported wallet scans and the account has no name.
+  ///
+  /// In en, this message translates to:
+  /// **'It might take some time.\nKeep Vizor open & running.'**
+  String get homeImportingDetail;
+
+  /// Two-line detail on desktop Home while an imported account scans. {name} is the account name entered by the user.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing {name}\nKeep Vizor open & running.'**
+  String homeImportingDetailNamed(String name);
+
+  /// Two-line title on desktop Home while an imported wallet scans the chain.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'re importing\nyour wallet...'**
+  String get homeImportingTitle;
+
+  /// Title of the mobile Home screen while an imported wallet is scanning the chain.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'re importing your wallet...'**
+  String get homeImportingTitleMobile;
+
+  /// Body of the keep-awake sheet explaining why the screen should stay on during sync.
+  ///
+  /// In en, this message translates to:
+  /// **'Your phone pauses syncing when screen is off. This allows sync to finish faster.'**
+  String get homeKeepAwakeBody;
+
+  /// Button in the keep-awake sheet that turns on the keep-screen-awake option.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep screen awake'**
+  String get homeKeepAwakeEnable;
+
+  /// Ghost button in the keep-awake sheet that dismisses it without turning the option on.
+  ///
+  /// In en, this message translates to:
+  /// **'Maybe later'**
+  String get homeKeepAwakeLater;
+
+  /// Bullet in the keep-awake sheet: the app still locks after one idle minute while sync continues.
+  ///
+  /// In en, this message translates to:
+  /// **'The app locks after 1 minute of inactivity. Syncing continues behind the lock.'**
+  String get homeKeepAwakeLockNote;
+
+  /// Bullet in the keep-awake sheet saying the choice can be changed later in Settings.
+  ///
+  /// In en, this message translates to:
+  /// **'You can change this anytime in the Settings.'**
+  String get homeKeepAwakeSettingsNote;
+
+  /// Title of the mobile Home sheet that offers to keep the screen awake while the wallet syncs.
+  ///
+  /// In en, this message translates to:
+  /// **'Stay awake to sync?'**
+  String get homeKeepAwakeTitle;
+
+  /// Status label of the Ledger shield failure panel after an error.
+  ///
+  /// In en, this message translates to:
+  /// **'Action needed'**
+  String get homeLedgerActionNeeded;
+
+  /// Ledger shield dialog error when the device refused a later round; earlier rounds were already broadcast.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Ledger couldn’t accept this approval. Earlier approvals were already sent.'**
+  String get homeLedgerApprovalNotAccepted;
+
+  /// Warning on the Ledger shield dialog when the transaction was broadcast but not saved; retrying could send it twice.
+  ///
+  /// In en, this message translates to:
+  /// **'The shield transaction reached the network but was not stored locally. Do not try again until sync confirms it.'**
+  String get homeLedgerBroadcastNotStored;
+
+  /// Warning on the Ledger shield dialog when the broadcast outcome is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'The shield transaction may have reached the network. Check activity before trying again.'**
+  String get homeLedgerBroadcastUnknown;
+
+  /// Screen-reader label of the close button on the mobile Ledger shield panel while shielding can still be cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel shielding'**
+  String get homeLedgerCancelShielding;
+
+  /// Ledger shield dialog message when the user switched account or network while shielding was in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected account or network changed. Return to your wallet.'**
+  String get homeLedgerContextChanged;
+
+  /// Status label of the Ledger shield failure panel when shielding paused with funds still unshielded.
+  ///
+  /// In en, this message translates to:
+  /// **'Inputs remaining'**
+  String get homeLedgerInputsRemaining;
+
+  /// Ledger shield dialog message when nothing was shielded because no transparent funds can be spent.
+  ///
+  /// In en, this message translates to:
+  /// **'No spendable transparent funds remain. Return to your wallet.'**
+  String get homeLedgerNoFundsRemain;
+
+  /// Ledger shield dialog error when the transaction involves Sapling, which the Ledger preview app cannot sign.
+  ///
+  /// In en, this message translates to:
+  /// **'This Ledger preview does not support Sapling inputs or outputs.'**
+  String get homeLedgerNoSapling;
+
+  /// Ledger shield dialog message when the remaining transparent funds are too small to shield further.
+  ///
+  /// In en, this message translates to:
+  /// **'The remaining funds are below the shielding threshold.'**
+  String get homeLedgerPausedBelowThreshold;
+
+  /// Title of the Ledger shield failure panel when shielding stopped early without an error.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding paused'**
+  String get homeLedgerPausedTitle;
+
+  /// Ledger shield dialog message when shielding was paused because the wallet is changing accounts or resetting.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding paused while wallet changes finish. Return to your wallet.'**
+  String get homeLedgerPausedWalletChanges;
+
+  /// Ledger shield dialog error when the user rejected the transaction on the device.
+  ///
+  /// In en, this message translates to:
+  /// **'The shield transaction was rejected on your Ledger.'**
+  String get homeLedgerRejected;
+
+  /// Notice on the desktop Ledger shield dialog when shielding needs several approvals.
+  ///
+  /// In en, this message translates to:
+  /// **'Each approval creates a separate transaction with its own network fee.'**
+  String get homeLedgerRoundFeeNotice;
+
+  /// Ledger shield dialog message after a round was sent and the rest is too small to shield. {round} is the round number.
+  ///
+  /// In en, this message translates to:
+  /// **'Round {round} was sent. The remaining funds are below the shielding threshold.'**
+  String homeLedgerRoundSentBelowThreshold(int round);
+
+  /// Ledger shield dialog message after a round was sent but the wallet has not yet shown that inputs were spent. {round} is the round number.
+  ///
+  /// In en, this message translates to:
+  /// **'Round {round} was sent, but no reduction in spendable inputs could be confirmed. Wait for sync before shielding again.'**
+  String homeLedgerRoundSentNoReduction(int round);
+
+  /// Ledger shield dialog message. Shielding runs in rounds, one Ledger approval each; {round} is the number of the round that was just sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Round {round} was sent, but the remaining funds could not be checked. Return to your wallet and try again after sync.'**
+  String homeLedgerRoundSentUnchecked(int round);
+
+  /// Title of the mobile Ledger shield screen while waiting for the user to approve on the Ledger.
+  ///
+  /// In en, this message translates to:
+  /// **'Shield with Ledger'**
+  String get homeLedgerShieldTitle;
+
+  /// Generic error on the Ledger shield dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger shielding could not be completed.'**
+  String get homeLedgerShieldingFailed;
+
+  /// Title of the Ledger shield failure panel after an error.
+  ///
+  /// In en, this message translates to:
+  /// **'Ledger signing failed'**
+  String get homeLedgerSigningFailedTitle;
+
+  /// Error text on desktop Home when the wallet failed to load. {details} is the technical error text, passed through untranslated.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Try again in a moment.\n\nDetails: {details}'**
+  String homeLoadFailed(String details);
+
+  /// Desktop Home button that starts the Ironwood pool migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate to Ironwood'**
+  String get homeMigrateToIronwood;
+
+  /// Pill on the mobile Home balance card shown when the Ironwood migration needs the user to act.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration required'**
+  String get homeMigrationRequired;
+
+  /// Title-case heading of the desktop Home balance card when the Ironwood migration needs the user to act.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration Required'**
+  String get homeMigrationRequiredTitle;
+
+  /// Desktop Home migration button text. {amount} is the formatted amount still being moved, such as 1.5 ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} still migrating'**
+  String homeMigrationStillMigrating(String amount);
+
+  /// Desktop Home migration button text after a network upgrade stopped the Ironwood migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Migration stopped by network upgrade'**
+  String get homeMigrationStoppedByUpgrade;
+
+  /// Desktop Home migration button text while a migration transaction waits for confirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for confirmation...'**
+  String get homeMigrationWaitingConfirmation;
+
+  /// Body of the first NU7 announcement point; s means seconds.
+  ///
+  /// In en, this message translates to:
+  /// **'Average wait for first confirmation drops from ~75s to ~25s.'**
+  String get homeNu7FasterBody;
+
+  /// Heading of the first NU7 announcement point: blocks arrive about three times as often.
+  ///
+  /// In en, this message translates to:
+  /// **'~3× faster blocks'**
+  String get homeNu7FasterTitle;
+
+  /// Button that dismisses the NU7 announcement.
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get homeNu7GotIt;
+
+  /// Body of the second NU7 announcement point.
+  ///
+  /// In en, this message translates to:
+  /// **'Network can handle 2.3x more shielded transactions per block.'**
+  String get homeNu7ThroughputBody;
+
+  /// Heading of the second NU7 announcement point. See the glossary entry for shielded.
+  ///
+  /// In en, this message translates to:
+  /// **'Higher shielded throughput'**
+  String get homeNu7ThroughputTitle;
+
+  /// Two-line title of the announcement shown after the NU7 network upgrade activates.
+  ///
+  /// In en, this message translates to:
+  /// **'NU7 Update is live.\nWhat does this mean?'**
+  String get homeNu7Title;
+
+  /// [security] Notice on desktop Home when the outcome of an earlier wallet password change could not be confirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t verify the previous password change. Try again or restart Vizor.'**
+  String get homePasswordChangeUnverified;
+
+  /// Screen-reader and tooltip label of the icon-only Pay button on desktop Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay in USDC'**
+  String get homePayInUsdc;
+
+  /// Home action button that opens the receive screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive'**
+  String get homeReceive;
+
+  /// Mobile Home button shown instead of Send/Receive while the wallet has no funds; opens the receive screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive your first ZEC'**
+  String get homeReceiveFirstZec;
+
+  /// Heading above the recent transactions list on Home.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent activity'**
+  String get homeRecentActivity;
+
+  /// Link next to the Home recent-activity heading that opens the full activity list.
+  ///
+  /// In en, this message translates to:
+  /// **'See all'**
+  String get homeSeeAll;
+
+  /// Home action button that opens the send screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get homeSend;
+
+  /// [security] Card text in the desktop Home setup carousel reminding the user to back up their secret passphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up your wallet. Keep your secret passphrase safe.'**
+  String get homeSetupBackupMessage;
+
+  /// Screen-reader name of the desktop Home carousel with wallet setup reminders.
+  ///
+  /// In en, this message translates to:
+  /// **'Wallet setup'**
+  String get homeSetupCarouselLabel;
+
+  /// Lowercase name of the Home wallet-setup carousel, used in the screen-reader label of its page dots (Show wallet setup banner 1 of 2).
+  ///
+  /// In en, this message translates to:
+  /// **'wallet setup banner'**
+  String get homeSetupCarouselName;
+
+  /// Card text in the desktop Home setup carousel that opens the Zcash introduction.
+  ///
+  /// In en, this message translates to:
+  /// **'Learn how Zcash protects your privacy and which address to use.'**
+  String get homeSetupEducationMessage;
+
+  /// Label of the mobile Home button that shields the transparent balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Shield'**
+  String get homeShield;
+
+  /// Instruction in the desktop Keystone shield dialog; Get Signature is the name of the button next to it.
+  ///
+  /// In en, this message translates to:
+  /// **'After you scanned, click Get Signature.'**
+  String get homeShieldAfterScan;
+
+  /// Title of the mobile Keystone shield screen while the transaction QR is shown for the Keystone to scan.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve with Keystone'**
+  String get homeShieldApproveTitle;
+
+  /// Title of the mobile Keystone shield screen when shielding failed or ended with a warning.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding needs attention'**
+  String get homeShieldAttentionTitle;
+
+  /// Button on the shield result screens that returns to the wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to wallet'**
+  String get homeShieldBackToWallet;
+
+  /// Button on the desktop Keystone shield dialog that closes it after a failure or warning.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to Wallet'**
+  String get homeShieldBackToWalletTitleCase;
+
+  /// Title of the mobile shield screens that move the transparent balance into a shielded pool.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent Balance'**
+  String get homeShieldBalanceTitle;
+
+  /// Warning on the Keystone shield dialog when the transaction was broadcast but not saved in the wallet; retrying could send it twice.
+  ///
+  /// In en, this message translates to:
+  /// **'The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.'**
+  String get homeShieldBroadcastNotStored;
+
+  /// Warning on the Keystone shield dialog when broadcasting timed out and the outcome is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.'**
+  String get homeShieldBroadcastUnknown;
+
+  /// Title of the desktop Keystone shield dialog while the signed transaction is sent; tx is short for transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Broadcasting shield tx'**
+  String get homeShieldBroadcastingTitle;
+
+  /// Message over the mobile Keystone scanner when camera permission is denied.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow camera access in Settings to scan Keystone signatures.'**
+  String get homeShieldCameraDenied;
+
+  /// Message over the mobile Keystone scanner when the camera cannot start.
+  ///
+  /// In en, this message translates to:
+  /// **'The camera is unavailable right now.'**
+  String get homeShieldCameraUnavailable;
+
+  /// Error on the shield screens when cancelling could not release the pending work.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not finish cancelling. Please try again.'**
+  String get homeShieldCancelFailed;
+
+  /// Message on the mobile Keystone shield screen after the user cancelled shielding.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding was cancelled.'**
+  String get homeShieldCancelled;
+
+  /// Error on the desktop Keystone shield dialog when the user declined the proving parameter download.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding was cancelled before proving parameters were downloaded.'**
+  String get homeShieldCancelledBeforeParams;
+
+  /// Button on the mobile shield screen that finishes the animation after shielding succeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete'**
+  String get homeShieldComplete;
+
+  /// Label of the mobile slide-to-shield control; the user drags the handle to confirm shielding.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to shield'**
+  String get homeShieldDrag;
+
+  /// Error on the Keystone and Ledger shield dialogs when sending the transaction to the network failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Shield transaction could not be broadcast.'**
+  String get homeShieldErrorBroadcast;
+
+  /// Generic error on the desktop Keystone shield dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Shield balance failed. Please try again.'**
+  String get homeShieldErrorGeneric;
+
+  /// Error on the mobile Keystone shield screen when the signed transaction could not be extracted.
+  ///
+  /// In en, this message translates to:
+  /// **'Shield transaction could not be finalized.'**
+  String get homeShieldErrorNotFinalized;
+
+  /// Error on the Keystone shield screens when the Sapling proving parameters failed to download or load.
+  ///
+  /// In en, this message translates to:
+  /// **'Required proving parameters could not be prepared.'**
+  String get homeShieldErrorProvingParams;
+
+  /// Error on the Keystone shield screens when the scanned signature could not be added to the transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signature could not be applied.'**
+  String get homeShieldErrorSignatureNotApplied;
+
+  /// Error on the mobile Keystone shield screen when the signing request was not ready when the user started scanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone signing could not be prepared.'**
+  String get homeShieldErrorSigningNotPrepared;
+
+  /// Error on the Keystone and Ledger shield dialogs when the wallet is not synced yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync the wallet before shielding transparent balance.'**
+  String get homeShieldErrorSyncFirst;
+
+  /// Error on the Keystone and Ledger shield dialogs when the transparent balance would not cover the network fee.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent balance is too small to shield after fees.'**
+  String get homeShieldErrorTooSmall;
+
+  /// Title of the mobile software-account shield screen when shielding failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding could not be completed'**
+  String get homeShieldFailedTitle;
+
+  /// Button in the desktop Keystone shield dialog that opens the camera to read the signature QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Get Signature'**
+  String get homeShieldGetSignature;
+
+  /// Instruction in the desktop Keystone shield dialog while the transaction is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Vizor open while the transaction is sent.'**
+  String get homeShieldKeepOpen;
+
+  /// Screen-reader label of the transaction QR code the Keystone device scans.
+  ///
+  /// In en, this message translates to:
+  /// **'Keystone transaction QR'**
+  String get homeShieldKeystoneQrSemantics;
+
+  /// Mobile shield footer button that moves from the transaction QR to scanning the Keystone signature.
+  ///
+  /// In en, this message translates to:
+  /// **'Next step'**
+  String get homeShieldNextStep;
+
+  /// Error notice on desktop Home when Shield is pressed but no account is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account.'**
+  String get homeShieldNoActiveAccount;
+
+  /// Label of the desktop Home button that shields the transparent balance.
+  ///
+  /// In en, this message translates to:
+  /// **'Shield now'**
+  String get homeShieldNow;
+
+  /// Title of the mobile software-account shield screen when the shielding transaction is queued for retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding queued'**
+  String get homeShieldQueuedTitle;
+
+  /// Status text on the mobile Keystone scanner while the scanned signature QR is decoded.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading signature…'**
+  String get homeShieldReadingSignature;
+
+  /// Button in the desktop Keystone shield dialog that cancels shielding.
+  ///
+  /// In en, this message translates to:
+  /// **'Reject'**
+  String get homeShieldReject;
+
+  /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code could not be decoded as a Keystone signature.'**
+  String get homeShieldScanDecodeFailed;
+
+  /// Hint under the mobile Keystone scanner when a frame could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the QR code steady and fully visible.'**
+  String get homeShieldScanHold;
+
+  /// Title of the mobile Keystone shield screen while the camera scans the signature QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan your Keystone signature'**
+  String get homeShieldScanTitle;
+
+  /// Subtitle of the desktop Keystone shield dialog above the transaction QR.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code to sign'**
+  String get homeShieldScanToSign;
+
+  /// Hint under the mobile Keystone scanner when the wrong kind of QR was scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the signed shield QR on Keystone, then scan again.'**
+  String get homeShieldScanWrongQr;
+
+  /// Status text on the mobile Keystone scanner while an animated signature QR is read. {progress} is a whole percentage.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning… {progress}%'**
+  String homeShieldScanning(int progress);
+
+  /// Mobile shield footer button that shows the transaction QR code for the Keystone to scan.
+  ///
+  /// In en, this message translates to:
+  /// **'Show QR'**
+  String get homeShieldShowQr;
+
+  /// Title of the desktop Keystone shield dialog while the user signs on the device; tx is short for transaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign tx on your Keystone'**
+  String get homeShieldSignTitle;
+
+  /// Warning on the Keystone and Ledger shield dialogs when the outcome of the broadcast is unclear.
+  ///
+  /// In en, this message translates to:
+  /// **'The shield transaction status is uncertain. Check activity before trying again.'**
+  String get homeShieldStatusUncertain;
+
+  /// Subtitle of the desktop Keystone shield dialog while the transaction is being sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting transaction'**
+  String get homeShieldSubmitting;
+
+  /// Title of the mobile shield screens after shielding completed.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded successfully'**
+  String get homeShieldSucceededTitle;
+
+  /// Screen-reader label of the flashlight button on the mobile Keystone scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle flashlight'**
+  String get homeShieldToggleFlashlight;
+
+  /// Button on the shield screens that retries the failed step.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get homeShieldTryAgain;
+
+  /// Label on the Home balance card for the shielded balance. See the glossary entry for shielded.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded balance'**
+  String get homeShieldedBalance;
+
+  /// Status text on the mobile shield screens while the transparent balance is being shielded.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding your balance…'**
+  String get homeShieldingBalance;
+
+  /// Label of the mobile Home shield button while shielding is in progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielding...'**
+  String get homeShieldingProgress;
+
+  /// Row on the mobile Home card showing the transparent balance. {balance} is a formatted amount such as 0.5 ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent: {balance}'**
+  String homeTransparentBalance(String balance);
+
+  /// Screen-reader label of the Home coinholder voting card.
+  ///
+  /// In en, this message translates to:
+  /// **'Open coinholder voting'**
+  String get homeVotingSemantics;
+
+  /// Subtitle of the Home coinholder voting card.
+  ///
+  /// In en, this message translates to:
+  /// **'Help to shape the network'**
+  String get homeVotingSubtitle;
+
+  /// Title of the Home card that opens coinholder voting.
+  ///
+  /// In en, this message translates to:
+  /// **'Coinholder voting'**
+  String get homeVotingTitle;
 
   /// [security] Body of the Linux keyring screen when the system keyring is locked; mentions the keyring password prompt.
   ///
