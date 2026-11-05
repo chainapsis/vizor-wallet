@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/l10n/l10n.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -198,7 +199,7 @@ class MobileRecipientRow extends StatelessWidget {
                         AppIcons.check,
                         size: 16,
                         color: colors.icon.accent,
-                        semanticLabel: 'Selected contact',
+                        semanticLabel: context.l10n.addressBookSelectedContact,
                       ),
                     )
                   : null,

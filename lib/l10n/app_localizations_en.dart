@@ -631,6 +631,289 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityToastHashCopiedMobile => 'Transaction Hash Copied';
 
   @override
+  String get addressBookAddContact => 'Add contact';
+
+  @override
+  String get addressBookAddressHintDesktop => 'Add address';
+
+  @override
+  String get addressBookAddressHintMobile => 'Add an address';
+
+  @override
+  String get addressBookAddressLabel => 'Address';
+
+  @override
+  String get addressBookAddressMissing => 'Add an address';
+
+  @override
+  String get addressBookChainAndAddress => 'Chain & address';
+
+  @override
+  String get addressBookChangePicture => 'Change contact picture';
+
+  @override
+  String get addressBookClearAddress => 'Clear address';
+
+  @override
+  String get addressBookClearLabel => 'Clear contact label';
+
+  @override
+  String get addressBookClearName => 'Clear name';
+
+  @override
+  String get addressBookClearSearch => 'Clear search';
+
+  @override
+  String addressBookContactActions(String label) {
+    return '$label actions';
+  }
+
+  @override
+  String get addressBookContactsTitle => 'Contacts';
+
+  @override
+  String get addressBookEditContact => 'Edit contact';
+
+  @override
+  String get addressBookEmptyBody => 'Add your first contact to get started.';
+
+  @override
+  String get addressBookEmptyTitle => 'No contacts yet';
+
+  @override
+  String get addressBookInvalidBitcoin => 'Invalid Bitcoin address';
+
+  @override
+  String get addressBookInvalidEvm => 'Invalid EVM address';
+
+  @override
+  String get addressBookInvalidNear => 'Invalid NEAR address';
+
+  @override
+  String get addressBookInvalidSolana => 'Invalid Solana address';
+
+  @override
+  String get addressBookInvalidZcash => 'Invalid Zcash address';
+
+  @override
+  String get addressBookLabelFieldLabel => 'Address label';
+
+  @override
+  String get addressBookLabelHint => 'Add label 1-20 characters';
+
+  @override
+  String get addressBookLabelLength => 'Use 1-20 characters';
+
+  @override
+  String get addressBookLabelMissing => 'Add a label';
+
+  @override
+  String get addressBookLoadFailed =>
+      'Couldn\'t load your contacts. Try again, or contact support if this keeps happening.';
+
+  @override
+  String get addressBookNameHint => 'Add a name';
+
+  @override
+  String get addressBookNameLabel => 'Name';
+
+  @override
+  String get addressBookNearSuffixWarning =>
+      'NEAR accounts usually end in .near — double-check this address';
+
+  @override
+  String get addressBookNetworkLabel => 'Network';
+
+  @override
+  String get addressBookNoNetworks => 'No networks found';
+
+  @override
+  String get addressBookNoResultsBody => 'Try to modify your search';
+
+  @override
+  String get addressBookNoResultsTitle => 'No contacts were found';
+
+  @override
+  String get addressBookPickerClose => 'Close contacts';
+
+  @override
+  String get addressBookPickerEmptyTitle => 'No contacts found';
+
+  @override
+  String get addressBookPickerLoadFailed =>
+      'Couldn\'t load contacts. Try again.';
+
+  @override
+  String get addressBookPickerSearchHint => 'Search contacts';
+
+  @override
+  String get addressBookRemove => 'Remove';
+
+  @override
+  String addressBookRemoveBody(String label) {
+    return '$label will be removed from your contacts.';
+  }
+
+  @override
+  String get addressBookRemoveBodyUnknown => 'This contact will be removed.';
+
+  @override
+  String addressBookRemoveConfirmBody(String label) {
+    return '\"$label\" will be removed from your contacts. This does not affect any past transactions.';
+  }
+
+  @override
+  String get addressBookRemoveConfirmTitle => 'Remove contact?';
+
+  @override
+  String get addressBookRemoveContact => 'Remove contact';
+
+  @override
+  String get addressBookRemoveFailed => 'Couldn\'t remove contact. Try again.';
+
+  @override
+  String get addressBookRemoveFailedMobile =>
+      'Couldn\'t remove the contact. Please try again.';
+
+  @override
+  String get addressBookSaveContact => 'Save contact';
+
+  @override
+  String get addressBookSaveFailed => 'Couldn\'t save contact. Try again.';
+
+  @override
+  String get addressBookSaveFailedMobile =>
+      'Couldn\'t save the contact. Please try again.';
+
+  @override
+  String get addressBookScanAddressQr => 'Scan address QR';
+
+  @override
+  String addressBookScanQrTitle(String network) {
+    return 'Scan $network QR code';
+  }
+
+  @override
+  String get addressBookSearch => 'Search';
+
+  @override
+  String get addressBookSearchHint => 'Search for label or network';
+
+  @override
+  String get addressBookSearchNetwork => 'Search network';
+
+  @override
+  String get addressBookSelectNetwork => 'Select network';
+
+  @override
+  String get addressBookSelectPicture => 'Select contact picture';
+
+  @override
+  String get addressBookSelectedContact => 'Selected contact';
+
+  @override
+  String get addressBookSendZec => 'Send ZEC';
+
+  @override
+  String get addressScanAddressCameraNeeded =>
+      'Address QR scanning needs a camera on this device.';
+
+  @override
+  String addressScanCameraDefaultSuffix(String name) {
+    return '$name (Default)';
+  }
+
+  @override
+  String get addressScanCameraNeeded =>
+      'QR scanning needs a camera on this device.';
+
+  @override
+  String get addressScanCameraOff =>
+      'Camera access is off. Allow it in Settings to scan addresses.';
+
+  @override
+  String get addressScanCameraRequired =>
+      'Address QR scanning requires a camera on this device.';
+
+  @override
+  String get addressScanCameraRestricted =>
+      'Screen Time or device management is blocking the camera on this device.';
+
+  @override
+  String get addressScanCameraUnavailable => 'Camera unavailable';
+
+  @override
+  String get addressScanCameraUnavailableNow =>
+      'The camera is unavailable right now.';
+
+  @override
+  String get addressScanCloseScanner => 'Close scanner';
+
+  @override
+  String get addressScanDefaultCamera => 'Default camera';
+
+  @override
+  String get addressScanDeniedTitle => 'You\'ve denied Camera access';
+
+  @override
+  String get addressScanDeniedTitleMobile => 'You\'ve denied camera access';
+
+  @override
+  String get addressScanEnableWindowsAccess => 'Enable Windows camera access';
+
+  @override
+  String get addressScanGrantAccess => 'Grant access to your camera';
+
+  @override
+  String get addressScanLoading => 'Loading';
+
+  @override
+  String get addressScanLoadingCamera => 'Loading camera...';
+
+  @override
+  String get addressScanLoadingEllipsis => 'Loading...';
+
+  @override
+  String get addressScanNoAddress => 'QR code did not include an address.';
+
+  @override
+  String get addressScanNoCamera => 'No camera found';
+
+  @override
+  String get addressScanNoCameraOpened =>
+      'No camera could be opened. Check that a camera is connected and not in use by another app.';
+
+  @override
+  String get addressScanOpenSettings => 'Open settings';
+
+  @override
+  String get addressScanRequestAgain => 'Request again';
+
+  @override
+  String get addressScanRequestAgainHint =>
+      'Request again, or enable manually\nin the System settings.';
+
+  @override
+  String get addressScanRestrictedBody =>
+      'Screen Time or device management\nis blocking the camera.';
+
+  @override
+  String get addressScanRestrictedTitle => 'Camera access is restricted';
+
+  @override
+  String get addressScanTitle => 'Scan the address QR code';
+
+  @override
+  String get addressScanToggleFlashlight => 'Toggle flashlight';
+
+  @override
+  String get addressScanWindowsAccessHint =>
+      'Turn on Camera access and Let desktop apps access your camera in Windows Settings.';
+
+  @override
+  String get addressScanZcashPrompt => 'Scan a Zcash QR code to continue';
+
+  @override
   String get appBackAmount => 'Amount';
 
   @override
@@ -2812,6 +3095,197 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get receiptMessageLabel => 'Message';
+
+  @override
+  String get receiveAboutAddressType => 'About this address type';
+
+  @override
+  String get receiveAddressCouldNotLoad =>
+      'Address couldn\'t be loaded. Try again.';
+
+  @override
+  String get receiveAddressLoadFailed =>
+      'We couldn\'t load your address. Try again in a moment.';
+
+  @override
+  String get receiveCopyShieldedAddress => 'Copy shielded address';
+
+  @override
+  String get receiveCopyTransparentAddress => 'Copy transparent address';
+
+  @override
+  String receiveErrorWithDetails(String message, String details) {
+    return '$message\nDetails: $details';
+  }
+
+  @override
+  String get receiveGenerateNewShieldedAddress =>
+      'Generate new shielded address';
+
+  @override
+  String get receiveInfoShieldedDiversified =>
+      'Each new address is a diversified address derived from the same key. They all receive to the same wallet.';
+
+  @override
+  String get receiveInfoShieldedHiddenDesktop =>
+      'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.';
+
+  @override
+  String get receiveInfoShieldedHiddenMobile =>
+      'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.';
+
+  @override
+  String get receiveInfoShieldedRenewClick =>
+      'A new Zcash shielded address is generated only when you click the renew button.';
+
+  @override
+  String get receiveInfoShieldedRenewTap =>
+      'A new Zcash shielded address is generated only when you tap the renew button.';
+
+  @override
+  String get receiveInfoShieldedSubtitle => 'Strong privacy by default.';
+
+  @override
+  String get receiveInfoShieldedTitle => 'Shielded address';
+
+  @override
+  String get receiveInfoTransparentExchanges =>
+      'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.';
+
+  @override
+  String get receiveInfoTransparentPublicDesktop =>
+      'All tx details - sender, receiver, and amount - are publicly visible on-chain.';
+
+  @override
+  String get receiveInfoTransparentPublicMobile =>
+      'All tx details — sender, receiver, and amount — are publicly visible on-chain.';
+
+  @override
+  String get receiveInfoTransparentRotates =>
+      'After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.';
+
+  @override
+  String receiveInfoTransparentShieldFirst(String ticker) {
+    return 'After receiving $ticker to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.';
+  }
+
+  @override
+  String get receiveInfoTransparentSubtitle => 'Publicly visible';
+
+  @override
+  String get receiveInfoTransparentTitle => 'Transparent address';
+
+  @override
+  String get receiveNoActiveAccount => 'No active account';
+
+  @override
+  String get receiveQrSaveFailed =>
+      'We couldn\'t save the QR image. Try another folder, or copy the request link instead.';
+
+  @override
+  String receiveQrSaved(String folder) {
+    return 'QR image saved to $folder';
+  }
+
+  @override
+  String get receiveQrUnavailable => 'QR unavailable';
+
+  @override
+  String get receiveRenewAddressError =>
+      'We couldn\'t refresh your shielded address. Try again, or use your current one.';
+
+  @override
+  String get receiveRequestAddMessage => 'Add a message';
+
+  @override
+  String get receiveRequestAmountDecimalsError => 'Enter up to 8 decimals';
+
+  @override
+  String get receiveRequestAmountFormatError => 'Enter an amount like 0.5';
+
+  @override
+  String get receiveRequestAmountLabel => 'Amount';
+
+  @override
+  String get receiveRequestAmountSupplyError => 'Amount exceeds the ZEC supply';
+
+  @override
+  String receiveRequestButton(String ticker) {
+    return 'Request $ticker';
+  }
+
+  @override
+  String get receiveRequestCloseMessage => 'Close message';
+
+  @override
+  String get receiveRequestCloseRequest => 'Close request';
+
+  @override
+  String get receiveRequestCopyFailed =>
+      'Couldn\'t copy the request link. Try sharing it instead.';
+
+  @override
+  String get receiveRequestCopyLink => 'Copy link';
+
+  @override
+  String get receiveRequestCopyRequestLink => 'Copy request link';
+
+  @override
+  String get receiveRequestCreate => 'Create request';
+
+  @override
+  String get receiveRequestEnterUsd => 'Enter amount in USD';
+
+  @override
+  String get receiveRequestEnterZec => 'Enter amount in ZEC';
+
+  @override
+  String get receiveRequestLinkCopied => 'Request link copied';
+
+  @override
+  String get receiveRequestMessageHelp =>
+      'Shielded addresses only — anyone with this link can read it.';
+
+  @override
+  String get receiveRequestMessageHint =>
+      'Anyone you send the link to can read this';
+
+  @override
+  String get receiveRequestMessageLabel => 'Message';
+
+  @override
+  String get receiveRequestMessageTooLong => 'Message is too long';
+
+  @override
+  String get receiveRequestSaveQr => 'Save QR image';
+
+  @override
+  String get receiveRequestShare => 'Share request';
+
+  @override
+  String get receiveRequestShareFailed =>
+      'Couldn\'t share this request. Copy the link instead.';
+
+  @override
+  String get receiveRequestZecButton => 'Request ZEC';
+
+  @override
+  String get receiveShareAddress => 'Share address';
+
+  @override
+  String get receiveShareFailed =>
+      'Couldn\'t share this address. Copy it instead.';
+
+  @override
+  String get receiveShareShieldedAddress => 'Share shielded address';
+
+  @override
+  String get receiveShareTransparentAddress => 'Share transparent address';
+
+  @override
+  String receiveTitle(String ticker) {
+    return 'Receive $ticker';
+  }
 
   @override
   String get secretPassphraseCopy => 'Copy secret passphrase';

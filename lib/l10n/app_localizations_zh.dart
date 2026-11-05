@@ -601,6 +601,275 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityToastHashCopiedMobile => '交易哈希已复制';
 
   @override
+  String get addressBookAddContact => '添加联系人';
+
+  @override
+  String get addressBookAddressHintDesktop => '添加地址';
+
+  @override
+  String get addressBookAddressHintMobile => '添加地址';
+
+  @override
+  String get addressBookAddressLabel => '地址';
+
+  @override
+  String get addressBookAddressMissing => '请添加地址';
+
+  @override
+  String get addressBookChainAndAddress => '链和地址';
+
+  @override
+  String get addressBookChangePicture => '更换联系人头像';
+
+  @override
+  String get addressBookClearAddress => '清除地址';
+
+  @override
+  String get addressBookClearLabel => '清除联系人标签';
+
+  @override
+  String get addressBookClearName => '清除姓名';
+
+  @override
+  String get addressBookClearSearch => '清除搜索';
+
+  @override
+  String addressBookContactActions(String label) {
+    return '$label 操作';
+  }
+
+  @override
+  String get addressBookContactsTitle => '联系人';
+
+  @override
+  String get addressBookEditContact => '编辑联系人';
+
+  @override
+  String get addressBookEmptyBody => '添加你的第一个联系人即可开始。';
+
+  @override
+  String get addressBookEmptyTitle => '还没有联系人';
+
+  @override
+  String get addressBookInvalidBitcoin => '无效的 Bitcoin 地址';
+
+  @override
+  String get addressBookInvalidEvm => '无效的 EVM 地址';
+
+  @override
+  String get addressBookInvalidNear => '无效的 NEAR 地址';
+
+  @override
+  String get addressBookInvalidSolana => '无效的 Solana 地址';
+
+  @override
+  String get addressBookInvalidZcash => '无效的 Zcash 地址';
+
+  @override
+  String get addressBookLabelFieldLabel => '地址标签';
+
+  @override
+  String get addressBookLabelHint => '添加 1-20 个字符的标签';
+
+  @override
+  String get addressBookLabelLength => '请使用 1-20 个字符';
+
+  @override
+  String get addressBookLabelMissing => '请添加标签';
+
+  @override
+  String get addressBookLoadFailed => '无法加载你的联系人。请重试；如果问题持续，请联系支持团队。';
+
+  @override
+  String get addressBookNameHint => '添加姓名';
+
+  @override
+  String get addressBookNameLabel => '姓名';
+
+  @override
+  String get addressBookNearSuffixWarning => 'NEAR 账户通常以 .near 结尾——请再次核对此地址';
+
+  @override
+  String get addressBookNetworkLabel => '网络';
+
+  @override
+  String get addressBookNoNetworks => '未找到网络';
+
+  @override
+  String get addressBookNoResultsBody => '请尝试修改搜索内容';
+
+  @override
+  String get addressBookNoResultsTitle => '未找到联系人';
+
+  @override
+  String get addressBookPickerClose => '关闭联系人';
+
+  @override
+  String get addressBookPickerEmptyTitle => '未找到联系人';
+
+  @override
+  String get addressBookPickerLoadFailed => '无法加载联系人。请重试。';
+
+  @override
+  String get addressBookPickerSearchHint => '搜索联系人';
+
+  @override
+  String get addressBookRemove => '删除';
+
+  @override
+  String addressBookRemoveBody(String label) {
+    return '将从你的联系人中删除 $label。';
+  }
+
+  @override
+  String get addressBookRemoveBodyUnknown => '将删除此联系人。';
+
+  @override
+  String addressBookRemoveConfirmBody(String label) {
+    return '将从你的联系人中删除“$label”。这不会影响任何过往交易。';
+  }
+
+  @override
+  String get addressBookRemoveConfirmTitle => '要删除联系人吗？';
+
+  @override
+  String get addressBookRemoveContact => '删除联系人';
+
+  @override
+  String get addressBookRemoveFailed => '无法删除联系人。请重试。';
+
+  @override
+  String get addressBookRemoveFailedMobile => '无法删除联系人。请重试。';
+
+  @override
+  String get addressBookSaveContact => '保存联系人';
+
+  @override
+  String get addressBookSaveFailed => '无法保存联系人。请重试。';
+
+  @override
+  String get addressBookSaveFailedMobile => '无法保存联系人。请重试。';
+
+  @override
+  String get addressBookScanAddressQr => '扫描地址二维码';
+
+  @override
+  String addressBookScanQrTitle(String network) {
+    return '扫描 $network 二维码';
+  }
+
+  @override
+  String get addressBookSearch => '搜索';
+
+  @override
+  String get addressBookSearchHint => '搜索标签或网络';
+
+  @override
+  String get addressBookSearchNetwork => '搜索网络';
+
+  @override
+  String get addressBookSelectNetwork => '选择网络';
+
+  @override
+  String get addressBookSelectPicture => '选择联系人头像';
+
+  @override
+  String get addressBookSelectedContact => '已选联系人';
+
+  @override
+  String get addressBookSendZec => '发送 ZEC';
+
+  @override
+  String get addressScanAddressCameraNeeded => '扫描地址二维码需要此设备配备摄像头。';
+
+  @override
+  String addressScanCameraDefaultSuffix(String name) {
+    return '$name（默认）';
+  }
+
+  @override
+  String get addressScanCameraNeeded => '扫描二维码需要此设备配备摄像头。';
+
+  @override
+  String get addressScanCameraOff => '摄像头访问已关闭。请在设置中允许以扫描地址。';
+
+  @override
+  String get addressScanCameraRequired => '扫描地址二维码需要此设备配备摄像头。';
+
+  @override
+  String get addressScanCameraRestricted => '屏幕使用时间或设备管理正在阻止此设备使用摄像头。';
+
+  @override
+  String get addressScanCameraUnavailable => '摄像头不可用';
+
+  @override
+  String get addressScanCameraUnavailableNow => '摄像头目前不可用。';
+
+  @override
+  String get addressScanCloseScanner => '关闭扫描器';
+
+  @override
+  String get addressScanDefaultCamera => '默认摄像头';
+
+  @override
+  String get addressScanDeniedTitle => '你已拒绝摄像头访问';
+
+  @override
+  String get addressScanDeniedTitleMobile => '你已拒绝摄像头访问';
+
+  @override
+  String get addressScanEnableWindowsAccess => '请启用 Windows 摄像头访问';
+
+  @override
+  String get addressScanGrantAccess => '请授予摄像头访问权限';
+
+  @override
+  String get addressScanLoading => '加载中';
+
+  @override
+  String get addressScanLoadingCamera => '正在加载摄像头...';
+
+  @override
+  String get addressScanLoadingEllipsis => '正在加载...';
+
+  @override
+  String get addressScanNoAddress => '二维码中不包含地址。';
+
+  @override
+  String get addressScanNoCamera => '未找到摄像头';
+
+  @override
+  String get addressScanNoCameraOpened => '无法打开摄像头。请确认摄像头已连接且未被其他应用占用。';
+
+  @override
+  String get addressScanOpenSettings => '打开设置';
+
+  @override
+  String get addressScanRequestAgain => '重新请求';
+
+  @override
+  String get addressScanRequestAgainHint => '请重新请求，或在\n系统设置中手动开启。';
+
+  @override
+  String get addressScanRestrictedBody => '屏幕使用时间或设备管理\n正在阻止使用摄像头。';
+
+  @override
+  String get addressScanRestrictedTitle => '摄像头访问受限';
+
+  @override
+  String get addressScanTitle => '扫描地址二维码';
+
+  @override
+  String get addressScanToggleFlashlight => '切换手电筒';
+
+  @override
+  String get addressScanWindowsAccessHint =>
+      '请在 Windows 设置中开启“摄像头访问”和“允许桌面应用访问你的摄像头”。';
+
+  @override
+  String get addressScanZcashPrompt => '请扫描 Zcash 二维码以继续';
+
+  @override
   String get appBackAmount => '金额';
 
   @override
@@ -2642,6 +2911,185 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get receiptMessageLabel => '消息';
+
+  @override
+  String get receiveAboutAddressType => '关于此地址类型';
+
+  @override
+  String get receiveAddressCouldNotLoad => '无法加载地址。请重试。';
+
+  @override
+  String get receiveAddressLoadFailed => '无法加载你的地址。请稍后重试。';
+
+  @override
+  String get receiveCopyShieldedAddress => '复制屏蔽地址';
+
+  @override
+  String get receiveCopyTransparentAddress => '复制透明地址';
+
+  @override
+  String receiveErrorWithDetails(String message, String details) {
+    return '$message\n详细信息：$details';
+  }
+
+  @override
+  String get receiveGenerateNewShieldedAddress => '生成新的屏蔽地址';
+
+  @override
+  String get receiveInfoShieldedDiversified =>
+      '每个新地址都是由同一密钥派生的多样化地址，所有地址都会收款到同一个钱包。';
+
+  @override
+  String get receiveInfoShieldedHiddenDesktop =>
+      '交易详情——发送方、接收方和金额——在链上经过加密并被隐藏。';
+
+  @override
+  String get receiveInfoShieldedHiddenMobile =>
+      '交易详情——发送方、接收方和金额——在链上经过加密并被隐藏。';
+
+  @override
+  String get receiveInfoShieldedRenewClick => '只有在你点击刷新按钮时，才会生成新的 Zcash 屏蔽地址。';
+
+  @override
+  String get receiveInfoShieldedRenewTap => '只有在你点按刷新按钮时，才会生成新的 Zcash 屏蔽地址。';
+
+  @override
+  String get receiveInfoShieldedSubtitle => '默认提供强隐私保护。';
+
+  @override
+  String get receiveInfoShieldedTitle => '屏蔽地址';
+
+  @override
+  String get receiveInfoTransparentExchanges =>
+      '常用于要求透明度或监管明确性的交易所，也是许多钱包兼容时的默认选项。';
+
+  @override
+  String get receiveInfoTransparentPublicDesktop =>
+      '所有交易详情——发送方、接收方和金额——在链上公开可见。';
+
+  @override
+  String get receiveInfoTransparentPublicMobile =>
+      '所有交易详情——发送方、接收方和金额——在链上公开可见。';
+
+  @override
+  String get receiveInfoTransparentRotates =>
+      '此地址收到 ZEC 且 Vizor 同步后，你的下一个透明地址会自动更换。之前的地址仍属于此钱包。';
+
+  @override
+  String receiveInfoTransparentShieldFirst(String ticker) {
+    return '向透明地址收到 $ticker 后，Vizor 会引导你屏蔽该余额，否则你将无法发送。';
+  }
+
+  @override
+  String get receiveInfoTransparentSubtitle => '公开可见';
+
+  @override
+  String get receiveInfoTransparentTitle => '透明地址';
+
+  @override
+  String get receiveNoActiveAccount => '没有活跃的账户';
+
+  @override
+  String get receiveQrSaveFailed => '无法保存二维码图片。请尝试其他文件夹，或改为复制请求链接。';
+
+  @override
+  String receiveQrSaved(String folder) {
+    return '二维码图片已保存到 $folder';
+  }
+
+  @override
+  String get receiveQrUnavailable => '二维码不可用';
+
+  @override
+  String get receiveRenewAddressError => '无法刷新你的屏蔽地址。请重试，或继续使用当前地址。';
+
+  @override
+  String get receiveRequestAddMessage => '添加留言';
+
+  @override
+  String get receiveRequestAmountDecimalsError => '最多输入 8 位小数';
+
+  @override
+  String get receiveRequestAmountFormatError => '请输入类似 0.5 的金额';
+
+  @override
+  String get receiveRequestAmountLabel => '金额';
+
+  @override
+  String get receiveRequestAmountSupplyError => '金额超过 ZEC 总供应量';
+
+  @override
+  String receiveRequestButton(String ticker) {
+    return '请求 $ticker';
+  }
+
+  @override
+  String get receiveRequestCloseMessage => '关闭留言';
+
+  @override
+  String get receiveRequestCloseRequest => '关闭请求';
+
+  @override
+  String get receiveRequestCopyFailed => '无法复制请求链接。请改为分享。';
+
+  @override
+  String get receiveRequestCopyLink => '复制链接';
+
+  @override
+  String get receiveRequestCopyRequestLink => '复制请求链接';
+
+  @override
+  String get receiveRequestCreate => '创建请求';
+
+  @override
+  String get receiveRequestEnterUsd => '以 USD 输入金额';
+
+  @override
+  String get receiveRequestEnterZec => '以 ZEC 输入金额';
+
+  @override
+  String get receiveRequestLinkCopied => '已复制请求链接';
+
+  @override
+  String get receiveRequestMessageHelp => '仅限屏蔽地址——任何拿到此链接的人都能读取。';
+
+  @override
+  String get receiveRequestMessageHint => '任何收到链接的人都能读取此内容';
+
+  @override
+  String get receiveRequestMessageLabel => '留言';
+
+  @override
+  String get receiveRequestMessageTooLong => '留言太长';
+
+  @override
+  String get receiveRequestSaveQr => '保存二维码图片';
+
+  @override
+  String get receiveRequestShare => '分享请求';
+
+  @override
+  String get receiveRequestShareFailed => '无法分享此请求。请改为复制链接。';
+
+  @override
+  String get receiveRequestZecButton => '请求 ZEC';
+
+  @override
+  String get receiveShareAddress => '分享地址';
+
+  @override
+  String get receiveShareFailed => '无法分享此地址。请改为复制。';
+
+  @override
+  String get receiveShareShieldedAddress => '分享屏蔽地址';
+
+  @override
+  String get receiveShareTransparentAddress => '分享透明地址';
+
+  @override
+  String receiveTitle(String ticker) {
+    return '接收 $ticker';
+  }
 
   @override
   String get secretPassphraseCopy => '复制助记词';

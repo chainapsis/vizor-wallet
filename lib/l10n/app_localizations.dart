@@ -1197,6 +1197,522 @@ abstract class AppLocalizations {
   /// **'Transaction Hash Copied'**
   String get activityToastHashCopiedMobile;
 
+  /// Button and dialog title that adds a new contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Add contact'**
+  String get addressBookAddContact;
+
+  /// Placeholder of the contact address field in the desktop dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Add address'**
+  String get addressBookAddressHintDesktop;
+
+  /// Placeholder of the contact address field on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an address'**
+  String get addressBookAddressHintMobile;
+
+  /// Label of the contact address field.
+  ///
+  /// In en, this message translates to:
+  /// **'Address'**
+  String get addressBookAddressLabel;
+
+  /// Validation message when the contact address field is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an address'**
+  String get addressBookAddressMissing;
+
+  /// Section label above the network selector and address field in the contact dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Chain & address'**
+  String get addressBookChainAndAddress;
+
+  /// Accessibility label of the avatar button in the contact dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Change contact picture'**
+  String get addressBookChangePicture;
+
+  /// Accessibility label of the button that clears the contact address on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear address'**
+  String get addressBookClearAddress;
+
+  /// Accessibility label of the button that clears the contact label.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear contact label'**
+  String get addressBookClearLabel;
+
+  /// Accessibility label of the button that clears the contact name on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear name'**
+  String get addressBookClearName;
+
+  /// Accessibility label of the button that clears the search text.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get addressBookClearSearch;
+
+  /// Accessibility label of the menu button on a contact row. {label} is the contact's name.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} actions'**
+  String addressBookContactActions(String label);
+
+  /// Title of the address book screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Contacts'**
+  String get addressBookContactsTitle;
+
+  /// Contact menu item and title of the dialog that edits a contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit contact'**
+  String get addressBookEditContact;
+
+  /// Body text of the empty address book.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your first contact to get started.'**
+  String get addressBookEmptyBody;
+
+  /// Headline of the address book when it has no contacts.
+  ///
+  /// In en, this message translates to:
+  /// **'No contacts yet'**
+  String get addressBookEmptyTitle;
+
+  /// Error under an address field when the text is not a valid Bitcoin address.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid Bitcoin address'**
+  String get addressBookInvalidBitcoin;
+
+  /// Error under an address field when the text is not a valid address for EVM chains such as Ethereum or Base.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid EVM address'**
+  String get addressBookInvalidEvm;
+
+  /// Error under an address field when the text is not a valid NEAR account.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid NEAR address'**
+  String get addressBookInvalidNear;
+
+  /// Error under an address field when the text is not a valid Solana address.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid Solana address'**
+  String get addressBookInvalidSolana;
+
+  /// Error under an address field when the text is not a valid Zcash address for the current network.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid Zcash address'**
+  String get addressBookInvalidZcash;
+
+  /// Label of the contact name field in the desktop contact dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Address label'**
+  String get addressBookLabelFieldLabel;
+
+  /// Placeholder of the contact name field in the desktop dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Add label 1-20 characters'**
+  String get addressBookLabelHint;
+
+  /// Validation message when the contact label is longer than 20 characters.
+  ///
+  /// In en, this message translates to:
+  /// **'Use 1-20 characters'**
+  String get addressBookLabelLength;
+
+  /// Validation message when the contact label field is empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a label'**
+  String get addressBookLabelMissing;
+
+  /// Error shown in place of the address book when loading fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load your contacts. Try again, or contact support if this keeps happening.'**
+  String get addressBookLoadFailed;
+
+  /// Placeholder of the contact name field on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a name'**
+  String get addressBookNameHint;
+
+  /// Label of the contact name field on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get addressBookNameLabel;
+
+  /// Warning under an address field when a NEAR account name has no .near suffix. The address can still be saved.
+  ///
+  /// In en, this message translates to:
+  /// **'NEAR accounts usually end in .near — double-check this address'**
+  String get addressBookNearSuffixWarning;
+
+  /// Label of the network selector in the mobile contact sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Network'**
+  String get addressBookNetworkLabel;
+
+  /// Message when the network picker search matches nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'No networks found'**
+  String get addressBookNoNetworks;
+
+  /// Body text when an address book search matches nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Try to modify your search'**
+  String get addressBookNoResultsBody;
+
+  /// Headline when an address book search matches nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'No contacts were found'**
+  String get addressBookNoResultsTitle;
+
+  /// Accessibility label of the button that closes the contact picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Close contacts'**
+  String get addressBookPickerClose;
+
+  /// Message in the contact picker when no contact matches.
+  ///
+  /// In en, this message translates to:
+  /// **'No contacts found'**
+  String get addressBookPickerEmptyTitle;
+
+  /// Error in the contact picker when loading contacts fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load contacts. Try again.'**
+  String get addressBookPickerLoadFailed;
+
+  /// Placeholder of the contact picker search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Search contacts'**
+  String get addressBookPickerSearchHint;
+
+  /// Confirm button that removes a contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get addressBookRemove;
+
+  /// Body of the desktop remove dialog. {label} is the contact's name.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} will be removed from your contacts.'**
+  String addressBookRemoveBody(String label);
+
+  /// Body of the desktop remove dialog when the contact is unknown.
+  ///
+  /// In en, this message translates to:
+  /// **'This contact will be removed.'**
+  String get addressBookRemoveBodyUnknown;
+
+  /// Body of the mobile remove confirmation. {label} is the contact's name.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{label}\" will be removed from your contacts. This does not affect any past transactions.'**
+  String addressBookRemoveConfirmBody(String label);
+
+  /// Title of the mobile confirmation sheet that removes a contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove contact?'**
+  String get addressBookRemoveConfirmTitle;
+
+  /// Contact menu item and title of the dialog that removes a contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove contact'**
+  String get addressBookRemoveContact;
+
+  /// Error in the desktop remove dialog when deleting a contact fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove contact. Try again.'**
+  String get addressBookRemoveFailed;
+
+  /// Toast on mobile when deleting a contact fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t remove the contact. Please try again.'**
+  String get addressBookRemoveFailedMobile;
+
+  /// Button that saves an edited contact on mobile.
+  ///
+  /// In en, this message translates to:
+  /// **'Save contact'**
+  String get addressBookSaveContact;
+
+  /// Error in the desktop contact dialog when saving fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save contact. Try again.'**
+  String get addressBookSaveFailed;
+
+  /// Toast on mobile when saving a contact fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the contact. Please try again.'**
+  String get addressBookSaveFailedMobile;
+
+  /// Accessibility label of the button that scans an address QR code.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan address QR'**
+  String get addressBookScanAddressQr;
+
+  /// Title of the camera scanner that reads a contact address. {network} is the chain name such as Ethereum.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan {network} QR code'**
+  String addressBookScanQrTitle(String network);
+
+  /// Accessibility label of the search field in the address book and network picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get addressBookSearch;
+
+  /// Placeholder of the address book search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Search for label or network'**
+  String get addressBookSearchHint;
+
+  /// Placeholder of the network picker search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Search network'**
+  String get addressBookSearchNetwork;
+
+  /// Title and accessibility label of the network picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Select network'**
+  String get addressBookSelectNetwork;
+
+  /// Title of the picker that chooses a contact avatar.
+  ///
+  /// In en, this message translates to:
+  /// **'Select contact picture'**
+  String get addressBookSelectPicture;
+
+  /// Accessibility label of the check mark on the chosen contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected contact'**
+  String get addressBookSelectedContact;
+
+  /// Contact menu item that starts sending ZEC to the contact.
+  ///
+  /// In en, this message translates to:
+  /// **'Send ZEC'**
+  String get addressBookSendZec;
+
+  /// Description in the mobile address scanner when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Address QR scanning needs a camera on this device.'**
+  String get addressScanAddressCameraNeeded;
+
+  /// Camera name with a marker that it is the system default. {name} is the device-reported camera name.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} (Default)'**
+  String addressScanCameraDefaultSuffix(String name);
+
+  /// Description in the mobile QR scanner when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'QR scanning needs a camera on this device.'**
+  String get addressScanCameraNeeded;
+
+  /// Message over the full-screen scanner when camera permission is off.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera access is off. Allow it in Settings to scan addresses.'**
+  String get addressScanCameraOff;
+
+  /// Description in the desktop QR scanner when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Address QR scanning requires a camera on this device.'**
+  String get addressScanCameraRequired;
+
+  /// Message over the full-screen scanner when the system restricts the camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen Time or device management is blocking the camera on this device.'**
+  String get addressScanCameraRestricted;
+
+  /// Title shown when the camera cannot be used.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera unavailable'**
+  String get addressScanCameraUnavailable;
+
+  /// Message over the full-screen scanner when the camera cannot start.
+  ///
+  /// In en, this message translates to:
+  /// **'The camera is unavailable right now.'**
+  String get addressScanCameraUnavailableNow;
+
+  /// Accessibility label of the close button of the QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Close scanner'**
+  String get addressScanCloseScanner;
+
+  /// Fallback name of the camera in the desktop QR scanner footer.
+  ///
+  /// In en, this message translates to:
+  /// **'Default camera'**
+  String get addressScanDefaultCamera;
+
+  /// Title in the desktop QR scanner when the camera permission was denied.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve denied Camera access'**
+  String get addressScanDeniedTitle;
+
+  /// Title in the mobile QR scanner when the camera permission was denied.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve denied camera access'**
+  String get addressScanDeniedTitleMobile;
+
+  /// Title in the desktop QR scanner when Windows blocks the camera.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Windows camera access'**
+  String get addressScanEnableWindowsAccess;
+
+  /// Title of the desktop QR scanner while waiting for the camera permission.
+  ///
+  /// In en, this message translates to:
+  /// **'Grant access to your camera'**
+  String get addressScanGrantAccess;
+
+  /// Label next to a spinner in the desktop QR scanner while the camera starts.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading'**
+  String get addressScanLoading;
+
+  /// Footer label of the desktop QR scanner while cameras are being listed.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading camera...'**
+  String get addressScanLoadingCamera;
+
+  /// Label next to a spinner in the mobile QR scanner while the camera starts.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading...'**
+  String get addressScanLoadingEllipsis;
+
+  /// Error shown after scanning a QR code that contains no address.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code did not include an address.'**
+  String get addressScanNoAddress;
+
+  /// Footer label of the desktop QR scanner when the device has no camera.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera found'**
+  String get addressScanNoCamera;
+
+  /// Description in the desktop QR scanner when the camera cannot be opened.
+  ///
+  /// In en, this message translates to:
+  /// **'No camera could be opened. Check that a camera is connected and not in use by another app.'**
+  String get addressScanNoCameraOpened;
+
+  /// Button that opens the system settings page for the camera permission.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get addressScanOpenSettings;
+
+  /// Button that asks for the camera permission again.
+  ///
+  /// In en, this message translates to:
+  /// **'Request again'**
+  String get addressScanRequestAgain;
+
+  /// Description when camera access is requested or denied. The line break splits the text for the narrow dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Request again, or enable manually\nin the System settings.'**
+  String get addressScanRequestAgainHint;
+
+  /// Description in the mobile QR scanner when Screen Time or device management restricts the camera. The line break splits the text.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen Time or device management\nis blocking the camera.'**
+  String get addressScanRestrictedBody;
+
+  /// Title in the mobile QR scanner when the camera is restricted by the system.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera access is restricted'**
+  String get addressScanRestrictedTitle;
+
+  /// Title of the QR scanner that reads an address.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the address QR code'**
+  String get addressScanTitle;
+
+  /// Accessibility label of the flashlight button of the QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle flashlight'**
+  String get addressScanToggleFlashlight;
+
+  /// Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'**
+  String get addressScanWindowsAccessHint;
+
+  /// Caption under the viewfinder of the mobile QR scanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan a Zcash QR code to continue'**
+  String get addressScanZcashPrompt;
+
   /// Back-link name of the send amount step.
   ///
   /// In en, this message translates to:
@@ -5014,6 +5530,330 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Message'**
   String get receiptMessageLabel;
+
+  /// Accessibility label of the help button that explains shielded versus transparent addresses.
+  ///
+  /// In en, this message translates to:
+  /// **'About this address type'**
+  String get receiveAboutAddressType;
+
+  /// Text shown in the address line when the address is empty because loading failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Address couldn\'t be loaded. Try again.'**
+  String get receiveAddressCouldNotLoad;
+
+  /// Message shown in place of the QR code when the address could not be loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t load your address. Try again in a moment.'**
+  String get receiveAddressLoadFailed;
+
+  /// Button label and accessibility label that copies the shielded address.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy shielded address'**
+  String get receiveCopyShieldedAddress;
+
+  /// Button label and accessibility label that copies the transparent address.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy transparent address'**
+  String get receiveCopyTransparentAddress;
+
+  /// Inline error on the Receive screen: a summary line, then a technical details line. {details} is raw error text and is not translated.
+  ///
+  /// In en, this message translates to:
+  /// **'{message}\nDetails: {details}'**
+  String receiveErrorWithDetails(String message, String details);
+
+  /// Accessibility label of the renew button that generates a new shielded address.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate new shielded address'**
+  String get receiveGenerateNewShieldedAddress;
+
+  /// [security] Bullet in the shielded address explainer: new addresses come from the same key and reach the same wallet.
+  ///
+  /// In en, this message translates to:
+  /// **'Each new address is a diversified address derived from the same key. They all receive to the same wallet.'**
+  String get receiveInfoShieldedDiversified;
+
+  /// [security] Bullet in the shielded address explainer on desktop; says transaction details are encrypted.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.'**
+  String get receiveInfoShieldedHiddenDesktop;
+
+  /// [security] Bullet in the shielded address explainer on mobile; says transaction details are encrypted. Keep the em dashes.
+  ///
+  /// In en, this message translates to:
+  /// **'Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.'**
+  String get receiveInfoShieldedHiddenMobile;
+
+  /// [security] Bullet in the shielded address explainer on desktop about when a new address is generated.
+  ///
+  /// In en, this message translates to:
+  /// **'A new Zcash shielded address is generated only when you click the renew button.'**
+  String get receiveInfoShieldedRenewClick;
+
+  /// [security] Bullet in the shielded address explainer on touch devices about when a new address is generated.
+  ///
+  /// In en, this message translates to:
+  /// **'A new Zcash shielded address is generated only when you tap the renew button.'**
+  String get receiveInfoShieldedRenewTap;
+
+  /// [security] Subtitle of the shielded address explainer.
+  ///
+  /// In en, this message translates to:
+  /// **'Strong privacy by default.'**
+  String get receiveInfoShieldedSubtitle;
+
+  /// Title of the explainer dialog for shielded addresses.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded address'**
+  String get receiveInfoShieldedTitle;
+
+  /// Bullet in the transparent address explainer about where transparent addresses are used.
+  ///
+  /// In en, this message translates to:
+  /// **'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.'**
+  String get receiveInfoTransparentExchanges;
+
+  /// [security] Bullet in the transparent address explainer on desktop; says transaction details are public.
+  ///
+  /// In en, this message translates to:
+  /// **'All tx details - sender, receiver, and amount - are publicly visible on-chain.'**
+  String get receiveInfoTransparentPublicDesktop;
+
+  /// [security] Bullet in the transparent address explainer on mobile; says transaction details are public. Keep the em dashes.
+  ///
+  /// In en, this message translates to:
+  /// **'All tx details — sender, receiver, and amount — are publicly visible on-chain.'**
+  String get receiveInfoTransparentPublicMobile;
+
+  /// [security] Bullet in the transparent address explainer: the transparent address rotates after receiving funds.
+  ///
+  /// In en, this message translates to:
+  /// **'After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.'**
+  String get receiveInfoTransparentRotates;
+
+  /// [security] Bullet in the transparent address explainer: funds must be shielded before sending. {ticker} is the currency ticker.
+  ///
+  /// In en, this message translates to:
+  /// **'After receiving {ticker} to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.'**
+  String receiveInfoTransparentShieldFirst(String ticker);
+
+  /// [security] Subtitle of the transparent address explainer; its activity is public.
+  ///
+  /// In en, this message translates to:
+  /// **'Publicly visible'**
+  String get receiveInfoTransparentSubtitle;
+
+  /// Title of the explainer dialog for transparent addresses.
+  ///
+  /// In en, this message translates to:
+  /// **'Transparent address'**
+  String get receiveInfoTransparentTitle;
+
+  /// Error shown on the Receive screen when no wallet account is selected.
+  ///
+  /// In en, this message translates to:
+  /// **'No active account'**
+  String get receiveNoActiveAccount;
+
+  /// Error toast on the Receive screen when saving the payment-request QR image fails.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t save the QR image. Try another folder, or copy the request link instead.'**
+  String get receiveQrSaveFailed;
+
+  /// Toast on the Receive screen after a payment-request QR image is saved. {folder} is the folder name.
+  ///
+  /// In en, this message translates to:
+  /// **'QR image saved to {folder}'**
+  String receiveQrSaved(String folder);
+
+  /// Placeholder shown where a QR code would be when it cannot be drawn.
+  ///
+  /// In en, this message translates to:
+  /// **'QR unavailable'**
+  String get receiveQrUnavailable;
+
+  /// Toast and inline error on the Receive screen when generating a new shielded address fails.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t refresh your shielded address. Try again, or use your current one.'**
+  String get receiveRenewAddressError;
+
+  /// Label of the collapsed prompt that adds an optional message to a payment request.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a message'**
+  String get receiveRequestAddMessage;
+
+  /// Inline error under the payment request amount field when the amount has more than 8 decimal places.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter up to 8 decimals'**
+  String get receiveRequestAmountDecimalsError;
+
+  /// Inline error under the payment request amount field when the text is not a number.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an amount like 0.5'**
+  String get receiveRequestAmountFormatError;
+
+  /// Label of the amount field in the payment request dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get receiveRequestAmountLabel;
+
+  /// Inline error under the payment request amount field when the amount is larger than the total ZEC supply.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount exceeds the ZEC supply'**
+  String get receiveRequestAmountSupplyError;
+
+  /// Button on the mobile Receive screen that opens the payment request sheet, and the title of the payment request dialog on both form factors. {ticker} is the currency ticker such as ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Request {ticker}'**
+  String receiveRequestButton(String ticker);
+
+  /// Accessibility label of the button that removes the optional message field.
+  ///
+  /// In en, this message translates to:
+  /// **'Close message'**
+  String get receiveRequestCloseMessage;
+
+  /// Accessibility label of the close button of the payment request dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Close request'**
+  String get receiveRequestCloseRequest;
+
+  /// Error toast on the mobile payment request when copying the link fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t copy the request link. Try sharing it instead.'**
+  String get receiveRequestCopyFailed;
+
+  /// Button and accessibility label on the mobile payment request result that copies the request link.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link'**
+  String get receiveRequestCopyLink;
+
+  /// Button on the desktop payment request result that copies the request link.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy request link'**
+  String get receiveRequestCopyRequestLink;
+
+  /// Button that turns the entered amount and message into a payment request.
+  ///
+  /// In en, this message translates to:
+  /// **'Create request'**
+  String get receiveRequestCreate;
+
+  /// Accessibility label of the toggle that switches the amount field to US dollars.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in USD'**
+  String get receiveRequestEnterUsd;
+
+  /// Accessibility label of the toggle that switches the amount field to ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter amount in ZEC'**
+  String get receiveRequestEnterZec;
+
+  /// Toast shown after the payment request link is copied to the clipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Request link copied'**
+  String get receiveRequestLinkCopied;
+
+  /// [security] Help text under the payment request message field: the message is stored in the link itself, so anyone who sees the link can read it.
+  ///
+  /// In en, this message translates to:
+  /// **'Shielded addresses only — anyone with this link can read it.'**
+  String get receiveRequestMessageHelp;
+
+  /// [security] Placeholder in the payment request message field: the message is readable by anyone who gets the link.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone you send the link to can read this'**
+  String get receiveRequestMessageHint;
+
+  /// Label of the optional message field in the payment request dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get receiveRequestMessageLabel;
+
+  /// Error shown when the payment request message exceeds the size limit.
+  ///
+  /// In en, this message translates to:
+  /// **'Message is too long'**
+  String get receiveRequestMessageTooLong;
+
+  /// Button on the desktop payment request result that saves the QR code as an image file.
+  ///
+  /// In en, this message translates to:
+  /// **'Save QR image'**
+  String get receiveRequestSaveQr;
+
+  /// Button on the mobile payment request result that shares the request QR image.
+  ///
+  /// In en, this message translates to:
+  /// **'Share request'**
+  String get receiveRequestShare;
+
+  /// Error toast on the mobile payment request when sharing fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t share this request. Copy the link instead.'**
+  String get receiveRequestShareFailed;
+
+  /// Button on the desktop Receive pane that opens the payment request card.
+  ///
+  /// In en, this message translates to:
+  /// **'Request ZEC'**
+  String get receiveRequestZecButton;
+
+  /// Visible label of the mobile Receive button that shares the selected address.
+  ///
+  /// In en, this message translates to:
+  /// **'Share address'**
+  String get receiveShareAddress;
+
+  /// Toast on the Receive screen when the system share sheet fails for an address.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t share this address. Copy it instead.'**
+  String get receiveShareFailed;
+
+  /// Tooltip and accessibility label of the button that shares the shielded address.
+  ///
+  /// In en, this message translates to:
+  /// **'Share shielded address'**
+  String get receiveShareShieldedAddress;
+
+  /// Tooltip and accessibility label of the button that shares the transparent address.
+  ///
+  /// In en, this message translates to:
+  /// **'Share transparent address'**
+  String get receiveShareTransparentAddress;
+
+  /// Title of the Receive screen. {ticker} is the currency ticker such as ZEC.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive {ticker}'**
+  String receiveTitle(String ticker);
 
   /// [security] Button that copies the seed phrase to the clipboard.
   ///

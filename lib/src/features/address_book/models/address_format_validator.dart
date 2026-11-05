@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:ui' show Locale;
 
 import '../../../core/config/network_config.dart';
 import '../../../core/crypto/base58check.dart';
 import '../../../core/crypto/bech32.dart';
 import '../../../core/crypto/keccak256.dart';
+import '../../../core/l10n/l10n.dart';
 import 'address_book_contact.dart';
 
 /// Severity of an address-format finding.
@@ -13,17 +15,41 @@ import 'address_book_contact.dart';
 /// enough to deserve a second look (surface it, never block on it).
 enum AddressFormatSeverity { error, warning }
 
-/// A format finding for an address, carrying a short user-facing [message]
-/// and its [severity].
+/// What an address-format finding says, independent of the display language.
+enum AddressFormatKind {
+  invalidEvm,
+  invalidBitcoin,
+  invalidSolana,
+  invalidNear,
+  invalidZcash,
+  nearMissingSuffix,
+}
+
+/// A format finding for an address, carrying a short user-facing message
+/// ([localizedMessage]) and its [severity].
 class AddressFormatFinding {
-  const AddressFormatFinding.error(this.message)
+  const AddressFormatFinding.error(this.kind)
     : severity = AddressFormatSeverity.error;
 
-  const AddressFormatFinding.warning(this.message)
+  const AddressFormatFinding.warning(this.kind)
     : severity = AddressFormatSeverity.warning;
 
-  final String message;
+  final AddressFormatKind kind;
   final AddressFormatSeverity severity;
+
+  String localizedMessage(AppLocalizations l10n) => switch (kind) {
+    AddressFormatKind.invalidEvm => l10n.addressBookInvalidEvm,
+    AddressFormatKind.invalidBitcoin => l10n.addressBookInvalidBitcoin,
+    AddressFormatKind.invalidSolana => l10n.addressBookInvalidSolana,
+    AddressFormatKind.invalidNear => l10n.addressBookInvalidNear,
+    AddressFormatKind.invalidZcash => l10n.addressBookInvalidZcash,
+    AddressFormatKind.nearMissingSuffix => l10n.addressBookNearSuffixWarning,
+  };
+
+  /// The English text, for callers that keep a plain string in state (swap
+  /// and pay). Display code with a [BuildContext] uses [localizedMessage].
+  String get message =>
+      localizedMessage(lookupAppLocalizations(const Locale('en')));
 }
 
 /// Conservative, best-effort address format check keyed on [network].
@@ -62,18 +88,18 @@ AddressFormatFinding? addressFormatCheck(
   if (network.isEvm) {
     return _isEvmAddress(trimmed)
         ? null
-        : const AddressFormatFinding.error('Invalid EVM address');
+        : const AddressFormatFinding.error(AddressFormatKind.invalidEvm);
   }
 
   switch (network) {
     case AddressBookNetwork.bitcoin:
       return _isBitcoinAddress(trimmed)
           ? null
-          : const AddressFormatFinding.error('Invalid Bitcoin address');
+          : const AddressFormatFinding.error(AddressFormatKind.invalidBitcoin);
     case AddressBookNetwork.solana:
       return _isSolanaAddress(trimmed)
           ? null
-          : const AddressFormatFinding.error('Invalid Solana address');
+          : const AddressFormatFinding.error(AddressFormatKind.invalidSolana);
     case AddressBookNetwork.near:
       return _nearFinding(trimmed);
     case AddressBookNetwork.zcash:
@@ -82,7 +108,7 @@ AddressFormatFinding? addressFormatCheck(
             zcashNetwork ?? zcashNetworkFromName(kZcashDefaultNetworkName),
           )
           ? null
-          : const AddressFormatFinding.error('Invalid Zcash address');
+          : const AddressFormatFinding.error(AddressFormatKind.invalidZcash);
     default:
       return null;
   }
@@ -172,7 +198,7 @@ AddressFormatFinding? _nearFinding(String value) {
   final isNamed =
       value.length >= 2 && value.length <= 64 && _nearNamed.hasMatch(value);
   if (!isNamed) {
-    return const AddressFormatFinding.error('Invalid NEAR address');
+    return const AddressFormatFinding.error(AddressFormatKind.invalidNear);
   }
   // Bare top-level names (`alice`) are syntactically valid, but on mainnet
   // only the protocol registrar can create them — real ones (`aurora`,
@@ -180,7 +206,7 @@ AddressFormatFinding? _nearFinding(String value) {
   // suffix. Warn without blocking.
   if (!value.contains('.')) {
     return const AddressFormatFinding.warning(
-      'NEAR accounts usually end in .near — double-check this address',
+      AddressFormatKind.nearMissingSuffix,
     );
   }
   return null;

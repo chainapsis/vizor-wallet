@@ -612,6 +612,290 @@ class AppLocalizationsKo extends AppLocalizations {
   String get activityToastHashCopiedMobile => '거⁠래 해⁠시⁠를 복⁠사⁠했⁠어⁠요';
 
   @override
+  String get addressBookAddContact => '연⁠락⁠처 추⁠가';
+
+  @override
+  String get addressBookAddressHintDesktop => '주⁠소⁠를 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get addressBookAddressHintMobile => '주⁠소⁠를 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get addressBookAddressLabel => '주⁠소';
+
+  @override
+  String get addressBookAddressMissing => '주⁠소⁠를 입⁠력⁠해 주⁠세⁠요';
+
+  @override
+  String get addressBookChainAndAddress => '체⁠인 및 주⁠소';
+
+  @override
+  String get addressBookChangePicture => '연⁠락⁠처 사⁠진 변⁠경';
+
+  @override
+  String get addressBookClearAddress => '주⁠소 지⁠우⁠기';
+
+  @override
+  String get addressBookClearLabel => '연⁠락⁠처 라⁠벨 지⁠우⁠기';
+
+  @override
+  String get addressBookClearName => '이⁠름 지⁠우⁠기';
+
+  @override
+  String get addressBookClearSearch => '검⁠색⁠어 지⁠우⁠기';
+
+  @override
+  String addressBookContactActions(String label) {
+    return '$label 작⁠업';
+  }
+
+  @override
+  String get addressBookContactsTitle => '연⁠락⁠처';
+
+  @override
+  String get addressBookEditContact => '연⁠락⁠처 수⁠정';
+
+  @override
+  String get addressBookEmptyBody => '첫 연⁠락⁠처⁠를 추⁠가⁠해 시⁠작⁠해 보⁠세⁠요.';
+
+  @override
+  String get addressBookEmptyTitle => '아⁠직 연⁠락⁠처⁠가 없⁠어⁠요';
+
+  @override
+  String get addressBookInvalidBitcoin => '올⁠바⁠르⁠지 않⁠은 Bitcoin 주⁠소⁠예⁠요';
+
+  @override
+  String get addressBookInvalidEvm => '올⁠바⁠르⁠지 않⁠은 EVM 주⁠소⁠예⁠요';
+
+  @override
+  String get addressBookInvalidNear => '올⁠바⁠르⁠지 않⁠은 NEAR 주⁠소⁠예⁠요';
+
+  @override
+  String get addressBookInvalidSolana => '올⁠바⁠르⁠지 않⁠은 Solana 주⁠소⁠예⁠요';
+
+  @override
+  String get addressBookInvalidZcash => '올⁠바⁠르⁠지 않⁠은 Zcash 주⁠소⁠예⁠요';
+
+  @override
+  String get addressBookLabelFieldLabel => '주⁠소 라⁠벨';
+
+  @override
+  String get addressBookLabelHint => '1~20⁠자⁠의 라⁠벨⁠을 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get addressBookLabelLength => '1~20⁠자⁠로 입⁠력⁠해 주⁠세⁠요';
+
+  @override
+  String get addressBookLabelMissing => '라⁠벨⁠을 입⁠력⁠해 주⁠세⁠요';
+
+  @override
+  String get addressBookLoadFailed =>
+      '연⁠락⁠처⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나, 계⁠속⁠되⁠면 고⁠객 지⁠원⁠에 문⁠의⁠해 주⁠세⁠요.';
+
+  @override
+  String get addressBookNameHint => '이⁠름⁠을 입⁠력⁠하⁠세⁠요';
+
+  @override
+  String get addressBookNameLabel => '이⁠름';
+
+  @override
+  String get addressBookNearSuffixWarning =>
+      'NEAR 계⁠정⁠은 보⁠통 .near⁠로 끝⁠나⁠요. 주⁠소⁠를 다⁠시 확⁠인⁠해 주⁠세⁠요';
+
+  @override
+  String get addressBookNetworkLabel => '네⁠트⁠워⁠크';
+
+  @override
+  String get addressBookNoNetworks => '네⁠트⁠워⁠크⁠를 찾⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get addressBookNoResultsBody => '검⁠색⁠어⁠를 바⁠꿔 보⁠세⁠요';
+
+  @override
+  String get addressBookNoResultsTitle => '연⁠락⁠처⁠를 찾⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get addressBookPickerClose => '연⁠락⁠처 닫⁠기';
+
+  @override
+  String get addressBookPickerEmptyTitle => '연⁠락⁠처⁠를 찾⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get addressBookPickerLoadFailed =>
+      '연⁠락⁠처⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get addressBookPickerSearchHint => '연⁠락⁠처 검⁠색';
+
+  @override
+  String get addressBookRemove => '삭⁠제';
+
+  @override
+  String addressBookRemoveBody(String label) {
+    return '$label⁠을(를) 연⁠락⁠처⁠에⁠서 삭⁠제⁠해⁠요.';
+  }
+
+  @override
+  String get addressBookRemoveBodyUnknown => '이 연⁠락⁠처⁠를 삭⁠제⁠해⁠요.';
+
+  @override
+  String addressBookRemoveConfirmBody(String label) {
+    return '\"$label\"을(를) 연⁠락⁠처⁠에⁠서 삭⁠제⁠해⁠요. 지⁠난 거⁠래⁠에⁠는 영⁠향⁠이 없⁠어⁠요.';
+  }
+
+  @override
+  String get addressBookRemoveConfirmTitle => '연⁠락⁠처⁠를 삭⁠제⁠할⁠까⁠요?';
+
+  @override
+  String get addressBookRemoveContact => '연⁠락⁠처 삭⁠제';
+
+  @override
+  String get addressBookRemoveFailed =>
+      '연⁠락⁠처⁠를 삭⁠제⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get addressBookRemoveFailedMobile =>
+      '연⁠락⁠처⁠를 삭⁠제⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get addressBookSaveContact => '연⁠락⁠처 저⁠장';
+
+  @override
+  String get addressBookSaveFailed =>
+      '연⁠락⁠처⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get addressBookSaveFailedMobile =>
+      '연⁠락⁠처⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get addressBookScanAddressQr => '주⁠소 QR 스⁠캔';
+
+  @override
+  String addressBookScanQrTitle(String network) {
+    return '$network QR 코⁠드 스⁠캔';
+  }
+
+  @override
+  String get addressBookSearch => '검⁠색';
+
+  @override
+  String get addressBookSearchHint => '라⁠벨 또⁠는 네⁠트⁠워⁠크 검⁠색';
+
+  @override
+  String get addressBookSearchNetwork => '네⁠트⁠워⁠크 검⁠색';
+
+  @override
+  String get addressBookSelectNetwork => '네⁠트⁠워⁠크 선⁠택';
+
+  @override
+  String get addressBookSelectPicture => '연⁠락⁠처 사⁠진 선⁠택';
+
+  @override
+  String get addressBookSelectedContact => '선⁠택⁠된 연⁠락⁠처';
+
+  @override
+  String get addressBookSendZec => 'ZEC 보⁠내⁠기';
+
+  @override
+  String get addressScanAddressCameraNeeded =>
+      '주⁠소 QR⁠을 스⁠캔⁠하⁠려⁠면 이 기⁠기⁠에 카⁠메⁠라⁠가 필⁠요⁠해⁠요.';
+
+  @override
+  String addressScanCameraDefaultSuffix(String name) {
+    return '$name(기⁠본)';
+  }
+
+  @override
+  String get addressScanCameraNeeded =>
+      'QR⁠을 스⁠캔⁠하⁠려⁠면 이 기⁠기⁠에 카⁠메⁠라⁠가 필⁠요⁠해⁠요.';
+
+  @override
+  String get addressScanCameraOff =>
+      '카⁠메⁠라 접⁠근⁠이 꺼⁠져 있⁠어⁠요. 주⁠소⁠를 스⁠캔⁠하⁠려⁠면 설⁠정⁠에⁠서 허⁠용⁠해 주⁠세⁠요.';
+
+  @override
+  String get addressScanCameraRequired =>
+      '주⁠소 QR⁠을 스⁠캔⁠하⁠려⁠면 이 기⁠기⁠에 카⁠메⁠라⁠가 필⁠요⁠해⁠요.';
+
+  @override
+  String get addressScanCameraRestricted =>
+      '스⁠크⁠린 타⁠임 또⁠는 기⁠기 관⁠리⁠가 이 기⁠기⁠의 카⁠메⁠라⁠를 차⁠단⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get addressScanCameraUnavailable => '카⁠메⁠라⁠를 사⁠용⁠할 수 없⁠어⁠요';
+
+  @override
+  String get addressScanCameraUnavailableNow => '지⁠금⁠은 카⁠메⁠라⁠를 사⁠용⁠할 수 없⁠어⁠요.';
+
+  @override
+  String get addressScanCloseScanner => '스⁠캐⁠너 닫⁠기';
+
+  @override
+  String get addressScanDefaultCamera => '기⁠본 카⁠메⁠라';
+
+  @override
+  String get addressScanDeniedTitle => '카⁠메⁠라 접⁠근⁠을 거⁠부⁠했⁠어⁠요';
+
+  @override
+  String get addressScanDeniedTitleMobile => '카⁠메⁠라 접⁠근⁠을 거⁠부⁠했⁠어⁠요';
+
+  @override
+  String get addressScanEnableWindowsAccess => 'Windows 카⁠메⁠라 접⁠근⁠을 켜 주⁠세⁠요';
+
+  @override
+  String get addressScanGrantAccess => '카⁠메⁠라 접⁠근⁠을 허⁠용⁠해 주⁠세⁠요';
+
+  @override
+  String get addressScanLoading => '불⁠러⁠오⁠는 중';
+
+  @override
+  String get addressScanLoadingCamera => '카⁠메⁠라 불⁠러⁠오⁠는 중...';
+
+  @override
+  String get addressScanLoadingEllipsis => '불⁠러⁠오⁠는 중...';
+
+  @override
+  String get addressScanNoAddress => 'QR 코⁠드⁠에 주⁠소⁠가 없⁠어⁠요.';
+
+  @override
+  String get addressScanNoCamera => '카⁠메⁠라⁠를 찾⁠지 못⁠했⁠어⁠요';
+
+  @override
+  String get addressScanNoCameraOpened =>
+      '카⁠메⁠라⁠를 열 수 없⁠어⁠요. 카⁠메⁠라⁠가 연⁠결⁠되⁠어 있⁠고 다⁠른 앱⁠에⁠서 사⁠용 중⁠이 아⁠닌⁠지 확⁠인⁠해 주⁠세⁠요.';
+
+  @override
+  String get addressScanOpenSettings => '설⁠정 열⁠기';
+
+  @override
+  String get addressScanRequestAgain => '다⁠시 요⁠청';
+
+  @override
+  String get addressScanRequestAgainHint =>
+      '다⁠시 요⁠청⁠하⁠거⁠나\n시⁠스⁠템 설⁠정⁠에⁠서 직⁠접 켜 주⁠세⁠요.';
+
+  @override
+  String get addressScanRestrictedBody =>
+      '스⁠크⁠린 타⁠임 또⁠는 기⁠기 관⁠리⁠가\n카⁠메⁠라⁠를 차⁠단⁠하⁠고 있⁠어⁠요.';
+
+  @override
+  String get addressScanRestrictedTitle => '카⁠메⁠라 접⁠근⁠이 제⁠한⁠되⁠어 있⁠어⁠요';
+
+  @override
+  String get addressScanTitle => '주⁠소 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+
+  @override
+  String get addressScanToggleFlashlight => '손⁠전⁠등 켜⁠기/끄⁠기';
+
+  @override
+  String get addressScanWindowsAccessHint =>
+      'Windows 설⁠정⁠에⁠서 \'카⁠메⁠라 액⁠세⁠스\'와 \'데⁠스⁠크⁠톱 앱⁠에⁠서 카⁠메⁠라⁠에 액⁠세⁠스⁠하⁠도⁠록 허⁠용\'을 켜 주⁠세⁠요.';
+
+  @override
+  String get addressScanZcashPrompt => '계⁠속⁠하⁠려⁠면 Zcash QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+
+  @override
   String get appBackAmount => '금⁠액';
 
   @override
@@ -2759,6 +3043,197 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get receiptMessageLabel => '메⁠시⁠지';
+
+  @override
+  String get receiveAboutAddressType => '이 주⁠소 유⁠형 알⁠아⁠보⁠기';
+
+  @override
+  String get receiveAddressCouldNotLoad =>
+      '주⁠소⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get receiveAddressLoadFailed =>
+      '주⁠소⁠를 불⁠러⁠오⁠지 못⁠했⁠어⁠요. 잠⁠시 후 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get receiveCopyShieldedAddress => '차⁠폐 주⁠소 복⁠사';
+
+  @override
+  String get receiveCopyTransparentAddress => '투⁠명 주⁠소 복⁠사';
+
+  @override
+  String receiveErrorWithDetails(String message, String details) {
+    return '$message\n세⁠부 정⁠보: $details';
+  }
+
+  @override
+  String get receiveGenerateNewShieldedAddress => '새 차⁠폐 주⁠소 만⁠들⁠기';
+
+  @override
+  String get receiveInfoShieldedDiversified =>
+      '새 주⁠소⁠는 모⁠두 같⁠은 키⁠에⁠서 파⁠생⁠된 다⁠변⁠화 주⁠소⁠예⁠요. 모⁠두 같⁠은 지⁠갑⁠으⁠로 받⁠아⁠요.';
+
+  @override
+  String get receiveInfoShieldedHiddenDesktop =>
+      '거⁠래 세⁠부 정⁠보(보⁠낸 사⁠람, 받⁠는 사⁠람, 금⁠액)는 온⁠체⁠인⁠에⁠서 암⁠호⁠화⁠되⁠어 숨⁠겨⁠져⁠요.';
+
+  @override
+  String get receiveInfoShieldedHiddenMobile =>
+      '거⁠래 세⁠부 정⁠보(보⁠낸 사⁠람, 받⁠는 사⁠람, 금⁠액)는 온⁠체⁠인⁠에⁠서 암⁠호⁠화⁠되⁠어 숨⁠겨⁠져⁠요.';
+
+  @override
+  String get receiveInfoShieldedRenewClick =>
+      '새 Zcash 차⁠폐 주⁠소⁠는 갱⁠신 버⁠튼⁠을 클⁠릭⁠할 때⁠만 만⁠들⁠어⁠져⁠요.';
+
+  @override
+  String get receiveInfoShieldedRenewTap =>
+      '새 Zcash 차⁠폐 주⁠소⁠는 갱⁠신 버⁠튼⁠을 탭⁠할 때⁠만 만⁠들⁠어⁠져⁠요.';
+
+  @override
+  String get receiveInfoShieldedSubtitle =>
+      '기⁠본⁠적⁠으⁠로 강⁠력⁠한 프⁠라⁠이⁠버⁠시⁠를 제⁠공⁠해⁠요.';
+
+  @override
+  String get receiveInfoShieldedTitle => '차⁠폐 주⁠소';
+
+  @override
+  String get receiveInfoTransparentExchanges =>
+      '투⁠명⁠성⁠이⁠나 규⁠제⁠상 명⁠확⁠성⁠이 필⁠요⁠한 거⁠래⁠소⁠에⁠서 흔⁠히 사⁠용⁠해⁠요. 여⁠러 지⁠갑⁠과⁠의 호⁠환⁠성⁠을 위⁠한 기⁠본⁠값⁠이⁠기⁠도 해⁠요.';
+
+  @override
+  String get receiveInfoTransparentPublicDesktop =>
+      '모⁠든 거⁠래 세⁠부 정⁠보(보⁠낸 사⁠람, 받⁠는 사⁠람, 금⁠액)가 온⁠체⁠인⁠에 공⁠개⁠돼⁠요.';
+
+  @override
+  String get receiveInfoTransparentPublicMobile =>
+      '모⁠든 거⁠래 세⁠부 정⁠보(보⁠낸 사⁠람, 받⁠는 사⁠람, 금⁠액)가 온⁠체⁠인⁠에 공⁠개⁠돼⁠요.';
+
+  @override
+  String get receiveInfoTransparentRotates =>
+      '이 주⁠소⁠로 ZEC⁠를 받⁠고 Vizor⁠가 동⁠기⁠화⁠하⁠면 다⁠음 투⁠명 주⁠소⁠로 자⁠동⁠으⁠로 바⁠뀌⁠어⁠요. 이⁠전 주⁠소⁠도 계⁠속 이 지⁠갑⁠에 속⁠해⁠요.';
+
+  @override
+  String receiveInfoTransparentShieldFirst(String ticker) {
+    return '투⁠명 주⁠소⁠로 $ticker⁠를 받⁠은 뒤⁠에⁠는 Vizor⁠가 잔⁠액⁠을 차⁠폐⁠하⁠도⁠록 안⁠내⁠해⁠요. 차⁠폐⁠하⁠지 않⁠으⁠면 보⁠낼 수 없⁠어⁠요.';
+  }
+
+  @override
+  String get receiveInfoTransparentSubtitle => '공⁠개⁠적⁠으⁠로 보⁠여⁠요';
+
+  @override
+  String get receiveInfoTransparentTitle => '투⁠명 주⁠소';
+
+  @override
+  String get receiveNoActiveAccount => '선⁠택⁠된 계⁠정⁠이 없⁠어⁠요';
+
+  @override
+  String get receiveQrSaveFailed =>
+      'QR 이⁠미⁠지⁠를 저⁠장⁠하⁠지 못⁠했⁠어⁠요. 다⁠른 폴⁠더⁠를 선⁠택⁠하⁠거⁠나 요⁠청 링⁠크⁠를 대⁠신 복⁠사⁠해 주⁠세⁠요.';
+
+  @override
+  String receiveQrSaved(String folder) {
+    return 'QR 이⁠미⁠지⁠를 $folder⁠에 저⁠장⁠했⁠어⁠요';
+  }
+
+  @override
+  String get receiveQrUnavailable => 'QR⁠을 표⁠시⁠할 수 없⁠어⁠요';
+
+  @override
+  String get receiveRenewAddressError =>
+      '차⁠폐 주⁠소⁠를 새⁠로 만⁠들⁠지 못⁠했⁠어⁠요. 다⁠시 시⁠도⁠하⁠거⁠나 현⁠재 주⁠소⁠를 계⁠속 사⁠용⁠해 주⁠세⁠요.';
+
+  @override
+  String get receiveRequestAddMessage => '메⁠시⁠지 추⁠가';
+
+  @override
+  String get receiveRequestAmountDecimalsError =>
+      '소⁠수⁠점⁠은 8⁠자⁠리⁠까⁠지 입⁠력⁠해 주⁠세⁠요';
+
+  @override
+  String get receiveRequestAmountFormatError => '0.5⁠처⁠럼 금⁠액⁠을 입⁠력⁠해 주⁠세⁠요';
+
+  @override
+  String get receiveRequestAmountLabel => '금⁠액';
+
+  @override
+  String get receiveRequestAmountSupplyError => '금⁠액⁠이 ZEC 총 공⁠급⁠량⁠을 넘⁠어⁠요';
+
+  @override
+  String receiveRequestButton(String ticker) {
+    return '$ticker 요⁠청⁠하⁠기';
+  }
+
+  @override
+  String get receiveRequestCloseMessage => '메⁠시⁠지 닫⁠기';
+
+  @override
+  String get receiveRequestCloseRequest => '요⁠청 닫⁠기';
+
+  @override
+  String get receiveRequestCopyFailed =>
+      '요⁠청 링⁠크⁠를 복⁠사⁠하⁠지 못⁠했⁠어⁠요. 대⁠신 공⁠유⁠해 보⁠세⁠요.';
+
+  @override
+  String get receiveRequestCopyLink => '링⁠크 복⁠사';
+
+  @override
+  String get receiveRequestCopyRequestLink => '요⁠청 링⁠크 복⁠사';
+
+  @override
+  String get receiveRequestCreate => '요⁠청 만⁠들⁠기';
+
+  @override
+  String get receiveRequestEnterUsd => 'USD⁠로 금⁠액 입⁠력';
+
+  @override
+  String get receiveRequestEnterZec => 'ZEC⁠로 금⁠액 입⁠력';
+
+  @override
+  String get receiveRequestLinkCopied => '요⁠청 링⁠크⁠를 복⁠사⁠했⁠어⁠요';
+
+  @override
+  String get receiveRequestMessageHelp =>
+      '차⁠폐 주⁠소⁠에⁠서⁠만 쓸 수 있⁠어⁠요. 이 링⁠크⁠를 가⁠진 사⁠람⁠은 누⁠구⁠나 읽⁠을 수 있⁠어⁠요.';
+
+  @override
+  String get receiveRequestMessageHint =>
+      '링⁠크⁠를 받⁠은 사⁠람⁠은 누⁠구⁠나 이 내⁠용⁠을 읽⁠을 수 있⁠어⁠요';
+
+  @override
+  String get receiveRequestMessageLabel => '메⁠시⁠지';
+
+  @override
+  String get receiveRequestMessageTooLong => '메⁠시⁠지⁠가 너⁠무 길⁠어⁠요';
+
+  @override
+  String get receiveRequestSaveQr => 'QR 이⁠미⁠지 저⁠장';
+
+  @override
+  String get receiveRequestShare => '요⁠청 공⁠유';
+
+  @override
+  String get receiveRequestShareFailed =>
+      '이 요⁠청⁠을 공⁠유⁠하⁠지 못⁠했⁠어⁠요. 대⁠신 링⁠크⁠를 복⁠사⁠해 주⁠세⁠요.';
+
+  @override
+  String get receiveRequestZecButton => 'ZEC 요⁠청⁠하⁠기';
+
+  @override
+  String get receiveShareAddress => '주⁠소 공⁠유';
+
+  @override
+  String get receiveShareFailed => '이 주⁠소⁠를 공⁠유⁠하⁠지 못⁠했⁠어⁠요. 대⁠신 복⁠사⁠해 주⁠세⁠요.';
+
+  @override
+  String get receiveShareShieldedAddress => '차⁠폐 주⁠소 공⁠유';
+
+  @override
+  String get receiveShareTransparentAddress => '투⁠명 주⁠소 공⁠유';
+
+  @override
+  String receiveTitle(String ticker) {
+    return '$ticker 받⁠기';
+  }
 
   @override
   String get secretPassphraseCopy => '복⁠구 문⁠구 복⁠사';

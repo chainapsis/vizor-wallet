@@ -838,6 +838,375 @@
   "@activityToastHashCopiedMobile": {
     "description": "Toast on the mobile receipt after the transaction hash was copied."
   },
+  "addressBookAddContact": "Add contact",
+  "@addressBookAddContact": {
+    "description": "Button and dialog title that adds a new contact."
+  },
+  "addressBookAddressHintDesktop": "Add address",
+  "@addressBookAddressHintDesktop": {
+    "description": "Placeholder of the contact address field in the desktop dialog."
+  },
+  "addressBookAddressHintMobile": "Add an address",
+  "@addressBookAddressHintMobile": {
+    "description": "Placeholder of the contact address field on mobile."
+  },
+  "addressBookAddressLabel": "Address",
+  "@addressBookAddressLabel": {
+    "description": "Label of the contact address field."
+  },
+  "addressBookAddressMissing": "Add an address",
+  "@addressBookAddressMissing": {
+    "description": "Validation message when the contact address field is empty."
+  },
+  "addressBookChainAndAddress": "Chain & address",
+  "@addressBookChainAndAddress": {
+    "description": "Section label above the network selector and address field in the contact dialog."
+  },
+  "addressBookChangePicture": "Change contact picture",
+  "@addressBookChangePicture": {
+    "description": "Accessibility label of the avatar button in the contact dialog."
+  },
+  "addressBookClearAddress": "Clear address",
+  "@addressBookClearAddress": {
+    "description": "Accessibility label of the button that clears the contact address on mobile."
+  },
+  "addressBookClearLabel": "Clear contact label",
+  "@addressBookClearLabel": {
+    "description": "Accessibility label of the button that clears the contact label."
+  },
+  "addressBookClearName": "Clear name",
+  "@addressBookClearName": {
+    "description": "Accessibility label of the button that clears the contact name on mobile."
+  },
+  "addressBookClearSearch": "Clear search",
+  "@addressBookClearSearch": {
+    "description": "Accessibility label of the button that clears the search text."
+  },
+  "addressBookContactActions": "{label} actions",
+  "@addressBookContactActions": {
+    "description": "Accessibility label of the menu button on a contact row. {label} is the contact's name.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "addressBookContactsTitle": "Contacts",
+  "@addressBookContactsTitle": {
+    "description": "Title of the address book screen."
+  },
+  "addressBookEditContact": "Edit contact",
+  "@addressBookEditContact": {
+    "description": "Contact menu item and title of the dialog that edits a contact."
+  },
+  "addressBookEmptyBody": "Add your first contact to get started.",
+  "@addressBookEmptyBody": {
+    "description": "Body text of the empty address book."
+  },
+  "addressBookEmptyTitle": "No contacts yet",
+  "@addressBookEmptyTitle": {
+    "description": "Headline of the address book when it has no contacts."
+  },
+  "addressBookInvalidBitcoin": "Invalid Bitcoin address",
+  "@addressBookInvalidBitcoin": {
+    "description": "Error under an address field when the text is not a valid Bitcoin address."
+  },
+  "addressBookInvalidEvm": "Invalid EVM address",
+  "@addressBookInvalidEvm": {
+    "description": "Error under an address field when the text is not a valid address for EVM chains such as Ethereum or Base."
+  },
+  "addressBookInvalidNear": "Invalid NEAR address",
+  "@addressBookInvalidNear": {
+    "description": "Error under an address field when the text is not a valid NEAR account."
+  },
+  "addressBookInvalidSolana": "Invalid Solana address",
+  "@addressBookInvalidSolana": {
+    "description": "Error under an address field when the text is not a valid Solana address."
+  },
+  "addressBookInvalidZcash": "Invalid Zcash address",
+  "@addressBookInvalidZcash": {
+    "description": "Error under an address field when the text is not a valid Zcash address for the current network."
+  },
+  "addressBookLabelFieldLabel": "Address label",
+  "@addressBookLabelFieldLabel": {
+    "description": "Label of the contact name field in the desktop contact dialog."
+  },
+  "addressBookLabelHint": "Add label 1-20 characters",
+  "@addressBookLabelHint": {
+    "description": "Placeholder of the contact name field in the desktop dialog."
+  },
+  "addressBookLabelLength": "Use 1-20 characters",
+  "@addressBookLabelLength": {
+    "description": "Validation message when the contact label is longer than 20 characters."
+  },
+  "addressBookLabelMissing": "Add a label",
+  "@addressBookLabelMissing": {
+    "description": "Validation message when the contact label field is empty."
+  },
+  "addressBookLoadFailed": "Couldn't load your contacts. Try again, or contact support if this keeps happening.",
+  "@addressBookLoadFailed": {
+    "description": "Error shown in place of the address book when loading fails."
+  },
+  "addressBookNameHint": "Add a name",
+  "@addressBookNameHint": {
+    "description": "Placeholder of the contact name field on mobile."
+  },
+  "addressBookNameLabel": "Name",
+  "@addressBookNameLabel": {
+    "description": "Label of the contact name field on mobile."
+  },
+  "addressBookNearSuffixWarning": "NEAR accounts usually end in .near — double-check this address",
+  "@addressBookNearSuffixWarning": {
+    "description": "Warning under an address field when a NEAR account name has no .near suffix. The address can still be saved."
+  },
+  "addressBookNetworkLabel": "Network",
+  "@addressBookNetworkLabel": {
+    "description": "Label of the network selector in the mobile contact sheet."
+  },
+  "addressBookNoNetworks": "No networks found",
+  "@addressBookNoNetworks": {
+    "description": "Message when the network picker search matches nothing."
+  },
+  "addressBookNoResultsBody": "Try to modify your search",
+  "@addressBookNoResultsBody": {
+    "description": "Body text when an address book search matches nothing."
+  },
+  "addressBookNoResultsTitle": "No contacts were found",
+  "@addressBookNoResultsTitle": {
+    "description": "Headline when an address book search matches nothing."
+  },
+  "addressBookPickerClose": "Close contacts",
+  "@addressBookPickerClose": {
+    "description": "Accessibility label of the button that closes the contact picker."
+  },
+  "addressBookPickerEmptyTitle": "No contacts found",
+  "@addressBookPickerEmptyTitle": {
+    "description": "Message in the contact picker when no contact matches."
+  },
+  "addressBookPickerLoadFailed": "Couldn't load contacts. Try again.",
+  "@addressBookPickerLoadFailed": {
+    "description": "Error in the contact picker when loading contacts fails."
+  },
+  "addressBookPickerSearchHint": "Search contacts",
+  "@addressBookPickerSearchHint": {
+    "description": "Placeholder of the contact picker search field."
+  },
+  "addressBookRemove": "Remove",
+  "@addressBookRemove": {
+    "description": "Confirm button that removes a contact."
+  },
+  "addressBookRemoveBody": "{label} will be removed from your contacts.",
+  "@addressBookRemoveBody": {
+    "description": "Body of the desktop remove dialog. {label} is the contact's name.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "addressBookRemoveBodyUnknown": "This contact will be removed.",
+  "@addressBookRemoveBodyUnknown": {
+    "description": "Body of the desktop remove dialog when the contact is unknown."
+  },
+  "addressBookRemoveConfirmBody": "\"{label}\" will be removed from your contacts. This does not affect any past transactions.",
+  "@addressBookRemoveConfirmBody": {
+    "description": "Body of the mobile remove confirmation. {label} is the contact's name.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "addressBookRemoveConfirmTitle": "Remove contact?",
+  "@addressBookRemoveConfirmTitle": {
+    "description": "Title of the mobile confirmation sheet that removes a contact."
+  },
+  "addressBookRemoveContact": "Remove contact",
+  "@addressBookRemoveContact": {
+    "description": "Contact menu item and title of the dialog that removes a contact."
+  },
+  "addressBookRemoveFailed": "Couldn't remove contact. Try again.",
+  "@addressBookRemoveFailed": {
+    "description": "Error in the desktop remove dialog when deleting a contact fails."
+  },
+  "addressBookRemoveFailedMobile": "Couldn't remove the contact. Please try again.",
+  "@addressBookRemoveFailedMobile": {
+    "description": "Toast on mobile when deleting a contact fails."
+  },
+  "addressBookSaveContact": "Save contact",
+  "@addressBookSaveContact": {
+    "description": "Button that saves an edited contact on mobile."
+  },
+  "addressBookSaveFailed": "Couldn't save contact. Try again.",
+  "@addressBookSaveFailed": {
+    "description": "Error in the desktop contact dialog when saving fails."
+  },
+  "addressBookSaveFailedMobile": "Couldn't save the contact. Please try again.",
+  "@addressBookSaveFailedMobile": {
+    "description": "Toast on mobile when saving a contact fails."
+  },
+  "addressBookScanAddressQr": "Scan address QR",
+  "@addressBookScanAddressQr": {
+    "description": "Accessibility label of the button that scans an address QR code."
+  },
+  "addressBookScanQrTitle": "Scan {network} QR code",
+  "@addressBookScanQrTitle": {
+    "description": "Title of the camera scanner that reads a contact address. {network} is the chain name such as Ethereum.",
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "addressBookSearch": "Search",
+  "@addressBookSearch": {
+    "description": "Accessibility label of the search field in the address book and network picker."
+  },
+  "addressBookSearchHint": "Search for label or network",
+  "@addressBookSearchHint": {
+    "description": "Placeholder of the address book search field."
+  },
+  "addressBookSearchNetwork": "Search network",
+  "@addressBookSearchNetwork": {
+    "description": "Placeholder of the network picker search field."
+  },
+  "addressBookSelectNetwork": "Select network",
+  "@addressBookSelectNetwork": {
+    "description": "Title and accessibility label of the network picker."
+  },
+  "addressBookSelectPicture": "Select contact picture",
+  "@addressBookSelectPicture": {
+    "description": "Title of the picker that chooses a contact avatar."
+  },
+  "addressBookSelectedContact": "Selected contact",
+  "@addressBookSelectedContact": {
+    "description": "Accessibility label of the check mark on the chosen contact."
+  },
+  "addressBookSendZec": "Send ZEC",
+  "@addressBookSendZec": {
+    "description": "Contact menu item that starts sending ZEC to the contact."
+  },
+  "addressScanAddressCameraNeeded": "Address QR scanning needs a camera on this device.",
+  "@addressScanAddressCameraNeeded": {
+    "description": "Description in the mobile address scanner when the device has no camera."
+  },
+  "addressScanCameraDefaultSuffix": "{name} (Default)",
+  "@addressScanCameraDefaultSuffix": {
+    "description": "Camera name with a marker that it is the system default. {name} is the device-reported camera name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "addressScanCameraNeeded": "QR scanning needs a camera on this device.",
+  "@addressScanCameraNeeded": {
+    "description": "Description in the mobile QR scanner when the device has no camera."
+  },
+  "addressScanCameraOff": "Camera access is off. Allow it in Settings to scan addresses.",
+  "@addressScanCameraOff": {
+    "description": "Message over the full-screen scanner when camera permission is off."
+  },
+  "addressScanCameraRequired": "Address QR scanning requires a camera on this device.",
+  "@addressScanCameraRequired": {
+    "description": "Description in the desktop QR scanner when the device has no camera."
+  },
+  "addressScanCameraRestricted": "Screen Time or device management is blocking the camera on this device.",
+  "@addressScanCameraRestricted": {
+    "description": "Message over the full-screen scanner when the system restricts the camera."
+  },
+  "addressScanCameraUnavailable": "Camera unavailable",
+  "@addressScanCameraUnavailable": {
+    "description": "Title shown when the camera cannot be used."
+  },
+  "addressScanCameraUnavailableNow": "The camera is unavailable right now.",
+  "@addressScanCameraUnavailableNow": {
+    "description": "Message over the full-screen scanner when the camera cannot start."
+  },
+  "addressScanCloseScanner": "Close scanner",
+  "@addressScanCloseScanner": {
+    "description": "Accessibility label of the close button of the QR scanner."
+  },
+  "addressScanDefaultCamera": "Default camera",
+  "@addressScanDefaultCamera": {
+    "description": "Fallback name of the camera in the desktop QR scanner footer."
+  },
+  "addressScanDeniedTitle": "You've denied Camera access",
+  "@addressScanDeniedTitle": {
+    "description": "Title in the desktop QR scanner when the camera permission was denied."
+  },
+  "addressScanDeniedTitleMobile": "You've denied camera access",
+  "@addressScanDeniedTitleMobile": {
+    "description": "Title in the mobile QR scanner when the camera permission was denied."
+  },
+  "addressScanEnableWindowsAccess": "Enable Windows camera access",
+  "@addressScanEnableWindowsAccess": {
+    "description": "Title in the desktop QR scanner when Windows blocks the camera."
+  },
+  "addressScanGrantAccess": "Grant access to your camera",
+  "@addressScanGrantAccess": {
+    "description": "Title of the desktop QR scanner while waiting for the camera permission."
+  },
+  "addressScanLoading": "Loading",
+  "@addressScanLoading": {
+    "description": "Label next to a spinner in the desktop QR scanner while the camera starts."
+  },
+  "addressScanLoadingCamera": "Loading camera...",
+  "@addressScanLoadingCamera": {
+    "description": "Footer label of the desktop QR scanner while cameras are being listed."
+  },
+  "addressScanLoadingEllipsis": "Loading...",
+  "@addressScanLoadingEllipsis": {
+    "description": "Label next to a spinner in the mobile QR scanner while the camera starts."
+  },
+  "addressScanNoAddress": "QR code did not include an address.",
+  "@addressScanNoAddress": {
+    "description": "Error shown after scanning a QR code that contains no address."
+  },
+  "addressScanNoCamera": "No camera found",
+  "@addressScanNoCamera": {
+    "description": "Footer label of the desktop QR scanner when the device has no camera."
+  },
+  "addressScanNoCameraOpened": "No camera could be opened. Check that a camera is connected and not in use by another app.",
+  "@addressScanNoCameraOpened": {
+    "description": "Description in the desktop QR scanner when the camera cannot be opened."
+  },
+  "addressScanOpenSettings": "Open settings",
+  "@addressScanOpenSettings": {
+    "description": "Button that opens the system settings page for the camera permission."
+  },
+  "addressScanRequestAgain": "Request again",
+  "@addressScanRequestAgain": {
+    "description": "Button that asks for the camera permission again."
+  },
+  "addressScanRequestAgainHint": "Request again, or enable manually\nin the System settings.",
+  "@addressScanRequestAgainHint": {
+    "description": "Description when camera access is requested or denied. The line break splits the text for the narrow dialog."
+  },
+  "addressScanRestrictedBody": "Screen Time or device management\nis blocking the camera.",
+  "@addressScanRestrictedBody": {
+    "description": "Description in the mobile QR scanner when Screen Time or device management restricts the camera. The line break splits the text."
+  },
+  "addressScanRestrictedTitle": "Camera access is restricted",
+  "@addressScanRestrictedTitle": {
+    "description": "Title in the mobile QR scanner when the camera is restricted by the system."
+  },
+  "addressScanTitle": "Scan the address QR code",
+  "@addressScanTitle": {
+    "description": "Title of the QR scanner that reads an address."
+  },
+  "addressScanToggleFlashlight": "Toggle flashlight",
+  "@addressScanToggleFlashlight": {
+    "description": "Accessibility label of the flashlight button of the QR scanner."
+  },
+  "addressScanWindowsAccessHint": "Turn on Camera access and Let desktop apps access your camera in Windows Settings.",
+  "@addressScanWindowsAccessHint": {
+    "description": "Description telling the user which two switches to turn on in Windows Settings. Use the Windows setting names."
+  },
+  "addressScanZcashPrompt": "Scan a Zcash QR code to continue",
+  "@addressScanZcashPrompt": {
+    "description": "Caption under the viewfinder of the mobile QR scanner."
+  },
   "appBackAmount": "Amount",
   "@appBackAmount": {
     "description": "Back-link name of the send amount step."
@@ -3659,6 +4028,250 @@
   "receiptMessageLabel": "Message",
   "@receiptMessageLabel": {
     "description": "Label of the memo row while a receipt is loading."
+  },
+  "receiveAboutAddressType": "About this address type",
+  "@receiveAboutAddressType": {
+    "description": "Accessibility label of the help button that explains shielded versus transparent addresses."
+  },
+  "receiveAddressCouldNotLoad": "Address couldn't be loaded. Try again.",
+  "@receiveAddressCouldNotLoad": {
+    "description": "Text shown in the address line when the address is empty because loading failed."
+  },
+  "receiveAddressLoadFailed": "We couldn't load your address. Try again in a moment.",
+  "@receiveAddressLoadFailed": {
+    "description": "Message shown in place of the QR code when the address could not be loaded."
+  },
+  "receiveCopyShieldedAddress": "Copy shielded address",
+  "@receiveCopyShieldedAddress": {
+    "description": "Button label and accessibility label that copies the shielded address."
+  },
+  "receiveCopyTransparentAddress": "Copy transparent address",
+  "@receiveCopyTransparentAddress": {
+    "description": "Button label and accessibility label that copies the transparent address."
+  },
+  "receiveErrorWithDetails": "{message}\nDetails: {details}",
+  "@receiveErrorWithDetails": {
+    "description": "Inline error on the Receive screen: a summary line, then a technical details line. {details} is raw error text and is not translated.",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      },
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "receiveGenerateNewShieldedAddress": "Generate new shielded address",
+  "@receiveGenerateNewShieldedAddress": {
+    "description": "Accessibility label of the renew button that generates a new shielded address."
+  },
+  "receiveInfoShieldedDiversified": "Each new address is a diversified address derived from the same key. They all receive to the same wallet.",
+  "@receiveInfoShieldedDiversified": {
+    "description": "[security] Bullet in the shielded address explainer: new addresses come from the same key and reach the same wallet."
+  },
+  "receiveInfoShieldedHiddenDesktop": "Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.",
+  "@receiveInfoShieldedHiddenDesktop": {
+    "description": "[security] Bullet in the shielded address explainer on desktop; says transaction details are encrypted."
+  },
+  "receiveInfoShieldedHiddenMobile": "Tx details — sender, receiver, and amount — are encrypted on-chain & hidden.",
+  "@receiveInfoShieldedHiddenMobile": {
+    "description": "[security] Bullet in the shielded address explainer on mobile; says transaction details are encrypted. Keep the em dashes."
+  },
+  "receiveInfoShieldedRenewClick": "A new Zcash shielded address is generated only when you click the renew button.",
+  "@receiveInfoShieldedRenewClick": {
+    "description": "[security] Bullet in the shielded address explainer on desktop about when a new address is generated."
+  },
+  "receiveInfoShieldedRenewTap": "A new Zcash shielded address is generated only when you tap the renew button.",
+  "@receiveInfoShieldedRenewTap": {
+    "description": "[security] Bullet in the shielded address explainer on touch devices about when a new address is generated."
+  },
+  "receiveInfoShieldedSubtitle": "Strong privacy by default.",
+  "@receiveInfoShieldedSubtitle": {
+    "description": "[security] Subtitle of the shielded address explainer."
+  },
+  "receiveInfoShieldedTitle": "Shielded address",
+  "@receiveInfoShieldedTitle": {
+    "description": "Title of the explainer dialog for shielded addresses."
+  },
+  "receiveInfoTransparentExchanges": "Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.",
+  "@receiveInfoTransparentExchanges": {
+    "description": "Bullet in the transparent address explainer about where transparent addresses are used."
+  },
+  "receiveInfoTransparentPublicDesktop": "All tx details - sender, receiver, and amount - are publicly visible on-chain.",
+  "@receiveInfoTransparentPublicDesktop": {
+    "description": "[security] Bullet in the transparent address explainer on desktop; says transaction details are public."
+  },
+  "receiveInfoTransparentPublicMobile": "All tx details — sender, receiver, and amount — are publicly visible on-chain.",
+  "@receiveInfoTransparentPublicMobile": {
+    "description": "[security] Bullet in the transparent address explainer on mobile; says transaction details are public. Keep the em dashes."
+  },
+  "receiveInfoTransparentRotates": "After this address receives ZEC and Vizor syncs, your next transparent address will automatically change. Previous addresses still belong to this wallet.",
+  "@receiveInfoTransparentRotates": {
+    "description": "[security] Bullet in the transparent address explainer: the transparent address rotates after receiving funds."
+  },
+  "receiveInfoTransparentShieldFirst": "After receiving {ticker} to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won't be able to send it.",
+  "@receiveInfoTransparentShieldFirst": {
+    "description": "[security] Bullet in the transparent address explainer: funds must be shielded before sending. {ticker} is the currency ticker.",
+    "placeholders": {
+      "ticker": {
+        "type": "String"
+      }
+    }
+  },
+  "receiveInfoTransparentSubtitle": "Publicly visible",
+  "@receiveInfoTransparentSubtitle": {
+    "description": "[security] Subtitle of the transparent address explainer; its activity is public."
+  },
+  "receiveInfoTransparentTitle": "Transparent address",
+  "@receiveInfoTransparentTitle": {
+    "description": "Title of the explainer dialog for transparent addresses."
+  },
+  "receiveNoActiveAccount": "No active account",
+  "@receiveNoActiveAccount": {
+    "description": "Error shown on the Receive screen when no wallet account is selected."
+  },
+  "receiveQrSaveFailed": "We couldn't save the QR image. Try another folder, or copy the request link instead.",
+  "@receiveQrSaveFailed": {
+    "description": "Error toast on the Receive screen when saving the payment-request QR image fails."
+  },
+  "receiveQrSaved": "QR image saved to {folder}",
+  "@receiveQrSaved": {
+    "description": "Toast on the Receive screen after a payment-request QR image is saved. {folder} is the folder name.",
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
+  "receiveQrUnavailable": "QR unavailable",
+  "@receiveQrUnavailable": {
+    "description": "Placeholder shown where a QR code would be when it cannot be drawn."
+  },
+  "receiveRenewAddressError": "We couldn't refresh your shielded address. Try again, or use your current one.",
+  "@receiveRenewAddressError": {
+    "description": "Toast and inline error on the Receive screen when generating a new shielded address fails."
+  },
+  "receiveRequestAddMessage": "Add a message",
+  "@receiveRequestAddMessage": {
+    "description": "Label of the collapsed prompt that adds an optional message to a payment request."
+  },
+  "receiveRequestAmountDecimalsError": "Enter up to 8 decimals",
+  "@receiveRequestAmountDecimalsError": {
+    "description": "Inline error under the payment request amount field when the amount has more than 8 decimal places."
+  },
+  "receiveRequestAmountFormatError": "Enter an amount like 0.5",
+  "@receiveRequestAmountFormatError": {
+    "description": "Inline error under the payment request amount field when the text is not a number."
+  },
+  "receiveRequestAmountLabel": "Amount",
+  "@receiveRequestAmountLabel": {
+    "description": "Label of the amount field in the payment request dialog."
+  },
+  "receiveRequestAmountSupplyError": "Amount exceeds the ZEC supply",
+  "@receiveRequestAmountSupplyError": {
+    "description": "Inline error under the payment request amount field when the amount is larger than the total ZEC supply."
+  },
+  "receiveRequestButton": "Request {ticker}",
+  "@receiveRequestButton": {
+    "description": "Button on the mobile Receive screen that opens the payment request sheet, and the title of the payment request dialog on both form factors. {ticker} is the currency ticker such as ZEC.",
+    "placeholders": {
+      "ticker": {
+        "type": "String"
+      }
+    }
+  },
+  "receiveRequestCloseMessage": "Close message",
+  "@receiveRequestCloseMessage": {
+    "description": "Accessibility label of the button that removes the optional message field."
+  },
+  "receiveRequestCloseRequest": "Close request",
+  "@receiveRequestCloseRequest": {
+    "description": "Accessibility label of the close button of the payment request dialog."
+  },
+  "receiveRequestCopyFailed": "Couldn't copy the request link. Try sharing it instead.",
+  "@receiveRequestCopyFailed": {
+    "description": "Error toast on the mobile payment request when copying the link fails."
+  },
+  "receiveRequestCopyLink": "Copy link",
+  "@receiveRequestCopyLink": {
+    "description": "Button and accessibility label on the mobile payment request result that copies the request link."
+  },
+  "receiveRequestCopyRequestLink": "Copy request link",
+  "@receiveRequestCopyRequestLink": {
+    "description": "Button on the desktop payment request result that copies the request link."
+  },
+  "receiveRequestCreate": "Create request",
+  "@receiveRequestCreate": {
+    "description": "Button that turns the entered amount and message into a payment request."
+  },
+  "receiveRequestEnterUsd": "Enter amount in USD",
+  "@receiveRequestEnterUsd": {
+    "description": "Accessibility label of the toggle that switches the amount field to US dollars."
+  },
+  "receiveRequestEnterZec": "Enter amount in ZEC",
+  "@receiveRequestEnterZec": {
+    "description": "Accessibility label of the toggle that switches the amount field to ZEC."
+  },
+  "receiveRequestLinkCopied": "Request link copied",
+  "@receiveRequestLinkCopied": {
+    "description": "Toast shown after the payment request link is copied to the clipboard."
+  },
+  "receiveRequestMessageHelp": "Shielded addresses only — anyone with this link can read it.",
+  "@receiveRequestMessageHelp": {
+    "description": "[security] Help text under the payment request message field: the message is stored in the link itself, so anyone who sees the link can read it."
+  },
+  "receiveRequestMessageHint": "Anyone you send the link to can read this",
+  "@receiveRequestMessageHint": {
+    "description": "[security] Placeholder in the payment request message field: the message is readable by anyone who gets the link."
+  },
+  "receiveRequestMessageLabel": "Message",
+  "@receiveRequestMessageLabel": {
+    "description": "Label of the optional message field in the payment request dialog."
+  },
+  "receiveRequestMessageTooLong": "Message is too long",
+  "@receiveRequestMessageTooLong": {
+    "description": "Error shown when the payment request message exceeds the size limit."
+  },
+  "receiveRequestSaveQr": "Save QR image",
+  "@receiveRequestSaveQr": {
+    "description": "Button on the desktop payment request result that saves the QR code as an image file."
+  },
+  "receiveRequestShare": "Share request",
+  "@receiveRequestShare": {
+    "description": "Button on the mobile payment request result that shares the request QR image."
+  },
+  "receiveRequestShareFailed": "Couldn't share this request. Copy the link instead.",
+  "@receiveRequestShareFailed": {
+    "description": "Error toast on the mobile payment request when sharing fails."
+  },
+  "receiveRequestZecButton": "Request ZEC",
+  "@receiveRequestZecButton": {
+    "description": "Button on the desktop Receive pane that opens the payment request card."
+  },
+  "receiveShareAddress": "Share address",
+  "@receiveShareAddress": {
+    "description": "Visible label of the mobile Receive button that shares the selected address."
+  },
+  "receiveShareFailed": "Couldn't share this address. Copy it instead.",
+  "@receiveShareFailed": {
+    "description": "Toast on the Receive screen when the system share sheet fails for an address."
+  },
+  "receiveShareShieldedAddress": "Share shielded address",
+  "@receiveShareShieldedAddress": {
+    "description": "Tooltip and accessibility label of the button that shares the shielded address."
+  },
+  "receiveShareTransparentAddress": "Share transparent address",
+  "@receiveShareTransparentAddress": {
+    "description": "Tooltip and accessibility label of the button that shares the transparent address."
+  },
+  "receiveTitle": "Receive {ticker}",
+  "@receiveTitle": {
+    "description": "Title of the Receive screen. {ticker} is the currency ticker such as ZEC.",
+    "placeholders": {
+      "ticker": {
+        "type": "String"
+      }
+    }
   },
   "secretPassphraseCopy": "Copy secret passphrase",
   "@secretPassphraseCopy": {
