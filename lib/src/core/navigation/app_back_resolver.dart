@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../l10n/l10n.dart';
+
 class AppBackTarget {
   const AppBackTarget({
     required this.label,
@@ -29,61 +31,62 @@ class _RouteStackEntry {
 }
 
 abstract final class AppBackResolver {
-  static const _homeTarget = AppBackTarget(
-    label: 'Home',
+  static AppBackTarget _homeTarget(AppLocalizations l10n) => AppBackTarget(
+    label: l10n.navHome,
     fallbackPath: '/home',
     preferPop: false,
   );
 
-  static const _routeLabels = <String, String>{
-    '/home': 'Home',
-    '/send': 'Send',
-    '/send/amount': 'Amount',
-    '/send/review': 'Review',
-    '/send/keystone/scan': 'Keystone',
-    '/send/status': 'Status',
-    '/donation': 'Donation',
-    '/swap': 'Swap',
-    '/swap/review': 'Review',
-    '/receive': 'Receive',
-    '/address-book': 'Contacts',
-    '/activity': 'Activity',
-    '/activity/tx/:txid': 'Transaction',
-    '/accounts': 'Accounts',
-    '/settings': 'Settings',
-    '/settings/secret-passphrase': 'Secret passphrase',
-    '/settings/viewing-key': 'Viewing key',
-    '/settings/change-password': 'Change password',
-    '/settings/endpoint': 'Endpoint',
-    '/settings/explorer': 'Explorer',
-    '/settings/uninstall': 'Uninstall Vizor',
-    '/onboarding/keystone': 'Connect Keystone',
-    '/voting': 'Vote',
-    '/voting/poll/:roundId': 'Voting round',
-    '/voting/poll/:roundId/review': 'Review',
-    '/voting/poll/:roundId/status': 'Status',
-    '/voting/poll/:roundId/submitted': 'Submitted',
-    '/voting/poll/:roundId/results': 'Results',
-    '/voting/keystone/scan': 'Keystone',
+  static final _routeLabels = <String, String Function(AppLocalizations)>{
+    '/home': (l) => l.navHome,
+    '/send': (l) => l.appBackSend,
+    '/send/amount': (l) => l.appBackAmount,
+    '/send/review': (l) => l.appBackReview,
+    '/send/keystone/scan': (_) => 'Keystone', // l10n-ignore: device name
+    '/send/status': (l) => l.appBackStatus,
+    '/donation': (l) => l.appBackDonation,
+    '/swap': (l) => l.navSwap,
+    '/swap/review': (l) => l.appBackReview,
+    '/receive': (l) => l.appBackReceive,
+    '/address-book': (l) => l.appBackContacts,
+    '/activity': (l) => l.navActivity,
+    '/activity/tx/:txid': (l) => l.appBackTransaction,
+    '/accounts': (l) => l.accountsTitle,
+    '/settings': (l) => l.navSettings,
+    '/settings/secret-passphrase': (l) => l.settingsRowSecretPassphrase,
+    '/settings/viewing-key': (l) => l.settingsViewingKeyTitle,
+    '/settings/change-password': (l) => l.settingsRowChangePassword,
+    '/settings/endpoint': (l) => l.settingsEndpointTitle,
+    '/settings/explorer': (l) => l.settingsExplorerTitle,
+    '/settings/uninstall': (l) => l.settingsUninstallTitle,
+    '/onboarding/keystone': (l) => l.onboardingConnectKeystone,
+    '/voting': (l) => l.navVote,
+    '/voting/poll/:roundId': (l) => l.appBackVotingRound,
+    '/voting/poll/:roundId/review': (l) => l.appBackReview,
+    '/voting/poll/:roundId/status': (l) => l.appBackStatus,
+    '/voting/poll/:roundId/submitted': (l) => l.appBackSubmitted,
+    '/voting/poll/:roundId/results': (l) => l.appBackResults,
+    '/voting/keystone/scan': (_) => 'Keystone', // l10n-ignore: device name
   };
 
   static AppBackTarget resolve(BuildContext context) {
+    final l10n = context.l10n;
     final stack = _routeStackFor(context);
     final current = stack.isEmpty ? null : stack.last;
-    if (_forcesHome(current)) return _homeTarget;
-    if (!context.canPop()) return _homeTarget;
+    if (_forcesHome(current)) return _homeTarget(l10n);
+    if (!context.canPop()) return _homeTarget(l10n);
 
     final previous = stack.length >= 2 ? stack[stack.length - 2] : null;
     if (previous == null) {
-      return const AppBackTarget(
-        label: 'Back',
+      return AppBackTarget(
+        label: l10n.commonBack,
         fallbackPath: '/home',
         preferPop: true,
       );
     }
 
     return AppBackTarget(
-      label: _labelFor(previous) ?? 'Back',
+      label: _labelFor(l10n, previous) ?? l10n.commonBack,
       fallbackPath: previous.location,
       preferPop: true,
     );
@@ -135,13 +138,17 @@ abstract final class AppBackResolver {
     );
   }
 
-  static String? _labelFor(_RouteStackEntry entry) {
-    return _routeLabels[entry.routePath] ??
+  static String? _labelFor(AppLocalizations l10n, _RouteStackEntry entry) {
+    final label =
+        _routeLabels[entry.routePath] ??
         _routeLabels[entry.location] ??
         _dynamicRouteLabel(entry.location);
+    return label?.call(l10n);
   }
 
-  static String? _dynamicRouteLabel(String location) {
+  static String Function(AppLocalizations)? _dynamicRouteLabel(
+    String location,
+  ) {
     if (location.startsWith('/activity/tx/')) {
       return _routeLabels['/activity/tx/:txid'];
     }

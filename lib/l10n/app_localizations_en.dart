@@ -174,10 +174,43 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsViewViewingKey => 'View viewing key';
 
   @override
+  String get appBackAmount => 'Amount';
+
+  @override
+  String get appBackContacts => 'Contacts';
+
+  @override
+  String get appBackDonation => 'Donation';
+
+  @override
   String get appBackHardwareWallets => 'Hardware wallets';
 
   @override
   String get appBackImportMethods => 'Import methods';
+
+  @override
+  String get appBackReceive => 'Receive';
+
+  @override
+  String get appBackResults => 'Results';
+
+  @override
+  String get appBackReview => 'Review';
+
+  @override
+  String get appBackSend => 'Send';
+
+  @override
+  String get appBackStatus => 'Status';
+
+  @override
+  String get appBackSubmitted => 'Submitted';
+
+  @override
+  String get appBackTransaction => 'Transaction';
+
+  @override
+  String get appBackVotingRound => 'Voting round';
 
   @override
   String get appExitBackHint => 'Go back again to exit';

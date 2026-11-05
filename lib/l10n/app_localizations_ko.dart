@@ -158,10 +158,43 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountsViewViewingKey => '뷰⁠잉 키 보⁠기';
 
   @override
+  String get appBackAmount => '금⁠액';
+
+  @override
+  String get appBackContacts => '연⁠락⁠처';
+
+  @override
+  String get appBackDonation => '후⁠원';
+
+  @override
   String get appBackHardwareWallets => '하⁠드⁠웨⁠어 지⁠갑';
 
   @override
   String get appBackImportMethods => '가⁠져⁠오⁠기 방⁠법';
+
+  @override
+  String get appBackReceive => '받⁠기';
+
+  @override
+  String get appBackResults => '결⁠과';
+
+  @override
+  String get appBackReview => '검⁠토';
+
+  @override
+  String get appBackSend => '보⁠내⁠기';
+
+  @override
+  String get appBackStatus => '상⁠태';
+
+  @override
+  String get appBackSubmitted => '제⁠출 완⁠료';
+
+  @override
+  String get appBackTransaction => '거⁠래';
+
+  @override
+  String get appBackVotingRound => '투⁠표 회⁠차';
 
   @override
   String get appExitBackHint => '한 번 더 뒤⁠로 가⁠면 종⁠료⁠돼⁠요';

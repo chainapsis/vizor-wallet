@@ -151,10 +151,43 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsViewViewingKey => '显示查看密钥';
 
   @override
+  String get appBackAmount => '金额';
+
+  @override
+  String get appBackContacts => '联系人';
+
+  @override
+  String get appBackDonation => '捐赠';
+
+  @override
   String get appBackHardwareWallets => '硬件钱包';
 
   @override
   String get appBackImportMethods => '导入方式';
+
+  @override
+  String get appBackReceive => '接收';
+
+  @override
+  String get appBackResults => '结果';
+
+  @override
+  String get appBackReview => '确认';
+
+  @override
+  String get appBackSend => '发送';
+
+  @override
+  String get appBackStatus => '状态';
+
+  @override
+  String get appBackSubmitted => '已提交';
+
+  @override
+  String get appBackTransaction => '交易';
+
+  @override
+  String get appBackVotingRound => '投票轮次';
 
   @override
   String get appExitBackHint => '再次返回即可退出';

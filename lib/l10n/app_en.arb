@@ -194,6 +194,18 @@
   "@accountsViewViewingKey": {
     "description": "[security] Account menu item that shows the account's viewing key."
   },
+  "appBackAmount": "Amount",
+  "@appBackAmount": {
+    "description": "Back-link name of the send amount step."
+  },
+  "appBackContacts": "Contacts",
+  "@appBackContacts": {
+    "description": "Back-link name of the address book screen."
+  },
+  "appBackDonation": "Donation",
+  "@appBackDonation": {
+    "description": "Back-link name of the donation screen."
+  },
   "appBackHardwareWallets": "Hardware wallets",
   "@appBackHardwareWallets": {
     "description": "Back-link label shown during desktop import that returns to the hardware wallet list."
@@ -201,6 +213,38 @@
   "appBackImportMethods": "Import methods",
   "@appBackImportMethods": {
     "description": "Back-link label shown during desktop import that returns to the list of import methods."
+  },
+  "appBackReceive": "Receive",
+  "@appBackReceive": {
+    "description": "Back-link name of the Receive screen."
+  },
+  "appBackResults": "Results",
+  "@appBackResults": {
+    "description": "Back-link name of the voting results screen."
+  },
+  "appBackReview": "Review",
+  "@appBackReview": {
+    "description": "Back-link name of a review step (send, swap, vote)."
+  },
+  "appBackSend": "Send",
+  "@appBackSend": {
+    "description": "Back-link name of the Send screen."
+  },
+  "appBackStatus": "Status",
+  "@appBackStatus": {
+    "description": "Back-link name of a status screen (send, vote)."
+  },
+  "appBackSubmitted": "Submitted",
+  "@appBackSubmitted": {
+    "description": "Back-link name of the vote submitted screen."
+  },
+  "appBackTransaction": "Transaction",
+  "@appBackTransaction": {
+    "description": "Back-link name of a transaction detail screen."
+  },
+  "appBackVotingRound": "Voting round",
+  "@appBackVotingRound": {
+    "description": "Back-link name of a coinholder voting round screen."
   },
   "appExitBackHint": "Go back again to exit",
   "@appExitBackHint": {

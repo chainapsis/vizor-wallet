@@ -364,6 +364,24 @@ abstract class AppLocalizations {
   /// **'View viewing key'**
   String get accountsViewViewingKey;
 
+  /// Back-link name of the send amount step.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get appBackAmount;
+
+  /// Back-link name of the address book screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Contacts'**
+  String get appBackContacts;
+
+  /// Back-link name of the donation screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Donation'**
+  String get appBackDonation;
+
   /// Back-link label shown during desktop import that returns to the hardware wallet list.
   ///
   /// In en, this message translates to:
@@ -375,6 +393,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Import methods'**
   String get appBackImportMethods;
+
+  /// Back-link name of the Receive screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Receive'**
+  String get appBackReceive;
+
+  /// Back-link name of the voting results screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Results'**
+  String get appBackResults;
+
+  /// Back-link name of a review step (send, swap, vote).
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get appBackReview;
+
+  /// Back-link name of the Send screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get appBackSend;
+
+  /// Back-link name of a status screen (send, vote).
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get appBackStatus;
+
+  /// Back-link name of the vote submitted screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Submitted'**
+  String get appBackSubmitted;
+
+  /// Back-link name of a transaction detail screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction'**
+  String get appBackTransaction;
+
+  /// Back-link name of a coinholder voting round screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Voting round'**
+  String get appBackVotingRound;
 
   /// Hint shown on Android after the first Back press at the root, telling the user to press Back again to exit the app.
   ///
