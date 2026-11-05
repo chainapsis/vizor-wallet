@@ -470,10 +470,6 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     return selected
   }
 
-  func network(endpoint: String) -> String? {
-    batches.first { $0.lightwalletdUrl == endpoint }?.network
-  }
-
   func nextActionHeight(endpoint: String) -> UInt64? {
     let transactionHeight = batches.filter { $0.lightwalletdUrl == endpoint }.flatMap(\.items)
       .filter { $0.status == .armed }
@@ -1311,47 +1307,28 @@ enum BackgroundMigrationOutboxSchedule {
 }
 
 enum BackgroundMigrationOutboxCadence {
-  static let preNu7SecondsPerBlock: TimeInterval = 75
-  /// ZIP 218 target spacing from NU7 activation.
-  static let nu7SecondsPerBlock: TimeInterval = 25
+  /// ZIP 218 target spacing. Checks run after NU7 activation; default regtest
+  /// mines its 75-second blocks on demand.
+  static let secondsPerBlock: TimeInterval = 25
   static let rollingCheckInterval: TimeInterval = 10 * 60
   static let dueLeadTime: TimeInterval = 10 * 60
 
   static func nextCheckDelay(
     remoteHeight: UInt64,
-    nextScheduledHeight: UInt64?,
-    nu7ActivationHeight: UInt64?
+    nextScheduledHeight: UInt64?
   ) -> TimeInterval? {
     guard let nextScheduledHeight else { return nil }
     if nextScheduledHeight <= remoteHeight { return 60 }
-    let estimated = estimatedSeconds(
-      from: remoteHeight,
-      to: nextScheduledHeight,
-      nu7ActivationHeight: nu7ActivationHeight
-    )
+    let estimated = estimatedSeconds(from: remoteHeight, to: nextScheduledHeight)
     return min(rollingCheckInterval, max(60, estimated - dueLeadTime))
   }
 
-  /// Blocks up to `nu7ActivationHeight - 1` take 75 seconds, later ones 25.
   static func estimatedSeconds(
     from remoteHeight: UInt64,
-    to targetHeight: UInt64,
-    nu7ActivationHeight: UInt64?
+    to targetHeight: UInt64
   ) -> TimeInterval {
     guard targetHeight > remoteHeight else { return 0 }
-    let blocks = targetHeight - remoteHeight
-    var preNu7Blocks = blocks
-    if let activation = nu7ActivationHeight, activation > 0 {
-      let lastPreNu7 = min(activation - 1, targetHeight)
-      preNu7Blocks = lastPreNu7 > remoteHeight ? lastPreNu7 - remoteHeight : 0
-    }
-    return TimeInterval(preNu7Blocks) * preNu7SecondsPerBlock
-      + TimeInterval(blocks - preNu7Blocks) * nu7SecondsPerBlock
-  }
-
-  static func nu7ActivationHeight(network: String) -> UInt64? {
-    let height = network.withCString { zcash_nu7_activation_height($0) }
-    return height == 0 ? nil : height
+    return TimeInterval(targetHeight - remoteHeight) * secondsPerBlock
   }
 
   /// The first upgrade activation after `height`, from Rust's schedule.

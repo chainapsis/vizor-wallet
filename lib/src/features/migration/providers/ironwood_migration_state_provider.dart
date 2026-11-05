@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/block_spacing_provider.dart';
 import '../../../providers/chain_upgrade_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -44,13 +43,6 @@ bool isIronwoodMigrationWaitingForConfirmation(
   }
   return status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
       status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
-}
-
-String ironwoodMigrationAnnouncementSeenStorageKey({
-  required String network,
-  required String accountUuid,
-}) {
-  return 'zcash_ironwood_migration_announcement_seen_${network}_$accountUuid';
 }
 
 String ironwoodMigrationCompletionSeenStorageKey({
@@ -163,47 +155,6 @@ String ironwoodMigrationCompletionId(rust_sync.MigrationStatus status) {
       ? 'transactions:${partIds.join('|')}'
       : 'values:${status.targetValuesZatoshi.join('|')}';
   return sha256.convert(utf8.encode(material)).toString();
-}
-
-abstract class IronwoodMigrationAnnouncementStore {
-  Future<bool> isSeen({required String network, required String accountUuid});
-
-  Future<void> markSeen({required String network, required String accountUuid});
-}
-
-class SharedPreferencesIronwoodMigrationAnnouncementStore
-    implements IronwoodMigrationAnnouncementStore {
-  const SharedPreferencesIronwoodMigrationAnnouncementStore();
-
-  @override
-  Future<bool> isSeen({
-    required String network,
-    required String accountUuid,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(
-          ironwoodMigrationAnnouncementSeenStorageKey(
-            network: network,
-            accountUuid: accountUuid,
-          ),
-        ) ??
-        false;
-  }
-
-  @override
-  Future<void> markSeen({
-    required String network,
-    required String accountUuid,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(
-      ironwoodMigrationAnnouncementSeenStorageKey(
-        network: network,
-        accountUuid: accountUuid,
-      ),
-      true,
-    );
-  }
 }
 
 typedef OrchardMigrationStatusGetter =
@@ -412,33 +363,6 @@ class _IronwoodMigrationSyncInputs {
   );
 }
 
-class IronwoodMigrationAnnouncementState {
-  const IronwoodMigrationAnnouncementState._({
-    required this.visible,
-    this.network,
-    this.accountUuid,
-    this.status,
-  });
-
-  const IronwoodMigrationAnnouncementState.hidden() : this._(visible: false);
-
-  const IronwoodMigrationAnnouncementState.visible({
-    required String network,
-    required String accountUuid,
-    required rust_sync.MigrationStatus status,
-  }) : this._(
-         visible: true,
-         network: network,
-         accountUuid: accountUuid,
-         status: status,
-       );
-
-  final bool visible;
-  final String? network;
-  final String? accountUuid;
-  final rust_sync.MigrationStatus? status;
-}
-
 enum IronwoodHomeMigrationCtaMode { hidden, start, resume, stopped }
 
 class IronwoodHomeMigrationCtaState {
@@ -589,11 +513,6 @@ class IronwoodPostMigrationState {
 
   bool get locksNavigation => mode == IronwoodPostMigrationMode.required;
 }
-
-final ironwoodMigrationAnnouncementStoreProvider =
-    Provider<IronwoodMigrationAnnouncementStore>(
-      (_) => const SharedPreferencesIronwoodMigrationAnnouncementStore(),
-    );
 
 final ironwoodMigrationCompletionStoreProvider =
     Provider<IronwoodMigrationCompletionStore>(
@@ -773,59 +692,6 @@ final ironwoodMigrationCompletionProvider =
         accountUuid: accountUuid,
         completionId: completionId,
         transferredZatoshi: transferredZatoshi,
-      );
-    });
-
-final ironwoodMigrationAnnouncementProvider =
-    FutureProvider<IronwoodMigrationAnnouncementState>((ref) async {
-      // Home announces only the latest upgrade; from NU7 that is NU7's.
-      if (ref.watch(nu7ActiveAtWalletTipProvider)) {
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }
-      final inputs = ref.watch(ironwoodMigrationInputsProvider);
-      if (!inputs.ironwoodActiveAtTip) {
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }
-
-      final accountUuid = inputs.accountUuid;
-      if (accountUuid == null) {
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }
-
-      if (!inputs.hasAccountScopedData ||
-          inputs.isSyncing ||
-          inputs.isBackgroundMode ||
-          inputs.hasSyncFailure) {
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }
-
-      if (!inputs.hasOrchardFunds) {
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }
-
-      final store = ref.watch(ironwoodMigrationAnnouncementStoreProvider);
-      if (await store.isSeen(
-        network: inputs.network,
-        accountUuid: accountUuid,
-      )) {
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }
-
-      final request = inputs.statusRequest;
-      if (request == null) {
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }
-      final status = await ref.watch(
-        ironwoodMigrationStatusProvider(request).future,
-      );
-      if (status.phase != kIronwoodMigrationReadyPhase) {
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }
-
-      return IronwoodMigrationAnnouncementState.visible(
-        network: inputs.network,
-        accountUuid: accountUuid,
-        status: status,
       );
     });
 

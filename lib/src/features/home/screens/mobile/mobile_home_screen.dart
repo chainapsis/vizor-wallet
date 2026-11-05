@@ -9,7 +9,6 @@ import '../../../../providers/voting/voting_participation_provider.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
@@ -57,10 +56,9 @@ import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
 import '../../../migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../../migration/models/mobile_ironwood_migration_attention_state.dart';
-import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../migration/providers/ironwood_migration_state_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
-import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
@@ -134,7 +132,6 @@ class MobileHomeScreen extends ConsumerWidget {
             ),
           ),
           const _SyncKeepAwakePromptHost(),
-          const _IronwoodMigrationAnnouncementHost(),
           const _Nu7AnnouncementHost(),
           _IronwoodMigrationAttentionMountGate(
             isHomeCurrent: isCurrentHomeRoute,
@@ -445,97 +442,6 @@ class _IronwoodMigrationAttentionHostState
       }
     } finally {
       _showing = false;
-    }
-  }
-}
-
-enum _IronwoodAnnouncementAction { startMigration }
-
-class _IronwoodMigrationAnnouncementHost extends ConsumerStatefulWidget {
-  const _IronwoodMigrationAnnouncementHost();
-
-  @override
-  ConsumerState<_IronwoodMigrationAnnouncementHost> createState() =>
-      _IronwoodMigrationAnnouncementHostState();
-}
-
-class _IronwoodMigrationAnnouncementHostState
-    extends ConsumerState<_IronwoodMigrationAnnouncementHost> {
-  bool _showing = false;
-  String? _shownFor;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _evaluate(ref.read(ironwoodMigrationAnnouncementProvider).value);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    ref.listen(ironwoodMigrationAnnouncementProvider, (_, next) {
-      _evaluate(next.value);
-    });
-    return const SizedBox.shrink();
-  }
-
-  void _evaluate(IronwoodMigrationAnnouncementState? announcement) {
-    if (announcement == null || !announcement.visible || _showing) return;
-    final network = announcement.network;
-    final accountUuid = announcement.accountUuid;
-    if (network == null || accountUuid == null) return;
-    final key = '$network:$accountUuid';
-    if (_shownFor == key) return;
-    _shownFor = key;
-    unawaited(_show(announcement));
-  }
-
-  Future<void> _show(IronwoodMigrationAnnouncementState announcement) async {
-    _showing = true;
-    try {
-      final action = await showAppMobileSheet<_IronwoodAnnouncementAction>(
-        context: context,
-        builder: (sheetContext) => MobileIronwoodMigrationAnnouncementSheet(
-          onStartMigration: () => Navigator.of(
-            sheetContext,
-          ).pop(_IronwoodAnnouncementAction.startMigration),
-          onOpenReleaseNotes: () => unawaited(_openReleaseNotes()),
-        ),
-      );
-      if (!mounted) return;
-      if (action == _IronwoodAnnouncementAction.startMigration) {
-        context.push('/migration/intro');
-      }
-      await _markSeen(announcement);
-    } finally {
-      _showing = false;
-    }
-  }
-
-  Future<void> _markSeen(
-    IronwoodMigrationAnnouncementState announcement,
-  ) async {
-    final network = announcement.network;
-    final accountUuid = announcement.accountUuid;
-    if (network == null || accountUuid == null) return;
-    try {
-      await ref
-          .read(ironwoodMigrationAnnouncementStoreProvider)
-          .markSeen(network: network, accountUuid: accountUuid);
-    } catch (_) {
-      return;
-    }
-    if (mounted) ref.invalidate(ironwoodMigrationAnnouncementProvider);
-  }
-
-  Future<void> _openReleaseNotes() async {
-    final uri = Uri.parse(kIronwoodMigrationReleaseNotesUrl);
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      // The announcement remains open so the user can retry.
     }
   }
 }

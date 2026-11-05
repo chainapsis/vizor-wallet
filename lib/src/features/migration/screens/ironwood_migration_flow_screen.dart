@@ -58,7 +58,7 @@ import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../models/ironwood_migration_presentation.dart';
 import '../models/ironwood_migration_upgrade_stop.dart';
 import '../models/mobile_ironwood_migration_status_entry.dart';
-import '../providers/ironwood_migration_announcement_provider.dart';
+import '../providers/ironwood_migration_state_provider.dart';
 import '../providers/ironwood_migration_coordinator_provider.dart';
 import '../providers/ironwood_migration_privacy_lock_provider.dart';
 import '../services/ironwood_migration_service.dart';

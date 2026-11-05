@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
@@ -8,11 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
-import 'package:zcash_wallet/src/core/zcash/block_spacing.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
-import 'package:zcash_wallet/src/providers/block_spacing_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -21,7 +17,7 @@ import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 import '../../fakes/fake_sync_notifier.dart';
 
 const _accountUuid = '550e8400-e29b-41d4-a716-446655440000';
-const _dbPath = '/tmp/ironwood-announcement-test-wallet.db';
+const _dbPath = '/tmp/ironwood-migration-state-test-wallet.db';
 const _endpoint = RpcEndpointConfig(
   networkName: 'main',
   lightwalletdUrl: 'https://zec.example:443',
@@ -56,9 +52,7 @@ void main() {
       await _settleCoreProviders(container);
 
       expect(
-        (await container.read(
-          ironwoodMigrationAnnouncementProvider.future,
-        )).visible,
+        (await container.read(ironwoodHomeMigrationCtaProvider.future)).visible,
         isFalse,
       );
       expect(
@@ -241,81 +235,6 @@ void main() {
     expect(state.visible, isFalse);
   });
 
-  test('resolves hidden while chain upgrade status is still loading', () async {
-    final chainStatus = Completer<rust_wallet.ChainUpgradeStatus>();
-    final container = _container(
-      getChainUpgradeStatus: ({required lightwalletdUrl, required network}) =>
-          chainStatus.future,
-    );
-    addTearDown(container.dispose);
-
-    final state = await container.read(
-      ironwoodMigrationAnnouncementProvider.future,
-    );
-
-    expect(state.visible, isFalse);
-
-    chainStatus.complete(
-      _chainStatus(
-        network: 'main',
-        tipHeight: 3_400_000,
-        ironwoodActiveAtTip: false,
-      ),
-    );
-  });
-
-  test('stays hidden before Ironwood is active', () async {
-    final migrationStatusCalls = <String>[];
-    final container = _container(
-      ironwoodActiveAtTip: false,
-      migrationStatusCalls: migrationStatusCalls,
-    );
-    addTearDown(container.dispose);
-
-    await _settleCoreProviders(container);
-    final state = await container.read(
-      ironwoodMigrationAnnouncementProvider.future,
-    );
-
-    expect(state.visible, isFalse);
-    expect(migrationStatusCalls, isEmpty);
-  });
-
-  test('shows when Ironwood is active and migration status is ready', () async {
-    final migrationStatusCalls = <String>[];
-    final container = _container(
-      ironwoodActiveAtTip: true,
-      migrationStatusCalls: migrationStatusCalls,
-    );
-    addTearDown(container.dispose);
-
-    await _settleCoreProviders(container);
-    final state = await container.read(
-      ironwoodMigrationAnnouncementProvider.future,
-    );
-
-    expect(state.visible, isTrue);
-    expect(state.network, 'main');
-    expect(state.accountUuid, _accountUuid);
-    expect(state.status?.phase, kIronwoodMigrationReadyPhase);
-    expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
-  });
-
-  test('gives way to the NU7 announcement once the tip reaches NU7', () async {
-    Future<bool> visibleWith(int nu7ActivationHeight) async {
-      final container = _container(nu7ActivationHeight: nu7ActivationHeight);
-      addTearDown(container.dispose);
-      await _settleCoreProviders(container);
-      return (await container.read(
-        ironwoodMigrationAnnouncementProvider.future,
-      )).visible;
-    }
-
-    // The ready state's tip is 3,500,000.
-    expect(await visibleWith(3_500_001), isTrue);
-    expect(await visibleWith(3_500_000), isFalse);
-  });
-
   test('shows Ledger the same migration UI as a software account', () async {
     Future<List<Object?>> migrationUi({required bool isLedgerAccount}) async {
       final migrationStatusCalls = <String>[];
@@ -343,9 +262,6 @@ void main() {
       await container.read(ironwoodPostMigrationStateProvider.future);
 
       return [
-        (await container.read(
-          ironwoodMigrationAnnouncementProvider.future,
-        )).visible,
         (await container.read(ironwoodHomeMigrationCtaProvider.future)).visible,
         (await container.read(
           ironwoodMigrationRouteCtaProvider.future,
@@ -361,64 +277,17 @@ void main() {
     expect(ledger.first, isTrue);
   });
 
-  test('stays hidden when the migration state is not ready', () async {
-    final container = _container(
-      ironwoodActiveAtTip: true,
-      migrationPhase: 'complete',
-    );
+  test('home CTA shows start once Ironwood is active and ready', () async {
+    final container = _container(ironwoodActiveAtTip: true);
     addTearDown(container.dispose);
 
     await _settleCoreProviders(container);
-    final state = await container.read(
-      ironwoodMigrationAnnouncementProvider.future,
-    );
+    final state = await container.read(ironwoodHomeMigrationCtaProvider.future);
 
-    expect(state.visible, isFalse);
+    expect(state.mode, IronwoodHomeMigrationCtaMode.start);
+    expect(state.visible, isTrue);
+    expect(state.buttonLabel, 'Migrate to Ironwood Pool');
   });
-
-  test('seen account and network suppress the ready modal', () async {
-    final migrationStatusCalls = <String>[];
-    final announcementStore = _FakeAnnouncementStore(
-      seenKeys: {_seenKey('main', _accountUuid)},
-    );
-    final container = _container(
-      ironwoodActiveAtTip: true,
-      announcementStore: announcementStore,
-      migrationStatusCalls: migrationStatusCalls,
-    );
-    addTearDown(container.dispose);
-
-    await _settleCoreProviders(container);
-    final state = await container.read(
-      ironwoodMigrationAnnouncementProvider.future,
-    );
-
-    expect(state.visible, isFalse);
-    expect(migrationStatusCalls, isEmpty);
-  });
-
-  test(
-    'home CTA shows start even after the announcement has been seen',
-    () async {
-      final announcementStore = _FakeAnnouncementStore(
-        seenKeys: {_seenKey('main', _accountUuid)},
-      );
-      final container = _container(
-        ironwoodActiveAtTip: true,
-        announcementStore: announcementStore,
-      );
-      addTearDown(container.dispose);
-
-      await _settleCoreProviders(container);
-      final state = await container.read(
-        ironwoodHomeMigrationCtaProvider.future,
-      );
-
-      expect(state.mode, IronwoodHomeMigrationCtaMode.start);
-      expect(state.visible, isTrue);
-      expect(state.buttonLabel, 'Migrate to Ironwood Pool');
-    },
-  );
 
   test('home CTA resumes an active run while syncing', () async {
     final container = _container(
@@ -1257,7 +1126,6 @@ ProviderContainer _container({
   String migrationPhase = kIronwoodMigrationReadyPhase,
   String? migrationActiveRunId,
   ChainUpgradeStatusGetter? getChainUpgradeStatus,
-  _FakeAnnouncementStore? announcementStore,
   _FakeCompletionStore? completionStore,
   List<String>? migrationStatusCalls,
   List<int> migrationTargetValues = const [],
@@ -1266,18 +1134,9 @@ ProviderContainer _container({
   Object? migrationStatusError,
   OrchardMigrationStatusGetter? getMigrationStatus,
   bool isLedgerAccount = false,
-  int? nu7ActivationHeight,
 }) {
   return ProviderContainer(
     overrides: [
-      if (nu7ActivationHeight != null)
-        blockSpacingProvider.overrideWithValue(
-          BlockSpacing(
-            preNu7BlockSeconds: 75,
-            nu7BlockSeconds: 25,
-            nu7ActivationHeight: nu7ActivationHeight,
-          ),
-        ),
       appBootstrapProvider.overrideWithValue(
         _bootstrap(isLedgerAccount: isLedgerAccount),
       ),
@@ -1298,7 +1157,6 @@ ProviderContainer _container({
             rust_wallet.ChainUpgradeActivationStatus(
               network: network,
               tipHeight: tipHeight,
-              nu63ActivationHeight: BigInt.from(3_428_143),
               ironwoodActiveAtTip: ironwoodActiveAtTip,
             ),
       ),
@@ -1307,9 +1165,6 @@ ProviderContainer _container({
       ),
       syncProvider.overrideWith(
         () => FakeSyncNotifier(syncState ?? _readySyncState()),
-      ),
-      ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
-        announcementStore ?? _FakeAnnouncementStore(),
       ),
       walletDbPathGetterProvider.overrideWithValue(() async => _dbPath),
       orchardMigrationStatusGetterProvider.overrideWithValue(
@@ -1426,18 +1281,8 @@ rust_wallet.ChainUpgradeStatus _chainStatus({
 }) {
   return rust_wallet.ChainUpgradeStatus(
     network: network,
-    lightwalletdChainName: network,
     tipHeight: BigInt.from(tipHeight),
-    lightwalletdReportedHeight: BigInt.from(tipHeight),
-    lightwalletdEstimatedHeight: BigInt.from(tipHeight),
-    lightwalletdConsensusBranchId: ironwoodActiveAtTip
-        ? '37a5165b'
-        : 'c8e71055',
-    lightwalletdUpgradeName: '',
-    lightwalletdUpgradeHeight: BigInt.zero,
-    nu63ActivationHeight: BigInt.from(3_428_143),
     ironwoodActiveAtTip: ironwoodActiveAtTip,
-    endpointMatchesNetwork: true,
   );
 }
 
@@ -1494,31 +1339,6 @@ class _FakeIronwoodActivationStore implements IronwoodActivationStore {
     _activeNetworks.add(network);
   }
 }
-
-class _FakeAnnouncementStore implements IronwoodMigrationAnnouncementStore {
-  _FakeAnnouncementStore({Set<String>? seenKeys})
-    : _seenKeys = seenKeys ?? <String>{};
-
-  final Set<String> _seenKeys;
-
-  @override
-  Future<bool> isSeen({
-    required String network,
-    required String accountUuid,
-  }) async {
-    return _seenKeys.contains(_seenKey(network, accountUuid));
-  }
-
-  @override
-  Future<void> markSeen({
-    required String network,
-    required String accountUuid,
-  }) async {
-    _seenKeys.add(_seenKey(network, accountUuid));
-  }
-}
-
-String _seenKey(String network, String accountUuid) => '$network|$accountUuid';
 
 class _FakeCompletionStore implements IronwoodMigrationCompletionStore {
   _FakeCompletionStore({Set<String>? seenKeys, this.seesEverything = false})

@@ -6,7 +6,6 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +16,6 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'package:zcash_wallet/src/features/activity/gift_card_activity_index.dart';
@@ -26,7 +24,7 @@ import 'package:zcash_wallet/src/features/home/providers/nu7_announcement_provid
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signing_service.dart';
 import 'package:zcash_wallet/src/features/ledger/services/ledger_signed_operation_service.dart';
-import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_state_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/pay/screens/pay_screen.dart';
@@ -499,164 +497,6 @@ void main() {
     await showAnnouncement();
     expect(opacity(), 1);
   });
-
-  testWidgets('home does not stack the NU7 announcement on the Ironwood one', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _appHarness(
-        '/home',
-        ironwoodMigrationAnnouncementStateListenable:
-            _ironwoodAnnouncementTestProvider,
-        nu7Announcement: const Nu7AnnouncementState.visible(network: 'main'),
-        syncState: SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          orchardBalance: BigInt.from(14_312_000_000),
-          spendableBalance: BigInt.from(14_312_000_000),
-          totalBalance: BigInt.from(14_312_000_000),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(ZcashWalletApp)),
-    );
-    container
-        .read(_ironwoodAnnouncementTestProvider.notifier)
-        .setAnnouncement(
-          IronwoodMigrationAnnouncementState.visible(
-            network: 'main',
-            accountUuid: 'account-1',
-            status: _migrationStatus(kIronwoodMigrationReadyPhase),
-          ),
-        );
-    await tester.pumpAndSettle();
-
-    final nu7Overlay = find.byKey(const ValueKey('nu7_announcement_overlay'));
-    expect(
-      find.byKey(const ValueKey('ironwood_migration_announcement_overlay')),
-      findsOneWidget,
-    );
-    expect(nu7Overlay, findsNothing);
-
-    await tester.tapAt(const Offset(4, 4));
-    await tester.pumpAndSettle();
-    container
-        .read(_ironwoodAnnouncementTestProvider.notifier)
-        .setAnnouncement(const IronwoodMigrationAnnouncementState.hidden());
-    await tester.pumpAndSettle();
-
-    expect(nu7Overlay, findsOneWidget);
-  });
-
-  testWidgets('home keeps Ironwood announcement visible during sync changes', (
-    tester,
-  ) async {
-    final syncedState = SyncState(
-      accountUuid: 'account-1',
-      hasAccountScopedData: true,
-      orchardBalance: BigInt.from(14_312_000_000),
-      spendableBalance: BigInt.from(14_312_000_000),
-      totalBalance: BigInt.from(14_312_000_000),
-    );
-    await tester.pumpWidget(
-      _appHarness(
-        '/home',
-        ironwoodMigrationAnnouncementStateListenable:
-            _ironwoodAnnouncementTestProvider,
-        syncState: syncedState,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(ZcashWalletApp)),
-    );
-    container
-        .read(_ironwoodAnnouncementTestProvider.notifier)
-        .setAnnouncement(
-          IronwoodMigrationAnnouncementState.visible(
-            network: 'main',
-            accountUuid: 'account-1',
-            status: _migrationStatus(kIronwoodMigrationReadyPhase),
-          ),
-        );
-    await tester.pumpAndSettle();
-
-    final overlay = find.byKey(
-      const ValueKey('ironwood_migration_announcement_overlay'),
-    );
-    expect(overlay, findsOneWidget);
-    expect(tester.widget<AppPaneModalOverlay>(overlay).scrimColor, isNull);
-
-    (container.read(syncProvider.notifier) as FakeSyncNotifier).emit(
-      syncedState.copyWith(isSyncing: true),
-    );
-    await tester.pump();
-    container
-        .read(_ironwoodAnnouncementTestProvider.notifier)
-        .setAnnouncement(const IronwoodMigrationAnnouncementState.hidden());
-    await container.read(ironwoodMigrationAnnouncementProvider.future);
-    await tester.pump();
-
-    expect(overlay, findsOneWidget);
-  });
-
-  testWidgets(
-    'home clears a stale Ironwood announcement after migration completes',
-    (tester) async {
-      await tester.pumpWidget(
-        _appHarness(
-          '/home',
-          ironwoodMigrationAnnouncementStateListenable:
-              _ironwoodAnnouncementTestProvider,
-          syncState: SyncState(
-            accountUuid: 'account-1',
-            hasAccountScopedData: true,
-            ironwoodBalance: BigInt.from(14_312_000_000),
-            spendableBalance: BigInt.from(14_312_000_000),
-            totalBalance: BigInt.from(14_312_000_000),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(ZcashWalletApp)),
-      );
-      container
-          .read(_ironwoodAnnouncementTestProvider.notifier)
-          .setAnnouncement(
-            IronwoodMigrationAnnouncementState.visible(
-              network: 'main',
-              accountUuid: 'account-1',
-              status: _migrationStatus(kIronwoodMigrationReadyPhase),
-            ),
-          );
-      await tester.pumpAndSettle();
-
-      final router = GoRouter.of(tester.element(find.byType(HomeScreen)));
-      router.go('/migration/intro');
-      await tester.pumpAndSettle();
-      expect(find.byType(HomeScreen), findsNothing);
-
-      router.go('/home');
-      await tester.pump();
-      final overlay = find.byKey(
-        const ValueKey('ironwood_migration_announcement_overlay'),
-      );
-      await _pumpUntilPresent(tester, overlay);
-      expect(overlay, findsOneWidget);
-
-      container
-          .read(_ironwoodAnnouncementTestProvider.notifier)
-          .setAnnouncement(const IronwoodMigrationAnnouncementState.hidden());
-      await tester.pumpAndSettle();
-
-      expect(overlay, findsNothing);
-    },
-  );
 
   testWidgets(
     'home desktop uses Ironwood balance and enables actions during migration',
@@ -2029,8 +1869,6 @@ Widget _appHarness(
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodHomeBalancePresentationMode? ironwoodHomeBalancePresentationMode,
   rust_sync.MigrationStatus? migrationCoordinatorStatus,
-  ProviderListenable<IronwoodMigrationAnnouncementState>?
-  ironwoodMigrationAnnouncementStateListenable,
   IronwoodMigrationFlowData? ironwoodMigrationFlowData,
   OrchardMigrationStatusGetter? migrationStatusGetter,
   bool failIfMigrationResolverLoads = false,
@@ -2148,13 +1986,6 @@ Widget _appHarness(
                 syncState?.ironwoodPendingBalance ?? BigInt.zero,
           ),
         ),
-      ironwoodMigrationAnnouncementProvider.overrideWith((ref) async {
-        final listenable = ironwoodMigrationAnnouncementStateListenable;
-        if (listenable != null) {
-          return ref.watch(listenable);
-        }
-        return const IronwoodMigrationAnnouncementState.hidden();
-      }),
     ],
     child: router == null
         ? const ZcashWalletApp()
@@ -2276,24 +2107,6 @@ class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
     required String accountUuid,
     required SwapAsset asset,
   }) async {}
-}
-
-final _ironwoodAnnouncementTestProvider =
-    NotifierProvider<
-      _IronwoodAnnouncementTestNotifier,
-      IronwoodMigrationAnnouncementState
-    >(_IronwoodAnnouncementTestNotifier.new);
-
-class _IronwoodAnnouncementTestNotifier
-    extends Notifier<IronwoodMigrationAnnouncementState> {
-  @override
-  IronwoodMigrationAnnouncementState build() {
-    return const IronwoodMigrationAnnouncementState.hidden();
-  }
-
-  void setAnnouncement(IronwoodMigrationAnnouncementState next) {
-    state = next;
-  }
 }
 
 class _FakeSwapActivityStore implements SwapActivityStore {
