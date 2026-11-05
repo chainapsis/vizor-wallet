@@ -83,52 +83,54 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
   });
 
-  testWidgets(
-    'automatic mode displays its effective server without a seed latency',
-    (tester) async {
-      tester.view
-        ..physicalSize = const Size(393, 852)
-        ..devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(
-        _app(
-          endpoint: defaultRpcEndpointConfig('main'),
-          effective: const RpcEndpointConfig(
-            networkName: 'main',
-            lightwalletdUrl: 'https://eu.zec.stardust.rest:443',
-            presetId: 'eu-zec-stardust',
-          ),
+  testWidgets('automatic row displays its effective server and latency', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(393, 852)
+      ..devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      _app(
+        endpoint: defaultRpcEndpointConfig('main'),
+        effective: const RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: 'https://eu.zec.stardust.rest:443',
+          presetId: 'eu-zec-stardust',
         ),
-      );
-      await tester.pump();
-      expect(
-        find.textContaining(
-          'Automatic · eu.zec.stardust.rest:443',
-          findRichText: true,
-        ),
-        findsOneWidget,
-      );
-      final automatic = find.byKey(
-        const ValueKey('mobile_endpoint_preset_default-mainnet'),
-      );
-      expect(
-        find.descendant(of: automatic, matching: find.text('Automatic')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: automatic, matching: find.text('123ms')),
-        findsNothing,
-      );
-      expect(
-        find.descendant(
-          of: automatic,
-          matching: find.text('us.zec.stardust.rest:443'),
-        ),
-        findsNothing,
-      );
-    },
-  );
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.textContaining(
+        'eu.zec.stardust.rest:443 · 123ms',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    final automatic = find.byKey(
+      const ValueKey('mobile_endpoint_preset_default-mainnet'),
+    );
+    expect(
+      find.descendant(of: automatic, matching: find.text('Automatic')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: automatic,
+        matching: find.text('eu.zec.stardust.rest:443 · 123ms'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: automatic,
+        matching: find.text('us.zec.stardust.rest:443'),
+      ),
+      findsNothing,
+    );
+  });
 
   testWidgets('custom endpoint card pins the input to the Figma position', (
     tester,
