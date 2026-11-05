@@ -8,6 +8,52 @@ import 'package:zcash_wallet/src/features/ledger/services/ledger_failure_guidanc
 import 'package:zcash_wallet/src/features/ledger/services/ledger_mobile_ble_service.dart';
 
 void main() {
+  test(
+    'connection and native failures use localized text, not exception text',
+    () {
+      expect(
+        ledgerFailureGuidance(
+          testL10n,
+          const LedgerConnectionRequiredException(
+            'English log text',
+            reason: LedgerConnectionRequiredReason.usb,
+          ),
+        )?.message,
+        testL10n.ledgerConnectionRequiredUsb,
+      );
+      final wrongApp = ledgerFailureGuidance(
+        testL10n,
+        const LedgerMobileException(
+          LedgerMobileFailure.wrongApp,
+          'Native text',
+        ),
+      );
+      expect(wrongApp?.message, testL10n.ledgerFailureMsgOpenZcash);
+      expect(wrongApp?.showDeviceAppPrompt, isTrue);
+      expect(
+        ledgerFailureGuidance(
+          testL10n,
+          const LedgerMobileException(
+            LedgerMobileFailure.unavailable,
+            'Dart text',
+          ),
+        )?.message,
+        testL10n.ledgerMobileUnavailable,
+      );
+      expect(
+        ledgerFailureGuidance(
+          testL10n,
+          const LedgerMobileException(
+            LedgerMobileFailure.unavailable,
+            'Finish the pairing request on the device',
+            platformText: true,
+          ),
+        )?.message,
+        'Finish the pairing request on the device',
+      );
+    },
+  );
+
   test('an NU7 transaction refused for an older app asks for an update', () {
     final error = StateError(ledgerAppUpdateRequiredError);
     final guidance = ledgerFailureGuidance(testL10n, error);
@@ -120,6 +166,7 @@ void main() {
         LedgerRequestFailure.fromError(
           const LedgerConnectionRequiredException(
             'Connection failed',
+            reason: LedgerConnectionRequiredReason.usb,
             cause: LedgerAppReadinessException(
               LedgerAppReadinessFailure.unavailable,
               'App failed',
@@ -173,7 +220,10 @@ void main() {
       );
       expect(
         LedgerRequestFailure.fromError(
-          const LedgerConnectionRequiredException('Connection failed'),
+          const LedgerConnectionRequiredException(
+            'Connection failed',
+            reason: LedgerConnectionRequiredReason.bluetooth,
+          ),
         ),
         LedgerRequestFailure.transportLost,
       );
@@ -273,6 +323,7 @@ void main() {
         testL10n,
         const LedgerConnectionRequiredException(
           'Connect and unlock your Ledger with USB, then try again.',
+          reason: LedgerConnectionRequiredReason.usb,
           cause: LedgerAppReadinessException(
             LedgerAppReadinessFailure.rejected,
             'Vizor could not prepare the Ledger Zcash app. Try again.',
@@ -289,6 +340,7 @@ void main() {
         testL10n,
         const LedgerConnectionRequiredException(
           'Connect and unlock your Ledger with USB, then try again.',
+          reason: LedgerConnectionRequiredReason.usb,
           cause: 'ledger_transport: No Ledger device found',
         ),
       )!;

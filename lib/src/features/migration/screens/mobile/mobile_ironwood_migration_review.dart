@@ -435,19 +435,15 @@ class _MobileMigrationFastReviewState
                                   letterSpacing: -0.21,
                                 ),
                                 children: [
-                                  TextSpan(
-                                    text: l10n.migrationImmediateTradeoffLead(
+                                  ...emphasisSpans(
+                                    l10n.migrationImmediateTradeoffBody(
                                       privacyAmountText,
+                                      l10n.migrationImmediateTradeoffHighlight,
                                     ),
+                                    [l10n.migrationImmediateTradeoffHighlight],
+                                    const TextStyle(color: Color(0xFFC06ECE)),
                                   ),
-                                  TextSpan(
-                                    text: l10n
-                                        .migrationMobileFastPrivacyBodyHighlight,
-                                    style: const TextStyle(
-                                      color: Color(0xFFC06ECE),
-                                    ),
-                                  ),
-                                  const TextSpan(text: '. '),
+                                  const TextSpan(text: ' '),
                                   TextSpan(
                                     text: isLedgerAccount
                                         ? l10n.migrationMobileFastPrivacyLedger

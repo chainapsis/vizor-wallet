@@ -740,6 +740,7 @@ class _LedgerShieldSigningOverlayState
               statusLabel: _pausedEarly
                   ? context.l10n.homeLedgerInputsRemaining
                   : context.l10n.commonActionNeeded,
+              actionNeeded: !(_pausedEarly),
               message: _error ?? context.l10n.homeLedgerShieldingFailed,
               showDeviceAppPrompt:
                   !_pausedEarly &&

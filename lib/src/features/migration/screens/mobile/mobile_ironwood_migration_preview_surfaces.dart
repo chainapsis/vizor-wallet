@@ -2213,10 +2213,14 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
                 labelStyle: AppTypography.bodyLarge.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
-                waitText: context.l10n.migrationMobileWaitLoopWait,
-                forWindowText: context.l10n.migrationMobileWaitLoopForWindow,
-                signText: context.l10n.migrationMobileWaitLoopSign,
-                batchText: context.l10n.migrationMobileWaitLoopBatch,
+                waitHighlight: context.l10n.migrationMobileWaitLoopWait,
+                waitLine: context.l10n.migrationMobileWaitLoopWaitLine(
+                  context.l10n.migrationMobileWaitLoopWait,
+                ),
+                signHighlight: context.l10n.migrationMobileWaitLoopSign,
+                signLine: context.l10n.migrationMobileWaitLoopSignLine(
+                  context.l10n.migrationMobileWaitLoopSign,
+                ),
               ),
             ),
           ),
@@ -3294,19 +3298,19 @@ class _MigrationWaitLoopPainter extends CustomPainter {
     required this.lineColor,
     required this.successColor,
     required this.labelStyle,
-    required this.waitText,
-    required this.forWindowText,
-    required this.signText,
-    required this.batchText,
+    required this.waitLine,
+    required this.waitHighlight,
+    required this.signLine,
+    required this.signHighlight,
   });
 
   final Color lineColor;
   final Color successColor;
   final TextStyle labelStyle;
-  final String waitText;
-  final String forWindowText;
-  final String signText;
-  final String batchText;
+  final String waitLine;
+  final String waitHighlight;
+  final String signLine;
+  final String signHighlight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -3335,14 +3339,18 @@ class _MigrationWaitLoopPainter extends CustomPainter {
       }
     }
 
-    final topSegments = [
-      _MigrationArcTextSegment(waitText, successColor),
-      _MigrationArcTextSegment(forWindowText, lineColor),
-    ];
-    final bottomSegments = [
-      _MigrationArcTextSegment(signText, successColor),
-      _MigrationArcTextSegment(batchText, lineColor),
-    ];
+    final topSegments = _arcSegments(
+      waitLine,
+      waitHighlight,
+      successColor,
+      lineColor,
+    );
+    final bottomSegments = _arcSegments(
+      signLine,
+      signHighlight,
+      successColor,
+      lineColor,
+    );
     const textRadius = 131.0;
     const labelClearance = 12.0;
     final clearanceAngle = labelClearance / textRadius;
@@ -3471,6 +3479,28 @@ class _MigrationWaitLoopPainter extends CustomPainter {
         successColor != oldDelegate.successColor ||
         labelStyle != oldDelegate.labelStyle;
   }
+}
+
+/// Splits a localized [line] around its [highlight], wherever the translation
+/// puts it.
+List<_MigrationArcTextSegment> _arcSegments(
+  String line,
+  String highlight,
+  Color highlightColor,
+  Color baseColor,
+) {
+  final start = line.indexOf(highlight);
+  if (start < 0 || highlight.isEmpty) {
+    return [_MigrationArcTextSegment(line, baseColor)];
+  }
+  final end = start + highlight.length;
+  return [
+    if (start > 0)
+      _MigrationArcTextSegment(line.substring(0, start), baseColor),
+    _MigrationArcTextSegment(highlight, highlightColor),
+    if (end < line.length)
+      _MigrationArcTextSegment(line.substring(end), baseColor),
+  ];
 }
 
 class _MigrationArcTextSegment {

@@ -2156,6 +2156,12 @@ abstract class AppLocalizations {
   /// **'After you scanned, click Get signature.'**
   String get commonKeystoneAfterScan;
 
+  /// Two-line instruction under a QR code. {icon} is replaced by the small button icon the user taps on the Keystone device, so move it wherever the grammar needs it. The line break between the two halves is intentional. Shared by: keystone, migration.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap {icon} on your Keystone,\nthen scan this QR code'**
+  String commonKeystoneScanPrompt(String icon);
+
   /// Hint when the scanned QR code is of the wrong type; asks to open the signature result QR code on the Keystone device. Shared by: send, swap.
   ///
   /// In en, this message translates to:
@@ -2359,12 +2365,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On a Mac, you can use Continuity Camera to scan with your iPhone instead.'**
   String get commonOnAMacYouCanUse;
-
-  /// Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'on your Keystone,'**
-  String get commonOnYourKeystone;
 
   /// Button that opens the system settings page for the camera permission. Shared by: address, keystone, ledger.
   ///
@@ -2839,18 +2839,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Syncing'**
   String get commonSyncing;
-
-  /// Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'Tap'**
-  String get commonTap;
-
-  /// End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration.
-  ///
-  /// In en, this message translates to:
-  /// **'then scan this QR code'**
-  String get commonThenScanThisQRCode;
 
   /// Hint under the mobile Keystone scanner when the scanned QR is not a valid signature. Shared by: home, keystone.
   ///
@@ -4016,11 +4004,11 @@ abstract class AppLocalizations {
   /// **'Check Keystone firmware'**
   String get keystoneFirmwareTitle;
 
-  /// Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly.
+  /// Line in the Keystone scanning help. {link} is the keyst.one/firmware link, which is a URL and is not translated; place it where the grammar needs it.
   ///
   /// In en, this message translates to:
-  /// **'Update to the latest Keystone firmware at '**
-  String get keystoneFirmwareUpdatePrefix;
+  /// **'Update to the latest Keystone firmware at {link}'**
+  String keystoneFirmwareUpdate(String link);
 
   /// Primary button on the Keystone how-to-connect screen; continues to the QR scan step once the user has followed the instructions.
   ///
@@ -4718,6 +4706,18 @@ abstract class AppLocalizations {
   /// **'Connection help'**
   String get ledgerConnectionHelp;
 
+  /// Guidance shown when the Ledger could not be reached over Bluetooth and the user has to reconnect it.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on and unlock your Ledger, then reconnect with Bluetooth.'**
+  String get ledgerConnectionRequiredBluetooth;
+
+  /// Guidance shown when the Ledger could not be reached over USB and the user has to reconnect it.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect and unlock your Ledger with USB, then try again.'**
+  String get ledgerConnectionRequiredUsb;
+
   /// Button label to continue signing after the Ledger is connected.
   ///
   /// In en, this message translates to:
@@ -5401,6 +5401,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Turn on location services to find your Ledger on this Android version, then try again.'**
   String get ledgerMobileTurnOnLocation;
+
+  /// Fallback guidance when the Bluetooth connection to the Ledger failed for an unknown reason.
+  ///
+  /// In en, this message translates to:
+  /// **'Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.'**
+  String get ledgerMobileUnavailable;
 
   /// Title of the status block when the search found no Ledger device.
   ///
@@ -6655,17 +6661,17 @@ abstract class AppLocalizations {
   /// **'Review Migration Plan'**
   String get migrationImmediateReviewTitle;
 
-  /// [security] Highlighted second part of the privacy notice, continuing the previous message.
+  /// [security] Sentence of the privacy notice for the one-step migration. {amount} is the ZEC amount; {highlight} is the emphasized phrase 'easier to associate with your wallet' and can be moved anywhere in the sentence.
   ///
   /// In en, this message translates to:
-  /// **'easier to associate with your wallet.'**
-  String get migrationImmediateTradeoffEmphasis;
+  /// **'Crosses in one visible step — your {amount} and timing are {highlight}.'**
+  String migrationImmediateTradeoffBody(String amount, String highlight);
 
-  /// [security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.
+  /// [security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'.
   ///
   /// In en, this message translates to:
-  /// **'Crosses in one visible step — your {amount} and timing are '**
-  String migrationImmediateTradeoffLead(String amount);
+  /// **'easier to associate with your wallet'**
+  String get migrationImmediateTradeoffHighlight;
 
   /// [security] Last line of the privacy notice for Ledger accounts; starts with a line break.
   ///
@@ -7404,12 +7410,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unavailable'**
   String get migrationMobileFastPlanUnavailable;
-
-  /// [security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence.
-  ///
-  /// In en, this message translates to:
-  /// **'easier to associate with your wallet'**
-  String get migrationMobileFastPrivacyBodyHighlight;
 
   /// Last sentence of the privacy warning card suggesting the Private migration option.
   ///
@@ -8251,11 +8251,11 @@ abstract class AppLocalizations {
   /// **'{count} notes'**
   String migrationMobileStatusNotesCount(int count);
 
-  /// Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space.
+  /// Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.
   ///
   /// In en, this message translates to:
-  /// **'Migration '**
-  String get migrationMobileStatusNotesLead;
+  /// **'Migration {notes}'**
+  String migrationMobileStatusNotesTitle(String notes);
 
   /// Message under the loading indicator while the migration progress is syncing.
   ///
@@ -8299,35 +8299,35 @@ abstract class AppLocalizations {
   /// **'Another Keystone approval will be needed after these confirmations.'**
   String get migrationMobileWaitKeystoneAgain;
 
-  /// Second fragment of the bottom text on the animated loop; keep the leading space.
-  ///
-  /// In en, this message translates to:
-  /// **' the batch of transactions'**
-  String get migrationMobileWaitLoopBatch;
-
   /// Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash.
   ///
   /// In en, this message translates to:
   /// **'Repeat several times,\nwaiting could take 2–10\nhours'**
   String get migrationMobileWaitLoopCaption;
 
-  /// Second fragment of the top text on the animated loop; keep the leading space.
-  ///
-  /// In en, this message translates to:
-  /// **' for the window'**
-  String get migrationMobileWaitLoopForWindow;
-
-  /// Highlighted first word of the bottom text on the animated loop; followed by the next fragment to read 'Sign the batch of transactions'.
+  /// Highlighted verb inserted into the bottom text of the animated loop, which reads 'Sign the batch of transactions'.
   ///
   /// In en, this message translates to:
   /// **'Sign'**
   String get migrationMobileWaitLoopSign;
 
-  /// Highlighted first word of the top text on the animated loop; followed by the next fragment to read 'Wait for the window'.
+  /// Text along the bottom of the animated loop on the migration screen: the user signs the next batch. {highlight} is the highlighted verb 'Sign' and can be moved anywhere.
+  ///
+  /// In en, this message translates to:
+  /// **'{highlight} the batch of transactions'**
+  String migrationMobileWaitLoopSignLine(String highlight);
+
+  /// Highlighted verb inserted into the top text of the animated loop, which reads 'Wait for the window'.
   ///
   /// In en, this message translates to:
   /// **'Wait'**
   String get migrationMobileWaitLoopWait;
+
+  /// Text along the top of the animated loop on the migration screen: the user waits for the next signing window. {highlight} is the highlighted verb 'Wait' and can be moved anywhere.
+  ///
+  /// In en, this message translates to:
+  /// **'{highlight} for the window'**
+  String migrationMobileWaitLoopWaitLine(String highlight);
 
   /// Title-case heading of the card on the preparation screen that shows the note split steps.
   ///
@@ -15212,17 +15212,17 @@ abstract class AppLocalizations {
   /// **'I understand'**
   String get settingsSeedScreenshotAck;
 
-  /// [security] Bold first words of the screenshot warning body; the next string continues the same sentence.
+  /// [security] Body of the warning about screenshots of the Secret Passphrase. {highlight} is the bold phrase 'Screenshots are not reliable' and can be moved anywhere in the first sentence.
+  ///
+  /// In en, this message translates to:
+  /// **'{highlight}. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.'**
+  String settingsSeedScreenshotBody(String highlight);
+
+  /// [security] Bold phrase inserted into the screenshot warning body, where it starts the first sentence.
   ///
   /// In en, this message translates to:
   /// **'Screenshots are not reliable'**
   String get settingsSeedScreenshotBodyLead;
-
-  /// [security] Rest of the screenshot warning body; it directly follows the bold lead and so starts with a period.
-  ///
-  /// In en, this message translates to:
-  /// **'. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.'**
-  String get settingsSeedScreenshotBodyRest;
 
   /// [security] Heading of the warning sheet shown when a screenshot is taken while the secret passphrase is visible.
   ///

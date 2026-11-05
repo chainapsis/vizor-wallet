@@ -13,6 +13,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import '../../../../main.dart' show log;
 import '../../../core/layout/mobile/mobile_top_nav.dart'
     show kMobileTopNavHeight;
+import '../../../core/l10n/inline_spans.dart';
 import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -88,8 +89,6 @@ const _mobileKeystoneStepTwoProgress = 1.0;
 const _mobileKeystoneTitleTopGap = AppSpacing.s;
 const _mobileKeystoneQrPromptGap = AppSpacing.base;
 const _mobileKeystonePromptBlockHeight = 56.0;
-const _mobileKeystonePromptLineGap = 2.0;
-const _mobileKeystonePromptInlineGap = 6.0;
 const _mobileKeystoneScanProgressHold = Duration(milliseconds: 360);
 const _mobileKeystoneLightText = Color(0xFFFFFFFF);
 const _mobileKeystoneOrange = Color(0xFFF98F0E);
@@ -1328,27 +1327,20 @@ class _KeystoneScanPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textStyle = AppTypography.bodyMediumStrong.copyWith(color: color);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: _mobileKeystonePromptInlineGap,
-          runSpacing: _mobileKeystonePromptLineGap,
-          children: [
-            Text(context.l10n.commonTap, style: textStyle),
-            const _KeystoneScanPromptIcon(),
-            Text(context.l10n.commonOnYourKeystone, style: textStyle),
-          ],
+    return Text.rich(
+      TextSpan(
+        children: inlineSlotSpans(
+          context.l10n.commonKeystoneScanPrompt(kInlineSlot),
+          const {
+            kInlineSlot: WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: _KeystoneScanPromptIcon(),
+            ),
+          },
         ),
-        const SizedBox(height: _mobileKeystonePromptLineGap),
-        Text(
-          context.l10n.commonThenScanThisQRCode,
-          textAlign: TextAlign.center,
-          style: textStyle,
-        ),
-      ],
+      ),
+      textAlign: TextAlign.center,
+      style: textStyle,
     );
   }
 }

@@ -45,6 +45,7 @@ Widget _signing(
         failureOverride: LedgerSigningFailurePresentation(
           title: 'Ledger needs attention',
           statusLabel: 'Action needed',
+          actionNeeded: true,
           message: guidance.message,
           showDeviceAppPrompt: guidance.showDeviceAppPrompt,
           bluetoothRecovery: guidance.bluetoothRecovery,

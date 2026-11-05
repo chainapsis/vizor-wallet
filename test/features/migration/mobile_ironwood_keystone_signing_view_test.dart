@@ -162,9 +162,14 @@ void main() {
         tester.getRect(find.text('Signs 26 of 51 transactions')).top,
       ),
     );
-    expect(find.text('Tap'), findsOneWidget);
-    expect(find.text('on your Keystone,'), findsOneWidget);
-    expect(find.text('then scan this QR code'), findsOneWidget);
+    final prompt = find.byWidgetPredicate(
+      (widget) =>
+          widget is RichText &&
+          widget.text.toPlainText().contains(
+            'on your Keystone,\nthen scan this QR code',
+          ),
+    );
+    expect(prompt, findsOneWidget);
     expect(find.text('Having issues scanning?'), findsNothing);
     expect(
       find.descendant(
@@ -178,15 +183,24 @@ void main() {
     final helpRect = tester.getRect(
       find.byKey(const ValueKey('mobile_ironwood_keystone_scan_help')),
     );
-    final firstLineRect = tester.getRect(find.text('on your Keystone,'));
-    final secondLineRect = tester.getRect(find.text('then scan this QR code'));
-    // The help affordance trails the end of the sentence: to the right of the
-    // last line, and vertically on that line rather than centred across both.
-    expect(helpRect.left, greaterThan(secondLineRect.right));
-    expect(helpRect.center.dy, greaterThan(firstLineRect.bottom));
+    final promptRect = tester.getRect(prompt);
+    final firstLineIcon = tester.getRect(
+      find
+          .descendant(
+            of: prompt,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is AppIcon && widget.name == AppIcons.keystoneScan,
+            ),
+          )
+          .first,
+    );
+    // The help affordance trails the end of the sentence, on its last line
+    // rather than centred across both.
+    expect(helpRect.center.dy, greaterThan(firstLineIcon.bottom));
     expect(
       helpRect.center.dy,
-      inInclusiveRange(secondLineRect.top, secondLineRect.bottom),
+      inInclusiveRange(promptRect.top, promptRect.bottom),
     );
     // The visual icon stays 28px so it fits the text line, but the tap target
     // keeps the 44pt minimum.

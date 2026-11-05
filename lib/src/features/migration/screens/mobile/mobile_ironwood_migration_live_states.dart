@@ -83,17 +83,11 @@ class _MobileMigrationPreparing extends StatelessWidget {
                               color: colors.text.accent,
                               fontWeight: FontWeight.w600,
                             ),
-                            children: [
-                              TextSpan(
-                                text:
-                                    context.l10n.migrationMobileStatusNotesLead,
-                              ),
-                              TextSpan(
-                                text: context.l10n
-                                    .migrationMobileStatusNotesCount(partCount),
-                                style: TextStyle(color: colors.text.secondary),
-                              ),
-                            ],
+                            children: _notesHeadingSpans(
+                              context,
+                              partCount,
+                              colors.text.secondary,
+                            ),
                           ),
                         ),
                       ),
@@ -256,15 +250,11 @@ class _MobileMigrationMigratingState
                     color: colors.text.accent,
                     fontWeight: FontWeight.w600,
                   ),
-                  children: [
-                    TextSpan(text: context.l10n.migrationMobileStatusNotesLead),
-                    TextSpan(
-                      text: context.l10n.migrationMobileStatusNotesCount(
-                        partCount,
-                      ),
-                      style: TextStyle(color: colors.text.secondary),
-                    ),
-                  ],
+                  children: _notesHeadingSpans(
+                    context,
+                    partCount,
+                    colors.text.secondary,
+                  ),
                 ),
               ),
             ),
@@ -463,4 +453,17 @@ int _mobileMigrationEtaHeight(SyncState? syncState) {
   if (syncState == null) return 0;
   if (syncState.chainTipHeight > 0) return syncState.chainTipHeight;
   return syncState.scannedHeight;
+}
+
+/// "Migration 3 notes" with the count in a muted colour; the count's position
+/// is the translator's.
+List<InlineSpan> _notesHeadingSpans(
+  BuildContext context,
+  int partCount,
+  Color mutedColor,
+) {
+  final notes = context.l10n.migrationMobileStatusNotesCount(partCount);
+  return emphasisSpans(context.l10n.migrationMobileStatusNotesTitle(notes), [
+    notes,
+  ], TextStyle(color: mutedColor));
 }

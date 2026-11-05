@@ -227,16 +227,20 @@ class _IronwoodMigrationImmediateReviewContentState
                               const SizedBox(height: 8),
                               Text.rich(
                                 TextSpan(
-                                  text: context.l10n
-                                      .migrationImmediateTradeoffLead(amount),
                                   children: [
-                                    TextSpan(
-                                      text: context
-                                          .l10n
-                                          .migrationImmediateTradeoffEmphasis,
-                                      style: const TextStyle(
-                                        color: Color(0xFFCA4ADC),
+                                    ...emphasisSpans(
+                                      context.l10n.migrationImmediateTradeoffBody(
+                                        amount,
+                                        context
+                                            .l10n
+                                            .migrationImmediateTradeoffHighlight,
                                       ),
+                                      [
+                                        context
+                                            .l10n
+                                            .migrationImmediateTradeoffHighlight,
+                                      ],
+                                      const TextStyle(color: Color(0xFFCA4ADC)),
                                     ),
                                     TextSpan(
                                       text: isLedgerAccount

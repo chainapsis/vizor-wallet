@@ -1121,6 +1121,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonKeystoneAfterScan => '扫描后，请点击“获取签名”。';
 
   @override
+  String commonKeystoneScanPrompt(String icon) {
+    return '在你的 Keystone 上点按 $icon，\n然后扫描此二维码';
+  }
+
+  @override
   String get commonKeystoneScanSignatureResult =>
       '请在 Keystone 上打开签名结果二维码，然后重新扫描。';
 
@@ -1224,9 +1229,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonOnAMacYouCanUse => '在 Mac 上，你也可以使用连续互通相机，改用 iPhone 进行扫描。';
-
-  @override
-  String get commonOnYourKeystone => '按钮（位于你的 Keystone），';
 
   @override
   String get commonOpenSettings => '打开设置';
@@ -1471,12 +1473,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonSyncing => '正在同步';
-
-  @override
-  String get commonTap => '点按';
-
-  @override
-  String get commonThenScanThisQRCode => '然后扫描此二维码';
 
   @override
   String get commonThisQRCodeCouldNotBe => '无法将此二维码解码为 Keystone 签名。';
@@ -2102,7 +2098,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get keystoneFirmwareTitle => '检查 Keystone 固件';
 
   @override
-  String get keystoneFirmwareUpdatePrefix => '请更新到最新的 Keystone 固件：';
+  String keystoneFirmwareUpdate(String link) {
+    return '请更新到最新的 Keystone 固件：$link';
+  }
 
   @override
   String get keystoneImReadyNow => '我已准备好';
@@ -2482,6 +2480,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ledgerConnectionHelp => '连接帮助';
+
+  @override
+  String get ledgerConnectionRequiredBluetooth => '请开启并解锁你的 Ledger，然后通过蓝牙重新连接。';
+
+  @override
+  String get ledgerConnectionRequiredUsb => '请通过 USB 连接并解锁你的 Ledger，然后重试。';
 
   @override
   String get ledgerContinueSigning => '继续签名';
@@ -2868,6 +2872,10 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get ledgerMobileTurnOnLocation =>
       '在此 Android 版本上查找 Ledger 需要开启定位服务，请开启后重试。';
+
+  @override
+  String get ledgerMobileUnavailable =>
+      'Vizor 无法连接你的 Ledger。请确认它已开启、已解锁且在附近，然后重试。';
 
   @override
   String get ledgerNoDevicesFound => '未找到 Ledger 设备';
@@ -3616,12 +3624,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationImmediateReviewTitle => '查看迁移计划';
 
   @override
-  String get migrationImmediateTradeoffEmphasis => '更容易与你的钱包关联。';
+  String migrationImmediateTradeoffBody(String amount, String highlight) {
+    return '将在一个可见的步骤中完成，你的 $amount 和时间点会$highlight。';
+  }
 
   @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return '将在一个可见的步骤中完成，你的 $amount 和时间点会 ';
-  }
+  String get migrationImmediateTradeoffHighlight => '更容易与你的钱包关联';
 
   @override
   String get migrationImmediateTradeoffLedger => '\nLedger 账户无法使用私密迁移。';
@@ -4070,9 +4078,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => '不可用';
-
-  @override
-  String get migrationMobileFastPrivacyBodyHighlight => '更容易与你的钱包关联';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate => '建议选择私密迁移选项。';
@@ -4556,7 +4561,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => '迁移 ';
+  String migrationMobileStatusNotesTitle(String notes) {
+    return '迁移 $notes';
+  }
 
   @override
   String get migrationMobileSyncingProgress => '正在同步迁移进度。';
@@ -4582,19 +4589,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get migrationMobileWaitKeystoneAgain => '这些确认完成后，还需要再次在 Keystone 上批准。';
 
   @override
-  String get migrationMobileWaitLoopBatch => '该批交易';
-
-  @override
   String get migrationMobileWaitLoopCaption => '需重复多次，\n等待可能需要 2–10\n小时';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => '窗口';
 
   @override
   String get migrationMobileWaitLoopSign => '签署';
 
   @override
+  String migrationMobileWaitLoopSignLine(String highlight) {
+    return '$highlight该批交易';
+  }
+
+  @override
   String get migrationMobileWaitLoopWait => '等待';
+
+  @override
+  String migrationMobileWaitLoopWaitLine(String highlight) {
+    return '$highlight窗口';
+  }
 
   @override
   String get migrationMobileWaitNoteSplit => '票据拆分';
@@ -8438,11 +8449,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsSeedScreenshotAck => '我明白了';
 
   @override
-  String get settingsSeedScreenshotBodyLead => '截图并不可靠';
+  String settingsSeedScreenshotBody(String highlight) {
+    return '$highlight。任何能访问你手机或相册的人都能看到你的助记词。请改为将助记词抄写在纸上。';
+  }
 
   @override
-  String get settingsSeedScreenshotBodyRest =>
-      '。任何能访问你手机或相册的人都能看到你的助记词。请改为将助记词抄写在纸上。';
+  String get settingsSeedScreenshotBodyLead => '截图并不可靠';
 
   @override
   String get settingsSeedScreenshotTitle => '请勿截取助记词的屏幕截图';

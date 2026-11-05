@@ -5,7 +5,7 @@ import '../../../core/l10n/l10n.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../shared/onboarding_rich_text.dart';
+import '../../../core/l10n/inline_spans.dart';
 import 'onboarding_split_view.dart';
 
 class AddressTypesScreen extends StatelessWidget {
@@ -359,7 +359,7 @@ class _AddressTypeDescription extends StatelessWidget {
       return Text.rich(
         TextSpan(
           style: bodyStyle,
-          children: onboardingEmphasisSpans(
+          children: emphasisSpans(
             context.l10n.onboardingAddressShieldedDescription(
               unifiedPrefix,
               legacyPrefix,

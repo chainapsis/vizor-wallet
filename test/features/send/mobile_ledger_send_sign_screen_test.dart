@@ -87,10 +87,12 @@ void main() {
         final Object error = switch (stage) {
           'connect' => LedgerConnectionRequiredException(
             'connect wrapper',
+            reason: LedgerConnectionRequiredReason.usb,
             cause: original,
           ),
           'readiness' => LedgerConnectionRequiredException(
             'connect wrapper',
+            reason: LedgerConnectionRequiredReason.usb,
             cause: LedgerAppReadinessException(
               LedgerAppReadinessFailure.unavailable,
               'readiness wrapper',

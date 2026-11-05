@@ -1151,6 +1151,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonKeystoneAfterScan => '스⁠캔⁠한 뒤 서⁠명 가⁠져⁠오⁠기⁠를 누⁠르⁠세⁠요.';
 
   @override
+  String commonKeystoneScanPrompt(String icon) {
+    return 'Keystone⁠에⁠서 $icon 버⁠튼⁠을 누⁠른 뒤\n이 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
+  }
+
+  @override
   String get commonKeystoneScanSignatureResult =>
       'Keystone⁠에⁠서 서⁠명 결⁠과 QR⁠을 연 다⁠음 다⁠시 스⁠캔⁠하⁠세⁠요.';
 
@@ -1261,9 +1266,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get commonOnAMacYouCanUse =>
       'Mac⁠에⁠서⁠는 연⁠속⁠성 카⁠메⁠라⁠를 사⁠용⁠해 iPhone⁠으⁠로 대⁠신 스⁠캔⁠할 수 있⁠어⁠요.';
-
-  @override
-  String get commonOnYourKeystone => 'Keystone⁠에⁠서 누⁠른 뒤,';
 
   @override
   String get commonOpenSettings => '설⁠정 열⁠기';
@@ -1511,12 +1513,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonSyncing => '동⁠기⁠화 중';
-
-  @override
-  String get commonTap => '다⁠음 버⁠튼⁠을';
-
-  @override
-  String get commonThenScanThisQRCode => '이 QR 코⁠드⁠를 스⁠캔⁠하⁠세⁠요';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -2187,8 +2183,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get keystoneFirmwareTitle => 'Keystone 펌⁠웨⁠어 확⁠인';
 
   @override
-  String get keystoneFirmwareUpdatePrefix =>
-      '최⁠신 Keystone 펌⁠웨⁠어⁠로 업⁠데⁠이⁠트⁠하⁠세⁠요: ';
+  String keystoneFirmwareUpdate(String link) {
+    return '최⁠신 Keystone 펌⁠웨⁠어⁠로 업⁠데⁠이⁠트⁠하⁠세⁠요: $link';
+  }
 
   @override
   String get keystoneImReadyNow => '준⁠비⁠됐⁠어⁠요';
@@ -2604,6 +2601,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get ledgerConnectionHelp => '연⁠결 도⁠움⁠말';
+
+  @override
+  String get ledgerConnectionRequiredBluetooth =>
+      'Ledger⁠를 켜⁠고 잠⁠금⁠을 푼 다⁠음 블⁠루⁠투⁠스⁠로 다⁠시 연⁠결⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerConnectionRequiredUsb =>
+      'Ledger⁠를 USB⁠로 연⁠결⁠하⁠고 잠⁠금⁠을 푼 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerContinueSigning => '서⁠명 이⁠어⁠가⁠기';
@@ -3033,6 +3038,10 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get ledgerMobileTurnOnLocation =>
       '이 Android 버⁠전⁠에⁠서 Ledger⁠를 찾⁠으⁠려⁠면 위⁠치 서⁠비⁠스⁠를 켠 뒤 다⁠시 시⁠도⁠해 주⁠세⁠요.';
+
+  @override
+  String get ledgerMobileUnavailable =>
+      'Vizor⁠가 Ledger⁠에 연⁠결⁠하⁠지 못⁠했⁠어⁠요. Ledger⁠가 켜⁠져 있⁠고 잠⁠금⁠이 풀⁠려 있⁠으⁠며 가⁠까⁠이⁠에 있⁠는⁠지 확⁠인⁠한 다⁠음 다⁠시 시⁠도⁠해 주⁠세⁠요.';
 
   @override
   String get ledgerNoDevicesFound => 'Ledger 기⁠기⁠를 찾⁠지 못⁠했⁠어⁠요';
@@ -3826,13 +3835,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get migrationImmediateReviewTitle => '이⁠전 계⁠획 검⁠토';
 
   @override
-  String get migrationImmediateTradeoffEmphasis =>
-      '내 지⁠갑⁠과 더 쉽⁠게 연⁠결⁠될 수 있⁠어⁠요.';
+  String migrationImmediateTradeoffBody(String amount, String highlight) {
+    return '눈⁠에 보⁠이⁠는 한 번⁠의 단⁠계⁠로 넘⁠어⁠가⁠므⁠로 $amount⁠과(와) 시⁠점⁠이 $highlight.';
+  }
 
   @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return '눈⁠에 보⁠이⁠는 한 번⁠의 단⁠계⁠로 넘⁠어⁠가⁠므⁠로 $amount⁠과(와) 시⁠점⁠이 ';
-  }
+  String get migrationImmediateTradeoffHighlight =>
+      '내 지⁠갑⁠과 더 쉽⁠게 연⁠결⁠될 수 있⁠어⁠요';
 
   @override
   String get migrationImmediateTradeoffLedger =>
@@ -4311,10 +4320,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => '사⁠용⁠할 수 없⁠음';
-
-  @override
-  String get migrationMobileFastPrivacyBodyHighlight =>
-      '내 지⁠갑⁠과 연⁠결⁠되⁠기 더 쉬⁠워⁠요';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
@@ -4826,7 +4831,9 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => '이⁠전 ';
+  String migrationMobileStatusNotesTitle(String notes) {
+    return '이⁠전 $notes';
+  }
 
   @override
   String get migrationMobileSyncingProgress =>
@@ -4855,20 +4862,24 @@ class AppLocalizationsKo extends AppLocalizations {
       '이 확⁠인⁠이 끝⁠나⁠면 Keystone⁠에⁠서 한 번 더 승⁠인⁠해⁠야 해⁠요.';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' 거⁠래 배⁠치';
-
-  @override
   String get migrationMobileWaitLoopCaption =>
       '여⁠러 번 반⁠복⁠되⁠며\n기⁠다⁠리⁠는 데 2~10⁠시⁠간\n걸⁠릴 수 있⁠어⁠요';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => ' 서⁠명 구⁠간⁠까⁠지';
 
   @override
   String get migrationMobileWaitLoopSign => '서⁠명⁠하⁠기';
 
   @override
+  String migrationMobileWaitLoopSignLine(String highlight) {
+    return '거⁠래 배⁠치 $highlight';
+  }
+
+  @override
   String get migrationMobileWaitLoopWait => '기⁠다⁠리⁠기';
+
+  @override
+  String migrationMobileWaitLoopWaitLine(String highlight) {
+    return '서⁠명 구⁠간⁠까⁠지 $highlight';
+  }
 
   @override
   String get migrationMobileWaitNoteSplit => '노⁠트 분⁠할';
@@ -8981,11 +8992,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsSeedScreenshotAck => '확⁠인⁠했⁠어⁠요';
 
   @override
-  String get settingsSeedScreenshotBodyLead => '스⁠크⁠린⁠샷⁠은 안⁠전⁠하⁠지 않⁠아⁠요';
+  String settingsSeedScreenshotBody(String highlight) {
+    return '$highlight. 휴⁠대⁠폰⁠이⁠나 사⁠진 보⁠관⁠함⁠에 접⁠근⁠할 수 있⁠는 사⁠람⁠은 누⁠구⁠나 복⁠구 문⁠구⁠를 볼 수 있⁠어⁠요. 대⁠신 종⁠이⁠에 직⁠접 적⁠어 두⁠세⁠요.';
+  }
 
   @override
-  String get settingsSeedScreenshotBodyRest =>
-      '. 휴⁠대⁠폰⁠이⁠나 사⁠진 보⁠관⁠함⁠에 접⁠근⁠할 수 있⁠는 사⁠람⁠은 누⁠구⁠나 복⁠구 문⁠구⁠를 볼 수 있⁠어⁠요. 대⁠신 종⁠이⁠에 직⁠접 적⁠어 두⁠세⁠요.';
+  String get settingsSeedScreenshotBodyLead => '스⁠크⁠린⁠샷⁠은 안⁠전⁠하⁠지 않⁠아⁠요';
 
   @override
   String get settingsSeedScreenshotTitle => '복⁠구 문⁠구⁠를 스⁠크⁠린⁠샷⁠으⁠로 남⁠기⁠지 마⁠세⁠요';

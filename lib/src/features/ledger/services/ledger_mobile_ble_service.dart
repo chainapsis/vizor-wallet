@@ -36,6 +36,7 @@ class LedgerMobileException implements Exception {
     this.message, {
     this.nativeDomain,
     this.nativeCode,
+    this.platformText = false,
   });
 
   final String? nativeDomain;
@@ -43,6 +44,10 @@ class LedgerMobileException implements Exception {
 
   final LedgerMobileFailure failure;
   final String message;
+
+  /// [message] was written by the platform (possibly with device-specific
+  /// instructions) rather than by Vizor, so it is not translated.
+  final bool platformText;
 
   @override
   String toString() => message;
@@ -556,6 +561,7 @@ class MethodChannelLedgerMobileBleService
             value['code'] as String? ?? 'unavailable',
             value['message'] as String? ?? 'Ledger discovery failed.',
             details: value['details'],
+            platformText: value['message'] is String,
           ),
         );
       default:
@@ -576,6 +582,7 @@ class MethodChannelLedgerMobileBleService
           : error.message ??
                 'Ledger mobile connection failed.', // l10n-ignore: exception text
       details: error.details,
+      platformText: error.code != 'pairing_invalid' && error.message != null,
     );
     if (ledgerFailureInvalidatesConnection(mapped.failure)) {
       _connectedDeviceId = null;
@@ -587,6 +594,7 @@ class MethodChannelLedgerMobileBleService
     String code,
     String message, {
     Object? details,
+    bool platformText = false,
   }) {
     final failure = switch (code) {
       'busy' => LedgerMobileFailure.busy,
@@ -611,6 +619,7 @@ class MethodChannelLedgerMobileBleService
       nativeCode: details is Map && details['nativeCode'] is int
           ? details['nativeCode'] as int
           : null,
+      platformText: platformText,
     );
   }
 }

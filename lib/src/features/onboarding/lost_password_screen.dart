@@ -17,7 +17,7 @@ import '../../providers/sync_provider.dart';
 import '../../providers/wallet_mutation_guard.dart';
 import '../../services/device_owner_auth.dart';
 import 'shared/onboarding_auth_shell.dart';
-import 'shared/onboarding_rich_text.dart';
+import '../../core/l10n/inline_spans.dart';
 
 class LostPasswordScreen extends ConsumerStatefulWidget {
   const LostPasswordScreen({
@@ -281,7 +281,7 @@ class _LostPasswordContent extends StatelessWidget {
             Text.rich(
               TextSpan(
                 style: bodyStyle,
-                children: onboardingEmphasisSpans(
+                children: emphasisSpans(
                   l10n.onboardingLostPasswordBody(resetAction, importAction),
                   [resetAction, importAction],
                   strongStyle,

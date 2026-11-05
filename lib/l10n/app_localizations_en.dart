@@ -1171,6 +1171,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'After you scanned, click Get signature.';
 
   @override
+  String commonKeystoneScanPrompt(String icon) {
+    return 'Tap $icon on your Keystone,\nthen scan this QR code';
+  }
+
+  @override
   String get commonKeystoneScanSignatureResult =>
       'Open the signature result QR on Keystone, then scan again.';
 
@@ -1281,9 +1286,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get commonOnAMacYouCanUse =>
       'On a Mac, you can use Continuity Camera to scan with your iPhone instead.';
-
-  @override
-  String get commonOnYourKeystone => 'on your Keystone,';
 
   @override
   String get commonOpenSettings => 'Open settings';
@@ -1533,12 +1535,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonSyncing => 'Syncing';
-
-  @override
-  String get commonTap => 'Tap';
-
-  @override
-  String get commonThenScanThisQRCode => 'then scan this QR code';
 
   @override
   String get commonThisQRCodeCouldNotBe =>
@@ -2227,8 +2223,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get keystoneFirmwareTitle => 'Check Keystone firmware';
 
   @override
-  String get keystoneFirmwareUpdatePrefix =>
-      'Update to the latest Keystone firmware at ';
+  String keystoneFirmwareUpdate(String link) {
+    return 'Update to the latest Keystone firmware at $link';
+  }
 
   @override
   String get keystoneImReadyNow => 'I\'m ready now';
@@ -2645,6 +2642,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ledgerConnectionHelp => 'Connection help';
+
+  @override
+  String get ledgerConnectionRequiredBluetooth =>
+      'Turn on and unlock your Ledger, then reconnect with Bluetooth.';
+
+  @override
+  String get ledgerConnectionRequiredUsb =>
+      'Connect and unlock your Ledger with USB, then try again.';
 
   @override
   String get ledgerContinueSigning => 'Continue signing';
@@ -3076,6 +3081,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ledgerMobileTurnOnLocation =>
       'Turn on location services to find your Ledger on this Android version, then try again.';
+
+  @override
+  String get ledgerMobileUnavailable =>
+      'Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.';
 
   @override
   String get ledgerNoDevicesFound => 'No Ledger devices found';
@@ -3884,13 +3893,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationImmediateReviewTitle => 'Review Migration Plan';
 
   @override
-  String get migrationImmediateTradeoffEmphasis =>
-      'easier to associate with your wallet.';
+  String migrationImmediateTradeoffBody(String amount, String highlight) {
+    return 'Crosses in one visible step — your $amount and timing are $highlight.';
+  }
 
   @override
-  String migrationImmediateTradeoffLead(String amount) {
-    return 'Crosses in one visible step — your $amount and timing are ';
-  }
+  String get migrationImmediateTradeoffHighlight =>
+      'easier to associate with your wallet';
 
   @override
   String get migrationImmediateTradeoffLedger =>
@@ -4389,10 +4398,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationMobileFastPlanUnavailable => 'Unavailable';
-
-  @override
-  String get migrationMobileFastPrivacyBodyHighlight =>
-      'easier to associate with your wallet';
 
   @override
   String get migrationMobileFastPrivacyConsiderPrivate =>
@@ -4921,7 +4926,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get migrationMobileStatusNotesLead => 'Migration ';
+  String migrationMobileStatusNotesTitle(String notes) {
+    return 'Migration $notes';
+  }
 
   @override
   String get migrationMobileSyncingProgress =>
@@ -4950,20 +4957,24 @@ class AppLocalizationsEn extends AppLocalizations {
       'Another Keystone approval will be needed after these confirmations.';
 
   @override
-  String get migrationMobileWaitLoopBatch => ' the batch of transactions';
-
-  @override
   String get migrationMobileWaitLoopCaption =>
       'Repeat several times,\nwaiting could take 2–10\nhours';
-
-  @override
-  String get migrationMobileWaitLoopForWindow => ' for the window';
 
   @override
   String get migrationMobileWaitLoopSign => 'Sign';
 
   @override
+  String migrationMobileWaitLoopSignLine(String highlight) {
+    return '$highlight the batch of transactions';
+  }
+
+  @override
   String get migrationMobileWaitLoopWait => 'Wait';
+
+  @override
+  String migrationMobileWaitLoopWaitLine(String highlight) {
+    return '$highlight for the window';
+  }
 
   @override
   String get migrationMobileWaitNoteSplit => 'Note Split';
@@ -9158,11 +9169,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsSeedScreenshotAck => 'I understand';
 
   @override
-  String get settingsSeedScreenshotBodyLead => 'Screenshots are not reliable';
+  String settingsSeedScreenshotBody(String highlight) {
+    return '$highlight. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
+  }
 
   @override
-  String get settingsSeedScreenshotBodyRest =>
-      '. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.';
+  String get settingsSeedScreenshotBodyLead => 'Screenshots are not reliable';
 
   @override
   String get settingsSeedScreenshotTitle =>

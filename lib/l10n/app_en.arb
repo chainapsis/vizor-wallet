@@ -1582,6 +1582,15 @@
   "@commonKeystoneAfterScan": {
     "description": "[security] Instruction in the desktop Keystone modal after proofs are ready. Shared by: send, swap. Shared by: common, migration."
   },
+  "commonKeystoneScanPrompt": "Tap {icon} on your Keystone,\nthen scan this QR code",
+  "@commonKeystoneScanPrompt": {
+    "description": "Two-line instruction under a QR code. {icon} is replaced by the small button icon the user taps on the Keystone device, so move it wherever the grammar needs it. The line break between the two halves is intentional. Shared by: keystone, migration.",
+    "placeholders": {
+      "icon": {
+        "type": "String"
+      }
+    }
+  },
   "commonKeystoneScanSignatureResult": "Open the signature result QR on Keystone, then scan again.",
   "@commonKeystoneScanSignatureResult": {
     "description": "Hint when the scanned QR code is of the wrong type; asks to open the signature result QR code on the Keystone device. Shared by: send, swap."
@@ -1717,10 +1726,6 @@
   "commonOnAMacYouCanUse": "On a Mac, you can use Continuity Camera to scan with your iPhone instead.",
   "@commonOnAMacYouCanUse": {
     "description": "Scanning tip on QR scanners. 'Continuity Camera' is an Apple feature name. Shared by: keystone, send."
-  },
-  "commonOnYourKeystone": "on your Keystone,",
-  "@commonOnYourKeystone": {
-    "description": "Middle of the instruction 'Tap [icon] on your Keystone, then scan this QR code'; follows an icon. Translators may rearrange the first two fragments around the icon. Shared by: keystone, migration."
   },
   "commonOpenSettings": "Open settings",
   "@commonOpenSettings": {
@@ -2052,14 +2057,6 @@
   "commonSyncing": "Syncing",
   "@commonSyncing": {
     "description": "Value of the estimated completion row while the migration progress is syncing. Shared by: migration, settings."
-  },
-  "commonTap": "Tap",
-  "@commonTap": {
-    "description": "Start of the on-screen instruction 'Tap [icon] on your Keystone, then scan this QR code'; an icon follows. Word order may differ in other languages, so the first two fragments may be rearranged around the icon. Shared by: keystone, migration."
-  },
-  "commonThenScanThisQRCode": "then scan this QR code",
-  "@commonThenScanThisQRCode": {
-    "description": "End of the instruction 'Tap [icon] on your Keystone, then scan this QR code'. Shared by: keystone, migration."
   },
   "commonThisQRCodeCouldNotBe": "This QR code could not be decoded as a Keystone signature.",
   "@commonThisQRCodeCouldNotBe": {
@@ -2922,9 +2919,14 @@
   "@keystoneFirmwareTitle": {
     "description": "Title of instruction step 1 on the Keystone how-to-connect screen. The step number is added by the app before this text."
   },
-  "keystoneFirmwareUpdatePrefix": "Update to the latest Keystone firmware at ",
-  "@keystoneFirmwareUpdatePrefix": {
-    "description": "Text before the keyst.one/firmware link in the scanning help. Keep the trailing space; the link follows directly."
+  "keystoneFirmwareUpdate": "Update to the latest Keystone firmware at {link}",
+  "@keystoneFirmwareUpdate": {
+    "description": "Line in the Keystone scanning help. {link} is the keyst.one/firmware link, which is a URL and is not translated; place it where the grammar needs it.",
+    "placeholders": {
+      "link": {
+        "type": "String"
+      }
+    }
   },
   "keystoneImReadyNow": "I'm ready now",
   "@keystoneImReadyNow": {
@@ -3426,6 +3428,14 @@
   "ledgerConnectionHelp": "Connection help",
   "@ledgerConnectionHelp": {
     "description": "Button in the mobile device sheet that opens help for connecting a Ledger."
+  },
+  "ledgerConnectionRequiredBluetooth": "Turn on and unlock your Ledger, then reconnect with Bluetooth.",
+  "@ledgerConnectionRequiredBluetooth": {
+    "description": "Guidance shown when the Ledger could not be reached over Bluetooth and the user has to reconnect it."
+  },
+  "ledgerConnectionRequiredUsb": "Connect and unlock your Ledger with USB, then try again.",
+  "@ledgerConnectionRequiredUsb": {
+    "description": "Guidance shown when the Ledger could not be reached over USB and the user has to reconnect it."
   },
   "ledgerContinueSigning": "Continue signing",
   "@ledgerContinueSigning": {
@@ -3948,6 +3958,10 @@
   "ledgerMobileTurnOnLocation": "Turn on location services to find your Ledger on this Android version, then try again.",
   "@ledgerMobileTurnOnLocation": {
     "description": "Guidance on Android when location services are off, which this Android version needs to find Bluetooth devices."
+  },
+  "ledgerMobileUnavailable": "Vizor could not reach your Ledger. Make sure it is on, unlocked and nearby, then try again.",
+  "@ledgerMobileUnavailable": {
+    "description": "Fallback guidance when the Bluetooth connection to the Ledger failed for an unknown reason."
   },
   "ledgerNoDevicesFound": "No Ledger devices found",
   "@ledgerNoDevicesFound": {
@@ -4968,18 +4982,21 @@
   "@migrationImmediateReviewTitle": {
     "description": "Title of the review screen for the one-step (\"Immediate\") migration."
   },
-  "migrationImmediateTradeoffEmphasis": "easier to associate with your wallet.",
-  "@migrationImmediateTradeoffEmphasis": {
-    "description": "[security] Highlighted second part of the privacy notice, continuing the previous message."
-  },
-  "migrationImmediateTradeoffLead": "Crosses in one visible step — your {amount} and timing are ",
-  "@migrationImmediateTradeoffLead": {
-    "description": "[security] First part of the privacy notice; {amount} is the ZEC amount. The sentence continues in the next message, so it must end with a space.",
+  "migrationImmediateTradeoffBody": "Crosses in one visible step — your {amount} and timing are {highlight}.",
+  "@migrationImmediateTradeoffBody": {
+    "description": "[security] Sentence of the privacy notice for the one-step migration. {amount} is the ZEC amount; {highlight} is the emphasized phrase 'easier to associate with your wallet' and can be moved anywhere in the sentence.",
     "placeholders": {
       "amount": {
         "type": "String"
+      },
+      "highlight": {
+        "type": "String"
       }
     }
+  },
+  "migrationImmediateTradeoffHighlight": "easier to associate with your wallet",
+  "@migrationImmediateTradeoffHighlight": {
+    "description": "[security] Emphasized phrase inserted into the privacy notice sentence as its highlight; it completes 'your amount and timing are …'."
   },
   "migrationImmediateTradeoffLedger": "\nPrivate migration is not available for Ledger accounts.",
   "@migrationImmediateTradeoffLedger": {
@@ -5587,10 +5604,6 @@
   "migrationMobileFastPlanUnavailable": "Unavailable",
   "@migrationMobileFastPlanUnavailable": {
     "description": "Placeholder value of the amount and fee rows on the Immediate migration review when no plan could be made."
-  },
-  "migrationMobileFastPrivacyBodyHighlight": "easier to associate with your wallet",
-  "@migrationMobileFastPrivacyBodyHighlight": {
-    "description": "[security] Highlighted middle part of the sentence in the privacy warning card; it follows the lead part and ends the sentence."
   },
   "migrationMobileFastPrivacyConsiderPrivate": "Consider choosing a Private Migration option.",
   "@migrationMobileFastPrivacyConsiderPrivate": {
@@ -6257,9 +6270,14 @@
       }
     }
   },
-  "migrationMobileStatusNotesLead": "Migration ",
-  "@migrationMobileStatusNotesLead": {
-    "description": "Bold first words of the heading row above the migration parts; followed by the note count such as 3 notes. Keep the trailing space."
+  "migrationMobileStatusNotesTitle": "Migration {notes}",
+  "@migrationMobileStatusNotesTitle": {
+    "description": "Heading row above the migration parts. {notes} is the muted note count such as '3 notes' and can be moved anywhere.",
+    "placeholders": {
+      "notes": {
+        "type": "String"
+      }
+    }
   },
   "migrationMobileSyncingProgress": "Syncing the migration progress.",
   "@migrationMobileSyncingProgress": {
@@ -6297,25 +6315,35 @@
   "@migrationMobileWaitKeystoneAgain": {
     "description": "Note under the note split card for Keystone accounts: another signing on the device is required afterwards."
   },
-  "migrationMobileWaitLoopBatch": " the batch of transactions",
-  "@migrationMobileWaitLoopBatch": {
-    "description": "Second fragment of the bottom text on the animated loop; keep the leading space."
-  },
   "migrationMobileWaitLoopCaption": "Repeat several times,\nwaiting could take 2–10\nhours",
   "@migrationMobileWaitLoopCaption": {
     "description": "Caption in the middle of the animated loop that explains the sign-and-wait cycle; the line breaks are intentional and the dash is an en dash."
   },
-  "migrationMobileWaitLoopForWindow": " for the window",
-  "@migrationMobileWaitLoopForWindow": {
-    "description": "Second fragment of the top text on the animated loop; keep the leading space."
-  },
   "migrationMobileWaitLoopSign": "Sign",
   "@migrationMobileWaitLoopSign": {
-    "description": "Highlighted first word of the bottom text on the animated loop; followed by the next fragment to read 'Sign the batch of transactions'."
+    "description": "Highlighted verb inserted into the bottom text of the animated loop, which reads 'Sign the batch of transactions'."
+  },
+  "migrationMobileWaitLoopSignLine": "{highlight} the batch of transactions",
+  "@migrationMobileWaitLoopSignLine": {
+    "description": "Text along the bottom of the animated loop on the migration screen: the user signs the next batch. {highlight} is the highlighted verb 'Sign' and can be moved anywhere.",
+    "placeholders": {
+      "highlight": {
+        "type": "String"
+      }
+    }
   },
   "migrationMobileWaitLoopWait": "Wait",
   "@migrationMobileWaitLoopWait": {
-    "description": "Highlighted first word of the top text on the animated loop; followed by the next fragment to read 'Wait for the window'."
+    "description": "Highlighted verb inserted into the top text of the animated loop, which reads 'Wait for the window'."
+  },
+  "migrationMobileWaitLoopWaitLine": "{highlight} for the window",
+  "@migrationMobileWaitLoopWaitLine": {
+    "description": "Text along the top of the animated loop on the migration screen: the user waits for the next signing window. {highlight} is the highlighted verb 'Wait' and can be moved anywhere.",
+    "placeholders": {
+      "highlight": {
+        "type": "String"
+      }
+    }
   },
   "migrationMobileWaitNoteSplit": "Note Split",
   "@migrationMobileWaitNoteSplit": {
@@ -11651,13 +11679,18 @@
   "@settingsSeedScreenshotAck": {
     "description": "Button that dismisses the screenshot warning sheet."
   },
+  "settingsSeedScreenshotBody": "{highlight}. Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.",
+  "@settingsSeedScreenshotBody": {
+    "description": "[security] Body of the warning about screenshots of the Secret Passphrase. {highlight} is the bold phrase 'Screenshots are not reliable' and can be moved anywhere in the first sentence.",
+    "placeholders": {
+      "highlight": {
+        "type": "String"
+      }
+    }
+  },
   "settingsSeedScreenshotBodyLead": "Screenshots are not reliable",
   "@settingsSeedScreenshotBodyLead": {
-    "description": "[security] Bold first words of the screenshot warning body; the next string continues the same sentence."
-  },
-  "settingsSeedScreenshotBodyRest": ". Anyone who has access to your phone or your photo library will be able to see your Secret Passphrase. Write down your Phrase on a piece of paper instead.",
-  "@settingsSeedScreenshotBodyRest": {
-    "description": "[security] Rest of the screenshot warning body; it directly follows the bold lead and so starts with a period."
+    "description": "[security] Bold phrase inserted into the screenshot warning body, where it starts the first sentence."
   },
   "settingsSeedScreenshotTitle": "Don’t take screenshots of your Secret Passphrase",
   "@settingsSeedScreenshotTitle": {

@@ -19,6 +19,7 @@ class MobileLedgerSigningContent extends StatelessWidget {
     required this.status,
     required this.active,
     required this.failed,
+    required this.showFailureStatus,
     required this.onClose,
     required this.onAction,
     this.actionLabel,
@@ -41,6 +42,7 @@ class MobileLedgerSigningContent extends StatelessWidget {
   final String status;
   final bool active;
   final bool failed;
+  final bool showFailureStatus;
   final AccountInfo? account;
   final String? actionLabel;
   final VoidCallback? onClose;
@@ -180,7 +182,7 @@ class MobileLedgerSigningContent extends StatelessWidget {
             padding: const EdgeInsets.only(top: AppSpacing.s),
             child: MobileLedgerMessage(roundFeeNotice!),
           ),
-        if (failed && status != l10n.commonActionNeeded) ...[
+        if (failed && showFailureStatus) ...[
           const SizedBox(height: AppSpacing.sm),
           Text(
             status,

@@ -337,6 +337,7 @@ class _PaymentLinkLedgerSigningOverlayState
               statusLabel: _requestNeedsRebuilding
                   ? context.l10n.paymentLinkNewGiftCardRequired
                   : context.l10n.commonActionNeeded,
+              actionNeeded: !(_requestNeedsRebuilding),
               message: _error!,
               showDeviceAppPrompt:
                   !_checkpointed &&

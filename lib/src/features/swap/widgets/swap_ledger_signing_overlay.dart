@@ -754,6 +754,8 @@ class _SwapLedgerSigningOverlayState
                   : _operationClaimUnavailable
                   ? context.l10n.commonPleaseWait
                   : context.l10n.commonActionNeeded,
+              actionNeeded:
+                  !postBroadcastRecovery && !_operationClaimUnavailable,
               message: postBroadcastRecovery
                   ? expiredRecovery
                         ? context.l10n.swapLedgerMessageExpired

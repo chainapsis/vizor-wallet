@@ -51,6 +51,7 @@ Widget buildMobileShieldLedger(BuildContext context) => const MobileShieldScene(
       status: 'Review on device',
       active: true,
       failed: false,
+      showFailureStatus: false,
       stage: LedgerSigningStage.reviewing,
       readiness: LedgerAppReadinessPhase.ready,
       saving: false,

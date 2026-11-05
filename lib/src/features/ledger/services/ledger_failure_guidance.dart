@@ -81,7 +81,12 @@ LedgerFailureGuidance? ledgerFailureGuidance(
                 error.cause!,
                 requestKind: requestKind,
               )) ??
-        LedgerFailureGuidance(error.message);
+        LedgerFailureGuidance(switch (error.reason) {
+          LedgerConnectionRequiredReason.bluetooth =>
+            l10n.ledgerConnectionRequiredBluetooth,
+          LedgerConnectionRequiredReason.usb =>
+            l10n.ledgerConnectionRequiredUsb,
+        });
   }
   if (error is LedgerAppReadinessException) {
     final cause = error.cause;
@@ -203,14 +208,17 @@ LedgerFailureGuidance _mobileGuidance(
     l10n.ledgerMobileRequestCancelled,
   ),
   LedgerMobileFailure.wrongApp => LedgerFailureGuidance(
-    error.message, // l10n-ignore: native message for the running app
+    l10n.ledgerFailureMsgOpenZcash,
     showDeviceAppPrompt: true,
   ),
   // Native unavailable messages can include instructions to finish a
   // pending device request. Preserve those instead of inventing a pairing
   // diagnosis.
   LedgerMobileFailure.unavailable => LedgerFailureGuidance(
-    error.message, // l10n-ignore: native message passed through
+    error.platformText
+        ? error
+              .message // l10n-ignore: platform text, wording unknown
+        : l10n.ledgerMobileUnavailable,
   ),
 };
 

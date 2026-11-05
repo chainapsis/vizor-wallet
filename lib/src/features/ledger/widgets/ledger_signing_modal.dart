@@ -32,6 +32,7 @@ class LedgerSigningFailurePresentation {
   const LedgerSigningFailurePresentation({
     required this.title,
     required this.statusLabel,
+    required this.actionNeeded,
     required this.message,
     required this.showDeviceAppPrompt,
     this.actionLabel,
@@ -45,6 +46,10 @@ class LedgerSigningFailurePresentation {
 
   final String title;
   final String statusLabel;
+
+  /// The failure is a generic "needs your action" state, so the mobile sheet
+  /// omits the redundant status line; other kinds name a specific status.
+  final bool actionNeeded;
   final String message;
   final bool showDeviceAppPrompt;
   final String? actionLabel;
@@ -64,6 +69,7 @@ LedgerSigningFailurePresentation ledgerMemoHashUpdateFailure(
 ) => LedgerSigningFailurePresentation(
   title: l10n.ledgerAppUpdateRequiredTitle,
   statusLabel: l10n.commonActionNeeded,
+  actionNeeded: true,
   message: l10n.ledgerFailureMsgMemoHashUnsupported,
   showDeviceAppPrompt: false,
   actionLabel: l10n.commonTryAgain,
@@ -77,6 +83,7 @@ LedgerSigningFailurePresentation ledgerAppUpdateFailure(
 ) => LedgerSigningFailurePresentation(
   title: l10n.ledgerAppUpdateRequiredTitle,
   statusLabel: l10n.commonActionNeeded,
+  actionNeeded: true,
   message: l10n.ledgerFailureMsgAppUpdateRequired(kLedgerNu7AppVersion),
   showDeviceAppPrompt: false,
   actionLabel: l10n.commonTryAgain,
@@ -232,6 +239,7 @@ class LedgerSigningModal extends ConsumerWidget {
             : statusLabel,
         active: !failed,
         failed: failed,
+        showFailureStatus: failed && !failure!.actionNeeded,
         account: account,
         onClose: onCancel,
         actionLabel: actionLabel,

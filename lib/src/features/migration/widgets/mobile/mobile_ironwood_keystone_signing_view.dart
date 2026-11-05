@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart' show Icons, Scaffold;
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/l10n/inline_spans.dart';
 import '../../../../core/l10n/l10n.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -388,37 +389,34 @@ class _KeystoneScanPrompt extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 6,
-          runSpacing: 2,
-          children: [
-            Text(context.l10n.commonTap, style: style),
-            const _KeystoneScanPromptIcon(),
-            Text(context.l10n.commonOnYourKeystone, style: style),
-          ],
-        ),
-        const SizedBox(height: 2),
         // The help affordance trails the last word of the sentence rather
         // than the whole two-line block, so it reads as part of the prompt.
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Flexible(
-              fit: FlexFit.loose,
-              child: Text(
-                context.l10n.commonThenScanThisQRCode,
-                textAlign: TextAlign.center,
-                style: style,
+        Text.rich(
+          TextSpan(
+            children: [
+              ...inlineSlotSpans(
+                context.l10n.commonKeystoneScanPrompt(kInlineSlot),
+                const {
+                  kInlineSlot: WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: _KeystoneScanPromptIcon(),
+                  ),
+                },
               ),
-            ),
-            if (onShowHelp != null) ...[
-              const SizedBox(width: 6),
-              _KeystoneScanHelpButton(color: color, onShowHelp: onShowHelp!),
+              if (onShowHelp != null) ...[
+                const WidgetSpan(child: SizedBox(width: 6)),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: _KeystoneScanHelpButton(
+                    color: color,
+                    onShowHelp: onShowHelp!,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
+          textAlign: TextAlign.center,
+          style: style,
         ),
       ],
     );

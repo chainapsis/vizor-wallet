@@ -181,6 +181,7 @@ class _LedgerImmediateMigrationSigningOverlayState
               pairingRecovery: _deviceGuidance?.pairingRecovery ?? false,
               title: context.l10n.migrationLedgerFailedTitle,
               statusLabel: context.l10n.commonActionNeeded,
+              actionNeeded: true,
               message: _error ?? context.l10n.migrationLedgerFailed,
               showDeviceAppPrompt:
                   _deviceGuidance?.showDeviceAppPrompt ?? false,

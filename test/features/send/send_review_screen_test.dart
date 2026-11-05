@@ -1238,6 +1238,7 @@ void main() {
               if (attempts == 1) {
                 throw LedgerConnectionRequiredException(
                   'connection failed',
+                  reason: LedgerConnectionRequiredReason.usb,
                   cause: original,
                 );
               }
